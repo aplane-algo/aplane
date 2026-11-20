@@ -1197,15 +1197,26 @@ it), so none is left looking approvable. Such a request answers `locked` ("the s
 session ended while the request waited for approval; send it again") and is
 audited as `approval_withdrawn_session_ended`, not as an operator rejection.
 A session end cancels no request's context. A request that is still planning,
-or waiting at its gates, meets the session check and answers `locked`. One
-already past that check answers `locked` at its next key load once a lock has
-cleared the key session, and a rotating sign at the lock's cut of its key use.
-Ordinary `/sign` and cosigner component signing register no key use, so a
-signature whose key was already decrypted is not stopped: the lock does not
-wait for it, and a request whose last key was already decrypted returns its
-signatures. A session end that comes after an operator
-answered overrides an approval, which could no longer sign, but not a
-rejection, which is recorded as the operator's. One refused at the check after its gates and
+or waiting at its gates, meets the session check and answers `locked`. A
+rotating sign past that check is stopped at the cut of its key use, which
+every session end makes. Ordinary `/sign`, component signing (bounded-base and
+cosigner-role) and assembly register no key use, so for them the check is a
+moment, not a hold, and what stops one already past it depends on the session
+end:
+
+- A lock, the start of store maintenance, or an unlock that lost to a lock
+  runs the lock cleanup, which clears the key session only after it has
+  drained the registered key users. A key load before that still succeeds;
+  one after it fails, and the request answers `locked` (an assembly's
+  passthrough key lookup answers `internal` instead). A signature whose key
+  was already decrypted is not stopped: the cleanup does not wait for it, and
+  a request whose last key was already decrypted returns its signatures.
+- An entry into recovery clears neither the key session nor the keyring, so
+  such a request goes on loading its keys and signs to completion.
+
+A session end that comes after an operator answered overrides an approval,
+which could no longer sign, but not a rejection, which is recorded as the
+operator's. One refused at the check after its gates and
 approval passed is audited as `session_ended_after_approval`. A request sent
 again under the same ID belongs to the new session and is handled as new.
 Only the signer withdraws a request; an operator's rejection stays a
