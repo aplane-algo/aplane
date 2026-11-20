@@ -385,7 +385,9 @@ This bootstrap script:
 - Detects architecture (`amd64`/`arm64`)
 - Downloads the matching GitHub release tarball
 - Verifies checksums (and minisign signature if `minisign` is installed)
-- Runs the bundled `install.sh`
+- Runs the bundled `install.sh`, which first shows the release's
+  `install_readme.txt` when it carries one (see
+  [Install from Release Tarball](#install-from-release-tarball))
 - In `--systemd` mode, enables and starts the `apsigner` systemd service
 
 Useful options:
@@ -536,8 +538,19 @@ aplane/
 │   └── templates/  # Template library copied into $APSIGNER_DATA/library/templates
 ├── plugins.available/ # Bundled plugin catalog
 ├── install.sh      # Installer
+├── install_readme.txt # Release notes for the installer, when the release has some
 └── uninstall.sh    # State-preserving uninstaller
 ```
+
+A release can carry `install_readme.txt` beside `install.sh`: a note from the
+maintainers about this release, such as that it installs only into a fresh
+root, or that an old install must be removed first. `install.sh` prints it
+before anything else, in every mode and for `--help` too, between a
+`==> Release notes for this installer (install_readme.txt)` header and a
+closing rule, and then carries on without waiting. Read it before you
+answer the installer's prompts; in an unattended install it is at the top of
+the log. An empty note prints nothing. If the note is there but cannot be
+read, the installer stops.
 
 `install.sh --systemd` accepts an optional operator root path plus `--bindir`
 for a custom binary directory (default: `/usr/local/bin`):

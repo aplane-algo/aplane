@@ -146,14 +146,9 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 // the Linux and the macOS archive's dist/staging/aplane/bin/.
 func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.ReplaceAll(string(data), "\\\n", " ")
 	name := regexp.MustCompile(`[A-Za-z0-9-]+$`)
 	var linuxCopies, darwinCopies int
-	for _, command := range strings.FieldsFunc(joined, func(r rune) bool { return r == '\n' || r == ';' }) {
+	for _, command := range shellCommands(readTextFile(t, path)) {
 		fields := strings.Fields(command)
 		if len(fields) < 3 || fields[0] != "cp" || fields[len(fields)-1] != "dist/staging/aplane/bin/" {
 			continue
@@ -175,6 +170,58 @@ func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
 		t.Fatalf("%s has %d Linux and %d macOS archive binary copies, want one of each", path, linuxCopies, darwinCopies)
 	}
 	return linux, darwin
+}
+
+// shellCommands splits a build file into its shell commands, continuation
+// lines joined, at newlines and semicolons.
+func shellCommands(text string) []string {
+	joined := strings.ReplaceAll(text, "\\\n", " ")
+	var commands []string
+	for _, command := range strings.FieldsFunc(joined, func(r rune) bool { return r == '\n' || r == ';' }) {
+		if command = strings.Join(strings.Fields(command), " "); command != "" {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+// TestReleaseArchivesShipTheInstallReadme pins that every archive copy of
+// install.sh is followed by a copy of the repository root's
+// install_readme.txt to the same place, when there is one, so a note made for
+// a release reaches every operator: the bootstrap package, and the Linux and
+// macOS archives release.yml and make release-local build.
+func TestReleaseArchivesShipTheInstallReadme(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for name, want := range map[string]int{
+		filepath.Join("scripts", "package-bootstrap-release.sh"): 1,
+		filepath.Join(".github", "workflows", "release.yml"):     2,
+		"Makefile": 2,
+	} {
+		commands := shellCommands(readTextFile(t, filepath.Join(root, name)))
+		copies := 0
+		for i, command := range commands {
+			fields := strings.Fields(command)
+			if len(fields) < 3 || fields[0] != "cp" {
+				continue
+			}
+			sources := fields[1 : len(fields)-1]
+			at := slices.IndexFunc(sources, func(source string) bool {
+				return filepath.Base(strings.Trim(source, `"`)) == "install.sh"
+			})
+			if at < 0 {
+				continue
+			}
+			copies++
+			note := strings.Replace(sources[at], "install.sh", "install_readme.txt", 1)
+			wantNext := []string{"if [ -f " + note + " ]", "then cp " + note + " " + fields[len(fields)-1], "fi"}
+			if next := commands[i+1 : min(i+4, len(commands))]; !slices.Equal(next, wantNext) {
+				t.Errorf("%s: %q is followed by %q, want %q", name, command, next, wantNext)
+			}
+		}
+		if copies != want {
+			t.Errorf("%s copies install.sh into %d archives, want %d", name, copies, want)
+		}
+	}
 }
 
 // TestInstallerShowsTheInstallReadmeFirst runs install.sh from a scratch

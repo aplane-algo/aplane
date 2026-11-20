@@ -325,6 +325,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
 		scripts/stage-bundled-plugins.sh --os linux --arch $${arch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
+		if [ -f install_readme.txt ]; then cp install_readme.txt dist/staging/aplane/; fi; \
 		write_release_metadata dist/staging/aplane; \
 		tar -czf "dist/$${archive}" -C dist/staging aplane; \
 		echo "✓ Created dist/$${archive}"; \
@@ -348,6 +349,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
 		scripts/stage-bundled-plugins.sh --os darwin --arch $${darwinarch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
+		if [ -f install_readme.txt ]; then cp install_readme.txt dist/staging/aplane/; fi; \
 		write_release_metadata dist/staging/aplane; \
 		tar -czf "dist/$${archive}" -C dist/staging aplane; \
 		echo "✓ Created dist/$${archive}"; \
