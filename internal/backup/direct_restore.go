@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,25 +25,70 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// CredentialEntry is one complete canonical managed credential prepared for
-// destination installation. KeyJSON contains private authority and must be
-// cleared with ZeroSecrets. Policy is the credential's archived policy
-// document of its own, nil when the archive carries none.
+// CredentialEntry is one archived credential as loadCredentialEntry admitted
+// it, prepared for destination installation. Its selector, canonical key JSON
+// and payload come from that one parse and are unexported, so an entry
+// cannot name a selector or category its credential does not have. The key
+// JSON contains private authority and must be cleared with ZeroSecrets.
+// Policy is the credential's archived policy document of its own, nil when
+// the archive carries none.
 type CredentialEntry struct {
 	StageHint *RotatingStageHint
-	Selector  string
-	Category  string
-	KeyType   string
-	KeyJSON   []byte
 	Policy    []byte
+	// credential is shared by every copy of the entry, so clearing it
+	// through one copy clears it for all: restore applies the copies
+	// ClassifyRestoreSet returns, not the set's own entries.
+	credential *admittedCredential
+}
+
+// admittedCredential is what admitCredentialEntry established about one
+// credential.
+type admittedCredential struct {
+	selector string
+	keyJSON  []byte
+	// payload is the admitted payload with its secrets cleared: the
+	// category, key type, public key and genesis hash later steps read.
+	payload *keys.Payload
+}
+
+// Selector is the credential's canonical selector, derived from its payload.
+func (e *CredentialEntry) Selector() string {
+	if e.credential == nil {
+		return ""
+	}
+	return e.credential.selector
+}
+
+// Category is the credential's payload category.
+func (e *CredentialEntry) Category() string {
+	if e.credential == nil {
+		return ""
+	}
+	return e.credential.payload.Category
+}
+
+// KeyType is the credential's key type.
+func (e *CredentialEntry) KeyType() string {
+	if e.credential == nil {
+		return ""
+	}
+	return e.credential.payload.KeyType
+}
+
+// keyJSON is the canonical credential, nil once it was cleared.
+func (e *CredentialEntry) keyJSON() []byte {
+	if e.credential == nil {
+		return nil
+	}
+	return e.credential.keyJSON
 }
 
 func (e *CredentialEntry) ZeroSecrets() {
-	if e == nil {
+	if e == nil || e.credential == nil {
 		return
 	}
-	crypto.ZeroBytes(e.KeyJSON)
-	e.KeyJSON = nil
+	crypto.ZeroBytes(e.credential.keyJSON)
+	e.credential.keyJSON = nil
 }
 
 // RestoreSet is a fully authenticated and payload-validated archive selection.
@@ -168,34 +212,79 @@ func LoadManagedRestoreSet(
 		}
 	}()
 	for _, selector := range selected {
-		inspected, inspectErr := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, role)
-		if inspectErr != nil {
-			return nil, authenticatedArchiveError(fmt.Errorf("validate backup credential %s: %w", selector, inspectErr))
-		}
-		if err := validateCredentialRuntimeSupport(&inspected); err != nil {
-			inspected.ZeroSecrets()
+		entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
+		if err != nil {
 			return nil, authenticatedArchiveError(fmt.Errorf("validate backup credential %s: %w", selector, err))
 		}
-		if inspected.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
-			inspected.ZeroSecrets()
+		if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
+			entry.ZeroSecrets()
 			return nil, authenticatedArchiveError(err)
 		}
-		inspected.StageHint = validatedRotatingHint(inspected, manifest.RotatingStageHints)
-		set.Entries = append(set.Entries, inspected)
+		entry.StageHint = validatedRotatingHint(entry, manifest.RotatingStageHints)
+		set.Entries = append(set.Entries, entry)
 	}
 	success = true
 	return set, nil
 }
 
-func validateCredentialRuntimeSupport(entry *CredentialEntry) error {
-	if entry == nil {
-		return fmt.Errorf("credential entry is nil")
-	}
-	payload, err := keys.ParsePayload(entry.KeyJSON)
+// loadCredentialEntry reads and decrypts one archived credential and admits
+// it. Deep verify, restore, its preview and rebuild all load credentials
+// here, so a credential that verifies is one restore admits.
+func loadCredentialEntry(
+	keysDir, selector string,
+	exportPassphrase []byte,
+	role noderole.Role,
+) (CredentialEntry, error) {
+	srcFile := filepath.Join(keysDir, selector+".apb")
+	// #nosec G304 -- keysDir is the private extracted archive root and selector
+	// is restricted to one validated basename before this function is called.
+	data, _, err := fsutil.ReadRegularFileLimited(srcFile, crypto.MaxStandaloneEnvelopeBytes)
 	if err != nil {
-		return err
+		return CredentialEntry{}, fmt.Errorf("read backup file: %w", err)
 	}
+	plaintext, err := crypto.DecryptStandalone(data, exportPassphrase)
+	if err != nil {
+		return CredentialEntry{}, fmt.Errorf("decrypt backup file: %w", err)
+	}
+	defer crypto.ZeroBytes(plaintext)
+	return admitCredentialEntry(plaintext, selector, role)
+}
+
+// admitCredentialEntry parses keyJSON once, checks that it derives selector,
+// that role may hold its key type and that this runtime can use it, and
+// canonicalizes it. The entry keeps what the parse established, so no later
+// step parses the credential again.
+func admitCredentialEntry(keyJSON []byte, selector string, role noderole.Role) (CredentialEntry, error) {
+	payload, err := keys.ParsePayload(keyJSON)
+	if err != nil {
+		return CredentialEntry{}, fmt.Errorf("failed to parse backup credential: %w", err)
+	}
+	// Clearing the secrets on return leaves the entry's payload holding only
+	// public facts.
 	defer payload.ZeroSecrets()
+	derived, err := payload.Selector()
+	if err != nil {
+		return CredentialEntry{}, err
+	}
+	if derived != selector {
+		return CredentialEntry{}, fmt.Errorf("selector mismatch: filename=%s derived=%s", selector, derived)
+	}
+	if err := keyclass.ValidateKeyTypeAllowedForNodeRole(role, payload.KeyType); err != nil {
+		return CredentialEntry{}, fmt.Errorf("role-forbidden: %w", err)
+	}
+	canonical, err := keys.MarshalPayload(payload)
+	if err != nil {
+		return CredentialEntry{}, fmt.Errorf("canonicalize credential: %w", err)
+	}
+	if err := requireRuntimeSupport(payload); err != nil {
+		crypto.ZeroBytes(canonical)
+		return CredentialEntry{}, err
+	}
+	return CredentialEntry{credential: &admittedCredential{selector: derived, keyJSON: canonical, payload: payload}}, nil
+}
+
+// requireRuntimeSupport refuses a credential this runtime cannot use.
+func requireRuntimeSupport(payload *keys.Payload) error {
 	switch payload.Category {
 	case keys.CategoryDSALsig:
 		if !lsigprovider.Has(payload.BaseKeyType) {
@@ -217,69 +306,6 @@ func validateCredentialRuntimeSupport(entry *CredentialEntry) error {
 		return fmt.Errorf("unsupported managed credential category %q", payload.Category)
 	}
 	return nil
-}
-
-func inspectCredentialBackupEntry(
-	keysDir, selector string,
-	exportPassphrase []byte,
-	role noderole.Role,
-) (CredentialEntry, error) {
-	srcFile := filepath.Join(keysDir, selector+".apb")
-	// #nosec G304 -- keysDir is the private extracted archive root and selector
-	// is restricted to one validated basename before this function is called.
-	data, _, err := fsutil.ReadRegularFileLimited(srcFile, crypto.MaxStandaloneEnvelopeBytes)
-	if err != nil {
-		return CredentialEntry{}, fmt.Errorf("read backup file: %w", err)
-	}
-	if !crypto.IsEncrypted(data) {
-		return CredentialEntry{}, fmt.Errorf("backup file must be encrypted")
-	}
-	var envelope struct {
-		EnvelopeVersion int `json:"envelope_version"`
-	}
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return CredentialEntry{}, fmt.Errorf("parse backup envelope: %w", err)
-	}
-	if envelope.EnvelopeVersion != 2 {
-		return CredentialEntry{}, fmt.Errorf(
-			"unsupported envelope_version: %d; create a new credential backup with this release",
-			envelope.EnvelopeVersion,
-		)
-	}
-	plaintext, err := crypto.DecryptStandalone(data, exportPassphrase)
-	if err != nil {
-		return CredentialEntry{}, fmt.Errorf("failed to decrypt backup (wrong passphrase?): %w", err)
-	}
-	defer crypto.ZeroBytes(plaintext)
-	keyJSON, err := ParseBackup(plaintext)
-	if err != nil {
-		return CredentialEntry{}, err
-	}
-	payload, err := keys.ParsePayload(keyJSON)
-	if err != nil {
-		return CredentialEntry{}, err
-	}
-	defer payload.ZeroSecrets()
-	derived, err := payload.Selector()
-	if err != nil {
-		return CredentialEntry{}, err
-	}
-	if derived != selector {
-		return CredentialEntry{}, fmt.Errorf("selector mismatch: filename=%s derived=%s", selector, derived)
-	}
-	if err := keyclass.ValidateKeyTypeAllowedForNodeRole(role, payload.KeyType); err != nil {
-		return CredentialEntry{}, fmt.Errorf("role-forbidden: %w", err)
-	}
-	canonical, err := keys.MarshalPayload(payload)
-	if err != nil {
-		return CredentialEntry{}, fmt.Errorf("canonicalize credential: %w", err)
-	}
-	return CredentialEntry{
-		Selector: derived,
-		Category: payload.Category,
-		KeyType:  payload.KeyType,
-		KeyJSON:  canonical,
-	}, nil
 }
 
 func normalizeCredentialSelectors(keysDir string, selectors []string) ([]string, error) {
@@ -367,15 +393,15 @@ func ClassifyRestoreSet(
 		classifyRestorePolicy(active, role, entry, kr, &result)
 		destPath, exists, err := keys.ManagedCredentialDestinationActive(
 			active,
-			entry.Selector,
-			entry.Category,
+			entry.Selector(),
+			entry.Category(),
 		)
 		if err != nil {
 			if isManagedClassConflict(err) {
 				result.Conflicts = append(result.Conflicts, RestoreConflict{
-					Selector: entry.Selector,
-					Category: entry.Category,
-					KeyType:  entry.KeyType,
+					Selector: entry.Selector(),
+					Category: entry.Category(),
+					KeyType:  entry.KeyType(),
 					Reason:   "contradictory managed credential class exists",
 				})
 				result.Pending = append(result.Pending, entry)
@@ -391,25 +417,25 @@ func ClassifyRestoreSet(
 		canonical, compareErr := openCanonicalDestination(destPath, entry, kr)
 		if compareErr != nil {
 			result.Conflicts = append(result.Conflicts, RestoreConflict{
-				Selector:       entry.Selector,
-				Category:       entry.Category,
-				KeyType:        entry.KeyType,
+				Selector:       entry.Selector(),
+				Category:       entry.Category(),
+				KeyType:        entry.KeyType(),
 				ExistingSHA256: fingerprint,
 				Reason:         "existing credential is unreadable: " + compareErr.Error(),
 			})
 			result.Pending = append(result.Pending, entry)
 			continue
 		}
-		equal := bytes.Equal(canonical, entry.KeyJSON)
+		equal := bytes.Equal(canonical, entry.keyJSON())
 		crypto.ZeroBytes(canonical)
 		if equal {
 			result.Identical = append(result.Identical, entry)
 			continue
 		}
 		result.Conflicts = append(result.Conflicts, RestoreConflict{
-			Selector:       entry.Selector,
-			Category:       entry.Category,
-			KeyType:        entry.KeyType,
+			Selector:       entry.Selector(),
+			Category:       entry.Category(),
+			KeyType:        entry.KeyType(),
 			ExistingSHA256: fingerprint,
 			Reason:         "existing credential differs from backup",
 		})
@@ -426,11 +452,11 @@ func classifyRestorePolicy(active storepaths.GenPaths, role noderole.Role, entry
 	if entry.Policy == nil {
 		return
 	}
-	current, err := destinationPolicy(active, role, entry.Selector, kr)
+	current, err := destinationPolicy(active, role, entry.Selector(), kr)
 	switch {
 	case err != nil:
 		result.Conflicts = append(result.Conflicts, RestoreConflict{
-			Selector: entry.Selector, Category: entry.Category, KeyType: entry.KeyType,
+			Selector: entry.Selector(), Category: entry.Category(), KeyType: entry.KeyType(),
 			Reason: "existing policy is unreadable: " + err.Error(),
 		})
 	case current == nil:
@@ -438,7 +464,7 @@ func classifyRestorePolicy(active storepaths.GenPaths, role noderole.Role, entry
 		return
 	default:
 		result.Conflicts = append(result.Conflicts, RestoreConflict{
-			Selector: entry.Selector, Category: entry.Category, KeyType: entry.KeyType,
+			Selector: entry.Selector(), Category: entry.Category(), KeyType: entry.KeyType(),
 			ExistingSHA256: policy.PolicySHA256(current),
 			Reason:         "existing policy differs from backup",
 		})
@@ -453,7 +479,7 @@ func openCanonicalDestination(path string, entry CredentialEntry, kr *crypto.Key
 	if err != nil {
 		return nil, err
 	}
-	ctx, err := keys.CredentialContext(entry.Selector, entry.Category)
+	ctx, err := keys.CredentialContext(entry.Selector(), entry.Category())
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +497,7 @@ func openCanonicalDestination(path string, entry CredentialEntry, kr *crypto.Key
 	if err != nil {
 		return nil, err
 	}
-	if selector != entry.Selector || payload.Category != entry.Category {
+	if selector != entry.Selector() || payload.Category != entry.Category() {
 		return nil, fmt.Errorf("existing credential metadata does not match its destination")
 	}
 	return keys.MarshalPayload(payload)
@@ -501,32 +527,24 @@ func ApplyCredentialEntry(
 	kr *crypto.Keyring,
 	replaceExisting bool,
 ) error {
-	payload, err := keys.ParsePayload(entry.KeyJSON)
-	if err != nil {
-		return err
+	// Only loadCredentialEntry fills an entry, so its selector and category
+	// are its payload's. An entry built by hand, or whose credential was
+	// cleared through any copy, has nothing to write.
+	keyJSON := entry.keyJSON()
+	if len(keyJSON) == 0 {
+		return fmt.Errorf("restore entry %q holds no admitted credential", entry.Selector())
 	}
-	defer payload.ZeroSecrets()
-	selector, err := payload.Selector()
-	if err != nil {
-		return err
-	}
-	if selector != entry.Selector || payload.Category != entry.Category || payload.KeyType != entry.KeyType {
-		return fmt.Errorf("restore entry metadata no longer matches canonical payload")
-	}
+	selector, category := entry.Selector(), entry.Category()
 
-	destPath, exists, destinationErr := keys.ManagedCredentialDestinationActive(
-		active,
-		entry.Selector,
-		entry.Category,
-	)
+	destPath, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, selector, category)
 	if destinationErr != nil && !isManagedClassConflict(destinationErr) {
 		return destinationErr
 	}
 	if (exists || destinationErr != nil) && !replaceExisting {
-		return fmt.Errorf("%w: %s", keys.ErrManagedCredentialExists, entry.Selector)
+		return fmt.Errorf("%w: %s", keys.ErrManagedCredentialExists, selector)
 	}
 	if destinationErr != nil {
-		canonical, err := keys.CanonicalManagedCredentialPathActive(active, entry.Selector, entry.Category)
+		canonical, err := keys.CanonicalManagedCredentialPathActive(active, selector, category)
 		if err != nil {
 			return err
 		}
@@ -535,16 +553,16 @@ func ApplyCredentialEntry(
 		if filepath.Ext(destPath) == keys.AccountKeyExtension {
 			otherExt = keys.CosignerCredentialExtension
 		}
-		if err := fsutil.RemoveDurable(filepath.Join(active.KeysDir(), entry.Selector+otherExt)); err != nil && !os.IsNotExist(err) {
+		if err := fsutil.RemoveDurable(filepath.Join(active.KeysDir(), selector+otherExt)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove contradictory managed credential: %w", err)
 		}
 	}
 
-	ctx, err := keys.CredentialContext(entry.Selector, entry.Category)
+	ctx, err := keys.CredentialContext(selector, category)
 	if err != nil {
 		return err
 	}
-	encrypted, err := kr.Seal(entry.KeyJSON, ctx)
+	encrypted, err := kr.Seal(keyJSON, ctx)
 	if err != nil {
 		return fmt.Errorf("encrypt restored credential: %w", err)
 	}
@@ -554,10 +572,10 @@ func ApplyCredentialEntry(
 	if err := fsutil.WriteFileDurable(destPath, encrypted); err != nil {
 		return fmt.Errorf("write restored credential: %w", err)
 	}
-	if payload.Category != keys.CategoryWitness {
-		_ = fsutil.RemoveDurable(keys.WitnessPublicMetadataPathActive(active, entry.Selector))
+	if category != keys.CategoryWitness {
+		_ = fsutil.RemoveDurable(keys.WitnessPublicMetadataPathActive(active, selector))
 	}
-	if err := keys.WriteWitnessPublicMetadataActive(active, entry.Selector, payload); err != nil {
+	if err := keys.WriteWitnessPublicMetadataActive(active, selector, entry.credential.payload); err != nil {
 		return fmt.Errorf("write restored witness public metadata: %w", err)
 	}
 	return nil

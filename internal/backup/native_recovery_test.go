@@ -32,7 +32,7 @@ func TestNativeFalconBackupPreservesRecoveryEntropy(t *testing.T) {
 		t.Fatal(err)
 	}
 	exported := t.TempDir()
-	if err := ExportKey(activePathsForBackupTest(t, source).KeysDir(), exported, generated.Address, kr, []byte("export-passphrase")); err != nil {
+	if _, err := exportCredentials(activePathsForBackupTest(t, source).KeysDir(), exported, []string{generated.Address}, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
 	dest := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))

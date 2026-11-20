@@ -4,15 +4,10 @@
 package backup
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/keyclass"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
@@ -103,77 +98,20 @@ func verifyPolicyDeep(keysDir, key string, passphrase []byte, role noderole.Role
 	return result
 }
 
-func verifyFileDeep(backupDir, address string, passphrase []byte, role noderole.Role) VerifyResult {
+// verifyFileDeep admits one archived credential with restore's loader, so a
+// credential that verifies is one restore accepts.
+func verifyFileDeep(keysDir, address string, passphrase []byte, role noderole.Role) VerifyResult {
 	result := VerifyResult{Address: address, FileName: address + ".apb"}
-	filePath := filepath.Join(backupDir, result.FileName)
-	info, err := os.Stat(filePath)
-	if err != nil {
-		result.Error = fmt.Sprintf("file not found: %v", err)
-		return result
+	if info, err := os.Stat(filepath.Join(keysDir, result.FileName)); err == nil {
+		result.Size = info.Size()
 	}
-	result.Size = info.Size()
-	data, _, err := fsutil.ReadRegularFileLimited(filePath, crypto.MaxStandaloneEnvelopeBytes)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to read file: %v", err)
-		return result
-	}
-	if !crypto.IsEncrypted(data) {
-		result.Error = "backup file must be encrypted"
-		return result
-	}
-	var envelope struct {
-		EnvelopeVersion int `json:"envelope_version"`
-	}
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		result.Error = fmt.Sprintf("invalid backup envelope: %v", err)
-		return result
-	}
-	if envelope.EnvelopeVersion != 2 {
-		result.Error = fmt.Sprintf("unsupported backup envelope_version %d", envelope.EnvelopeVersion)
-		return result
-	}
-	decrypted, err := crypto.DecryptStandalone(data, passphrase)
-	if err != nil {
-		result.Error = fmt.Sprintf("decryption failed: %v", err)
-		return result
-	}
-	defer crypto.ZeroBytes(decrypted)
-	keyJSON, err := ParseBackup(decrypted)
-	if err != nil {
-		result.Error = fmt.Sprintf("failed to parse backup payload: %v", err)
-		return result
-	}
-	payload, err := keys.ParsePayload(keyJSON)
-	if err != nil {
-		result.Error = fmt.Sprintf("invalid key format: %v", err)
-		return result
-	}
-	defer payload.ZeroSecrets()
-	selector, err := payload.Selector()
+	entry, err := loadCredentialEntry(keysDir, address, passphrase, role)
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	if selector != address {
-		result.Error = fmt.Sprintf("address mismatch: filename=%s, derived=%s", address, selector)
-		return result
-	}
-	if err := keyclass.ValidateKeyTypeAllowedForNodeRole(role, payload.KeyType); err != nil {
-		result.Error = fmt.Sprintf("role-forbidden: %v", err)
-		return result
-	}
-	canonical, err := keys.MarshalPayload(payload)
-	if err != nil {
-		result.Error = fmt.Sprintf("canonicalize credential: %v", err)
-		return result
-	}
-	entry := CredentialEntry{Selector: selector, Category: payload.Category, KeyType: payload.KeyType, KeyJSON: canonical}
-	defer entry.ZeroSecrets()
-	if err := validateCredentialRuntimeSupport(&entry); err != nil {
-		result.Error = err.Error()
-		return result
-	}
+	entry.ZeroSecrets()
 	result.Valid = true
-	result.KeyType = payload.KeyType
+	result.KeyType = entry.KeyType()
 	return result
 }
