@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/strictjson"
 )
 
 // This file decodes and validates a cosigner document's external sources and
@@ -782,29 +784,10 @@ func decodeExternalPointer(node *jsonNode) (string, error) {
 	if len(raw) > MaxExternalPointerLength {
 		return "", docErrorf(node.pointer, "pointer is longer than %d characters", MaxExternalPointerLength)
 	}
-	if err := ValidateJSONPointer(raw); err != nil {
+	if err := strictjson.ValidatePointer(raw); err != nil {
 		return "", docErrorf(node.pointer, "%v", err)
 	}
 	return raw, nil
-}
-
-// ValidateJSONPointer checks that pointer is an RFC 6901 JSON Pointer.
-func ValidateJSONPointer(pointer string) error {
-	if pointer == "" {
-		return nil
-	}
-	if !strings.HasPrefix(pointer, "/") {
-		return fmt.Errorf("a JSON Pointer is empty or starts with \"/\"")
-	}
-	for i := 0; i < len(pointer); i++ {
-		if pointer[i] != '~' {
-			continue
-		}
-		if i+1 >= len(pointer) || (pointer[i+1] != '0' && pointer[i+1] != '1') {
-			return fmt.Errorf("in a JSON Pointer \"~\" must be written \"~0\", and \"/\" inside a name \"~1\"")
-		}
-	}
-	return nil
 }
 
 // externalOperandNames are a rule's operand fields, in canonical order.

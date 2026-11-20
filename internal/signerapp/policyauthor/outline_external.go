@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/strictjson"
 )
 
 // A cosigner document's external sources and checks: a section for the
@@ -301,7 +302,7 @@ func externalCheckAdd() AddAction {
 
 func externalRuleAdd(pointer string) AddAction {
 	return AddAction{Label: "Add a rule", Prompt: `JSON Pointer into the answer, e.g. /enabled; edit the rule from there`, apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
-		if err := policy.ValidateJSONPointer(input); err != nil {
+		if err := strictjson.ValidatePointer(input); err != nil {
 			return nil, err
 		}
 		p, _ := json.Marshal(input)
