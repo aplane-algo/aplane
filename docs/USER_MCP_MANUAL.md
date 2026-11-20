@@ -222,9 +222,9 @@ Existing LogicSig credentials retain their compiled bytecode and derivation
 and signing metadata; rotating credentials instead retain the seed and bound
 genesis hash used to derive stage programs. Disabling a key type stops new
 creation without disabling existing valid credentials. Signing still requires
-a supported provider. Compiler-auto-salted records omit `salt_counter`, while
-unsalted records have no `lsig_derivation` and carry `salt_counter`, which is
-always written as 0.
+a supported provider. Compiler-auto-salted records carry
+`lsig_derivation: algod_v13_auto_salt`, while unsalted records have no
+`lsig_derivation`.
 
 ### Creation params vs runtime args
 

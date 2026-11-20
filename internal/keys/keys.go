@@ -25,10 +25,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// ErrMissingLogicSigSaltCounter indicates an unsalted LogicSig key file (no
-// lsig_derivation) without the salt_counter such a file must carry.
-var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
-
 // ErrLogicSigAddressOnCurve indicates a stored LogicSig key file whose bytecode
 // derives an on-curve address, violating the off-curve salt invariant.
 var ErrLogicSigAddressOnCurve = errors.New("logic sig key file address is on-curve")
@@ -91,8 +87,6 @@ func newAddressCollisionError(addressFiles map[string][]string) *AddressCollisio
 
 func keyPayloadScanWarningCode(err error) KeyScanWarningCode {
 	switch {
-	case errors.Is(err, ErrMissingLogicSigSaltCounter):
-		return KeyScanWarningLogicSigSaltInvalid
 	case errors.Is(err, ErrLogicSigAddressOnCurve):
 		return KeyScanWarningLogicSigAddressInvalid
 	case errors.Is(err, ErrInvalidLogicSigBytecode):
@@ -141,7 +135,6 @@ const (
 	KeyScanWarningDetectKeyTypeFailed     KeyScanWarningCode = "detect_key_type_failed"
 	KeyScanWarningIncompatibleFormat      KeyScanWarningCode = "incompatible_key_format"
 	KeyScanWarningParseLogicSigFailed     KeyScanWarningCode = "parse_logic_sig_failed"
-	KeyScanWarningLogicSigSaltInvalid     KeyScanWarningCode = "logic_sig_salt_invalid"
 	KeyScanWarningLogicSigAddressInvalid  KeyScanWarningCode = "logic_sig_address_invalid"
 	KeyScanWarningAddressDerivationFailed KeyScanWarningCode = "address_derivation_failed"
 	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
@@ -179,8 +172,6 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Skipped incompatible key file %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningParseLogicSigFailed:
 		return fmt.Sprintf("Failed to parse lsig file %s: %v", w.KeyFile, w.Err)
-	case KeyScanWarningLogicSigSaltInvalid:
-		return fmt.Sprintf("Failed to validate LogicSig salt metadata for %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningLogicSigAddressInvalid:
 		return fmt.Sprintf("Failed to derive address from bytecode for %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningAddressDerivationFailed:
@@ -199,13 +190,12 @@ func (w KeyScanWarning) Message() string {
 }
 
 // IsLogicSigInvariantViolation reports whether this warning means a persisted
-// LogicSig key was rejected by a LogicSig integrity invariant: missing salt
-// metadata, an on-curve address, or missing/undecodable bytecode. The signer
-// audit-logs these rejections because they can indicate key-file tampering.
+// LogicSig key was rejected by a LogicSig integrity invariant: an on-curve
+// address, or missing/undecodable bytecode. The signer audit-logs these
+// rejections because they can indicate key-file tampering.
 func (w KeyScanWarning) IsLogicSigInvariantViolation() bool {
 	switch w.Code {
-	case KeyScanWarningLogicSigSaltInvalid,
-		KeyScanWarningLogicSigAddressInvalid,
+	case KeyScanWarningLogicSigAddressInvalid,
 		KeyScanWarningParseLogicSigFailed:
 		return true
 	default:

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -97,6 +98,44 @@ func TestImportThenRestoreOfAMixedArchive(t *testing.T) {
 	active := resolveAtomicTestGeneration(t, paths)
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), good+".key")); err != nil {
 		t.Fatalf("admitted credential was not restored: %v", err)
+	}
+}
+
+// A key file written before salt_counter was retired is a key the node
+// cannot admit: the import accepts the archive and names it, and a restore
+// from the import skips it and restores the rest.
+func TestImportThenRestoreSkipsARetiredSaltCounter(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	service := directRestoreTestService(paths, ir)
+	good, goodJSON := keystest.Ed25519KeyJSON(t)
+	retired, retiredJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
+	want := []adminproto.RestoreSkipped{{
+		Selector: retired,
+		Reason:   `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`,
+	}}
+
+	archivePath := writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{good: goodJSON, retired: retiredJSON})
+	imported := importArchiveForTest(t, service, archivePath, "retired.tar.gz")
+	if !imported.Success || imported.Error != "" || !slices.Equal(imported.Skipped, want) {
+		t.Fatalf("CommitBackupImport() = %+v, want skipped %+v", imported, want)
+	}
+	preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{
+		ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
+	})
+	if preview.Error != "" || len(preview.Keys) != 1 || preview.Keys[0].Address != good || !slices.Equal(preview.Skipped, want) {
+		t.Fatalf("PreviewRestore() = %+v", preview)
+	}
+	restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID: "restore-retired", ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
+	})
+	if !restored.Success || len(restored.Restored) != 1 || restored.Restored[0].Selector != good || !slices.Equal(restored.Skipped, want) {
+		t.Fatalf("RestoreBackup() = %+v", restored)
+	}
+	active := resolveAtomicTestGeneration(t, paths)
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), retired+".key")); !os.IsNotExist(err) {
+		t.Fatalf("skipped credential was restored: %v", err)
 	}
 }
 

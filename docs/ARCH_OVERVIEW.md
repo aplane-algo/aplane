@@ -1403,10 +1403,10 @@ genesis hash, and versioned key-type implementation.
 The complete key file and key type state machines are documented in
 [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
-rejected during key scan. Key files with no `lsig_derivation` (unsalted
-bytecode) require `salt_counter`, which every writer sets to 0;
-`algod_v13_auto_salt` derivations forbid it and require final TEAL v13+
-bytecode plus a valid `lsig_opcode_profile`.
+rejected during key scan. A key file with no `lsig_derivation` holds unsalted
+bytecode; an `algod_v13_auto_salt` derivation requires final TEAL v13+
+bytecode plus a valid `lsig_opcode_profile`, and any other derivation is
+refused.
 LogicSig key files without `signing_metadata_version` are refused by the key
 parser, which runs at key scan, on every key load and at restore, so none
 reaches signing. Key files with
@@ -2383,10 +2383,10 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
     versioned key-type implementation.
 16. Every persisted LogicSig key file has an off-curve address. For DSA-backed
     and generic LogicSig keys, stored bytecode
-    that derives an on-curve LogicSig address is rejected on load. Key files
-    with no `lsig_derivation` (unsalted bytecode) require `salt_counter`, which
-    every writer sets to 0; `algod_v13_auto_salt` derivations must omit it and
-    carry final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
+    that derives an on-curve LogicSig address is rejected on load. A key file
+    with no `lsig_derivation` holds unsalted bytecode; an
+    `algod_v13_auto_salt` derivation must carry final TEAL v13+ bytecode plus
+    a valid `lsig_opcode_profile`, and any other derivation is refused.
 
 ## Architectural Seams
 

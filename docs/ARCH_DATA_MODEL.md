@@ -343,8 +343,8 @@ Durable signing metadata includes:
 - `key_type`,
 - public/private key material where applicable,
 - stored LogicSig bytecode where applicable,
-- `lsig_derivation` for compiler-auto-salted LogicSig keys, or for an unsalted
-  key no `lsig_derivation` and a `salt_counter`, which every writer sets to 0,
+- `lsig_derivation` for compiler-auto-salted LogicSig keys; an unsalted key has
+  none,
 - `signing_metadata_version` (version 1 non-bounded; version 2 bounded),
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
@@ -394,8 +394,8 @@ keys derive from stored public/private key material, and LogicSig keys derive
 from stored bytecode. Payloads do not persist an address field; inventory and
 key state repair recover the selector from key material or bytecode.
 `signing_args`, `signing_metadata_version`, `base_key_type`,
-`template_fingerprint`, `lsig_derivation`, and an unsalted key's
-`salt_counter` are not independent address-derivation inputs.
+`template_fingerprint`, and `lsig_derivation` are not independent
+address-derivation inputs.
 
 The full durable payload is `keys.Payload` (codec in
 `internal/keys/payload_codec.go`). The signing-argument *schema slice* is
@@ -1324,7 +1324,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
 | Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`bounded1`, `cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
-| LogicSig derivation record | signing authority metadata | key payload `lsig_derivation`, or `salt_counter` on an unsalted key | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | `algod_v13_auto_salt` keys require final TEAL v13+ bytecode and forbid `salt_counter`; an unsalted key has no `lsig_derivation` and requires `salt_counter`, which every writer sets to 0. Unknown or internally inconsistent derivation records reject scan/restore/signing. |
+| LogicSig derivation record | signing authority metadata | key payload `lsig_derivation`, absent on an unsalted key | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | `algod_v13_auto_salt` keys require final TEAL v13+ bytecode. Unknown or internally inconsistent derivation records reject scan and signing, and a restore skips the key. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
 | Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Covers behavior and a YAML template's `valid_rekey_target`; versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
 | Offline key inventory | local decrypted projection | encrypted key files plus passphrase | `apstore keys list` output | `cmd/apstore`, `internal/keys` | Does not print private key, mnemonic, or raw cosigner public key by default. |

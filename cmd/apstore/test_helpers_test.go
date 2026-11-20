@@ -116,7 +116,6 @@ func canonicalGenericKeyWithoutSigningMetadataForApstore(t *testing.T, keyType s
 		"category":       apkeys.CategoryGenericLsig,
 		"key_type":       keyType,
 		"lsig_bytecode":  hex.EncodeToString(bytecode),
-		"salt_counter":   0,
 		"created_at":     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	})
 }

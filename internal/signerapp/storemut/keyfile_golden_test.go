@@ -22,7 +22,8 @@ var createdAtField = regexp.MustCompile(`"created_at": "[^"]*"`)
 
 // SaveGenericLSig writes the same key file bytes, apart from created_at, for an
 // unsalted and an auto-salted program. The digests were taken before the
-// payload constructors lost their salt counter parameter.
+// payload constructors lost their salt counter parameter; the unsalted one was
+// retaken when salt_counter was retired, and differs only by that line.
 func TestSaveGenericLSigKeyFilesAreUnchanged(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -31,7 +32,7 @@ func TestSaveGenericLSigKeyFilesAreUnchanged(t *testing.T) {
 		autoSalted bool
 		want       string
 	}{
-		{name: "unsalted", program: []byte{0x06, 0x81, 0x01, 0x00}, offset: 3, want: "c3c29baccdfe97ab7598ef82848ebb2b049e35e87a8e0d09ba1d287f991bbdb3"},
+		{name: "unsalted", program: []byte{0x06, 0x81, 0x01, 0x00}, offset: 3, want: "05b25fa85fa1bfc959e3db3cac549560814a3d67fff20612ec73bf00d31af64b"},
 		{name: "auto-salted", program: []byte{13, 0x81, 0}, offset: 2, autoSalted: true, want: "88d9fe93c13e6fa7e36330a79465c317a6ce19dacc911a303b17745747db1614"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

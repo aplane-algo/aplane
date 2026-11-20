@@ -212,10 +212,19 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			name: "unknown payload field",
 			build: func(t *testing.T, _, keysDir string) (string, string) {
 				address, keyJSON := testEd25519BackupKeyJSON(t)
-				sealAdmissionMember(t, keysDir, address, withExtraFieldForTest(t, keyJSON), admissionPassphrase)
+				sealAdmissionMember(t, keysDir, address, withTopLevelFieldForTest(t, keyJSON, "extra", "1"), admissionPassphrase)
 				return address, address
 			},
 			skip: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
+		},
+		{
+			name: "LogicSig with a retired salt_counter",
+			build: func(t *testing.T, _, keysDir string) (string, string) {
+				selector, keyJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
+				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
+				return selector, selector
+			},
+			skip: retiredSaltCounterReason,
 		},
 		{
 			name: "selector mismatch",
@@ -515,15 +524,15 @@ func selectorForTest(t *testing.T, keyJSON []byte) string {
 	return selector
 }
 
-// withExtraFieldForTest returns keyJSON in its canonical layout with one
-// more top-level field.
-func withExtraFieldForTest(t *testing.T, keyJSON []byte) []byte {
+// withTopLevelFieldForTest returns keyJSON in its canonical layout with the
+// top-level field name set to the JSON value.
+func withTopLevelFieldForTest(t *testing.T, keyJSON []byte, name, value string) []byte {
 	t.Helper()
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(keyJSON, &object); err != nil {
 		t.Fatal(err)
 	}
-	object["extra"] = json.RawMessage("1")
+	object[name] = json.RawMessage(value)
 	data, err := json.MarshalIndent(object, "", "  ")
 	if err != nil {
 		t.Fatal(err)

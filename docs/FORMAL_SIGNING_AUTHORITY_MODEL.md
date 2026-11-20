@@ -67,7 +67,7 @@ after the product store's current term key decrypts it. The model observes:
 - native key material for native keys,
 - LogicSig bytecode for LogicSig keys,
 - `signing_metadata_version`,
-- `lsig_derivation` and its format-dependent optional `salt_counter`,
+- `lsig_derivation`, absent for unsalted bytecode,
 - `signing_args`,
 - `base_key_type`,
 - optional `template_fingerprint`,
@@ -206,9 +206,11 @@ address from its stored bytecode.
 
 Rules:
 
-1. The derivation record must be internally consistent. `algod_v13_auto_salt`
-   keys forbid `salt_counter`; an unsalted key has no `lsig_derivation` and
-   requires `salt_counter`, which every writer sets to 0.
+1. The derivation record must be known and internally consistent: an unsalted
+   key has no `lsig_derivation`, and an `algod_v13_auto_salt` key stores final
+   TEAL v13+ bytecode and an `lsig_opcode_profile` valid for its kind (the
+   default path alone without `bounded_authorization`, the three bounded paths
+   with it).
 2. The stored bytecode, not derivation metadata alone, determines the LogicSig
    address.
 3. Changing derivation metadata without changing stored bytecode does not
@@ -229,9 +231,8 @@ Address identity derives from key material:
   but the cryptographic LogicSig address is still derived from stored bytecode.
 
 Signing metadata fields such as `signing_args`, `signing_metadata_version`,
-`base_key_type`, `template_fingerprint`, `lsig_derivation`, and
-`salt_counter` are not independent
-address derivation inputs.
+`base_key_type`, `template_fingerprint`, and `lsig_derivation` are not
+independent address derivation inputs.
 
 ## Signing Rules
 
@@ -325,13 +326,15 @@ AcceptedLogicSigKey(key) => OffCurve(AddressOf(key.stored_bytecode))
 
 ### S7: Derivation Record Consistency, Not Address Authority
 
-The derivation record must match its format, but address identity is still
-derived from bytecode.
+The derivation record must name a known format and match it, but address
+identity is still derived from bytecode.
 
 ```text
 AcceptedLogicSigKey(key) =>
-  (key.lsig_derivation = algod_v13_auto_salt => not HasSaltCounter(key)) and
-  (key.lsig_derivation = absent => HasSaltCounter(key))
+  key.lsig_derivation in {absent, algod_v13_auto_salt} and
+  (key.lsig_derivation = algod_v13_auto_salt =>
+     TEALVersion(key.stored_bytecode) >= 13 and
+     ValidOpcodeProfile(key.lsig_opcode_profile, Bounded(key)))
 AddressIdentity(key) = AddressOf(key.stored_bytecode)
 ```
 
@@ -392,8 +395,7 @@ SignMode(entry) and Accepted(entry) =>
 If `Resolve` returns `NotFound`, planning rejects before signing runs. The
 implementation must not silently fall back to a different address or recover
 a key by recomputing addresses from `signing_metadata_version`,
-`base_key_type`, `template_fingerprint`, `lsig_derivation`, or
-`salt_counter` alone.
+`base_key_type`, `template_fingerprint`, or `lsig_derivation` alone.
 
 ### S12: Auth Address Selects The Policy Document
 
@@ -489,7 +491,8 @@ High-value test anchors:
 
 - LogicSig keys without `signing_metadata_version` reject for signing/restore,
 - LogicSig keys with unknown or inconsistent derivation records reject,
-- compiler-auto-salted keys forbid `salt_counter`, while unsalted keys (no `lsig_derivation`) require it,
+- compiler-auto-salted keys whose bytecode predates TEAL v13, or whose
+  `lsig_opcode_profile` is missing or invalid, reject,
 - on-curve LogicSig bytecode rejects,
 - conflicting key payload aliases reject,
 - generic LogicSig signing uses stored `signing_args`,
