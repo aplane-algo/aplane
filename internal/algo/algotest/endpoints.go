@@ -16,10 +16,10 @@ const (
 	// integration environment, then to defaultPublicAlgodURL.
 	TEALCompileAlgodURLEnv = "TEAL_COMPILE_ALGOD_URL"
 
-	// TEALCompileAlgodTokenEnv overrides the algod API token used by compile-only
+	// tealCompileAlgodTokenEnv overrides the algod API token used by compile-only
 	// tests. It falls back to ALGOD_TOKEN for consistency with the
 	// integration environment.
-	TEALCompileAlgodTokenEnv = "TEAL_COMPILE_ALGOD_TOKEN"
+	tealCompileAlgodTokenEnv = "TEAL_COMPILE_ALGOD_TOKEN"
 )
 
 // ResolveTEALCompileAlgodURL returns the algod endpoint for compile-only paths.
@@ -35,7 +35,7 @@ func ResolveTEALCompileAlgodURL() string {
 
 // ResolveTEALCompileAlgodToken returns the algod token for compile-only paths.
 func ResolveTEALCompileAlgodToken() string {
-	if v := os.Getenv(TEALCompileAlgodTokenEnv); v != "" {
+	if v := os.Getenv(tealCompileAlgodTokenEnv); v != "" {
 		return v
 	}
 	return os.Getenv("ALGOD_TOKEN")

@@ -80,10 +80,7 @@ type liveCompilerEndpoint struct {
 // endpoint named by TEAL_COMPILE_ALGOD_URL when set, otherwise a local LocalNet
 // first and the repo's public node second.
 func liveCompilerEndpoints() []liveCompilerEndpoint {
-	token := os.Getenv(algotest.TEALCompileAlgodTokenEnv)
-	if token == "" {
-		token = os.Getenv("ALGOD_TOKEN")
-	}
+	token := algotest.ResolveTEALCompileAlgodToken()
 	if u := os.Getenv(algotest.TEALCompileAlgodURLEnv); u != "" {
 		return []liveCompilerEndpoint{{name: "TEAL_COMPILE_ALGOD_URL", url: u, token: token}}
 	}
