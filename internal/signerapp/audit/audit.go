@@ -1141,11 +1141,14 @@ func (a *AuditLogger) LogBackupCreatedContext(ctx adminserver.SessionContext, ar
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+// LogBackupImportedContext records a published import: the archive, and the
+// keys in it a restore would skip, as a preview of it would.
+func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, result adminproto.CommitBackupImportResult) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupImported
 	entry.Outcome = "imported"
-	entry.Reason = fmt.Sprintf("file=%s size=%d", fileName, size)
+	entry.Reason = fmt.Sprintf("file=%s size=%d", result.Backup.FileName, result.Backup.Size)
+	entry.SkippedKeys = skippedSelectors(result.Skipped)
 	a.Log(entry)
 }
 

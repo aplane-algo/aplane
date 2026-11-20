@@ -537,9 +537,9 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 	})
 	if result.Success {
 		if audit, ok := s.audit.(interface {
-			LogBackupImportedContext(SessionContext, string, int64)
+			LogBackupImportedContext(SessionContext, adminproto.CommitBackupImportResult)
 		}); ok {
-			audit.LogBackupImportedContext(s.SessionContext(), result.Backup.FileName, result.Backup.Size)
+			audit.LogBackupImportedContext(s.SessionContext(), result)
 		}
 	} else if result.Error != "" {
 		if audit, ok := s.audit.(interface {

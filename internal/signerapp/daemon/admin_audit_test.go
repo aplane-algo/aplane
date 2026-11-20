@@ -19,7 +19,7 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 	if _, ok := audit.(interface {
 		LogIdentityLockedContext(adminserver.SessionContext, string)
 		LogBackupCreatedContext(adminserver.SessionContext, string)
-		LogBackupImportedContext(adminserver.SessionContext, string, int64)
+		LogBackupImportedContext(adminserver.SessionContext, adminproto.CommitBackupImportResult)
 		LogBackupFailedContext(adminserver.SessionContext, string)
 		LogBackupExportStartedContext(adminserver.SessionContext, string)
 		LogBackupRestorePreviewedContext(adminserver.SessionContext, adminproto.RestorePreviewResult)

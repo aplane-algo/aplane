@@ -46,7 +46,7 @@ Each line is a JSON object with the following fields:
 | `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
 | `key_count` | int | Number of keys (for reload/start events) |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
-| `skipped_keys` | string[] | On a restore outcome or preview: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), at most 64 |
+| `skipped_keys` | string[] | On a restore outcome, a restore preview or a backup import: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), at most 64 |
 | `skipped_keys_omitted` | int | Keys left out of `skipped_keys` |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
 | `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
@@ -94,7 +94,7 @@ Fields are omitted when empty.
 | `KEY_EXPORTED` | A recovery-material export attempt was recorded; `outcome` identifies the result |
 | `KEY_REJECTED` | A key file was skipped during signer scan because it violated a load-time key-file invariant |
 | `BACKUP_CREATED` | A key backup was created through the authenticated admin surface |
-| `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage |
+| `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage; `skipped_keys` names the keys in it a restore would skip |
 | `BACKUP_EXPORT_STARTED` | An authenticated client began reading a managed backup archive; a non-zero initial offset is still audited |
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface; `key_count` counts the keys a restore would admit and `skipped_keys` names the ones it would skip |

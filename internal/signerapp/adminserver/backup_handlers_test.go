@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -235,6 +236,7 @@ func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) 
 		commitBackupImportResult: adminproto.CommitBackupImportResult{
 			Success: true,
 			Backup:  adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42},
+			Skipped: []adminproto.RestoreSkipped{{Selector: "BAD", Reason: "refused"}},
 		},
 		readBackupChunkResult: adminproto.ReadBackupChunkResult{
 			Success: true, FileName: "export.tar.gz", Data: []byte("chunk"),
@@ -256,6 +258,10 @@ func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) 
 
 	if audit.importedCalls != 1 || audit.exportStartedCalls != 1 {
 		t.Fatalf("success audit calls = import %d export %d, want 1/1", audit.importedCalls, audit.exportStartedCalls)
+	}
+	// The import is audited with the keys a restore of it would skip.
+	if !reflect.DeepEqual(audit.lastImport, svc.commitBackupImportResult) {
+		t.Fatalf("import audited as %+v, want %+v", audit.lastImport, svc.commitBackupImportResult)
 	}
 }
 
@@ -349,11 +355,13 @@ type recordingBackupTransferAudit struct {
 type backupSuccessOnlyAudit struct {
 	recordingAuthorizationAudit
 	importedCalls      int
+	lastImport         adminproto.CommitBackupImportResult
 	exportStartedCalls int
 }
 
-func (a *backupSuccessOnlyAudit) LogBackupImportedContext(SessionContext, string, int64) {
+func (a *backupSuccessOnlyAudit) LogBackupImportedContext(_ SessionContext, result adminproto.CommitBackupImportResult) {
 	a.importedCalls++
+	a.lastImport = result
 }
 
 func (a *backupSuccessOnlyAudit) LogBackupExportStartedContext(SessionContext, string) {
@@ -369,7 +377,8 @@ func (a *backupFailureOnlyAudit) LogBackupFailedContext(SessionContext, string) 
 	a.failedCalls++
 }
 
-func (*recordingBackupTransferAudit) LogBackupImportedContext(SessionContext, string, int64) {}
+func (*recordingBackupTransferAudit) LogBackupImportedContext(SessionContext, adminproto.CommitBackupImportResult) {
+}
 
 func (a *recordingBackupTransferAudit) LogBackupFailedContext(_ SessionContext, reason string) {
 	a.failedCalls++

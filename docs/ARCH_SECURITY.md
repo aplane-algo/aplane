@@ -1239,8 +1239,9 @@ Audit entries carry attribution fields:
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
 - `key_count`: key count for startup and reload events, the keys a restore
   restored, and the keys a restore preview would admit
-- `skipped_keys`: the archived keys a restore or its preview skips because
-  the node cannot admit them, bounded like the other lists
+- `skipped_keys`: the archived keys a restore, its preview, or an import
+  names as skipped because the node cannot admit them, selectors only and
+  bounded like the other lists (`skipped_keys_omitted` counts the rest)
 - `witness_key_id`: public witness authority affected by a cosigner-reference mutation
 - `client_label`: display label of the key in enrollment and revocation events
 - `closed_connections`: live connections closed by a key revocation
@@ -1472,13 +1473,15 @@ Backup-audit semantics:
 - `BACKUP_CREATED` is emitted when an authenticated admin backup operation
   writes a managed archive; `reason` contains the archive path
 - `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
-  verification and is published into the managed backup set
+  verification and is published into the managed backup set; `reason`
+  contains the file name and size, and `skipped_keys` the keys in it a
+  restore would skip
 - `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
   managed archive transfer, including when a client starts at a non-zero
   offset; reaching EOF closes the inferred transfer for subsequent auditing
 - `BACKUP_FAILED` is emitted when backup creation, import commit, or export
   streaming fails; `reason` contains the failure reason
-- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys
+- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path, `key_count` the keys a restore would admit, and `skipped_keys` the ones it would skip
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
 - `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
   first generation-store write. It records the operation ID and

@@ -135,9 +135,9 @@ func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionCont
 	}
 }
 
-func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, result adminproto.CommitBackupImportResult) {
 	if audit := s.signer.auditLog; audit != nil {
-		audit.LogBackupImportedContext(ctx, fileName, size)
+		audit.LogBackupImportedContext(ctx, result)
 	}
 }
 
