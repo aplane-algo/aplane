@@ -67,6 +67,66 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 	}
 }
 
+// Validate is the only check on a cosigner request's target indices before
+// the signer indexes the decoded group by them, so each refusal is pinned.
+func TestComponentRequestValidateRefusesBadTargetIndices(t *testing.T) {
+	cosigner := func(indices ...int) []ComponentTarget {
+		targets := make([]ComponentTarget, len(indices))
+		for i, index := range indices {
+			targets[i] = ComponentTarget{TargetIndex: index, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"}
+		}
+		return targets
+	}
+	group := []string{"5458aa", "5458bb", "5458cc"}
+	tests := []struct {
+		name    string
+		request ComponentRequest
+		wantErr string
+	}{
+		{name: "every position covered", request: ComponentRequest{
+			GroupBytesHex: group, Targets: cosigner(2, 0),
+			ContextualPositions: []ComponentContextPosition{{TargetIndex: 1}},
+		}},
+		{name: "targets before a declared dummy", request: ComponentRequest{
+			GroupBytesHex: group, Targets: cosigner(0, 1),
+			DummyPositions: []ComponentDummyPosition{{TargetIndex: 2}},
+		}},
+		{name: "no targets", request: ComponentRequest{GroupBytesHex: group},
+			wantErr: "targets array is empty"},
+		{name: "index past the group", request: ComponentRequest{GroupBytesHex: group, Targets: cosigner(0, 1, 3)},
+			wantErr: "target 3: target_index 3 is outside original prefix"},
+		{name: "negative index", request: ComponentRequest{GroupBytesHex: group, Targets: cosigner(-1)},
+			wantErr: "target 1: target_index -1 is outside original prefix"},
+		{name: "duplicate index", request: ComponentRequest{GroupBytesHex: group, Targets: cosigner(0, 1, 0)},
+			wantErr: "target 3: duplicate or overlapping target_index 0"},
+		{name: "contextual position on a target", request: ComponentRequest{
+			GroupBytesHex: group, Targets: cosigner(0, 1, 2),
+			ContextualPositions: []ComponentContextPosition{{TargetIndex: 1}},
+		}, wantErr: "contextual position 1: duplicate or overlapping target_index 1"},
+		{name: "position left uncovered", request: ComponentRequest{GroupBytesHex: group, Targets: cosigner(0, 2)},
+			wantErr: "original group position 1 is not covered"},
+		{name: "index inside the dummy suffix", request: ComponentRequest{
+			GroupBytesHex: group, Targets: cosigner(0, 2),
+			ContextualPositions: []ComponentContextPosition{{TargetIndex: 1}},
+			DummyPositions:      []ComponentDummyPosition{{TargetIndex: 2}},
+		}, wantErr: "target 2: target_index 2 is outside original prefix"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want none", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestComponentRequestGroupSignRequestPreservesApprovalMetadata(t *testing.T) {
 	targetInfo := &AppCallInfo{Mode: "abi", Method: "increment(uint64)void"}
 	contextInfo := &AppCallInfo{Mode: "raw"}

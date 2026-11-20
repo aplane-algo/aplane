@@ -68,17 +68,11 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		VerifySignableKeys: func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 			return verifySignableKeys(opts.Console, snapshot, requests, passthroughIndices, foreignIndices)
 		},
-		CalculateDummies: func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-			return calculateLogicSigResources(opts.Console, snapshot, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
-		},
-		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
-			return buildFinalGroupWithoutFees(opts.Console, txns, dummiesNeeded, isPreGrouped)
-		},
 		Snapshot: deps.Snapshot,
 	}
 }
 
-func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummiesNeeded int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError) {
+func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummiesNeeded int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, needsRegroup bool, err *ServiceError) {
 	if dummiesNeeded > 0 {
 		firstTxn := txns[0]
 		sp := types.SuggestedParams{
@@ -92,14 +86,14 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 		var createErr error
 		dummyTxns, createErr = txsigning.CreateDummyTransactions(dummiesNeeded, sp)
 		if createErr != nil {
-			return nil, nil, feeInfo, false, internal(fmt.Sprintf("failed to create dummy transactions: %v", createErr))
+			return nil, nil, false, internal(fmt.Sprintf("failed to create dummy transactions: %v", createErr))
 		}
 		consoleOf(console).Printf("[GROUP] Added %d resource dummy transaction(s); final fee planning follows\n", dummiesNeeded)
 	}
 	allTxns = make([]types.Transaction, 0, len(txns)+len(dummyTxns))
 	allTxns = append(allTxns, txns...)
 	allTxns = append(allTxns, dummyTxns...)
-	return allTxns, dummyTxns, feeInfo, dummiesNeeded > 0 || !isPreGrouped, nil
+	return allTxns, dummyTxns, dummiesNeeded > 0 || !isPreGrouped, nil
 }
 
 func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {

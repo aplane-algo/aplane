@@ -184,8 +184,10 @@ Every signable LogicSig key must be a v1 signing-metadata key:
 signing_metadata_version >= 1
 ```
 
-LogicSig keys missing `signing_metadata_version` reject when signing or restore
-would otherwise depend on missing durable signing metadata.
+The key parser refuses a LogicSig key file without the version its shape
+requires (1, or 2 with `bounded_authorization`). Key scan, every key load and
+restore run the parser, so such a file never loads to sign; the signer makes
+no separate check at signing time (S2).
 
 ### Stored Bytecode and Args
 

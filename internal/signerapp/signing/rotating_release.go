@@ -318,16 +318,6 @@ func (m *ReleaseMemory) ForLeafChoice(account string, generation uint64) (Releas
 	return m.byAccount[account], m.open(account, generation)
 }
 
-// Clear forgets the account's entry.
-func (m *ReleaseMemory) Clear(account string) {
-	if m == nil {
-		return
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.byAccount, account)
-}
-
 // Reset forgets every record and holds every account until the next
 // restore from the audit log begins (Restoring).
 func (m *ReleaseMemory) Reset() {

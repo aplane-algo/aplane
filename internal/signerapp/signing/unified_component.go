@@ -24,19 +24,16 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 	if err := s.rejectRotatingComponentRequest(req); err != nil {
 		return nil, err
 	}
-	group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
-	if decodeErr != nil {
-		return nil, badRequest(decodeErr.Error())
-	}
-	if err := validateFrozenComponentDummyPartition(req, makeTxnSlice(group)); err != nil {
-		return nil, err
-	}
 	switch req.TargetKind() {
 	case signerapi.ComponentTargetKindCosigner:
-		planReq := componentPlanRequest{
-			RequestID: req.RequestID, GroupBytesHex: req.GroupBytesHex,
-			Role: ComponentSignRoleCosigner,
+		group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
+		if decodeErr != nil {
+			return nil, badRequest(decodeErr.Error())
 		}
+		if err := validateFrozenComponentDummyPartition(req, makeTxnSlice(group)); err != nil {
+			return nil, err
+		}
+		planReq := componentPlanRequest{RequestID: req.RequestID, Group: group}
 		for _, target := range req.Targets {
 			planReq.TargetIndices = append(planReq.TargetIndices, target.TargetIndex)
 			planReq.ComponentKey = target.ComponentKey
@@ -54,6 +51,8 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 		}
 		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
 	case signerapi.ComponentTargetKindBoundedBase:
+		// ValidateFrozenComponentContext decodes and partition-checks the
+		// group itself, as the cosigner case above does.
 		return s.PrepareBoundedComponentWithContext(ctx, req, session)
 	default:
 		return nil, badRequest("unsupported component target kind")

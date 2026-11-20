@@ -40,8 +40,6 @@ type AuditLogger interface {
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (resourcePlan lsigresource.Plan, lsigIndices []int, err *ServiceError)
-type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 
 type DummyFeeInfo struct {
 	TotalFees               uint64
@@ -108,6 +106,15 @@ type PlanResult struct {
 	approval approvalBinding
 }
 
+// boundedItem is the plan's bounded classification for position i, or nil
+// for a position that is not a bounded account's (or no plan).
+func (p *PlanResult) boundedItem(i int) *boundedPlanItem {
+	if p == nil || i < 0 || i >= len(p.BoundedItems) {
+		return nil
+	}
+	return p.BoundedItems[i]
+}
+
 // SnapshotFunc retrieves the identity snapshot needed for planning.
 type SnapshotFunc func() PlannerRuntimeSnapshot
 
@@ -116,8 +123,6 @@ type Planner struct {
 	Console                Console
 	GenerateTxnDescription DescribeTxnFunc
 	VerifySignableKeys     VerifySignableKeysFunc
-	CalculateDummies       CalculateDummiesFunc
-	BuildFinalGroup        BuildFinalGroupFunc
 	GenesisHashResolver    apconfig.GenesisHashNetworkResolver
 	Snapshot               SnapshotFunc
 }
@@ -287,19 +292,6 @@ type finalizedGroup struct {
 // slots it produces the same group byte for byte, which is what lets the
 // rotating flow check a presented group by rebuilding it.
 func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *ServiceError) {
-	calculate := p.CalculateDummies
-	if calculate == nil {
-		calculate = func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-			return calculateLogicSigResources(p.Console, snapshot, requests, txns, boundedItems, passthroughIndices, foreignIndices, passthroughSignedTxns, hasPassthrough, isPreGrouped)
-		}
-	}
-	build := p.BuildFinalGroup
-	if build == nil {
-		build = func(txns []types.Transaction, dummiesNeeded int, _ []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
-			return buildFinalGroupWithoutFees(p.Console, txns, dummiesNeeded, isPreGrouped)
-		}
-	}
-
 	// Classify bounded requests before budgeting: each path's argument bytes size
 	// the group. This pass sees pre-pooling fees, so it is sizing input only — the
 	// authoritative classification runs on the finalized group below.
@@ -308,13 +300,13 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 		return nil, err
 	}
 
-	resourcePlan, lsigIndices, err := calculate(in.Snapshot, in.Requests, in.Txns, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns, in.HasPassthrough, in.IsPreGrouped)
+	resourcePlan, lsigIndices, err := calculateLogicSigResources(p.Console, in.Snapshot, in.Requests, in.Txns, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns, in.HasPassthrough, in.IsPreGrouped)
 	if err != nil {
 		return nil, err
 	}
 	dummiesNeeded := int(resourcePlan.DummyCount)
 
-	allTxns, dummyTxns, _, needsRegroup, err := build(in.Txns, dummiesNeeded, lsigIndices, in.IsPreGrouped)
+	allTxns, dummyTxns, needsRegroup, err := buildFinalGroupWithoutFees(p.Console, in.Txns, dummiesNeeded, in.IsPreGrouped)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +471,8 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 		mutations.Reason = "lsig_budget"
 	}
 	mutations.TotalFeesDelta = int(plan.FeeInfo.TotalFees)
-	mutations.FeesModified = appendUniqueIndices(mutations.FeesModified, plan.FeeInfo.FeeIndices...)
+	// applyGroupFees lists each position it charged once.
+	mutations.FeesModified = append([]int(nil), plan.FeeInfo.FeeIndices...)
 	if plan.FeeInfo.ProgramFeeContribution > 0 {
 		if mutations.Reason == "" {
 			mutations.Reason = "lsig_program_fee"
@@ -514,22 +507,6 @@ func BuildMutationReport(plan *PlanResult, originalCount int) *signerapi.Mutatio
 	}
 
 	return mutations
-}
-
-func appendUniqueIndices(dst []int, indices ...int) []int {
-	for _, index := range indices {
-		found := false
-		for _, existing := range dst {
-			if existing == index {
-				found = true
-				break
-			}
-		}
-		if !found {
-			dst = append(dst, index)
-		}
-	}
-	return dst
 }
 
 func categorizeRequests(requests []signerapi.SignRequest) (passthroughIndices, foreignIndices map[int]bool, err *ServiceError) {
@@ -691,23 +668,13 @@ func validateKnownNetwork(txns []types.Transaction, resolver apconfig.GenesisHas
 }
 
 func validateNetworkParams(txns []types.Transaction, console Console) *ServiceError {
-	firstTxn := txns[0]
-	maxFirstValid := firstTxn.FirstValid
-	minLastValid := firstTxn.LastValid
-
 	for i := 1; i < len(txns); i++ {
-		txn := txns[i]
-		if txn.GenesisHash != firstTxn.GenesisHash {
+		if txns[i].GenesisHash != txns[0].GenesisHash {
 			return badRequest(fmt.Sprintf("transaction %d has different genesis hash - all transactions must target the same network", i+1))
-		}
-		if txn.FirstValid > maxFirstValid {
-			maxFirstValid = txn.FirstValid
-		}
-		if txn.LastValid < minLastValid {
-			minLastValid = txn.LastValid
 		}
 	}
 
+	maxFirstValid, minLastValid := approvalWindow(txns)
 	if maxFirstValid > minLastValid {
 		return badRequest(fmt.Sprintf("transaction validity windows do not overlap (earliest LastValid: %d, latest FirstValid: %d) - group would never be valid", minLastValid, maxFirstValid))
 	}

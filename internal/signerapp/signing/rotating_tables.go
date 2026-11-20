@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -307,8 +306,8 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 	if errors.Is(tableErr, stagetable.ErrDiscarded) {
 		report.Discarded = tableErr
 	}
+	// finishStageReport settles report.Scanned on every return from here.
 	defer func() { finishStageReport(ctx, table, &report) }()
-	report.Scanned = table.Len()
 
 	report.ObservedSeq = deps.Releases.Seq()
 	readCtx, cancelRead := context.WithTimeout(ctx, opts.chainReadTimeout())
@@ -368,7 +367,6 @@ func (s *Service) fillStageTableOnce(ctx context.Context, deps *RotatingDeps, ge
 		}
 		found, pending, spent, ran, grantErr := s.runRecoveryGrant(ctx, deps.Recovery, grant, table, account, session, view.Authorizer, budget, opts, &cut, lookup)
 		report.Lookup = ran
-		report.Scanned = table.Len()
 		// Hinted probes consume work even when they do not extend the prefix.
 		budget -= spent
 		if grantErr != nil {
@@ -482,7 +480,6 @@ func (s *Service) fillLookahead(
 		}
 		from = table.FirstMissing(from)
 	}
-	report.Scanned = table.Len()
 	report.Pending = report.Err == nil && ctx.Err() == nil && from < target
 }
 
@@ -854,8 +851,6 @@ func deriveRange(ctx context.Context, rs *rotatingSession, from, to uint64, opts
 	}
 	return out, nil
 }
-
-func sortStrings(s []string) { sort.Strings(s) }
 
 // treeFrontier returns the lookahead limit of an account whose stages share
 // trees (rotatingkey.Profile.StagesPerTree): one past the last stage of the

@@ -302,24 +302,9 @@ func (s *Service) PrepareRotatingWithContext(ctx context.Context, req signerapi.
 		return nil, badRequest("transaction must not set rekey_to; the signer sets it")
 	}
 
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, deps, req.Account, session)
+	account, genesis, profile, table, svcErr := s.rotatingSpendPreamble(ctx, deps, req.Account, txn, session)
 	if svcErr != nil {
 		return nil, svcErr
-	}
-	if err := validateRotatingSpend(txn, account, genesis); err != nil {
-		return nil, err
-	}
-	// The key's bound genesis is not enough: the network must also be one
-	// this node is configured for, checked before any gate runs.
-	if err := validateKnownNetwork([]types.Transaction{txn}, s.genesisHashResolver()); err != nil {
-		return nil, err
-	}
-	if err := validateTransactionBounds([]types.Transaction{txn}); err != nil {
-		return nil, err
-	}
-	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account), s.Planner.Snapshot().KeyTypes[req.Account])
-	if table == nil {
-		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
 	derive := s.requestDeriver(req.Account, session)
 
@@ -402,24 +387,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 	spend := allTxns[0]
 
-	account, genesis, profile, svcErr := s.rotatingAccount(ctx, deps, req.Account, session)
+	account, genesis, profile, table, svcErr := s.rotatingSpendPreamble(ctx, deps, req.Account, spend, session)
 	if svcErr != nil {
 		return nil, svcErr
-	}
-	if err := validateRotatingSpend(spend, account, genesis); err != nil {
-		return nil, err
-	}
-	// The key's bound genesis is not enough: the network must also be one
-	// this node is configured for, checked before any gate runs.
-	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
-		return nil, err
-	}
-	if err := validateTransactionBounds([]types.Transaction{spend}); err != nil {
-		return nil, err
-	}
-	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(req.Account), s.Planner.Snapshot().KeyTypes[req.Account])
-	if table == nil {
-		return nil, internal(fmt.Sprintf("stage table: %v", tableErr))
 	}
 
 	// Rule 2: the group's RekeyTo is A_{n+1} for some n, which fixes the
@@ -638,7 +608,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 
 	// The release is audited durably and remembered before the signature
 	// leaves. Both are observational: a failure is reported, not fatal.
-	if logger, ok := s.AuditLog.(AuditRotatingReleaseLogger); ok && logger != nil {
+	if logger, ok := s.AuditLog.(AuditRotatingReleaseLogger); ok {
 		if err := logger.LogRotatingRelease(req.Account, txIDText, stage, uint64(spend.LastValid), leaf.Tree, leaf.Index); err != nil {
 			consoleOf(s.Console).Printf("[ROTATING] WARNING: release of stage %d for %s was not recorded in the audit log: %v\n", stage, req.Account, err)
 		}
@@ -749,6 +719,32 @@ func (s *Service) releaseRefused(ctx context.Context, deps *RotatingDeps, accoun
 		return unavailable("rotating key was removed during signing")
 	}
 	return nil
+}
+
+// rotatingSpendPreamble is what prepare and sign both establish for a spend,
+// in this order, before either runs a gate: the account and its bound network
+// from its aplane key (rotatingAccount), the spend against them, that this
+// node is configured for that network (the key's bound genesis is not
+// enough), the network's transaction bounds, and the account's stage table.
+func (s *Service) rotatingSpendPreamble(ctx context.Context, deps *RotatingDeps, accountText string, spend types.Transaction, session *keystore.KeySession) (types.Address, []byte, *lsigresource.Profile, *stagetable.Table, *ServiceError) {
+	account, genesis, profile, svcErr := s.rotatingAccount(ctx, deps, accountText, session)
+	if svcErr != nil {
+		return types.Address{}, nil, nil, nil, svcErr
+	}
+	if err := validateRotatingSpend(spend, account, genesis); err != nil {
+		return types.Address{}, nil, nil, nil, err
+	}
+	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
+		return types.Address{}, nil, nil, nil, err
+	}
+	if err := validateTransactionBounds([]types.Transaction{spend}); err != nil {
+		return types.Address{}, nil, nil, nil, err
+	}
+	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(accountText), s.Planner.Snapshot().KeyTypes[accountText])
+	if table == nil {
+		return types.Address{}, nil, nil, nil, internal(fmt.Sprintf("stage table: %v", tableErr))
+	}
+	return account, genesis, profile, table, nil
 }
 
 // rotatingAccount returns the account address, genesis hash and resource

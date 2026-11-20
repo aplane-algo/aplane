@@ -12,7 +12,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -430,17 +429,8 @@ func TestSignGroupLogsPolicyRejectionToAudit(t *testing.T) {
 	txnSender := types.Address{2}
 	audit := &testAuditLogger{}
 	service := &Service{
-		Planner: &Planner{
-			VerifySignableKeys: func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
-				return 1, nil
-			},
-			CalculateDummies: func(snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
-				return lsigresource.Plan{}, nil, nil
-			},
-			BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
-				return txns, nil, DummyFeeInfo{}, false, nil
-			},
-		},
+		// The plan below is built by hand, so the planner is never asked.
+		Planner:  &Planner{},
 		Approval: &ApprovalService{},
 		Executor: &Executor{},
 		AuditLog: audit,

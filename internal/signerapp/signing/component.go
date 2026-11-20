@@ -4,27 +4,14 @@
 package signing
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 )
 
-// ComponentSignRole is an internal gate/message role derived from the public
-// component target kind. It is not part of the HTTP request surface. The cosigner
-// is the only role a component is signed in; a cosigned account's spending key
-// releases its base component through the bounded flow.
-type ComponentSignRole string
-
-const (
-	ComponentSignRoleCosigner ComponentSignRole = "cosigner"
-)
-
 type ComponentSignPlan struct {
 	RequestID    string
-	Role         ComponentSignRole
-	MessageRole  message.Role
 	ComponentKey string
 	Group        *canonical.Group
 	Targets      []ComponentSignTarget
@@ -39,80 +26,42 @@ type ComponentSignTarget struct {
 	Message [32]byte
 }
 
+// componentPlanRequest is a cosigner request as SignComponentsWithContext
+// hands it on: validated (signerapi.ComponentRequest.Validate, so every
+// target index is distinct and inside the group) and decoded once.
 type componentPlanRequest struct {
 	RequestID     string
-	Role          ComponentSignRole
 	ComponentKey  string
-	GroupBytesHex []string
+	Group         *canonical.Group
 	TargetIndices []int
 }
 
-func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *ServiceError) {
-	if err := req.validate(); err != nil {
-		return nil, badRequest(err.Error())
-	}
-
-	role, err := componentMessageRole(req.Role)
-	if err != nil {
-		return nil, badRequest(err.Error())
-	}
-
-	group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
-	if decodeErr != nil {
-		return nil, badRequest(decodeErr.Error())
-	}
-
+// prepareComponentSigning lists the request's targets in group order, each
+// with the cosigner-role component message the cosigner signs for it.
+func prepareComponentSigning(req componentPlanRequest) *ComponentSignPlan {
 	targetIndices := append([]int(nil), req.TargetIndices...)
 	sort.Ints(targetIndices)
 
 	targets := make([]ComponentSignTarget, len(targetIndices))
 	for i, targetIndex := range targetIndices {
-		entry := group.Entries[targetIndex]
+		// No bounds check here: signerapi.ComponentRequest.Validate, which
+		// SignComponentsWithContext runs first, refuses a target index that
+		// is negative, repeated or outside the group's original prefix
+		// (TestComponentRequestValidateRefusesBadTargetIndices).
+		entry := req.Group.Entries[targetIndex]
 		targets[i] = ComponentSignTarget{
 			TargetIndex: targetIndex,
 			Sender:      entry.Txn.Sender.String(),
 			TxID:        entry.TxID,
 			Fee:         uint64(entry.Txn.Fee),
-			Message:     message.ComponentMessage(role, entry.TxID),
+			Message:     message.ComponentMessage(message.RoleCosigner, entry.TxID),
 		}
 	}
 
 	return &ComponentSignPlan{
 		RequestID:    req.RequestID,
-		Role:         req.Role,
-		MessageRole:  role,
 		ComponentKey: req.ComponentKey,
-		Group:        group,
+		Group:        req.Group,
 		Targets:      targets,
-	}, nil
-}
-
-func (r componentPlanRequest) validate() error {
-	if r.Role != ComponentSignRoleCosigner {
-		return fmt.Errorf("role must be %q", ComponentSignRoleCosigner)
 	}
-	if len(r.GroupBytesHex) == 0 {
-		return fmt.Errorf("group_bytes_hex is empty")
-	}
-	if len(r.TargetIndices) == 0 {
-		return fmt.Errorf("target_indices is empty")
-	}
-	seen := make(map[int]bool, len(r.TargetIndices))
-	for _, index := range r.TargetIndices {
-		if index < 0 || index >= len(r.GroupBytesHex) {
-			return fmt.Errorf("target_indices %d out of range", index)
-		}
-		if seen[index] {
-			return fmt.Errorf("target_indices contains duplicate %d", index)
-		}
-		seen[index] = true
-	}
-	return nil
-}
-
-func componentMessageRole(role ComponentSignRole) (message.Role, error) {
-	if role != ComponentSignRoleCosigner {
-		return 0, fmt.Errorf("role must be %q", ComponentSignRoleCosigner)
-	}
-	return message.RoleCosigner, nil
 }

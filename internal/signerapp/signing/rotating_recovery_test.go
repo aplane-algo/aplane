@@ -791,3 +791,29 @@ func TestRotatingAccountStatusesProjection(t *testing.T) {
 		t.Fatalf("unobserved status = %+v", st)
 	}
 }
+
+// A recovery start names a rotating account this signer holds, checked from
+// the key index alone, with no grant started for any other.
+func TestRecoverRotatingStartRefusesWhatTheKeyIndexDoesNotHold(t *testing.T) {
+	f := newRotatingFixture(t)
+	f.held = []string{types.Address{2}.String()}
+	cases := []struct {
+		account string
+		want    string
+	}{
+		{types.Address{1}.String(), "no key found for account: " + types.Address{1}.String()},
+		{types.Address{2}.String(), "account " + types.Address{2}.String() + " is not a rotating account"},
+		// The key index check is the one prepare and sign make
+		// (indexedRotatingKey), which reads the address first.
+		{"not-an-address", "invalid account: illegal base32 data at input byte 0"},
+	}
+	for _, tc := range cases {
+		_, err := f.svc.RecoverRotatingWithContext(context.Background(), signerapi.RotatingRecoverRequest{Account: tc.account, Action: "start"})
+		if err == nil || err.Kind != ErrorBadRequest || err.Message != tc.want {
+			t.Fatalf("start for %s: err = %#v, want bad request %q", tc.account, err, tc.want)
+		}
+		if st := f.recovery().State(tc.account); st.Grant != nil {
+			t.Fatalf("start for %s left a grant: %+v", tc.account, st)
+		}
+	}
+}

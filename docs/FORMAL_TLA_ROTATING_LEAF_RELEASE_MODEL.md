@@ -86,6 +86,11 @@ history, so the question is whether the history is complete.
   account has already left: a node that is behind, for example after an
   endpoint failover. The chain only moves forward, so it never shows a later
   stage than the true one.
+- Apart from a later stage's release taking an earlier stage's place, the
+  memory drops an account's entry only through those actions:
+  `ReleaseMemory.Reset` (`Lock`, `DelayedReset` and `Recover`) and
+  `clearIfUnchanged` (`ApplyObservation`, under `SeqGuard` and
+  `NextStageGuard`). The code has no other per-account forget.
 
 The guards are constants:
 

@@ -29,10 +29,9 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if err := validateFrozenComponentDummyPartition(request, allTxns); err != nil {
 		return nil, signerapi.GroupSignRequest{}, err
 	}
-	isPreGrouped, groupErr := validateGroupConsistency(allTxns, false, s.Console)
-	if groupErr != nil {
-		return nil, signerapi.GroupSignRequest{}, groupErr
-	}
+	// DecodeGroupHex has checked the group's consistency and recomputed its
+	// ID, so a group is pre-grouped exactly when it has one.
+	isPreGrouped := group.GroupID != (types.Digest{})
 	if err := validateKnownNetwork(allTxns, s.Planner.GenesisHashResolver); err != nil {
 		return nil, signerapi.GroupSignRequest{}, err
 	}
@@ -45,11 +44,10 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		}
 	}
 
+	// The partition check refused an empty prefix, so the request has at
+	// least one slot and no more than the group.
 	req := request.GroupSignRequest()
 	evalCount := len(req.Requests)
-	if evalCount == 0 || evalCount > len(allTxns) {
-		return nil, signerapi.GroupSignRequest{}, badRequest("frozen component original prefix is empty or invalid")
-	}
 	originals := allTxns[:evalCount]
 	// Every contextual position is foreign to this request's policy and
 	// signing: policy judges it and the signer signs it later, on /sign. The
@@ -84,7 +82,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	resourcePlan, sizingLsigIndices, err := s.Planner.CalculateDummies(snapshot, sizing, originals, sizingItems, map[int]bool{}, sizingForeign, nil, false, false)
+	resourcePlan, sizingLsigIndices, err := calculateLogicSigResources(s.Planner.Console, snapshot, sizing, originals, sizingItems, map[int]bool{}, sizingForeign, nil, false, false)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
@@ -149,7 +147,7 @@ func (s *Service) frozenComponentPlannerError(err *ServiceError) *ServiceError {
 // declared dummy nor relabel a real dummy as an original policy input.
 func validateFrozenComponentDummyPartition(request signerapi.ComponentRequest, allTxns []types.Transaction) *ServiceError {
 	originalCount := len(allTxns) - len(request.DummyPositions)
-	if originalCount <= 0 || originalCount > len(allTxns) {
+	if originalCount <= 0 {
 		return badRequest("frozen component original prefix is empty or invalid")
 	}
 	original := allTxns[0]
