@@ -165,7 +165,7 @@ func TestCloseKeepsInFlightAuthFailureSummary(t *testing.T) {
 	}
 	flushed := make(chan struct{})
 	go func() {
-		a.flushAuthFailureSummary()
+		a.authFailures.flush(a)
 		close(flushed)
 	}()
 	<-writing
