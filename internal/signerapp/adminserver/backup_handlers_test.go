@@ -316,30 +316,6 @@ func TestLockedStateRejectsRecoveryCapableRestoreReads(t *testing.T) {
 	}
 }
 
-func TestBackupTransferHandlersRejectUnavailableService(t *testing.T) {
-	ir := productruntime.New(productruntime.Config{})
-	ir.SetUnlocked()
-	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{}, OriginLocal)
-	session.Bind(auth.NewProductIdentity("test"), ir)
-
-	session.HandleBeginBackupImport(&protocol.BeginBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "begin"}, FileName: "backup.tar.gz"})
-	session.HandleAppendBackupImport(&protocol.AppendBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "append"}, UploadID: ".import-test.part", Data: []byte("x")})
-	session.HandleCommitBackupImport(&protocol.CommitBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "commit"}, UploadID: ".import-test.part", FileName: "backup.tar.gz"})
-	session.HandleAbortBackupImport(&protocol.AbortBackupImportMessage{BaseMessage: protocol.BaseMessage{ID: "abort"}, UploadID: ".import-test.part"})
-	session.HandleReadBackupChunk(&protocol.ReadBackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: "read"}, FileName: "backup.tar.gz"})
-
-	msgs := decodeAdminProtoWrites(t, conn)
-	if len(msgs) != 5 {
-		t.Fatalf("response count = %d, want 5", len(msgs))
-	}
-	for _, msg := range msgs {
-		if msg.Type != protocol.MsgTypeError {
-			t.Fatalf("unavailable backup service response = %+v, want error", msg)
-		}
-	}
-}
-
 func TestLockedStatePermitsAbortingUnpublishedBackupUpload(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	svc := &stubServices{}

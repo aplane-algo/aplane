@@ -402,7 +402,7 @@ func TestApplyPolicy_PersistsUploadedBytesAndReloads(t *testing.T) {
 	if !result.Success || result.Policy == nil || result.Policy.GenerationID == "" {
 		t.Fatalf("ApplyPolicy() = %+v", result)
 	}
-	if doc := svc.adminApp().GetPolicyDocument(policy.DefaultKey); !doc.Success || doc.Document != uploaded {
+	if doc := svc.adminApp().GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}); !doc.Success || doc.Document != uploaded {
 		t.Fatalf("GetPolicyDocument() = %+v, want the exact uploaded bytes", doc)
 	}
 

@@ -23,7 +23,7 @@ func OfferDisplacement(active *Session, newConn adminproto.AdminConn, timeout ti
 	existsMsg := protocol.ClientExistsMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeClientExists},
 	}
-	if err := writeJSONMessage(newConn, existsMsg); err != nil {
+	if err := WriteJSONMessage(newConn, existsMsg); err != nil {
 		return reject()
 	}
 
@@ -80,7 +80,9 @@ func DisplaceSession(active *Session) {
 	_ = active.Close()
 }
 
-func writeJSONMessage(conn adminproto.AdminConn, v interface{}) error {
+// WriteJSONMessage writes one admin message to a connection that has no
+// session yet.
+func WriteJSONMessage(conn adminproto.AdminConn, v interface{}) error {
 	data, err := protocol.MarshalAdminMessage(v)
 	if err != nil {
 		return err

@@ -233,7 +233,7 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError},
 			Error:       "another apadmin client is currently authenticating",
 		}
-		_ = writeJSONMessage(adminConn, errMsg)
+		_ = adminserver.WriteJSONMessage(adminConn, errMsg)
 		_ = session.Close()
 		return
 	}
@@ -471,12 +471,4 @@ func (s *IPCServer) activeSession() *adminserver.Session {
 func (s *IPCServer) clearPendingSession(session *adminserver.Session) {
 	s.sessionManager().ClearPreAuthPending(session)
 	s.sessionManager().ClearPending(session)
-}
-
-func writeJSONMessage(conn adminproto.AdminConn, v interface{}) error {
-	data, err := protocol.MarshalAdminMessage(v)
-	if err != nil {
-		return err
-	}
-	return conn.WriteMessage(data)
 }
