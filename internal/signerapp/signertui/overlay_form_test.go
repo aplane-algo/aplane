@@ -73,7 +73,7 @@ const (
 // as Enter on the key type list and the preset screen does.
 func overlayForm(t *testing.T, keyType string, presetIndex int) Model {
 	t.Helper()
-	index, ok := keyTypeIndex(keyType, getKeyTypeCount(), getKeyTypeByIndex)
+	index, ok := keyTypeIndex(keyType, generateKeyTypeIDs())
 	if !ok {
 		t.Fatalf("%s is not on the Generate list", keyType)
 	}
@@ -421,7 +421,7 @@ func TestImportedCosignerFillsTheOverlayForm(t *testing.T) {
 	infos := overlayInventory(t)
 	for _, keyType := range []string{boundedHostKeyType, plainFalconKeyType} {
 		m := Model{viewState: ViewGenerateParams, cosigner: cosignerState{loaded: true}}
-		index, _ := keyTypeIndex(keyType, getKeyTypeCount(), getKeyTypeByIndex)
+		index, _ := keyTypeIndex(keyType, generateKeyTypeIDs())
 		m.forms.generateKeyType = index
 		m = m.initGenericLSigParamsForKeyType(keyType)
 		m.forms.genericLSigParams[overlayList] = "typed"
@@ -500,7 +500,7 @@ func TestCustomBoundsLeavesChoicesUnsetAndTheManagerFormHasNone(t *testing.T) {
 
 	// The manager opens the form with a cosigner and no preset.
 	m := Model{viewState: ViewGenerateParams, cosigner: cosignerState{loaded: true}}
-	index, _ := keyTypeIndex(plainFalconKeyType, getKeyTypeCount(), getKeyTypeByIndex)
+	index, _ := keyTypeIndex(plainFalconKeyType, generateKeyTypeIDs())
 	m.forms.generateKeyType = index
 	m = m.initGenericLSigParamsForKeyType(plainFalconKeyType)
 	m.forms.genericLSigParams[overlayCosigner] = "WITNESS"

@@ -181,9 +181,9 @@ func getServerImportKeyTypes() []protocol.KeyTypeInfo {
 	return out
 }
 
-// getKeyTypeOptions returns the mnemonic import key type display strings, in
-// selection order (native key types first, then published ones).
-func getKeyTypeOptions() []string {
+// importKeyTypeOptions returns the mnemonic import key type display strings,
+// in selection order (native key types first, then published ones).
+func importKeyTypeOptions() []string {
 	if types := getServerImportKeyTypes(); len(types) > 0 {
 		options := make([]string, len(types))
 		for i, info := range types {
@@ -205,26 +205,6 @@ func getKeyTypeOptions() []string {
 		} else {
 			options[i] = displayKeyType(keyType)
 		}
-	}
-	return options
-}
-
-// getGenerateKeyTypeOptions returns key type options for the generate form,
-// in selection order: native key types first, then published key types and
-// generic LogicSig templates.
-func getGenerateKeyTypeOptions() []string {
-	if types := getServerKeyTypes(); len(types) > 0 {
-		options := make([]string, len(types))
-		for i, info := range types {
-			options[i] = displayKeyType(info.KeyType)
-		}
-		return options
-	}
-
-	types := compiledGenerateKeyTypes()
-	options := make([]string, len(types))
-	for i, keyType := range types {
-		options[i] = displayKeyType(keyType)
 	}
 	return options
 }
@@ -292,6 +272,17 @@ func (s *paramSpec) optionLabel(name, value string) string {
 	return terminalSafe(s.OptionLabel(name, value))
 }
 
+// validateParams checks creation parameter values against params.
+func validateParams(params []lsigprovider.ParameterDef) func(map[string]string) error {
+	return func(values map[string]string) error {
+		normalized, err := lsigprovider.NormalizeCreationParams(values, params)
+		if err != nil {
+			return err
+		}
+		return generictemplate.ValidateParameterValues(normalized, params)
+	}
+}
+
 func getParamSpecForKeyType(keyType string) *paramSpec {
 	if keyType == "" {
 		return nil
@@ -306,13 +297,7 @@ func getParamSpecForKeyType(keyType string) *paramSpec {
 			DisplayName: terminalSafe(info.DisplayName),
 			Description: terminalSafe(info.Description),
 			Params:      params,
-			Validate: func(values map[string]string) error {
-				normalized, err := lsigprovider.NormalizeCreationParams(values, params)
-				if err != nil {
-					return err
-				}
-				return generictemplate.ValidateParameterValues(normalized, params)
-			},
+			Validate:    validateParams(params),
 		}
 	}
 
@@ -335,50 +320,24 @@ func getParamSpecForKeyType(keyType string) *paramSpec {
 	}
 }
 
+// getImportKeyTypeByIndex returns the import list's key type at index, or ""
+// when there is none.
 func getImportKeyTypeByIndex(index int) string {
-	if types := getServerImportKeyTypes(); len(types) > 0 {
-		if index >= 0 && index < len(types) {
-			return types[index].KeyType
-		}
-		return ""
-	}
-	types := compiledImportKeyTypes()
-	if index >= 0 && index < len(types) {
-		return types[index]
-	}
-	return ""
+	return keyTypeAt(importKeyTypeIDs(), index)
 }
 
-// getKeyTypeByIndex returns the key type identifier for the given index.
-// Handles both cryptographic key types (versioned) and generic LogicSig templates.
+// getKeyTypeByIndex returns the generate list's key type at index, or "" when
+// there is none. The list holds both cryptographic key types (versioned) and
+// generic LogicSig templates.
 func getKeyTypeByIndex(index int) string {
-	if types := getServerKeyTypes(); len(types) > 0 {
-		if index >= 0 && index < len(types) {
-			return types[index].KeyType
-		}
-		return ""
-	}
+	return keyTypeAt(generateKeyTypeIDs(), index)
+}
 
-	types := compiledGenerateKeyTypes()
-	if index >= 0 && index < len(types) {
-		return types[index]
+func keyTypeAt(ids []string, index int) string {
+	if index >= 0 && index < len(ids) {
+		return ids[index]
 	}
 	return ""
-}
-
-// getKeyTypeCount returns the total number of key types (cryptographic + generic lsig).
-func getKeyTypeCount() int {
-	if types := getServerKeyTypes(); len(types) > 0 {
-		return len(types)
-	}
-	return len(compiledGenerateKeyTypes())
-}
-
-func getImportKeyTypeCount() int {
-	if types := getServerImportKeyTypes(); len(types) > 0 {
-		return len(types)
-	}
-	return len(compiledImportKeyTypes())
 }
 
 func getExpectedImportWordCount(keyTypeIndex int) int {

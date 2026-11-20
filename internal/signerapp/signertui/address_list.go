@@ -13,22 +13,9 @@ import (
 )
 
 func splitAddressListValue(value string) []string {
-	if value == "" {
-		return nil
-	}
-
-	parts := strings.FieldsFunc(value, func(r rune) bool {
+	return strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || unicode.IsSpace(r)
 	})
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		out = append(out, part)
-	}
-	return out
 }
 
 func resolveAddressListValue(value string) (string, error) {

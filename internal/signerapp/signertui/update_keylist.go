@@ -210,7 +210,7 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "e":
-		return m.openCosignerExport()
+		return m.openCosignerExportFor(m.details.address, m.details.keyType, ViewKeyDetails)
 
 	case "d":
 		// Delete selected key - show confirmation dialog
