@@ -45,7 +45,7 @@ func TestGenerateTransactionDescriptionFromTxn_ShowsResolvedNetwork(t *testing.T
 		},
 	}
 
-	desc := DetailTxn(txn).Text()
+	desc := DetailTxnWithResolver(txn, apconfig.DefaultGenesisHashNetworkResolver()).Text()
 	for _, want := range []string{
 		"Network: testnet",
 		"GenesisID: testnet-v1.0",

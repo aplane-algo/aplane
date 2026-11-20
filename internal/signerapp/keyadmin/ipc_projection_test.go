@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -85,7 +86,7 @@ func TestProjectDeleteIPC(t *testing.T) {
 }
 
 func TestProjectListKeys(t *testing.T) {
-	keys, err := ProjectListKeys([]ListKeyInfo{
+	keys, err := ProjectListKeys([]adminproto.KeyInfo{
 		{Address: "A", KeyType: "ed25519"},
 		{Address: "B", KeyType: "test.timed-policy.v1", TemplateProvenanceStatus: "conflict", TemplateProvenanceNote: "changed"},
 	}, nil)
@@ -107,7 +108,7 @@ func TestProjectListKeys(t *testing.T) {
 }
 
 func TestProjectKeyDetailsIPC(t *testing.T) {
-	ok := ProjectKeyDetailsIPC(&KeyDetailsResult{
+	ok := ProjectKeyDetailsIPC(&adminproto.GetKeyDetailsResult{
 		Address:      "ADDR",
 		KeyType:      "test.timed-policy.v1",
 		PublicKeyHex: "aabbccdd",
@@ -149,12 +150,12 @@ func TestProjectImportIPC(t *testing.T) {
 	}
 }
 
-func TestTrimKeyNotFoundPrefix(t *testing.T) {
-	if got := trimKeyNotFoundPrefix("key not found: ADDR"); got != "ADDR" {
-		t.Fatalf("trimKeyNotFoundPrefix() = %q, want ADDR", got)
-	}
-	if got := trimKeyNotFoundPrefix("ADDR"); got != "ADDR" {
-		t.Fatalf("trimKeyNotFoundPrefix() = %q, want ADDR", got)
+func TestProjectDeleteIPCNamesTheMissingKey(t *testing.T) {
+	for _, message := range []string{"key not found: ADDR", "ADDR"} {
+		got := ProjectDeleteIPC(&Error{Kind: ErrorNotFound, Message: message})
+		if got.Success || got.Code != protocol.ErrCodeKeyNotFound || got.Error != "Key not found: ADDR" {
+			t.Fatalf("ProjectDeleteIPC(%q) = %+v", message, got)
+		}
 	}
 }
 

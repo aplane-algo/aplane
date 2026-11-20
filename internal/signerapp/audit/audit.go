@@ -309,10 +309,10 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		entry.ArchiveEntriesOmitted = omitted
 	}
 	if entry.PolicyUpdates, omitted = boundList(entry.PolicyUpdates); omitted > 0 {
-		entry.PolicyUpdatesOmitted += omitted
+		entry.PolicyUpdatesOmitted = omitted
 	}
 	if entry.PolicyRemovals, omitted = boundList(entry.PolicyRemovals); omitted > 0 {
-		entry.PolicyRemovalsOmitted += omitted
+		entry.PolicyRemovalsOmitted = omitted
 	}
 	return entry
 }
@@ -344,49 +344,52 @@ func boundOperationID(id string) string {
 	return id[:cut] + "…sha256:" + hex.EncodeToString(sum[:])
 }
 
-// Log writes an audit entry
+// Log writes an audit entry, best effort: a failure is a warning on stderr.
 func (a *AuditLogger) Log(entry AuditEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closed {
 		return
 	}
-	entry = normalizeEntry(entry)
-
-	// Set timestamp if not provided
-	if entry.Timestamp.IsZero() {
-		entry.Timestamp = time.Now().UTC()
-	}
-
-	// Encode as JSON (one line per entry)
-	data, err := json.Marshal(entry)
+	line, err := a.lineLocked(entry)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to marshal audit entry: %v\n", err)
 		return
 	}
+	if a.file == nil {
+		fmt.Fprintf(os.Stderr, "Warning: audit log unavailable, dropping entry\n")
+		return
+	}
+	if err := a.writeLineLocked(line); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+}
 
-	// Rotate if this write would exceed the size limit
+// lineLocked encodes entry as one log line and readies the file for it: it
+// rotates the log first when the line would take it over the size limit, and
+// reopens the current file when a failed rotation left no handle. A failed
+// rotation is only a warning: the line still goes to the oversized current
+// file. The caller checks a.file before writing. Must be called with a.mu
+// held.
+func (a *AuditLogger) lineLocked(entry AuditEntry) ([]byte, error) {
+	entry = normalizeEntry(entry)
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
+	}
 	line := append(data, '\n')
 	if a.written+uint64(len(line)) > maxAuditLogSize {
 		if err := a.rotate(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to rotate audit log: %v\n", err)
-			// Continue writing to current file
 		}
 	}
-
-	// A failed rotation may have left no usable handle; recover instead of
-	// erroring on every subsequent entry.
 	if a.file == nil {
 		a.reopenCurrent()
-		if a.file == nil {
-			fmt.Fprintf(os.Stderr, "Warning: audit log unavailable, dropping entry\n")
-			return
-		}
 	}
-
-	if err := a.writeLineLocked(line); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
+	return line, nil
 }
 
 // endsMidLine reports whether the file at path, of size bytes, ends without
@@ -446,33 +449,13 @@ func (a *AuditLogger) logDurable(entry AuditEntry) error {
 	if a.closed {
 		return fmt.Errorf("audit log is closed")
 	}
-	entry = normalizeEntry(entry)
-
-	if entry.Timestamp.IsZero() {
-		entry.Timestamp = time.Now().UTC()
-	}
-
-	data, err := json.Marshal(entry)
+	line, err := a.lineLocked(entry)
 	if err != nil {
 		return fmt.Errorf("marshal audit entry: %w", err)
 	}
-
-	line := append(data, '\n')
-	if a.written+uint64(len(line)) > maxAuditLogSize {
-		if err := a.rotate(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to rotate audit log: %v\n", err)
-			// Continue writing to the current file; the entry's durability
-			// does not depend on rotation succeeding.
-		}
-	}
-
 	if a.file == nil {
-		a.reopenCurrent()
-		if a.file == nil {
-			return fmt.Errorf("audit log unavailable at %s", a.path)
-		}
+		return fmt.Errorf("audit log unavailable at %s", a.path)
 	}
-
 	return a.writeLineLocked(line)
 }
 
@@ -636,14 +619,10 @@ func productPrincipalAuditFields() AuditEntry {
 	}
 }
 
-func sessionPrincipalID(p adminserver.SessionPrincipal) string {
-	return p.ID
-}
-
 func sessionAuditFields(ctx adminserver.SessionContext) AuditEntry {
-	principal := sessionPrincipalID(ctx.AdminPrincipal)
-	requester := sessionPrincipalID(ctx.RequesterPrincipal)
-	approver := sessionPrincipalID(ctx.ApproverPrincipal)
+	principal := ctx.AdminPrincipal.ID
+	requester := ctx.RequesterPrincipal.ID
+	approver := ctx.ApproverPrincipal.ID
 	if requester == "" {
 		requester = principal
 	}
@@ -835,7 +814,7 @@ func (a *AuditLogger) LogSignWithheldAttributed(attr Attribution, address, txnSe
 
 // LogAuthFailed logs an authentication failure before a principal is known.
 func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
-	if !a.admitAuthFailure() {
+	if !a.authFailures.admit(a) {
 		return
 	}
 	a.LogAuthFailedAttributed("", remoteAddr, reason)
@@ -848,12 +827,6 @@ func (l *entryLimiter) init(summaryEvent AuditEventType, subject string) {
 	l.summaryAfter = authFailureSummaryInterval
 	l.tokens = authFailureBurst
 }
-
-// admitAuthFailure reports whether an unauthenticated failure is logged
-// individually; otherwise it is counted toward the next summary.
-func (a *AuditLogger) admitAuthFailure() bool { return a.authFailures.admit(a) }
-
-func (a *AuditLogger) flushAuthFailureSummary() { a.authFailures.flush(a) }
 
 // admit reports whether the next entry of this stream is logged
 // individually; otherwise it is counted toward the next summary.

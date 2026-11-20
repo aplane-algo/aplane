@@ -14,7 +14,6 @@ func (fs *Signer) newApprovalServiceWithAudit(ir *productruntime.Runtime, auditL
 		UserAutoApprove:              ir.Config().UserAutoApprove(),
 		ApprovalWait:                 ir.Config().ApprovalWait,
 		AuditLog:                     auditLog,
-		Console:                      signerConsole{},
 		KnownAddresses:               ir.KnownAddresses,
 		HasClient:                    fs.hasAdminClient,
 		RequestSigningApprovalPrompt: ir.RequestSigningApprovalPrompt,

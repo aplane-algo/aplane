@@ -725,8 +725,7 @@ policy context, so `list_asa_set` and `lookup_asa` require `policy.view` and
 ASA set result codes include `policy_unavailable`, `unknown_network`,
 `asa_builtin`, `asa_already_confirmed`, `lookup_failed`,
 `confirmation_stale`, `asa_referenced`, `not_found`, `identity_locked`,
-`recovery_blocked`, `asa_commit_uncertain`, `asa_reload_failed`, and
-`asa_unavailable`.
+`recovery_blocked`, `asa_commit_uncertain`, and `asa_reload_failed`.
 
 Policy selection semantics:
 

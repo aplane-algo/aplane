@@ -79,7 +79,7 @@ func (p *NodePolicy) PolicyFor(selector string) *policy.Config {
 	if p == nil {
 		return nil
 	}
-	if cfg, ok := p.Keys[selector]; ok && selector != "" {
+	if cfg, ok := p.Keys[selector]; ok {
 		return cfg
 	}
 	return p.Default

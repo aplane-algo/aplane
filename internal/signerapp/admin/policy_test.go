@@ -79,7 +79,7 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	return Service{Deps: deps, Runtime: ir}, ir
+	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir
 }
 
 func signerPolicyDoc(maxFee string) string {
@@ -114,7 +114,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	embedded := policytest.EmbeddedDefault(t, noderole.RoleSigner)
 	if !view.Success || view.NodeRole != "signer" || len(view.Documents) != 1 ||
 		view.Documents[0].Key != policy.DefaultKey || view.Documents[0].Size != len(embedded) ||
-		svc.GetPolicyDocument(policy.DefaultKey).Document != embedded {
+		svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}).Document != embedded {
 		t.Fatalf("GetPolicy() = %+v", view)
 	}
 	before := currentGeneration(t, svc, ir)
@@ -138,7 +138,7 @@ func TestSignerPolicyApplyMintsGenerationAndReloads(t *testing.T) {
 	if got := runtimePolicy(ir, ""); got == nil || got.MaxFeeMicroAlgos != 2000 {
 		t.Fatalf("runtime policy after apply = %#v", got)
 	}
-	if again := svc.GetPolicy(); svc.GetPolicyDocument(policy.DefaultKey).Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
+	if again := svc.GetPolicy(); svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}).Document != signerPolicyDoc("2000") || again.PolicySetSHA256 == view.PolicySetSHA256 {
 		t.Fatalf("GetPolicy() after apply = %+v", again)
 	}
 
@@ -180,7 +180,7 @@ func TestConcurrentPolicyAppliesCarryTheirOwnEvidence(t *testing.T) {
 		if r.Success {
 			winners++
 			if r.GenerationID != currentGeneration(t, svc, ir) || svc.GetPolicy().PolicySetSHA256 != r.PolicySetSHA256 ||
-				svc.GetPolicyDocument(policy.DefaultKey).Document != signerPolicyDoc(fmt.Sprintf("%d", 2000+i)) {
+				svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}).Document != signerPolicyDoc(fmt.Sprintf("%d", 2000+i)) {
 				t.Fatalf("the winner's evidence is not its own commit: %+v", r)
 			}
 			continue
@@ -276,11 +276,11 @@ func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	if ir.NodePolicy().HasOwn(adminPolicyKeyB) {
 		t.Fatal("removed policy is still enforced")
 	}
-	if doc := svc.GetPolicyDocument(adminPolicyKeyA); !doc.Success || doc.Document != cosignerPolicyDoc(adminPolicyKeyA) {
+	if doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: adminPolicyKeyA}); !doc.Success || doc.Document != cosignerPolicyDoc(adminPolicyKeyA) {
 		t.Fatalf("GetPolicyDocument(A) = %+v", doc)
 	}
 	for _, key := range []string{adminPolicyKeyB, ""} {
-		if doc := svc.GetPolicyDocument(key); doc.Success || doc.Code != "policy_document_not_found" {
+		if doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: key}); doc.Success || doc.Code != "policy_document_not_found" {
 			t.Fatalf("GetPolicyDocument(%q) = %+v, want policy_document_not_found", key, doc)
 		}
 	}
@@ -417,7 +417,7 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 	if after := currentGeneration(t, svc, ir); after == before {
 		t.Fatalf("uncertain commit did not publish a new root (still %s)", before)
 	}
-	if got := svc.GetPolicyDocument(policy.DefaultKey).Document; got != signerPolicyDoc("2000") {
+	if got := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}).Document; got != signerPolicyDoc("2000") {
 		t.Fatalf("runtime policy after uncertain commit = %q, want the committed document", got)
 	}
 }

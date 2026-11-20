@@ -79,9 +79,6 @@ func (s Service) ListASASet() adminproto.ListASASetResult {
 
 // LookupASA reads an asset for the operator to confirm. Nothing is stored.
 func (s Service) LookupASA(req adminproto.LookupASARequest) adminproto.LookupASAResult {
-	if s.ASAChain == nil {
-		return adminproto.LookupASAResult{Code: "asa_unavailable", Error: errASAUnavailable.Error()}
-	}
 	_, set := s.Runtime.PolicyState()
 	if set == nil {
 		return adminproto.LookupASAResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
@@ -104,9 +101,6 @@ func (s Service) LookupASA(req adminproto.LookupASARequest) adminproto.LookupASA
 // AddASA adds the asset the operator confirmed, after reading it again and
 // finding every confirmed value unchanged.
 func (s Service) AddASA(req adminproto.AddASARequest) adminproto.AddASAResult {
-	if s.ASAChain == nil {
-		return adminproto.AddASAResult{Code: "asa_unavailable", Error: errASAUnavailable.Error()}
-	}
 	confirmed := req.Confirmed
 	genesis, err := s.chainFor(confirmed.Network)
 	if err != nil {
@@ -156,9 +150,6 @@ func (s Service) AddASA(req adminproto.AddASARequest) adminproto.AddASAResult {
 // RemoveASA removes an operator entry, refusing while any stored document
 // explicitly names the asset.
 func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASAResult {
-	if s.ASAChain == nil {
-		return adminproto.RemoveASAResult{Code: "asa_unavailable", Error: errASAUnavailable.Error()}
-	}
 	var genesis asaset.GenesisHash
 	var err error
 	switch {
@@ -329,22 +320,9 @@ func (s Service) chainFor(network string) (asaset.GenesisHash, error) {
 	return asaset.GenesisHash{}, fmt.Errorf("network %q is not one this node knows", network)
 }
 
-var errASAUnavailable = errors.New("the ASA set cannot be changed on this node")
-
-// networks is the node's genesis-hash mapping: the chain view's, or, without
-// one, the mapping built from the node's config.
+// networks is the node's genesis-hash mapping.
 func (s Service) networks() apconfig.GenesisHashNetworkResolver {
-	if s.ASAChain != nil {
-		return s.ASAChain.Networks()
-	}
-	var custom map[string]string
-	if s.Deps != nil && s.Deps.Config() != nil {
-		custom = s.Deps.Config().GenesisHashNetworks
-	}
-	if r, err := apconfig.NewGenesisHashNetworkResolver(custom); err == nil {
-		return r
-	}
-	return apconfig.DefaultGenesisHashNetworkResolver()
+	return s.ASAChain.Networks()
 }
 
 func (s Service) now() time.Time {

@@ -256,8 +256,7 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	name := publicArchiveName(result.Backup.Path, result.Backup.FileName)
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocol.BackupInfo{Path: name, FileName: name, CreatedAt: result.Backup.CreatedAt, Size: result.Backup.Size, Checksum: result.Backup.Checksum}, Warning: result.Warning, Code: result.Code, Error: result.Error}
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
@@ -399,16 +398,21 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 	}
 	out := make([]protocol.BackupInfo, len(items))
 	for i, item := range items {
-		name := publicArchiveName(item.Path, item.FileName)
-		out[i] = protocol.BackupInfo{
-			Path:      name,
-			FileName:  name,
-			CreatedAt: item.CreatedAt,
-			Size:      item.Size,
-			Checksum:  item.Checksum,
-		}
+		out[i] = protocolBackupInfo(item)
 	}
 	return out
+}
+
+// protocolBackupInfo names an archive by its base name only.
+func protocolBackupInfo(item adminproto.BackupInfo) protocol.BackupInfo {
+	name := publicArchiveName(item.Path, item.FileName)
+	return protocol.BackupInfo{
+		Path:      name,
+		FileName:  name,
+		CreatedAt: item.CreatedAt,
+		Size:      item.Size,
+		Checksum:  item.Checksum,
+	}
 }
 
 func publicArchiveName(path, fileName string) string {
@@ -477,10 +481,6 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 	}
 }
 
-func ProtocolPolicyMessage(id string, view adminproto.PolicyView) protocol.PolicyMessage {
-	return view.Wire(id)
-}
-
 func ProtocolPolicyDocumentMessage(id string, result adminproto.PolicyDocumentResult) protocol.PolicyDocumentMessage {
 	return protocol.PolicyDocumentMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: id},
@@ -516,7 +516,7 @@ func ProtocolApplyPolicyResultMessage(id string, result adminproto.ApplyPolicyRe
 		Error:           result.Error,
 	}
 	if result.Policy != nil {
-		policyMsg := ProtocolPolicyMessage(id, *result.Policy)
+		policyMsg := result.Policy.Wire(id)
 		msg.Policy = &policyMsg
 	}
 	return msg

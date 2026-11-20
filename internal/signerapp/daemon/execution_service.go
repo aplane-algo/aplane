@@ -10,7 +10,6 @@ import (
 func (fs *Signer) newExecutionServiceWithAudit(auditLog signersigning.AuditFailLogger) *signersigning.Executor {
 	return &signersigning.Executor{
 		AuditLog:          auditLog,
-		Console:           signerConsole{},
 		DecodeRuntimeArgs: signersigning.DecodeHexRuntimeArgs,
 	}
 }

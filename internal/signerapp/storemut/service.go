@@ -42,27 +42,20 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 	}
 	// The key and its policy pair are archived by one deletion, so the
 	// archive must have room for all of them before anything moves.
-	candidates := []string{keyFile}
-	hasPolicy := false
+	var policyPair []string
 	if storepaths.ValidatePolicySelector(address) == nil {
 		policyPath := active.PolicyPath(address)
 		if _, err := os.Lstat(policyPath); err == nil {
-			hasPolicy = true
-			candidates = append(candidates, policyPath, policy.PolicyIntegritySidecarPath(policyPath))
+			policyPair = []string{policyPath, policy.PolicyIntegritySidecarPath(policyPath)}
 		} else if !os.IsNotExist(err) {
 			return nil, err
 		}
 	}
-	if hasPolicy {
-		if _, err := genstore.PreflightDeletedArchiveAppend(active, candidates...); err != nil {
-			return nil, err
-		}
-	}
-	result, err := keymgmt.DeleteKeyActive(active, address, keyFile)
+	result, err := keymgmt.DeleteKeyActive(active, address, keyFile, policyPair...)
 	if err != nil {
 		return nil, err
 	}
-	if hasPolicy {
+	if policyPair != nil {
 		if err := policy.ArchiveKeyPolicy(active, address); err != nil {
 			return nil, fmt.Errorf("key deleted, but archiving its policy failed: %w", err)
 		}

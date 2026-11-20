@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -350,5 +351,25 @@ func TestGroupReviewCountsHeldAndForeignPositionsApart(t *testing.T) {
 	listed := warningRekeyTargetsForPlan(plan)
 	if !listed[0][listTestTarget.String()] || len(listed) != 1 {
 		t.Fatalf("warning lists = %v, want only position 0's", listed)
+	}
+}
+
+// A rekey-to list is one account's: in a group, a rekey on another position to
+// an address on it still warns that control is lost.
+func TestReviewScopesEachRekeyListToItsPosition(t *testing.T) {
+	target := types.Address{0xC1}
+	rekey := types.Transaction{Header: types.Header{RekeyTo: target}}
+	plan := &PlanResult{HeldForeign: map[int]*heldPosition{0: {SenderHeld: true, ListedRekeyTargets: map[string]bool{target.String(): true}}}}
+	review := txnreview.Review{Items: make([]txnreview.Item, 2)}
+	(&ApprovalService{}).completeReview(&review, plan, []types.Transaction{rekey, rekey})
+	violations := reviewViolations(&review, true)
+	if len(violations) != 2 || violations[0].Field != "Tx 1/2: RekeyTo" || violations[1].Field != "Tx 2/2: RekeyTo" {
+		t.Fatalf("violations = %+v", violations)
+	}
+	if !strings.Contains(violations[0].Message, "rekey-to list") || !strings.Contains(violations[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
+		t.Fatalf("the listed position's warning = %q", violations[0].Message)
+	}
+	if strings.Contains(violations[1].Message, "rekey-to list") || !strings.Contains(violations[1].Message, "YOU WILL LOSE CONTROL") {
+		t.Fatalf("another position's warning = %q", violations[1].Message)
 	}
 }

@@ -42,7 +42,8 @@ type Deps interface {
 type Service struct {
 	Deps    Deps
 	Runtime *productruntime.Runtime
-	// ASAChain reads assets for the ASA set; nil leaves the set read-only.
+	// ASAChain is the node's network mapping and reads assets for the ASA
+	// set.
 	ASAChain ASAChain
 	// Now is the clock for ASA set changes; nil is time.Now.
 	Now func() time.Time
@@ -90,9 +91,6 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 }
 
 func endpointDisplayURL(cfg *serverconfig.ServerConfig, sshInfo SSHInfo) string {
-	if cfg == nil {
-		return ""
-	}
 	if endpoint := strings.TrimSpace(cfg.Endpoint.AdvertiseURL); endpoint != "" {
 		return endpoint
 	}
@@ -100,9 +98,6 @@ func endpointDisplayURL(cfg *serverconfig.ServerConfig, sshInfo SSHInfo) string 
 		return ""
 	}
 	host := endpointDisplayHost(cfg.Endpoint.SSH.ListenAddress)
-	if host == "" {
-		host = apconfig.DefaultSSHListenAddress
-	}
 	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(sshInfo.Port))
 }
 

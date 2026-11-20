@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -58,7 +57,7 @@ func requireTerminalSafe(t *testing.T, what, text string) {
 func signForEscapingTest(t *testing.T, req signerapi.GroupSignRequest, plan *PlanResult) escapingTestCapture {
 	t.Helper()
 	got := escapingTestCapture{console: &printedConsole{}}
-	describe := DescribeTxnFunc(txdesc.DetailTxn)
+	describe := DescribeTxnFunc(describeOnBuiltinNetworks)
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove: false,
@@ -229,7 +228,7 @@ func TestReviewBannersPrintTheClientsTypeEscaped(t *testing.T) {
 			}),
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(txdesc.DetailTxn),
+		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(describeOnBuiltinNetworks),
 		IsUnlocked:                    func() bool { return true },
 		Console:                       console,
 		PolicyFor: fixedPolicy(&policy.Config{
@@ -295,7 +294,7 @@ func signHostileTypeForTest(t *testing.T, typ types.TxType, count int, autoAppro
 			}),
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(txdesc.DetailTxn),
+		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(describeOnBuiltinNetworks),
 		IsUnlocked:                    func() bool { return true },
 		Console:                       console,
 		BeforeExecute: func() (func(), *ServiceError) {

@@ -16,13 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
-// DetailTxn describes a decoded transaction as data, naming its network from
-// the built-in table. Use this when you have a modified transaction (e.g.,
-// after fee adjustments) to show the actual values that will be signed.
-func DetailTxn(txn types.Transaction) txnreview.Details {
-	return DetailTxnWithResolver(txn, apconfig.DefaultGenesisHashNetworkResolver())
-}
-
 // DetailTxnWithResolver describes txn as data, naming its network through
 // resolver.
 func DetailTxnWithResolver(txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) txnreview.Details {
@@ -36,9 +29,6 @@ func DetailTxnWithResolver(txn types.Transaction, resolver apconfig.GenesisHashN
 // units. An approval prompt is built from the context its signing request
 // captured, so a reload while it waits does not change what it says.
 func DetailTxnInContext(txn types.Transaction, ctx *policycontext.Context) txnreview.Details {
-	if ctx == nil {
-		return DetailTxn(txn)
-	}
 	network, _ := ctx.Network(asaset.GenesisHash(txn.GenesisHash))
 	return txnreview.Detail(txn, txnreview.View{Network: network, Assets: ctx.Assets()})
 }
