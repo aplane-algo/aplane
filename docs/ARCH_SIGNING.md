@@ -1196,9 +1196,14 @@ session cannot sign afterwards (past its approval, the session check refuses
 it), so none is left looking approvable. Such a request answers `locked` ("the signer's
 session ended while the request waited for approval; send it again") and is
 audited as `approval_withdrawn_session_ended`, not as an operator rejection.
-A session end cancels no request's context: a request that is planning or
-signing meets the session check or the lock's cut of its key use, which
-answer `locked` as before. A session end that comes after an operator
+A session end cancels no request's context. A request that is still planning,
+or waiting at its gates, meets the session check and answers `locked`. One
+already past that check answers `locked` at its next key load once a lock has
+cleared the key session, and a rotating sign at the lock's cut of its key use.
+Ordinary `/sign` and cosigner component signing register no key use, so a
+signature whose key was already decrypted is not stopped: the lock does not
+wait for it, and a request whose last key was already decrypted returns its
+signatures. A session end that comes after an operator
 answered overrides an approval, which could no longer sign, but not a
 rejection, which is recorded as the operator's. One refused at the check after its gates and
 approval passed is audited as `session_ended_after_approval`. A request sent

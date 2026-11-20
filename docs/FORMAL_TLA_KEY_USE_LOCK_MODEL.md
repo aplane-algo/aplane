@@ -24,8 +24,11 @@
 > `key_use_lock_negative_loser.cfg` (`LoserLocks = FALSE`, violates
 > `KU4_NoWipeWhileUnlocked`, 2700 distinct states at depth 10).
 
-Code that holds loaded key material outside an admin session registers a key
-use with `Runtime.KeyUseContext`. For a rotating seed that is every load in
+The holders of loaded key material that register a key use with
+`Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
+table worker) and mnemonic export. Ordinary `/sign`, cosigner component
+signing and assembly hold a decrypted key too but register none (see the
+limits below). For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
 approval; the stage table fill and the release restore use the same identity
@@ -154,6 +157,14 @@ for each.
   cut short (the deriver reports that as `errKeyUseRefused`, decided where the
   window was stopped). `Register`, a held step and `Release` describe them, so
   KU2 covers them without new actions.
+- Ordinary `/sign`, cosigner component signing and assembly are not key uses,
+  and the model does not cover them. Their check after the gates
+  (`Service.beforeExecute` in `internal/signerapp/signing/service.go`; the
+  production `BeforeExecute` hook adds nothing to it) is a moment, not a hold:
+  a lock that begins after it clears the session while a key decrypted before
+  it is still signing, and the request returns that signature. KU2 is about
+  registered key uses only. Making those paths key uses would be an extension
+  of this model.
 - The model takes as given that every load of key material is registered; it
   cannot see a load that is not. For rotating seeds,
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign
