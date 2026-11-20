@@ -338,9 +338,7 @@ func dispatchAdminMessage(t *testing.T, session *Session, msg any) {
 	if err != nil {
 		t.Fatalf("MarshalAdminMessage() error = %v", err)
 	}
-	if !session.Dispatch(data) {
-		t.Fatalf("Dispatch(%T) = false, want true", msg)
-	}
+	session.Dispatch(data)
 }
 
 type adminProtoWrite struct {

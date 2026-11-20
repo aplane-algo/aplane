@@ -19,9 +19,7 @@ func addActiveProductSession(t *testing.T, server *IPCServer) *ipcJSONRecorderCo
 	if !registerPendingSession(server.sessionManager(), session) {
 		t.Fatal("registerPendingSession() = false, want true")
 	}
-	if _, ok := server.sessionManager().PromoteToActive(session); !ok {
-		t.Fatal("PromoteToActive() = false, want true")
-	}
+	server.sessionManager().PromoteToActive(session)
 	return recorder
 }
 

@@ -122,9 +122,6 @@ func TestServiceRequestReportsFullQueueAndHidesOtherFailures(t *testing.T) {
 	if len(logged) == 0 {
 		t.Fatal("storage failure was not logged")
 	}
-	if _, err := (Service{}).Request(key, "", ""); err == nil {
-		t.Fatal("Request() without a queue succeeded")
-	}
 }
 
 // A request that reached the live queue through a write that is not yet

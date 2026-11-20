@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -232,7 +231,7 @@ func (s Service) updateAdminSettingLocked(req adminproto.UpdateAdminSettingReque
 	// edit to another key of the file made while the signer runs stays in
 	// the file and takes effect at the next start. The process-global
 	// config.yaml is never written.
-	saveErr := storemut.New(s.Deps.KeyPaths()).SaveRuntimeSetting(s.Deps.DataDir(), req.Key, saveValue)
+	saveErr := productruntime.SaveStoredSetting(s.Deps.DataDir(), req.Key, saveValue)
 	switch {
 	case saveErr == nil || errors.Is(saveErr, fsutil.ErrPublishedNotDurable):
 		// The new file is in place and is what the next start loads, so

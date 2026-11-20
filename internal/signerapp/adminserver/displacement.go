@@ -14,10 +14,10 @@ import (
 // displace_confirm response. Confirmation only authorizes replacement; the
 // old active session remains the owner until the caller promotes the new
 // session and then calls DisplaceSession.
-func OfferDisplacement(active *Session, newConn adminproto.AdminConn, timeout time.Duration) (confirmed bool, displaced bool) {
-	reject := func() (bool, bool) {
+func OfferDisplacement(newConn adminproto.AdminConn, timeout time.Duration) bool {
+	reject := func() bool {
 		_ = newConn.Close()
-		return false, false
+		return false
 	}
 
 	existsMsg := protocol.ClientExistsMessage{
@@ -55,8 +55,7 @@ func OfferDisplacement(active *Session, newConn adminproto.AdminConn, timeout ti
 	if base.Type != protocol.MsgTypeDisplaceConfirm {
 		return reject()
 	}
-
-	return true, active != nil
+	return true
 }
 
 // DisplaceSession notifies and closes a session after its replacement has

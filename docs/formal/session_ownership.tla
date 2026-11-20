@@ -16,9 +16,8 @@ disconnect defer decides whether an exiting session runs "owner cleanup"
 The safety question this module answers is the one from the fix: because
 unlock happens during authentication, BEFORE the session becomes the
 active owner, any failure between those two points (pending-slot
-contention, displacement rejection, promotion failure, connection drop)
-must not strand the identity unlocked with no session left whose exit
-will re-lock it.
+contention, displacement rejection, connection drop) must not strand
+the identity unlocked with no session left whose exit will re-lock it.
 
 The code's mechanism, modeled here exactly:
 
@@ -157,7 +156,8 @@ PromoteReplace(s) ==
 \* defer in ipc.go handleRegisteredClient: failed auth (default branch) or
 \* login timeout (AuthOutcomeTimedOut: the pre-auth read deadline fires on a
 \* read, so always before any passphrase verifies and nothing is unlocked),
-\* pending-slot or promotion failure (early return while Authed),
+\* pending-slot failure or a refused displacement offer (early returns
+\* while Authed),
 \* displacement close, and plain connection drop. ClearActive removes the
 \* session from the owner slot if it still holds it; owner cleanup (fail
 \* pending approvals + lock under lock_on_disconnect) runs iff the session

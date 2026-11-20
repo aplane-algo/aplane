@@ -120,9 +120,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	if !registerPendingSession(ipcServer.manager, owner) {
 		t.Fatal("registerPendingSession(owner) = false, want true")
 	}
-	if _, ok := ipcServer.manager.PromoteToActive(owner); !ok {
-		t.Fatal("PromoteToActive(owner) = false, want true")
-	}
+	ipcServer.manager.PromoteToActive(owner)
 
 	serverConn, clientConn := net.Pipe()
 	done := make(chan struct{})

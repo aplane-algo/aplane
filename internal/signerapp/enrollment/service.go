@@ -41,9 +41,10 @@ func RequestID(fingerprint string) string {
 
 // Service queues enrollment requests and tells the operator about them.
 type Service struct {
-	// Queue records the request. It reports pending when the request now
-	// waits for the operator and added when it was new rather than a
-	// refresh; pending is false for a key that is already enrolled.
+	// Queue records the request and is required. It reports pending when
+	// the request now waits for the operator and added when it was new
+	// rather than a refresh; pending is false for a key that is already
+	// enrolled.
 	Queue func(key ssh.PublicKey, label, remoteAddr string) (pending, added bool, err error)
 	// Notify tells a connected operator about a new request. It may be nil
 	// and must not block.
@@ -67,15 +68,9 @@ type Service struct {
 // answered with an error so it retries: the retry refreshes the entry and is
 // acknowledged only once the queue is durable.
 func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending bool, err error) {
-	if s.Queue == nil {
-		return false, fmt.Errorf("enrollment queue not configured")
-	}
-	if key == nil {
-		return false, fmt.Errorf("enrollment key is required")
-	}
 	fingerprint := ssh.FingerprintSHA256(key)
 	pending, added, err := s.Queue(key, label, remoteAddr)
-	notDurable := err != nil && errors.Is(err, productruntime.ErrAppliedNotDurable)
+	notDurable := errors.Is(err, productruntime.ErrAppliedNotDurable)
 	if err != nil && !notDurable {
 		if errors.Is(err, enrollqueue.ErrQueueFull) {
 			return false, fmt.Errorf("enrollment queue is full; ask the operator to clear it and try again")

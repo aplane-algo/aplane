@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -69,12 +68,6 @@ func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType s
 	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, keyType, kr, params, activated)
 }
 
-// ImportKeyFromMnemonicWithActivated imports and persists a standard key using
-// the product store's activated compiled key type set.
-func (s *Service) ImportKeyFromMnemonicWithActivated(keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
-	return s.ImportKeyFromMnemonicWithActivatedContext(context.Background(), keyType, mnemonic, kr, params, activated)
-}
-
 // ImportKeyFromMnemonicWithActivatedContext imports and persists a standard key
 // using the product store's activated compiled key type set.
 func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context, keyType, mnemonic string, kr *crypto.Keyring, params map[string]string, activated []string) (*keymgmt.ImportResult, error) {
@@ -100,9 +93,4 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 	}
 	_, err := keygen.SaveNewKey(s.keyPaths, payload, kr)
 	return err
-}
-
-// SaveRuntimeSetting persists a single product-runtime setting.
-func (s *Service) SaveRuntimeSetting(dataDir, key string, value interface{}) error {
-	return productruntime.SaveStoredSetting(dataDir, key, value)
 }

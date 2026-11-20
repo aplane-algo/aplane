@@ -164,7 +164,7 @@ func (q *Queue) WithRequest(key ssh.PublicKey, label, remoteAddr string, now tim
 	if key == nil {
 		return nil, Entry{}, false, fmt.Errorf("enrollment queue: key is required")
 	}
-	out := q.pruned(now)
+	out := q.Pruned(now)
 	fingerprint := ssh.FingerprintSHA256(key)
 	entry = Entry{
 		Key:         key,
@@ -205,10 +205,6 @@ func (q *Queue) WithoutFingerprint(fingerprint string) (*Queue, Entry, error) {
 
 // Pruned returns the queue without entries that lapsed before now.
 func (q *Queue) Pruned(now time.Time) *Queue {
-	return q.pruned(now)
-}
-
-func (q *Queue) pruned(now time.Time) *Queue {
 	out := &Queue{}
 	if q == nil {
 		return out

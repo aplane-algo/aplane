@@ -48,7 +48,9 @@ func (m *SessionManager) BindPreAuthPending(s *Session) (active *Session, ok boo
 	}
 }
 
-func (m *SessionManager) PromoteToActive(s *Session) (replaced *Session, ok bool) {
+// PromoteToActive makes s the active session in one step and returns the
+// session it replaced, if any.
+func (m *SessionManager) PromoteToActive(s *Session) (replaced *Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.pending == s {
@@ -56,7 +58,7 @@ func (m *SessionManager) PromoteToActive(s *Session) (replaced *Session, ok bool
 	}
 	replaced = m.active
 	m.active = s
-	return replaced, true
+	return replaced
 }
 
 func (m *SessionManager) ClearPending(s *Session) {

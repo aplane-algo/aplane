@@ -211,9 +211,11 @@ func setPreAuthReadDeadline(conn adminproto.AdminConn, deadline time.Time) {
 	}
 }
 
-func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newConn adminproto.AdminConn) bool {
-	confirmed, displaced := adminserver.OfferDisplacement(active, newConn, displacementTimeout)
-	if displaced {
+// offerDisplacementSession asks newConn whether to displace the active
+// session; callers offer only while one is active.
+func (s *IPCServer) offerDisplacementSession(newConn adminproto.AdminConn) bool {
+	confirmed := adminserver.OfferDisplacement(newConn, displacementTimeout)
+	if confirmed {
 		logWarnf("existing apadmin client accepted displacement by new connection")
 	}
 	return confirmed
@@ -222,7 +224,6 @@ func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newCon
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps(), adminserver.OriginLocal)
-	session.SetAuthMethod("ipc-passphrase")
 
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session
@@ -238,7 +239,7 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 		return
 	}
 	if active != nil {
-		if !s.offerDisplacementSession(active, adminConn) {
+		if !s.offerDisplacementSession(adminConn) {
 			s.clearPendingSession(session)
 			_ = session.Close()
 			return
@@ -258,7 +259,6 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	defer func() {
 		s.clearPendingSession(session)
 		boundIR := session.BoundRuntime()
-		s.sessionManager().ClearPending(session)
 		wasActiveClient := s.sessionManager().ClearActive(session)
 		_ = session.Close() // Best-effort cleanup
 
@@ -320,16 +320,12 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		return
 	}
 	if active != nil && active != session && active != displacementConfirmedFor {
-		if !s.offerDisplacementSession(active, adminConn) {
+		if !s.offerDisplacementSession(adminConn) {
 			s.sessionManager().ClearPending(session)
 			return
 		}
 	}
-	replaced, ok := s.sessionManager().PromoteToActive(session)
-	if !ok {
-		logWarnf("IPC client could not promote the product session")
-		return
-	}
+	replaced := s.sessionManager().PromoteToActive(session)
 	if replaced != nil && replaced != session {
 		if replacedIR := replaced.BoundRuntime(); replacedIR != nil {
 			replacedIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisplaced)
@@ -358,24 +354,12 @@ func (s *IPCServer) serveAdminMessages(session *adminserver.Session, adminConn a
 		if err != nil {
 			return
 		}
-		serveAdminMessage(session, line)
+		session.Dispatch(line)
 		// The frame may carry a passphrase or a recovery phrase. Handlers
 		// decode what they need into their own buffers, so it is not needed
 		// once the message is handled.
 		protocol.SensitiveBytes(line).Zero()
 	}
-}
-
-func serveAdminMessage(session *adminserver.Session, line []byte) {
-	base, err := protocol.ParseAdminBaseMessage(line)
-	if err != nil {
-		_ = session.SendError("", protocol.ErrCodeInvalidMessageFormat, "invalid message format")
-		return
-	}
-	if session.Dispatch(line) {
-		return
-	}
-	_ = session.SendError(base.ID, protocol.ErrCodeUnknownMessageType, "unknown message type: "+base.Type)
 }
 
 // HasClient returns true if an admin client is connected.

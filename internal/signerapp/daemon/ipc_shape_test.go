@@ -42,8 +42,8 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 		server.adminSessionDeps(),
 		adminserver.OriginLocal,
 	)
-	if ok := session.Authenticate(); ok {
-		t.Fatal("Authenticate() = true, want false for missing kind")
+	if session.AuthenticateOutcome() == adminserver.AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true, want false for missing kind")
 	}
 
 	msgs := recorder.messages(t)
@@ -82,8 +82,8 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 		server.adminSessionDeps(),
 		adminserver.OriginLocal,
 	)
-	if ok := session.Authenticate(); !ok {
-		t.Fatal("Authenticate() = false, want true")
+	if session.AuthenticateOutcome() != adminserver.AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want true")
 	}
 
 	if session.Identity() == nil {
@@ -137,8 +137,8 @@ func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
 		server.adminSessionDeps(),
 		adminserver.OriginLocal,
 	)
-	if ok := session.Authenticate(); ok {
-		t.Fatal("Authenticate() = true after node failure")
+	if session.AuthenticateOutcome() == adminserver.AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true after node failure")
 	}
 	msgs := recorder.messages(t)
 	if len(msgs) != 2 || !reflectJSONSubset(msgs[1], map[string]any{
@@ -377,7 +377,6 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 
 	ipcServer := &IPCServer{signer: server}
 	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.adminSessionDeps(), adminserver.OriginLocal)
-	session.SetAuthMethod("ipc-passphrase")
 	if !ipcServer.sessionManager().RegisterPreAuthPending(session) {
 		t.Fatal("RegisterPreAuthPending() = false, want true")
 	}
@@ -579,4 +578,45 @@ func (c *interleavingRecorderConn) Write(p []byte) (int, error) {
 		time.Sleep(time.Microsecond)
 	}
 	return len(p), nil
+}
+
+// After login every frame is parsed once and answered by its first
+// problem: a frame that is not an admin message, then one that is not a
+// request, then an unknown request type.
+func TestHandleRegisteredClientAnswersBadFramesInOrder(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	frames := "not json\n" +
+		`{"kind":"response","type":"list_keys","id":"req-2"}` + "\n" +
+		`{"kind":"request","type":"definitely_unknown","id":"req-3"}` + "\n"
+	conn := newIPCMockConn(authLine+frames, "unix:/tmp/test-ipc.sock")
+
+	ipcServer := &IPCServer{signer: server}
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn), server.adminSessionDeps(), adminserver.OriginLocal)
+	if !ipcServer.sessionManager().RegisterPreAuthPending(session) {
+		t.Fatal("RegisterPreAuthPending() = false, want true")
+	}
+
+	ipcServer.handleRegisteredClient(session, nil)
+
+	msgs := parseJSONLines(t, conn.writes.Bytes())
+	if len(msgs) < 3 {
+		t.Fatalf("message count = %d, want at least 3", len(msgs))
+	}
+	want := []map[string]any{
+		{"type": protocol.MsgTypeError, "code": protocol.ErrCodeInvalidMessageFormat, "error": "invalid message format"},
+		{"type": protocol.MsgTypeError, "code": protocol.ErrCodeInvalidRequest, "error": "expected request message", "id": "req-2"},
+		{"type": protocol.MsgTypeError, "code": protocol.ErrCodeUnknownMessageType, "error": "unknown message type: definitely_unknown", "id": "req-3"},
+	}
+	got := msgs[len(msgs)-3:]
+	for i := range want {
+		if !reflectJSONSubset(got[i], want[i]) {
+			t.Fatalf("reply %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+	if id, ok := got[0]["id"]; ok && id != "" {
+		t.Fatalf("malformed-frame reply id = %v, want none", id)
+	}
 }

@@ -53,10 +53,10 @@ type SessionContext struct {
 	ApproverPrincipal  SessionPrincipal
 }
 
-func newSessionContext(method string, conn adminproto.AdminConn, origin Origin) SessionContext {
+func newSessionContext(conn adminproto.AdminConn, origin Origin) SessionContext {
 	return SessionContext{
 		SessionID:  newSessionID(),
-		AuthMethod: method,
+		AuthMethod: authMethod,
 		Origin:     origin,
 		RemoteAddr: connRemoteAddr(conn),
 	}

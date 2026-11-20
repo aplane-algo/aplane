@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -112,7 +111,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(paths)
-	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
+	result, err := svc.ImportKeyFromMnemonicWithActivatedContext(context.Background(), "ed25519", testMnemonic, masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
 	}
@@ -179,35 +178,6 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	}
 	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "test.timed-policy.v1" {
 		t.Fatalf("payload = (%q, %q), want canonical generic LogicSig", payload.Category, payload.KeyType)
-	}
-}
-
-func TestSaveProductSettingPersistsRuntimeConfigValue(t *testing.T) {
-	dir := t.TempDir()
-
-	svc := New(utilkeys.NewPaths(dir))
-	if err := svc.SaveRuntimeSetting(dir, "user_auto_approve", true); err != nil {
-		t.Fatalf("SaveRuntimeSetting() error = %v", err)
-	}
-	if err := svc.SaveRuntimeSetting(dir, "passphrase_timeout", "30m"); err != nil {
-		t.Fatalf("SaveRuntimeSetting() error = %v", err)
-	}
-	if err := svc.SaveRuntimeSetting(dir, "theme", "dark"); err != nil {
-		t.Fatalf("SaveRuntimeSetting() error = %v", err)
-	}
-
-	cfg, err := productruntime.LoadStoredConfig(dir)
-	if err != nil {
-		t.Fatalf("LoadStoredConfig() error = %v", err)
-	}
-	if cfg.UserAutoApprove == nil || !*cfg.UserAutoApprove {
-		t.Fatal("user_auto_approve not persisted to product runtime config")
-	}
-	if cfg.PassphraseTimeout != "30m" {
-		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "30m")
-	}
-	if cfg.Theme != "dark" {
-		t.Fatalf("theme = %q, want %q", cfg.Theme, "dark")
 	}
 }
 

@@ -53,21 +53,22 @@ type Session struct {
 	audit              AuthorizationAudit
 	nodeFailure        func() error
 
-	mu                  sync.Mutex
-	state               SessionState
-	authenticatedOnly   bool
-	identity            *auth.Identity
-	bound               *productruntime.Runtime
-	method              string
-	context             SessionContext
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	activeBackupExports map[backupExportAuditKey]struct{}
+	mu                sync.Mutex
+	state             SessionState
+	authenticatedOnly bool
+	identity          *auth.Identity
+	bound             *productruntime.Runtime
+	context           SessionContext
+	ctx               context.Context
+	cancel            context.CancelFunc
+	// activeBackupExports holds the archive file names whose transfer has
+	// been audited and has not reached EOF.
+	activeBackupExports map[string]struct{}
 }
 
-type backupExportAuditKey struct {
-	fileName string
-}
+// authMethod is how every admin session authenticates: a passphrase over the
+// local IPC socket.
+const authMethod = "ipc-passphrase"
 
 // markBackupExportChunk returns true when this successful read starts an
 // unaudited archive transfer. Offset zero explicitly starts a new transfer;
@@ -77,24 +78,22 @@ func (s *Session) markBackupExportChunk(fileName string, offset int64, eof bool)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := backupExportAuditKey{fileName: fileName}
-	_, active := s.activeBackupExports[key]
+	_, active := s.activeBackupExports[fileName]
 	started := offset == 0 || !active
 	if eof {
-		delete(s.activeBackupExports, key)
+		delete(s.activeBackupExports, fileName)
 		return started
 	}
 	if s.activeBackupExports == nil {
-		s.activeBackupExports = make(map[backupExportAuditKey]struct{})
+		s.activeBackupExports = make(map[string]struct{})
 	}
-	s.activeBackupExports[key] = struct{}{}
+	s.activeBackupExports[fileName] = struct{}{}
 	return started
 }
 
 // NewSession creates an admin session on conn. origin says where conn comes
 // from; the recovery-material operations run only for OriginLocal.
 func NewSession(conn adminproto.AdminConn, deps SessionDeps, origin Origin) *Session {
-	method := "ipc-passphrase"
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
 		conn:               conn,
@@ -108,29 +107,35 @@ func NewSession(conn adminproto.AdminConn, deps SessionDeps, origin Origin) *Ses
 		audit:              deps.Audit,
 		nodeFailure:        deps.NodeFailure,
 		state:              StateConnected,
-		method:             method,
-		context:            newSessionContext(method, conn, origin),
+		context:            newSessionContext(conn, origin),
 		ctx:                ctx,
 		cancel:             cancel,
 	}
 }
 
+// authorize answers a request the session may not make with an error and
+// reports whether it may go ahead.
 func (s *Session) authorize(requestID string, action auth.Action, resource auth.Resource) bool {
+	err := s.authorizationRefusal(action, resource)
+	if err != nil {
+		_ = s.SendError(requestID, protocol.CodeForError(err), err.Error())
+	}
+	return err == nil
+}
+
+// authorizationRefusal refuses a session with no bound runtime, and one whose
+// identity the authorizer denies action on resource; a denial is audited. A
+// session bound without an identity is denied by authorizeIdentity.
+func (s *Session) authorizationRefusal(action auth.Action, resource auth.Resource) error {
 	if s.BoundRuntime() == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeNoRuntimeBound, "no product runtime bound to session")
-		return false
+		return protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("no product runtime bound to session"))
 	}
 	identity := s.Identity()
-	if s.authorizer != nil && identity == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeNoRuntimeBound, "no product runtime bound to session")
-		return false
-	}
 	if err := s.authorizeIdentity(identity, action, resource); err != nil {
 		s.logAuthorizationDenied(identity, action, resource, err.Error())
-		_ = s.SendError(requestID, protocol.ErrCodeAuthorizationDenied, "authorization denied")
-		return false
+		return protocol.WithCode(protocol.ErrCodeAuthorizationDenied, errors.New("authorization denied"))
 	}
-	return true
+	return nil
 }
 
 func (s *Session) authorizeIdentity(identity *auth.Identity, action auth.Action, resource auth.Resource) error {
@@ -160,12 +165,6 @@ func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Ac
 		ctx.ApproverPrincipal = principal
 	}
 	s.audit.LogAuthorizationDenied(ctx, action, resource, reason)
-}
-
-// Authenticate performs the current admin passphrase handshake for one
-// session. It preserves the existing auth_required/auth/auth_result flow.
-func (s *Session) Authenticate() bool {
-	return s.AuthenticateOutcome() == AuthOutcomeAuthenticated
 }
 
 // AuthenticateOutcome performs the admin handshake and returns whether the
@@ -260,7 +259,7 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 			continue
 		}
 
-		sessionIdentity := s.productServices.NewSessionIdentity(s.method)
+		sessionIdentity := s.productServices.NewSessionIdentity(authMethod)
 		principal := principalFromIdentity(sessionIdentity)
 		authenticateOnly := base.Type == protocol.MsgTypeAuthOnly
 		if !authenticateOnly {
@@ -295,7 +294,6 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		s.context.AdminPrincipal = principal
 		s.context.RequesterPrincipal = principal
 		s.context.ApproverPrincipal = principal
-		s.context.AuthMethod = s.method
 		s.mu.Unlock()
 		s.sendAuthResult(true, "", "")
 		return AuthOutcomeAuthenticated
@@ -407,12 +405,6 @@ func (s *Session) SessionContext() SessionContext {
 	return cloneSessionContext(s.context)
 }
 
-func (s *Session) SessionID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.context.SessionID
-}
-
 func (s *Session) State() SessionState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -430,15 +422,6 @@ func (s *Session) Bind(identity *auth.Identity, bound *productruntime.Runtime) {
 	s.context.ApproverPrincipal = principal
 	if bound != nil {
 		s.state = StateAuthenticated
-	}
-}
-
-func (s *Session) SetAuthMethod(method string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if method != "" {
-		s.method = method
-		s.context.AuthMethod = method
 	}
 }
 

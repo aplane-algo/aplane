@@ -72,9 +72,8 @@ func (c *displacementTestConn) writeCount() int {
 func TestOfferDisplacementTimeoutClosesNewConnection(t *testing.T) {
 	conn := newDisplacementTestConn()
 
-	confirmed, displaced := OfferDisplacement(nil, conn, 10*time.Millisecond)
-	if confirmed || displaced {
-		t.Fatalf("OfferDisplacement() = (%v, %v), want false, false", confirmed, displaced)
+	if OfferDisplacement(conn, 10*time.Millisecond) {
+		t.Fatal("OfferDisplacement() = true, want false")
 	}
 	if got := conn.writeCount(); got != 1 {
 		t.Fatalf("WriteMessage() calls = %d, want 1", got)
@@ -87,7 +86,7 @@ func TestOfferDisplacementTimeoutClosesNewConnection(t *testing.T) {
 	}
 }
 
-func TestOfferDisplacementConfirmWithoutActiveKeepsConnectionOpen(t *testing.T) {
+func TestOfferDisplacementConfirmKeepsConnectionOpen(t *testing.T) {
 	conn := newDisplacementTestConn()
 	confirm, err := protocol.MarshalAdminMessage(protocol.DisplaceConfirmMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDisplaceConfirm},
@@ -97,14 +96,13 @@ func TestOfferDisplacementConfirmWithoutActiveKeepsConnectionOpen(t *testing.T) 
 	}
 	conn.reads <- displacementTestRead{line: confirm}
 
-	confirmed, displaced := OfferDisplacement(nil, conn, time.Second)
-	if !confirmed || displaced {
-		t.Fatalf("OfferDisplacement() = (%v, %v), want true, false", confirmed, displaced)
+	if !OfferDisplacement(conn, time.Second) {
+		t.Fatal("OfferDisplacement() = false, want true")
 	}
 
 	select {
 	case <-conn.closed:
-		t.Fatal("connection closed after confirmed displacement without active session")
+		t.Fatal("connection closed after confirmed displacement")
 	default:
 	}
 }

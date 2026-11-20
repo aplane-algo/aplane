@@ -66,15 +66,15 @@ func TestSessionManagerPromoteReplaceAndClear(t *testing.T) {
 	if !bindPending(t, manager, first) {
 		t.Fatal("bindPending(first) = false")
 	}
-	replaced, ok := manager.PromoteToActive(first)
-	if !ok || replaced != nil || !manager.HasClient() || manager.ActiveSession() != first {
+	replaced := manager.PromoteToActive(first)
+	if replaced != nil || !manager.HasClient() || manager.ActiveSession() != first {
 		t.Fatal("first promotion did not establish the scalar active slot")
 	}
 	if !bindPending(t, manager, second) {
 		t.Fatal("bindPending(second) = false")
 	}
-	replaced, ok = manager.PromoteToActive(second)
-	if !ok || replaced != first || manager.ActiveSession() != second {
+	replaced = manager.PromoteToActive(second)
+	if replaced != first || manager.ActiveSession() != second {
 		t.Fatal("second promotion did not atomically replace the active session")
 	}
 	if manager.ClearActive(first) || !manager.ClearActive(second) || manager.HasClient() {
@@ -131,8 +131,8 @@ func TestSessionManagerConcurrentOwnershipTransitions(t *testing.T) {
 	if _, ok := manager.BindPreAuthPending(winner); !ok {
 		t.Fatal("BindPreAuthPending(winner) = false, want true")
 	}
-	if replaced, ok := manager.PromoteToActive(winner); !ok || replaced != nil {
-		t.Fatalf("PromoteToActive() = (%p, %v), want (nil, true)", replaced, ok)
+	if replaced := manager.PromoteToActive(winner); replaced != nil {
+		t.Fatalf("PromoteToActive() = %p, want nil", replaced)
 	}
 
 	for _, session := range sessions {

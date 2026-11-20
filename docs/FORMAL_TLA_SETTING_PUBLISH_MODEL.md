@@ -40,10 +40,10 @@ under the store mutation lock:
   marks the setting unsaved before the save starts
   (`RuntimeConfig.SetUnsaved`).
 - `SavePlaced` is the save's rename putting the new file in place
-  (`storemut.SaveRuntimeSetting`), and `Publish` is memory following it with
-  the unsaved mark cleared. A directory flush that fails after the rename
-  (`fsutil.ErrPublishedNotDurable`) leaves the new file in place and takes
-  the same two steps.
+  (`productruntime.SaveStoredSetting`), and `Publish` is memory following it
+  with the unsaved mark cleared. A directory flush that fails after the
+  rename (`fsutil.ErrPublishedNotDurable`) leaves the new file in place and
+  takes the same two steps.
 - `SaveFail` is a save that left the old file in place. A restrictive value
   stays in effect and unsaved, answered `applied_not_saved`
   (`protocol.ResultCodeAppliedNotSaved`); any other value was never

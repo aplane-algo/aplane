@@ -108,11 +108,8 @@ func (fs *Signer) nodeFailure() error {
 // registered after the close pass. A revocation that took effect but is not
 // yet durable still closes the connections and is audited; the durability
 // failure is reported after that.
-func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) (int, error) {
-	if ir == nil {
-		return 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
-	}
-	entry, revoked, err := ir.RevokeAuthorizedKey(fingerprint)
+func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, fingerprint string) (int, error) {
+	entry, revoked, err := fs.productRuntime().RevokeAuthorizedKey(fingerprint)
 	if !revoked {
 		if errors.Is(err, clientregistry.ErrNotEnrolled) {
 			return 0, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("client key %s is not enrolled", fingerprint))
@@ -139,15 +136,12 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, ir *productrun
 // set, replaces the label the client asked for. A key that entered the live
 // registry is audited as enrolled even when the write is not yet durable or
 // the request could not be cleared; that failure is reported on top.
-func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint, label string) (string, error) {
-	if ir == nil {
-		return "", protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
-	}
+func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, fingerprint, label string) (string, error) {
 	label, err := clientregistry.NormalizeLabel(label)
 	if err != nil {
 		return "", protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
-	entry, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, label)
+	entry, enrolled, cleared, err := fs.productRuntime().ApproveEnrollment(fingerprint, label)
 	if enrolled {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
@@ -173,11 +167,8 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, ir *pr
 }
 
 // RejectClientEnrollment drops a waiting request without enrolling its key.
-func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *productruntime.Runtime, fingerprint string) error {
-	if ir == nil {
-		return protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
-	}
-	entry, rejected, err := ir.RejectEnrollment(fingerprint)
+func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, fingerprint string) error {
+	entry, rejected, err := fs.productRuntime().RejectEnrollment(fingerprint)
 	if rejected {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
@@ -208,10 +199,7 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, ir *pro
 // The line follows the registry's rule: this version implements no
 // authorized_keys options, so an option-bearing line (from=, restrict, ...)
 // is refused rather than enrolled without the restriction it asks for.
-func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productruntime.Runtime, publicKey, label string) (string, string, bool, error) {
-	if ir == nil {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
-	}
+func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (string, string, bool, error) {
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
 	if err != nil {
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
@@ -234,7 +222,7 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
-	added, cleared, err := ir.ImportClientKey(key, label)
+	added, cleared, err := fs.productRuntime().ImportClientKey(key, label)
 	if added {
 		if fs.auditLog != nil {
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
@@ -252,19 +240,13 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, ir *productrun
 	if added || cleared {
 		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	}
-	if err != nil {
-		return fingerprint, label, added, err
-	}
-	return fingerprint, label, added, nil
+	return fingerprint, label, added, err
 }
 
 // RevokeAllClientKeys removes every enrolled client key and closes every
 // client connection: the emergency lever.
-func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext, ir *productruntime.Runtime) (int, int, error) {
-	if ir == nil {
-		return 0, 0, protocol.WithCode(protocol.ErrCodeNoRuntimeBound, errors.New("product runtime unavailable"))
-	}
-	entries, revoked, err := ir.RevokeAllAuthorizedKeys()
+func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext) (int, int, error) {
+	entries, revoked, err := fs.productRuntime().RevokeAllAuthorizedKeys()
 	if !revoked {
 		return 0, 0, err
 	}

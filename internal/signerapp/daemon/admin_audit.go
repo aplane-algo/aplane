@@ -19,19 +19,12 @@ import (
 // precondition). TestAdminSessionAuditSatisfiesHandlerProbes pins the full
 // probe set against this type.
 
-func (s signerAdminServices) auditLogger() *AuditLogger {
-	if s.signer == nil {
-		return nil
-	}
-	return s.signer.auditLog
-}
-
 func (s signerAdminServices) LogCredentialRestoreIntentDurableContext(
 	ctx adminserver.SessionContext,
 	operationID, archivePath string,
 	replaceExisting bool,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return fmt.Errorf("%w; refusing restore without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
@@ -44,7 +37,7 @@ func (s signerAdminServices) LogCredentialRestoreContext(
 	ctx adminserver.SessionContext,
 	result adminproto.RestoreBackupResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogCredentialRestoreContext(ctx, result)
 	}
 }
@@ -53,19 +46,19 @@ func (s signerAdminServices) LogCredentialRestoreRollbackContext(
 	ctx adminserver.SessionContext,
 	result adminproto.RollbackRestoreResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogCredentialRestoreRollbackContext(ctx, result)
 	}
 }
 
 func (s signerAdminServices) LogIdentityLockedContext(ctx adminserver.SessionContext, reason string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogIdentityLockedContext(ctx, reason)
 	}
 }
 
 func (s signerAdminServices) LogSettingSaveErrorContext(ctx adminserver.SessionContext, key, value string, inEffect bool, cause string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogSettingSaveErrorContext(ctx, key, value, inEffect, cause)
 	}
 }
@@ -75,7 +68,7 @@ func (s signerAdminServices) LogGenerationQuarantinePruneIntentDurableContext(
 	operationID string,
 	generationIDs []string,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return fmt.Errorf("%w; refusing quarantine prune without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
@@ -87,7 +80,7 @@ func (s signerAdminServices) LogGenerationQuarantinePruneContext(
 	operationID string,
 	result adminproto.PruneGenerationQuarantineResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogGenerationQuarantinePruneContext(ctx, operationID, result)
 	}
 }
@@ -97,7 +90,7 @@ func (s signerAdminServices) LogGenerationAbandonedDiscardIntentDurableContext(
 	operationID string,
 	generationIDs []string,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return fmt.Errorf("%w; refusing abandoned discard without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
@@ -109,7 +102,7 @@ func (s signerAdminServices) LogGenerationAbandonedDiscardContext(
 	operationID string,
 	result adminproto.DiscardAbandonedGenerationsResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogGenerationAbandonedDiscardContext(ctx, operationID, result)
 	}
 }
@@ -119,7 +112,7 @@ func (s signerAdminServices) LogDeletedArchivePruneIntentDurableContext(
 	operationID string,
 	entries []string,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return fmt.Errorf("%w; refusing archive prune without a durable intent record", adminserver.ErrAuditUnavailable)
 	}
@@ -131,49 +124,49 @@ func (s signerAdminServices) LogDeletedArchivePruneContext(
 	operationID string,
 	result adminproto.PruneDeletedArchiveResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogDeletedArchivePruneContext(ctx, operationID, result)
 	}
 }
 
 func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupCreatedContext(ctx, archivePath)
 	}
 }
 
 func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupImportedContext(ctx, fileName, size)
 	}
 }
 
 func (s signerAdminServices) LogBackupExportStartedContext(ctx adminserver.SessionContext, fileName string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupExportStartedContext(ctx, fileName)
 	}
 }
 
 func (s signerAdminServices) LogBackupFailedContext(ctx adminserver.SessionContext, reason string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupFailedContext(ctx, reason)
 	}
 }
 
 func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, archivePath string, keyCount int) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupRestorePreviewedContext(ctx, archivePath, keyCount)
 	}
 }
 
 func (s signerAdminServices) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogBackupRestorePreviewFailedContext(ctx, reason)
 	}
 }
 
 func (s signerAdminServices) LogCosignerReferenceChangedContext(ctx adminserver.SessionContext, action, name, componentKey string, success bool) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogCosignerReferenceChangedContext(ctx, action, name, componentKey, success)
 	}
 }
@@ -186,7 +179,7 @@ func (s signerAdminServices) LogPolicyApplyIntentDurableContext(
 	operationID string,
 	req adminproto.ApplyPolicyRequest,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return adminserver.ErrAuditUnavailable
 	}
@@ -198,7 +191,7 @@ func (s signerAdminServices) LogPolicyApplyResultContext(
 	operationID string,
 	result adminproto.ApplyPolicyResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogPolicyApplyResultContext(ctx, operationID, result)
 	}
 }
@@ -208,7 +201,7 @@ func (s signerAdminServices) LogASASetUpdateIntentDurableContext(
 	operationID, action, network, genesisHash string,
 	assetID uint64,
 ) error {
-	audit := s.auditLogger()
+	audit := s.signer.auditLog
 	if audit == nil {
 		return adminserver.ErrAuditUnavailable
 	}
@@ -221,7 +214,7 @@ func (s signerAdminServices) LogASASetAddResultContext(
 	req adminproto.AddASARequest,
 	result adminproto.AddASAResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogASASetAddResultContext(ctx, operationID, req, result)
 	}
 }
@@ -232,7 +225,7 @@ func (s signerAdminServices) LogASASetRemoveResultContext(
 	req adminproto.RemoveASARequest,
 	result adminproto.RemoveASAResult,
 ) {
-	if audit := s.auditLogger(); audit != nil {
+	if audit := s.signer.auditLog; audit != nil {
 		audit.LogASASetRemoveResultContext(ctx, operationID, req, result)
 	}
 }

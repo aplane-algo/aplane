@@ -1577,11 +1577,11 @@ authorization: generation repeats every check.
 
 | Step | Work | Owner |
 |---|---|---|
-| 1 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
-| 2 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key`, with `cosigner_key_type` when its type is not the default, for a key type that takes a cosigner of the reference's type | `lsigprovider.CosignerComponentKeyTypes`, `cosignerrefs` |
-| 3 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values | `lsigprovider.ResolveInstance` |
-| 4 | Collect the provider's warnings | `lsigprovider.CreationAdvisor` |
-| 5 | Take the mutation lock and refuse a locked signer. Check the key type is enabled, then the signer's generation settings. Then check the request against the keys this signer holds: refuse a rekey-to list that names a rotating account held here, and add a warning for a cosigner key held here | `lockUnlockedMutation`, `keytypestate.CanGenerate`, `checkGenerationRequirements`, `checkAgainstHeldKeys` |
+| 1 | Take the mutation lock and refuse a locked signer. Template changes take the same lock, so every later step judges the definition in force | `lockUnlockedMutation` |
+| 2 | Check the key type is allowed for the node role | `keyclass.ValidateKeyTypeAllowedForNodeRole` |
+| 3 | Resolve rotating network names, and turn a `cosigner` reference into `cosigner_public_key`, with `cosigner_key_type` when its type is not the default, for a key type that takes a cosigner of the reference's type | `lsigprovider.CosignerComponentKeyTypes`, `cosignerrefs` |
+| 4 | Select the instance the parameters ask for and canonicalize them, including sorting `address[]` values, and collect the provider's warnings | `lsigprovider.ResolveInstance`, `lsigprovider.CreationAdvisor` |
+| 5 | Check the key type is enabled, then the signer's generation settings. Then check the request against the keys this signer holds: refuse a rekey-to list that names a rotating account held here, and add a warning for a cosigner key held here | `keytypestate.CanGenerate`, `checkGenerationRequirements`, `checkAgainstHeldKeys` |
 | 6 | Branch: generic LogicSigs go to `Service.GenerateGenericLSig`; everything else continues below | `genericlsig.IsGenericLSigType` |
 | 7 | Choose the family generator | `keymgmt.GenerateKeyWithActivatedContext`, `keygen.GetGenerator` |
 
