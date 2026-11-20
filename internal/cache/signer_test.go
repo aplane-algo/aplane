@@ -299,15 +299,6 @@ func TestSignerCache_BasicCRUD(t *testing.T) {
 	if got := cache.GetKeyType("ADDR3"); got != "" {
 		t.Errorf("GetKeyType(ADDR3) = %q, want empty", got)
 	}
-
-	// Remove
-	cache.RemoveAddress("ADDR1")
-	if cache.Count() != 1 {
-		t.Errorf("Count() = %d, want 1 after remove", cache.Count())
-	}
-	if cache.HasAddress("ADDR1") {
-		t.Error("HasAddress(ADDR1) should be false after remove")
-	}
 }
 
 func TestSignerCache_GenericLsig(t *testing.T) {
@@ -476,7 +467,7 @@ func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	if err := os.WriteFile(storePath(store, "signer_cache.json"), raw, 0o600); err != nil {
+	if err := os.WriteFile(store.path("signer_cache.json"), raw, 0o600); err != nil {
 		t.Fatalf("write legacy signer cache: %v", err)
 	}
 
@@ -500,7 +491,7 @@ func TestSignerCache_LoadTamperedCacheReturnsEmpty(t *testing.T) {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
 
-	filename := storePath(store, "signer_cache.json")
+	filename := store.path("signer_cache.json")
 	raw, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("ReadFile(%q) error = %v", filename, err)

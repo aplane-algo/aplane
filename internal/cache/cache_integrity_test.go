@@ -82,7 +82,7 @@ func TestGetOrCreateCacheKeyConcurrentBootstrapUsesSingleKey(t *testing.T) {
 			t.Fatalf("worker %d key differs from worker 0", i)
 		}
 	}
-	diskKey, err := os.ReadFile(storePath(store, ".cache_key"))
+	diskKey, err := os.ReadFile(store.path(".cache_key"))
 	if err != nil {
 		t.Fatalf("ReadFile(.cache_key) error = %v", err)
 	}
@@ -93,10 +93,10 @@ func TestGetOrCreateCacheKeyConcurrentBootstrapUsesSingleKey(t *testing.T) {
 
 func TestCreateCacheKeyFileAtomicallyDoesNotOverwriteExistingKey(t *testing.T) {
 	store := NewStore(t.TempDir())
-	if err := os.MkdirAll(cacheDir(store), 0o750); err != nil {
+	if err := os.MkdirAll(store.dir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	keyFile := storePath(store, ".cache_key")
+	keyFile := store.path(".cache_key")
 	existing := bytes.Repeat([]byte{7}, 32)
 	if err := os.WriteFile(keyFile, existing, 0o600); err != nil {
 		t.Fatalf("WriteFile(.cache_key) error = %v", err)
@@ -120,10 +120,10 @@ func TestCreateCacheKeyFileAtomicallyDoesNotOverwriteExistingKey(t *testing.T) {
 
 func TestGetOrCreateCacheKeyRejectsInvalidLength(t *testing.T) {
 	store := NewStore(t.TempDir())
-	if err := os.MkdirAll(cacheDir(store), 0o750); err != nil {
+	if err := os.MkdirAll(store.dir(), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(storePath(store, ".cache_key"), []byte("short"), 0o600); err != nil {
+	if err := os.WriteFile(store.path(".cache_key"), []byte("short"), 0o600); err != nil {
 		t.Fatalf("WriteFile(.cache_key) error = %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestGetOrCreateCacheKeyRejectsInvalidLength(t *testing.T) {
 
 func TestSaveAndLoadSignedCacheRoundTrip(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "roundtrip.json")
+	filename := store.path("roundtrip.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -168,7 +168,7 @@ func TestSaveAndLoadSignedCacheRoundTrip(t *testing.T) {
 
 func TestSaveSignedCacheWritesPayloadSchemaVersion(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "versioned.json")
+	filename := store.path("versioned.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -210,7 +210,7 @@ func TestSaveSignedCacheWritesPayloadSchemaVersion(t *testing.T) {
 
 func TestLoadSignedCacheRejectsMissingPayloadSchema(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "legacy-versioned.json")
+	filename := store.path("legacy-versioned.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -238,7 +238,7 @@ func TestLoadSignedCacheRejectsMissingPayloadSchema(t *testing.T) {
 
 func TestLoadSignedCacheRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "future-envelope.json")
+	filename := store.path("future-envelope.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -270,7 +270,7 @@ func TestLoadSignedCacheRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 
 func TestLoadSignedCacheRejectsUnsupportedPayloadSchemaVersion(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "future-payload.json")
+	filename := store.path("future-payload.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestLoadSignedCacheRejectsUnsupportedPayloadSchemaVersion(t *testing.T) {
 
 func TestLoadSignedCacheRejectsTampering(t *testing.T) {
 	store := NewStore(t.TempDir())
-	filename := storePath(store, "tampered.json")
+	filename := store.path("tampered.json")
 
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
@@ -400,10 +400,10 @@ func TestTamperedCacheLogsAWarning(t *testing.T) {
 	store := NewStore(t.TempDir())
 	aliases := LoadAliasCacheFromStore(store)
 	aliases.Aliases["a"] = "b"
-	if err := aliases.SaveCache(); err != nil {
-		t.Fatalf("SaveCache() error = %v", err)
+	if err := aliases.SaveCacheLocked(); err != nil {
+		t.Fatalf("SaveCacheLocked() error = %v", err)
 	}
-	filename := storePath(store, "alias_cache.json")
+	filename := store.path("alias_cache.json")
 	raw, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("ReadFile(%q) error = %v", filename, err)

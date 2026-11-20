@@ -43,10 +43,6 @@ type cachePayloadVersioner interface {
 	supportedCachePayloadSchemaVersion() int
 }
 
-func storePath(store *Store, filename string) string {
-	return store.path(filename)
-}
-
 // SignedCache represents cache data with HMAC signature.
 type SignedCache struct {
 	Version int    `json:"version"`
@@ -54,12 +50,8 @@ type SignedCache struct {
 	HMAC    string `json:"hmac"`
 }
 
-func cacheDir(store *Store) string {
-	return store.dir()
-}
-
 func getOrCreateCacheKey(store *Store) ([]byte, error) {
-	keyFile := storePath(store, ".cache_key")
+	keyFile := store.path(".cache_key")
 
 	key, err := readCacheKeyFile(keyFile)
 	if err == nil {
@@ -74,7 +66,7 @@ func getOrCreateCacheKey(store *Store) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate cache key: %w", err)
 	}
 
-	if err := fsutil.MkdirAll(cacheDir(store)); err != nil {
+	if err := fsutil.MkdirAll(store.dir()); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -201,8 +193,8 @@ func saveSignedCacheWithoutClientLock(store *Store, filePath string, data interf
 }
 
 func ensureCacheDir(store *Store) error {
-	if err := fsutil.MkdirAll(cacheDir(store)); err != nil {
-		return fmt.Errorf("failed to create cache directory %s: %w", cacheDir(store), err)
+	if err := fsutil.MkdirAll(store.dir()); err != nil {
+		return fmt.Errorf("failed to create cache directory %s: %w", store.dir(), err)
 	}
 	return nil
 }
@@ -237,8 +229,8 @@ func saveSignedCacheWithKey(store *Store, filePath string, data interface{}) err
 	save := func() error {
 		return saveSignedCacheWithoutClientLock(store, filePath, data)
 	}
-	if store != nil && store.clientDataDir() != "" {
-		return clientdata.WithExclusiveLock(store.clientDataDir(), save)
+	if store != nil {
+		return clientdata.WithExclusiveLock(store.dataDir, save)
 	}
 	return save()
 }
@@ -279,7 +271,6 @@ func LoadSignedCache(filePath string, key []byte, target interface{}) error {
 	if err := json.Unmarshal(dataBytes, target); err != nil {
 		return fmt.Errorf("failed to unmarshal cache data: %w", err)
 	}
-	ensureCachePayloadSchemaVersion(target)
 	return nil
 }
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/refname"
 )
 
@@ -26,9 +25,7 @@ type AliasMutationResult struct {
 func (s *State) RefreshAuthAddressWithContext(ctx context.Context, addr string) (string, error) {
 	var authAddr string
 	err := s.WithExclusiveLock(func() error {
-		if s.DataDir != "" {
-			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
-		}
+		s.ReloadAuthCache()
 		var err error
 		authAddr, err = s.AuthCache.RefreshAuthAddressWithContext(ctx, s.AlgodClient, addr, s.Network)
 		return err
@@ -94,9 +91,7 @@ func (s *State) AddAliasWithContext(ctx context.Context, name, address string) (
 		if err != nil {
 			return nil
 		}
-		if s.DataDir != "" {
-			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
-		}
+		s.ReloadAuthCache()
 		if err := s.AuthCache.UpdateAuthAddress(address, acctInfo.AuthAddr, s.Network); err != nil {
 			if rollbackErr := restoreAlias(); rollbackErr != nil {
 				return fmt.Errorf("failed to update auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
@@ -114,12 +109,6 @@ func (s *State) AddAliasWithContext(ctx context.Context, name, address string) (
 	if err != nil {
 		return nil, err
 	}
-
-	if result.WasUpdated && result.OldAddress == address {
-		result.WasUpdated = false
-		result.OldAddress = ""
-	}
-
 	return result, nil
 }
 
@@ -151,9 +140,7 @@ func (s *State) RemoveAlias(name string) (string, bool, error) {
 		if err := s.AliasCache.SaveCacheLocked(); err != nil {
 			return err
 		}
-		if s.DataDir != "" {
-			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
-		}
+		s.ReloadAuthCache()
 		return s.AuthCache.PruneToOwnedAddresses(s.ownedAuthAddresses(), s.Network)
 	})
 	if err != nil {

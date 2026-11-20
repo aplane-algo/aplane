@@ -18,6 +18,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -555,5 +556,70 @@ func TestSignerCacheAcceptsTheKeysContractFixtures(t *testing.T) {
 	}
 	if found == 0 {
 		t.Fatal("no /keys contract fixtures found")
+	}
+}
+
+// PopulateSignerCache replaces every per-address entry the cache held and
+// clears Locked, keeping the store it is bound to.
+func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
+	state := newTestState(t)
+	state.SignerCache.Keys = map[string]string{"OLD": "ed25519"}
+	state.SignerCache.GenericLsigs = map[string]bool{"OLD": true}
+	state.SignerCache.LogicSigResources = map[string]lsigresource.Profile{"OLD": {ProgramBytes: 1}}
+	state.SignerCache.SigningArgs = map[string][]cache.SigningArgInfo{"OLD": {{Name: "x"}}}
+	state.SignerCache.SigningFlows = map[string]string{"OLD": "cosigned1"}
+	state.SignerCache.CosignerComponentKeyTypes = map[string]string{"OLD": "t"}
+	state.SignerCache.CosignerPublicKeys = map[string]string{"OLD": "ab"}
+	state.SignerCache.BoundedMaxFees = map[string]uint64{"OLD": 7}
+	state.SignerCache.BoundedContracts = map[string]string{"OLD": "plain1"}
+	state.SignerCache.Locked = true
+
+	maxFee := uint64(5000)
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address:       "NEW",
+		KeyType:       "aplane.falcon1024.v1",
+		IsGenericLsig: true,
+		SigningFlow:   "cosigned1",
+		SigningArgs:   []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}},
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: "bounded2",
+			MaxFee:   &maxFee,
+		},
+	}}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	if state.SignerCache.Locked {
+		t.Fatal("Locked = true after populate, want false")
+	}
+	got, err := json.Marshal(state.SignerCache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"schema_version":3,"keys":{"NEW":"aplane.falcon1024.v1"},"generic_lsigs":{"NEW":true},"signing_args":{"NEW":[{"name":"secret","type":"bytes","required":true}]},"signing_flows":{"NEW":"cosigned1"},"bounded_max_fees":{"NEW":5000},"bounded_contracts":{"NEW":"bounded2"}}`
+	if string(got) != want {
+		t.Fatalf("signer cache after populate\n got: %s\nwant: %s", got, want)
+	}
+
+	if err := state.SaveSignerCacheLocked(); err != nil {
+		t.Fatalf("SaveSignerCacheLocked() error = %v", err)
+	}
+	if reloaded := cache.LoadSignerCacheFromStore(state.CacheStore); reloaded.GetKeyType("NEW") != "aplane.falcon1024.v1" || reloaded.HasAddress("OLD") {
+		t.Fatalf("reloaded keys = %v, want only NEW", reloaded.Keys)
+	}
+}
+
+func TestAddAliasRefusesAnAddressAsAName(t *testing.T) {
+	state := newTestState(t)
+	name := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	target := "7777777777777777777777777777777777777777777777777774MSJUVU"
+	for _, input := range []string{name, strings.ToLower(name)} {
+		_, err := state.AddAliasWithContext(context.Background(), input, target)
+		if err == nil || !strings.Contains(err.Error(), "is an Algorand address") {
+			t.Fatalf("AddAliasWithContext(%q) error = %v, want the address-name refusal", input, err)
+		}
+	}
+	state.ReloadAliasCache()
+	if len(state.AliasCache.Aliases) != 0 {
+		t.Fatalf("aliases = %v, want none", state.AliasCache.Aliases)
 	}
 }

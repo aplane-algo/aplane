@@ -38,15 +38,10 @@ func LoadSetCacheFromStore(store *Store) SetCache {
 	return cache
 }
 
-// SaveCache saves the set cache to disk with HMAC signature
-func (cache *SetCache) SaveCache() error {
-	return saveSignedCacheWithKey(cache.store, storePath(cache.store, "set_cache.json"), cache)
-}
-
 // SaveCacheLocked saves the set cache while the caller already holds the
 // APCLIENT_DATA mutation lock.
 func (cache *SetCache) SaveCacheLocked() error {
-	return saveSignedCacheWithoutClientLock(cache.store, storePath(cache.store, "set_cache.json"), cache)
+	return saveSignedCacheWithoutClientLock(cache.store, cache.store.path("set_cache.json"), cache)
 }
 
 // GetSet returns the addresses in a set

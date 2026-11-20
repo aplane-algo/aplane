@@ -123,14 +123,14 @@ func TestApplyInputModeTransforms_RejectsClientAliasesAndSets(t *testing.T) {
 
 	aliasCache := cache.LoadAliasCacheFromStore(store)
 	aliasCache.Aliases["alice"] = addr1
-	if err := aliasCache.SaveCache(); err != nil {
-		t.Fatalf("SaveCache(alias) returned error: %v", err)
+	if err := aliasCache.SaveCacheLocked(); err != nil {
+		t.Fatalf("SaveCacheLocked(alias) returned error: %v", err)
 	}
 
 	setCache := cache.LoadSetCacheFromStore(store)
 	setCache.Sets["friends"] = []string{addr2, addr3}
-	if err := setCache.SaveCache(); err != nil {
-		t.Fatalf("SaveCache(set) returned error: %v", err)
+	if err := setCache.SaveCacheLocked(); err != nil {
+		t.Fatalf("SaveCacheLocked(set) returned error: %v", err)
 	}
 
 	m := Model{
