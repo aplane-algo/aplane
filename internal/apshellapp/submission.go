@@ -181,8 +181,8 @@ var ErrUncheckedPluginGroup = errors.New("internal error: the plugin group was n
 
 // CheckPluginGroup decodes a plugin result for its group mode and applies the
 // rekey rule. It is the one decode of a plugin result: the review and
-// submission both use the group it returns. A result with localSigners, or
-// with a mode it does not know, is refused before anything is decoded. A
+// submission both use the group it returns. A result with a mode it does not
+// know is refused before anything is decoded. A
 // pregrouped-signed group for a review that cannot ask the user is refused
 // once decoded, before any key list is fetched: it could never be submitted.
 // So is a group the step's arg: words cannot be given to: a pregrouped-signed
@@ -206,10 +206,6 @@ var ErrUncheckedPluginGroup = errors.New("internal error: the plugin group was n
 func (a *App) CheckPluginGroup(ctx context.Context, result *jsonrpc.ExecuteResult, opts PluginCheckOptions) (*PluginGroup, error) {
 	if result == nil {
 		return nil, fmt.Errorf("plugin returned no result")
-	}
-	if len(result.LocalSigners) > 0 {
-		return nil, fmt.Errorf("plugin localSigners are not supported; use groupMode %q or %q",
-			jsonrpc.GroupModePresignPlan, jsonrpc.GroupModePregroupedSigned)
 	}
 	group := &PluginGroup{
 		mode:             result.GroupMode,

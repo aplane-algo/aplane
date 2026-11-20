@@ -297,6 +297,43 @@ func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 	}
 }
 
+// initialize carries the network and its algod, and an indexerUrl that is
+// always present and empty.
+func TestInitializePluginSendsTheRuntimeConfig(t *testing.T) {
+	params := make(chan string, 1)
+	inst := newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
+		raw, _ := json.Marshal(req["params"])
+		params <- string(raw)
+		return map[string]interface{}{
+			"jsonrpc": jsonrpc.Version,
+			"id":      req["id"],
+			"result":  map[string]interface{}{"success": true, "protocol": jsonrpc.PluginProtocol},
+		}
+	})
+	defer inst.Stop()
+
+	cfg := runtimeConfig{network: "localnet", algodURL: "http://localhost:4001", algodToken: "tok"}
+	if err := NewManagerWithDataDir("").initializePlugin(inst, cfg); err != nil {
+		t.Fatalf("initializePlugin() error = %v", err)
+	}
+	const want = `{"algodToken":"tok","algodUrl":"http://localhost:4001","indexerUrl":"","network":"localnet"}`
+	if got := <-params; got != want {
+		t.Fatalf("initialize params = %s, want %s", got, want)
+	}
+}
+
+func TestCallTimeoutIsTheManifestsOrThirtySeconds(t *testing.T) {
+	for _, tc := range []struct {
+		seconds int
+		want    time.Duration
+	}{{0, 30 * time.Second}, {5, 5 * time.Second}} {
+		inst := &Instance{Plugin: &discovery.Plugin{Manifest: &manifest.Manifest{Timeout: tc.seconds}}}
+		if got := callTimeout(inst); got != tc.want {
+			t.Errorf("callTimeout(manifest timeout %d) = %v, want %v", tc.seconds, got, tc.want)
+		}
+	}
+}
+
 func newTestPluginInstance(t *testing.T) *Instance {
 	t.Helper()
 

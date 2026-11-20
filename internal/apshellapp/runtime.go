@@ -212,21 +212,14 @@ func (a *App) CompleterDeps() CompleterDeps {
 	}
 }
 
-// ConfigurePlugins updates plugin runtime configuration for the currently selected network.
-func (a *App) ConfigurePlugins() error {
-	if a == nil || a.Plugins == nil {
-		return nil
+// ConfigurePlugins gives plugins the current network and its algod settings,
+// empty when config.yaml has none for it.
+func (a *App) ConfigurePlugins() {
+	var algodURL, algodToken string
+	if cfg, err := a.Config.GetAlgodConfig(a.Network()); err == nil {
+		algodURL, algodToken = cfg.Server, cfg.Token
 	}
-
-	algodURL := ""
-	algodToken := ""
-	if cfg, err := a.Config.GetAlgodConfig(a.Network()); err == nil && cfg != nil {
-		algodURL = cfg.Server
-		algodToken = cfg.Token
-	}
-
-	a.Plugins.SetConfig(a.Network(), algodURL, algodToken, "")
-	return nil
+	a.Plugins.SetConfig(a.Network(), algodURL, algodToken)
 }
 
 // Balance returns balance information for one resolved address or alias.

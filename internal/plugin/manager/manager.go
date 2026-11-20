@@ -75,7 +75,6 @@ type Manager struct {
 	network    string
 	algodURL   string
 	algodToken string
-	indexerURL string
 
 	// dataDir is the apshell data dir; per-plugin state directories live under
 	// dataDir/plugin-state/<name>. Empty disables persistent plugin state.
@@ -89,7 +88,6 @@ type runtimeConfig struct {
 	network    string
 	algodURL   string
 	algodToken string
-	indexerURL string
 }
 
 // TestHooks provides narrow manager hooks for package-external tests.
@@ -190,13 +188,12 @@ func NewTestInstanceForHooks(
 }
 
 // SetConfig configures the manager
-func (m *Manager) SetConfig(network, algodURL, algodToken, indexerURL string) {
+func (m *Manager) SetConfig(network, algodURL, algodToken string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.network = network
 	m.algodURL = algodURL
 	m.algodToken = algodToken
-	m.indexerURL = indexerURL
 }
 
 // DiscoverPluginsCached returns cached plugin list, discovering if needed.
@@ -355,7 +352,9 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		fmt.Sprintf("APSHELL_NETWORK=%s", cfg.network),
 		fmt.Sprintf("APSHELL_ALGOD_URL=%s", cfg.algodURL),
 		fmt.Sprintf("APSHELL_ALGOD_TOKEN=%s", cfg.algodToken),
-		fmt.Sprintf("APSHELL_INDEXER_URL=%s", cfg.indexerURL),
+		// apshell has no indexer to give; set empty, as initialize's
+		// indexerUrl is, so a plugin reads "" rather than nothing.
+		"APSHELL_INDEXER_URL=",
 		"APSHELL_PLUGIN=1",
 	)
 	if stateDir != "" {
@@ -440,16 +439,10 @@ func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error 
 		Network:    cfg.network,
 		AlgodURL:   cfg.algodURL,
 		AlgodToken: cfg.algodToken,
-		IndexerURL: cfg.indexerURL,
 	}
 
 	var result jsonrpc.InitializeResult
-	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-
-	err := instance.Client.CallWithTimeout(jsonrpc.MethodInitialize, params, &result, timeout)
+	err := instance.Client.CallWithTimeout(jsonrpc.MethodInitialize, params, &result, callTimeout(instance))
 	if err != nil {
 		return err
 	}
@@ -471,7 +464,6 @@ func (m *Manager) configSnapshot() runtimeConfig {
 		network:    m.network,
 		algodURL:   m.algodURL,
 		algodToken: m.algodToken,
-		indexerURL: m.indexerURL,
 	}
 }
 
@@ -592,11 +584,7 @@ func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string
 // it within abandonGrace rather than waiting for it to finish what it was
 // asked.
 func (m *Manager) call(ctx context.Context, pluginName string, instance *Instance, method string, params, result interface{}) error {
-	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-	err := instance.Client.CallContext(ctx, method, params, result, timeout)
+	err := instance.Client.CallContext(ctx, method, params, result, callTimeout(instance))
 	if err == nil {
 		return nil
 	}
@@ -607,6 +595,16 @@ func (m *Manager) call(ctx context.Context, pluginName string, instance *Instanc
 		m.discardInstance(pluginName, instance)
 	}
 	return err
+}
+
+// callTimeout bounds one call to instance: its manifest's timeout, or 30
+// seconds when the manifest sets none. A loaded manifest always has one; a
+// manifest built in code may not.
+func callTimeout(instance *Instance) time.Duration {
+	if instance.Plugin.Manifest.Timeout == 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
 }
 
 // SignTransactions asks a running plugin to sign the canonical bytes for the slots

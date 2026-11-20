@@ -4,12 +4,7 @@
 // Package jsonrpc defines the methods and types for plugin communication
 package jsonrpc
 
-import (
-	"encoding/json"
-	"fmt"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
-)
+import "github.com/algorand/go-algorand-sdk/v2/types"
 
 // Standard methods that all plugins must implement
 const (
@@ -39,7 +34,7 @@ type InitializeParams struct {
 	Network    string `json:"network"`    // Network context token
 	AlgodURL   string `json:"algodUrl"`   // Algorand node API URL
 	AlgodToken string `json:"algodToken"` // Algod API token (empty for public nodes)
-	IndexerURL string `json:"indexerUrl"` // Indexer URL if available
+	IndexerURL string `json:"indexerUrl"` // Always empty: apshell has no indexer to give
 }
 
 // InitializeResult returned from plugin initialization
@@ -98,10 +93,6 @@ type ExecuteResult struct {
 	Presentation     *Presentation       `json:"presentation,omitempty"`
 	RequiresApproval bool                `json:"requiresApproval,omitempty"`
 	Continuation     *Continuation       `json:"continuation,omitempty"` // For multi-step workflows
-	// LocalSigners is an unsupported secret-bearing field from a removed plugin
-	// signing design. It is retained only so hosts can fail closed when a plugin
-	// returns the field instead of silently ignoring secret-bearing input.
-	LocalSigners []json.RawMessage `json:"localSigners,omitempty"`
 
 	// PluginSigners declares slots the plugin owns but will sign itself, by
 	// reference, in the pre-sign planning flow (GroupModePresignPlan). APlane never
@@ -207,27 +198,6 @@ type PluginSigner struct {
 	PQScheme string `json:"pqScheme,omitempty"`
 }
 
-// UnmarshalJSON rejects the retired scalar LogicSig size declaration. Protocol
-// 1.0 plugins could otherwise echo the host-provided handshake version and have
-// encoding/json silently discard lsigSize, producing an under-budgeted group.
-func (s *PluginSigner) UnmarshalJSON(data []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	if _, retired := fields["lsigSize"]; retired {
-		return fmt.Errorf("plugin signer field %q is unsupported by plugin protocol %s; use %q", "lsigSize", PluginProtocol, "lsigResources")
-	}
-
-	type wire PluginSigner
-	var decoded wire
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	*s = PluginSigner(decoded)
-	return nil
-}
-
 // PluginLogicSigResources keeps the three v42 consensus resources separate.
 // MaxOpcodeCost is a reviewed worst-case ceiling for the selected path, not a
 // value sampled from one execution.
@@ -274,97 +244,4 @@ type ShutdownParams struct{}
 type ShutdownResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
-}
-
-// Callback method names reserved for plugin-initiated requests. The production
-// manager currently installs no handler, so inbound requests fail closed with
-// method-not-found unless a host explicitly wires one.
-const (
-	CallbackGetAccount   = "getAccount"
-	CallbackListAccounts = "listAccounts"
-	CallbackGetBalance   = "getBalance"
-	CallbackGetAssetInfo = "getAssetInfo"
-	CallbackGetAppInfo   = "getAppInfo"
-	CallbackLog          = "log"
-)
-
-// GetAccountParams for account info callback
-type GetAccountParams struct {
-	Address string `json:"address"`
-}
-
-// GetAccountResult returns account information
-type GetAccountResult struct {
-	Address string          `json:"address"`
-	Balance uint64          `json:"balance"`
-	Assets  []AssetHolding  `json:"assets,omitempty"`
-	Apps    []AppLocalState `json:"apps,omitempty"`
-}
-
-// ListAccountsParams for account listing callback.
-type ListAccountsParams struct{}
-
-// ListAccountsResult returns all accounts available to the plugin host.
-type ListAccountsResult struct {
-	Accounts []string `json:"accounts"`
-}
-
-// AssetHolding represents an asset holding
-type AssetHolding struct {
-	AssetID  uint64 `json:"assetId"`
-	Amount   uint64 `json:"amount"`
-	IsFrozen bool   `json:"isFrozen"`
-}
-
-// AppLocalState represents local app state
-type AppLocalState struct {
-	AppID     uint64                 `json:"appId"`
-	KeyValues map[string]interface{} `json:"keyValues"`
-}
-
-// GetBalanceParams for balance query
-type GetBalanceParams struct {
-	Address string `json:"address"`
-	AssetID uint64 `json:"assetId,omitempty"` // 0 for ALGO
-}
-
-// GetBalanceResult returns balance
-type GetBalanceResult struct {
-	Balance uint64 `json:"balance"`
-}
-
-// GetAssetInfoParams for ASA metadata lookup.
-type GetAssetInfoParams struct {
-	AssetID uint64 `json:"assetId"`
-}
-
-// GetAssetInfoResult returns ASA metadata.
-type GetAssetInfoResult struct {
-	AssetID  uint64 `json:"assetId"`
-	Name     string `json:"name,omitempty"`
-	UnitName string `json:"unitName,omitempty"`
-	Decimals uint64 `json:"decimals"`
-}
-
-// GetAppInfoParams for application metadata lookup.
-type GetAppInfoParams struct {
-	AppID uint64 `json:"appId"`
-}
-
-// GetAppInfoResult returns application metadata.
-type GetAppInfoResult struct {
-	AppID       uint64                 `json:"appId"`
-	Creator     string                 `json:"creator,omitempty"`
-	GlobalState map[string]interface{} `json:"globalState,omitempty"`
-}
-
-// LogParams for logging callback
-type LogParams struct {
-	Level   string `json:"level"` // debug, info, warn, error
-	Message string `json:"message"`
-}
-
-// LogResult confirms log received
-type LogResult struct {
-	Success bool `json:"success"`
 }

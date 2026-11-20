@@ -14,7 +14,7 @@ import (
 
 // PluginRuntime is the narrow application-facing plugin boundary.
 type PluginRuntime interface {
-	SetConfig(network, algodURL, algodToken, indexerURL string)
+	SetConfig(network, algodURL, algodToken string)
 	DiscoverPluginsCached() ([]*discovery.Plugin, error)
 	FindByCommand(command string) (*discovery.Plugin, error)
 	FindByName(name string) (*discovery.Plugin, error)

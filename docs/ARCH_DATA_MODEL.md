@@ -1172,7 +1172,7 @@ These decisions are part of the current data model and contract surface:
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
-| Plugin manifest schema 2.0 is command-only. | `functions` and `protocol_version` are rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
+| Plugin manifest schema 2.0 is command-only. | Commands are the only executable surface, and unknown fields are ignored; plugin JSON-RPC protocol and manifest schema are separate models. |
 | Template `ReloadReport` is a reload projection. | It verifies product-store activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
 
 ## Changing the Data Model

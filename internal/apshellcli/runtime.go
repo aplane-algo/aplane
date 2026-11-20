@@ -14,9 +14,7 @@ func initPluginRuntime(r *REPLState) error {
 	if r.app().Plugins == nil {
 		r.app().Plugins = manager.NewManagerWithDataDir(r.DataDir)
 	}
-	if err := r.app().ConfigurePlugins(); err != nil {
-		return fmt.Errorf("configure plugins: %w", err)
-	}
+	r.app().ConfigurePlugins()
 	if _, err := r.app().Plugins.DiscoverPluginsCached(); err != nil {
 		return fmt.Errorf("discover plugins: %w", err)
 	}

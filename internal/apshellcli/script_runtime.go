@@ -105,11 +105,9 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 // a failed simulation's own IDs are not listed. A completed run returns the
 // last step's message, data and presentation, with every transaction ID it
 // submitted (simulated, in simulate mode) in data.txids and, for more than one
-// such step, each step's message and IDs in data.steps. A plugin's data never
-// carries localSigners to the script, in any outcome, and data the plugin
-// returned as an object stays an object, empty if localSigners was all it held.
+// such step, each step's message and IDs in data.steps.
 func jsPluginOutcome(pr *PluginResult, runErr error, simulated bool) (bool, string, interface{}, interface{}, error) {
-	data := appresult.StripShellOnlyPluginData(pr.Data)
+	data := pr.Data
 	ids := append([]string(nil), pr.TxIDs...)
 	for _, step := range pr.Steps {
 		ids = append(ids, step.TxIDs...)

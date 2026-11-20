@@ -44,13 +44,28 @@ func TestConfigurePluginsUsesCurrentNetworkConfig(t *testing.T) {
 	app := New(eng, cfg, t.TempDir())
 	app.Plugins = plugins
 
-	if err := app.ConfigurePlugins(); err != nil {
-		t.Fatalf("ConfigurePlugins() error = %v", err)
-	}
+	app.ConfigurePlugins()
 	if plugins.network != "testnet" {
 		t.Fatalf("plugin network = %q, want testnet", plugins.network)
 	}
 	if plugins.algodURL != "https://testnet.example" || plugins.algodToken != "test-token" {
 		t.Fatalf("plugin algod config = %q/%q", plugins.algodURL, plugins.algodToken)
+	}
+}
+
+// A network with no algod settings gives plugins the network and empty algod
+// settings.
+func TestConfigurePluginsWithoutAlgodConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Algod = config.AlgodConfig{
+		"mainnet": &config.AlgodNetworkConfig{Server: "https://mainnet.example", Token: "main-token"},
+	}
+	plugins := &fakePluginRuntime{algodURL: "stale", algodToken: "stale"}
+	app := New(engine.NewEngine("testnet"), cfg, t.TempDir())
+	app.Plugins = plugins
+
+	app.ConfigurePlugins()
+	if plugins.network != "testnet" || plugins.algodURL != "" || plugins.algodToken != "" {
+		t.Fatalf("plugin config = %q %q/%q, want testnet with no algod", plugins.network, plugins.algodURL, plugins.algodToken)
 	}
 }
