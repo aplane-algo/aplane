@@ -217,7 +217,7 @@ type SignBatch struct {
 type SignRequest struct {
     // Sign mode fields
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
-    TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
+    TxnSender    string            `json:"txn_sender,omitempty"`    // Client-stated sender; the signer does not read it
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
@@ -1546,8 +1546,9 @@ never meet its threshold. A LogicSig with a program and no delegation is an
 escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
 `/sign/assemble` apply the same check.
 
-`txn_sender` is an advisory display hint for clients. Signer authority,
-policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
+`txn_sender` is the transaction sender as the client states it. The signer
+does not read it: approval display, authority, policy, and audit use the
+sender decoded from `txn_bytes_hex`.
 
 `app_call_info` is approval-rendering metadata on the shared request DTO:
 

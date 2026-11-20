@@ -62,7 +62,7 @@ func (r LogicSigResourceUsage) validate() error {
 type SignRequest struct {
 	// Sign mode fields (server signs this transaction)
 	AuthAddress   string                 `json:"auth_address,omitempty"`   // Auth address (which key to use for signing)
-	TxnSender     string                 `json:"txn_sender,omitempty"`     // Advisory display hint; server derives authority from txn bytes
+	TxnSender     string                 `json:"txn_sender,omitempty"`     // Client-stated sender; the signer does not read it and takes the sender from txn bytes
 	TxnBytesHex   string                 `json:"txn_bytes_hex,omitempty"`  // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs (name -> hex value)
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign or passthrough LogicSig
