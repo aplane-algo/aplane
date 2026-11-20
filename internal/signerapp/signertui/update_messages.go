@@ -513,7 +513,6 @@ func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
 		m.details.templateProvenanceStatus = msg.TemplateProvenanceStatus
 		m.details.templateProvenanceNote = msg.TemplateProvenanceNote
 		m.details.policyLabel = msg.PolicyLabel
-		m.details.mnemonicExportable = msg.MnemonicExportable
 		m.details.scrollOffset = 0 // Reset scroll on open
 		m.viewState = ViewKeyDetails
 	} else {

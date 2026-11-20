@@ -52,11 +52,11 @@ func TestPagersReachTheirLastLine(t *testing.T) {
 		{"key details", func(m *Model, lines []string) {
 			m.viewState = ViewKeyDetails
 			m.details.address = strings.Repeat("A", 58)
-			m.details.keyType = "publisher.family.v1"
+			// A native key type, so the recovery phrase line is drawn too.
+			m.details.keyType = "falcon1024"
 			m.details.publicKeyHex = strings.Repeat("cd", 32)
 			m.details.policyLabel = "per-key policy"
 			m.details.templateProvenanceNote = "the installed template differs from the one this key was made with"
-			m.details.mnemonicExportable = true
 			m.details.saveStatus = "Saved."
 			m.details.parameters = map[string]string{}
 			for _, line := range lines[:30] {

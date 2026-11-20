@@ -750,7 +750,6 @@ type GetKeyDetailsResult struct {
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
 	PolicyLabel              string
-	MnemonicExportable       bool
 	Code                     string
 	Error                    string
 }

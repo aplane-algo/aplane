@@ -26,7 +26,7 @@ func (m Model) viewFooterText() string {
 		return m.keyListFooterText()
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
-		if m.details.mnemonicExportable {
+		if isNativeKeyType(m.details.keyType) {
 			parts = append(parts, "m=recovery phrase")
 		}
 		if m.isCosignerNode() && witness.IsKeyType(m.details.keyType) {

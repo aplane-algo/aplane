@@ -119,15 +119,23 @@ func TestMnemonicPassphraseGrowthClearsPreviousBuffer(t *testing.T) {
 	}
 }
 
-func TestMnemonicExportOpensOnlyForSignerMarkedKeys(t *testing.T) {
-	for _, exportable := range []bool{false, true} {
+// Every native key exports its recovery phrase, and no other key class does.
+func TestMnemonicExportOpensOnlyForNativeKeys(t *testing.T) {
+	for keyType, exportable := range map[string]bool{
+		"falcon1024":                   true,
+		"ed25519":                      true,
+		"aplane.falcon1024.v1":         false,
+		"aplane.witness-falcon1024.v1": false,
+	} {
 		m := activityReadyModel()
 		m.viewState = ViewKeyDetails
-		m.details.address, m.details.keyType = "ACCOUNT", "falcon1024"
-		m.details.mnemonicExportable = exportable
+		m.details.address, m.details.keyType = "ACCOUNT", keyType
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 		if got := next.(Model).viewState == ViewMnemonicExport; got != exportable {
-			t.Fatalf("exportable=%v opened export screen=%v", exportable, got)
+			t.Fatalf("%s opened export screen=%v, want %v", keyType, got, exportable)
+		}
+		if got := strings.Contains(m.viewFooterText(), "m=recovery phrase"); got != exportable {
+			t.Fatalf("%s footer offers the recovery phrase=%v, want %v", keyType, got, exportable)
 		}
 	}
 }
