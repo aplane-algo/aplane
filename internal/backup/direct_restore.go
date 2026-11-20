@@ -265,11 +265,11 @@ type openedArchive struct {
 func openArchive(sourceRoot string, exportPassphrase []byte) (openedArchive, error) {
 	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
 	if err != nil {
-		return openedArchive{}, err
+		return openedArchive{}, withArchivePaths(sourceRoot, err)
 	}
 	archive := openedArchive{keysDir: ResolveBackupKeysDir(sourceRoot), manifest: manifest}
 	if archive.selectors, err = archiveSelectors(archive.keysDir); err != nil {
-		return openedArchive{}, authenticatedArchiveError(err)
+		return openedArchive{}, authenticatedArchiveError(withArchivePaths(sourceRoot, err))
 	}
 	return archive, nil
 }
@@ -369,7 +369,7 @@ func (a openedArchive) admitEach(
 	for _, selector := range selectors {
 		entry, skip, err := a.loadCredentialEntry(selector, exportPassphrase, role)
 		if err != nil {
-			return nil, fmt.Errorf("backup credential %s: %w", selector, err)
+			return nil, withArchivePaths(filepath.Dir(a.keysDir), fmt.Errorf("backup credential %s: %w", selector, err))
 		}
 		if skip != nil {
 			skipped = append(skipped, *skip)

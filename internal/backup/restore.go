@@ -78,9 +78,34 @@ func PrepareRestoreSource(source string) (string, func(), error) {
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	if err := ExtractTarGzArchive(source, tmpDir); err != nil {
 		cleanup()
-		return "", nil, err
+		return "", nil, withArchivePaths(tmpDir, err)
 	}
 	return tmpDir, cleanup, nil
+}
+
+// archivePathError is an error about an extracted archive whose text names
+// each file by its path in the archive, never by where it was extracted: an
+// error reaches the operator and the audit log, and the extraction
+// directory is the daemon's.
+type archivePathError struct {
+	root string
+	err  error
+}
+
+func (e *archivePathError) Error() string {
+	text := strings.ReplaceAll(e.err.Error(), e.root+string(filepath.Separator), "")
+	return strings.ReplaceAll(text, e.root, ".")
+}
+
+func (e *archivePathError) Unwrap() error { return e.err }
+
+// withArchivePaths names the files under root in err's text by their paths
+// in the archive extracted there.
+func withArchivePaths(root string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &archivePathError{root: filepath.Clean(root), err: err}
 }
 
 func ResolveManagedBackupPath(paths storepaths.Paths, archivePath string) (string, error) {

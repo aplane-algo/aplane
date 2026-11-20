@@ -252,3 +252,37 @@ func TestArchiveSelectorsSortBeforeSearching(t *testing.T) {
 		rebuild.ZeroSecrets()
 	}
 }
+
+// A member that does not read is named by its path in the archive: no
+// reason shows where the daemon extracted it.
+func TestUnreadableMemberIsNamedByItsArchivePath(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+	root, keysDir := newAdmissionArchive(t)
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	sealAdmissionMember(t, keysDir, address, keyJSON, admissionPassphrase)
+	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), admissionPassphrase, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Directories are outside the sealed inventory, so this needs no
+	// passphrase.
+	if err := os.Mkdir(filepath.Join(keysDir, "EVILDIR.apb"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managed := BuildManagedArchivePath(paths, "unreadable-member")
+	if err := CreateTarGzArchive(root, managed); err != nil {
+		t.Fatal(err)
+	}
+	want := "backup credential EVILDIR: read backup file: path is not a regular file: apb/EVILDIR.apb"
+	_, previewErr := PreviewRestoreWithNodeRole(paths, managed, admissionPassphrase, noderole.RoleSigner)
+	_, restoreErr := LoadManagedRestoreSet(paths, managed, nil, admissionPassphrase, noderole.RoleSigner)
+	_, verifyErr := DeepVerifyBackupBytes(root, admissionPassphrase)
+	for name, err := range map[string]error{"preview": previewErr, "restore": restoreErr, "verify": verifyErr} {
+		if err == nil || err.Error() != want {
+			t.Fatalf("%s error = %v, want %q", name, err, want)
+		}
+	}
+	if !ArchiveAuthenticated(previewErr) || !ArchiveAuthenticated(restoreErr) {
+		t.Fatalf("preview %v and restore %v must record the authenticated archive", previewErr, restoreErr)
+	}
+}
