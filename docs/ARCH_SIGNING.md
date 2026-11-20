@@ -2253,8 +2253,12 @@ warning does not establish that no leaf was reused.
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
   envelope. Witness rows omit it because they are not spending accounts.
-  Clients read it rather than derive it from `key_type`; apshell refuses to
-  sign for a row without a kind it knows.
+  Clients read it rather than derive it from `key_type`. apshell refuses a
+  row without a kind it knows on the prepare path (building a transaction,
+  `canSignFor`) and does not list it as signable; a pre-built group
+  (JavaScript `sign()`, a transaction file, a plugin's default group,
+  presign-plan managed slots, cosigned contextual positions) reads no kind and
+  leaves authorization to the signer.
 - optional `signing_flow`: explicit signing choreography label. `bounded1`
   selects bounded routing without an online cosigner (a bounded or plain host
   without a cosigner), `cosigned1` selects the user-first bounded

@@ -102,7 +102,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	}
 
 	// The key type and authorization kind are the signer's, from its /keys
-	// answer. A key it reports no kind this client knows for signs nothing.
+	// answer. A key it reports no kind this client knows for is refused here.
 	keyType := e.signerCacheKeyType(signingAddr)
 	authorizationKind, _ := e.signerCacheAuthorizationKind(signingAddr)
 	if authorizationKind == "" {

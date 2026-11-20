@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
@@ -54,5 +55,48 @@ func TestAuthorizationKindIsTheSignersReport(t *testing.T) {
 				t.Errorf("CanSignForAddressWithKind() = %v, %q; want %v, %q", canSign, kind, tc.canSign, tc.want)
 			}
 		})
+	}
+}
+
+// The addresses the client lists as signable are the ones canSignFor would
+// say it signs for: a key listed with no kind, or with one this client does
+// not know, is left out, whether it is the account's own or the auth address
+// it is rekeyed to.
+func TestSignableAddressesLeaveOutAKeyWithoutAKnownKind(t *testing.T) {
+	known, noKind, unknownKind := testAddr(1), testAddr(2), testAddr(3)
+	rekeyedToKnown, rekeyedToNoKind, rekeyedToUnknownKind := testAddr(4), testAddr(5), testAddr(6)
+	transport := newAccountMockTransport(t)
+	for _, addr := range []string{known, noKind, unknownKind, rekeyedToKnown, rekeyedToNoKind, rekeyedToUnknownKind} {
+		transport.addAccount(addr, 1_000_000)
+	}
+	eng := setupEngineWithMockAlgod(t, transport)
+	if err := eng.populateSignerCache([]signerapi.KeyInfo{
+		{Address: known, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: noKind, KeyType: "ed25519"},
+		{Address: unknownKind, KeyType: "ed25519", AuthorizationKind: "quantum_magic"},
+	}); err != nil {
+		t.Fatalf("populateSignerCache() error = %v", err)
+	}
+	// A rekeyed account is known to the client by its alias.
+	eng.AliasCache.Aliases = map[string]string{
+		"to-known":        rekeyedToKnown,
+		"to-no-kind":      rekeyedToNoKind,
+		"to-unknown-kind": rekeyedToUnknownKind,
+	}
+	eng.AuthCache.AuthAddresses[rekeyedToKnown] = known
+	eng.AuthCache.AuthAddresses[rekeyedToNoKind] = noKind
+	eng.AuthCache.AuthAddresses[rekeyedToUnknownKind] = unknownKind
+
+	got := eng.GetSignableAddresses()
+	want := []string{known, rekeyedToKnown}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("GetSignableAddresses() = %v, want %v", got, want)
+	}
+	for _, key := range []string{known, noKind, unknownKind} {
+		canSign, _ := eng.CanSignForAddressWithKind(key)
+		if listed := slices.Contains(got, key); canSign != listed {
+			t.Errorf("%s: CanSignForAddressWithKind() = %v but listed as signable = %v", key, canSign, listed)
+		}
 	}
 }

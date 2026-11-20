@@ -78,21 +78,30 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 }
 
 // signerCacheAuthorizationKind returns the authorization kind the signer
-// reported for an address on /keys. The boolean reports whether the address
-// is present. A present address with an empty kind authorizes nothing this
-// client knows: the signer reported no kind (a witness key) or one outside
-// the closed set, and callers treat it as not signable.
+// reported for an address on /keys; the client never derives one from the
+// key type. The boolean reports whether the address is present. A present
+// address with an empty kind has none this client knows: the signer reported
+// no kind (a witness key) or one outside the closed set. The prepare path
+// (BuildSigningContext, CanSignForAddressWithKind) refuses such a key, and
+// isAccountSignable does not list it. A pre-built group reads no kind: it
+// leaves its authorization to the signer, which holds the key.
 func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	if !e.SignerCache.HasAddress(address) {
 		return "", false
 	}
-	switch kind := algorithm.AuthorizationKind(e.SignerCache.AuthorizationKind(address)); kind {
+	return knownAuthorizationKind(e.SignerCache.AuthorizationKind(address)), true
+}
+
+// knownAuthorizationKind returns kind when it is in the closed set, and ""
+// otherwise.
+func knownAuthorizationKind(kind string) algorithm.AuthorizationKind {
+	switch kind := algorithm.AuthorizationKind(kind); kind {
 	case algorithm.AuthorizationEd25519, algorithm.AuthorizationNativePQ, algorithm.AuthorizationLogicSig:
-		return kind, true
+		return kind
 	default:
-		return "", true
+		return ""
 	}
 }
 
@@ -244,8 +253,19 @@ func (e *Core) SignerCacheAddresses() []string {
 	return addresses
 }
 
+// isAccountSignable reports whether the client would sign for address: the
+// signer holds the key that signs for it (cache.IsAccountSignable: a rotating
+// account's own, else its auth address's) and lists it with a kind this
+// client knows, so the listing agrees with BuildSigningContext and canSignFor.
 func (e *Core) isAccountSignable(address string) bool {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return cache.IsAccountSignable(address, &e.SignerCache, &e.AuthCache)
+	if !cache.IsAccountSignable(address, &e.SignerCache, &e.AuthCache) {
+		return false
+	}
+	key := address
+	if !e.SignerCache.IsRotating(address) {
+		key = e.AuthCache.ResolveEffectiveSigner(address)
+	}
+	return knownAuthorizationKind(e.SignerCache.AuthorizationKind(key)) != ""
 }
