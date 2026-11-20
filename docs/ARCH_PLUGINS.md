@@ -317,14 +317,12 @@ Called once after the plugin starts.
   "params": {
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
-    "algodToken": "",
-    "indexerUrl": ""
+    "algodToken": ""
   }
 }
 ```
 
-`indexerUrl` is reserved and currently always empty; apshell does not supply
-an indexer URL. A plugin that needs an indexer uses its own.
+apshell gives a plugin no indexer; a plugin that needs one uses its own.
 
 **Response:**
 ```json

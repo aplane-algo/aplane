@@ -107,7 +107,7 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		t.Fatalf("decode the initialize request %s: %v", raw, err)
 	}
-	const wantParams = `{"network":"localnet","algodUrl":"http://localhost:4001","algodToken":"config-token","indexerUrl":""}`
+	const wantParams = `{"network":"localnet","algodUrl":"http://localhost:4001","algodToken":"config-token"}`
 	if got := string(req.Params); got != wantParams {
 		t.Errorf("initialize params = %s, want %s", got, wantParams)
 	}

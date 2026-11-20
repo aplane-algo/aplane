@@ -40,7 +40,6 @@ type InitializeParams struct {
 	Network    string `json:"network"`
 	AlgodURL   string `json:"algodUrl"`
 	AlgodToken string `json:"algodToken"`
-	IndexerURL string `json:"indexerUrl"`
 }
 
 type InitializeResult struct {
