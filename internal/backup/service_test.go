@@ -4,9 +4,6 @@
 package backup
 
 import (
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,8 +12,11 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -37,7 +37,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
@@ -103,7 +103,7 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.CosignerCredentialFilePath(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
@@ -135,6 +135,51 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "apb", selector+".apb")); err != nil {
 		t.Fatalf("cosigner witness .apb missing: %v", err)
+	}
+}
+
+// A selected-keys backup that names an address twice would export it twice and
+// count it twice. It is refused before anything is written, as restore refuses
+// a duplicate selector; the same address named once is backed up.
+func TestCreateSelectedKeysArchiveRefusesADuplicateAddress(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := storepaths.NewPaths(t.TempDir())
+	paths = mintFirstGenerationForBackupTest(t, paths)
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, selection := range [][]string{{address, address}, {address, "", address}} {
+		archivePath := BuildManagedArchivePath(paths, "20261120-010203")
+		result, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, selection, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey)))
+		if err == nil || !strings.Contains(err.Error(), "duplicate backup address") {
+			t.Fatalf("CreateKeysArchive(%q) = %+v, %v; want a duplicate address refused", selection, result, err)
+		}
+		if _, statErr := os.Lstat(archivePath); !os.IsNotExist(statErr) {
+			t.Fatalf("archive stat error = %v, want no archive", statErr)
+		}
+	}
+	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, BuildManagedArchivePath(paths, "20261120-010204"), []string{"", ""}, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey))); err == nil || !strings.Contains(err.Error(), "no addresses selected for backup") {
+		t.Fatalf("CreateKeysArchive(empty entries) error = %v, want no addresses selected", err)
+	}
+
+	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, BuildManagedArchivePath(paths, "20261120-010205"), []string{"", address}, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey)))
+	if err != nil {
+		t.Fatalf("CreateKeysArchive(once) error = %v", err)
+	}
+	if result.KeyCount != 1 || len(result.Addresses) != 1 || result.Addresses[0] != address {
+		t.Fatalf("archive result = %+v, want %s once", result, address)
 	}
 }
 
@@ -202,7 +247,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
@@ -214,7 +259,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
@@ -260,7 +305,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal(bad) error = %v", err)
 	}
-	badFile := apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), badAddress)
+	badFile := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), badAddress)
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
@@ -288,7 +333,7 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("Resolve() error = %v", err)
 	}
 	srcDir := active.KeysDir()
-	corruptFile := apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	corruptFile := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}

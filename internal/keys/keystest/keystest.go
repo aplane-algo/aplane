@@ -3,16 +3,21 @@
 
 // Package keystest builds canonical key payload fixtures for tests. It is the
 // single owner of the New*Payload -> MarshalPayload fixture pattern, so a
-// payload schema change is one edit here instead of one per test package.
+// payload schema change is one edit here instead of one per test package. It
+// also holds the key-file paths and the key scan that tests reach for.
 package keystest
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -101,4 +106,31 @@ func marshal(t testing.TB, payload *keys.Payload, kind string) []byte {
 		t.Fatalf("MarshalPayload(%s) error = %v", kind, err)
 	}
 	return keyJSON
+}
+
+// AccountKeyFilePath is the account credential path for an address in a
+// generation.
+func AccountKeyFilePath(active storepaths.GenPaths, address string) string {
+	return filepath.Join(active.KeysDir(), address+keys.AccountKeyExtension)
+}
+
+// CosignerCredentialFilePath is the cosigner credential path for a Witness
+// Key ID in a generation.
+func CosignerCredentialFilePath(active storepaths.GenPaths, witnessKeyID string) string {
+	return filepath.Join(active.KeysDir(), witnessKeyID+keys.CosignerCredentialExtension)
+}
+
+// ScanKeys scans the bound generation's keys directory with kr and returns
+// the keys it accepted, failing the test on a scan error.
+func ScanKeys(t testing.TB, paths storepaths.Paths, kr *crypto.Keyring) map[string]keys.KeyScanInfo {
+	t.Helper()
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	report, err := keys.ScanKeysDirectory(active, kr, nil)
+	if err != nil {
+		t.Fatalf("ScanKeysDirectory() error = %v", err)
+	}
+	return report.Keys
 }

@@ -872,8 +872,11 @@ control or format character (a bidirectional control or zero-width character
 among them), or invalid UTF-8; a YAML double-quoted string decodes `\e` and
 `\u` escapes into such characters. The one exception is the line break a YAML
 block scalar (`description: |` or `>`) ends a description with: it is dropped,
-so a one-line block scalar is accepted, and the library and the signer's key-type
-list show the description without it (the installed YAML keeps it as written).
+so a one-line block scalar is accepted, and the library, the signer's key-type
+list (`/keytypes`, its bounded contract included) and its key list (`/keys`
+signing arguments and bounded contracts) show the description without it (the
+installed YAML keeps it as written, and so does an account's recorded signing
+metadata).
 A description that still holds a line break, such as a `|` block of two lines,
 is refused; a `>` block folds its lines into one. The error names the field and
 shows the text escaped. The library lists such a file as invalid. It is an

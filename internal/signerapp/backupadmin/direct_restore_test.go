@@ -148,6 +148,7 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
 	service := directRestoreTestService(paths, ir)
+	beforeRestore := selectedAtomicTestGenerationID(t, paths)
 	if result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-for-rollback",
 		ArchivePath:      archivePath,
@@ -166,6 +167,15 @@ func TestDirectRestoreRollbackCannotRollbackItself(t *testing.T) {
 	}
 	if manifest.Operation != genstore.OperationCredentialRestoreRollback {
 		t.Fatalf("rollback operation = %q", manifest.Operation)
+	}
+	// The rollback source is reachable from the rollback generation: its
+	// parent is the restore, whose capability names the source.
+	restored, err := genstore.ReadManifest(paths.GenerationPaths(manifest.ParentID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.RollbackCapability == nil || restored.RollbackCapability.SourceGenerationID != beforeRestore {
+		t.Fatalf("restore manifest capability = %+v, want source %s", restored.RollbackCapability, beforeRestore)
 	}
 	second := service.RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-two"})
 	if second.Success || second.Code != protocol.ResultCodeRestoreRollbackRefused {

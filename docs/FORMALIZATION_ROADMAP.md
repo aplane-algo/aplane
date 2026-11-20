@@ -246,13 +246,18 @@ no snapshot is loaded, an internal error; rejections expressed as
 restated over document selection). The 2026-10-07 closing note that a missing
 per-witness-key entry rejects every request is superseded: a cosigner key
 with no document of its own follows the node default, which is deny-all as
-shipped but operator-replaceable. Not refreshed here: the P10 and S12 rows in
-`FORMAL_TRACEABILITY.md` still cite `policy.Config.ForKey`,
+shipped but operator-replaceable. The P10 and S12 rows in
+`FORMAL_TRACEABILITY.md` were not refreshed on the reviewed branch, which
+still cited `policy.Config.ForKey`,
 `TestEvaluateAlwaysReviewRulesUsesKeyOverride`, and
-`TestEvaluateAutoRejectionRulesAppliesKeyOverrides`, none of which exist
-after the redesign; the rows should point at
-`policyruntime.NodePolicy.PolicyFor`, `signing.Service.PolicyFor`, and the
-per-key tests in `test/integration/policy_per_key_test.go`.
+`TestEvaluateAutoRejectionRulesAppliesKeyOverrides`; they were refreshed when
+the redesign merged (`407db644`). Both rows now cite
+`policyruntime.NodePolicy.PolicyFor` and
+`signing.authPolicyKeysFromRequest`, and anchor tests that exist:
+`always_review_test.go::TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey`
+and `service_test.go::TestEvaluateAutoRejectionRulesResolvesPolicyPerKey` in
+`internal/signerapp/signing`, with P10 also citing
+`test/integration/policy_per_key_test.go`.
 
 Drift review (2026-10-16, HEAD `9fbbb5a6`): range `09e24050..9fbbb5a6` (110
 commits; the 2026-10-14 review was scoped to per-key policy, so this one

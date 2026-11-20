@@ -6,8 +6,6 @@ package storemut
 import (
 	"context"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,7 +13,10 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -53,7 +54,7 @@ func TestDeleteKeyMovesFileToDeletedKeys(t *testing.T) {
 	paths := utilkeys.NewPaths(tmpDir)
 	paths = genstoretest.MintFirst(t, paths)
 
-	keyPath := keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), "ADDR")
+	keyPath := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), "ADDR")
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -154,7 +155,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
 	}
 
-	keyPath := keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), salted.Address.String())
+	keyPath := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), salted.Address.String())
 	if _, err := os.Stat(keyPath); err != nil {
 		t.Fatalf("expected generic lsig file at %s: %v", keyPath, err)
 	}

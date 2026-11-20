@@ -66,7 +66,7 @@ func TestReconcileDiscardsAttemptsAndStagingKeepsSealedPriors(t *testing.T) {
 		t.Fatalf("MkdirAll(staging): %v", err)
 	}
 
-	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -123,14 +123,14 @@ func TestReconcileStoreRootAuthenticatesSelectionAndQuarantinesAttempt(t *testin
 	}
 	attempt := mintTestGeneration(t, paths, testGenD, nil)
 
-	preview, err := InspectStoreRoot(paths, kr, nil)
+	preview, err := InspectStoreRoot(paths, kr)
 	if err != nil {
 		t.Fatalf("InspectStoreRoot() error = %v", err)
 	}
 	if preview.Current != testGenA || !slices.Equal(quarantinedIDs(preview), []string{testGenD}) {
 		t.Fatalf("preview = %+v", preview)
 	}
-	report, err := ReconcileStoreRoot(paths, kr, nil)
+	report, err := ReconcileStoreRoot(paths, kr)
 	if err != nil {
 		t.Fatalf("ReconcileStoreRoot() error = %v", err)
 	}
@@ -169,31 +169,11 @@ func TestReconcileStoreRootPreservesResidueWhenRootIsInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ReconcileStoreRoot(paths, kr, nil); err == nil {
+	if _, err := ReconcileStoreRoot(paths, kr); err == nil {
 		t.Fatal("ReconcileStoreRoot accepted invalid root")
 	}
 	if _, err := os.Stat(attempt.Dir()); err != nil {
 		t.Fatalf("invalid-root reconciliation changed residue: %v", err)
-	}
-}
-
-func TestReconcileKeepsReferencedUnsealedAttempt(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths)
-	attempt := paths.GenerationPaths(testGenD)
-	if err := os.MkdirAll(filepath.Join(attempt.Dir(), "keys"), 0o770); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-
-	report, err := ReconcileStoreRoot(paths, testKeyring(t), map[string]bool{testGenD: true})
-	if err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-	if len(report.Quarantined) != 0 {
-		t.Fatalf("referenced attempt was quarantined: %v", report.Quarantined)
-	}
-	if _, err := os.Lstat(attempt.Dir()); err != nil {
-		t.Fatalf("referenced attempt missing: %v", err)
 	}
 }
 
@@ -208,7 +188,7 @@ func TestReconcilePreservesUnsafeAttemptInPlaceAndBlocks(t *testing.T) {
 	}
 	// No manifest: this directory cannot be safely classified or audited as
 	// a complete publication, so it must neither be deleted nor relocated.
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "preserved in place") {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "preserved in place") {
 		t.Fatalf("Reconcile(unsafe attempt) error = %v, want fail-closed preservation", err)
 	}
 	if _, err := os.Stat(attempt.Dir()); err != nil {
@@ -235,13 +215,13 @@ func TestReconcilePreservesCandidateWhenQuarantineIsFull(t *testing.T) {
 		"keys/ACCOUNT.key": "candidate",
 	})
 
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("Reconcile(full quarantine) error = %v, want capacity refusal", err)
 	}
 	if _, err := os.Stat(attempt.Dir()); err != nil {
 		t.Fatalf("candidate was destroyed when quarantine was full: %v", err)
 	}
-	if _, err := InspectStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, err := InspectStoreRoot(paths, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("Inspect(full quarantine) error = %v, want matching capacity refusal", err)
 	}
 }
@@ -252,7 +232,7 @@ func TestReconcileFailsClosedOnUnexpectedEntry(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(paths.GenerationsDir(), "not-a-generation"), 0o770); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err == nil {
 		t.Fatal("Reconcile accepted an unexpected generations entry")
 	}
 }
@@ -261,7 +241,7 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbageStoreRoot(paths, nil, true, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbageStoreRoot() error = %v", err)
 	}
@@ -275,23 +255,11 @@ func TestCollectGarbageRetainsCurrentPlusNewestSealedPrior(t *testing.T) {
 	}
 }
 
-func TestCollectGarbageHonorsReferences(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	buildGenerationChain(t, paths)
-	removed, err := CollectGarbageStoreRoot(paths, map[string]bool{testGenA: true}, true, testKeyring(t))
-	if err != nil {
-		t.Fatalf("CollectGarbageStoreRoot() error = %v", err)
-	}
-	if len(removed) != 0 {
-		t.Fatalf("removed referenced generation: %v", removed)
-	}
-}
-
 func TestCollectGarbageAllPriorsReachesRotationQuiescence(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A, B sealed priors; C current
 
-	removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, false, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbageStoreRoot(all priors) error = %v", err)
 	}
@@ -321,7 +289,7 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 				t.Fatalf("remove manifest: %v", err)
 			}
 
-			removed, err := CollectGarbageStoreRoot(paths, nil, retainParent, testKeyring(t))
+			removed, err := CollectGarbageStoreRoot(paths, retainParent, testKeyring(t))
 			if err == nil {
 				t.Fatalf("CollectGarbageStoreRoot() = %v, want error for invalid current generation", removed)
 			}
@@ -340,19 +308,19 @@ func TestCollectGarbageRefusesToPruneWhenCurrentInvalid(t *testing.T) {
 func TestCollectGarbageIsIdempotentAfterAllPriorsPrune(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	buildGenerationChain(t, paths) // A -> B -> C, store root=C
-	if _, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t)); err != nil {
+	if _, err := CollectGarbageStoreRoot(paths, false, testKeyring(t)); err != nil {
 		t.Fatalf("CollectGarbageStoreRoot(all priors) error = %v", err)
 	}
 	// Current's immutable manifest still names the deleted parent B; an
 	// ordinary prune must be a successful no-op, not a missing-parent error.
-	removed, err := CollectGarbageStoreRoot(paths, nil, true, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, true, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbageStoreRoot(after all-priors) error = %v, want no-op", err)
 	}
 	if len(removed) != 0 {
 		t.Fatalf("removed = %v, want nothing", removed)
 	}
-	if _, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t)); err != nil {
+	if _, err := CollectGarbageStoreRoot(paths, false, testKeyring(t)); err != nil {
 		t.Fatalf("CollectGarbageStoreRoot(all priors, repeated) error = %v, want no-op", err)
 	}
 }
@@ -382,7 +350,7 @@ func TestValidateCurrentRequiresCompleteAuthorityShape(t *testing.T) {
 				t.Fatalf("ValidateCurrent accepted a generation missing %s", name)
 			}
 			// The prune path inherits the rejection: nothing is deleted.
-			removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
+			removed, err := CollectGarbageStoreRoot(paths, false, testKeyring(t))
 			if err == nil {
 				t.Fatalf("CollectGarbageStoreRoot() = %v, want error for missing namespace", removed)
 			}
@@ -405,7 +373,7 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 		t.Fatalf("remove parent seal: %v", err)
 	}
 
-	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -421,7 +389,7 @@ func TestReconcileRetainsUnsealedRollbackParent(t *testing.T) {
 
 	// Both prune modes refuse while the damaged parent exists.
 	for _, retainParent := range []bool{true, false} {
-		removed, err := CollectGarbageStoreRoot(paths, nil, retainParent, testKeyring(t))
+		removed, err := CollectGarbageStoreRoot(paths, retainParent, testKeyring(t))
 		if err == nil || len(removed) != 0 {
 			t.Fatalf("CollectGarbageStoreRoot(retain=%v) = (%v, %v), want fail-closed refusal", retainParent, removed, err)
 		}
@@ -451,7 +419,7 @@ func TestReconcileDeletesNothingWhenCurrentManifestIncomplete(t *testing.T) {
 		t.Fatalf("corrupt manifest: %v", err)
 	}
 
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err == nil {
 		t.Fatal("Reconcile accepted an invalid current manifest")
 	}
 	for _, path := range []string{staging, attempt.Dir()} {
@@ -657,7 +625,7 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 		t.Fatalf("MkdirAll(staging): %v", err)
 	}
 
-	report, err := InspectStoreRoot(paths, testKeyring(t), nil)
+	report, err := InspectStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -672,7 +640,7 @@ func TestInspectClassifiesWithoutDeleting(t *testing.T) {
 	}
 	// Reconcile deletes staging and moves the complete publication into the
 	// non-authoritative quarantine namespace.
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	for _, path := range []string{attempt.Dir(), staging} {
@@ -698,7 +666,7 @@ func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	if !identityDirSynced {
@@ -707,7 +675,7 @@ func TestReconcileReconfirmsCurrentFlipDurability(t *testing.T) {
 
 	// The read-only classification must not perform the sync.
 	identityDirSynced = false
-	if _, err := InspectStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := InspectStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
 	if identityDirSynced {
@@ -772,7 +740,7 @@ func TestSealTempResidueIsToleratedAndCollected(t *testing.T) {
 	if err := ValidateCurrent(gen); err != nil {
 		t.Fatalf("ValidateCurrent() error = %v, want tolerance for durable-write residue", err)
 	}
-	report, err := InspectStoreRoot(paths, testKeyring(t), nil)
+	report, err := InspectStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -783,7 +751,7 @@ func TestSealTempResidueIsToleratedAndCollected(t *testing.T) {
 		t.Fatalf("Inspect deleted the residue: %v", err)
 	}
 
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 	if _, err := os.Stat(residue); !os.IsNotExist(err) {
@@ -833,7 +801,7 @@ func TestCrashedPruneRetriesAsNoOp(t *testing.T) {
 
 	// The retry neither wedges on the residue nor misclassifies it: the
 	// tombstone is staging garbage, and the remaining prior still prunes.
-	removed, err := CollectGarbageStoreRoot(paths, nil, false, testKeyring(t))
+	removed, err := CollectGarbageStoreRoot(paths, false, testKeyring(t))
 	if err != nil {
 		t.Fatalf("CollectGarbageStoreRoot(retry) error = %v, want crash-idempotent retry", err)
 	}
@@ -897,7 +865,7 @@ func TestReconcileCollectsNamespaceDurableWriteResidue(t *testing.T) {
 		t.Fatalf("write residue: %v", err)
 	}
 
-	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
@@ -928,7 +896,7 @@ func TestReconcileKeepsRecordsWhoseNamesMerelyContainTmpDash(t *testing.T) {
 		}
 	}
 
-	report, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
+	report, err := ReconcileStoreRoot(paths, testKeyring(t))
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}

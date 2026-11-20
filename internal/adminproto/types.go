@@ -211,16 +211,15 @@ type ChangeStorePassphraseRequest struct {
 }
 
 type ChangeStorePassphraseResult struct {
-	Success                  bool
-	KeysMigrated             int
-	TemplatesMigrated        int
-	PolicySidecarsMigrated   int
-	NodeRoleSidecarsMigrated int
-	PriorGenerations         int
-	HelperWarning            string
-	RootCommitted            bool
-	Code                     string
-	Error                    string
+	Success                bool
+	KeysMigrated           int
+	TemplatesMigrated      int
+	PolicySidecarsMigrated int
+	PriorGenerations       int
+	HelperWarning          string
+	RootCommitted          bool
+	Code                   string
+	Error                  string
 }
 
 type RestoreKeyInfo struct {

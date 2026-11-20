@@ -35,7 +35,9 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 `pkg/signerapi/types.go`. The wire-relevant fields are:
 
 - `auth_address` — which signer-managed key to use for signing (sign mode).
-- `txn_sender` — transaction sender, used for approval display.
+- `txn_sender` — transaction sender as the client states it. The signer does
+  not read it: approval display, policy and audit take the sender from the
+  decoded `txn_bytes_hex`.
 - `txn_bytes_hex` — TX-prefixed msgpack-encoded unsigned transaction, hex
   encoded. Required for sign mode and foreign mode.
 - `lsig_args` — name-keyed caller runtime arguments for generic or composed

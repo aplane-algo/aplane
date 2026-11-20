@@ -178,7 +178,7 @@ func restoreRollbackPolicy(source *rollbackGenerationSource, role noderole.Role,
 	if strings.HasSuffix(name, ".hmac") {
 		return nil
 	}
-	if _, _, err := rollbackPolicyContext(entry.Path, name, entry.Term); err != nil {
+	if err := checkRollbackPolicyMember(entry.Path, name, entry.Term); err != nil {
 		return err
 	}
 	data, _, err := fsutil.ReadRegularFile(filepath.Join(source.gen.Dir(), filepath.FromSlash(entry.Path)))
@@ -195,53 +195,17 @@ func restoreRollbackPolicy(source *rollbackGenerationSource, role noderole.Role,
 	return nil
 }
 
+// rollbackMemberContext classifies one keys/ or keytypes/ source member;
+// populateRollbackGeneration routes policies/ to restoreRollbackPolicy and
+// keeps everything else from the outgoing generation, so any other member is
+// refused.
 func rollbackMemberContext(
 	entry genstore.InventoryEntry,
 ) (crypto.ObjectContext, bool, error) {
-	switch entry.Path {
-	case storepaths.DefaultPolicyFileName, storepaths.DefaultPolicyFileName + ".hmac", "node.yaml.hmac",
-		storepaths.ASASetFileName, storepaths.ASASetFileName + ".hmac":
-		if entry.Term != 0 {
-			return crypto.ObjectContext{}, false, fmt.Errorf(
-				"rollback plaintext authority member %s carries term %d",
-				entry.Path,
-				entry.Term,
-			)
-		}
-		return crypto.ObjectContext{}, false, nil
-	}
-	namespace, name, ok := strings.Cut(entry.Path, "/")
-	if !ok {
-		return crypto.ObjectContext{}, false, fmt.Errorf(
-			"rollback source has invalid inventory path %q",
-			entry.Path,
-		)
-	}
+	namespace, name, _ := strings.Cut(entry.Path, "/")
 	switch namespace {
 	case "keys":
 		return rollbackCredentialContext(entry.Path, name, entry.Term)
-	case "policies":
-		return rollbackPolicyContext(entry.Path, name, entry.Term)
-	case "deleted":
-		deletedNamespace, deletedName, ok := strings.Cut(name, "/")
-		if !ok {
-			return crypto.ObjectContext{}, false, fmt.Errorf(
-				"rollback source has invalid deleted archive path %q",
-				entry.Path,
-			)
-		}
-		switch deletedNamespace {
-		case "keys":
-			return rollbackCredentialContext(entry.Path, deletedName, entry.Term)
-		case "keytypes":
-			return rollbackTemplateContext(entry.Path, deletedName, entry.Term)
-		case "policies":
-			return rollbackPolicyContext(entry.Path, deletedName, entry.Term)
-		}
-		return crypto.ObjectContext{}, false, fmt.Errorf(
-			"rollback source has unsupported deleted archive member %q",
-			entry.Path,
-		)
 	case "keytypes":
 		switch {
 		case strings.HasSuffix(name, templatestore.TemplateFileExtension):
@@ -267,16 +231,17 @@ func rollbackMemberContext(
 	)
 }
 
-// rollbackPolicyContext accepts a plaintext key policy document or sidecar.
-func rollbackPolicyContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
-	key, ok := strings.CutSuffix(strings.TrimSuffix(name, ".hmac"), ".json")
+// checkRollbackPolicyMember accepts a plaintext key policy document; its
+// caller has already skipped the sidecars.
+func checkRollbackPolicyMember(path, name string, term int64) error {
+	key, ok := strings.CutSuffix(name, ".json")
 	if !ok || storepaths.ValidatePolicySelector(key) != nil {
-		return crypto.ObjectContext{}, false, fmt.Errorf("rollback source has invalid policy member %q", path)
+		return fmt.Errorf("rollback source has invalid policy member %q", path)
 	}
 	if term != 0 {
-		return crypto.ObjectContext{}, false, fmt.Errorf("rollback plaintext member %s carries term %d", path, term)
+		return fmt.Errorf("rollback plaintext member %s carries term %d", path, term)
 	}
-	return crypto.ObjectContext{}, false, nil
+	return nil
 }
 
 func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {

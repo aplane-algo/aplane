@@ -31,7 +31,7 @@ func TestStoreBackupListShowsCreatedTimeAndSource(t *testing.T) {
 			return errors.New("unexpected request")
 		}
 		*result.(*protocol.BackupsListMessage) = protocol.BackupsListMessage{Backups: []protocol.BackupInfo{
-			{FileName: "aplane-backup-20261102-070725.tar.gz", Size: 10, Checksum: "aa"},
+			{FileName: "aplane-backup-20261102-070725.000000000.tar.gz", Size: 10, Checksum: "aa"},
 			{FileName: "lab.tar.gz", Size: 10, Checksum: "bb", CreatedAt: time.Date(2026, 10, 30, 18, 2, 11, 0, time.UTC).Unix()},
 		}}
 		return nil
@@ -41,7 +41,7 @@ func TestStoreBackupListShowsCreatedTimeAndSource(t *testing.T) {
 	if err := store.RunBackup([]string{"list"}); err != nil {
 		t.Fatal(err)
 	}
-	want := "aplane-backup-20261102-070725.tar.gz  10 B  aa  2026-11-02T07:07:25Z  from name\n" +
+	want := "aplane-backup-20261102-070725.000000000.tar.gz  10 B  aa  2026-11-02T07:07:25Z  from name\n" +
 		"lab.tar.gz  10 B  bb  2026-10-30T18:02:11Z  file time\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)

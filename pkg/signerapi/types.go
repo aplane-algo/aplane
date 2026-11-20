@@ -62,7 +62,7 @@ func (r LogicSigResourceUsage) validate() error {
 type SignRequest struct {
 	// Sign mode fields (server signs this transaction)
 	AuthAddress   string                 `json:"auth_address,omitempty"`   // Auth address (which key to use for signing)
-	TxnSender     string                 `json:"txn_sender,omitempty"`     // Advisory display hint; server derives authority from txn bytes
+	TxnSender     string                 `json:"txn_sender,omitempty"`     // Client-stated sender; the signer does not read it and takes the sender from txn bytes
 	TxnBytesHex   string                 `json:"txn_bytes_hex,omitempty"`  // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs (name -> hex value)
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign or passthrough LogicSig
@@ -547,19 +547,10 @@ type InputModeInfo struct {
 	InputType  string `json:"input_type,omitempty"`
 }
 
-// RuntimeArgInfo is runtime-argument metadata exposed from /keytypes.
+// RuntimeArgInfo is runtime-argument metadata: a key type's from /keytypes
+// (runtime_args, and a bounded contract's), or the signing arguments an aplane
+// key recorded when it was created, from /keys (signing_args).
 type RuntimeArgInfo struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"` // "address", "uint64", "string", "bytes"
-	Label       string `json:"label,omitempty"`
-	Description string `json:"description,omitempty"`
-	Required    bool   `json:"required,omitempty"`
-	ByteLength  int    `json:"byte_length,omitempty"`
-	MaxSize     int    `json:"max_size,omitempty"`
-}
-
-// SigningArgInfo is the key-file-owned signing-argument metadata exposed from /keys.
-type SigningArgInfo struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"` // "address", "uint64", "string", "bytes"
 	Label       string `json:"label,omitempty"`
@@ -587,7 +578,7 @@ type KeyInfo struct {
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
 	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
 	IsSpendingAccount        *bool                     `json:"is_spending_account,omitempty"`
-	SigningArgs              []SigningArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
+	SigningArgs              []RuntimeArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string                    `json:"template_provenance_note,omitempty"`

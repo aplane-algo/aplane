@@ -17,12 +17,13 @@ import (
 	"time"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -770,7 +771,7 @@ func mustReadPassphrase(t *testing.T, signerDataDir string) string {
 
 func mustActiveAccountKeyPath(t *testing.T, signerDataDir, address string) string {
 	t.Helper()
-	return apkeys.AccountKeyFilePathActive(mustActiveStorePaths(t, signerDataDir), address)
+	return keystest.AccountKeyFilePath(mustActiveStorePaths(t, signerDataDir), address)
 }
 
 func mustActiveStorePaths(t *testing.T, signerDataDir string) utilkeys.GenPaths {

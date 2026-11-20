@@ -245,7 +245,7 @@ func TestInterruptedChangePassBeforeRootReplacementKeepsOldAuthority(t *testing.
 	mustWaitForAddresses(t, env, address)
 	assertCanSign(t, env, address)
 	assertPassphraseRejected(t, env, newPass)
-	records, err := genstore.ListQuarantined(storepaths.NewPaths(env.dataDir))
+	records, err := genstore.ListQuarantined(storepaths.NewPaths(env.dataDir), nil)
 	if err != nil {
 		t.Fatalf("list quarantined successor: %v", err)
 	}

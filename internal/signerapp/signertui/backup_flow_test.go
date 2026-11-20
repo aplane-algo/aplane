@@ -84,13 +84,13 @@ func TestBackupDisplayCloseReturnsToBackupsSelectingTheNewBackup(t *testing.T) {
 	m := Model{
 		viewState: ViewBackupDisplay,
 		backup: backupState{
-			archivePath: "aplane-backup-20261102-070725.tar.gz",
+			archivePath: "aplane-backup-20261102-070725.000000000.tar.gz",
 		},
 	}
 
 	next, cmd := m.handleBackupDisplayKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewBackups || got.backups.selectName != "aplane-backup-20261102-070725.tar.gz" {
+	if got.viewState != ViewBackups || got.backups.selectName != "aplane-backup-20261102-070725.000000000.tar.gz" {
 		t.Fatalf("viewState = %v selectName %q, want the Backups page selecting the new backup", got.viewState, got.backups.selectName)
 	}
 	if got.backup.archivePath != "" {

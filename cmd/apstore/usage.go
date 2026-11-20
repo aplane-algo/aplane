@@ -27,7 +27,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore initialize --role cosigner\n")
 	fmt.Fprintf(os.Stderr, "  apstore rebuild /mnt/usb/aplane-backup.tar.gz\n")
 	fmt.Fprintf(os.Stderr, "  apstore rebuild /mnt/usb/aplane-cosigner-backup.tar.gz --role cosigner\n")
-	fmt.Fprintf(os.Stderr, "  apstore verify /mnt/usb/backup/aplane-backup-20260423-010203.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore verify /mnt/usb/backup/aplane-backup-20260423-010203.000000000.tar.gz\n")
 	fmt.Fprintf(os.Stderr, "  apstore policy check\n")
 	fmt.Fprintf(os.Stderr, "  apstore policy sign\n")
 	fmt.Fprintf(os.Stderr, "  apstore keys list\n")

@@ -12,7 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -130,7 +130,7 @@ func TestIPCManagedBackupPreviewAndDirectRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActivePaths() error = %v", err)
 	}
-	if _, err := os.Stat(keys.AccountKeyFilePathActive(active, generated.Address)); err != nil {
+	if _, err := os.Stat(keystest.AccountKeyFilePath(active, generated.Address)); err != nil {
 		t.Fatalf("restored key stat error = %v", err)
 	}
 	if ir.KeyCount() != 1 {

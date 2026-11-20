@@ -401,8 +401,14 @@ The full durable payload is `keys.Payload` (codec in
 `internal/keys/payload_codec.go`). The signing-argument *schema slice* is
 modeled by `internal/signingargs.Info`; key-file storage aliases that type as
 `keys.StoredSigningArg`, signer cache aliases it as `cache.SigningArgInfo`, and
-`/keys` projects it to the SDK-facing `signerapi.SigningArgInfo` DTO. Template
-and `/keytypes` generation metadata uses `runtime_args`.
+`/keys` projects it to the SDK-facing `signerapi.RuntimeArgInfo` DTO, the type
+`/keytypes` uses for the generation metadata `runtime_args`. Every projection of
+key-type metadata into these DTOs (creation parameters, those the signer
+declares itself included, such as a rotating account's network and the
+Witness Key ID selector; runtime arguments; a bounded contract's runtime
+arguments; and signing arguments) goes through
+`internal/signerapp/keytypemeta`, which drops the line break a YAML block scalar
+ends a description with (`lsigprovider.DescriptionText`).
 
 ### Bounded Authorization
 
@@ -1394,7 +1400,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key`/`is_spending_account` disambiguate selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
 | Key types response | wire projection | enabled providers/templates and cosigner refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args; may carry `signing_flow`. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
-| Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is advisory display data only. |
+| Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is client-stated; the signer does not read it and takes the sender from the decoded bytes. |
 | Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |

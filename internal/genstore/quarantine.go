@@ -127,11 +127,12 @@ func DiscardAbandoned(
 	if len(generationIDs) == 0 || len(generationIDs) > quarantineMaxPruneSelection {
 		return nil, fmt.Errorf("abandoned discard requires 1..%d generation IDs", quarantineMaxPruneSelection)
 	}
-	current, err := selectedGenerationFromStoreRoot(paths, kr)
+	selected, err := AuthenticateStoreRootSelection(paths, kr)
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := ReadManifest(paths.GenerationPaths(current))
+	current := selected.GenerationID()
+	manifest, err := ReadManifest(selected)
 	if err != nil {
 		return nil, fmt.Errorf("read current generation before abandoned discard: %w", err)
 	}
@@ -191,18 +192,10 @@ func DiscardAbandoned(
 
 // ListQuarantined returns deterministic non-authoritative metadata for the
 // currently quarantined generation publications. It never returns GenPaths or
-// otherwise makes the namespace addressable by signing and history APIs.
-func ListQuarantined(paths storepaths.Paths) ([]QuarantineRecord, error) {
-	return listQuarantined(paths, nil)
-}
-
-// ListQuarantinedWithKeyring additionally classifies envelope terms under the
-// currently authenticated authority without opening or returning plaintext.
-func ListQuarantinedWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRecord, error) {
-	return listQuarantined(paths, kr)
-}
-
-func listQuarantined(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRecord, error) {
+// otherwise makes the namespace addressable by signing and history APIs. A
+// non-nil kr additionally classifies envelope terms under the currently
+// authenticated authority without opening or returning plaintext.
+func ListQuarantined(paths storepaths.Paths, kr *crypto.Keyring) ([]QuarantineRecord, error) {
 	if _, _, err := quarantineUsage(paths); err != nil {
 		return nil, err
 	}
@@ -454,7 +447,7 @@ func checkQuarantineCapacity(count int, encodedBytes int64, candidate Quarantine
 // changepass, credential restore, rollback, and future mint callers from
 // drifting on the capacity invariant.
 func requireMintableGenerationStore(paths storepaths.Paths, kr *crypto.Keyring) error {
-	report, err := InspectStoreRoot(paths, kr, nil)
+	report, err := InspectStoreRoot(paths, kr)
 	if err != nil {
 		return err
 	}

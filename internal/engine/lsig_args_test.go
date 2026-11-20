@@ -216,9 +216,9 @@ func TestSubmitChecksLsigArgsAgainstTheEffectiveSigner(t *testing.T) {
 	lsigRekeyedAway, native := testAddress(13), testAddress(14)
 	keys := []signerapi.KeyInfo{
 		{Address: hashlock.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
-			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
+			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
 		{Address: lsigRekeyedAway.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
-			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true, ByteLength: 4}}},
+			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true, ByteLength: 4}}},
 		{Address: native.String(), KeyType: "ed25519"},
 	}
 	authAddrs := map[string]string{rekeyedToLsig.String(): hashlock.String(), lsigRekeyedAway.String(): native.String()}
@@ -281,7 +281,7 @@ func TestSubmitChecksLsigArgsAgainstTheEffectiveSigner(t *testing.T) {
 func TestSignAndSubmitWithPluginSignersPlacesArgumentsOnManagedSlots(t *testing.T) {
 	plugin, managed := testAddress(21), testAddress(22)
 	keys := []signerapi.KeyInfo{{Address: managed.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
-		SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}}
+		SigningArgs: []signerapi.RuntimeArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}}
 	refs := map[string]string{plugin.String(): "plugin-ref"}
 	preimage := map[string][]byte{"preimage": []byte("open")}
 

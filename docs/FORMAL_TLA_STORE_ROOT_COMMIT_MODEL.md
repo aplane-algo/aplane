@@ -43,9 +43,11 @@ The transitions transcribe the commit protocol in `internal/genstore`:
   `internal/crypto/store_root.go`.
 - `CrashBeforeRename`, `ReconcileOldRoot`, and `RestoreAuthenticOldRoot` are
   `internal/genstore/reconcile.go` and `internal/genstore/quarantine.go`: a
-  crash before the root rename leaves the old root authoritative, and a
-  complete non-current, unsealed, unreferenced publication is quarantined
-  intact — never deleted, resumed, or adopted. `RestoreAuthenticOldRoot`
+  crash before the root rename leaves the old root authoritative, and every
+  complete non-current, unsealed publication is quarantined intact — never
+  deleted, resumed, or adopted. (The current generation's declared parent is
+  retained instead: it was committed once, so a missing seal on it is damage
+  outside the model.) `RestoreAuthenticOldRoot`
   additionally models an operator restoring an older authentic root file
   after a successor committed; the newer complete directory then has the
   same shape as a crashed-mint publication and must be quarantined.

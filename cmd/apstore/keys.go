@@ -28,7 +28,7 @@ func cmdKeysList() error {
 	}
 	defer kr.Zero()
 
-	report, err := apkeys.ScanKeysDirectoryWithKeyringReportActive(active, kr)
+	report, err := apkeys.ScanKeysDirectory(active, kr, nil)
 	if err != nil {
 		return err
 	}

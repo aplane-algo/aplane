@@ -19,9 +19,9 @@ import (
 type ReconcileReport struct {
 	Current string
 	// Quarantined are safely relocatable, published-but-uncommitted
-	// generations (non-current, unsealed, unreferenced). Inspect reports what
-	// Reconcile would quarantine; Reconcile moves them without granting them
-	// selection, rollback, or historical authority.
+	// generations (non-current, unsealed, not the declared parent). Inspect
+	// reports what Reconcile would quarantine; Reconcile moves them without
+	// granting them selection, rollback, or historical authority.
 	Quarantined []QuarantineRecord
 	// DiscardedStaging are .staging-* directories that never published,
 	// plus orphaned durable-write temp files (seal.json.tmp-*) inside the
@@ -39,37 +39,25 @@ type ReconcileReport struct {
 
 // InspectStoreRoot authenticates a fresh root read and classifies generation
 // residue without changing it.
-func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map[string]bool) (ReconcileReport, error) {
-	current, err := selectedGenerationFromStoreRoot(paths, kr)
+func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (ReconcileReport, error) {
+	selected, err := AuthenticateStoreRootSelection(paths, kr)
 	if err != nil {
 		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
 	}
-	return reconcileSelected(paths, current, kr, referenced, false)
+	return reconcileSelected(paths, selected.GenerationID(), kr, false)
 }
 
 // ReconcileStoreRoot authenticates the sole commit record before relocating or
 // deleting any residue. The caller holds the mutation lock and an open keyring.
-func ReconcileStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced map[string]bool) (ReconcileReport, error) {
-	current, err := selectedGenerationFromStoreRoot(paths, kr)
+func ReconcileStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (ReconcileReport, error) {
+	selected, err := AuthenticateStoreRootSelection(paths, kr)
 	if err != nil {
 		return ReconcileReport{}, fmt.Errorf("reconcile: %w", err)
 	}
-	return reconcileSelected(paths, current, kr, referenced, true)
+	return reconcileSelected(paths, selected.GenerationID(), kr, true)
 }
 
-func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (string, error) {
-	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
-	if err != nil {
-		return "", err
-	}
-	selection, err := crypto.AuthenticateStoreRoot(exact, kr)
-	if err != nil {
-		return "", fmt.Errorf("authenticate store root: %w", err)
-	}
-	return selection.CurrentGenerationID, nil
-}
-
-func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, referenced map[string]bool, remove bool) (ReconcileReport, error) {
+func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyring, remove bool) (ReconcileReport, error) {
 	report := ReconcileReport{}
 	report.Current = current
 
@@ -140,7 +128,7 @@ func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyrin
 			if err != nil {
 				return report, err
 			}
-			if sealed || referenced[name] || name == retainedParent {
+			if sealed || name == retainedParent {
 				if sealed {
 					report.SealedPriors = append(report.SealedPriors, name)
 				} else if name == retainedParent {
@@ -228,15 +216,15 @@ func sweepWriteResidue(paths storepaths.Paths, current string, remove bool, repo
 
 // CollectGarbageStoreRoot prunes retained generations only after the sole
 // store root and its selection have been authenticated under kr.
-func CollectGarbageStoreRoot(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
-	report, err := ReconcileStoreRoot(paths, kr, referenced)
+func CollectGarbageStoreRoot(paths storepaths.Paths, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {
+	report, err := ReconcileStoreRoot(paths, kr)
 	if err != nil {
 		return nil, err
 	}
-	return collectGarbageFromReport(paths, referenced, retainRollbackParent, kr, report)
+	return collectGarbageFromReport(paths, retainRollbackParent, kr, report)
 }
 
-func collectGarbageFromReport(paths storepaths.Paths, referenced map[string]bool, retainRollbackParent bool, kr *crypto.Keyring, report ReconcileReport) ([]string, error) {
+func collectGarbageFromReport(paths storepaths.Paths, retainRollbackParent bool, kr *crypto.Keyring, report ReconcileReport) ([]string, error) {
 	// Reconcile has already validated the current generation (structure and
 	// manifest completeness) before its own deletions; nothing here runs
 	// against an unvalidated current.
@@ -252,12 +240,7 @@ func collectGarbageFromReport(paths storepaths.Paths, referenced map[string]bool
 		// missing, the fail-closed seal validation below still applies.
 		return nil, nil
 	}
-	retain := make(map[string]bool, len(referenced)+1)
-	for name, keep := range referenced {
-		if keep {
-			retain[name] = true
-		}
-	}
+	retainedParent := ""
 	if retainRollbackParent {
 		manifest, err := ReadManifest(paths.GenerationPaths(report.Current))
 		if err != nil {
@@ -278,12 +261,12 @@ func collectGarbageFromReport(paths storepaths.Paths, referenced map[string]bool
 			if validateErr != nil {
 				return nil, fmt.Errorf("collect: rollback parent %s failed seal validation, refusing to prune: %w", manifest.ParentID, validateErr)
 			}
-			retain[manifest.ParentID] = true
+			retainedParent = manifest.ParentID
 		}
 	}
 	var removed []string
 	for _, name := range report.SealedPriors {
-		if retain[name] {
+		if name == retainedParent {
 			continue
 		}
 		// Deletion is not atomic: a crash mid-RemoveAll would leave a

@@ -335,7 +335,7 @@ bin/apstore initialize
 bin/apadmin backup create all
 
 # Export a managed backup to an external directory
-bin/apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /path/to/backups
+bin/apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz /path/to/backups
 
 # Backup specific key
 bin/apadmin backup create address ABC123...
