@@ -984,7 +984,7 @@ func TestPresignManagedSlotsMeetTheDefaultFlowsPreconditions(t *testing.T) {
 	keys := []signerapi.KeyInfo{
 		{Address: native.String(), KeyType: "ed25519"},
 		{Address: hashlock.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true,
-			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
+			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "preimage", Type: "bytes", Required: true, MaxSize: 64}}},
 		{Address: rotating.String(), KeyType: "aplane.rotating-triple-xmss.v1", SigningFlow: signerapi.SigningFlowRotating1},
 		{Address: cosigned.String(), KeyType: "test.bounded-cosigner.v1", SigningFlow: signerapi.SigningFlowCosigned1},
 	}

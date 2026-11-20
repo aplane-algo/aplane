@@ -263,9 +263,21 @@ matching base spending signature and all account/program checks.
 The cosigned key is validated against signer inventory metadata — no key
 decryption — before the gates run, so a rejected request or an operator prompt
 never triggers a private-key operation and approval never precedes a
-key-not-found rejection. The key is decrypted only after the gates pass, under
-the final execution gate, so shutdown or lock transitions cannot
-complete while component key material is in use. In a mixed group the
+key-not-found rejection. The key is decrypted only after the gates pass and a
+last check finds the signer still unlocked in the session the request began
+in. That check is a moment, not a hold: component signing registers no key
+use, so a lock that begins after it does not wait for the signature. The lock
+clears the key session after it has drained the registered key users, waiting
+only for a decryption already under way. A decryption before the session is
+cleared still succeeds and one after it fails as locked, but a key already
+decrypted finishes its signature and is then zeroed: a lock can complete while
+component key material is still in use. An entry into recovery clears neither
+the session nor the keyring, so a request past the check signs to completion.
+Only the holders listed in [ARCH_SECURITY.md](ARCH_SECURITY.md#lock-path)
+register a key use, which a lock cancels and waits for. Shutdown zeroes the
+keyring only after the request servers have drained, and keeps it until
+process exit when a request handler may still be running at the deadline
+([Shutdown Path](ARCH_SECURITY.md#shutdown-path)). In a mixed group the
 operator may be prompted twice — once for the bounded-base component request
 and once for the ordinary `/sign` legs; both prompts render the full group
 context. The `auto_approve_self_noop_transfer` rule never fires for cosigned

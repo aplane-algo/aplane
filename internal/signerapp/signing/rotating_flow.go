@@ -605,8 +605,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	}
 
 	// Stateless signing performs a complete hypertree signature. Re-read the
-	// chain after that work and before releasing bytes. The existing execution
-	// lease remains held; do not acquire a second lease here.
+	// chain after that work and before releasing bytes. The re-read runs on the
+	// context of the key-use window opened above, which a lock cancels; it
+	// needs no window of its own.
 	if leafProfile.StatelessHash {
 		if stale := recheckChainAfterSigning(ctx, requestCtx, deps, genesis, account, spend, stageAddr); stale != nil {
 			return nil, stale

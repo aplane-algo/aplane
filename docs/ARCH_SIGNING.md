@@ -217,7 +217,7 @@ type SignBatch struct {
 type SignRequest struct {
     // Sign mode fields
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
-    TxnSender    string            `json:"txn_sender,omitempty"`    // Transaction sender (for display)
+    TxnSender    string            `json:"txn_sender,omitempty"`    // Client-stated sender; the signer does not read it
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
@@ -1196,11 +1196,27 @@ session cannot sign afterwards (past its approval, the session check refuses
 it), so none is left looking approvable. Such a request answers `locked` ("the signer's
 session ended while the request waited for approval; send it again") and is
 audited as `approval_withdrawn_session_ended`, not as an operator rejection.
-A session end cancels no request's context: a request that is planning or
-signing meets the session check or the lock's cut of its key use, which
-answer `locked` as before. A session end that comes after an operator
-answered overrides an approval, which could no longer sign, but not a
-rejection, which is recorded as the operator's. One refused at the check after its gates and
+A session end cancels no request's context. A request that is still planning,
+or waiting at its gates, meets the session check and answers `locked`. A
+rotating sign past that check is stopped at the cut of its key use, which
+every session end makes. Ordinary `/sign`, component signing (bounded-base and
+cosigner-role) and assembly register no key use, so for them the check is a
+moment, not a hold, and what stops one already past it depends on the session
+end:
+
+- A lock, the start of store maintenance, or an unlock that lost to a lock
+  runs the lock cleanup, which clears the key session only after it has
+  drained the registered key users. A key load before that still succeeds;
+  one after it fails, and the request answers `locked` (an assembly's
+  passthrough key lookup answers `internal` instead). A signature whose key
+  was already decrypted is not stopped: the cleanup does not wait for it, and
+  a request whose last key was already decrypted returns its signatures.
+- An entry into recovery clears neither the key session nor the keyring, so
+  such a request goes on loading its keys and signs to completion.
+
+A session end that comes after an operator answered overrides an approval,
+which could no longer sign, but not a rejection, which is recorded as the
+operator's. One refused at the check after its gates and
 approval passed is audited as `session_ended_after_approval`. A request sent
 again under the same ID belongs to the new session and is handled as new.
 Only the signer withdraws a request; an operator's rejection stays a
@@ -1530,8 +1546,9 @@ never meet its threshold. A LogicSig with a program and no delegation is an
 escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
 `/sign/assemble` apply the same check.
 
-`txn_sender` is an advisory display hint for clients. Signer authority,
-policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
+`txn_sender` is the transaction sender as the client states it. The signer
+does not read it: approval display, authority, policy, and audit use the
+sender decoded from `txn_bytes_hex`.
 
 `app_call_info` is approval-rendering metadata on the shared request DTO:
 

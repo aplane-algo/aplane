@@ -405,8 +405,11 @@ func (ir *Runtime) SetRecovery() {
 // endSignRequests ends every approval wait in flight when the session ends,
 // so no request from it is left waiting for, or showing, an approval; those
 // answer that the session ended. Requests that are planning or signing are
-// not interrupted here: the session check or the lock's cut of their key use
-// refuses them, as locked.
+// not interrupted here: the session check refuses one that has not passed it,
+// and the cut of its key use refuses a rotating sign. Ordinary and component
+// signing register no key use, so one already past the check is stopped only
+// by a key load after the lock cleanup cleared the session, and not at all by
+// an entry into recovery (ARCH_SIGNING.md, session end).
 // The lock cleanup calls it first, before it waits for key users, so a lock,
 // the start of store maintenance and an unlock that lost to a lock withdraw
 // at once; entering recovery, which runs no cleanup, calls it directly.
