@@ -70,9 +70,6 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 			if len(result.Mnemonic) != 0 || !bytes.Equal(exported.shared, make([]byte, len(exported.shared))) {
 				t.Fatal("service retained the delivered phrase")
 			}
-			if details, detailsErr := svc.GetKeyDetails(generated.Address); detailsErr != nil || !details.MnemonicExportable {
-				t.Fatal("key details do not mark the key exportable")
-			}
 			if len(audit.exported) != 1 || audit.exported[0].address != generated.Address || audit.exported[0].outcome != "released" {
 				t.Fatal("export audit missing")
 			}
@@ -100,6 +97,9 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 			if !bytes.Equal(generatedFile, importedFile) {
 				t.Fatal("generate and import wrote different key files")
 			}
+			if publicKeyFieldForTest(t, importedFile) != publicKeyFieldForTest(t, generatedFile) {
+				t.Fatal("import changed the public key")
+			}
 			if got := keyFileFieldsForTest(t, generatedFile); got != wantKeyFileFields[keyType] {
 				t.Fatalf("key file fields = %s, want %s", got, wantKeyFileFields[keyType])
 			}
@@ -115,7 +115,7 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 // wantKeyFileFields is each native key type's decrypted key file fields.
 var wantKeyFileFields = map[string]string{
 	"ed25519":    "category,created_at,format_version,key_type,private_key,public_key,valid_rekey_target",
-	"falcon1024": "category,created_at,format_version,key_type,pq_address_salt,pq_scheme,private_key,public_key,recovery_entropy,valid_rekey_target",
+	"falcon1024": "category,created_at,format_version,key_type,private_key,public_key,recovery_entropy,valid_rekey_target",
 }
 
 // maskedKeyFileForTest returns the decrypted key file of address with its
@@ -146,6 +146,17 @@ func maskedKeyFileForTest(t *testing.T, ir *productruntime.Runtime, address stri
 }
 
 var createdAtPattern = regexp.MustCompile(`"created_at": "[^"]*"`)
+
+func publicKeyFieldForTest(t *testing.T, data []byte) string {
+	t.Helper()
+	var fields struct {
+		PublicKey string `json:"public_key"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil || fields.PublicKey == "" {
+		t.Fatalf("key file has no public_key: %v", err)
+	}
+	return fields.PublicKey
+}
 
 func keyFileFieldsForTest(t *testing.T, data []byte) string {
 	t.Helper()
@@ -228,47 +239,6 @@ func TestNativeMnemonicExportAuditsDeliveryFailure(t *testing.T) {
 	}
 }
 
-func TestLegacyNativeFalconMnemonicUnavailable(t *testing.T) {
-	nativereg.RegisterSigner()
-	ir := setupProductRuntime(t)
-	svc := Service{Runtime: ir}
-	generated, genErr := svc.GenerateKey(context.Background(), "falcon1024", nil)
-	if genErr != nil {
-		t.Fatal(genErr)
-	}
-	file, err := ir.FindKeyFile(generated.Address)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
-		raw, err := keys.ReadDecryptedKeyJSONWithKeyring(file, kr)
-		if err != nil {
-			return err
-		}
-		defer crypto.ZeroBytes(raw)
-		payload, err := keys.ParsePayload(raw)
-		if err != nil {
-			return err
-		}
-		defer payload.ZeroSecrets()
-		crypto.ZeroBytes(payload.RecoveryEntropy)
-		payload.RecoveryEntropy = nil
-		payload.FormatVersion = keys.CurrentKeyFormatVersion
-		_, err = keys.SaveNewPayload(ir.KeyPaths(), payload, false, kr)
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, delivered := exportWith(svc, context.Background(), generated.Address, bytes.Clone(testPassphrase))
-	if result.Success || delivered.calls != 0 || result.Code != "unavailable" {
-		t.Fatalf("unexpected result code %s", result.Code)
-	}
-	if details, detailsErr := svc.GetKeyDetails(generated.Address); detailsErr != nil || details.MnemonicExportable {
-		t.Fatal("key details mark a Falcon key without entropy exportable")
-	}
-}
-
 func TestNativeMnemonicExportRejectsWitness(t *testing.T) {
 	ir := setupProductRuntimeWithRole(t, noderole.RoleCosigner)
 	svc := Service{Runtime: ir}
@@ -279,9 +249,6 @@ func TestNativeMnemonicExportRejectsWitness(t *testing.T) {
 	result, delivered := exportWith(svc, context.Background(), key.Address, bytes.Clone(testPassphrase))
 	if result.Success || delivered.calls != 0 || result.Code != "forbidden" {
 		t.Fatalf("unexpected result code %s", result.Code)
-	}
-	if details, detailsErr := svc.GetKeyDetails(key.Address); detailsErr != nil || details.MnemonicExportable {
-		t.Fatal("key details mark a witness key exportable")
 	}
 }
 

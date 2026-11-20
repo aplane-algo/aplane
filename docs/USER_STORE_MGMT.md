@@ -103,15 +103,18 @@ after it appears (an unanswered passphrase prompt also closes after two minutes)
 and lock or disconnect clears it. There is no automatic clipboard or plaintext
 file output. Generation itself does not display recovery phrases.
 
-This supports existing Ed25519 keys and newly generated/imported native
-`falcon1024` keys that retain recovery entropy. Older Falcon credentials cannot
-recover their original phrase: use encrypted backups. LogicSig, rotating, and
-witness credentials do not support mnemonic export. Key details show the `m`
-option only for keys whose phrase can be exported.
+This supports every native key: `ed25519` and `falcon1024`. LogicSig,
+rotating, and witness credentials do not support mnemonic export, and key
+details show the `m` option only for a native key.
 
-Native Falcon credentials with recovery entropy use payload format 2. APlane
-v0.46.0 and older cannot read these new credentials or restore backups containing
-them. Existing format-1 credentials remain readable by newer releases.
+Native Falcon key files changed shape in this release: they no longer store
+`pq_scheme` or `pq_address_salt`, which follow from the key type and public
+key. A native Falcon key file or backup written by an earlier release is
+refused, so an older backup that holds a native Falcon key does not restore.
+Move each native Falcon key by its phrase instead: show it with the release
+that holds the key, then import it here with local AP Admin (see
+[Mnemonic Import](#2-mnemonic-import)). A native Falcon key from before v0.48.0
+has no phrase; move its funds to a new account from the release that holds it.
 
 ---
 
@@ -917,11 +920,10 @@ template YAML.
 
 **Problem**: Key details do not offer `m` (Show recovery phrase).
 
-**Cause**: Export is restricted to native Ed25519 and native Falcon keys. Older
-Falcon credentials did not retain the entropy needed to reconstruct their phrase.
+**Cause**: Export is restricted to native Ed25519 and native Falcon keys.
 
-**Solution**: Use encrypted backups for those credentials. For supported native
-keys, open their details in local apadmin and press `m`, then re-enter the signer
+**Solution**: Use encrypted backups for every other credential. For a native
+key, open its details in local apadmin and press `m`, then re-enter the signer
 passphrase. Keep any externally held recovery phrase offline and separate from
 the store passphrase.
 

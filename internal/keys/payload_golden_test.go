@@ -32,29 +32,24 @@ func registerGoldenTestCodecs() {
 	})
 }
 
-func goldenNativeFalconPayload(t *testing.T, withEntropy bool) *Payload {
+// goldenNativeFalconPayload pairs a fixed key pair with unrelated entropy; the
+// stand-in validator does not check that the entropy derives the pair.
+func goldenNativeFalconPayload(t *testing.T) *Payload {
 	t.Helper()
 	publicKey, privateKey, err := falcon.GenerateKey(bytes.Repeat([]byte{0x21}, 32))
 	if err != nil {
 		t.Fatal(err)
 	}
-	salt, _, err := nativefalcon.CanonicalAddress(publicKey[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
-	if withEntropy {
-		payload.FormatVersion = NativeRecoveryKeyFormatVersion
-		payload.RecoveryEntropy = bytes.Repeat([]byte{0x22}, nativefalcon.RecoveryEntropySize)
-	}
-	return payload
+	return NewNativeFalconPayload(publicKey[:], privateKey[:], bytes.Repeat([]byte{0x22}, nativefalcon.RecoveryEntropySize))
 }
 
 // TestMarshalPayloadGoldenBytes pins the exact bytes MarshalPayload writes for
 // every key category, above all those that carry private_key or
 // recovery_entropy. A key file's encrypted payload is these bytes, so they
 // must not change. The digests were taken from the encoder that held both
-// fields as hex strings.
+// fields as hex strings, native_pq's again when native Falcon key files
+// dropped pq_scheme and pq_address_salt; keystest's
+// TestPreChangeNativeFalconKeyJSONIsTheEarlierEncoding pins the earlier bytes.
 func TestMarshalPayloadGoldenBytes(t *testing.T) {
 	registerGoldenTestCodecs()
 	edPublic, edPrivate := canonicalEd25519Pair(t, 0x11)
@@ -68,8 +63,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 		digest  string
 	}{
 		{"ed25519", NewEd25519Payload(edPublic, edPrivate), "e8a4354115b677b16da4cf36b69b7bcb24d99b4f61494e13fdf56826810c03ea"},
-		{"native_pq", goldenNativeFalconPayload(t, false), "edfaac7e7dd8f9d165400b125d003c75b5d687b86e4d295d11cbf3292832fb31"},
-		{"native_pq with recovery entropy", goldenNativeFalconPayload(t, true), "0e2ae0dde698b9c1b4469e11de9bf757934c9d8fa18bd3aaa66d64b92f7a6b1e"},
+		{"native_pq", goldenNativeFalconPayload(t), "1cda1c45fc16669cc7ec3e5be3a89177bed25ed32ad7262b1acf94ea83fe177e"},
 		{"witness", NewWitnessPayload(witness.Falcon1024V1, componentPublic, componentPrivate), "d6e494aa574e43ba93dc1be7994fee193d6d57277bfaa5d0f7cf1e711a43d70f"},
 		{"dsa_lsig", payloadWithOpcodeProfile(t, NewDSALSigPayload(
 			"test.dsa.v1", "test.base.v1", []byte{0x01, 0x02}, []byte{0x03, 0x04},

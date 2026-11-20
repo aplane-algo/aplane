@@ -459,6 +459,10 @@ func TestClearKeysBlocksDuringWithKeyring(t *testing.T) {
 	}
 }
 
+// preChangeNativeFalconScanWarning is the scan warning for a native Falcon key
+// file from before key files dropped pq_scheme and pq_address_salt.
+const preChangeNativeFalconScanWarning = `Skipped incompatible key file {file}: incompatible key file format: failed to decode canonical payload: json: unknown field "pq_scheme"; restore or regenerate the key file using the current key schema`
+
 // A native Falcon key file from before key files dropped pq_scheme and
 // pq_address_salt, with or without recovery entropy, is skipped by the scan
 // as an incompatible key file.
@@ -469,8 +473,8 @@ func TestFileKeyStoreScanSkipsPreChangeNativeFalconKeyFiles(t *testing.T) {
 		recovery bool
 		want     string
 	}{
-		{"format 2 with recovery entropy", true, ""},
-		{"format 1 without recovery entropy", false, ""},
+		{"format 2 with recovery entropy", true, preChangeNativeFalconScanWarning},
+		{"format 1 without recovery entropy", false, preChangeNativeFalconScanWarning},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, paths, cleanup := setupTestKeysDir(t)
@@ -496,13 +500,10 @@ func TestFileKeyStoreScanSkipsPreChangeNativeFalconKeyFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ScanKeysDirectory() error = %v", err)
 			}
-			var got string
-			if len(report.Warnings) == 1 {
-				got = report.Warnings[0].Message()
-			}
 			want := strings.ReplaceAll(tc.want, "{file}", keyFile)
-			if got != want || len(report.Keys) != 1-len(report.Warnings) || len(report.Warnings) > 1 {
-				t.Fatalf("scan kept %d keys and warned %q, want warning %q", len(report.Keys), got, want)
+			if len(report.Keys) != 0 || len(report.Warnings) != 1 ||
+				report.Warnings[0].Code != keys.KeyScanWarningIncompatibleFormat || report.Warnings[0].Message() != want {
+				t.Fatalf("scan kept %d keys and warned %v, want only %q", len(report.Keys), report.Warnings, want)
 			}
 		})
 	}

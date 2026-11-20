@@ -92,14 +92,12 @@ func NativeFalconKeyJSON(t testing.TB, entropy []byte) (address string, keyJSON 
 		t.Fatalf("DeriveKeyPair() error = %v", err)
 	}
 	defer crypto.ZeroBytes(privateKey[:])
-	salt, derived, err := nativefalcon.CanonicalAddress(publicKey[:])
+	_, derived, err := keys.NativePQAddress(nativefalcon.KeyType, publicKey[:])
 	if err != nil {
-		t.Fatalf("CanonicalAddress() error = %v", err)
+		t.Fatalf("NativePQAddress() error = %v", err)
 	}
-	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
+	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], entropy)
 	defer payload.ZeroSecrets()
-	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
-	payload.RecoveryEntropy = append([]byte(nil), entropy...)
 	payload.ValidRekeyTarget = true
 	return derived.String(), marshal(t, payload, "native_pq")
 }
@@ -120,9 +118,9 @@ func PreChangeNativeFalconKeyJSON(t testing.TB, keyJSON []byte, recovery bool) [
 	if err != nil {
 		t.Fatalf("decode native Falcon public key: %v", err)
 	}
-	salt, _, err := nativefalcon.CanonicalAddress(publicKey)
+	salt, _, err := keys.NativePQAddress(nativefalcon.KeyType, publicKey)
 	if err != nil {
-		t.Fatalf("CanonicalAddress() error = %v", err)
+		t.Fatalf("NativePQAddress() error = %v", err)
 	}
 	lines := strings.Split(string(keyJSON), "\n")
 	out := make([]string, 0, len(lines)+2)

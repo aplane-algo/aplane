@@ -54,8 +54,6 @@ func TestProviderAuthorizesStructuredTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	material.Category = "native_pq"
-	material.PQScheme = nativefalcon.Scheme
-	material.PQAddressSalt = &salt
 	material.PublicKey = append([]byte(nil), publicKey[:]...)
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: address}}
 	stxn, err := provider.AuthorizeTransaction(material, txn, address)
@@ -64,5 +62,8 @@ func TestProviderAuthorizesStructuredTransaction(t *testing.T) {
 	}
 	if stxn.PQsig.Blank() || stxn.Sig != (types.Signature{}) {
 		t.Fatal("provider did not return an exclusive PQ authorization")
+	}
+	if byte(stxn.PQsig.Salt) != salt {
+		t.Fatalf("provider signed with salt %d, the canonical salt is %d", stxn.PQsig.Salt, salt)
 	}
 }

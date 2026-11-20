@@ -338,7 +338,8 @@ the on-disk category.
 
 Durable signing metadata includes:
 
-- `format_version`,
+- `format_version`, which follows from the category: 2 for `native_pq`, 1 for
+  every other category,
 - `category`,
 - `key_type`,
 - public/private key material where applicable,
@@ -352,7 +353,9 @@ Durable signing metadata includes:
 - optional `template_fingerprint`, which for a plain host account with overlays or
   bounds is the selected arrangement's or shape's fingerprint rather than the
   type-wide grammar fingerprint,
-- `pq_scheme` and `pq_address_salt` for native PQ keys,
+- `recovery_entropy` for native PQ keys, which every one keeps; a native PQ
+  key stores no scheme or address salt, since `keys.NativePQAddress` derives
+  both from its key type and public key,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,
 - `valid_rekey_target` on every category: the key type's declaration recorded
@@ -1295,7 +1298,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Managed credential envelope | authoritative secret storage | selected generation `keys/*.key` or `keys/*.cos` encrypted JSON | decrypted canonical payload | `internal/keys`, `internal/keystore` | Category selects the sole filename class; envelope and payload versions checked before use; the term envelope's AAD binds the account address or Witness Key ID, so a credential filed under another name does not decrypt. |
 | Native Ed25519 key | signing authority | `.key` category `ed25519` | address to private key material | `internal/signing`, `internal/keygen`, `internal/keys` | Address derives from key material; explicit local mnemonic export is available. |
-| Native PQ key | signing authority | `.key` category `native_pq`, key type `falcon1024` | address to protocol-native Falcon-1024 key material | `internal/signing/falcon1024`, `internal/keys` | Protocol-native post-quantum account; format 2 retains encrypted recovery entropy for explicit local mnemonic export. |
+| Native PQ key | signing authority | `.key` category `native_pq`, key type `falcon1024` | address to protocol-native Falcon-1024 key material | `internal/signing/falcon1024`, `internal/keys` | Protocol-native post-quantum account; every key keeps encrypted recovery entropy, so every one can export its phrase locally. Scheme and address salt derive from the key type and public key, not the file. |
 | Rotating account key | signing authority | `.key` category `rotating_lsig` | address, rotating stage material, stage table | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Inventory uses `signing_flow: rotating1`; served only by `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary signing endpoints refuse with `rotating_signing_required`. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |

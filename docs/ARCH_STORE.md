@@ -1349,33 +1349,38 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   beyond that; no secret is cached. Only accounts created at stage 0 are
   supported.
 
-Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
-`pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
-The public key is exactly 1793 bytes and the private key exactly 2305 bytes.
-The salt is the lowest byte whose
-`SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
-Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
-recovery entropy; the Falcon working seed is
-`SHA512/256("PQK" || "f1" || entropy)`. Newly generated and mnemonic-imported
-native Falcon credentials use `format_version: 2` and retain the 32-byte entropy
-as canonical hex `recovery_entropy` inside the encrypted payload. The full
-admission parse (`keys.ParsePayload`, also run by `MarshalPayload` before any
-write) requires it to reproduce the exact stored public/private key pair; it is
-never included in public metadata or signing projections. Re-deriving the pair
-is a full Falcon key generation, so hot reads of credentials already in the
+Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`
+and `format_version: 2`; every other category uses format 1. The public key
+is exactly 1793 bytes and the private key exactly 2305 bytes. The key file
+stores neither the protocol scheme nor the address salt: both follow from the
+key type and public key, and `keys.NativePQAddress` is the one place that
+derives them. For `falcon1024` the scheme is `f1` and the salt is the lowest
+byte whose `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+Ed25519 curve point. `internal/keys/native_pq_test.go` freezes that derivation
+with literal vectors: a different scheme or address rule is a new key type,
+not a change to `falcon1024`. Its 25-word Algorand mnemonic encodes 32 bytes
+of recovery entropy; the Falcon working seed is
+`SHA512/256("PQK" || "f1" || entropy)`. Every native Falcon credential keeps
+the 32-byte entropy as canonical hex `recovery_entropy` inside the encrypted
+payload; no other category may carry it. The full admission parse
+(`keys.ParsePayload`, also run by `MarshalPayload` before any write) requires
+it to reproduce the exact stored public/private key pair; it is never included
+in public metadata or signing projections. Re-deriving the pair is a full
+Falcon key generation, so hot reads of credentials already in the
 authenticated store (key scans, signing lookups, key list and details) use
 `keys.ParseStoredPayload`, which checks the entropy structurally and runs the
 cheaper key-pair probe instead. Ingress paths (backup restore, import, copy)
-and mnemonic export always use the full parse. Backup/restore and
-passphrase changes preserve it, and secret cleanup wipes it.
+and mnemonic export always use the full parse. Backup/restore and passphrase
+changes preserve it, and secret cleanup wipes it.
 
-Format 1 remains readable and is still written for other key classes. It
-forbids recovery entropy; format 2 is accepted only for native Falcon with
-exactly 32 bytes of matching entropy. Old Falcon credentials remain usable
-but cannot export a mnemonic because their entropy was discarded. No entropy
-can be reconstructed from their expanded private key. Readers through v0.46.0
-reject format 2; stores/backups containing these credentials require the newer
-reader. Native addresses and signing algorithms are unchanged.
+A native Falcon key file written before key files dropped `pq_scheme` and
+`pq_address_salt`, or one from before native Falcon kept recovery entropy, is
+refused: the scan skips it as an incompatible key file, and every backup
+consumer refuses an archive that holds one. Move such a key by exporting its
+25-word phrase with the release that holds it and importing the phrase here.
+A key without recovery entropy has no phrase to export; move its funds to a
+new account from the release that holds it. Native addresses and signing are
+unchanged.
 
 Native Ed25519 recovery phrases are reconstructed from the validated private
 key and need no storage change. Both native types may explicitly export their

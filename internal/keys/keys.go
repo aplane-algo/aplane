@@ -546,8 +546,6 @@ func logicSigAddressBytes(bytecode []byte) (types.Address, error) {
 
 type SigningMetadata struct {
 	Category               string
-	PQScheme               string
-	PQAddressSalt          *byte
 	BaseKeyType            string
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg

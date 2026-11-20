@@ -51,7 +51,7 @@ func TestNativeFalconBackupPreservesRecoveryEntropy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer payload.ZeroSecrets()
-	if payload.FormatVersion != keys.NativeRecoveryKeyFormatVersion || !bytes.Equal(payload.RecoveryEntropy, entropy) {
+	if payload.FormatVersion != keys.NativePQKeyFormatVersion || !bytes.Equal(payload.RecoveryEntropy, entropy) {
 		t.Fatal("backup/restore lost recovery entropy")
 	}
 }

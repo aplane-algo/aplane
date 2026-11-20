@@ -10,6 +10,7 @@ import (
 	"github.com/algorand/falcon"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
@@ -56,16 +57,15 @@ func (p *Provider) AuthorizeTransaction(key *signing.KeyMaterial, txn types.Tran
 	if !ok || privateKey == nil {
 		return types.SignedTxn{}, fmt.Errorf("invalid native Falcon private key material")
 	}
-	if key.Category != "native_pq" {
+	if key.Category != keys.CategoryNativePQ {
 		return types.SignedTxn{}, fmt.Errorf("native Falcon key category is %q, want native_pq", key.Category)
 	}
-	if key.PQScheme != nativefalcon.Scheme {
-		return types.SignedTxn{}, fmt.Errorf("native Falcon PQ scheme is %q, want %q", key.PQScheme, nativefalcon.Scheme)
+	// Key files store no address salt; it follows from the public key.
+	salt, _, err := keys.NativePQAddress(key.Type, key.PublicKey)
+	if err != nil {
+		return types.SignedTxn{}, fmt.Errorf("derive native Falcon address salt: %w", err)
 	}
-	if key.PQAddressSalt == nil {
-		return types.SignedTxn{}, fmt.Errorf("native Falcon key is missing PQ address salt")
-	}
-	return signerops.AuthorizeTransaction(privateKey, key.PublicKey, *key.PQAddressSalt, txn, authorizer)
+	return signerops.AuthorizeTransaction(privateKey, key.PublicKey, salt, txn, authorizer)
 }
 
 func (*Provider) ZeroKey(key *signing.KeyMaterial) {

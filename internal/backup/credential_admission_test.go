@@ -185,6 +185,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, true), admissionPassphrase)
 				return address, address
 			},
+			refusal: preChangeNativeFalconRefusal,
 		},
 		{
 			name: "native Falcon credential from before recovery entropy",
@@ -193,6 +194,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, false), admissionPassphrase)
 				return address, address
 			},
+			refusal: preChangeNativeFalconRefusal,
 		},
 		{
 			name: "member that is not JSON",
@@ -328,6 +330,11 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 		})
 	}
 }
+
+// preChangeNativeFalconRefusal is what every archive consumer reports for a
+// native Falcon credential from before key files dropped pq_scheme and
+// pq_address_salt, with or without recovery entropy.
+const preChangeNativeFalconRefusal = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "pq_scheme"; restore or regenerate the key file using the current key schema`
 
 // nativeFalconBackupKeyJSONForTest returns a native Falcon credential, one
 // per entropy fill, since rebuild restores every case into one store.

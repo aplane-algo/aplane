@@ -67,14 +67,12 @@ func (g *NativeFalconGenerator) generate(paths storepaths.Paths, entropy []byte,
 		return nil, fmt.Errorf("generate native Falcon key pair: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey[:])
-	salt, address, err := nativefalcon.CanonicalAddress(publicKey[:])
+	_, address, err := keys.NativePQAddress(nativefalcon.KeyType, publicKey[:])
 	if err != nil {
 		return nil, err
 	}
-	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
+	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], entropy)
 	defer payload.ZeroSecrets()
-	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
-	payload.RecoveryEntropy = append([]byte(nil), entropy...)
 	keyFiles, err := SaveNewKey(paths, payload, kr)
 	if err != nil {
 		return nil, fmt.Errorf("save native Falcon key: %w", err)

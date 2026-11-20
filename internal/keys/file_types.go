@@ -23,9 +23,19 @@ const (
 	CategoryWitness         = "witness"
 	CategoryRotatingLsig    = "rotating_lsig"
 	CurrentKeyFormatVersion = 1
-	// NativeRecoveryKeyFormatVersion adds recovery entropy to native Falcon credentials.
-	NativeRecoveryKeyFormatVersion = 2
+	// NativePQKeyFormatVersion is the format of every native PQ credential,
+	// which keeps the recovery entropy that derives its key pair.
+	NativePQKeyFormatVersion = 2
 )
+
+// formatVersionForCategory is the one format_version a category's payload
+// carries.
+func formatVersionForCategory(category string) int {
+	if category == CategoryNativePQ {
+		return NativePQKeyFormatVersion
+	}
+	return CurrentKeyFormatVersion
+}
 
 const CurrentSigningMetadataVersion = 1
 
