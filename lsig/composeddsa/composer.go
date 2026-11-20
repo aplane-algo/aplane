@@ -90,12 +90,11 @@ type Config struct {
 	TemplateVars []tealtemplate.TemplateVariable
 	Params       []lsigprovider.ParameterDef  // Creation-time parameters
 	RuntimeArgs  []lsigprovider.RuntimeArgDef // Signing-time arguments
-	// BoundedRuntimeArgs and DerivedArgs carry schema-v2-only slot metadata.
-	BoundedRuntimeArgs []boundedmeta.RuntimeArg
-	DerivedArgs        []boundedmeta.DerivedArg
-	Bounded            *BoundedAuthorizationProfile
-	Layer3             *Layer3Policy
-	OpcodeProfile      lsigresource.OpcodeProfile
+	// DerivedArgs carries schema-v2-only slot metadata.
+	DerivedArgs   []boundedmeta.DerivedArg
+	Bounded       *BoundedAuthorizationProfile
+	Layer3        *Layer3Policy
+	OpcodeProfile lsigresource.OpcodeProfile
 	// RekeyTargetDeclaration is an installed template's valid_rekey_target,
 	// part of its definition and its fingerprint. A compiled key type, a plain
 	// host's programs included, leaves it nil: it declares the attribute in
@@ -120,13 +119,15 @@ type ComposedDSA struct {
 	description string
 
 	// Components
-	ops                DSAOps
-	tealSuffix         string
-	saltStyle          lsigsalt.Style
-	templateMode       string
-	templateVars       []tealtemplate.TemplateVariable
-	params             []lsigprovider.ParameterDef
-	runtimeArgs        []lsigprovider.RuntimeArgDef
+	ops          DSAOps
+	tealSuffix   string
+	saltStyle    lsigsalt.Style
+	templateMode string
+	templateVars []tealtemplate.TemplateVariable
+	params       []lsigprovider.ParameterDef
+	runtimeArgs  []lsigprovider.RuntimeArgDef
+	// boundedRuntimeArgs is runtimeArgs as a bounded account records them,
+	// for a bounded composer.
 	boundedRuntimeArgs []boundedmeta.RuntimeArg
 	derivedArgs        []boundedmeta.DerivedArg
 	bounded            *BoundedAuthorizationProfile
@@ -160,10 +161,19 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		}
 	}
 	if bounded != nil && bounded.Cosigner != nil && !hasParameter(params, BoundedCosignerPublicKeyParameter) {
-		params = append(params, boundedCosignerPublicKeyParameterDef(bounded.Cosigner.ComponentKeyType))
+		params = append(params, BoundedCosignerParameterDef(bounded.Cosigner.ComponentKeyType))
 	}
 	if bounded != nil && bounded.RekeyList != nil && !hasParameter(params, BoundedRekeyToParameter) {
 		params = append(params, rekeyListEntriesParameterDef(bounded.Rekey))
+	}
+	var boundedRuntimeArgs []boundedmeta.RuntimeArg
+	if bounded != nil {
+		for _, arg := range cfg.RuntimeArgs {
+			boundedRuntimeArgs = append(boundedRuntimeArgs, boundedmeta.RuntimeArg{
+				Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
+				Required: arg.Required, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
+			})
+		}
 	}
 	return &ComposedDSA{
 		keyType:                cfg.KeyType,
@@ -179,7 +189,7 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		templateVars:           cfg.TemplateVars,
 		params:                 params,
 		runtimeArgs:            cfg.RuntimeArgs,
-		boundedRuntimeArgs:     append([]boundedmeta.RuntimeArg(nil), cfg.BoundedRuntimeArgs...),
+		boundedRuntimeArgs:     boundedRuntimeArgs,
 		derivedArgs:            append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
 		bounded:                bounded,
 		layer3:                 cloneLayer3Policy(cfg.Layer3),
@@ -525,7 +535,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		return "", err
 	}
 	var strictSuffix tealtemplate.RenderedTemplate
-	if strings.TrimSpace(c.tealSuffix) != "" {
+	if c.hasAuthorTEAL() {
 		if err := validateSuffixControlFlow(c.tealSuffix); err != nil {
 			return "", err
 		}
@@ -593,15 +603,16 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	}
 	// A framework allowlist is emitted first and falls through, so author TEAL
 	// can only narrow what it admits and nothing the author writes can skip it.
+	// Author TEAL is always present here: a composer with no framework policy
+	// has some (validateBoundedConfig, or the early return above), so the
+	// suffix switch has already refused a missing or unknown mode.
 	if c.layer3 == nil || c.hasAuthorTEAL() {
 		switch mode {
 		case generictemplate.TemplateModeStrict:
 			b.WriteString(strictSuffix.TEAL)
 			b.WriteString("\n\n")
-		case generictemplate.TemplateModeGenerated, "":
-			// An empty mode reaches here only without author TEAL (the suffix
-			// switch above refuses one), which renders as the empty generated suffix.
-			// Optional user-supplied suffix with @variable substitution.
+		case generictemplate.TemplateModeGenerated:
+			// User-supplied suffix with @variable substitution.
 			paramDefs := make([]tealtemplate.ParamDef, len(authorDefs))
 			for i, p := range authorDefs {
 				paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
@@ -618,8 +629,6 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 			}
 			b.WriteString(substituted)
 			b.WriteString("\n\n")
-		default:
-			return "", fmt.Errorf("unsupported template_mode %q", c.templateMode)
 		}
 	}
 

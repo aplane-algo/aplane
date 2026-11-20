@@ -133,6 +133,12 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 	if err := ValidateTemplateSpec(spec); err != nil {
 		return nil, err
 	}
+	return newProviderFromValidSpec(spec)
+}
+
+// newProviderFromValidSpec composes a spec that passed ValidateTemplateSpec on
+// its registered base.
+func newProviderFromValidSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 	base, ok := LookupBase(spec.BaseKeyType)
 	if !ok {
 		return nil, fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
@@ -173,26 +179,24 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 	if err != nil {
 		return nil, err
 	}
-	boundedRuntimeMetadata, runtimeDefs := boundedRuntimeArgsFromTemplate(spec.Bounded)
 	return NewComposedDSA(Config{
-		KeyType:            spec.KeyType(),
-		BaseKeyType:        base.BaseKeyType,
-		FamilyName:         base.FamilyName,
-		Version:            spec.Version,
-		DisplayName:        spec.DisplayName,
-		Description:        spec.Description,
-		Ops:                base.Ops,
-		TEALSuffix:         strings.TrimSpace(spec.TEAL),
-		SaltStyle:          saltStyle,
-		TemplateMode:       spec.TemplateMode,
-		TemplateVars:       spec.TemplateVariables,
-		Params:             generictemplate.ParameterSpecToParameterDefs(spec.Parameters),
-		RuntimeArgs:        append(generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs), runtimeDefs...),
-		BoundedRuntimeArgs: boundedRuntimeMetadata,
-		DerivedArgs:        boundedDerivedArgsFromTemplate(spec.Bounded),
-		Bounded:            bounded,
-		Layer3:             layer3,
-		OpcodeProfile:      spec.LogicSigOpcodeProfile(bounded != nil),
+		KeyType:       spec.KeyType(),
+		BaseKeyType:   base.BaseKeyType,
+		FamilyName:    base.FamilyName,
+		Version:       spec.Version,
+		DisplayName:   spec.DisplayName,
+		Description:   spec.Description,
+		Ops:           base.Ops,
+		TEALSuffix:    strings.TrimSpace(spec.TEAL),
+		SaltStyle:     saltStyle,
+		TemplateMode:  spec.TemplateMode,
+		TemplateVars:  spec.TemplateVariables,
+		Params:        generictemplate.ParameterSpecToParameterDefs(spec.Parameters),
+		RuntimeArgs:   append(generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs), boundedRuntimeArgsFromTemplate(spec.Bounded)...),
+		DerivedArgs:   boundedDerivedArgsFromTemplate(spec.Bounded),
+		Bounded:       bounded,
+		Layer3:        layer3,
+		OpcodeProfile: spec.LogicSigOpcodeProfile(bounded != nil),
 		// An installed template declares it (install requires it); a plain
 		// host's bounded shape, built from a spec in code, does not, and
 		// answers its catalog entry.
@@ -228,48 +232,48 @@ func ValidateTemplateAdmission(spec *TemplateSpec) error {
 			}
 		}
 	}
-	provider, err := NewProviderFromTemplateSpec(spec)
+	provider, err := newProviderFromValidSpec(spec)
 	if err != nil {
 		return err
 	}
-	if err := provider.validateTemplateContract(); err != nil {
+	metadata, err := provider.validateTemplateContract()
+	if err != nil {
 		return err
 	}
-	return provider.checkArgumentLimits()
+	return provider.checkArgumentLimits(metadata)
 }
 
 // validateTemplateContract checks a bounded template against its template-level
 // contract: the profile, the framework's injected parameters, and the argument
 // layout's structure. Instance fields, such as a cosigner key, wait for key
-// generation.
-func (c *ComposedDSA) validateTemplateContract() error {
+// generation. It returns the template-level metadata it checked, nil for a
+// template that is not bounded.
+func (c *ComposedDSA) validateTemplateContract() (*boundedmeta.Metadata, error) {
 	if c.bounded == nil {
-		return nil
+		return nil, nil
 	}
 	metadata, err := c.boundedAuthorizationMetadataBase()
 	if err != nil {
-		return fmt.Errorf("invalid bounded template contract: %w", err)
+		return nil, fmt.Errorf("invalid bounded template contract: %w", err)
 	}
 	if metadata == nil {
-		return nil
+		return nil, nil
 	}
 	if err := metadata.ValidateProfile(); err != nil {
-		return fmt.Errorf("invalid bounded template contract: %w", err)
+		return nil, fmt.Errorf("invalid bounded template contract: %w", err)
 	}
-	return nil
+	return metadata, nil
 }
 
 // checkArgumentLimits refuses a program whose LogicSig the network would refuse
 // on any transaction: too many arguments, or one too large. A bounded program's
 // whole layout counts (signatures, proofs, runtime arguments and the cosigner's
 // signature). Any other composed program has the base's signature arguments and
-// the template's runtime arguments.
-func (c *ComposedDSA) checkArgumentLimits() error {
-	if c.bounded != nil {
-		// validateTemplateContract has already built this without error.
-		if metadata, err := c.boundedAuthorizationMetadataBase(); err == nil && metadata != nil {
-			return metadata.ValidateNetworkLimits()
-		}
+// the template's runtime arguments. metadata is what validateTemplateContract
+// returned.
+func (c *ComposedDSA) checkArgumentLimits(metadata *boundedmeta.Metadata) error {
+	if metadata != nil {
+		return metadata.ValidateNetworkLimits()
 	}
 	// A base that doesn't describe its signature arguments still carries at
 	// least one.
@@ -339,23 +343,18 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 	return nil
 }
 
-func boundedRuntimeArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) ([]boundedmeta.RuntimeArg, []lsigprovider.RuntimeArgDef) {
+func boundedRuntimeArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) []lsigprovider.RuntimeArgDef {
 	if spec == nil {
-		return nil, nil
+		return nil
 	}
-	metadata := make([]boundedmeta.RuntimeArg, len(spec.RuntimeArgs))
 	defs := make([]lsigprovider.RuntimeArgDef, len(spec.RuntimeArgs))
 	for i, arg := range spec.RuntimeArgs {
-		metadata[i] = boundedmeta.RuntimeArg{
-			Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
-			Required: true, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
-		}
 		defs[i] = lsigprovider.RuntimeArgDef{
 			Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
 			Required: true, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
 		}
 	}
-	return metadata, defs
+	return defs
 }
 
 func boundedDerivedArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) []boundedmeta.DerivedArg {
@@ -476,9 +475,6 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	}
 	if provider.KeyType() != keyType {
 		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("template key type %q does not match state key type %q", provider.KeyType(), keyType)
-	}
-	if _, ok := LookupBase(spec.BaseKeyType); !ok {
-		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	return templatepolicy.PreparedTemplateRegistration{
 		Fingerprint: provider.CompatibilityFingerprint(),

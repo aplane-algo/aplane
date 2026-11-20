@@ -302,17 +302,10 @@ func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
 }
 
 // BoundedCosignerParameterDef returns the definition of the cosigner key the
-// composer injects for a cosigner of componentKeyType, for a provider that
-// presents it itself.
+// composer injects for a cosigner of componentKeyType, which a provider that
+// presents the key itself also uses. Its length is part of the composed
+// fingerprint.
 func BoundedCosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
-	return boundedCosignerPublicKeyParameterDef(componentKeyType)
-}
-
-// boundedCosignerPublicKeyParameterDef is the cosigner key's definition for a
-// cosigner of componentKeyType. The default type's is the definition every
-// existing account's composer has, so it must not change: its length is part
-// of the composed fingerprint.
-func boundedCosignerPublicKeyParameterDef(componentKeyType string) lsigprovider.ParameterDef {
 	def := lsigprovider.ParameterDef{
 		Name:        BoundedCosignerPublicKeyParameter,
 		Label:       "Cosigner Public Key",
@@ -320,9 +313,6 @@ func boundedCosignerPublicKeyParameterDef(componentKeyType string) lsigprovider.
 		Type:        "bytes",
 		Required:    true,
 		MaxLength:   boundedmeta.DefaultCosignerPublicKeySize * 2,
-	}
-	if componentKeyType == boundedmeta.DefaultCosignerComponentKeyType {
-		return def
 	}
 	if publicKeySize, _, ok := boundedmeta.CosignerSizes(componentKeyType); ok {
 		def.MaxLength = publicKeySize * 2
@@ -359,16 +349,12 @@ func cloneSignatureArgLayout(layout SignatureArgLayout) SignatureArgLayout {
 	return layout
 }
 
-func validateSignatureArgLayout(layout SignatureArgLayout) error {
-	return boundedmeta.ValidateSignatureLayout(layout)
-}
-
 func (c *ComposedDSA) validatedSignatureArgLayout() (SignatureArgLayout, error) {
 	layout, ok := c.SignatureArgLayout()
 	if !ok {
 		return SignatureArgLayout{}, fmt.Errorf("base key type %q does not expose a static bounded signature argument layout", c.baseKeyType)
 	}
-	if err := validateSignatureArgLayout(layout); err != nil {
+	if err := boundedmeta.ValidateSignatureLayout(layout); err != nil {
 		return SignatureArgLayout{}, err
 	}
 	return layout, nil
@@ -394,15 +380,8 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	}
 	profile := c.bounded
 	if profile.Cosigner != nil {
-		publicKeySize, err := c.cosignerPublicKeySize()
+		cosignerPublicKey, err := c.validatedCosignerPublicKey(publicKey, params)
 		if err != nil {
-			return nil, err
-		}
-		cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, publicKeySize)
-		if err != nil {
-			return nil, err
-		}
-		if err := c.refuseSharedSpendingKey("cosigner", publicKey, profile.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
 			return nil, err
 		}
 		componentKeyID, err := witness.ID(profile.Cosigner.ComponentKeyType, cosignerPublicKey)
@@ -588,16 +567,6 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if c.ops.TEALVersion() != tealVersion {
 		return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile requires TEAL version %d, base emits version %d", profile.Contract, tealVersion, c.ops.TEALVersion())
 	}
-	if len(c.runtimeArgs) != len(c.boundedRuntimeArgs) {
-		return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime arguments must use the bounded argument contract")
-	}
-	for i, arg := range c.runtimeArgs {
-		metadataArg := c.boundedRuntimeArgs[i]
-		if arg.Name != metadataArg.Name || arg.Type != metadataArg.Type || arg.Required != metadataArg.Required ||
-			arg.ByteLength != metadataArg.ByteLength || arg.MaxSize != metadataArg.MaxSize {
-			return nil, SignatureArgLayout{}, fmt.Errorf("bounded runtime argument %q does not match its metadata contract", arg.Name)
-		}
-	}
 	if err := validateBoundedReservedNames(profile, c.params, c.runtimeArgs, c.derivedArgs, c.templateVars, c.tealSuffix); err != nil {
 		return nil, SignatureArgLayout{}, err
 	}
@@ -621,7 +590,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			if param.Name != BoundedCosignerPublicKeyParameter || profile.Cosigner == nil {
 				return fmt.Errorf("parameter name %q uses reserved cosigner namespace", param.Name)
 			}
-			want := boundedCosignerPublicKeyParameterDef(profile.Cosigner.ComponentKeyType)
+			want := BoundedCosignerParameterDef(profile.Cosigner.ComponentKeyType)
 			if param.Type != want.Type || !param.Required || param.MaxLength != want.MaxLength {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
 			}
@@ -707,7 +676,9 @@ func decodeHexParameter(value, name string, expectedSize int) ([]byte, error) {
 	return decoded, nil
 }
 
-func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.ParameterDef) ([]byte, error) {
+// CanonicalBoundedBehaviorParameters encodes behavior-bearing creation values
+// in parameter-definition order.
+func CanonicalBoundedBehaviorParameters(params map[string]string, defs []lsigprovider.ParameterDef) ([]byte, error) {
 	normalized, err := lsigprovider.NormalizeCreationParams(params, defs)
 	if err != nil {
 		return nil, fmt.Errorf("normalize behavior parameters: %w", err)
@@ -730,12 +701,6 @@ func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.P
 		encoded = boundedmeta.AppendField(encoded, canonical)
 	}
 	return encoded, nil
-}
-
-// CanonicalBoundedBehaviorParameters encodes behavior-bearing creation values
-// in parameter-definition order.
-func CanonicalBoundedBehaviorParameters(params map[string]string, defs []lsigprovider.ParameterDef) ([]byte, error) {
-	return canonicalBehaviorParameters(params, defs)
 }
 
 func canonicalParameterValue(def lsigprovider.ParameterDef, value string) ([]byte, error) {
