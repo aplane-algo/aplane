@@ -4,7 +4,10 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -123,10 +126,36 @@ func (m *Model) clampCosignerManagerScroll(count int) {
 
 func (m Model) cosignerManagerVisibleRows() int {
 	rows := m.windowBodyHeight() - 10
+	if lines := len(m.invalidCosignerReferenceLines()); lines > 0 {
+		rows -= lines + 1
+	}
 	if rows < 3 {
 		return 3
 	}
 	return rows
+}
+
+// maxShownInvalidCosignerReferences bounds the report below the list, so the
+// list keeps its rows; apadmin cosigner list names every one.
+const maxShownInvalidCosignerReferences = 3
+
+// invalidCosignerReferenceLines reports the reference files that are not valid
+// references. The manager acts only on listed references, so it points to
+// where each is cleared.
+func (m Model) invalidCosignerReferenceLines() []string {
+	count := len(m.cosigner.invalid)
+	if count == 0 {
+		return nil
+	}
+	lines := []string{fmt.Sprintf("%d reference file(s) are not valid references:", count)}
+	for i, bad := range m.cosigner.invalid {
+		if i == maxShownInvalidCosignerReferences {
+			lines = append(lines, fmt.Sprintf("  and %d more", count-i))
+			break
+		}
+		lines = append(lines, "  "+filepath.Base(bad.Path)+": "+bad.Reason)
+	}
+	return append(lines, "apadmin cosigner list says how to clear each.")
 }
 
 func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -316,6 +345,12 @@ func (m Model) renderCosignerReferences() string {
 		body.WriteString(scrollMoreBelowLine(len(references) - end))
 		body.WriteString("\n")
 	}
+	if lines := m.invalidCosignerReferenceLines(); len(lines) > 0 {
+		body.WriteString("\n")
+		for _, line := range lines {
+			body.WriteString(errorStyle.Render(ellipsize(terminalSafe(line), m.tableWidth())) + "\n")
+		}
+	}
 	if m.cosigner.managerStatus != "" {
 		body.WriteString("\n")
 		body.WriteString(subtitleStyle.Render(wrapPlainText(m.cosigner.managerStatus, m.tableWidth())))
@@ -360,8 +395,10 @@ func (m Model) renderCosignerReferenceDetails() string {
 	body.WriteString("\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(90)))
 	body.WriteString("\n")
-	if reference.PublicKeySHA256 != "" {
-		body.WriteString("\nPublic key SHA-256: " + reference.PublicKeySHA256 + "\n")
+	// The details show the public key's digest, not the key itself.
+	if publicKey, err := hex.DecodeString(reference.PublicKeyHex); err == nil && len(publicKey) > 0 {
+		digest := sha256.Sum256(publicKey)
+		body.WriteString("\nPublic key SHA-256: " + hex.EncodeToString(digest[:]) + "\n")
 	}
 	if reference.ImportedAt != "" {
 		body.WriteString("Imported: " + reference.ImportedAt + "\n")

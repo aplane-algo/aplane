@@ -497,13 +497,12 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 		return SigningMetadata{}
 	}
 	return SigningMetadata{
-		Category:               p.Category,
-		BaseKeyType:            p.BaseKeyType,
-		Parameters:             maps.Clone(p.Parameters),
-		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
-		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
-		SigningMetadataVersion: p.SigningMetadataVersion,
-		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
+		Category:              p.Category,
+		BaseKeyType:           p.BaseKeyType,
+		Parameters:            maps.Clone(p.Parameters),
+		SigningArgs:           cloneStoredSigningArgs(p.SigningArgs),
+		LogicSigOpcodeProfile: p.LogicSigOpcodeProfile,
+		BoundedAuthorization:  boundedmeta.Clone(p.BoundedAuthorization),
 	}
 }
 

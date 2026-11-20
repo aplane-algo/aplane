@@ -175,6 +175,7 @@ type (
 	ListCosignerReferencesMessage        = protocol.ListCosignerReferencesMessage
 	CosignerReferencesListMessage        = protocol.CosignerReferencesListMessage
 	CosignerReferenceInfo                = protocol.CosignerReferenceInfo
+	InvalidCosignerReferenceInfo         = protocol.InvalidCosignerReferenceInfo
 	ImportCosignerReferenceMessage       = protocol.ImportCosignerReferenceMessage
 	ImportCosignerReferenceResultMessage = protocol.ImportCosignerReferenceResultMessage
 	RemoveCosignerReferenceMessage       = protocol.RemoveCosignerReferenceMessage

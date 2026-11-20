@@ -6,6 +6,7 @@ package rest
 import (
 	"context"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -30,8 +31,19 @@ type Dependencies struct {
 	// NetworkGenesisHashes lists the networks the signer knows; rotating key
 	// generation offers their names. Optional.
 	NetworkGenesisHashes func() map[string]string
+	// Warnf logs a listing that fails. Optional.
+	Warnf func(format string, args ...any)
+	// ReportInvalidCosignerReferences receives the cosigner reference entries
+	// a key type list leaves out, on every list. Optional.
+	ReportInvalidCosignerReferences func([]cosignerrefs.InvalidRecord)
 }
 
 type Service struct {
 	Deps Dependencies
+}
+
+func (s Service) warnf(format string, args ...any) {
+	if s.Deps.Warnf != nil {
+		s.Deps.Warnf(format, args...)
+	}
 }

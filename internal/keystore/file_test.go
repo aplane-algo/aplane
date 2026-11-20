@@ -266,9 +266,8 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 
 	store := NewAtomicFileKeyStoreForPaths(paths)
 	store.cache["addr1"] = keys.KeyScanInfo{
-		Category:               keys.CategoryDSALsig,
-		Parameters:             map[string]string{"cosigner_public_key": "abc123"},
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+		Category:   keys.CategoryDSALsig,
+		Parameters: map[string]string{"cosigner_public_key": "abc123"},
 		SigningArgs: []keys.StoredSigningArg{
 			{Name: "proof", Type: "bytes", Required: true, ByteLength: 32},
 		},
@@ -283,9 +282,6 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	got := summary["addr1"]
 	if got.Category != keys.CategoryDSALsig {
 		t.Fatalf("Category = %q, want %q", got.Category, keys.CategoryDSALsig)
-	}
-	if got.SigningMetadataVersion != keys.CurrentSigningMetadataVersion {
-		t.Fatalf("SigningMetadataVersion = %d, want %d", got.SigningMetadataVersion, keys.CurrentSigningMetadataVersion)
 	}
 	if got.TemplateFingerprint != "semantic-a" {
 		t.Fatalf("TemplateFingerprint = %q, want semantic-a", got.TemplateFingerprint)

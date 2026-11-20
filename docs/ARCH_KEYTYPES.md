@@ -1444,11 +1444,9 @@ or provider registration.
   It is available to generic (schema v1) and composed (schema v1 or v2)
   templates, e.g. `aplane.htlc.v1` and the Falcon allowlist templates; it is not
   limited to bounded templates.
-- `legacy` (schema v1 only) renders through the same `@variable` substitution
-  and list-expansion path as `generated`, but without generated mode's up-front
-  list-syntax validation; it is the effective mode for already-stored schema-v1
-  templates with no `template_mode`. Template import requires an explicit mode,
-  and schema v2 requires `strict` or `generated`.
+- Every template declares one of these two modes: a template without
+  `template_mode`, whether imported, installed, bundled or from the library,
+  is refused.
 
 #### Generic templates (`lsig/generictemplate`)
 

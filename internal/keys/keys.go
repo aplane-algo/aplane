@@ -113,19 +113,18 @@ func incompatibleKeyFormatErr(detail error) error {
 // This allows scanning to extract all needed info in a single decrypt operation,
 // avoiding the need to re-decrypt keys for /keys API or signing budget calculation.
 type KeyScanInfo struct {
-	KeyFile                string // Path to the key file
-	KeyType                string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
-	Category               string // Key category from the key file, if present
-	LogicSigResources      *lsigresource.Profile
-	PublicKeyHex           string // Hex-encoded public key (for /keys API)
-	BaseKeyType            string // Base DSA key type used for signing metadata, if present
-	Parameters             map[string]string
-	SigningArgs            []StoredSigningArg
-	BoundedAuthorization   *boundedmeta.Metadata
-	SigningMetadataVersion int
-	TemplateFingerprint    string
-	ValidRekeyTarget       bool   // recorded in the aplane key at creation
-	CreatedAt              string // RFC 3339 creation timestamp
+	KeyFile              string // Path to the key file
+	KeyType              string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
+	Category             string // Key category from the key file, if present
+	LogicSigResources    *lsigresource.Profile
+	PublicKeyHex         string // Hex-encoded public key (for /keys API)
+	BaseKeyType          string // Base DSA key type used for signing metadata, if present
+	Parameters           map[string]string
+	SigningArgs          []StoredSigningArg
+	BoundedAuthorization *boundedmeta.Metadata
+	TemplateFingerprint  string
+	ValidRekeyTarget     bool   // recorded in the aplane key at creation
+	CreatedAt            string // RFC 3339 creation timestamp
 }
 
 // KeyScanWarningCode classifies a key file skipped during directory scan.
@@ -388,19 +387,18 @@ func scanKeysDirectory(active storepaths.GenPaths, excluded map[string]bool, dec
 		// keysMap is never returned with either entry.
 		addressFiles[selector] = append(addressFiles[selector], keyFile)
 		keysMap[selector] = KeyScanInfo{
-			KeyFile:                keyFile,
-			KeyType:                keyType,
-			Category:               category,
-			LogicSigResources:      logicSigResources,
-			PublicKeyHex:           publicKeyHex,
-			BaseKeyType:            signingMeta.BaseKeyType,
-			Parameters:             signingMeta.Parameters,
-			SigningArgs:            signingMeta.SigningArgs,
-			BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
-			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
-			TemplateFingerprint:    payload.TemplateFingerprint,
-			ValidRekeyTarget:       payload.ValidRekeyTarget,
-			CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
+			KeyFile:              keyFile,
+			KeyType:              keyType,
+			Category:             category,
+			LogicSigResources:    logicSigResources,
+			PublicKeyHex:         publicKeyHex,
+			BaseKeyType:          signingMeta.BaseKeyType,
+			Parameters:           signingMeta.Parameters,
+			SigningArgs:          signingMeta.SigningArgs,
+			BoundedAuthorization: boundedmeta.Clone(signingMeta.BoundedAuthorization),
+			TemplateFingerprint:  payload.TemplateFingerprint,
+			ValidRekeyTarget:     payload.ValidRekeyTarget,
+			CreatedAt:            payload.CreatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 
@@ -535,11 +533,10 @@ func logicSigAddressBytes(bytecode []byte) (types.Address, error) {
 }
 
 type SigningMetadata struct {
-	Category               string
-	BaseKeyType            string
-	Parameters             map[string]string
-	SigningArgs            []StoredSigningArg
-	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
-	BoundedAuthorization   *boundedmeta.Metadata
-	SigningMetadataVersion int
+	Category              string
+	BaseKeyType           string
+	Parameters            map[string]string
+	SigningArgs           []StoredSigningArg
+	LogicSigOpcodeProfile lsigresource.OpcodeProfile
+	BoundedAuthorization  *boundedmeta.Metadata
 }

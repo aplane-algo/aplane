@@ -506,17 +506,19 @@ func printModeWarnings(ir *productruntime.Runtime) {
 }
 
 // configureAlgodOnDSAs sets up the algod client on all DSA providers that support it.
-// This enables runtime TEAL compilation for composed providers during key import.
+// Every DSA LogicSig provider, aplane.falcon1024.v1 included, compiles its
+// TEAL with algod to derive an account, so without one generation and import
+// of those keys fail; nothing is precompiled.
 func configureAlgodOnDSAs(serverCfg *serverconfig.ServerConfig) {
 	cfg, err := serverCfg.GetTEALCompileAlgod()
 	if err != nil || cfg.Server == "" {
-		return // No algod configured, providers will use precompiled fallback where available
+		return
 	}
 
 	client, err := algod.MakeClient(cfg.Server, cfg.Token)
 	if err != nil {
 		logWarnf("failed to create algod client for DSA providers: %v", err)
-		logWarnf("composed providers will fail without algod; pure aplane.falcon1024.v1 will use precompiled fallback")
+		logWarnf("DSA LogicSig keys, aplane.falcon1024.v1 included, cannot be generated or imported without algod")
 		return
 	}
 

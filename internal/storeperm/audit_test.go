@@ -144,7 +144,7 @@ func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	}
 	uid, gid := ownerIDs(t, root)
 
-	_, err := MigratePrivate(StoppedMigrationOptions(root, uid, gid, ""))
+	_, err := MigratePrivate(RepairMigrationOptions(root, uid, gid))
 	if err == nil || !strings.Contains(err.Error(), "store-local bin directory") {
 		t.Fatalf("MigratePrivate() error = %v, want local binary rejection", err)
 	}
@@ -371,7 +371,7 @@ func TestMigratePrivateRejectsStructuralObjectsBeforeChangingRoot(t *testing.T) 
 	}
 }
 
-func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
+func TestMigratePrivateRemovesTheRecognizedSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket contract")
 	}
@@ -398,11 +398,11 @@ func TestMigratePrivateRemovesRecognizedLegacySocket(t *testing.T) {
 		t.Fatalf("MigratePrivate() result = %+v, want socket removal", result)
 	}
 	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
-		t.Fatalf("legacy socket remains after migration: %v", err)
+		t.Fatalf("recognized socket remains after migration: %v", err)
 	}
 }
 
-func TestRecognizedLegacySocketRejectsStoreRoot(t *testing.T) {
+func TestRecognizedSocketRejectsStoreRoot(t *testing.T) {
 	root := workspaceTempDir(t)
 	if _, err := recognizedStoreSocket(root, root); err == nil {
 		t.Fatal("recognizedStoreSocket(root) error = nil, want confinement rejection")

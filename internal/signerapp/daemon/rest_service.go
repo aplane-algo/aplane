@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
@@ -31,6 +32,10 @@ func (fs *Signer) restServiceWithSigningAudit(signingAudit signingAudit) signerr
 			},
 			StoreHealth:          &fs.storeHealth,
 			NetworkGenesisHashes: fs.networkGenesisHashes,
+			Warnf:                logWarnf,
+			ReportInvalidCosignerReferences: func(invalid []cosignerrefs.InvalidRecord) {
+				fs.invalidReferences.report(invalid, logWarnf, logInfof)
+			},
 		},
 	}
 }

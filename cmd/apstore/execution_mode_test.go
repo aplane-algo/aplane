@@ -13,10 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/storelock"
 )
 
-func TestNormalizeManagedStoreOwnershipUsesConfiguredLegacySocket(t *testing.T) {
+// Normalization after a root-run mutation hands a managed store back to its
+// recorded service principal. It reads nothing from config.yaml, so one that
+// does not parse does not stop it.
+func TestNormalizeManagedStoreOwnershipUsesTheServicePrincipal(t *testing.T) {
 	dataDir := t.TempDir()
-	customSocket := filepath.Join(dataDir, "custom.sock")
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: "+customSocket+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("ipc_path: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -24,10 +26,10 @@ func TestNormalizeManagedStoreOwnershipUsesConfiguredLegacySocket(t *testing.T) 
 	managedStoreOwner = func(string) (int, int, error) { return 123, 456, nil }
 	t.Cleanup(func() { managedStoreOwner = oldManagedStoreOwner })
 	oldMigrateManagedStore := migrateManagedStore
-	var gotRoot, gotSocket string
+	var gotRoot string
 	var gotUID, gotGID int
-	migrateManagedStore = func(root string, uid, gid int, socketPath string) error {
-		gotRoot, gotUID, gotGID, gotSocket = root, uid, gid, socketPath
+	migrateManagedStore = func(root string, uid, gid int) error {
+		gotRoot, gotUID, gotGID = root, uid, gid
 		return nil
 	}
 	t.Cleanup(func() { migrateManagedStore = oldMigrateManagedStore })
@@ -35,8 +37,8 @@ func TestNormalizeManagedStoreOwnershipUsesConfiguredLegacySocket(t *testing.T) 
 	if err := normalizeManagedStoreOwnership(dataDir); err != nil {
 		t.Fatalf("normalizeManagedStoreOwnership() error = %v", err)
 	}
-	if gotRoot != dataDir || gotUID != 123 || gotGID != 456 || gotSocket != customSocket {
-		t.Fatalf("migration inputs = %q %d:%d %q, want %q 123:456 %q", gotRoot, gotUID, gotGID, gotSocket, dataDir, customSocket)
+	if gotRoot != dataDir || gotUID != 123 || gotGID != 456 {
+		t.Fatalf("migration inputs = %q %d:%d, want %q 123:456", gotRoot, gotUID, gotGID, dataDir)
 	}
 }
 
@@ -265,7 +267,7 @@ func TestManagedStorePermissionCommandsRequireRootBeforeTouchingTheStore(t *test
 			t.Cleanup(func() { dataDirectory, currentEUID, migrateManagedStore = oldDataDirectory, oldEUID, oldMigrate })
 			dataDirectory = t.TempDir()
 			currentEUID = func() int { return 1000 }
-			migrateManagedStore = func(string, int, int, string) error {
+			migrateManagedStore = func(string, int, int) error {
 				t.Error("the store was migrated")
 				return nil
 			}

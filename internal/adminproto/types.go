@@ -46,14 +46,12 @@ type AdminSettings struct {
 }
 
 const (
-	AdminSettingUserAutoApprove      = "user_auto_approve"
-	AdminSettingRequireContained     = "require_contained"
-	AdminSettingRequireCosigner      = "require_cosigner"
-	AdminSettingLockOnDisconnect     = "lock_on_disconnect"
-	AdminSettingPassphraseTimeout    = "passphrase_timeout"
-	AdminSettingTheme                = "theme"
-	AdminSettingSSHListenAddress     = "ssh.listen_address"
-	AdminSettingEndpointAdvertiseURL = "endpoint.advertise_url"
+	AdminSettingUserAutoApprove   = "user_auto_approve"
+	AdminSettingRequireContained  = "require_contained"
+	AdminSettingRequireCosigner   = "require_cosigner"
+	AdminSettingLockOnDisconnect  = "lock_on_disconnect"
+	AdminSettingPassphraseTimeout = "passphrase_timeout"
+	AdminSettingTheme             = "theme"
 )
 
 // SignerLockedNotification is the admin-domain notification emitted when the signer locks.
@@ -355,19 +353,27 @@ type ReconcileStoreResult struct {
 // CosignerReferenceInfo is the admin-domain projection of a stored public
 // cosigner reference. It never contains private witness material.
 type CosignerReferenceInfo struct {
-	Schema            string
-	Name              string
-	ComponentKey      string
-	KeyType           string
-	PublicKeyEncoding string
-	PublicKeyHex      string
-	PublicKeySize     int
-	PublicKeySHA256   string
-	ImportedAt        string
+	Schema       string
+	Name         string
+	ComponentKey string
+	KeyType      string
+	PublicKeyHex string
+	ImportedAt   string
+}
+
+// InvalidCosignerReference is a file in the reference directory that is not a
+// valid reference. Removable says whether removing the reference named Name
+// clears it; any other one has to be deleted by hand.
+type InvalidCosignerReference struct {
+	Path      string
+	Name      string
+	Reason    string
+	Removable bool
 }
 
 type ListCosignerReferencesResult struct {
 	References []CosignerReferenceInfo
+	Invalid    []InvalidCosignerReference
 	Code       string
 	Error      string
 }
@@ -404,6 +410,7 @@ type RemoveCosignerReferenceResult struct {
 	Name         string
 	ComponentKey string
 	Removed      bool
+	Path         string // the file removed, when Removed
 	Code         string
 	Error        string
 }

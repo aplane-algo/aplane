@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func TestPreflightLegacyAcceptsClosedLegacyTreeWithoutMutation(t *testing.T) {
+func TestPreflightSharedAcceptsAClosedTreeWithoutMutation(t *testing.T) {
 	root := workspaceTempDir(t)
 	if err := os.Chmod(root, 0o700); err != nil {
 		t.Fatal(err)
@@ -23,7 +23,7 @@ func TestPreflightLegacyAcceptsClosedLegacyTreeWithoutMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(nested, "config.yaml")
-	if err := os.WriteFile(path, []byte("legacy\n"), 0o660); err != nil {
+	if err := os.WriteFile(path, []byte("shared\n"), 0o660); err != nil {
 		t.Fatal(err)
 	}
 	wantTime := time.Unix(1_700_000_000, 123_000_000)
@@ -50,13 +50,13 @@ func TestPreflightLegacyAcceptsClosedLegacyTreeWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "legacy\n" || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+	if string(data) != "shared\n" || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
 		t.Fatalf("preflight mutated file: data=%q mode=%v mtime=%v; before mode=%v mtime=%v",
 			data, after.Mode(), after.ModTime(), before.Mode(), before.ModTime())
 	}
 }
 
-func TestPreflightLegacyAllowsSocketForLaterMigrationClassification(t *testing.T) {
+func TestPreflightSharedAllowsSocketForLaterMigrationClassification(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket contract")
 	}
@@ -87,7 +87,7 @@ func TestPreflightLegacyAllowsSocketForLaterMigrationClassification(t *testing.T
 	}
 }
 
-func TestPreflightLegacyRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
+func TestPreflightSharedRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
 	for _, relative := range []string{
 		".prod",
 		".apstore.lock",
@@ -138,7 +138,7 @@ func TestPreflightLegacyRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
 	}
 }
 
-func TestPreflightLegacyRejectsHardlinkedFile(t *testing.T) {
+func TestPreflightSharedRejectsHardlinkedFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("hardlink metadata contract")
 	}
@@ -160,7 +160,7 @@ func TestPreflightLegacyRejectsHardlinkedFile(t *testing.T) {
 	}
 }
 
-func TestPreflightLegacyRequiresClosedRealRoot(t *testing.T) {
+func TestPreflightSharedRequiresClosedRealRoot(t *testing.T) {
 	root := workspaceTempDir(t)
 	if err := os.Chmod(root, 0o770); err != nil {
 		t.Fatal(err)

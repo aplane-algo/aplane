@@ -534,21 +534,39 @@ not contain `..`. The persisted record schema is:
 
 ```json
 {
-  "schema": "aplane.cosigner-public-key-ref.v2",
+  "schema": "aplane.cosigner-public-key-ref.v3",
   "name": "lab-cosigner",
   "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
   "key_type": "aplane.witness-falcon1024.v1",
-  "public_key_encoding": "hex",
   "public_key_hex": "0000...0000",
-  "public_key_size": 1793,
-  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a",
   "imported_at": "2026-06-04T00:00:00Z"
 }
 ```
 
-The catalog is populated only by explicit operator import. Only the version 2
-record schema is read; records in any other schema, or carrying fields outside
-it, are rejected.
+The catalog is populated only by explicit operator import. Only the version 3
+record schema is read; a record in any other schema is reported as an
+unsupported schema, and one carrying fields outside it is rejected. Every
+read checks that `component_key` is the Witness Key ID `key_type` and
+`public_key_hex` derive, and that `imported_at` is the RFC 3339 time the
+import stamped.
+
+A `.json` entry in `cosigners/` that is not a valid reference never breaks a
+listing and is never hidden. That covers a record that does not parse, a
+file whose name is not a reference name, a file the signer cannot read, a
+directory, and a dangling symlink. The reference list reports each beside the
+valid references, with its path and why, and `/keytypes` leaves it out of
+the cosigner choices. The signer logs a warning naming it when it first
+appears or its reason changes, not on every list, and a note when it is
+gone. A cosigner picked by
+Witness Key ID fails, naming such entries, only when no valid reference
+matches. `apadmin cosigner remove <name>` takes the name exactly as listed
+and clears an entry named for a reference name that it can read, whether or
+not the record parses, and a dangling symlink; any other entry has to be
+deleted by hand. Show, remove and import check an entry's type before
+reading it, so a directory or a FIFO is refused, not read, and an import over
+an invalid entry gives the same hint as the list. Only a reference directory that cannot be read fails the
+list. The admin protocol's cosigner references carry the same fields as the
+record, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
 controlling terminal. Unsupported

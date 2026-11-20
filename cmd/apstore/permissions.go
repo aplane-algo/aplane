@@ -58,12 +58,7 @@ func cmdPermissions(args []string) error {
 		return err
 	}
 	if args[0] == "migrate" {
-		socketPath, err := configuredMigrationSocketPath(dataDirectory)
-		if err != nil {
-			return err
-		}
-		opts := storeperm.StoppedMigrationOptions(dataDirectory, uid, gid, socketPath)
-		result, err := storeperm.MigratePrivate(opts)
+		result, err := storeperm.MigratePrivate(storeperm.RepairMigrationOptions(dataDirectory, uid, gid))
 		if err != nil {
 			return err
 		}
@@ -163,11 +158,11 @@ func cmdPermissionsConvertManaged(args []string) error {
 	if _, err := storeperm.PreflightShared(dataDirectory); err != nil {
 		return err
 	}
-	socketPath, err := configuredMigrationSocketPath(dataDirectory)
+	opts, err := convertManagedMigrationOptions(uid, gid)
 	if err != nil {
 		return err
 	}
-	result, err := storeperm.MigratePrivate(storeperm.StoppedMigrationOptions(dataDirectory, uid, gid, socketPath))
+	result, err := storeperm.MigratePrivate(opts)
 	if err != nil {
 		return err
 	}
@@ -229,14 +224,36 @@ func configuredLiveAuditSocketPath(root string) (path string, unreadable error, 
 	return path, unreadable, nil
 }
 
-func configuredMigrationSocketPath(root string) (string, error) {
+// convertManagedMigrationOptions is the conversion policy for a same-UID
+// store. The systemd installer also converts a store that is already
+// managed; that one is repaired as permissions migrate repairs it, because
+// its managed daemon never binds inside the store.
+func convertManagedMigrationOptions(uid, gid int) (storeperm.MigrationOptions, error) {
+	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDirectory)
+	if err != nil {
+		return storeperm.MigrationOptions{}, err
+	}
+	if managed {
+		return storeperm.RepairMigrationOptions(dataDirectory, uid, gid), nil
+	}
+	socketPath, err := conversionSocketPath(dataDirectory)
+	if err != nil {
+		return storeperm.MigrationOptions{}, err
+	}
+	return storeperm.ConversionMigrationOptions(dataDirectory, uid, gid, socketPath), nil
+}
+
+// conversionSocketPath resolves the in-store socket the same-UID daemon of
+// the store being converted left: the in-store path config.yaml names, or the
+// same-UID default when config.yaml names a path outside the store.
+func conversionSocketPath(root string) (string, error) {
 	cfg, err := serverconfig.LoadServerConfig(root)
 	if err != nil {
-		return "", fmt.Errorf("load signer config for permission migration: %w", err)
+		return "", fmt.Errorf("load signer config for managed-store conversion: %w", err)
 	}
 	path, err := adminipc.ResolveInStoreSocketPath(root, cfg.IPCPath)
 	if err != nil {
-		return "", fmt.Errorf("resolve in-store signer socket for permission migration: %w", err)
+		return "", fmt.Errorf("resolve in-store signer socket for managed-store conversion: %w", err)
 	}
 	return path, nil
 }

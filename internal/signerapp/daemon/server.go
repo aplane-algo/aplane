@@ -63,6 +63,7 @@ type Signer struct {
 	rotatingRecovery  signersigning.RotatingRecovery // Per-unlock stage recovery allowance and grants, keyed by the lock generation
 	stageFillBatch    int                            // Tests shrink the stage table worker's batch; 0 is the default
 	stageFillMaxDeriv int                            // Tests bound derivations per unresolved account per pass; 0 is one batch
+	invalidReferences invalidReferenceReport         // The cosigner reference entries key type lists last logged as left out
 }
 
 // ConfigSnapshot returns an independent copy of the process config. Nothing

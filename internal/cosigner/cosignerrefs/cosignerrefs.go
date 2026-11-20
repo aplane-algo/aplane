@@ -7,11 +7,11 @@ package cosignerrefs
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -28,7 +29,7 @@ import (
 )
 
 const (
-	RecordSchema = "aplane.cosigner-public-key-ref.v2"
+	RecordSchema = "aplane.cosigner-public-key-ref.v3"
 
 	// ParamCosignerName is the generation parameter that selects an imported
 	// cosigner reference by name.
@@ -37,18 +38,21 @@ const (
 
 var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 
+// ErrInvalidRecord marks a stored reference that does not parse or does not
+// hold together. Remove removes one all the same.
+var ErrInvalidRecord = errors.New("invalid cosigner reference")
+
 type ExportEnvelope = witness.PublicReference
 
+// Record is a stored cosigner reference. ComponentKey is the Witness Key ID
+// KeyType and PublicKeyHex derive; every read checks that it does.
 type Record struct {
-	Schema            string `json:"schema"`
-	Name              string `json:"name"`
-	ComponentKey      string `json:"component_key"`
-	KeyType           string `json:"key_type"`
-	PublicKeyEncoding string `json:"public_key_encoding"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	PublicKeySize     int    `json:"public_key_size"`
-	PublicKeySHA256   string `json:"public_key_sha256"`
-	ImportedAt        string `json:"imported_at"`
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	ComponentKey string `json:"component_key"`
+	KeyType      string `json:"key_type"`
+	PublicKeyHex string `json:"public_key_hex"`
+	ImportedAt   string `json:"imported_at"`
 }
 
 func NormalizeName(name string) (string, error) {
@@ -78,11 +82,11 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	existing, found, err := Get(paths, record.Name)
-	if err != nil {
-		return nil, err
+	existing, bad, missing := inspect(paths.CosignerRefPath(record.Name), record.Name)
+	if bad != nil {
+		return nil, fmt.Errorf("cannot import cosigner reference %q over a file that is not a valid reference: %s", record.Name, bad)
 	}
-	if found {
+	if !missing {
 		if sameReferenceAuthority(existing, *record) {
 			return &existing, nil
 		}
@@ -101,10 +105,7 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 func sameReferenceAuthority(a, b Record) bool {
 	return a.ComponentKey == b.ComponentKey &&
 		a.KeyType == b.KeyType &&
-		a.PublicKeyEncoding == b.PublicKeyEncoding &&
-		a.PublicKeyHex == b.PublicKeyHex &&
-		a.PublicKeySize == b.PublicKeySize &&
-		a.PublicKeySHA256 == b.PublicKeySHA256
+		a.PublicKeyHex == b.PublicKeyHex
 }
 
 func ParseImport(name string, data []byte) (*Record, error) {
@@ -116,19 +117,12 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cosigner public-key envelope: %w", err)
 	}
-	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
-	if err != nil {
-		return nil, err
-	}
 	return &Record{
-		Schema:            RecordSchema,
-		Name:              name,
-		ComponentKey:      env.WitnessKeyID,
-		KeyType:           env.KeyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     publicKeySize,
-		PublicKeySHA256:   publicKeySHA256,
+		Schema:       RecordSchema,
+		Name:         name,
+		ComponentKey: env.WitnessKeyID,
+		KeyType:      env.KeyType,
+		PublicKeyHex: env.PublicKeyHex,
 	}, nil
 }
 
@@ -157,70 +151,194 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.CosignerRefPath(name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Record{}, false, nil
-		}
-		return Record{}, false, fmt.Errorf("failed to read cosigner reference %s: %w", name, err)
+	rec, bad, missing := inspect(paths.CosignerRefPath(name), name)
+	switch {
+	case missing:
+		return Record{}, false, nil
+	case bad == nil:
+		return rec, true, nil
+	case bad.Removable:
+		return Record{}, false, fmt.Errorf("%w %s: %s", ErrInvalidRecord, name, bad.Reason)
+	default:
+		return Record{}, false, fmt.Errorf("cosigner reference %s %s", name, bad.Reason)
 	}
-	rec, err := parseRecord(data, name)
-	if err != nil {
-		return Record{}, false, fmt.Errorf("invalid cosigner reference %s: %w", name, err)
-	}
-	return rec, true, nil
 }
 
-// List returns every independently valid cosigner reference. A malformed record
-// is omitted rather than hiding unrelated generation choices; direct Get of
-// that record still returns its validation error.
-func List(paths storepaths.Paths) ([]Record, error) {
+// InvalidRecord is a ".json" entry of the reference directory that is not a
+// valid cosigner reference.
+type InvalidRecord struct {
+	Path   string // the entry, as it is named in the directory
+	Stem   string // its name without ".json"
+	Reason string
+	// Removable says whether Remove of Stem clears it. Only an entry named for
+	// a reference name that Remove can read, or a dangling symlink, is; any
+	// other one has to be deleted by hand.
+	Removable bool
+}
+
+func (r InvalidRecord) String() string {
+	if r.Removable {
+		return fmt.Sprintf("%q: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
+	}
+	return fmt.Sprintf("%q: %s (remove does not reach it; delete the file to clear it)", r.Path, r.Reason)
+}
+
+// List returns the valid cosigner references and, beside them, every other
+// ".json" entry of the reference directory with why it is not one: one bad
+// entry never hides the rest. Only a directory that cannot be read fails the
+// list.
+func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 	dir := paths.CosignerRefsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("failed to read cosigner reference directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to read cosigner reference directory: %w", err)
 	}
 	records := make([]Record, 0, len(entries))
+	var invalid []InvalidRecord
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		name := strings.TrimSuffix(entry.Name(), ".json")
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("failed to read cosigner reference %s: %w", name, err)
+		rec, bad := listEntry(dir, entry)
+		switch {
+		case rec != nil:
+			records = append(records, *rec)
+		case bad != nil:
+			invalid = append(invalid, *bad)
 		}
-		rec, err := parseRecord(data, name)
-		if err != nil {
-			continue
-		}
-		records = append(records, rec)
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
 	})
-	return records, nil
+	sort.Slice(invalid, func(i, j int) bool {
+		return invalid[i].Path < invalid[j].Path
+	})
+	return records, invalid, nil
 }
 
-func Delete(paths storepaths.Paths, name string) (bool, error) {
-	name, err := NormalizeName(name)
+// listEntry reads one ".json" entry of the reference directory: a record, or
+// the entry as an invalid one, or neither when the entry was removed after
+// the directory was read.
+func listEntry(dir string, entry os.DirEntry) (*Record, *InvalidRecord) {
+	bad := &InvalidRecord{Path: filepath.Join(dir, entry.Name()), Stem: strings.TrimSuffix(entry.Name(), ".json")}
+	if name, err := NormalizeName(bad.Stem); err != nil || name != bad.Stem {
+		bad.Reason = fmt.Sprintf("%q is not a reference name", bad.Stem)
+		return nil, bad
+	}
+	rec, invalid, missing := inspect(bad.Path, bad.Stem)
+	switch {
+	case missing && entry.Type()&os.ModeSymlink != 0:
+		// Remove reads a dangling symlink as absent and deletes it.
+		bad.Reason, bad.Removable = "symlink to a missing file", true
+		return nil, bad
+	case missing:
+		return nil, nil
+	case invalid != nil:
+		return nil, invalid
+	}
+	return &rec, nil
+}
+
+// inspect reads the reference file at path, named stem: the record, or the
+// file as an invalid one, or missing when nothing is there, a dangling
+// symlink included. A directory, a FIFO or another special file is refused
+// by its type and never read. Remove reads the record first, so a file this
+// cannot read is not removable.
+func inspect(path, stem string) (Record, *InvalidRecord, bool) {
+	bad := &InvalidRecord{Path: path, Stem: stem}
+	info, err := os.Stat(path)
+	switch {
+	case os.IsNotExist(err):
+		return Record{}, nil, true
+	case err != nil:
+		bad.Reason = "cannot be inspected: " + errorCause(err)
+	case info.IsDir():
+		bad.Reason = "is a directory"
+	case !info.Mode().IsRegular():
+		bad.Reason = "is not a regular file"
+	}
+	if bad.Reason != "" {
+		return Record{}, bad, false
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return Record{}, nil, true
+	}
 	if err != nil {
-		return false, err
+		bad.Reason = "cannot be read: " + errorCause(err)
+		return Record{}, bad, false
 	}
-	if err := os.Remove(paths.CosignerRefPath(name)); err != nil {
+	rec, err := parseRecord(data, stem)
+	if err != nil {
+		bad.Reason, bad.Removable = boundedReason(err.Error()), true
+		return Record{}, bad, false
+	}
+	return rec, nil, false
+}
+
+// maxReasonBytes bounds a reason, which can quote a value read from the file,
+// so a listing stays far below the admin frame limit.
+const maxReasonBytes = 200
+
+func boundedReason(reason string) string {
+	if len(reason) <= maxReasonBytes {
+		return reason
+	}
+	cut := maxReasonBytes
+	for cut > 0 && !utf8.RuneStart(reason[cut]) {
+		cut--
+	}
+	return reason[:cut] + "...(truncated)"
+}
+
+// errorCause drops the path a filesystem error repeats: the entry names it.
+func errorCause(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err.Error()
+	}
+	return err.Error()
+}
+
+// Removal is what Remove did.
+type Removal struct {
+	Removed      bool
+	ComponentKey string // the removed reference's Witness Key ID, when its record parsed
+	Path         string // the file deleted
+}
+
+// Remove deletes the reference named name. The name must be a reference name
+// exactly as listed: a near miss such as "Foo" would name the file of another
+// reference, "foo", so it is refused. A record that does not parse is removed
+// all the same, which is how the operator clears one the list reports.
+func Remove(paths storepaths.Paths, name string) (Removal, error) {
+	canonical, err := NormalizeName(name)
+	if err != nil {
+		return Removal{}, err
+	}
+	if canonical != name {
+		return Removal{}, fmt.Errorf("remove takes a reference name exactly as listed: %q would be the reference %q, stored as %q, not %q",
+			name, canonical, canonical+".json", name+".json")
+	}
+	existing, found, err := Get(paths, name)
+	if err != nil && !errors.Is(err, ErrInvalidRecord) {
+		return Removal{}, err
+	}
+	path := paths.CosignerRefPath(name)
+	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return Removal{}, nil
 		}
-		return false, fmt.Errorf("failed to remove cosigner reference %s: %w", name, err)
+		return Removal{}, fmt.Errorf("failed to remove cosigner reference %s: %w", name, err)
 	}
-	return true, nil
+	removal := Removal{Removed: true, Path: path}
+	if found {
+		removal.ComponentKey = existing.ComponentKey
+	}
+	return removal, nil
 }
 
 // ResolveCreationParamsForComponents resolves the signer-facing cosigner
@@ -269,7 +387,7 @@ func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, 
 func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, bool, error) {
 	value = strings.TrimSpace(value)
 	if componentKey, err := witness.NormalizeID(value); err == nil {
-		records, err := List(paths)
+		records, invalid, err := List(paths)
 		if err != nil {
 			return Record{}, false, err
 		}
@@ -278,18 +396,37 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, 
 				return rec, true, nil
 			}
 		}
+		// The reference sought may be one that cannot be read.
+		if len(invalid) > 0 {
+			described := make([]string, len(invalid))
+			for i, bad := range invalid {
+				// A REST client gets this error: it names each entry by its
+				// file name, not by its path on the signer.
+				described[i] = fmt.Sprintf("%q: %s", filepath.Base(bad.Path), bad.Reason)
+			}
+			return Record{}, false, fmt.Errorf("%w: no valid cosigner reference has Witness Key ID %s, and these reference files are not valid: %s",
+				ErrInvalidRecord, componentKey, strings.Join(described, "; "))
+		}
 		return Record{}, false, nil
 	}
 	return Get(paths, value)
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {
+	// The schema is read first, so a record of another schema is reported as
+	// that, not as the fields its shape carries.
+	var header struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return Record{}, fmt.Errorf("failed to parse record: %w", err)
+	}
+	if header.Schema != RecordSchema {
+		return Record{}, fmt.Errorf("unsupported schema %q", header.Schema)
+	}
 	var rec Record
 	if err := decodeRecordStrict(data, &rec); err != nil {
 		return Record{}, err
-	}
-	if rec.Schema != RecordSchema {
-		return Record{}, fmt.Errorf("unsupported schema %q", rec.Schema)
 	}
 	rec, err := normalizeRecord(rec)
 	if err != nil {
@@ -325,48 +462,16 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
-	if err != nil {
-		return Record{}, err
-	}
-	if rec.PublicKeyEncoding != "" && rec.PublicKeyEncoding != "hex" {
-		return Record{}, fmt.Errorf("unsupported public_key_encoding %q", rec.PublicKeyEncoding)
-	}
-	if rec.PublicKeySize != 0 && rec.PublicKeySize != publicKeySize {
-		return Record{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", rec.PublicKeySize, publicKeySize)
-	}
-	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
-		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
+	// Import stamps every record before it is written.
+	if _, err := time.Parse(time.RFC3339, rec.ImportedAt); err != nil {
+		return Record{}, fmt.Errorf("imported_at %q is not an RFC 3339 time", rec.ImportedAt)
 	}
 	return Record{
-		Schema:            RecordSchema,
-		Name:              name,
-		ComponentKey:      env.WitnessKeyID,
-		KeyType:           env.KeyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     publicKeySize,
-		PublicKeySHA256:   publicKeySHA256,
-		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
+		Schema:       RecordSchema,
+		Name:         name,
+		ComponentKey: env.WitnessKeyID,
+		KeyType:      env.KeyType,
+		PublicKeyHex: env.PublicKeyHex,
+		ImportedAt:   rec.ImportedAt,
 	}, nil
-}
-
-// publicKeyDigest returns the size and SHA-256 of a cosigner public key.
-// Its callers have had witness.NewPublicReference accept the key; the decode
-// and size checks here are a deliberately layered check on untrusted import
-// input, so a digest is never taken of a key that reference did not vouch for.
-func publicKeyDigest(keyType, publicKeyHex string) (int, string, error) {
-	publicKey, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		return 0, "", fmt.Errorf("public key must be hex: %w", err)
-	}
-	wantSize, ok := witness.PublicKeySize(keyType)
-	if !ok {
-		return 0, "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
-	}
-	if len(publicKey) != wantSize {
-		return 0, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
-	}
-	sum := sha256.Sum256(publicKey)
-	return len(publicKey), hex.EncodeToString(sum[:]), nil
 }

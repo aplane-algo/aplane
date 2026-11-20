@@ -339,10 +339,9 @@ func TestExecutorSignGenericLSigRejectsMissingRequiredRuntimeArg(t *testing.T) {
 		"",
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryGenericLsig,
-			Bytecode:               []byte{1},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:     keyType,
+			Category: keys.CategoryGenericLsig,
+			Bytecode: []byte{1},
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "secret",
 				Type:     "bytes",
@@ -376,10 +375,9 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 		"",
 		map[string]string{"secret": "xyz"},
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryGenericLsig,
-			Bytecode:               []byte{1},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:     keyType,
+			Category: keys.CategoryGenericLsig,
+			Bytecode: []byte{1},
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "secret",
 				Type:     "bytes",
@@ -413,10 +411,9 @@ func TestExecutorSignGenericLSigUsesStoredSigningArgsWithoutProvider(t *testing.
 		"",
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryGenericLsig,
-			Bytecode:               []byte{1},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:     keyType,
+			Category: keys.CategoryGenericLsig,
+			Bytecode: []byte{1},
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "secret",
 				Type:     "bytes",
@@ -450,10 +447,9 @@ func TestExecutorSignGenericLSigOrdersStoredSigningArgsOnSuccess(t *testing.T) {
 		"",
 		map[string]string{"first": "01", "second": "02"},
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryGenericLsig,
-			Bytecode:               append([]byte(nil), testApprovalProgram...),
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:     keyType,
+			Category: keys.CategoryGenericLsig,
+			Bytecode: append([]byte(nil), testApprovalProgram...),
 			SigningArgs: []lsigprovider.RuntimeArgDef{
 				{Name: "second", Type: "bytes", Required: true},
 				{Name: "first", Type: "bytes", Required: true},
@@ -488,10 +484,9 @@ func TestExecutorSignGenericLSigIgnoresLiveTemplateMetadata(t *testing.T) {
 		"",
 		map[string]string{"stored": "7a"},
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryGenericLsig,
-			Bytecode:               append([]byte(nil), testApprovalProgram...),
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:     keyType,
+			Category: keys.CategoryGenericLsig,
+			Bytecode: append([]byte(nil), testApprovalProgram...),
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "stored",
 				Type:     "bytes",
@@ -525,11 +520,10 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 		nil,
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               []byte{1},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    []byte{1},
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "secret",
 				Type:     "bytes",
@@ -571,11 +565,10 @@ func TestExecutorAssembleDSALogicSigUsesStoredSigningArgsWithoutComposedProvider
 		nil,
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               []byte{1},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    []byte{1},
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "secret",
 				Type:     "bytes",
@@ -618,11 +611,10 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 		map[string]string{"alpha": "0a", "beta": "0b"},
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               append([]byte(nil), testApprovalProgram...),
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    append([]byte(nil), testApprovalProgram...),
 			SigningArgs: []lsigprovider.RuntimeArgDef{
 				{Name: "beta", Type: "bytes", Required: true},
 				{Name: "alpha", Type: "bytes", Required: true},
@@ -653,12 +645,11 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 		nil,
 		&boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeySpendingKey)},
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               append([]byte(nil), testApprovalProgram...),
-			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-			BoundedAuthorization:   testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
+			Type:                 keyType,
+			Category:             keys.CategoryDSALsig,
+			BaseKeyType:          baseKeyType,
+			Bytecode:             append([]byte(nil), testApprovalProgram...),
+			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
 		},
 		signature,
 		keyType,
@@ -834,8 +825,7 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
 	item := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedmeta.Clone(metadata)}
 	loaded := &coresigning.KeyMaterial{
-		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-		BoundedAuthorization:   boundedmeta.Clone(metadata),
+		BoundedAuthorization: boundedmeta.Clone(metadata),
 	}
 
 	if err := verifyBoundedPlanIntegrity(item, loaded); err != nil {
@@ -855,8 +845,7 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	drifted := boundedmeta.Clone(metadata)
 	drifted.MaxFee = new(*drifted.MaxFee - 1)
 	changed := &coresigning.KeyMaterial{
-		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-		BoundedAuthorization:   drifted,
+		BoundedAuthorization: drifted,
 	}
 	if err := verifyBoundedPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("metadata drift: error = %#v, want internal", err)
@@ -865,8 +854,7 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 	rekeyChanged := boundedmeta.Clone(metadata)
 	rekeyChanged.Rekey = boundedmeta.RekeyRefused
 	if err := verifyBoundedPlanIntegrity(item, &coresigning.KeyMaterial{
-		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
-		BoundedAuthorization:   rekeyChanged,
+		BoundedAuthorization: rekeyChanged,
 	}); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("rekey setting drift: error = %#v, want internal", err)
 	}
@@ -898,11 +886,10 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 		map[string]string{"stored": "55"},
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               append([]byte(nil), testApprovalProgram...),
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    append([]byte(nil), testApprovalProgram...),
 			SigningArgs: []lsigprovider.RuntimeArgDef{{
 				Name:     "stored",
 				Type:     "bytes",
@@ -938,11 +925,10 @@ func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.
 		nil,
 		nil,
 		&coresigning.KeyMaterial{
-			Type:                   keyType,
-			Category:               keys.CategoryDSALsig,
-			BaseKeyType:            baseKeyType,
-			Bytecode:               []byte{0x06, 0x81, 0x01},
-			SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    []byte{0x06, 0x81, 0x01},
 		},
 		[]byte{1, 2, 3},
 		keyType,
@@ -1038,11 +1024,11 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 			}},
 		{name: "bounded metadata the plan lacks", wantErr: "key gained bounded metadata after planning",
 			key: func(private []byte) *coresigning.KeyMaterial {
-				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned), SigningMetadataVersion: keys.BoundedSigningMetadataVersion}
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned)}
 			}},
 		{name: "cosigned bounded account", item: &boundedPlanItem{Path: boundedPathPureSpend, Metadata: boundedmeta.Clone(cosigned)}, wantErr: "cosign",
 			key: func(private []byte) *coresigning.KeyMaterial {
-				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned), SigningMetadataVersion: keys.BoundedSigningMetadataVersion}
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned)}
 			}},
 		{name: "unsupported key type", wantErr: "unsupported key type: test-unsupported-zeroing-v1",
 			key: func(private []byte) *coresigning.KeyMaterial {
@@ -1063,7 +1049,7 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 			key: func(private []byte) *coresigning.KeyMaterial {
 				return &coresigning.KeyMaterial{
 					Type: "test-dsa-zeroing-v1", BaseKeyType: baseType, Category: keys.CategoryDSALsig, Value: private,
-					Bytecode: append([]byte(nil), testApprovalProgram...), SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+					Bytecode: append([]byte(nil), testApprovalProgram...),
 				}
 			},
 			want: func(t *testing.T, signed []byte) {
@@ -1073,7 +1059,7 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 			key: func(private []byte) *coresigning.KeyMaterial {
 				return &coresigning.KeyMaterial{
 					Type: "test-generic-zeroing-v1", Category: keys.CategoryGenericLsig, Value: private,
-					Bytecode: append([]byte(nil), testApprovalProgram...), SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+					Bytecode: append([]byte(nil), testApprovalProgram...),
 				}
 			},
 			want: func(t *testing.T, signed []byte) {

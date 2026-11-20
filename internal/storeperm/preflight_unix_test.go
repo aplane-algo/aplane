@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestPreflightLegacyRejectsFIFO(t *testing.T) {
+func TestPreflightSharedRejectsFIFO(t *testing.T) {
 	root := workspaceTempDir(t)
 	if err := os.Chmod(root, 0o700); err != nil {
 		t.Fatal(err)

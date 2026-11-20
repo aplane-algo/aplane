@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -662,9 +663,14 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if _, err := cosignerrefs.Import(ir.KeyPaths(), "lab-cosigner", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
+	// A reference file that is not valid is left out, and the log names it.
 	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(corrupt cosigner reference) error = %v", err)
 	}
+	var reported []cosignerrefs.InvalidRecord
+	svc := Service{Deps: Dependencies{ReportInvalidCosignerReferences: func(invalid []cosignerrefs.InvalidRecord) {
+		reported = append(reported, invalid...)
+	}}}
 	// A fixed-contract cosigned template: its cosigner key becomes a selector.
 	const keyType = "test.rest-reference-options.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
@@ -683,7 +689,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 		t.Fatalf("Put() error = %v", err)
 	}
 
-	resp, svcErr := Service{}.KeyTypes(ir)
+	resp, svcErr := svc.KeyTypes(ir)
 	if svcErr != nil {
 		t.Fatalf("KeyTypes() error = %v", svcErr)
 	}
@@ -705,6 +711,12 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
 		t.Fatalf("cosigner options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
+	}
+	want := []cosignerrefs.InvalidRecord{{
+		Path: ir.KeyPaths().CosignerRefPath("corrupt"), Stem: "corrupt", Reason: `unsupported schema "wrong"`, Removable: true,
+	}}
+	if !reflect.DeepEqual(reported, want) {
+		t.Fatalf("reported = %+v, want %+v", reported, want)
 	}
 }
 

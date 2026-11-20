@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package cosignerrefs
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+)
+
+// An imported reference is stored as its public key, its type, and the
+// Witness Key ID they derive, under its name and import time.
+func TestImportStoresTheReferenceFields(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(paths.CosignerRefPath("lab"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for name := range fields {
+		got = append(got, name)
+	}
+	slices.Sort(got)
+	want := []string{"component_key", "imported_at", "key_type", "name", "public_key_hex", "schema"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("stored fields = %v, want %v", got, want)
+	}
+}
+
+// A stored record is checked as an import is: its Witness Key ID must derive
+// from its type and public key, and only the record's own fields are read.
+func TestGetRefusesARecordThatDoesNotHoldTogether(t *testing.T) {
+	publicKey := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	otherID, err := witness.ID(witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		mutate func(map[string]any)
+		want   string
+	}{
+		"another key's ID": {
+			mutate: func(raw map[string]any) { raw["component_key"] = otherID },
+			want:   "witness_key_id does not match key_type and public_key_hex",
+		},
+		"short public key": {
+			mutate: func(raw map[string]any) {
+				short := hex.EncodeToString(publicKey[:len(publicKey)-1])
+				raw["public_key_hex"] = short
+			},
+			want: "witness public key length 1792 invalid",
+		},
+		"public key size": {
+			mutate: func(raw map[string]any) { raw["public_key_size"] = len(publicKey) },
+			want:   `unknown field "public_key_size"`,
+		},
+		"public key digest": {
+			mutate: func(raw map[string]any) { raw["public_key_sha256"] = strings.Repeat("0", 64) },
+			want:   `unknown field "public_key_sha256"`,
+		},
+		"public key encoding": {
+			mutate: func(raw map[string]any) { raw["public_key_encoding"] = "hex" },
+			want:   `unknown field "public_key_encoding"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			if _, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, publicKey)); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(paths.CosignerRefPath("lab"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(raw)
+			writeRawRecord(t, paths, "lab", raw)
+			if _, _, err := Get(paths, "lab"); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Get() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// Import stamps every record with the time it was imported, so a record
+// without that time, or with anything else in its place, is malformed.
+func TestGetRefusesARecordWithoutItsImportTime(t *testing.T) {
+	for name, mutate := range map[string]func(map[string]any){
+		"absent":     func(raw map[string]any) { delete(raw, "imported_at") },
+		"empty":      func(raw map[string]any) { raw["imported_at"] = "" },
+		"padded":     func(raw map[string]any) { raw["imported_at"] = " 2026-08-17T00:00:00Z" },
+		"not a time": func(raw map[string]any) { raw["imported_at"] = "yesterday" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			if _, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(paths.CosignerRefPath("lab"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			mutate(raw)
+			writeRawRecord(t, paths, "lab", raw)
+			if _, _, err := Get(paths, "lab"); err == nil || !strings.Contains(err.Error(), "is not an RFC 3339 time") {
+				t.Fatalf("Get() error = %v, want the import time refused", err)
+			}
+		})
+	}
+}
+
+// A record written in the earlier v2 shape is reported by its schema, not by
+// the fields that shape carried.
+func TestGetReportsAnEarlierSchemaAsUnsupported(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	id, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRawRecord(t, paths, "lab", map[string]any{
+		"schema":              "aplane.cosigner-public-key-ref.v2",
+		"name":                "lab",
+		"component_key":       id,
+		"key_type":            witness.Falcon1024V1,
+		"public_key_encoding": "hex",
+		"public_key_hex":      hex.EncodeToString(pub),
+		"public_key_size":     len(pub),
+		"public_key_sha256":   strings.Repeat("0", 64),
+		"imported_at":         "2026-08-17T00:00:00Z",
+	})
+	want := `invalid cosigner reference lab: unsupported schema "aplane.cosigner-public-key-ref.v2"`
+	if _, _, err := Get(paths, "lab"); err == nil || err.Error() != want {
+		t.Fatalf("Get() error = %v, want %q", err, want)
+	}
+}
+
+// A reason quotes values read from the file, so it is bounded: a 5 MiB schema
+// field cannot make a listing, a Get or a selection error outgrow the 4 MiB
+// admin frame.
+func TestInvalidReasonsAreBounded(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	writeRawRecord(t, paths, "huge", map[string]any{"schema": strings.Repeat("x", 5<<20)})
+
+	_, invalid, err := List(paths)
+	if err != nil || len(invalid) != 1 {
+		t.Fatalf("List() invalid = %d entries, %v", len(invalid), err)
+	}
+	reason := invalid[0].Reason
+	if len(reason) > maxReasonBytes+len("...(truncated)") || !strings.HasPrefix(reason, `unsupported schema "xxx`) || !strings.HasSuffix(reason, "...(truncated)") {
+		t.Fatalf("reason is %d bytes: %.80q...", len(reason), reason)
+	}
+	if _, _, err := Get(paths, "huge"); err == nil || len(err.Error()) > 300 {
+		t.Fatalf("Get() error is %d bytes, want it bounded", len(err.Error()))
+	}
+	other, err := witness.ID(witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: other})
+	if err == nil || len(err.Error()) > 500 {
+		t.Fatalf("selection error is %d bytes, want it bounded", len(err.Error()))
+	}
+}
+
+// Importing over a file of the same name that is not a valid reference says
+// so, with the hint the list gives for it.
+func TestImportOverAnInvalidFileSaysHowToClearIt(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	writeRawRecordBytes(t, paths, "lab", []byte(`{"schema":"wrong"}`))
+	_, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
+	want := `cannot import cosigner reference "lab" over a file that is not a valid reference: "` + paths.CosignerRefPath("lab") +
+		`": unsupported schema "wrong" (remove reference lab to clear it)`
+	if err == nil || err.Error() != want {
+		t.Fatalf("Import() error = %v, want %q", err, want)
+	}
+}

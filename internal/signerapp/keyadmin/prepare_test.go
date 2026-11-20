@@ -141,8 +141,8 @@ func TestReviewedGenerationKeepsTheReviewedAuthority(t *testing.T) {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 
-	if deleted, err := cosignerrefs.Delete(ir.KeyPaths(), prepareTestReference); err != nil || !deleted {
-		t.Fatalf("delete reference = (%v, %v)", deleted, err)
+	if removal, err := cosignerrefs.Remove(ir.KeyPaths(), prepareTestReference); err != nil || !removal.Removed {
+		t.Fatalf("remove reference = (%+v, %v)", removal, err)
 	}
 	importPrepareReference(t, ir, prepareTestReference, 0x62)
 
