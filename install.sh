@@ -1052,6 +1052,24 @@ check_local_config_consistency() {
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC="$SCRIPT_DIR/bin"
 RELEASE_METADATA_SRC="$SCRIPT_DIR/release.json"
+# The binaries a release ships, as scripts/package-bootstrap-release.sh lists
+# them. Only these are installed, so a helper or stale build left in a
+# checkout's bin/ never is. macOS archives carry no appass-systemd-creds.
+RELEASE_BINARIES=(
+    apshell
+    apsigner
+    apadmin
+    apconsole
+    apapprover
+    apstore
+    appass
+    aplocalnet
+    appass-file
+    appass-systemd-creds
+    approbe
+    appolicy
+    applugin-checksum
+)
 
 if [ ! -d "$BIN_SRC" ]; then
     echo "Error: bin/ directory not found at $BIN_SRC" >&2
@@ -1357,16 +1375,6 @@ install_template_library() {
     fi
 
     mkdir -p "$dest"
-    # Earlier releases also installed a retired directory beside templates.
-    # This release can no longer parse those, so an upgraded node drops them.
-    if [ -n "$data_dir" ] && [ -d "$library_root/retired" ]; then
-        rm -rf -- "$library_root/retired"
-        echo "Removed retired templates from $library_root/retired."
-    fi
-    # v0.49.0's bounded templates are retired too: the plain hosts' bounds
-    # replace them, and this release can't parse them, so the KeyType Library
-    # would list them as invalid with no way to remove them.
-    rm -f -- "$dest/aplane.corridor.v1.yaml" "$dest/aplane.falcon1024-allowlist-alock.v1.yaml" "$dest/aplane.falcon1024-allowlist.v1.yaml" "$dest/aplane.falcon1024-allowlist.v2.yaml" "$dest/aplane.falcon1024-timelock.v1.yaml"
     for file in "$src"/*; do
         [ -f "$file" ] || continue
         case "$(basename "$file")" in
@@ -1790,7 +1798,7 @@ abort_if_macos_install_processes_running() {
     install_root="${install_root%/}"
     local found=0
     local pid exe
-    for name in apsigner apadmin apconsole apshell aprekey apbounded-admin apstore apapprover appass aplocalnet; do
+    for name in apsigner apadmin apconsole apshell apstore apapprover appass aplocalnet; do
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             exe="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
@@ -1952,8 +1960,6 @@ if [ "$CLIENT_MODE" = "1" ]; then
     mkdir -p "$BINDIR" "$APCLIENT_DIR/.ssh" "$APCLIENT_DIR/plugins.available" "$APCLIENT_DIR/scripts"
     install_release_metadata "$CLIENT_PATH/install"
     echo "Installing client binaries to $BINDIR..."
-    # Retired client binaries: an upgraded install must not keep offering them.
-    rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin" "$BINDIR/appolicy"
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
@@ -2183,20 +2189,12 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
-    # appolicy ships with the signer binaries; remove a client-side copy left
-    # by a release that installed the retired binary there.
-    rm -f "$CLIENT_BINDIR/appolicy"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
-    for bin in "$BIN_SRC"/*; do
+    for name in "${RELEASE_BINARIES[@]}"; do
+        bin="$BIN_SRC/$name"
         [ -f "$bin" ] || continue
-        name="$(basename "$bin")"
-        if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
-            echo "  skipping obsolete $name"
-            continue
-        fi
         if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ]; then
             cp "$bin" "$CLIENT_BINDIR/"
             chmod 755 "$CLIENT_BINDIR/$name"
@@ -2209,9 +2207,6 @@ if [ "$LOCAL_MODE" = "1" ]; then
             echo "  $name → $SIGNER_BINDIR"
         fi
     done
-    # A retired binary an older build left in the source bin directory was
-    # copied with the rest; it is not part of this release.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/aprekey" "$SIGNER_BINDIR/apbounded-admin"
 
     MEMORY_LOCK_ENABLED=0
     if [ "$MEMORY_LOCK_REQUESTED" = "1" ]; then
@@ -2314,7 +2309,6 @@ exec apconsole -config "$SCRIPT_DIR/apconsole.yaml"
 STARTEOF
     chmod +x "$START_SH"
     bash -n "$START_SH"
-    rm -f "$LOCAL_PATH/start-tmux.sh" "$LOCAL_PATH/start-screen.sh"
 
     # Copy uninstall helper
     if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
@@ -2536,13 +2530,9 @@ fi
 
 # Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
-for bin in "$BIN_SRC"/*; do
+for name in "${RELEASE_BINARIES[@]}"; do
+    bin="$BIN_SRC/$name"
     [ -f "$bin" ] || continue
-    name="$(basename "$bin")"
-    if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
-        echo "  skipping obsolete $name"
-        continue
-    fi
     cp "$bin" "$BINDIR/"
     # Passphrase helpers must be executable by the unprivileged service user.
     # The appass-file secret itself stays protected by product-store 0600 files.
@@ -2553,9 +2543,6 @@ for bin in "$BIN_SRC"/*; do
     esac
     echo "  $name"
 done
-# Retired binaries an earlier release installed here, or an older build left in
-# the source bin directory and the loop copied.
-rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
 
 # Step 3: Bootstrap managed metadata, migrate the store, and install systemd files
 echo ""

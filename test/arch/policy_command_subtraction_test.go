@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,8 +18,8 @@ import (
 // TestAppolicyShipsWithTheSignerBinaries pins where appolicy is built,
 // packaged, installed and removed. It is a signer-side tool: built for every
 // platform the signer ships on, installed into the signer bindir by the
-// install copy loop (no exclusion), never left in the client bindir, and
-// removed with the signer binaries on uninstall.
+// install copy loop (no exclusion), and removed with the signer binaries on
+// uninstall.
 func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	root := filepath.Join("..", "..")
 	read := func(name string) string {
@@ -36,9 +37,6 @@ func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	}
 	if strings.Contains(installer, `"$SIGNER_BINDIR/appolicy"`) {
 		t.Error("install.sh removes appolicy from the signer bindir")
-	}
-	if !strings.Contains(installer, `rm -f "$CLIENT_BINDIR/appolicy"`) {
-		t.Error("install.sh does not remove a client-side appolicy left by an earlier release")
 	}
 
 	removal := regexp.MustCompile(`(?m)^\s*for binary in [^\n]*\bappolicy\b[^\n]*; do\s*$`)
@@ -69,6 +67,31 @@ func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 	}
 	if !regexp.MustCompile(`(?m)^\s+appolicy$`).MatchString(read(filepath.Join("scripts", "package-bootstrap-release.sh"))) {
 		t.Error("package-bootstrap-release.sh does not require appolicy")
+	}
+}
+
+// TestInstallerInstallsTheReleaseBinaries pins install.sh's binary list to the
+// release package's, so an install from a checkout installs what a release
+// ships and nothing else that happens to sit in bin/.
+func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
+	root := filepath.Join("..", "..")
+	list := func(name, opener string) []string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, rest, found := strings.Cut(string(data), opener+"\n")
+		body, _, closed := strings.Cut(rest, ")")
+		if !found || !closed {
+			t.Fatalf("%s has no %q list", name, opener)
+		}
+		return strings.Fields(body)
+	}
+	installed := list("install.sh", "RELEASE_BINARIES=(")
+	packaged := list(filepath.Join("scripts", "package-bootstrap-release.sh"), "local binaries=(")
+	if !slices.Equal(installed, packaged) {
+		t.Errorf("install.sh installs %v, but a release packages %v", installed, packaged)
 	}
 }
 

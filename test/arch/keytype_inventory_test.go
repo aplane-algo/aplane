@@ -6,7 +6,6 @@ package arch_test
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -106,19 +105,6 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 	for _, token := range namingPassTokens {
 		namingPass[token] = true
 	}
-	// The installers name a retired binary or library template only to delete it
-	// from an upgraded or uninstalled machine, or to find a binary still running
-	// before they do. Only those lines are exempt, so installing one again would
-	// still be caught.
-	removesRetired := map[string][]string{
-		"../../install.sh": {"ap" + "rekey", "aplane." + "corridor.v1", "aplane." + "falcon1024-allowlist.v1",
-			"aplane." + "falcon1024-allowlist.v2", "aplane." + "falcon1024-timelock.v1"},
-		"../../uninstall.sh": {"ap" + "rekey"},
-	}
-	removalLine := func(line string) bool {
-		line = strings.TrimSpace(line)
-		return strings.HasPrefix(line, "rm -f ") || strings.HasPrefix(line, "for name in ")
-	}
 	textExtensions := map[string]bool{
 		".go": true, ".md": true, ".yaml": true, ".yml": true,
 		".json": true, ".sh": true, ".service": true, ".toml": true,
@@ -154,20 +140,10 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		}
 		lower := strings.ToLower(string(content))
 		for _, token := range retired {
-			scanned := lower
 			if namingPass[token] && namingPassHistory[filepath.ToSlash(path)] {
 				continue
 			}
-			if slices.Contains(removesRetired[filepath.ToSlash(path)], token) {
-				var kept []string
-				for _, line := range strings.Split(lower, "\n") {
-					if !removalLine(line) {
-						kept = append(kept, line)
-					}
-				}
-				scanned = strings.Join(kept, "\n")
-			}
-			if strings.Contains(scanned, strings.ToLower(token)) {
+			if strings.Contains(lower, strings.ToLower(token)) {
 				t.Errorf("%s contains retired key-type product vocabulary %q", path, token)
 			}
 		}

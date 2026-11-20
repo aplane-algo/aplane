@@ -372,8 +372,6 @@ if [ "$CLIENT_MODE" = "1" ]; then
     else
         echo "No apshell found at $CLIENT_BINDIR/apshell"
     fi
-    # Retired client binaries an older release may have left.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Clean up shell rc
@@ -502,8 +500,6 @@ if [ "$LOCAL_MODE" = "1" ]; then
         rm -f "$CLIENT_BINDIR/apshell"
         CLIENT_BINARY_REMOVED=1
     fi
-    # Retired client binaries an older release may have left.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Remove installer-generated MCP config only if it still points at this
@@ -531,7 +527,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
         rmdir "$APCLIENT_DIR/.codex" 2>/dev/null || true
     fi
 
-    for artifact in apenv.sh apconsole.yaml start.sh start-tmux.sh start-screen.sh; do
+    for artifact in apenv.sh apconsole.yaml start.sh; do
         artifact_path="$LOCAL_PARENT/$artifact"
         if [ -e "$artifact_path" ]; then
             rm -f "$artifact_path"
@@ -770,8 +766,7 @@ else
     DATA_DIR_ALREADY_ABSENT=1
 fi
 
-# Remove binaries, and the retired ones an earlier release may have installed.
-rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
+# Remove binaries
 for binary in apsigner apshell apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
     binary_path="$BINDIR/$binary"
     if [ -e "$binary_path" ]; then
