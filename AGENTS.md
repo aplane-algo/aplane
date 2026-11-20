@@ -58,7 +58,6 @@ for the address).
 - `cmd/approbe/`: Installer/helper liveness probe and canonical signer IPC-path resolver
 - `cmd/appolicy/`: Offline policy file editor (terminal UI), check, format, explain, try, and test (saved cases); files only, never a node or store
 - `cmd/aplocalnet/`: LocalNet setup TUI/CLI for algod reachability, client/signer network config, plugin activation, and KMD plugin environment
-- `cmd/compile_teal/`: Dev/build helper that compiles TEAL source to generated Go bytecode
 - `cmd/configdoc/`: Documentation generator for configuration
 - `cmd/applugin-checksum/`: Checksum generator for plugins
 

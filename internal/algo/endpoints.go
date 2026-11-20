@@ -7,16 +7,16 @@ import "os"
 
 const (
 	// DefaultPublicAlgodURL is the repo-wide public algod default for testnet-facing
-	// tooling and tests when no explicit endpoint is provided.
+	// tests when no explicit endpoint is provided.
 	DefaultPublicAlgodURL = "https://testnet-api.4160.nodely.dev"
 
 	// TEALCompileAlgodURLEnv overrides the algod endpoint used by compile-only
-	// tooling and tests. It falls back to ALGOD_URL for consistency with the
+	// tests. It falls back to ALGOD_URL for consistency with the
 	// integration environment, then to DefaultPublicAlgodURL.
 	TEALCompileAlgodURLEnv = "TEAL_COMPILE_ALGOD_URL"
 
 	// TEALCompileAlgodTokenEnv overrides the algod API token used by compile-only
-	// tooling and tests. It falls back to ALGOD_TOKEN for consistency with the
+	// tests. It falls back to ALGOD_TOKEN for consistency with the
 	// integration environment.
 	TEALCompileAlgodTokenEnv = "TEAL_COMPILE_ALGOD_TOKEN"
 )

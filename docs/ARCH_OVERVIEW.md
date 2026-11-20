@@ -538,7 +538,6 @@ All under `cmd/`:
 | `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, private-store permission audit/migration, and offline key inventory; it has no live admin transport | Providers (KeyGen) + Crypto + Store Mutation |
 | `appass` | Passphrase auto-unlock setup TUI | UI (TUI) + Crypto |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
-| `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |  |
 | `configdoc` | Config documentation generator |  |
 | `appass-file` | Dev passphrase helper |  |
 | `appass-systemd-creds` | Production passphrase helper |  |
@@ -568,7 +567,6 @@ aplane/
 │   ├── apstore/                   # Stopped-daemon bootstrap and rescue flows
 │   ├── appass/                    # Passphrase auto-unlock configuration TUI
 │   ├── aplocalnet/                # LocalNet setup TUI/CLI
-│   ├── compile_teal/              # Dev/build helper for TEAL bytecode generation
 │   ├── configdoc/                 # Configuration documentation generator
 │   ├── appass-file/               # Dev passphrase helper
 │   ├── appass-systemd-creds/      # systemd-creds passphrase helper
