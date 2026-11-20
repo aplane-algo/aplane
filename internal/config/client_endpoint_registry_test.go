@@ -309,8 +309,8 @@ func TestClientEndpointURLRules(t *testing.T) {
 		{raw: "http://127.0.0.1:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
 		{raw: "http://signer.example:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
 		{raw: "ftp://signer.example", wantErr: `unsupported url scheme "ftp"; endpoints are ssh://host[:port]`},
-		{raw: "self", wantErr: `url "self" is not supported; configure an explicit ssh://host[:port] endpoint`},
-		{raw: "", wantErr: `unsupported url scheme ""; endpoints are ssh://host[:port]`, loadErr: "url is required"},
+		{raw: "self", wantErr: `unsupported url scheme ""; endpoints are ssh://host[:port]`},
+		{raw: "", wantErr: "url is required"},
 		{raw: "://bad", wantErr: `invalid url: parse "://bad": missing protocol scheme`},
 	}
 	for _, tt := range tests {
@@ -354,11 +354,11 @@ func checkEndpointURLResult(t *testing.T, path string, err error, gotURL, wantUR
 // rules, as an in-memory registry may hold.
 func TestClientEndpointSSHHostPortRefusesUnvalidatedURLs(t *testing.T) {
 	tests := map[string]string{
-		"https://signer.example":     `endpoint "https://signer.example" requires ssh://`,
-		"ssh://":                     `endpoint "ssh://" has no SSH host`,
-		"ssh://signer.example:0":     `invalid SSH port "0"`,
-		"ssh://signer.example:99999": `invalid SSH port "99999"`,
-		"://bad":                     `invalid endpoint URL: parse "://bad": missing protocol scheme`,
+		"https://signer.example":     `endpoint URL "https://signer.example": unsupported url scheme "https"; endpoints are ssh://host[:port]`,
+		"ssh://":                     `endpoint URL "ssh://": url host is required`,
+		"ssh://signer.example:0":     `endpoint URL "ssh://signer.example:0": invalid url port "0"`,
+		"ssh://signer.example:99999": `endpoint URL "ssh://signer.example:99999": invalid url port "99999"`,
+		"://bad":                     `endpoint URL "://bad": invalid url: parse "://bad": missing protocol scheme`,
 	}
 	for raw, want := range tests {
 		if _, _, err := ClientEndpointSSHHostPort(ClientEndpointConfig{URL: raw}); err == nil || err.Error() != want {

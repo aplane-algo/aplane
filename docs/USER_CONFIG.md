@@ -253,11 +253,11 @@ available when generating cosigned accounts, export it on the cosigner node with
 `apadmin cosigner import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.
 
-If the signer operator sets a client-reachable advertised URL in
-`$APSIGNER_DATA/config.yaml`, `apadmin endpoint export` can omit `--host`, and
-the cosigner key export screen shows it as the address clients add with
-`endpoints add`. Cosigner installs prompt for this address when they write a
-new config:
+If the signer operator sets a client-reachable advertised URL, which must be
+`ssh://host[:port]`, in `$APSIGNER_DATA/config.yaml`, `apadmin endpoint export`
+can omit `--host`, and the cosigner key export screen shows it as the address
+clients add with `endpoints add`. Cosigner installs prompt for this address
+when they write a new config:
 
 ```yaml
 endpoint:

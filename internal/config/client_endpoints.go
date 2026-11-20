@@ -5,12 +5,12 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 )
 
 const (
@@ -138,7 +138,7 @@ func normalizeClientEndpointConfig(dataDir string, endpoint ClientEndpointConfig
 	if endpoint.URL == "" {
 		return endpoint, fmt.Errorf("url is required")
 	}
-	if err := validateClientEndpointURL(endpoint.URL); err != nil {
+	if _, _, err := endpointrefs.ParseURL(endpoint.URL); err != nil {
 		return endpoint, err
 	}
 
@@ -153,57 +153,17 @@ func normalizeClientEndpointConfig(dataDir string, endpoint ClientEndpointConfig
 	return endpoint, nil
 }
 
-// validateClientEndpointURL accepts only ssh:// endpoints. A node is reached
-// through its SSH server, which authenticates the client's enrolled key and
-// hands the API channel to the node's REST handler with that identity; there
-// is no credential a raw HTTP endpoint could present.
-func validateClientEndpointURL(rawURL string) error {
-	if rawURL == "self" {
-		return fmt.Errorf("url %q is not supported; configure an explicit ssh://host[:port] endpoint", rawURL)
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid url: %w", err)
-	}
-	if parsed.Scheme != "ssh" {
-		return fmt.Errorf("unsupported url scheme %q; endpoints are ssh://host[:port]", parsed.Scheme)
-	}
-	if parsed.Hostname() == "" {
-		return fmt.Errorf("url host is required")
-	}
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return fmt.Errorf("invalid url port %q", parsed.Port())
-		}
-	}
-	return nil
-}
-
-// ClientEndpointSSHHostPort returns the SSH host and port for an ssh://
-// endpoint. It is shared by signer-facing clients so endpoint routing does not
-// depend on legacy config.yaml ssh fields.
+// ClientEndpointSSHHostPort returns the SSH host and port of an endpoint,
+// the port defaulting to DefaultSSHPort.
 func ClientEndpointSSHHostPort(endpoint ClientEndpointConfig) (string, int, error) {
-	parsed, err := url.Parse(endpoint.URL)
+	host, port, err := endpointrefs.ParseURL(endpoint.URL)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid endpoint URL: %w", err)
+		return "", 0, fmt.Errorf("endpoint URL %q: %w", endpoint.URL, err)
 	}
-	if parsed.Scheme != "ssh" {
-		return "", 0, fmt.Errorf("endpoint %q requires ssh://", endpoint.URL)
+	if port == 0 {
+		port = DefaultSSHPort
 	}
-	host := parsed.Hostname()
-	if host == "" {
-		return "", 0, fmt.Errorf("endpoint %q has no SSH host", endpoint.URL)
-	}
-	sshPort := DefaultSSHPort
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return "", 0, fmt.Errorf("invalid SSH port %q", parsed.Port())
-		}
-		sshPort = port
-	}
-	return host, sshPort, nil
+	return host, port, nil
 }
 
 // ResolveClientEndpointSSH resolves the complete SSH transport for an endpoint.

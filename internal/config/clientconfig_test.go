@@ -281,7 +281,7 @@ func TestLoadClientEndpointRegistryRejectsSelfForEveryRole(t *testing.T) {
 				t.Fatalf("write endpoints: %v", err)
 			}
 			_, err := LoadClientEndpointRegistry(dataDir)
-			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
+			if err == nil || !strings.Contains(err.Error(), `unsupported url scheme ""; endpoints are ssh://host[:port]`) {
 				t.Fatalf("LoadClientEndpointRegistry() error = %v, want unsupported self URL", err)
 			}
 		})

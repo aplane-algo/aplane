@@ -346,9 +346,9 @@ func TestEndpointExportImportRoundTrip(t *testing.T) {
 		{url: "ssh://signer.example:2223", wantURL: "ssh://signer.example:2223"},
 		{url: "ssh://signer.example:2223/", wantURL: "ssh://signer.example:2223"},
 		{url: "ssh://[::1]:2223", wantURL: "ssh://[::1]:2223"},
-		{url: "https://signer.example:8443", importErr: `endpoint "main": unsupported url scheme "https"; endpoints are ssh://host[:port]`},
-		{url: "http://127.0.0.1:11270", importErr: `endpoint "main": unsupported url scheme "http"; endpoints are ssh://host[:port]`},
-		{url: "http://signer.example:11270", exportErr: "raw http endpoints must be loopback; use ssh:// or https:// for remote endpoints"},
+		{url: "https://signer.example:8443", exportErr: `unsupported url scheme "https"; endpoints are ssh://host[:port]`},
+		{url: "http://127.0.0.1:11270", exportErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{url: "http://signer.example:11270", exportErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {

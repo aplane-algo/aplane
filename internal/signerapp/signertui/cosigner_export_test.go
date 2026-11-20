@@ -159,7 +159,6 @@ func TestCosignerClientEndpointHintIsTheAddressOnly(t *testing.T) {
 		want     string
 	}{
 		"ssh non-default port": {&AdminSettings{EndpointAdvertiseURL: "ssh://cosigner.example:2223", SignerPort: 12270}, "ssh://cosigner.example:2223"},
-		"https":                {&AdminSettings{EndpointAdvertiseURL: "https://cosigner.example", SignerPort: 12270}, "https://cosigner.example"},
 		"placeholder":          {&AdminSettings{SignerPort: 12270}, "ssh://<this cosigner's host>:<ssh port>"},
 		"no settings":          {nil, "ssh://<this cosigner's host>:<ssh port>"},
 	} {

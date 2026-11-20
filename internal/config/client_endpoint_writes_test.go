@@ -188,7 +188,7 @@ func TestStoredClientEndpointRejectsSelfForEveryRole(t *testing.T) {
 				Role: role,
 				URL:  "self",
 			}, false)
-			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
+			if err == nil || !strings.Contains(err.Error(), `unsupported url scheme ""; endpoints are ssh://host[:port]`) {
 				t.Fatalf("upsertStoredClientEndpoint() error = %v, want unsupported self URL", err)
 			}
 		})

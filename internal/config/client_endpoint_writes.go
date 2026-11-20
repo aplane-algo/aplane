@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -190,7 +192,7 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 		return ClientEndpointConfig{}, err
 	}
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
-	if err := validateClientEndpointURL(endpoint.URL); err != nil {
+	if _, _, err := endpointrefs.ParseURL(endpoint.URL); err != nil {
 		return ClientEndpointConfig{}, err
 	}
 	return endpoint, nil

@@ -342,12 +342,13 @@ func TestLoadServerConfigEndpointAdvertiseURLRules(t *testing.T) {
 		{raw: "ssh://[::1]:2223", wantURL: "ssh://[::1]:2223"},
 		{raw: "ssh://signer.example:0", wantErr: `invalid url port "0"`},
 		{raw: "ssh:///path", wantErr: "url host is required"},
-		{raw: "https://signer.example:8443", wantURL: "https://signer.example:8443"},
-		{raw: "http://127.0.0.1:11270", wantURL: "http://127.0.0.1:11270"},
-		{raw: "http://localhost:11270", wantURL: "http://localhost:11270"},
-		{raw: "http://signer.example:11270", wantErr: "raw http endpoints must be loopback; use ssh:// or https:// for remote endpoints"},
-		{raw: "ftp://signer.example", wantErr: `unsupported url scheme "ftp"`},
-		{raw: "self", wantErr: `url "self" is not allowed in exported endpoint envelopes`},
+		{raw: "https://signer.example:8443", wantErr: `unsupported url scheme "https"; endpoints are ssh://host[:port]`},
+		{raw: "http://127.0.0.1:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{raw: "http://localhost:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{raw: "http://[::1]:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{raw: "http://signer.example:11270", wantErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{raw: "ftp://signer.example", wantErr: `unsupported url scheme "ftp"; endpoints are ssh://host[:port]`},
+		{raw: "self", wantErr: `unsupported url scheme ""; endpoints are ssh://host[:port]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.raw, func(t *testing.T) {
