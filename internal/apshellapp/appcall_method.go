@@ -7,36 +7,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
-
 	"github.com/aplane-algo/aplane/internal/appresult"
-	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
 // AppCallMethodRequest captures the parsed ABI/method app call request.
 type AppCallMethodRequest struct {
-	AppID            uint64
-	Method           string
-	ABIPath          string
-	ArgValues        []string
-	PayAmount        uint64
-	From             string
-	Accounts         []string
-	ForeignApps      []uint64
-	AssetRefs        []cmdspec.AssetRef
-	Boxes            []types.AppBoxReference
-	OnCompletion     types.OnCompletion
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	Note             string
-	Wait             bool
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
+	AppID     uint64
+	Method    string
+	ABIPath   string
+	ArgValues []string
+	From      string
+	AppCallOptions
 }
 
 // AppCallMethod executes the semantic part of an ABI/method app call.
@@ -102,48 +84,10 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 	}
 	decorateAppCallMethodResult(result)
 
-	if req.PayAmount > 0 {
-		paymentPrepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
-			From:       fromAddr,
-			To:         crypto.GetApplicationAddress(req.AppID).String(),
-			Amount:     req.PayAmount,
-			Fee:        req.Fee,
-			UseFlatFee: req.UseFlatFee,
-		})
-		if err != nil {
-			return nil, err
-		}
-		paymentPrep := preparedTxnFromEngine(paymentPrepResult)
-
-		group, err := prepareTxnGroup(paymentPrep, prepared.Prep)
-		if err != nil {
-			return nil, err
-		}
-
-		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, lsigArgs, req.Wait)
-		if err != nil {
-			return nil, fmt.Errorf("grouped app call failed: %w", err)
-		}
-
-		result.Structured.Grouped = true
-		result.Structured.TxIDs = submit.TxIDs
-		result.Structured.Confirmed = submit.Confirmed
-		result.Output = submit.Output
-		result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
-		appendAppCallMethodConfirmedLines(result)
-		return result, nil
-	}
-
-	submit, err := a.eng.SignAndSubmit(ctx, prepared.Prep.enginePrep, lsigArgs, req.Wait)
+	result.Output, result.Warnings, err = a.submitAppCall(ctx, "app call", fromAddr, req.AppID, prepared.Prep, req.AppCallOptions, lsigArgs, &result.Structured)
 	if err != nil {
-		return nil, fmt.Errorf("app call failed: %w", err)
+		return nil, err
 	}
-
-	result.Structured.TxID = submit.TxID
-	result.Structured.TxIDs = []string{submit.TxID}
-	result.Structured.Confirmed = submit.Confirmed
-	result.Output = submit.Output
-	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	appendAppCallMethodConfirmedLines(result)
 	return result, nil
 }

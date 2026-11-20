@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -255,79 +256,45 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 		LsigArgs: plan.LsigArgs,
 	}
 
-	switch plan.Mode {
-	case SendModeAtomicToMultiple:
-		if assetID == 0 {
-			payments := make([]engine.AtomicPaymentParams, len(plan.ToAddresses))
-			for i, to := range plan.ToAddresses {
-				payments[i] = engine.AtomicPaymentParams{From: plan.FromAddresses[0], To: to, Amount: amountUnits, Note: plan.Note}
-			}
-			checks, err := a.eng.ValidateAtomicPayments(ctx, payments, plan.Fee)
-			if err != nil {
-				return nil, err
-			}
-			prep, err := a.eng.PrepareAtomicPayments(ctx, payments, groupParams)
-			if err != nil {
-				return nil, err
-			}
-			result.Checks = balanceCheckDetailsListFromEngine(checks)
-			result.Prep = preparedAtomicGroupFromEngine(prep)
-			return result, nil
-		}
-
-		transfers := make([]engine.AtomicASAParams, len(plan.ToAddresses))
-		for i, to := range plan.ToAddresses {
-			transfers[i] = engine.AtomicASAParams{From: plan.FromAddresses[0], To: to, AssetID: assetID, Amount: amountUnits, Note: plan.Note}
-		}
-		checks, err := a.eng.ValidateAtomicASATransfers(ctx, transfers)
-		if err != nil {
-			return nil, err
-		}
-		prep, err := a.eng.PrepareAtomicASATransfers(ctx, transfers, groupParams)
-		if err != nil {
-			return nil, err
-		}
-		result.Checks = balanceCheckDetailsListFromEngine(checks)
-		result.Prep = preparedAtomicGroupFromEngine(prep)
-		return result, nil
-
-	case SendModeAtomicFromMultiple:
-		if assetID == 0 {
-			payments := make([]engine.AtomicPaymentParams, len(plan.FromAddresses))
-			for i, from := range plan.FromAddresses {
-				payments[i] = engine.AtomicPaymentParams{From: from, To: plan.ToAddresses[0], Amount: amountUnits, Note: plan.Note}
-			}
-			checks, err := a.eng.ValidateAtomicPayments(ctx, payments, plan.Fee)
-			if err != nil {
-				return nil, err
-			}
-			prep, err := a.eng.PrepareAtomicPayments(ctx, payments, groupParams)
-			if err != nil {
-				return nil, err
-			}
-			result.Checks = balanceCheckDetailsListFromEngine(checks)
-			result.Prep = preparedAtomicGroupFromEngine(prep)
-			return result, nil
-		}
-
-		transfers := make([]engine.AtomicASAParams, len(plan.FromAddresses))
-		for i, from := range plan.FromAddresses {
-			transfers[i] = engine.AtomicASAParams{From: from, To: plan.ToAddresses[0], AssetID: assetID, Amount: amountUnits, Note: plan.Note}
-		}
-		checks, err := a.eng.ValidateAtomicASATransfers(ctx, transfers)
-		if err != nil {
-			return nil, err
-		}
-		prep, err := a.eng.PrepareAtomicASATransfers(ctx, transfers, groupParams)
-		if err != nil {
-			return nil, err
-		}
-		result.Checks = balanceCheckDetailsListFromEngine(checks)
-		result.Prep = preparedAtomicGroupFromEngine(prep)
-		return result, nil
+	// One side has a single account, the other the list.
+	froms, tos := plan.FromAddresses, plan.ToAddresses
+	if plan.Mode == SendModeAtomicToMultiple {
+		froms = slices.Repeat([]string{froms[0]}, len(tos))
+	} else {
+		tos = slices.Repeat([]string{tos[0]}, len(froms))
 	}
 
-	return nil, fmt.Errorf("unsupported atomic send mode: %s", plan.Mode)
+	var (
+		checks []engine.BalanceCheckResult
+		prep   *engine.AtomicPrepResult
+		err    error
+	)
+	if assetID == 0 {
+		payments := make([]engine.AtomicPaymentParams, len(froms))
+		for i := range froms {
+			payments[i] = engine.AtomicPaymentParams{From: froms[i], To: tos[i], Amount: amountUnits, Note: plan.Note}
+		}
+		if checks, err = a.eng.ValidateAtomicPayments(ctx, payments, plan.Fee); err != nil {
+			return nil, err
+		}
+		if prep, err = a.eng.PrepareAtomicPayments(ctx, payments, groupParams); err != nil {
+			return nil, err
+		}
+	} else {
+		transfers := make([]engine.AtomicASAParams, len(froms))
+		for i := range froms {
+			transfers[i] = engine.AtomicASAParams{From: froms[i], To: tos[i], AssetID: assetID, Amount: amountUnits, Note: plan.Note}
+		}
+		if checks, err = a.eng.ValidateAtomicASATransfers(ctx, transfers); err != nil {
+			return nil, err
+		}
+		if prep, err = a.eng.PrepareAtomicASATransfers(ctx, transfers, groupParams); err != nil {
+			return nil, err
+		}
+	}
+	result.Checks = balanceCheckDetailsListFromEngine(checks)
+	result.Prep = preparedAtomicGroupFromEngine(prep)
+	return result, nil
 }
 
 // executeNonAtomicSend validates and executes a prepared non-atomic send flow.
@@ -366,13 +333,13 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 			prep = &labeled
 		}
 		submit, err := a.eng.SignAndSubmit(ctx, prep, plan.LsigArgs, wait)
+		if submit != nil {
+			itemResult.TxID = submit.TxID
+			itemResult.Confirmed = submit.Confirmed
+			itemResult.Output = submit.Output
+			itemResult.Warnings = append(itemResult.Warnings, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)...)
+		}
 		if err != nil {
-			if submit != nil {
-				itemResult.TxID = submit.TxID
-				itemResult.Confirmed = submit.Confirmed
-				itemResult.Output = submit.Output
-				itemResult.Warnings = append(itemResult.Warnings, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)...)
-			}
 			itemResult.Error = fmt.Sprintf("transaction failed: %v", err)
 			itemResult.Submission = appresult.SubmissionFromError(err)
 			var failure *signing.SubmissionError
@@ -382,10 +349,6 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 			result.LastError = itemResult.Error
 			result.FailureCount++
 		} else {
-			itemResult.TxID = submit.TxID
-			itemResult.Confirmed = submit.Confirmed
-			itemResult.Output = submit.Output
-			itemResult.Warnings = append(itemResult.Warnings, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)...)
 			result.SuccessCount++
 		}
 		result.Items = append(result.Items, itemResult)

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -441,6 +442,56 @@ func TestNonAtomicSendLeavesThePlanAsPrepared(t *testing.T) {
 	for i, item := range plan.Items {
 		if got := item.Prep.enginePrep.Batch; got != nil {
 			t.Errorf("transaction %d of the plan is labeled %+v", i+1, got)
+		}
+	}
+}
+
+// An atomic send builds one transfer per account on the side with the list,
+// each between that account and the one on the other side, in order: a
+// payment for ALGO and an asset transfer for an ASA.
+func TestPrepareAtomicSendPairsEachAccount(t *testing.T) {
+	const usdc = 10458941
+	for _, mode := range []SendMode{SendModeAtomicToMultiple, SendModeAtomicFromMultiple} {
+		for _, assetID := range []uint64{0, usdc} {
+			t.Run(fmt.Sprintf("%s asset %d", mode, assetID), func(t *testing.T) {
+				f := newArgsFixture(t)
+				f.holdings = map[string][]models.AssetHolding{}
+				for _, account := range []string{argsNative, argsFalcon, argsDest} {
+					f.holdings[account] = []models.AssetHolding{{AssetId: usdc, Amount: 9_000_000}}
+				}
+				meta := asa.Metadata{Network: "testnet", AssetID: assetID}
+				plan := &SendPlan{Mode: mode, Amount: asa.AmountFromRaw(1500, meta), Note: "n", Fee: 3000, UseFlatFee: true}
+				wantFrom, wantTo := []string{argsNative, argsNative}, []string{argsDest, argsFalcon}
+				if mode == SendModeAtomicToMultiple {
+					plan.FromAddresses, plan.ToAddresses = []string{argsNative}, []string{argsDest, argsFalcon}
+				} else {
+					plan.FromAddresses, plan.ToAddresses = []string{argsNative, argsFalcon}, []string{argsDest}
+					wantFrom, wantTo = []string{argsNative, argsFalcon}, []string{argsDest, argsDest}
+				}
+
+				prepared, err := f.app.prepareAtomicSend(context.Background(), plan)
+				if err != nil {
+					t.Fatalf("prepareAtomicSend() error = %v", err)
+				}
+				txns := prepared.Prep.enginePrep.Transactions
+				if len(txns) != 2 || len(prepared.Checks) != 2 {
+					t.Fatalf("prepared %d transaction(s) and %d check(s), want 2 of each", len(txns), len(prepared.Checks))
+				}
+				for i, txn := range txns {
+					if txn.Sender.String() != wantFrom[i] || string(txn.Note) != "n" || txn.Fee != 3000 {
+						t.Errorf("transaction %d: sender %s, note %q, fee %d", i, txn.Sender, txn.Note, txn.Fee)
+					}
+					if assetID == 0 {
+						if txn.Type != types.PaymentTx || txn.Receiver.String() != wantTo[i] || txn.Amount != 1500 {
+							t.Errorf("transaction %d: %s to %s of %d, want a payment to %s of 1500", i, txn.Type, txn.Receiver, txn.Amount, wantTo[i])
+						}
+						continue
+					}
+					if txn.Type != types.AssetTransferTx || txn.AssetReceiver.String() != wantTo[i] || txn.AssetAmount != 1500 || uint64(txn.XferAsset) != usdc {
+						t.Errorf("transaction %d: %s to %s of %d of %d, want an asset transfer to %s of 1500", i, txn.Type, txn.AssetReceiver, txn.AssetAmount, txn.XferAsset, wantTo[i])
+					}
+				}
+			})
 		}
 	}
 }

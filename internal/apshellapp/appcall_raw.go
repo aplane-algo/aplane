@@ -15,11 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
-// AppCallRawRequest captures the parsed raw app call request.
-type AppCallRawRequest struct {
-	AppID            uint64
-	From             string
-	AppArgs          [][]byte
+// AppCallOptions are the options both forms of app call take.
+type AppCallOptions struct {
 	PayAmount        uint64
 	Accounts         []string
 	ForeignApps      []uint64
@@ -35,6 +32,14 @@ type AppCallRawRequest struct {
 	Fee              uint64
 	UseFlatFee       bool
 	LsigArgs         cmdspec.LsigArgs
+}
+
+// AppCallRawRequest captures the parsed raw app call request.
+type AppCallRawRequest struct {
+	AppID   uint64
+	From    string
+	AppArgs [][]byte
+	AppCallOptions
 }
 
 // AppCallRaw executes the semantic part of a raw app call.
@@ -94,50 +99,52 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 	}
 	decorateAppCallRawResult(result)
 
-	if req.PayAmount > 0 {
-		paymentPrepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
-			From:       fromAddr,
-			To:         crypto.GetApplicationAddress(req.AppID).String(),
-			Amount:     req.PayAmount,
-			Fee:        req.Fee,
-			UseFlatFee: req.UseFlatFee,
-		})
-		if err != nil {
-			return nil, err
-		}
-		paymentPrep := preparedTxnFromEngine(paymentPrepResult)
-
-		group, err := prepareTxnGroup(paymentPrep, prep)
-		if err != nil {
-			return nil, err
-		}
-
-		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, lsigArgs, req.Wait)
-		if err != nil {
-			return nil, fmt.Errorf("grouped raw app call failed: %w", err)
-		}
-
-		result.Structured.Grouped = true
-		result.Structured.TxIDs = submit.TxIDs
-		result.Structured.Confirmed = submit.Confirmed
-		result.Output = submit.Output
-		result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
-		appendAppCallRawConfirmedLines(result)
-		return result, nil
-	}
-
-	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, lsigArgs, req.Wait)
+	result.Output, result.Warnings, err = a.submitAppCall(ctx, "raw app call", fromAddr, req.AppID, prep, req.AppCallOptions, lsigArgs, &result.Structured)
 	if err != nil {
-		return nil, fmt.Errorf("raw app call failed: %w", err)
+		return nil, err
 	}
-
-	result.Structured.TxID = submit.TxID
-	result.Structured.TxIDs = []string{submit.TxID}
-	result.Structured.Confirmed = submit.Confirmed
-	result.Output = submit.Output
-	result.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	appendAppCallRawConfirmedLines(result)
 	return result, nil
+}
+
+// submitAppCall signs and submits a prepared app call from fromAddr, and
+// records the submission in structured. With a companion payment, the
+// payment to the app's address is prepared and goes first, in one group with
+// the call. label names the call in a failure.
+func (a *App) submitAppCall(ctx context.Context, label, fromAddr string, appID uint64, call *PreparedTxn, opts AppCallOptions, lsigArgs engine.LsigArgs, structured *appresult.AppCall) (string, []Warning, error) {
+	if opts.PayAmount == 0 {
+		submit, err := a.eng.SignAndSubmit(ctx, call.enginePrep, lsigArgs, opts.Wait)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s failed: %w", label, err)
+		}
+		structured.TxID = submit.TxID
+		structured.TxIDs = []string{submit.TxID}
+		structured.Confirmed = submit.Confirmed
+		return submit.Output, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning), nil
+	}
+
+	paymentPrepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
+		From:       fromAddr,
+		To:         crypto.GetApplicationAddress(appID).String(),
+		Amount:     opts.PayAmount,
+		Fee:        opts.Fee,
+		UseFlatFee: opts.UseFlatFee,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	group, err := prepareTxnGroup(preparedTxnFromEngine(paymentPrepResult), call)
+	if err != nil {
+		return "", nil, err
+	}
+	submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, lsigArgs, opts.Wait)
+	if err != nil {
+		return "", nil, fmt.Errorf("grouped %s failed: %w", label, err)
+	}
+	structured.Grouped = true
+	structured.TxIDs = submit.TxIDs
+	structured.Confirmed = submit.Confirmed
+	return submit.Output, submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning), nil
 }
 
 func decorateAppCallRawResult(result *AppCallRawResult) {

@@ -61,15 +61,13 @@ func (a *App) Connect(ctx context.Context, req ConnectRequest) (*ConnectResult, 
 		}
 		return nil, err
 	}
-	result := connectionDetailsFromEngine(connectResult)
-
 	res := &ConnectResult{
 		Target:   target,
-		KeyCount: result.KeyCount,
-		Locked:   result.Locked,
+		KeyCount: connectResult.KeyCount,
+		Locked:   connectResult.Locked,
 	}
 
-	if result.AlreadyConnected {
+	if connectResult.AlreadyConnected {
 		res.AlreadyConnected = true
 		res.Summary = Summary{Message: fmt.Sprintf("Already connected to %s", target)}
 		decorateConnectResult(res)
@@ -77,7 +75,7 @@ func (a *App) Connect(ctx context.Context, req ConnectRequest) (*ConnectResult, 
 	}
 
 	res.Summary = Summary{Message: fmt.Sprintf("Signer verified over SSH at %s", target)}
-	if result.Locked {
+	if connectResult.Locked {
 		res.Warnings = append(res.Warnings, Warning{
 			Code:    "signer_locked",
 			Message: "Signer is locked — unlock via apadmin before signing",

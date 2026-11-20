@@ -177,27 +177,21 @@ func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateComma
 		}
 
 		submit, err := a.eng.SignAndSubmit(ctx, prepResult, lsigArgs, true)
+		if submit != nil {
+			item.TxID = submit.TxID
+			item.Confirmed = submit.Confirmed
+			item.Output = submit.Output
+			item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
+		}
 		if err != nil {
-			if submit != nil {
-				item.TxID = submit.TxID
-				item.Confirmed = submit.Confirmed
-				item.Output = submit.Output
-				item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
-			}
 			if !errors.Is(err, engine.ErrSimulationFailed) {
 				item.Error = err.Error()
 			}
 			item.Submission = appresult.SubmissionFromError(err)
 			result.FailureCount++
-			result.Items = append(result.Items, item)
-			continue
+		} else {
+			result.SuccessCount++
 		}
-
-		item.TxID = submit.TxID
-		item.Confirmed = submit.Confirmed
-		item.Output = submit.Output
-		item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
-		result.SuccessCount++
 		result.Items = append(result.Items, item)
 	}
 
@@ -496,7 +490,6 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		To:                      toAddress,
 		IsUnrekey:               check.IsUnrekey,
 		CanSignForTarget:        canSignForTarget,
-		TargetIsLsig:            authorizationKind == algorithm.AuthorizationLogicSig,
 		TargetAuthorizationKind: authorizationKind,
 	}
 	decorateRekeyResult(result)
@@ -599,43 +592,24 @@ func decorateRekeyResult(result *RekeyCommandResult) {
 	}
 
 	if result.CanSignForTarget {
-		targetKind := "Ed25519"
+		// targetKind names the target before it is signed for; target names
+		// it once the rekey is in effect.
+		targetKind, target := "Ed25519", "Ed25519 address"
 		switch result.TargetAuthorizationKind {
 		case algorithm.AuthorizationNativePQ:
-			targetKind = "native post-quantum"
+			targetKind, target = "native post-quantum", "native post-quantum address"
 		case algorithm.AuthorizationLogicSig:
-			targetKind = "lsig"
-		default:
-			if result.TargetIsLsig {
-				targetKind = "lsig"
-			}
+			targetKind, target = "lsig", "lsig"
 		}
 		result.PreSubmitLines = []string{
 			fmt.Sprintf("Rekeying account {from} to %s address {to}...", targetKind),
 			"WARNING: After this transaction, you must use the new auth address to sign!",
 		}
-		switch targetKind {
-		case "lsig":
-			result.ConfirmedLines = []string{
-				"Account {from} is now rekeyed to lsig {to}",
-			}
-			result.PendingLines = []string{
-				"When confirmed, {from} will be rekeyed to lsig {to}",
-			}
-		case "native post-quantum":
-			result.ConfirmedLines = []string{
-				"Account {from} is now rekeyed to native post-quantum address {to}",
-			}
-			result.PendingLines = []string{
-				"When confirmed, {from} will be rekeyed to native post-quantum address {to}",
-			}
-		default:
-			result.ConfirmedLines = []string{
-				"Account {from} is now rekeyed to Ed25519 address {to}",
-			}
-			result.PendingLines = []string{
-				"When confirmed, {from} will be rekeyed to Ed25519 address {to}",
-			}
+		result.ConfirmedLines = []string{
+			fmt.Sprintf("Account {from} is now rekeyed to %s {to}", target),
+		}
+		result.PendingLines = []string{
+			fmt.Sprintf("When confirmed, {from} will be rekeyed to %s {to}", target),
 		}
 		return
 	}
@@ -966,13 +940,13 @@ func (a *App) sweepFrom(ctx context.Context, plan sweepPlan, fromAddress string)
 	}
 
 	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, plan.lsigArgs, plan.wait)
+	if submit != nil {
+		item.TxID = submit.TxID
+		item.Confirmed = submit.Confirmed
+		item.Output = submit.Output
+		item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
+	}
 	if err != nil {
-		if submit != nil {
-			item.TxID = submit.TxID
-			item.Confirmed = submit.Confirmed
-			item.Output = submit.Output
-			item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
-		}
 		if errors.Is(err, engine.ErrSimulationFailed) {
 			item.SimulationFailure = err.Error()
 		} else {
@@ -983,11 +957,6 @@ func (a *App) sweepFrom(ctx context.Context, plan sweepPlan, fromAddress string)
 		errors.As(err, &failure)
 		return item, sweepFailed, failure
 	}
-
-	item.TxID = submit.TxID
-	item.Confirmed = submit.Confirmed
-	item.Output = submit.Output
-	item.Warnings = submissionWarnings(submit.WriteNotices, submit.AuthRefreshWarning)
 	return item, sweepSent, nil
 }
 

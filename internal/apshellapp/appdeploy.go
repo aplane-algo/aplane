@@ -105,10 +105,9 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 			})
 			return result, nil
 		}
-		created := createdAppDetailsFromEngine(createdResult)
-		result.Structured.AppID = created.AppID
-		result.Structured.AppAddress = created.AppAddress
-		result.ConfirmedLines = []string{fmt.Sprintf("Created app %d at %s", created.AppID, created.AppAddress)}
+		result.Structured.AppID = createdResult.AppID
+		result.Structured.AppAddress = createdResult.AppAddress
+		result.ConfirmedLines = []string{fmt.Sprintf("Created app %d at %s", createdResult.AppID, createdResult.AppAddress)}
 	}
 
 	return result, nil
