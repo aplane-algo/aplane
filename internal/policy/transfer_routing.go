@@ -5,6 +5,7 @@ package policy
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -85,7 +86,7 @@ func (tp *TransferPolicy) Clone() *TransferPolicy {
 		return nil
 	}
 	cp := *tp
-	cp.BlockedDestinations = cloneAddressSetMap(tp.BlockedDestinations)
+	cp.BlockedDestinations = maps.Clone(tp.BlockedDestinations)
 	cp.AddressSets = cloneCompiledAddressSets(tp.AddressSets)
 	cp.AssetSets = cloneCompiledAssetSets(tp.AssetSets)
 	cp.Routes = cloneCompiledRoutes(tp.Routes)
@@ -183,17 +184,6 @@ func cloneUint64Ptr(v *uint64) *uint64 {
 	return &out
 }
 
-func cloneAddressSetMap(in map[types.Address]struct{}) map[types.Address]struct{} {
-	if in == nil {
-		return nil
-	}
-	out := make(map[types.Address]struct{}, len(in))
-	for addr := range in {
-		out[addr] = struct{}{}
-	}
-	return out
-}
-
 func cloneCompiledAddressSets(in map[string]compiledAddressSet) map[string]compiledAddressSet {
 	if in == nil {
 		return nil
@@ -214,7 +204,7 @@ func cloneCompiledAssetSets(in map[string]compiledAssetSet) map[string]compiledA
 	}
 	out := make(map[string]compiledAssetSet, len(in))
 	for name, set := range in {
-		out[name] = compiledAssetSet{ByNetwork: cloneUintNetworkMap(set.ByNetwork), AlgoNetworks: cloneStringSet(set.AlgoNetworks)}
+		out[name] = compiledAssetSet{ByNetwork: cloneUintNetworkMap(set.ByNetwork), AlgoNetworks: maps.Clone(set.AlgoNetworks)}
 	}
 	return out
 }
@@ -226,7 +216,7 @@ func cloneCompiledRoutes(in []CompiledTransferRoute) []CompiledTransferRoute {
 	out := make([]CompiledTransferRoute, len(in))
 	for i, route := range in {
 		out[i] = route
-		out[i].Networks = cloneStringSet(route.Networks)
+		out[i].Networks = maps.Clone(route.Networks)
 		out[i].Sources = cloneAddressTerms(route.Sources)
 		out[i].AssetSources = cloneAddressTerms(route.AssetSources)
 		out[i].Assets = cloneAssetTerms(route.Assets)
@@ -289,17 +279,6 @@ func cloneUintNetworkMap(in map[string][]uint64) map[string][]uint64 {
 	out := make(map[string][]uint64, len(in))
 	for network, values := range in {
 		out[network] = append([]uint64(nil), values...)
-	}
-	return out
-}
-
-func cloneStringSet(in map[string]struct{}) map[string]struct{} {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]struct{}, len(in))
-	for v := range in {
-		out[v] = struct{}{}
 	}
 	return out
 }

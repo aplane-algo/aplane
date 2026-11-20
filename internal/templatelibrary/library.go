@@ -183,14 +183,6 @@ func ParseFile(path string) (ParsedTemplate, error) {
 	return ParseYAML(path, data)
 }
 
-func ParseFileAs(path string, templateType templatestore.TemplateType) (ParsedTemplate, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ParsedTemplate{}, fmt.Errorf("failed to read template file: %w", err)
-	}
-	return ParseYAMLAs(path, data, templateType)
-}
-
 func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 	var header struct {
 		templatestore.BaseTemplateSpec `yaml:",inline"`
@@ -213,41 +205,6 @@ func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 	}
 }
 
-func ParseYAMLAs(path string, data []byte, templateType templatestore.TemplateType) (ParsedTemplate, error) {
-	var header struct {
-		templatestore.BaseTemplateSpec `yaml:",inline"`
-		TemplateMode                   string `yaml:"template_mode"`
-	}
-	if err := yaml.Unmarshal(data, &header); err != nil {
-		return ParsedTemplate{SourcePath: path}, fmt.Errorf("YAML parse error: %w", err)
-	}
-	if err := validateBaseImportableSchema(header.BaseTemplateSpec, header.TemplateMode); err != nil {
-		return ParsedTemplate{SourcePath: path}, err
-	}
-	if header.TemplateType != "" && templatestore.TemplateType(header.TemplateType) != templateType {
-		return ParsedTemplate{SourcePath: path}, fmt.Errorf("template_type %q does not match requested type %q", header.TemplateType, templateType)
-	}
-	switch templateType {
-	case templatestore.TemplateTypeGeneric:
-		return parseGeneric(path, data)
-	case templatestore.TemplateTypeComposed:
-		return parseComposed(path, data)
-	default:
-		return ParsedTemplate{SourcePath: path}, fmt.Errorf("unsupported template_type %q", templateType)
-	}
-}
-
-func ValidateImportableSchema(data []byte) error {
-	var header struct {
-		templatestore.BaseTemplateSpec `yaml:",inline"`
-		TemplateMode                   string `yaml:"template_mode"`
-	}
-	if err := yaml.Unmarshal(data, &header); err != nil {
-		return fmt.Errorf("YAML parse error: %w", err)
-	}
-	return validateBaseImportableSchema(header.BaseTemplateSpec, header.TemplateMode)
-}
-
 func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateMode string) error {
 	schemaVersion := base.SchemaVersion
 	if schemaVersion == 0 {
@@ -264,20 +221,13 @@ func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateM
 }
 
 func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
-	active, err := genstore.Resolve(paths)
-	if err != nil {
-		return InstallResult{KeyType: tmpl.KeyType, TemplateType: tmpl.TemplateType}, err
-	}
-	return InstallParsedActive(active, tmpl, kr)
-}
-
-// InstallParsedActive is InstallParsed against resolved active-store paths
-// authenticated generation; the caller resolved the layout once for the
-// whole operation.
-func InstallParsedActive(active storepaths.GenPaths, tmpl ParsedTemplate, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
 		KeyType:      tmpl.KeyType,
 		TemplateType: tmpl.TemplateType,
+	}
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		return result, err
 	}
 	if tmpl.KeyType == "" {
 		return result, fmt.Errorf("template key type is required")
@@ -358,9 +308,9 @@ func putTemplateState(active storepaths.GenPaths, tmpl ParsedTemplate, state key
 	if err != nil {
 		return templateStateChange{}, err
 	}
-	source, err := stateSourceForTemplateType(tmpl.TemplateType)
-	if err != nil {
-		return templateStateChange{}, err
+	source, ok := templatestore.SourceForTemplateType(tmpl.TemplateType)
+	if !ok {
+		return templateStateChange{}, fmt.Errorf("unsupported template_type %q", tmpl.TemplateType)
 	}
 	rec := keytypestate.Record{
 		KeyType:     tmpl.KeyType,
@@ -395,17 +345,6 @@ func RollbackTemplateStateChange(paths storepaths.Paths, result InstallResult) e
 	return keytypestate.Delete(paths, result.KeyType)
 }
 
-func stateSourceForTemplateType(templateType templatestore.TemplateType) (keytypestate.Source, error) {
-	switch templateType {
-	case templatestore.TemplateTypeGeneric:
-		return keytypestate.SourceYAMLGeneric, nil
-	case templatestore.TemplateTypeComposed:
-		return keytypestate.SourceYAMLComposed, nil
-	default:
-		return "", fmt.Errorf("unsupported template_type %q", templateType)
-	}
-}
-
 func InstallFromLibrary(paths storepaths.Paths, ref TemplateRef, kr *crypto.Keyring) (InstallResult, error) {
 	matches, err := findLibraryMatches(paths, ref)
 	if err != nil {
@@ -438,7 +377,7 @@ func ActivateCompiledProvider(paths storepaths.Paths, keyType string) (InstallRe
 		return result, err
 	}
 	// The record path reported back must be the one the writes actually
-	// use: the active namespace, never the flat legacy path.
+	// use: the active namespace.
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return result, err
@@ -1021,8 +960,4 @@ func oppositeTemplateType(templateType templatestore.TemplateType) templatestore
 		return templatestore.TemplateTypeGeneric
 	}
 	return templatestore.TemplateTypeGeneric
-}
-
-func EnsureLibraryDir(paths storepaths.Paths) error {
-	return fsutil.MkdirAllPrivate(paths.TemplateLibraryDir())
 }

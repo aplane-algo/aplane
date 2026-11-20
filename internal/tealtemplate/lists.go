@@ -109,8 +109,6 @@ func ValidateListTemplates(teal string, paramDefs []ParamDef) error {
 		switch strings.TrimSuffix(def.Type, "[]") {
 		case "address", "address_bytes":
 			params[def.Name] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-		case "uint64":
-			params[def.Name] = "0"
 		default:
 			params[def.Name] = "0"
 		}

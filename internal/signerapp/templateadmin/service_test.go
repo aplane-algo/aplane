@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -22,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
@@ -391,7 +391,7 @@ teal: |
 		t.Fatalf("ImportInstalledTemplate() = %+v, want invalid template: %s", imported, want)
 	}
 
-	if err := templatelibrary.EnsureLibraryDir(ir.KeyPaths()); err != nil {
+	if err := fsutil.MkdirAllPrivate(ir.KeyPaths().TemplateLibraryDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(ir.KeyPaths().TemplateLibraryDir(), "oversized.yaml"), yaml, 0o600); err != nil {

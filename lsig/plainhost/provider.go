@@ -263,7 +263,7 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		}
 		profile.Cosigner = cosigner
 	}
-	if rekey == RekeyOnlyThese || rekey == RekeyPlusCosigned {
+	if selected.HasRekeyList() {
 		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
 	}
 	composer := composeddsa.NewComposedDSA(composeddsa.Config{
@@ -399,19 +399,20 @@ func checkPlainProgram(params map[string]string) error {
 	return nil
 }
 
-// plainRequest reports whether a request is for the plain program. Every entry
-// point applies the same rule as validation: a request naming only parameters
-// no program reads is refused, so a caller that derives without validating
-// first can't get a weaker account than it asked for.
-func plainRequest(params map[string]string) (bool, error) {
+// plainRequest returns a request's parameters as present gives them, and
+// whether it is for the plain program. Every entry point applies the same rule
+// as validation: a request naming only parameters no program reads is refused,
+// so a caller that derives without validating first can't get a weaker account
+// than it asked for.
+func plainRequest(params map[string]string) (map[string]string, bool, error) {
 	request, err := present(params)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	if hasContract(request) {
-		return false, nil
+		return request, false, nil
 	}
-	return true, checkPlainProgram(request)
+	return request, true, checkPlainProgram(request)
 }
 
 // resolve selects the program and the canonical values for a request, given
@@ -517,14 +518,11 @@ func composerValues(selected *program, values map[string]string) map[string]stri
 	return declared
 }
 
-// resolveGenerated resolves a request and returns the composer's values, with
-// the rekey-to list's root added when generation made one. The root is not a
-// creation parameter, so the program is resolved without it.
+// resolveGenerated resolves a request, as plainRequest returns it, and returns
+// the composer's values, with the rekey-to list's root added when generation
+// made one. The root is not a creation parameter, so the program is resolved
+// without it.
 func (p *Provider) resolveGenerated(params map[string]string) (*program, map[string]string, error) {
-	params, err := present(params)
-	if err != nil {
-		return nil, nil, err
-	}
 	request, generated := composeddsa.SplitGeneratedParams(params)
 	selected, values, err := p.resolve(request)
 	if err != nil {
@@ -548,17 +546,14 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef { return p.param
 // ValidateCreationParams checks a request; no parameters is the plain program,
 // which the plain provider validates.
 func (p *Provider) ValidateCreationParams(params map[string]string) error {
-	params, err := present(params)
+	request, plain, err := plainRequest(params)
 	if err != nil {
 		return err
 	}
-	if !hasContract(params) {
-		if err := checkPlainProgram(params); err != nil {
-			return err
-		}
-		return p.Plain.ValidateCreationParams(params)
+	if plain {
+		return p.Plain.ValidateCreationParams(request)
 	}
-	selected, values, err := p.resolve(params)
+	selected, values, err := p.resolve(request)
 	if err != nil {
 		return err
 	}
@@ -581,17 +576,14 @@ func (p *Provider) CosignerComponentKeyTypes(params map[string]string) ([]string
 // ResolveInstance selects the program for resolved parameters. No parameters
 // select the plain program, which has no contract.
 func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
-	params, err := present(params)
+	request, plain, err := plainRequest(params)
 	if err != nil {
 		return nil, err
 	}
-	if !hasContract(params) {
-		if err := checkPlainProgram(params); err != nil {
-			return nil, err
-		}
+	if plain {
 		return &lsigprovider.Instance{Values: map[string]string{}}, nil
 	}
-	selected, values, err := p.resolve(params)
+	selected, values, err := p.resolve(request)
 	if err != nil {
 		return nil, err
 	}
@@ -674,7 +666,7 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
-	shape := Shape{Spend: spend, Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}
+	shape := Shape{Arrangement: Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}, Spend: spend}
 	switch metadata.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
@@ -700,12 +692,14 @@ func (p *Provider) GrammarFingerprint() string {
 
 // GenerateTEAL renders the selected program.
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	if plain, err := plainRequest(params); err != nil {
+	request, plain, err := plainRequest(params)
+	if err != nil {
 		return "", err
-	} else if plain {
+	}
+	if plain {
 		return p.Plain.GenerateTEAL(publicKey, params)
 	}
-	selected, values, err := p.resolveGenerated(params)
+	selected, values, err := p.resolveGenerated(request)
 	if err != nil {
 		return "", err
 	}
@@ -714,12 +708,14 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 
 // DeriveLsig derives the selected program and its address.
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
-	if plain, err := plainRequest(params); err != nil {
+	request, plain, err := plainRequest(params)
+	if err != nil {
 		return nil, "", err
-	} else if plain {
+	}
+	if plain {
 		return p.Plain.DeriveLsig(ctx, publicKey, params)
 	}
-	selected, values, err := p.resolveGenerated(params)
+	selected, values, err := p.resolveGenerated(request)
 	if err != nil {
 		return nil, "", err
 	}
@@ -728,12 +724,14 @@ func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[
 
 // DeriveLsigWithSalt derives the selected program with its salt metadata.
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	if plain, err := plainRequest(params); err != nil {
+	request, plain, err := plainRequest(params)
+	if err != nil {
 		return lsigsalt.FindResult{}, err
-	} else if plain {
+	}
+	if plain {
 		return p.Plain.DeriveLsigWithSalt(ctx, publicKey, params)
 	}
-	selected, values, err := p.resolveGenerated(params)
+	selected, values, err := p.resolveGenerated(request)
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
@@ -743,14 +741,12 @@ func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, par
 // PrepareRekeyList adds the rekey-to list's root once the spending key exists.
 // Any other request is unchanged.
 func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
-	if plain, err := plainRequest(params); err != nil {
-		return nil, err
-	} else if plain {
-		return params, nil
-	}
-	request, err := present(params)
+	request, plain, err := plainRequest(params)
 	if err != nil {
 		return nil, err
+	}
+	if plain {
+		return params, nil
 	}
 	selected, values, err := p.resolve(request)
 	if err != nil {
@@ -773,12 +769,14 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 // refuses one the network could not run in one transaction, before the key is
 // persisted. The plain program has none.
 func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	if plain, err := plainRequest(params); err != nil {
+	request, plain, err := plainRequest(params)
+	if err != nil {
 		return nil, err
-	} else if plain {
+	}
+	if plain {
 		return nil, nil
 	}
-	selected, values, err := p.resolveGenerated(params)
+	selected, values, err := p.resolveGenerated(request)
 	if err != nil {
 		return nil, err
 	}

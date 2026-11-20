@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 
@@ -280,7 +281,7 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 	if err != nil {
 		t.Fatalf("Failed to create mock algod client: %v", err)
 	}
-	logicsigdsa.ConfigureAlgodClient(client)
+	lsigprovider.ConfigureAlgodClient(client)
 	server.makeAlgod = func(serverURL, token string) (*algod.Client, error) {
 		return algod.MakeClientWithTransport(serverURL, token, nil, transport)
 	}

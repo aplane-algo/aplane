@@ -315,7 +315,7 @@ func TestBaseTemplateSpec_KeyType(t *testing.T) {
 
 func markTemplateState(t *testing.T, paths utilkeys.Paths, keyType string, templateType TemplateType, state keytypestate.State) {
 	t.Helper()
-	source, ok := sourceForTemplateType(templateType)
+	source, ok := SourceForTemplateType(templateType)
 	if !ok {
 		t.Fatalf("unsupported template type in test: %q", templateType)
 	}

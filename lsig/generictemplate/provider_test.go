@@ -144,7 +144,7 @@ func TestSubstituteVariables(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := SubstituteVariables(tc.teal, tc.params, spec)
+			result, err := tealtemplate.SubstituteVariables(tc.teal, tc.params, tealParamDefs(spec))
 			if tc.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")

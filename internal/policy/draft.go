@@ -261,15 +261,14 @@ func (d *Draft) At(pointer string) DraftNode {
 		return DraftNode{}
 	}
 	node := d.Root()
-	for _, token := range strings.Split(pointer[1:], "/") {
-		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+	for _, token := range pointerTokens(pointer) {
 		switch node.Kind() {
 		case "object":
 			node = node.Member(token)
 		case "array":
-			i, err := strconv.Atoi(token)
 			items := node.Items()
-			if err != nil || i < 0 || i >= len(items) || strconv.Itoa(i) != token {
+			i, err := arrayIndex(token, len(items))
+			if err != nil {
 				return DraftNode{}
 			}
 			node = items[i]
@@ -459,10 +458,7 @@ func (d *Draft) edit(pointer string, change func(parent *jsonNode, token string)
 		return nil, fmt.Errorf("pointer %q does not name a member or item", pointer)
 	}
 	root := cloneNode(d.root)
-	tokens := strings.Split(pointer[1:], "/")
-	for i, t := range tokens {
-		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(t, "~1", "/"), "~0", "~")
-	}
+	tokens := pointerTokens(pointer)
 	parent := root
 	for _, t := range tokens[:len(tokens)-1] {
 		switch parent.kind {
@@ -505,6 +501,16 @@ func parseEditValue(value []byte) (*jsonNode, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// pointerTokens splits a JSON Pointer that starts with "/" into its unescaped
+// reference tokens.
+func pointerTokens(pointer string) []string {
+	tokens := strings.Split(pointer[1:], "/")
+	for i, t := range tokens {
+		tokens[i] = strings.ReplaceAll(strings.ReplaceAll(t, "~1", "/"), "~0", "~")
+	}
+	return tokens
 }
 
 func arrayIndex(token string, n int) (int, error) {

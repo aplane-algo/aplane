@@ -79,31 +79,19 @@ var spendEffectOrder = []txeffects.SpendEffect{
 // Shape is one bounded2 account the grammar can select: the bounds, and the
 // overlay arrangement beside them.
 type Shape struct {
+	Arrangement
 	// Spend is a non-empty subset in canonical order.
 	Spend []txeffects.SpendEffect
 	// Encoding is empty when the shape has no recipient list.
 	Encoding string
-	Rekey    string
-	// Cosigner is the cosigner's key type, empty for none.
-	Cosigner string
 	// AnyRecipient is the limits-only shape: no recipient list, so the
 	// envelope's fee ceiling and transfer kinds are the whole rule. It is
 	// an explicit field, not an empty Encoding, so no zero value selects it.
 	AnyRecipient bool
 }
 
-// HasRekeyList reports whether the shape takes a rekey-to list.
-func (s Shape) HasRekeyList() bool {
-	return s.Rekey == RekeyOnlyThese || s.Rekey == RekeyPlusCosigned
-}
-
-// rekeySetting is the contract's rekey setting under the shape's option: only
+// arrangementSetting is the contract's rekey setting under a rekey option: only
 // these is refused plus the list, plus cosigned a spending-key rekey plus the list.
-func (s Shape) rekeySetting() boundedmeta.RekeySetting {
-	return arrangementSetting(s.Rekey)
-}
-
-// arrangementSetting is the contract's rekey setting under a rekey option.
 func arrangementSetting(rekey string) boundedmeta.RekeySetting {
 	if rekey == RekeySpendingKey || rekey == RekeyPlusCosigned {
 		return boundedmeta.RekeySpendingKey
@@ -161,8 +149,7 @@ func Shapes() []Shape {
 					}
 				}
 				shapes = append(shapes, Shape{
-					Spend: spend, Encoding: encoding, Rekey: arrangement.Rekey, Cosigner: arrangement.Cosigner,
-					AnyRecipient: anyRecipient,
+					Arrangement: arrangement, Spend: spend, Encoding: encoding, AnyRecipient: anyRecipient,
 				})
 			}
 		}
@@ -200,7 +187,7 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 		// declares; a listed rekey never asks it.
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
 			Contract:         boundedmeta.CosignerContractV1,
-			RequiredOn:       boundedmeta.CosignerRequiredOn(shape.rekeySetting()),
+			RequiredOn:       boundedmeta.CosignerRequiredOn(arrangementSetting(shape.Rekey)),
 			ComponentKeyType: shape.Cosigner,
 		}
 	}

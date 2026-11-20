@@ -94,8 +94,7 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	return &selection{
 		maxFee: maxFee,
 		shape: Shape{
-			Spend: spend, Encoding: encoding, Rekey: overlays.arrangement.Rekey, Cosigner: overlays.arrangement.Cosigner,
-			AnyRecipient: anyRecipient,
+			Arrangement: overlays.arrangement, Spend: spend, Encoding: encoding, AnyRecipient: anyRecipient,
 		},
 		values: values,
 	}, nil
@@ -151,7 +150,8 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 		return "", fmt.Errorf("%s must be %s", boundedmeta.CosignerKeyTypeParameter, strings.Join(CosignerKeyTypes, " or "))
 	}
 	publicKeySize, _, _ := boundedmeta.CosignerSizes(cosignerType)
-	publicKey, err := hex.DecodeString(strings.TrimPrefix(cosigner, "0x"))
+	// NormalizeCreationParams has made the key canonical hex, with no prefix.
+	publicKey, err := hex.DecodeString(cosigner)
 	if err != nil {
 		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.BoundedCosignerPublicKeyParameter, err)
 	}
@@ -205,7 +205,7 @@ func checkKnown(params map[string]string, defs []lsigprovider.ParameterDef) erro
 // account without one. only_these and plus_cosigned take a list, and must have one.
 func canonicalRekeyTo(params, normalized map[string]string, rekey string) (string, error) {
 	_, present := params[ParameterRekeyTo]
-	if rekey != RekeyOnlyThese && rekey != RekeyPlusCosigned {
+	if !(Arrangement{Rekey: rekey}).HasRekeyList() {
 		if present {
 			return "", fmt.Errorf("%s needs %s=%s or %s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese, RekeyPlusCosigned)
 		}

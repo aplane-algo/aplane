@@ -6,6 +6,7 @@ package policy
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -86,18 +87,6 @@ func (t TransactionTypesV1) Verdict(txType string) TransactionTypeVerdict {
 		return v
 	}
 	return TransactionTypeReject
-}
-
-// Clone returns a copy of the map.
-func (t TransactionTypesV1) Clone() TransactionTypesV1 {
-	if t == nil {
-		return nil
-	}
-	out := make(TransactionTypesV1, len(t))
-	for k, v := range t {
-		out[k] = v
-	}
-	return out
 }
 
 // ThresholdsV1 is one asset's review and reject thresholds in base units.
@@ -1110,7 +1099,7 @@ func validateRoutesV1(pointer string, routes []RouteV1, addressSets map[string]A
 func validateRouteLimitsCoverage(pointer string, route RouteV1, assetSets map[string]AssetSetV1) error {
 	for network, assets := range route.Limits {
 		np := pointer + "/" + network
-		if !route.NetworkWildcard && !containsString(route.Networks, network) {
+		if !route.NetworkWildcard && !slices.Contains(route.Networks, network) {
 			return docErrorf(np, "route does not cover network %q", network)
 		}
 		for asset := range assets {
@@ -1168,13 +1157,4 @@ func assetRefString(asset TransferAssetRef) string {
 		return "algo"
 	}
 	return "asa:" + strconv.FormatUint(asset.ASAID, 10)
-}
-
-func containsString(list []string, want string) bool {
-	for _, v := range list {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }

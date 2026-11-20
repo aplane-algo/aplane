@@ -7,8 +7,6 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
 // Register adds a LogicSigDSA implementation to the unified lsigprovider registry.
@@ -73,26 +71,11 @@ func GetKeyTypes() []string {
 	return keyTypes
 }
 
-// IsRegistered checks if a key type is registered as a DSA.
-// Input is normalized to lowercase.
-func IsRegistered(keyType string) bool {
-	return Get(keyType) != nil
-}
-
-// RoutingFamily returns a key type's provider-declared ROUTING family — the
-// family the keygen/signing/mnemonic/metadata registries are indexed by (the
-// key type's own family for a self-handling DSA, or the base's family for a
-// composed template that delegates). It is not the key type's own display
-// label. Delegates to lsigprovider.RoutingFamily.
-func RoutingFamily(keyType string) string {
-	return lsigprovider.RoutingFamily(keyType)
-}
-
 // ResolveByKeyType is the shared lookup for the RESOLVE axis of key-type
 // resolution (see docs/ARCH_KEYTYPES.md): it resolves a value for keyType
 // from a registry keyed by routing family, using the standard two-step lookup the
 // family-keyed registries share: an exact key-type match first (native and
-// per-key-type registrations), then the key type's RoutingFamily. get reads the
+// per-key-type registrations), then the key type's lsigprovider.RoutingFamily. get reads the
 // caller's registry (it runs under whatever lock the caller holds). It returns
 // the zero value and false when neither matches.
 //
@@ -102,7 +85,7 @@ func ResolveByKeyType[T any](keyType string, get func(string) (T, bool)) (T, boo
 	if v, ok := get(keyType); ok {
 		return v, true
 	}
-	if family := RoutingFamily(keyType); family != keyType {
+	if family := lsigprovider.RoutingFamily(keyType); family != keyType {
 		if v, ok := get(family); ok {
 			return v, true
 		}
@@ -112,9 +95,9 @@ func ResolveByKeyType[T any](keyType string, get func(string) (T, bool)) (T, boo
 }
 
 // IsLogicSigType checks if a key type uses LogicSig-based signatures.
-// Only returns true for registered DSA types.
+// Only returns true for registered DSA types. Input is normalized to lowercase.
 func IsLogicSigType(keyType string) bool {
-	return IsRegistered(keyType)
+	return Get(keyType) != nil
 }
 
 // GetCryptoSignatureSize returns the cryptographic signature size for a key type.
@@ -126,10 +109,4 @@ func GetCryptoSignatureSize(keyType string) int {
 		return 0
 	}
 	return dsa.CryptoSignatureSize()
-}
-
-// ConfigureAlgodClient sets the algod client on all registered providers.
-// Delegates to lsigprovider.ConfigureAlgodClient.
-func ConfigureAlgodClient(client *algod.Client) {
-	lsigprovider.ConfigureAlgodClient(client)
 }

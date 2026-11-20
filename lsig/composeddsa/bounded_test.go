@@ -5,6 +5,7 @@ package composeddsa
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -70,7 +71,7 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 		t.Fatalf("CanonicalBoundedBehaviorParameters(absent) error = %v", err)
 	}
 	want := boundedmeta.AppendField(nil, []byte(boundedBehaviorParametersDomainV1))
-	want = boundedmeta.AppendUint32(want, 1)
+	want = binary.BigEndian.AppendUint32(want, 1)
 	want = boundedmeta.AppendField(want, []byte(def.Name))
 	want = boundedmeta.AppendField(want, []byte(def.Type))
 	want = boundedmeta.AppendField(want, nil)
@@ -353,15 +354,6 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			want: `unsupported rekey setting "admin_key"`,
 		},
 		{
-			name: "runtime args",
-			make: func() *ComposedDSA {
-				provider := newBoundedTestProvider(valid)
-				provider.runtimeArgs = []lsigprovider.RuntimeArgDef{{Name: "proof", Type: "bytes"}}
-				return provider
-			},
-			want: "must use the bounded argument contract",
-		},
-		{
 			name: "reserved label",
 			make: func() *ComposedDSA {
 				provider := newBoundedTestProvider(valid)
@@ -495,9 +487,6 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 			Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30,
 		}},
 		RuntimeArgs: []lsigprovider.RuntimeArgDef{{
-			Name: "preimage", Type: "bytes", Required: true, MaxSize: 64,
-		}},
-		BoundedRuntimeArgs: []boundedmeta.RuntimeArg{{
 			Name: "preimage", Type: "bytes", Required: true, MaxSize: 64,
 		}},
 		DerivedArgs: []boundedmeta.DerivedArg{{

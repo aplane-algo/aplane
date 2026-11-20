@@ -333,7 +333,7 @@ func (metadata *Metadata) ValidateProfile() error {
 		if recipientProofs != 1 {
 			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
 		}
-	case IsKnownLayer3Policy(metadata.Layer3Policy) && metadata.Layer3Policy != Layer3PolicyCustom:
+	case metadata.Layer3Policy != Layer3PolicyCustom:
 		if recipientProofs != 0 {
 			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
 		}

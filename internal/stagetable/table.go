@@ -42,9 +42,10 @@ const (
 // removed and the table started empty.
 var ErrDiscarded = errors.New("stage table discarded")
 
-// ErrClosed reports an append to a table whose key has been deleted.
+// ErrPersistence reports that the table could not be written to disk.
 var ErrPersistence = errors.New("stage cache persistence failed")
 
+// ErrClosed reports an append to a table whose key has been deleted.
 var ErrClosed = errors.New("stage table closed")
 
 // ErrNoKey reports a request for the table of an account whose key is not
@@ -97,9 +98,6 @@ func Open(path string, selector types.Address, genesisHash []byte, keyType strin
 	}
 	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maxCacheBytes+1))
-	if errors.Is(err, os.ErrNotExist) {
-		return t, nil
-	}
 	if err != nil {
 		return nil, fmt.Errorf("read stage table: %w", err)
 	}

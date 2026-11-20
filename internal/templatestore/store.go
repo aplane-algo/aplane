@@ -207,7 +207,7 @@ func GetTemplateFilePathActive(active storepaths.GenPaths, keyType string) strin
 // paths.
 func SaveTemplateActive(active storepaths.GenPaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
 	keyType = normalizeKeyType(keyType)
-	if _, ok := sourceForTemplateType(templateType); !ok {
+	if _, ok := SourceForTemplateType(templateType); !ok {
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
 	}
 
@@ -269,7 +269,7 @@ func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType
 // TemplateExistsActive is TemplateExistsForPaths against resolved
 // active-store paths.
 func TemplateExistsActive(active storepaths.GenPaths, keyType string, templateType TemplateType) bool {
-	source, sourceOK := sourceForTemplateType(templateType)
+	source, sourceOK := SourceForTemplateType(templateType)
 	if !sourceOK {
 		return false
 	}
@@ -289,7 +289,7 @@ type TemplateFileInfo struct {
 }
 
 func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType TemplateType) ([]TemplateFileInfo, error) {
-	source, ok := sourceForTemplateType(templateType)
+	source, ok := SourceForTemplateType(templateType)
 	if !ok {
 		return nil, fmt.Errorf("unsupported template_type %q", templateType)
 	}
@@ -322,12 +322,27 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType Template
 	return files, nil
 }
 
-func sourceForTemplateType(templateType TemplateType) (keytypestate.Source, bool) {
+// SourceForTemplateType is the key type state source a template of
+// templateType is recorded under.
+func SourceForTemplateType(templateType TemplateType) (keytypestate.Source, bool) {
 	switch templateType {
 	case TemplateTypeGeneric:
 		return keytypestate.SourceYAMLGeneric, true
 	case TemplateTypeComposed:
 		return keytypestate.SourceYAMLComposed, true
+	default:
+		return "", false
+	}
+}
+
+// TemplateTypeForSource is the template type a key type state source records,
+// the inverse of SourceForTemplateType.
+func TemplateTypeForSource(source keytypestate.Source) (TemplateType, bool) {
+	switch source {
+	case keytypestate.SourceYAMLGeneric:
+		return TemplateTypeGeneric, true
+	case keytypestate.SourceYAMLComposed:
+		return TemplateTypeComposed, true
 	default:
 		return "", false
 	}

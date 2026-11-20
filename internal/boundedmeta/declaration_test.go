@@ -3,10 +3,7 @@
 
 package boundedmeta
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	metadata := &Metadata{
@@ -41,15 +38,6 @@ func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 		t.Fatalf("spending-key declaration = %+v, %v", spending, err)
 	}
 
-	for name, setting := range map[string]RekeySetting{
-		"missing setting": "",
-		"unknown setting": "admin_key",
-	} {
-		metadata.Rekey = setting
-		if _, err := metadata.Declaration(); err == nil || !strings.Contains(err.Error(), "unsupported rekey setting") {
-			t.Fatalf("%s: Declaration() error = %v", name, err)
-		}
-	}
 	if _, err := (*Metadata)(nil).Declaration(); err == nil {
 		t.Fatal("a nil contract produced a declaration")
 	}

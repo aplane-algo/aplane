@@ -80,20 +80,7 @@ func RenderStrict(teal string, params map[string]string, variables []TemplateVar
 }
 
 func RenderStrictFragment(teal string, params map[string]string, variables []TemplateVariable) (RenderedTemplate, error) {
-	if err := rejectAtVariableSyntax(teal); err != nil {
-		return RenderedTemplate{}, err
-	}
-
-	decls, err := validateDeclarations(variables)
-	if err != nil {
-		return RenderedTemplate{}, err
-	}
-
-	refs, err := validateSymbolRefs(teal, decls)
-	if err != nil {
-		return RenderedTemplate{}, err
-	}
-	if err := validateDeclaredVariablesReferenced(variables, refs); err != nil {
+	if err := ValidateStrictTemplate(teal, variables); err != nil {
 		return RenderedTemplate{}, err
 	}
 

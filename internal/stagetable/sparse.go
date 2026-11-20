@@ -19,6 +19,12 @@ import (
 
 const maxCacheBytes = 64 << 20
 
+// The sources a recovery hint may have.
+const (
+	HintSourceLocalObservation = "local_observation"
+	HintSourceBackup           = "backup"
+)
+
 // Hint is an untrusted recovery candidate, never signing authority. A nil
 // Round differs from round zero. Imported observations have Source backup.
 type Hint struct {
@@ -26,6 +32,14 @@ type Hint struct {
 	Round      *uint64       `json:"observed_round,omitempty"`
 	Authorizer types.Address `json:"authorizer"`
 	Source     string        `json:"source"`
+}
+
+// validHint checks a hint's stage and source.
+func validHint(h Hint) error {
+	if h.Stage >= math.MaxUint64-1 || (h.Source != HintSourceLocalObservation && h.Source != HintSourceBackup) {
+		return errors.New("invalid recovery hint")
+	}
+	return nil
 }
 
 func cloneHint(h *Hint) *Hint {
@@ -59,8 +73,8 @@ func (t *Table) SetHint(h Hint) error {
 // RecordHint stages an observation for the worker's next publication. It does
 // not wait for disk I/O; this keeps foreground signing independent of the cache.
 func (t *Table) RecordHint(h Hint) error {
-	if h.Stage >= math.MaxUint64-1 || (h.Source != "local_observation" && h.Source != "backup") {
-		return errors.New("invalid recovery hint")
+	if err := validHint(h); err != nil {
+		return err
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -90,7 +104,7 @@ func (t *Table) RecordHint(h Hint) error {
 		case h.Round != nil && *h.Round != *old.Round:
 			newer = *h.Round > *old.Round
 		default:
-			newer = h.Source == "local_observation" && old.Source == "backup"
+			newer = h.Source == HintSourceLocalObservation && old.Source == HintSourceBackup
 		}
 	}
 	if newer {
@@ -214,8 +228,10 @@ func decodeCache(data []byte, selector types.Address, genesis [32]byte, keyType 
 	if keyType != "" && meta.KeyType != "" && meta.KeyType != keyType {
 		return nil, nil, "", errors.New("stage cache key type mismatch")
 	}
-	if hint != nil && (hint.Stage >= math.MaxUint64-1 || (hint.Source != "local_observation" && hint.Source != "backup")) {
-		return nil, nil, "", errors.New("invalid recovery hint")
+	if hint != nil {
+		if err := validHint(*hint); err != nil {
+			return nil, nil, "", err
+		}
 	}
 	return entries, hint, meta.KeyType, nil
 }

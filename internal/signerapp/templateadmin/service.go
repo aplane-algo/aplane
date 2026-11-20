@@ -300,14 +300,6 @@ func (s Service) ShowInstalledTemplate(req adminproto.ShowInstalledTemplateReque
 
 func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateRequest) adminproto.ImportInstalledTemplateResult {
 	ir := s.Runtime
-	if err := templatelibrary.ValidateImportableSchema(req.TemplateYAML); err != nil {
-		return adminproto.ImportInstalledTemplateResult{
-			Success: false,
-			Code:    protocol.ResultCodeInvalidTemplate,
-			Error:   err.Error(),
-		}
-	}
-
 	parsed, err := templatelibrary.ParseYAML("ipc-installed-template.yaml", req.TemplateYAML)
 	if err != nil {
 		return adminproto.ImportInstalledTemplateResult{
@@ -683,7 +675,7 @@ func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templa
 	if !ok {
 		return "", keytypestate.Record{}, false, nil
 	}
-	templateType, ok := templateTypeFromSource(rec.Source)
+	templateType, ok := templatestore.TemplateTypeForSource(rec.Source)
 	if !ok {
 		return "", keytypestate.Record{}, false, nil
 	}
@@ -691,17 +683,6 @@ func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templa
 		return "", keytypestate.Record{}, false, nil
 	}
 	return templateType, rec, true, nil
-}
-
-func templateTypeFromSource(source keytypestate.Source) (templatestore.TemplateType, bool) {
-	switch source {
-	case keytypestate.SourceYAMLGeneric:
-		return templatestore.TemplateTypeGeneric, true
-	case keytypestate.SourceYAMLComposed:
-		return templatestore.TemplateTypeComposed, true
-	default:
-		return "", false
-	}
 }
 
 func installedWireTemplateType(templateType templatestore.TemplateType) string {

@@ -19,9 +19,10 @@ func normalize(s string) string {
 }
 
 var (
-	providers    = xregistry.NewStringRegistry[LSigProvider]()
-	storedClient *algod.Client // Stored algod client for late-registered providers
-	clientMu     sync.RWMutex
+	providers = xregistry.NewStringRegistry[LSigProvider]()
+	// storedClient is the algod client applied to late-registered providers.
+	// registerMu guards it.
+	storedClient *algod.Client
 	registerMu   sync.Mutex
 )
 
@@ -56,9 +57,6 @@ func RegisterIfAbsent(p LSigProvider) bool {
 	defer registerMu.Unlock()
 
 	keyType := validateProviderContract(p)
-	if providers.Has(keyType) {
-		return false
-	}
 	if !providers.Set(keyType, p) {
 		return false
 	}
@@ -164,7 +162,7 @@ func ConfigureAlgodClient(client *algod.Client) {
 	registerMu.Lock()
 	defer registerMu.Unlock()
 
-	setStoredClient(client)
+	storedClient = client
 	for _, p := range GetAll() {
 		if configurable, ok := p.(AlgodConfigurable); ok {
 			configurable.SetAlgodClient(client)
@@ -203,24 +201,12 @@ func validateProviderContract(p LSigProvider) string {
 	return normalize(rawKeyType)
 }
 
-func getStoredClient() *algod.Client {
-	clientMu.RLock()
-	defer clientMu.RUnlock()
-	return storedClient
-}
-
-func setStoredClient(client *algod.Client) {
-	clientMu.Lock()
-	defer clientMu.Unlock()
-	storedClient = client
-}
-
+// applyStoredClientIfNeeded runs with registerMu held.
 func applyStoredClientIfNeeded(p LSigProvider) {
-	client := getStoredClient()
-	if client == nil {
+	if storedClient == nil {
 		return
 	}
 	if configurable, ok := p.(AlgodConfigurable); ok {
-		configurable.SetAlgodClient(client)
+		configurable.SetAlgodClient(storedClient)
 	}
 }

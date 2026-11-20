@@ -5,39 +5,14 @@ package generictemplate
 
 import "github.com/aplane-algo/aplane/internal/tealtemplate"
 
-// SubstituteVariables replaces @variable_name placeholders in TEAL source
-// with the corresponding values from the params map.
-// Values are formatted appropriately for TEAL:
-// - addresses and uint64 values are inserted as-is
-// - bytes values are prefixed with 0x
-//
-// Returns an error if a variable referenced in TEAL is not found in params.
-func SubstituteVariables(teal string, params map[string]string, spec *TemplateSpec) (string, error) {
+// tealParamDefs is the spec's parameters as generated-mode TEAL substitution
+// reads them.
+func tealParamDefs(spec *TemplateSpec) []tealtemplate.ParamDef {
 	paramDefs := make([]tealtemplate.ParamDef, len(spec.Parameters))
 	for i, p := range spec.Parameters {
 		paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: p.Type}
 	}
-	return tealtemplate.SubstituteVariables(teal, params, paramDefs)
-}
-
-// ExpandListTemplates expands restricted list-template blocks before scalar
-// @variable substitution runs.
-func ExpandListTemplates(teal string, params map[string]string, spec *TemplateSpec) (string, error) {
-	paramDefs := make([]tealtemplate.ParamDef, len(spec.Parameters))
-	for i, p := range spec.Parameters {
-		paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: p.Type}
-	}
-	return tealtemplate.ExpandLists(teal, params, paramDefs)
-}
-
-// ValidateListTemplateSyntax checks generated-mode TEAL for unsupported
-// template constructs without requiring concrete parameter values.
-func ValidateListTemplateSyntax(teal string, spec *TemplateSpec) error {
-	paramDefs := make([]tealtemplate.ParamDef, len(spec.Parameters))
-	for i, p := range spec.Parameters {
-		paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: p.Type}
-	}
-	return tealtemplate.ValidateListTemplates(teal, paramDefs)
+	return paramDefs
 }
 
 // ValidateVariablesAgainstParams checks that all variables in the TEAL

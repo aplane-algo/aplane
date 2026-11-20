@@ -47,16 +47,12 @@ type AssetLabel func(network string, assetID uint64) (unitName string, decimals 
 
 // DiffPolicyV1 describes how next differs from current. Both documents must
 // decode for the same role; the key may differ, as when a key's new policy
-// is compared with the default it followed. ASA amounts are in base units.
-func DiffPolicyV1(current, next *PolicyV1) []PolicyChange {
-	return DiffPolicyV1Labelled(current, next, nil)
-}
-
-// DiffPolicyV1Labelled is DiffPolicyV1 with ASA amounts also shown in the
-// display units label gives them, beside the base units, decimals, ID and
-// network they were computed from. An asset label does not know stays in
-// base units only: no decimal count is guessed.
-func DiffPolicyV1Labelled(current, next *PolicyV1, label AssetLabel) []PolicyChange {
+// is compared with the default it followed. ASA amounts are in base units,
+// and also in the display units label gives them, beside the base units,
+// decimals, ID and network they were computed from, when label is set. An
+// asset label does not know stays in base units only: no decimal count is
+// guessed.
+func DiffPolicyV1(current, next *PolicyV1, label AssetLabel) []PolicyChange {
 	d := policyDiff{label: label}
 	d.text("/description", current.Description, next.Description)
 	for _, f := range []struct {
@@ -273,12 +269,6 @@ func noRouteStrictness(action TransferOnNoRoute) int {
 }
 
 func (d *policyDiff) noRoute(path string, current, next TransferOnNoRoute) {
-	if current == "" {
-		current = TransferOnNoRouteReject
-	}
-	if next == "" {
-		next = TransferOnNoRouteReject
-	}
 	if current == next {
 		return
 	}

@@ -33,8 +33,7 @@ func RegisterSigner() {
 			Generators: []dsafamilyreg.GeneratorSpec{{
 				Family: family.Name,
 				Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
-					family.Name:            keygenOps,
-					"aplane.falcon1024.v1": keygenOps,
+					family.Name: keygenOps,
 				},
 				Mnemonic: bip39impl.NewHandler(family.Name),
 			}},
