@@ -58,9 +58,8 @@ through the default unsigned-intent path or one of the explicit group modes.
 entries, then calls the plugin back with canonical bytes through
 `signTransactions` before `/sign` signs the managed slots.
 `groupMode:"pregrouped-signed"` is fully plugin-signed and bypasses apsigner
-entirely after local client review. Top-level `localSigners` is unsupported and
-rejected. See [Plugin Group Modes](#plugin-group-modes) below and
-[ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
+entirely after local client review. See [Plugin Group Modes](#plugin-group-modes)
+below and [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
 
 **Group immutability rule**: Pre-grouped transactions (group ID already set)
 are always immutable. The server will not add dummies, adjust fees, or
@@ -574,10 +573,6 @@ budgeted.
 ---
 
 ## Plugin Group Modes
-
-Top-level `localSigners` is not a supported plugin signing mechanism. If a
-plugin returns it, apshell rejects the result before planning, approval, or
-submission. APlane never signs with plugin-supplied secret keys.
 
 `groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
 signers whose key material cannot be exported. The plugin emits an unsigned

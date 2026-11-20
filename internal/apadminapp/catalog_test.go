@@ -558,9 +558,9 @@ func TestCatalogEndpointExportPrecedenceAndDefaults(t *testing.T) {
 			wantURL:  "ssh://signer.example:2223",
 		},
 		{
-			name: "explicit URL wins", args: []string{"export", "--host", "ignored.example", "--url", "https://signer.example:8443"},
+			name: "explicit URL wins", args: []string{"export", "--host", "ignored.example", "--url", "ssh://signer.example:8443"},
 			settings: protocol.AdminSettingsMessage{EndpointAdvertiseURL: "ssh://advertised:22"},
-			wantURL:  "https://signer.example:8443",
+			wantURL:  "ssh://signer.example:8443",
 		},
 		{
 			name: "advertised URL", args: []string{"export"},
@@ -572,7 +572,8 @@ func TestCatalogEndpointExportPrecedenceAndDefaults(t *testing.T) {
 			wantURL: "ssh://127.0.0.1:" + fmt.Sprint(config.DefaultSSHPort),
 		},
 		{name: "missing routing", args: []string{"export"}, wantErr: "advertise_url"},
-		{name: "self rejected", args: []string{"export", "--url", "self"}, wantErr: "not allowed"},
+		{name: "self rejected", args: []string{"export", "--url", "self"}, wantErr: `unsupported url scheme ""`},
+		{name: "https rejected", args: []string{"export", "--url", "https://signer.example:8443"}, wantErr: `unsupported url scheme "https"; endpoints are ssh://host[:port]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

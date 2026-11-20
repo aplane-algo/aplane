@@ -38,7 +38,6 @@ func TestTrustLocalSignerHostKeyAddressForms(t *testing.T) {
 			}
 			writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

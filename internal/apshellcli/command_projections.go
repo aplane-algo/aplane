@@ -176,16 +176,14 @@ type endpointPublicKeyProjection struct {
 }
 
 type endpointMutationProjection struct {
-	Mode            string `json:"mode"`
-	Alias           string `json:"alias"`
-	Role            string `json:"role,omitempty"`
-	URL             string `json:"url,omitempty"`
-	DryRun          bool   `json:"dry_run,omitempty"`
-	Created         bool   `json:"created,omitempty"`
-	Updated         bool   `json:"updated,omitempty"`
-	DefaultChanged  bool   `json:"default_changed,omitempty"`
-	PreviousDefault string `json:"previous_default,omitempty"`
-	Deleted         bool   `json:"deleted,omitempty"`
+	Mode    string `json:"mode"`
+	Alias   string `json:"alias"`
+	Role    string `json:"role,omitempty"`
+	URL     string `json:"url,omitempty"`
+	DryRun  bool   `json:"dry_run,omitempty"`
+	Created bool   `json:"created,omitempty"`
+	Updated bool   `json:"updated,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
 }
 
 type endpointDiscoveryProjection struct {

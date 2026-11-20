@@ -26,7 +26,6 @@ func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Endpoints = config.ClientEndpointRegistry{
 		SchemaVersion: 1,
-		Default:       "primary",
 		Endpoints: map[string]config.ClientEndpointConfig{
 			"primary": {
 				Role: config.ClientEndpointRoleSigner,

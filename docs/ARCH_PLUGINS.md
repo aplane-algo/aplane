@@ -174,11 +174,7 @@ JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
 runtime request and response frames, and from the APlane plugin protocol
 version exchanged in the `initialize` method.
 
-Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
-upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
-their command declarations and executable JSON-RPC protocol do not change.
-The retired `functions` and `protocol_version` fields are rejected; other
-unknown manifest fields are ignored. Commands are the sole executable and
+Unknown manifest fields are ignored. Commands are the sole executable and
 discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
@@ -605,10 +601,11 @@ future plugin→host signing mechanism must be designed around mandatory decoded
 review and fail-closed non-interactive behavior before it is added to the wire
 protocol.
 
-Plugin-initiated requests back into apshell are reserved but not installed in
-production. The JSON-RPC client keeps typed request plumbing for future
-reviewed callbacks such as account/balance/app metadata lookup, but absent a
-production handler inbound plugin requests fail closed with `method not found`.
+apshell serves no plugin-initiated methods. It answers a request from the
+plugin that has an `id` with a JSON-RPC error: `-32600` for a `jsonrpc` other
+than `"2.0"` or an `id` that is neither a number nor a string, and otherwise
+`-32601` with the message `method not found: <method>`. A notification, with
+no `id`, gets no reply.
 
 ### Execution Context
 
@@ -761,22 +758,6 @@ accounts the plugin's transactions send from.
 - In the default flow and for `presign-plan`'s managed slots, the signer
   judges each argument against the key that signs, and refuses one a key does
   not take, a native key's included.
-
-### Unsupported `localSigners`
-
-Top-level `localSigners` is intentionally unsupported. APlane does not accept
-plugin-supplied secret keys, even for ephemeral accounts. If a plugin returns
-`localSigners`, apshell rejects the result and tells the plugin author to use
-one of the audited group modes below.
-
-Plugins that need to sign accounts or LogicSigs outside apsigner custody must
-either:
-
-- return a complete, already-signed group with `groupMode:"pregrouped-signed"`,
-  or
-- use `groupMode:"presign-plan"` plus `pluginSigners`, so APlane can
-  canonicalize the group and ask the plugin to sign only its declared slots over
-  canonical bytes.
 
 ### Plugin Transaction Flows (Group Modes)
 

@@ -499,7 +499,7 @@ bytes even though apshell does not submit them.
   to start without a trusted host, and the signer refuses the tunnel until the
   key is enrolled.
 - **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
-  `create`, `import`, `discover-cosigners`, `default`, `delete`, plus interactive
+  `create`, `import`, `discover-cosigners`, `delete`, plus interactive
   `add`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
   endpoint; the rest are `role: cosigner`.
@@ -530,9 +530,7 @@ Invoke from JS with `plugin(name, ...args)`, which returns:
 { success, message, data, presentation }
 ```
 
-(Always check `success`.) Ephemeral plugin signing keys (`localSigners`) are
-unsupported; if a plugin returns `localSigners`, APlane rejects the plugin
-result before submission.
+(Always check `success`.)
 
 **`algokit-localnet`** is the bundled LocalNet plugin (active when listed in
 `plugins.yaml`). It talks directly to LocalNet's algod/KMD APIs and provides the

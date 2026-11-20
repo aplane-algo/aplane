@@ -236,6 +236,8 @@ func (a *App) PrepareCosignerSetup(req CosignerSetupRequest) (CosignerSetupPlan,
 		return CosignerSetupPlan{}, err
 	}
 	existing, exists := registry.Endpoint(alias)
+	// The plan refuses this too. Refusing here, before any URL prompt, says
+	// what to do instead.
 	if exists && existing.Role != config.ClientEndpointRoleCosigner {
 		return CosignerSetupPlan{}, fmt.Errorf("endpoint alias %q has role %q; choose a cosigner alias", alias, existing.Role)
 	}

@@ -59,10 +59,6 @@ func load(path string) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
 	}
-	if err := rejectRetiredManifestFields(data); err != nil {
-		return nil, fmt.Errorf("invalid manifest: %w", err)
-	}
-
 	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid manifest: %w", err)
 	}
@@ -133,20 +129,6 @@ func (m *Manifest) normalizeManifestFormat() error {
 	}
 	if m.ManifestFormat != CurrentManifestFormat {
 		return fmt.Errorf("unsupported manifest_format %q", m.ManifestFormat)
-	}
-	return nil
-}
-
-func rejectRetiredManifestFields(data []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	if _, ok := fields["protocol_version"]; ok {
-		return fmt.Errorf("protocol_version is no longer supported; use manifest_format")
-	}
-	if _, ok := fields["functions"]; ok {
-		return fmt.Errorf("functions is no longer supported in manifest_format 2.0; expose executable commands only")
 	}
 	return nil
 }

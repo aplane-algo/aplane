@@ -38,7 +38,6 @@ network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -69,7 +68,6 @@ network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -98,7 +96,6 @@ network: testnet
 `)
 	writeRemoteEndpointRegistry(t, dir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

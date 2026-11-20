@@ -88,7 +88,7 @@ func (a *App) Connect(ctx context.Context, req ConnectRequest) (*ConnectResult, 
 // ConnectConfigured establishes an SSH tunnel using the configured default endpoint.
 func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
 	registry := a.Config.ClientEndpointsOrDefault()
-	_, endpoint, ok := registry.DefaultEndpoint()
+	_, endpoint, ok := registry.SignerEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("no default signer endpoint in endpoints.yaml")
 	}
@@ -158,19 +158,19 @@ type EnrollmentTarget struct {
 // selects the default signer endpoint.
 func (a *App) ResolveEnrollmentTarget(alias string) (EnrollmentTarget, error) {
 	registry := a.Config.ClientEndpointsOrDefault()
-	defaultAlias, defaultEndpoint, hasDefault := registry.DefaultEndpoint()
+	signerAlias, _, hasSigner := registry.SignerEndpoint()
 	if alias == "" {
-		if !hasDefault {
+		if !hasSigner {
 			return EnrollmentTarget{}, fmt.Errorf("no default signer endpoint in endpoints.yaml; import or configure a signer endpoint before running enroll")
 		}
-		alias = defaultAlias
+		alias = signerAlias
 	}
 	if _, err := a.configuredEndpoint(alias); err != nil {
 		return EnrollmentTarget{}, err
 	}
 	return EnrollmentTarget{
 		Alias:       alias,
-		AutoConnect: hasDefault && alias == defaultAlias && defaultEndpoint.Role == config.ClientEndpointRoleSigner,
+		AutoConnect: hasSigner && alias == signerAlias,
 	}, nil
 }
 

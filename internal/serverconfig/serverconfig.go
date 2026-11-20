@@ -24,7 +24,7 @@ type SSHServerConfig struct {
 
 // ServerEndpointConfig holds the signer endpoint surface exposed to clients.
 type ServerEndpointConfig struct {
-	AdvertiseURL string          `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apadmin endpoint export when --host/--url are omitted, and shown after a cosigner key export as the address clients add"`
+	AdvertiseURL string          `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL, ssh://host[:port], used by apadmin endpoint export when --host/--url are omitted, and shown after a cosigner key export as the address clients add"`
 	SignerPort   int             `yaml:"signer_port" description:"Loopback REST API port behind the endpoint" default:"11270"`
 	SSH          SSHServerConfig `yaml:"ssh" description:"SSH tunnel settings for apsigner endpoint access" default:"default SSH settings"`
 }
@@ -372,7 +372,7 @@ func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) 
 	}
 	config.Endpoint.AdvertiseURL = strings.TrimRight(strings.TrimSpace(config.Endpoint.AdvertiseURL), "/")
 	if config.Endpoint.AdvertiseURL != "" {
-		if err := endpointrefs.ValidatePortableURL(config.Endpoint.AdvertiseURL); err != nil {
+		if _, _, err := endpointrefs.ParseURL(config.Endpoint.AdvertiseURL); err != nil {
 			return ServerConfig{}, fmt.Errorf("invalid endpoint.advertise_url in config: %w", err)
 		}
 	}

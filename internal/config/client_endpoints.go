@@ -5,12 +5,11 @@ package config
 
 import (
 	"fmt"
-	"net/url"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 )
 
 const (
@@ -28,7 +27,6 @@ const (
 // from endpoints.yaml.
 type ClientEndpointRegistry struct {
 	SchemaVersion int                             `yaml:"schema_version"`
-	Default       string                          `yaml:"default,omitempty"`
 	Endpoints     map[string]ClientEndpointConfig `yaml:"endpoints,omitempty"`
 }
 
@@ -58,42 +56,30 @@ func GetClientEndpointsPath(dataDir string) string {
 	return filepath.Join(dataDir, ClientEndpointsFile)
 }
 
-// LoadClientEndpointRegistry loads endpoints.yaml. Client signer routing lives
-// only in endpoints.yaml; config.yaml ssh settings are not a fallback.
+// LoadClientEndpointRegistry loads endpoints.yaml for use: it is the stored
+// registry with each endpoint's SSH paths defaulted and resolved against
+// dataDir. Client signer routing lives only in endpoints.yaml; config.yaml
+// ssh settings are not a fallback.
 func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
-	path := GetClientEndpointsPath(dataDir)
-	if path == "" {
+	if dataDir == "" {
 		return emptyClientEndpointRegistry(), nil
 	}
-	data, err := os.ReadFile(path)
+	registry, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return emptyClientEndpointRegistry(), nil
-		}
-		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
-	}
-
-	stored, err := decodeClientEndpointRegistry(data)
-	if err != nil {
-		return ClientEndpointRegistry{}, fmt.Errorf("failed to parse %s: %w", path, err)
-	}
-	if stored.Endpoints == nil {
-		stored.Endpoints = map[string]ClientEndpointConfig{}
-	}
-	for alias, endpoint := range stored.Endpoints {
-		if err := ValidateClientEndpointAlias(alias); err != nil {
-			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		normalized, err := normalizeClientEndpointConfig(dataDir, endpoint)
-		if err != nil {
-			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		stored.Endpoints[alias] = normalized
-	}
-	if err := normalizeClientEndpointRegistryRoleState(&stored); err != nil {
 		return ClientEndpointRegistry{}, err
 	}
-	return stored, nil
+	for alias, endpoint := range registry.Endpoints {
+		if endpoint.IdentityFile == "" {
+			endpoint.IdentityFile = ".ssh/id_ed25519"
+		}
+		if endpoint.KnownHostsPath == "" {
+			endpoint.KnownHostsPath = ".ssh/known_hosts"
+		}
+		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
+		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
+		registry.Endpoints[alias] = endpoint
+	}
+	return registry, nil
 }
 
 func emptyClientEndpointRegistry() ClientEndpointRegistry {
@@ -129,81 +115,17 @@ func ValidateClientEndpointRole(role string) error {
 	}
 }
 
-func normalizeClientEndpointConfig(dataDir string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
-	endpoint.Role = strings.TrimSpace(endpoint.Role)
-	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
-		return endpoint, err
-	}
-	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
-	if endpoint.URL == "" {
-		return endpoint, fmt.Errorf("url is required")
-	}
-	if err := validateClientEndpointURL(endpoint.URL); err != nil {
-		return endpoint, err
-	}
-
-	if endpoint.IdentityFile == "" {
-		endpoint.IdentityFile = ".ssh/id_ed25519"
-	}
-	if endpoint.KnownHostsPath == "" {
-		endpoint.KnownHostsPath = ".ssh/known_hosts"
-	}
-	endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
-	endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
-	return endpoint, nil
-}
-
-// validateClientEndpointURL accepts only ssh:// endpoints. A node is reached
-// through its SSH server, which authenticates the client's enrolled key and
-// hands the API channel to the node's REST handler with that identity; there
-// is no credential a raw HTTP endpoint could present.
-func validateClientEndpointURL(rawURL string) error {
-	if rawURL == "self" {
-		return fmt.Errorf("url %q is not supported; configure an explicit ssh://host[:port] endpoint", rawURL)
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid url: %w", err)
-	}
-	if parsed.Scheme != "ssh" {
-		return fmt.Errorf("unsupported url scheme %q; endpoints are ssh://host[:port]", parsed.Scheme)
-	}
-	if parsed.Hostname() == "" {
-		return fmt.Errorf("url host is required")
-	}
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return fmt.Errorf("invalid url port %q", parsed.Port())
-		}
-	}
-	return nil
-}
-
-// ClientEndpointSSHHostPort returns the SSH host and port for an ssh://
-// endpoint. It is shared by signer-facing clients so endpoint routing does not
-// depend on legacy config.yaml ssh fields.
+// ClientEndpointSSHHostPort returns the SSH host and port of an endpoint,
+// the port defaulting to DefaultSSHPort.
 func ClientEndpointSSHHostPort(endpoint ClientEndpointConfig) (string, int, error) {
-	parsed, err := url.Parse(endpoint.URL)
+	host, port, err := endpointrefs.ParseURL(endpoint.URL)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid endpoint URL: %w", err)
+		return "", 0, fmt.Errorf("endpoint URL %q: %w", endpoint.URL, err)
 	}
-	if parsed.Scheme != "ssh" {
-		return "", 0, fmt.Errorf("endpoint %q requires ssh://", endpoint.URL)
+	if port == 0 {
+		port = DefaultSSHPort
 	}
-	host := parsed.Hostname()
-	if host == "" {
-		return "", 0, fmt.Errorf("endpoint %q has no SSH host", endpoint.URL)
-	}
-	sshPort := DefaultSSHPort
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return "", 0, fmt.Errorf("invalid SSH port %q", parsed.Port())
-		}
-		sshPort = port
-	}
-	return host, sshPort, nil
+	return host, port, nil
 }
 
 // ResolveClientEndpointSSH resolves the complete SSH transport for an endpoint.
@@ -221,10 +143,7 @@ func ResolveClientEndpointSSH(endpoint ClientEndpointConfig) (ClientEndpointSSH,
 }
 
 func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
-	out := ClientEndpointRegistry{
-		SchemaVersion: r.SchemaVersion,
-		Default:       r.Default,
-	}
+	out := ClientEndpointRegistry{SchemaVersion: r.SchemaVersion}
 	if len(r.Endpoints) > 0 {
 		out.Endpoints = make(map[string]ClientEndpointConfig, len(r.Endpoints))
 		for alias, endpoint := range r.Endpoints {
@@ -234,13 +153,16 @@ func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 	return out
 }
 
-func (r ClientEndpointRegistry) DefaultEndpoint() (string, ClientEndpointConfig, bool) {
-	alias := r.Default
-	if alias == "" {
-		return "", ClientEndpointConfig{}, false
+// SignerEndpoint returns the registry's signer endpoint, the one connect
+// and enroll use when no alias is named. Loading and saving allow at most
+// one.
+func (r ClientEndpointRegistry) SignerEndpoint() (string, ClientEndpointConfig, bool) {
+	for alias, endpoint := range r.Endpoints {
+		if endpoint.Role == ClientEndpointRoleSigner {
+			return alias, endpoint, true
+		}
 	}
-	endpoint, ok := r.Endpoints[alias]
-	return alias, endpoint, ok
+	return "", ClientEndpointConfig{}, false
 }
 
 func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bool) {
@@ -249,51 +171,10 @@ func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bo
 }
 
 func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {
-	if len(c.Endpoints.Endpoints) > 0 || c.Endpoints.Default != "" {
+	if len(c.Endpoints.Endpoints) > 0 {
 		return c.Endpoints.Clone()
 	}
 	return emptyClientEndpointRegistry()
-}
-
-func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) error {
-	registry.Default = strings.TrimSpace(registry.Default)
-	if registry.Default != "" {
-		if err := ValidateClientEndpointAlias(registry.Default); err != nil {
-			return fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
-		}
-	}
-
-	signerAlias := ""
-	cosignerCount := 0
-	for alias, endpoint := range registry.Endpoints {
-		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
-			return fmt.Errorf("endpoint %q: %w", alias, err)
-		}
-		if endpoint.Role == ClientEndpointRoleCosigner {
-			cosignerCount++
-		}
-		if endpoint.Role != ClientEndpointRoleSigner {
-			continue
-		}
-		if signerAlias != "" {
-			return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
-		}
-		signerAlias = alias
-	}
-	if cosignerCount > MaxClientCosignerEndpoints {
-		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
-	}
-	if signerAlias == "" {
-		if registry.Default != "" {
-			return fmt.Errorf("%s default endpoint %q is set but no %q endpoint is configured", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner)
-		}
-		return nil
-	}
-	if registry.Default != "" && registry.Default != signerAlias {
-		return fmt.Errorf("%s default endpoint %q must be the %q endpoint %q", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner, signerAlias)
-	}
-	registry.Default = signerAlias
-	return nil
 }
 
 // decodeClientEndpointRegistry reads endpoints.yaml, which must carry the

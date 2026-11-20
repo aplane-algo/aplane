@@ -27,7 +27,7 @@ type fakePluginRuntime struct {
 	cachedDiscCalls int
 }
 
-func (f *fakePluginRuntime) SetConfig(network, algodURL, algodToken, _ string) {
+func (f *fakePluginRuntime) SetConfig(network, algodURL, algodToken string) {
 	f.network = network
 	f.algodURL = algodURL
 	f.algodToken = algodToken

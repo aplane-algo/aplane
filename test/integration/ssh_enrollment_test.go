@@ -1015,12 +1015,9 @@ func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, c
 	t.Helper()
 
 	cfg := mustLoadClientConfig(t)
-	alias, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	alias, endpoint, ok := cfg.Endpoints.SignerEndpoint()
 	if !ok {
 		t.Fatal("client endpoint registry missing default signer endpoint")
-	}
-	if endpoint.Role != config.ClientEndpointRoleSigner {
-		t.Fatalf("default endpoint %q role = %q, want signer", alias, endpoint.Role)
 	}
 	sshCfg, err := config.ResolveClientEndpointSSH(endpoint)
 	if err != nil {

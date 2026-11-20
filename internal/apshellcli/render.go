@@ -134,12 +134,6 @@ func renderPluginResult(r *REPLState, pr *PluginResult, simulated bool) {
 	}
 }
 
-func projectPluginResult(pr *PluginResult) appresult.Plugin {
-	filtered := *pr
-	filtered.Data = appresult.FilterPluginData(pr.Data)
-	return filtered.Plugin
-}
-
 func projectKeys(keys appresult.Keys) interface{} {
 	type mcpKey struct {
 		Address                  string `json:"address"`

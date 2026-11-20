@@ -879,9 +879,6 @@ more than one such step adds `data.steps`, one `{ message, txids }` per step.
 The IDs include any budget dummy transactions the signer added. In such a run
 a plugin's own `steps` field is replaced as `txids` is, and when a run
 submitted transactions, plugin data that is not an object is not returned.
-`data` has
-`localSigners` removed in every outcome; data the plugin returned as an object
-stays an object, empty if `localSigners` was all it held.
 
 Before the run has produced any transaction IDs, a cancelled review or the
 plugin's own failure returns `{ success: false, message }`. Once it has, from
