@@ -40,7 +40,7 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.signing.request = nil
 			m.viewState = m.screenUnderApproval()
-			return m, m.sendSignResponse(id, approved)
+			return m, m.sendSignResponseCmd(id, approved)
 		})
 	m.signing.focus = focus
 	if handled {
@@ -266,14 +266,4 @@ func wrapText(text string, width int) string {
 		s = s[:len(s)-1]
 	}
 	return s
-}
-
-// sendUnlockRequest sends an unlock request via the admin protocol transport.
-func (m Model) sendUnlockRequest(passphrase []byte) tea.Cmd {
-	return m.sendUnlockCmd(passphrase)
-}
-
-// sendSignResponse sends a sign response via the admin protocol transport.
-func (m Model) sendSignResponse(requestID string, approved bool) tea.Cmd {
-	return m.sendSignResponseCmd(requestID, approved)
 }

@@ -76,11 +76,11 @@ func (m Model) reviewWidth() int {
 	return m.width
 }
 
-// reviewLayout is the width of the review and the heights of its upper pane
-// and its detail pane. The review fills the window between the admin header
-// and the status bar; it draws its own keys line, so the window has no
-// footer under it.
-func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailHeight int) {
+// reviewLayout is the width of the review, its upper pane if it has one, and
+// the heights of that pane and of its detail pane. The review fills the
+// window between the admin header and the status bar; it draws its own keys
+// line, so the window has no footer under it.
+func (m Model) reviewLayout(review *protocol.Review) (width int, pane reviewPane, hasPane bool, paneHeight, detailHeight int) {
 	width = m.reviewWidth()
 	inner := m.windowBodyHeight()
 	if inner <= 0 {
@@ -89,7 +89,7 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 	// The header lines, the rule over the detail pane and the keys line are
 	// always there.
 	rest := inner - len(m.reviewHeader(review, width)) - 2
-	if pane, ok := m.reviewUpperPane(review, width); ok {
+	if pane, hasPane = m.reviewUpperPane(review, width); hasPane {
 		// A list leaves most of the room to the detail pane; a picture
 		// takes what it needs and leaves the detail pane a few lines.
 		limit := max(3, rest/3)
@@ -99,7 +99,7 @@ func (m Model) reviewLayout(review *protocol.Review) (width, paneHeight, detailH
 		paneHeight = min(len(pane.header)+len(pane.lines), limit)
 		rest -= paneHeight
 	}
-	return width, paneHeight, max(3, rest)
+	return width, pane, hasPane, paneHeight, max(3, rest)
 }
 
 // refreshReview sizes the detail pane and fills it for the selected row, and
@@ -111,8 +111,8 @@ func (m *Model) refreshReview() {
 	review := m.signing.request.Review
 	rows := reviewRows(review)
 	m.signing.review.row = max(0, min(max(0, rows-1), m.signing.review.row))
-	width, paneHeight, detailHeight := m.reviewLayout(review)
-	if pane, ok := m.reviewUpperPane(review, width); ok && review.Group {
+	width, pane, hasPane, paneHeight, detailHeight := m.reviewLayout(review)
+	if hasPane && review.Group {
 		visible := max(1, paneHeight-len(pane.header))
 		first, last := -1, 0
 		for i, line := range pane.lines {
@@ -133,14 +133,15 @@ func (m *Model) refreshReview() {
 		m.signing.review.top = max(0, min(max(0, len(pane.lines)-visible), top))
 	}
 
-	detail := m.reviewDetail(review)
+	var detail []reviewLine
 	if m.signing.review.text {
 		// The request's description, as apapprover prints it, then its
 		// warnings.
-		detail = nil
 		for _, line := range strings.Split(m.buildSigningViewportContent(), "\n") {
 			detail = append(detail, reviewLine{text: line, style: normalStyle})
 		}
+	} else {
+		detail = m.reviewDetail(review)
 	}
 	var out []string
 	for _, line := range detail {
@@ -372,7 +373,6 @@ func reviewItemSeverity(item protocol.ReviewItem) string {
 // its rows from the first one shown, the selected row marked.
 func (m Model) reviewPaneLines(pane reviewPane, width, height int) []string {
 	lines := append([]string{}, pane.header...)
-	clip := lipgloss.NewStyle().MaxWidth(width)
 	for i := m.signing.review.top; i < len(pane.lines) && len(lines) < height; i++ {
 		line := pane.lines[i]
 		if line.row == m.signing.review.row {
@@ -386,11 +386,8 @@ func (m Model) reviewPaneLines(pane reviewPane, width, height int) []string {
 			pad := strings.Repeat(" ", max(0, width-2-lipgloss.Width(line.plain)))
 			lines = append(lines, tint.Bold(true).Render(mark)+line.render(true)+tint.Render(pad))
 		} else {
-			lines = append(lines, clip.Render("  "+line.render(false)))
+			lines = append(lines, "  "+line.render(false))
 		}
-	}
-	for i, line := range lines {
-		lines[i] = clip.Render(line)
 	}
 	return lines
 }
@@ -424,7 +421,8 @@ func (m Model) reviewDetail(review *protocol.Review) []reviewLine {
 	if review.Group {
 		row = m.signing.review.row
 	}
-	return join(reviewTransaction(review, row), reviewWarnings(review.Findings), reviewNotes(review.Findings), reviewAccounts(review), reviewRequest(review))
+	return join(reviewTransaction(review, row), reviewViolations("Warnings", review.Findings, false),
+		reviewViolations("Notes", review.Findings, true), reviewAccounts(review), reviewRequest(review))
 }
 
 // reviewWarning draws one warning: what it is about and the first line of
@@ -454,16 +452,8 @@ func reviewSection(title string) reviewLine {
 	return reviewLine{text: title, style: subtitleStyle.Bold(true)}
 }
 
-// reviewWarnings lists the warnings in full, and reviewNotes the notices,
-// each under its own heading.
-func reviewWarnings(violations []protocol.PolicyViolation) []reviewLine {
-	return reviewViolations("Warnings", violations, false)
-}
-
-func reviewNotes(violations []protocol.PolicyViolation) []reviewLine {
-	return reviewViolations("Notes", violations, true)
-}
-
+// reviewViolations lists in full, under title, the notices when notices is
+// set and the warnings otherwise.
 func reviewViolations(title string, violations []protocol.PolicyViolation, notices bool) []reviewLine {
 	var lines []reviewLine
 	for _, v := range violations {
@@ -608,10 +598,10 @@ func chipDigest(address string) [sha256.Size]byte { return sha256.Sum256([]byte(
 
 // renderReviewScreen draws the signing request from its review.
 func (m Model) renderReviewScreen(review *protocol.Review) string {
-	width, paneHeight, _ := m.reviewLayout(review)
+	width, pane, hasPane, paneHeight, _ := m.reviewLayout(review)
 	lines := m.reviewHeader(review, width)
 	hidden := 0
-	if pane, ok := m.reviewUpperPane(review, width); ok {
+	if hasPane {
 		lines = append(lines, m.reviewPaneLines(pane, width, paneHeight)...)
 		rows := map[int]bool{}
 		for _, line := range pane.lines[min(len(pane.lines), m.signing.review.top+paneHeight-len(pane.header)):] {
@@ -623,6 +613,7 @@ func (m Model) renderReviewScreen(review *protocol.Review) string {
 	lines = append(lines, strings.Split(m.signing.viewport.View(), "\n")...)
 	lines = append(lines, m.reviewKeysLine(width))
 
+	// The one clip of every line, the upper pane's included.
 	clip := lipgloss.NewStyle().MaxWidth(width)
 	for i, line := range lines {
 		lines[i] = clip.Render(line)

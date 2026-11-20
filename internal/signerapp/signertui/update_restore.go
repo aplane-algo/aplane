@@ -111,7 +111,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		key := m.restore.previewKeys[m.restore.selectedKey]
-		if !m.restoreKeySelectable(key) {
+		if !restoreKeySelectable(key) {
 			return m, nil
 		}
 		if m.restore.selected == nil {
@@ -125,7 +125,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a", "A":
 		m.restore.selected = make(map[string]bool)
 		for _, key := range m.restore.previewKeys {
-			if m.restoreKeySelectable(key) {
+			if restoreKeySelectable(key) {
 				m.restore.selected[key.Address] = true
 			}
 		}

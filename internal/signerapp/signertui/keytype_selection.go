@@ -3,7 +3,10 @@
 
 package tui
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // generateKeyTypesNotLoaded is shown when Enter lands on a type the compiled list
 // offers but the signer hasn't classified yet. A list that arrives clears it.
@@ -19,21 +22,22 @@ const generateKeyTypesNotLoaded = "The signer's key types have not loaded. Try a
 // form built on it and needs a fresh choice before Enter acts again. An Import
 // selection only opens a mnemonic prompt, so it falls back to the nearest position.
 func (m Model) reselectKeyTypes(generate, imp string) Model {
-	if i, ok := keyTypeIndex(generate, getKeyTypeCount(), getKeyTypeByIndex); ok {
+	generateIDs, importIDs := generateKeyTypeIDs(), importKeyTypeIDs()
+	if i, ok := keyTypeIndex(generate, generateIDs); ok {
 		m.forms.generateKeyType = i
 		if m.forms.generateError == generateKeyTypesNotLoaded {
 			m.forms.generateError = ""
 		}
 	} else {
-		m.forms.generateKeyType = clampIndex(m.forms.generateKeyType, getKeyTypeCount())
+		m.forms.generateKeyType = clampIndex(m.forms.generateKeyType, len(generateIDs))
 		if generate != "" {
 			m = m.loseGenerateSelection(generate)
 		}
 	}
-	if i, ok := keyTypeIndex(imp, getImportKeyTypeCount(), getImportKeyTypeByIndex); ok {
+	if i, ok := keyTypeIndex(imp, importIDs); ok {
 		m.forms.importKeyType = i
 	} else {
-		m.forms.importKeyType = clampIndex(m.forms.importKeyType, getImportKeyTypeCount())
+		m.forms.importKeyType = clampIndex(m.forms.importKeyType, len(importIDs))
 	}
 	return m
 }
@@ -88,14 +92,12 @@ func (m Model) loseGenerateSelection(keyType string) Model {
 	return m
 }
 
-func keyTypeIndex(keyType string, count int, at func(int) string) (int, bool) {
+func keyTypeIndex(keyType string, ids []string) (int, bool) {
 	if keyType == "" {
 		return 0, false
 	}
-	for i := 0; i < count; i++ {
-		if at(i) == keyType {
-			return i, true
-		}
+	if i := slices.Index(ids, keyType); i >= 0 {
+		return i, true
 	}
 	return 0, false
 }

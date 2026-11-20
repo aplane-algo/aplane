@@ -3,23 +3,10 @@
 
 package tui
 
-func cloneBytes(data []byte) []byte {
-	if len(data) == 0 {
-		return nil
-	}
-	out := make([]byte, len(data))
-	copy(out, data)
-	return out
-}
-
-func zeroBytes(data []byte) {
-	for i := range data {
-		data[i] = 0
-	}
-}
+import "github.com/aplane-algo/aplane/internal/crypto"
 
 func (m *Model) clearRestorePassphrase() {
-	zeroBytes(m.restore.passphrase)
+	crypto.ZeroBytes(m.restore.passphrase)
 	m.restore.passphrase = nil
 }
 
@@ -58,31 +45,8 @@ func (m Model) failRestoreRequest(err error) Model {
 }
 
 func (m *Model) resetRestoreFlow() {
-	m.restore.pendingID = ""
 	m.clearRestorePassphrase()
-	m.restore.backups = nil
-	m.restore.backupsLoaded = false
-	m.restore.backupsListErr = ""
-	m.restore.selectedBackup = 0
-	m.restore.backupScrollOffset = 0
-	m.restore.archivePath = ""
-	m.restore.passphraseError = ""
-	m.restore.previewing = false
-	m.restore.previewKeys = nil
-	m.restore.previewErrors = nil
-	m.restore.selected = nil
-	m.restore.selectedKey = 0
-	m.restore.previewScrollOffset = 0
-	m.restore.previewError = ""
-	m.restore.replaceExisting = false
-	m.restore.replaceConflicts = nil
-	m.restore.returnToRecovery = false
-	m.restore.previewFocus = restoreFocusList
-	m.restore.displaySelectedKey = 0
-	m.restore.displayScrollOffset = 0
-	m.restore.result = RestoreDisplayResult{}
-	m.restore.progressLabel = ""
-	m.restore.recoveryError = ""
+	m.restore = restoreState{}
 }
 
 func (m Model) currentRestoreBackup() (BackupInfo, bool) {
@@ -97,14 +61,14 @@ func (m Model) currentRestoreBackup() (BackupInfo, bool) {
 // recovery is inactive and never overwrites anything, and the
 // replace-existing consent is collected on the restore confirmation beside the
 // exact conflicts it authorizes.
-func (m Model) restoreKeySelectable(key RestoreKeyInfo) bool {
+func restoreKeySelectable(key RestoreKeyInfo) bool {
 	return key.Error == "" && key.Address != ""
 }
 
 func (m *Model) initializeRestoreSelection() {
 	m.restore.selected = make(map[string]bool)
 	for _, key := range m.restore.previewKeys {
-		if key.Error == "" && key.Address != "" && !key.AlreadyExists {
+		if restoreKeySelectable(key) && !key.AlreadyExists {
 			m.restore.selected[key.Address] = true
 		}
 	}
@@ -208,9 +172,6 @@ func (m *Model) clampRestorePreviewScroll() {
 	if m.restore.selectedKey >= m.restore.previewScrollOffset+visibleHeight {
 		m.restore.previewScrollOffset = m.restore.selectedKey - visibleHeight + 1
 	}
-	if m.restore.previewScrollOffset < 0 {
-		m.restore.previewScrollOffset = 0
-	}
 }
 
 func (m Model) selectedRestoreAddresses() []string {
@@ -224,16 +185,6 @@ func (m Model) selectedRestoreAddresses() []string {
 		}
 	}
 	return addresses
-}
-
-func (m Model) selectedRestoreCount() int {
-	count := 0
-	for _, key := range m.restore.previewKeys {
-		if m.restore.selected[key.Address] {
-			count++
-		}
-	}
-	return count
 }
 
 func firstRestoreError(errors []RestoreError) string {

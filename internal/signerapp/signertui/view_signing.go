@@ -79,18 +79,7 @@ func (m Model) renderSigningPopup() string {
 		sb.WriteString("\n\n")
 	}
 
-	// Buttons - use JoinHorizontal for proper alignment
-	var approveBtn, rejectBtn string
-	if m.signing.focus == 0 {
-		approveBtn = buttonActiveStyle.Render("> APPROVE")
-		rejectBtn = buttonInactiveStyle.Render("  REJECT")
-	} else {
-		approveBtn = buttonInactiveStyle.Render("  APPROVE")
-		rejectBtn = buttonActiveStyle.Render("> REJECT")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, approveBtn, "  ", rejectBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.signing.focus, "APPROVE", "REJECT", nil))
 
 	return m.renderPopup(60, sb.String())
 }

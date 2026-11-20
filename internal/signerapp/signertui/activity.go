@@ -56,9 +56,7 @@ func (m *Model) applySignerLockedState() {
 	m.clearMnemonicExport()
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
-	m.manualLock.pending = false
-	m.manualLock.focus = 0
-	m.manualLock.returnView = ViewKeyList
+	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.clearCosignerWorkflowState()
 	m.signerState = signerRuntimeLocked
 	m.signerStatusKnown = true
@@ -69,9 +67,7 @@ func (m *Model) applySignerLockedState() {
 }
 
 func (m *Model) applySignerUnlockedState(keyCount int) {
-	m.manualLock.pending = false
-	m.manualLock.focus = 0
-	m.manualLock.returnView = ViewKeyList
+	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.signerState = signerRuntimeUnlocked
 	m.signerStatusKnown = true
 	m.keyCount = keyCount
@@ -124,9 +120,7 @@ func (m *Model) enterRecovery() tea.Cmd {
 func (m *Model) applySignerRecoveryState() {
 	m.clearMnemonicExport()
 	m.clearRestorePassphrase()
-	m.manualLock.pending = false
-	m.manualLock.focus = 0
-	m.manualLock.returnView = ViewKeyList
+	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.signerState = signerRuntimeRecovery
 	m.signerStatusKnown = true
 	m.keyCount = 0
@@ -244,7 +238,8 @@ func (m Model) sendLockIdentityCmd(reason string) tea.Cmd {
 		if client == nil {
 			return lockIdentitySendFailedMsg{Error: fmt.Errorf("not connected")}
 		}
-		if err := client.SendLockIdentity(reason); err != nil {
+		msg := LockIdentityMessage{BaseMessage: BaseMessage{Type: MsgTypeLockIdentity, ID: clockRequestID("lock")}, Reason: reason}
+		if err := client.sendMessage(msg); err != nil {
 			return lockIdentitySendFailedMsg{Error: err}
 		}
 		return nil

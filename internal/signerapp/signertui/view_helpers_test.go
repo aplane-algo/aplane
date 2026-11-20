@@ -93,11 +93,11 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 		},
 	})
 
-	if got, want := getKeyTypeCount(), 5; got != want {
-		t.Fatalf("getKeyTypeCount() = %d, want %d", got, want)
+	if got, want := len(generateKeyTypeIDs()), 5; got != want {
+		t.Fatalf("len(generateKeyTypeIDs()) = %d, want %d", got, want)
 	}
-	if got, want := getImportKeyTypeCount(), 2; got != want {
-		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
+	if got, want := len(importKeyTypeIDs()), 2; got != want {
+		t.Fatalf("len(importKeyTypeIDs()) = %d, want %d", got, want)
 	}
 	// Native key types come first, then published ones, each alphabetical.
 	wantGenerate := []string{"ed25519", "aplane.ed25519.v1", "aplane." + "falcon1024-allowlist.v1", "aplane.falcon1024.v1", "test.timed-policy.v1"}
@@ -105,9 +105,6 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 		if got := getKeyTypeByIndex(i); got != want {
 			t.Fatalf("generate key type index %d = %q, want %q", i, got, want)
 		}
-	}
-	if got := strings.Join(getGenerateKeyTypeOptions(), ","); got != strings.Join(wantGenerate, ",") {
-		t.Fatalf("generate options = %s, want %s", got, strings.Join(wantGenerate, ","))
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {
 		t.Fatalf("import key type index 1 = %q, want %q", got, want)

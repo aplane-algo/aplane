@@ -9,7 +9,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
 // The overlay choices. On a key type that takes the overlays (the plain hosts),
@@ -188,13 +187,7 @@ func (m Model) overlaySpec(keyType string, spec *paramSpec, preset *boundary.Pre
 		Params:      params,
 		Sections:    sections,
 		Overlay:     true,
-		Validate: func(values map[string]string) error {
-			normalized, err := lsigprovider.NormalizeCreationParams(values, params)
-			if err != nil {
-				return err
-			}
-			return generictemplate.ValidateParameterValues(normalized, params)
-		},
+		Validate:    validateParams(params),
 		OptionLabel: func(name, value string) string {
 			switch {
 			case name == overlayRekey:

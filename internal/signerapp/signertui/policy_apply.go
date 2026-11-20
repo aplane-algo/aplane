@@ -84,7 +84,7 @@ type PolicyApplyResultMsg struct {
 }
 
 func (m Model) openPolicyApply() (tea.Model, tea.Cmd) {
-	if m.policies.loading || m.policies.err != "" || !m.policies.policy.Success {
+	if !m.policySummaryReady() {
 		return m, nil
 	}
 	m.policies.apply = policyApplyState{}
@@ -270,9 +270,7 @@ func (m Model) handlePolicyCheckResult(msg PolicyCheckResultMsg) (tea.Model, tea
 	apply.busy = "Loading active policy..."
 	apply.pendingDocumentID = newRequestID("policy-apply-doc")
 	id := apply.pendingDocumentID
-	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error {
-		return c.SendGetPolicyDocumentAt(key, apply.reviewedSnapshot, id)
-	})
+	return m, m.sendGetPolicyDocumentCmd(key, apply.reviewedSnapshot, id)
 }
 
 // handlePolicyApplyDocumentLoaded receives the active document the candidate
@@ -324,16 +322,13 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		if apply.edit.active {
 			// Keep the text: the operator may want to change it and try again.
 			m = m.returnToPolicyEditor()
-			if failed {
-				// A failed apply may mean the active policy moved; reload the
-				// summary so the next attempt names the current policy set.
-				return m.requestPolicy()
-			}
-			return m, nil
+		} else {
+			m = m.closePolicyApply()
 		}
-		m = m.closePolicyApply()
 		if failed {
-			// A failed apply may mean the active policy moved; show it fresh.
+			// A failed apply may mean the active policy moved; reload the
+			// summary so what shows next, and the next attempt, name the
+			// current policy set.
 			return m.requestPolicy()
 		}
 		return m, nil
@@ -421,10 +416,6 @@ func (m Model) failPendingPolicyApply(id string, err error) (Model, bool) {
 		return m, false
 	}
 	return m, true
-}
-
-func (m Model) policyApplyTargetLabel() string {
-	return policyTargetLabel(m.policies.apply.doc.Key)
 }
 
 // policyApplyReviewLine is one wrapped line of the review body.
@@ -535,7 +526,7 @@ func (m Model) renderPolicyApplyReview() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Review Policy Change"))
 	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+m.policyApplyTargetLabel(), width)))
+	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+policyTargetLabel(m.policies.apply.doc.Key), width)))
 	sb.WriteString("\n\n")
 
 	lines := m.policyApplyReviewLines()
@@ -605,31 +596,25 @@ func (m Model) policyApplyFooterText() string {
 	return footer
 }
 
-// SendCheckPolicy asks the daemon to validate one candidate document.
-func (c *IPCClient) SendCheckPolicy(doc adminproto.PolicyDocument, id string) error {
-	return c.sendMessage(protocol.CheckPolicyMessage{
-		BaseMessage: BaseMessage{Type: protocol.MsgTypeCheckPolicy, ID: id},
-		Documents:   []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
-	})
-}
-
+// sendCheckPolicyCmd asks the daemon to validate one candidate document.
 func (m Model) sendCheckPolicyCmd(doc adminproto.PolicyDocument, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendCheckPolicy(doc, id) })
-}
-
-// SendApplyPolicy asks the daemon to install one document against the policy
-// set the operator reviewed.
-func (c *IPCClient) SendApplyPolicy(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) error {
-	return c.sendMessage(protocol.ApplyPolicyMessage{
-		BaseMessage:             BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: id},
-		Documents:               []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
-		ExpectedPolicySetSHA256: expectedPolicySetSHA256,
-		ExpectedSnapshotSHA256:  expectedSnapshot,
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(protocol.CheckPolicyMessage{
+			BaseMessage: BaseMessage{Type: protocol.MsgTypeCheckPolicy, ID: id},
+			Documents:   []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
+		})
 	})
 }
 
+// sendApplyPolicyCmd asks the daemon to install one document against the
+// policy set the operator reviewed.
 func (m Model) sendApplyPolicyCmd(doc adminproto.PolicyDocument, expectedPolicySetSHA256, expectedSnapshot, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
-		return c.SendApplyPolicy(doc, expectedPolicySetSHA256, expectedSnapshot, id)
+		return c.sendMessage(protocol.ApplyPolicyMessage{
+			BaseMessage:             BaseMessage{Type: protocol.MsgTypeApplyPolicy, ID: id},
+			Documents:               []protocol.PolicyDocumentWire{{Key: doc.Key, Document: doc.Document}},
+			ExpectedPolicySetSHA256: expectedPolicySetSHA256,
+			ExpectedSnapshotSHA256:  expectedSnapshot,
+		})
 	})
 }

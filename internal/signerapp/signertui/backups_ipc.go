@@ -11,7 +11,9 @@ import (
 // Admin requests and replies for the Backups page: delete, export (chunk
 // reads), and import (begin, append, commit, abort). Every request carries an
 // ID the page chose, and every reply arrives as a message carrying that ID,
-// so the page can tell its own replies from stale ones.
+// so the page can tell its own replies from stale ones. A send failure comes
+// back as a sendFailedMsg carrying the ID, routed as the daemon's error reply
+// would be.
 
 // BackupDeleteResultMsg is the reply to delete_backup.
 type BackupDeleteResultMsg struct {
@@ -66,32 +68,26 @@ func base(msgType, id string) protocol.BaseMessage {
 	return protocol.BaseMessage{Type: msgType, ID: id}
 }
 
-// backupRequestCmd sends one Backups-page request. A send failure comes back
-// as a sendFailedMsg carrying id, routed as the daemon's error reply would be.
-func (m Model) backupRequestCmd(id string, send func(*IPCClient) error) tea.Cmd {
-	return operationCmd(m.adminClient, id, send)
-}
-
 func (m Model) sendDeleteBackupCmd(id, fileName string) tea.Cmd {
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(protocol.DeleteBackupMessage{BaseMessage: base(protocol.MsgTypeDeleteBackup, id), ArchivePath: fileName})
 	})
 }
 
 func (m Model) sendReadBackupChunkCmd(id, fileName string, offset int64) tea.Cmd {
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(protocol.ReadBackupChunkMessage{BaseMessage: base(protocol.MsgTypeReadBackupChunk, id), FileName: fileName, Offset: offset})
 	})
 }
 
 func (m Model) sendBeginBackupImportCmd(id, fileName string) tea.Cmd {
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(protocol.BeginBackupImportMessage{BaseMessage: base(protocol.MsgTypeBeginBackupImport, id), FileName: fileName})
 	})
 }
 
 func (m Model) sendAppendBackupImportCmd(id, uploadID string, offset int64, data []byte) tea.Cmd {
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(protocol.AppendBackupImportMessage{
 			BaseMessage: base(protocol.MsgTypeAppendBackupImport, id), UploadID: uploadID, Offset: offset, Data: data,
 		})
@@ -102,7 +98,7 @@ func (m Model) sendAppendBackupImportCmd(id, uploadID string, offset int64, data
 // of the passphrase and zeroes it once it has run; the caller zeroes its own.
 func (m Model) sendCommitBackupImportCmd(id, uploadID, fileName string, size int64, checksum string, passphrase []byte) tea.Cmd {
 	return secretCmd(passphrase, func(p []byte) tea.Cmd {
-		return m.backupRequestCmd(id, func(c *IPCClient) error {
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 			return c.sendMessage(protocol.CommitBackupImportMessage{
 				BaseMessage: base(protocol.MsgTypeCommitBackupImport, id), UploadID: uploadID, FileName: fileName,
 				ExpectedSize: size, ExpectedSHA256: checksum, ExportPassphrase: protocol.SensitiveBytes(p),
@@ -113,7 +109,7 @@ func (m Model) sendCommitBackupImportCmd(id, uploadID, fileName string, size int
 
 func (m Model) sendAbortBackupImportCmd(uploadID string) tea.Cmd {
 	id := newRequestID("backup-import-abort")
-	return m.backupRequestCmd(id, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(protocol.AbortBackupImportMessage{BaseMessage: base(protocol.MsgTypeAbortBackupImport, id), UploadID: uploadID})
 	})
 }

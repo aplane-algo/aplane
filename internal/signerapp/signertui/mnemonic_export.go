@@ -67,7 +67,7 @@ func (m Model) handleMnemonicExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			e.error = "Enter your signer passphrase"
 			return m, nil
 		}
-		e.requestID = fmt.Sprintf("mnemonic-export-%d", time.Now().UnixNano())
+		e.requestID = clockRequestID("mnemonic-export")
 		e.pending, e.error = true, ""
 		requestID, address := e.requestID, e.address
 		send := secretCmd(e.passphrase, func(p []byte) tea.Cmd {

@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -100,7 +101,7 @@ type unresolvedBackupImport struct {
 
 func (m Model) openBackupImport() (tea.Model, tea.Cmd) {
 	imp := &m.backups.imp
-	zeroBytes(imp.passphrase)
+	crypto.ZeroBytes(imp.passphrase)
 	*imp = backupImportState{canceledBegins: imp.canceledBegins, unresolved: imp.unresolved}
 	m.viewState = ViewBackupImport
 	return m, nil
@@ -161,7 +162,7 @@ func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // closeBackupImportForm forgets the form's input, zeroing the passphrase.
 func (m Model) closeBackupImportForm() Model {
 	imp := &m.backups.imp
-	zeroBytes(imp.passphrase)
+	crypto.ZeroBytes(imp.passphrase)
 	imp.passphrase = nil
 	imp.err = ""
 	return m
@@ -286,7 +287,7 @@ func (m Model) commitBackupImport() (tea.Model, tea.Cmd) {
 	imp.phase = importCommitting
 	imp.pendingID = newRequestID("backup-import-commit")
 	cmd := m.sendCommitBackupImportCmd(imp.pendingID, imp.uploadID, imp.source.Name, imp.source.Size, imp.source.Checksum, imp.passphrase)
-	zeroBytes(imp.passphrase)
+	crypto.ZeroBytes(imp.passphrase)
 	imp.passphrase = nil
 	id := imp.pendingID
 	timeout := tea.Tick(backupCommitWait, func(time.Time) tea.Msg { return backupCommitTimeoutMsg{id: id} })

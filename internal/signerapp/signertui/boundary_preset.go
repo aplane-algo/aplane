@@ -9,10 +9,18 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// activeBoundaryPreset is the preset being filled in when it applies to
+// keyType, otherwise nil.
+func (m Model) activeBoundaryPreset(keyType string) *boundary.Preset {
+	if keyType != m.forms.boundaryKeyType {
+		return nil
+	}
+	return m.forms.boundaryPreset
+}
 
 // paramSpecFor is the parameter form for keyType: the overlay choices for a type
 // that takes them, otherwise its parameters. While a preset is active it shows
@@ -22,10 +30,7 @@ func (m Model) paramSpecFor(keyType string) *paramSpec {
 	if spec == nil {
 		return nil
 	}
-	preset := m.forms.boundaryPreset
-	if preset != nil && keyType != m.forms.boundaryKeyType {
-		preset = nil
-	}
+	preset := m.activeBoundaryPreset(keyType)
 	if overlay := m.overlaySpec(keyType, spec, preset); overlay != nil {
 		return overlay
 	}
@@ -56,13 +61,7 @@ func (m Model) paramSpecFor(keyType string) *paramSpec {
 		DisplayName: preset.Title,
 		Description: preset.Description,
 		Params:      params,
-		Validate: func(values map[string]string) error {
-			normalized, err := lsigprovider.NormalizeCreationParams(values, params)
-			if err != nil {
-				return err
-			}
-			return generictemplate.ValidateParameterValues(normalized, params)
-		},
+		Validate:    validateParams(params),
 	}
 }
 

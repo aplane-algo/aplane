@@ -28,8 +28,6 @@ const (
 
 	reviewBodyWidth = 64
 	reviewIDWidth   = 44
-
-	recipientsParameter = "recipients"
 )
 
 // handlePreparedGeneration receives what a request would create. A bounded account
@@ -148,7 +146,7 @@ func rekeyToList(review PrepareGenerateResultMessage) []string {
 }
 
 func recipientList(parameters map[string]string) []string {
-	value := strings.TrimSpace(parameters[recipientsParameter])
+	value := strings.TrimSpace(parameters[boundary.ParameterRecipients])
 	if value == "" {
 		return nil
 	}
@@ -421,7 +419,7 @@ func reviewDetailParameters(review PrepareGenerateResultMessage) []string {
 	listed := rekeyToList(review) != nil
 	for name := range review.Parameters {
 		switch {
-		case name == recipientsParameter, name == boundedmeta.CosignerPublicKeyParameter:
+		case name == boundary.ParameterRecipients, name == boundedmeta.CosignerPublicKeyParameter:
 			continue
 		case name == boundedmeta.RekeyListEntriesParameter && listed:
 			// Shown below as the rekey-to list.

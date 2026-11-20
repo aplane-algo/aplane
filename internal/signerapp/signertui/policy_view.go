@@ -88,13 +88,6 @@ type policyRow struct {
 	doc    *protocol.PolicyDocumentInfoWire
 }
 
-func (r policyRow) label() string {
-	if r.key == policy.DefaultKey {
-		return "default"
-	}
-	return terminalSafe(r.key)
-}
-
 func (m Model) openPolicies() (tea.Model, tea.Cmd) {
 	m.policies = policiesState{returnView: m.viewState}
 	m.viewState = ViewPolicies
@@ -106,10 +99,9 @@ func (m Model) requestPolicy() (tea.Model, tea.Cmd) {
 	m.policies.pendingPolicyID = newRequestID("policy")
 	m.policies.pendingContextID = newRequestID("policy-context")
 	m.policies.snapshot, m.policies.loadedContext, m.policies.contextErr = "", nil, ""
-	contextID := m.policies.pendingContextID
 	return m, tea.Batch(
 		m.sendGetPolicyCmd(m.policies.pendingPolicyID),
-		operationCmd(m.adminClient, contextID, func(c *IPCClient) error { return c.SendGetPolicyContext(contextID) }),
+		m.sendGetPolicyContextCmd(m.policies.pendingContextID),
 	)
 }
 
@@ -257,7 +249,7 @@ func (m Model) handlePoliciesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.policies.pendingDocumentID = newRequestID("policy-doc")
 			m.viewState = ViewPolicyDocument
 			key := rows[m.policies.selected].doc.Key
-			return m, m.sendGetPolicyDocumentCmd(key, m.policies.pendingDocumentID)
+			return m, m.sendGetPolicyDocumentCmd(key, "", m.policies.pendingDocumentID)
 		}
 	}
 	return m, nil
@@ -358,7 +350,7 @@ func (m Model) renderPolicies() string {
 		if i == m.policies.selected {
 			cursor = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s%-*s  %s", cursor, labelWidth, ellipsizeMiddle(row.label(), labelWidth), policyRowStatus(row.key, row.status)))
+		lines = append(lines, fmt.Sprintf("%s%-*s  %s", cursor, labelWidth, ellipsizeMiddle(terminalSafe(row.key), labelWidth), policyRowStatus(row.key, row.status)))
 	}
 
 	var footer strings.Builder
@@ -391,7 +383,7 @@ func (m Model) policyLabelWidth(rows []policyRow) int {
 	const cursorAndGap = 2 + 2
 	longest := 0
 	for _, row := range rows {
-		longest = max(longest, utf8.RuneCountInString(row.label()))
+		longest = max(longest, utf8.RuneCountInString(terminalSafe(row.key)))
 	}
 	return min(longest, max(m.tableWidth()-cursorAndGap-policyStatusColumnWidth, 8))
 }
@@ -494,40 +486,29 @@ func (m Model) policiesFooterText() string {
 	return "up/down: Select | enter: View | e: Edit | a: Load file | x: Export | r: Refresh | esc/q: Back"
 }
 
-// SendGetPolicy requests the node's policy summary under request id.
-func (c *IPCClient) SendGetPolicy(id string) error {
-	return c.sendMessage(protocol.GetPolicyMessage{
-		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicy, ID: id},
-	})
-}
-
+// sendGetPolicyCmd requests the node's policy summary under request id.
 func (m Model) sendGetPolicyCmd(id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicy(id) })
-}
-
-// SendGetPolicyContext requests the node's policy context under request id.
-func (c *IPCClient) SendGetPolicyContext(id string) error {
-	return c.sendMessage(protocol.GetPolicyContextMessage{BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: id}})
-}
-
-// SendGetPolicyDocumentAt requests one policy document under request id,
-// refused by the node if its policy or context moved since snapshot.
-func (c *IPCClient) SendGetPolicyDocumentAt(key, snapshot, id string) error {
-	return c.sendMessage(protocol.GetPolicyDocumentMessage{
-		BaseMessage:            BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: id},
-		Key:                    key,
-		ExpectedSnapshotSHA256: snapshot,
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(protocol.GetPolicyMessage{BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicy, ID: id}})
 	})
 }
 
-// SendGetPolicyDocument requests one policy document under request id.
-func (c *IPCClient) SendGetPolicyDocument(key, id string) error {
-	return c.sendMessage(protocol.GetPolicyDocumentMessage{
-		BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: id},
-		Key:         key,
+// sendGetPolicyContextCmd requests the node's policy context under request id.
+func (m Model) sendGetPolicyContextCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(protocol.GetPolicyContextMessage{BaseMessage: BaseMessage{Type: protocol.MsgTypeGetPolicyContext, ID: id}})
 	})
 }
 
-func (m Model) sendGetPolicyDocumentCmd(key, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGetPolicyDocument(key, id) })
+// sendGetPolicyDocumentCmd requests one policy document under request id. A
+// snapshot, when given, has the node refuse the read if its policy or context
+// moved since then.
+func (m Model) sendGetPolicyDocumentCmd(key, snapshot, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(protocol.GetPolicyDocumentMessage{
+			BaseMessage:            BaseMessage{Type: protocol.MsgTypeGetPolicyDocument, ID: id},
+			Key:                    key,
+			ExpectedSnapshotSHA256: snapshot,
+		})
+	})
 }

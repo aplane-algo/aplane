@@ -60,23 +60,15 @@ func (m Model) compatibleCosignerChoices(componentKeyTypes []string) []cosignerC
 	}
 
 	choices := make([]cosignerChoice, 0, len(grouped))
+	// Reference names are already lowercase (cosignerrefs.NormalizeName).
 	for _, choice := range grouped {
-		sort.Slice(choice.Aliases, func(i, j int) bool {
-			left := strings.ToLower(choice.Aliases[i])
-			right := strings.ToLower(choice.Aliases[j])
-			if left != right {
-				return left < right
-			}
-			return choice.Aliases[i] < choice.Aliases[j]
-		})
+		slices.Sort(choice.Aliases)
 		choice.PrimaryAlias = choice.Aliases[0]
 		choices = append(choices, *choice)
 	}
 	sort.Slice(choices, func(i, j int) bool {
-		left := strings.ToLower(choices[i].PrimaryAlias)
-		right := strings.ToLower(choices[j].PrimaryAlias)
-		if left != right {
-			return left < right
+		if choices[i].PrimaryAlias != choices[j].PrimaryAlias {
+			return choices[i].PrimaryAlias < choices[j].PrimaryAlias
 		}
 		return choices[i].WitnessKeyID < choices[j].WitnessKeyID
 	})
@@ -157,13 +149,7 @@ func (m Model) referenceAliasesForWitness(witnessKeyID, keyType string) []string
 			aliases = append(aliases, reference.Name)
 		}
 	}
-	sort.Slice(aliases, func(i, j int) bool {
-		left, right := strings.ToLower(aliases[i]), strings.ToLower(aliases[j])
-		if left != right {
-			return left < right
-		}
-		return aliases[i] < aliases[j]
-	})
+	slices.Sort(aliases)
 	return aliases
 }
 
@@ -371,10 +357,7 @@ func cosignerImportNameFromPath(path string) string {
 	} else {
 		base = strings.TrimSuffix(base, filepath.Ext(base))
 	}
-	if name := sanitizeCosignerReferenceNameSuggestion(base); name != "" {
-		return name
-	}
-	return ""
+	return sanitizeCosignerReferenceNameSuggestion(base)
 }
 
 func (m Model) suggestCosignerImportNameFromDocument(data []byte) Model {
@@ -395,11 +378,18 @@ func (m Model) hasCustomCosignerImportName() bool {
 	return strings.TrimSpace(m.cosigner.importName) != "" && m.cosigner.importName != m.cosigner.importNameDefault
 }
 
-func suggestedCosignerReferenceName(witnessKeyID string) string {
+// compactWitnessKeyID is the short lowercase form of a Witness Key ID that
+// suggested names carry.
+func compactWitnessKeyID(witnessKeyID string) string {
 	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))
 	if len(compact) > 10 {
 		compact = compact[:10]
 	}
+	return compact
+}
+
+func suggestedCosignerReferenceName(witnessKeyID string) string {
+	compact := compactWitnessKeyID(witnessKeyID)
 	if compact == "" {
 		return "cosigner"
 	}
@@ -554,25 +544,14 @@ func (m Model) cosignerSelectionDisplay(witnessKeyID string) string {
 	if witnessKeyID == "" {
 		return "Choose an enrolled cosigner"
 	}
-	for _, choice := range m.choicesForAllReferences() {
-		if choice.WitnessKeyID == witnessKeyID {
-			return fmt.Sprintf("%s  %s", choice.PrimaryAlias, apadminapp.CompactWitnessKeyID(witnessKeyID))
+	// A Witness Key ID commits to its key type, so its references share one.
+	for _, reference := range m.cosigner.references {
+		if reference.ComponentKey == witnessKeyID && reference.Name != "" {
+			aliases := m.referenceAliasesForWitness(witnessKeyID, reference.KeyType)
+			return fmt.Sprintf("%s  %s", aliases[0], apadminapp.CompactWitnessKeyID(witnessKeyID))
 		}
 	}
 	return apadminapp.CompactWitnessKeyID(witnessKeyID)
-}
-
-func (m Model) choicesForAllReferences() []cosignerChoice {
-	seenTypes := make(map[string]bool)
-	var choices []cosignerChoice
-	for _, reference := range m.cosigner.references {
-		if seenTypes[reference.KeyType] {
-			continue
-		}
-		seenTypes[reference.KeyType] = true
-		choices = append(choices, m.compatibleCosignerChoices([]string{reference.KeyType})...)
-	}
-	return choices
 }
 
 // cosignerPickerAliasWidth sizes the alias column from every choice, leaving

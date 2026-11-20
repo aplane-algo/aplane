@@ -96,7 +96,7 @@ func (m Model) renderImportForm() string {
 	header := titleStyle.Render("Import Key from Mnemonic") + "\nKey Type:\n"
 
 	// Key type selection (dynamically built from registered algorithms)
-	keyTypes := getKeyTypeOptions()
+	keyTypes := importKeyTypeOptions()
 	rows := make([]string, len(keyTypes))
 	for i, kt := range keyTypes {
 		switch {
@@ -183,19 +183,17 @@ func (m Model) renderGenerateForm() string {
 	// Key type selection (dynamically built from registered algorithms), with
 	// the selected type's name in a box under the list, as the bounds preset
 	// screen boxes its descriptions.
-	keyTypes := getGenerateKeyTypeOptions()
 	ids := generateKeyTypeIDs()
-	rows := make([]string, len(keyTypes))
-	descriptions := make([]string, len(keyTypes))
-	for i, kt := range keyTypes {
+	rows := make([]string, len(ids))
+	descriptions := make([]string, len(ids))
+	for i, id := range ids {
+		kt := displayKeyType(id)
 		if i == m.forms.generateKeyType {
 			rows[i] = selectedStyle.Render("> " + kt)
 		} else {
 			rows[i] = normalStyle.Render("  " + kt)
 		}
-		if i < len(ids) {
-			descriptions[i] = getKeyTypeSelectionLabel(ids[i])
-		}
+		descriptions[i] = getKeyTypeSelectionLabel(id)
 	}
 
 	var errorLine string
@@ -214,17 +212,12 @@ func (m Model) renderGenerateForm() string {
 		}
 	}
 
-	rows, selected := separateKeyTypeClusters(rows, nativeKeyTypeCount(generateKeyTypeIDs()), m.forms.generateKeyType)
+	rows, selected := separateKeyTypeClusters(rows, nativeKeyTypeCount(ids), m.forms.generateKeyType)
 	return m.renderPopup(70, m.fitSelectionList(header, rows, selected, footer, 70))
 }
 
-// renderParameterModal renders the shared parameter input modal for both generate and import.
-// buttonVerb is "GENERATE" or "IMPORT".
-func (m Model) renderParameterModal(keyTypeIndex int, buttonVerb, errorMsg string) string {
-	selectedKeyType := getKeyTypeByIndex(keyTypeIndex)
-	return m.renderParameterModalForKeyType(selectedKeyType, buttonVerb, errorMsg)
-}
-
+// renderParameterModalForKeyType renders the shared parameter input modal for
+// both generate and import. buttonVerb is "GENERATE" or "IMPORT".
 func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg string) string {
 	var sb strings.Builder
 	errorMsg = terminalSafeLines(errorMsg)
@@ -301,7 +294,7 @@ func (m Model) visibleParamModalFields() int {
 func (m Model) renderParamField(sb *strings.Builder, spec *paramSpec, keyType string, paramDef lsigprovider.ParameterDef, focused bool, reserve int) {
 	isCosignerSelector := m.isCosignerSelectorParam(keyType, paramDef)
 	labelText, modeHint := m.paramFieldLabel(paramDef, focused, isCosignerSelector)
-	if spec != nil && spec.Overlay && isOverlayParameter(paramDef.Name) {
+	if spec.Overlay && isOverlayParameter(paramDef.Name) {
 		// The overlay controls are choices whose labels say whether they
 		// are optional, so they get no "(optional)"; one a preset needs
 		// says "(required)" instead.
@@ -410,7 +403,7 @@ func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterD
 		if isCosignerSelector {
 			currentValue = m.cosignerFieldDisplay(paramDef, currentValue)
 		}
-		lines := paramInputLines(terminalSafeLines(currentValue))
+		lines := strings.Split(terminalSafeLines(currentValue), "\n")
 		lines[len(lines)-1] += "_"
 		return lines
 	}
@@ -428,7 +421,7 @@ func (m Model) paramFieldLines(spec *paramSpec, paramDef lsigprovider.ParameterD
 	if isCosignerSelector {
 		value = m.cosignerFieldDisplay(paramDef, m.forms.genericLSigParams[paramDef.Name])
 	}
-	return paramInputLines(terminalSafeLines(value))
+	return strings.Split(terminalSafeLines(value), "\n")
 }
 
 // shownOption is the option a choice field will send: its value, or its default
@@ -571,7 +564,7 @@ func renderedLinesBeforeAppend(s string) int {
 
 // renderGenerateParams renders the parameter input modal for LSig types with creation params
 func (m Model) renderGenerateParams() string {
-	return m.renderParameterModal(m.forms.generateKeyType, "GENERATE", m.forms.generateError)
+	return m.renderParameterModalForKeyType(getKeyTypeByIndex(m.forms.generateKeyType), "GENERATE", m.forms.generateError)
 }
 
 // renderGenerating renders the loading state while generating a key
@@ -706,17 +699,7 @@ func (m Model) renderDisplaceConfirm() string {
 	sb.WriteString("Proceeding will disconnect it.\n\n")
 
 	// Buttons - Cancel is default (safer)
-	var cancelBtn, proceedBtn string
-	if m.displaceConfirmFocus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		proceedBtn = buttonInactiveStyle.Render("  PROCEED")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		proceedBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("214")).Foreground(lipgloss.Color("214")).Render("> PROCEED")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", proceedBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.displaceConfirmFocus, "CANCEL", "PROCEED", buttonCaution))
 
 	return m.renderPopup(60, sb.String())
 }
@@ -740,17 +723,7 @@ func (m Model) renderDeleteConfirm() string {
 	sb.WriteString("\n\n")
 
 	// Buttons - Cancel is default (safer)
-	var cancelBtn, deleteBtn string
-	if m.del.focus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		deleteBtn = buttonInactiveStyle.Render("  DELETE")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		deleteBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> DELETE")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", deleteBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.del.focus, "CANCEL", "DELETE", buttonDanger))
 
 	return m.renderPopup(80, sb.String())
 }
@@ -765,17 +738,7 @@ func (m Model) renderLockConfirm() string {
 	sb.WriteString("This will clear the unlocked key session from signer memory.\n")
 	sb.WriteString("apadmin will stay open and return to the unlock screen.\n\n")
 
-	var cancelBtn, lockBtn string
-	if m.manualLock.focus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		lockBtn = buttonInactiveStyle.Render("  LOCK")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		lockBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("214")).Foreground(lipgloss.Color("214")).Render("> LOCK")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", lockBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.manualLock.focus, "CANCEL", "LOCK", buttonCaution))
 
 	return m.renderPopup(70, sb.String())
 }

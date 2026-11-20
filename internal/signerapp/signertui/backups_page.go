@@ -265,7 +265,7 @@ func (m Model) renderBackupDeleteConfirm() string {
 		body.WriteString("\n\n")
 	}
 	body.WriteString("The archive is removed from the signer. Export it first to keep a copy.\n\n")
-	body.WriteString(confirmButtons(del.focus, "DELETE") + "\n")
+	body.WriteString(buttonPair(del.focus, "CANCEL", "DELETE", buttonDanger) + "\n")
 	if del.pendingID != "" {
 		body.WriteString("\n" + subtitleStyle.Render("Deleting...") + "\n")
 	}
@@ -330,7 +330,7 @@ func (m Model) renderBackupUndoConfirm() string {
 	body.WriteString("\n\n")
 	body.WriteString(wrapPlainText("Returns the signer's keys to how they were before the most recent restore. The signer refuses if its latest change was not a restore that can still be undone.", width))
 	body.WriteString("\n\n")
-	body.WriteString(confirmButtons(m.backups.undoFocus, "UNDO") + "\n")
+	body.WriteString(buttonPair(m.backups.undoFocus, "CANCEL", "UNDO", buttonDanger) + "\n")
 	return m.renderPopup(80, body.String())
 }
 
@@ -489,17 +489,28 @@ func (m Model) renderBackupViewHeader(popupWidth int) string {
 	return sb.String()
 }
 
-// confirmButtons lays out a CANCEL button and a destructive action button
-// side by side, as the key delete dialog does; focus 0 is CANCEL.
-func confirmButtons(focus int, action string) string {
-	cancel := buttonInactiveStyle.Render("  CANCEL")
-	act := buttonInactiveStyle.Render("  " + action)
+// Colours for a focused dialog button whose action is destructive (danger)
+// or disruptive (caution).
+var (
+	buttonDanger  = lipgloss.Color("196")
+	buttonCaution = lipgloss.Color("214")
+)
+
+// buttonPair lays out two dialog buttons side by side, the focused one (focus
+// 0 is left) marked. A focused right button takes the colour accent, if any.
+func buttonPair(focus int, left, right string, accent lipgloss.TerminalColor) string {
+	leftBtn := buttonInactiveStyle.Render("  " + left)
+	rightBtn := buttonInactiveStyle.Render("  " + right)
 	if focus == 0 {
-		cancel = buttonActiveStyle.Render("> CANCEL")
+		leftBtn = buttonActiveStyle.Render("> " + left)
 	} else {
-		act = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> " + action)
+		active := buttonActiveStyle
+		if accent != nil {
+			active = active.BorderForeground(accent).Foreground(accent)
+		}
+		rightBtn = active.Render("> " + right)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, cancel, "  ", act)
+	return lipgloss.JoinHorizontal(lipgloss.Center, leftBtn, "  ", rightBtn)
 }
 
 // Shutdown releases what the model holds when the program exits: a revealed

@@ -38,10 +38,7 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.backup.confirmError = ""
 		m.viewState = ViewBackups
 		return m, nil
-	case "tab":
-		m.backup.confirmFocus = (m.backup.confirmFocus + 1) % 2
-		return m, nil
-	case "shift+tab":
+	case "tab", "shift+tab":
 		m.backup.confirmFocus = (m.backup.confirmFocus + 1) % 2
 		return m, nil
 	case "enter":
@@ -106,7 +103,7 @@ func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "e":
-		return m.openGeneratedCosignerExport()
+		return m.openCosignerExportFor(m.forms.generatedAddress, m.forms.generatedKeyType, ViewGenerateDisplay)
 	case "s", "S":
 		return m.saveGeneratedReceipt(), nil
 	case "w", "W":
@@ -183,35 +180,17 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Cycle backwards through fields
 		return m.setImportFocus((m.forms.importFocus + 2) % 3)
 
-	case "up":
+	case "up", "k":
 		// In key type field, switch to previous type
 		if m.forms.importFocus == 0 && m.forms.importKeyType > 0 {
 			m.forms.importKeyType--
 		}
 		return m, nil
 
-	case "k":
-		// In key type field, vim-style up navigation
-		if m.forms.importFocus == 0 {
-			if m.forms.importKeyType > 0 {
-				m.forms.importKeyType--
-			}
-		}
-		return m, nil
-
-	case "down":
+	case "down", "j":
 		// In key type field, switch to next type (dynamic bounds)
-		if m.forms.importFocus == 0 && m.forms.importKeyType < getImportKeyTypeCount()-1 {
+		if m.forms.importFocus == 0 && m.forms.importKeyType < len(importKeyTypeIDs())-1 {
 			m.forms.importKeyType++
-		}
-		return m, nil
-
-	case "j":
-		// In key type field, vim-style down navigation (dynamic bounds)
-		if m.forms.importFocus == 0 {
-			if m.forms.importKeyType < getImportKeyTypeCount()-1 {
-				m.forms.importKeyType++
-			}
 		}
 		return m, nil
 
@@ -225,19 +204,11 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "left", "right", "delete", "home", "end", "insert", "pgup", "pgdown":
-		// Ignore navigation/editing keys not supported in these fields
-		return m, nil
-
 	case " ":
-		// Space - add to mnemonic or submit if on button
-		switch m.forms.importFocus {
-		case 2:
+		// Space submits on the button; the mnemonic field takes it above.
+		if m.forms.importFocus == 2 {
 			return m.submitImport()
 		}
-		return m, nil
-
-	default:
 	}
 
 	return m, nil
@@ -282,14 +253,14 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 	}
 
 	id := m.beginOperation(ViewImporting)
-	return m, m.sendImportKeyCmd(keyType, mnemonic, id)
+	return m, m.sendImportKeyCmd(keyType, mnemonic, nil, id)
 }
 
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.
 func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
-		return m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id)
+		return m.sendImportKeyCmd(keyType, mnemonic, params, id)
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
@@ -320,7 +291,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		// Move to next key type
 		m.forms.generateNeedsChoice = false
-		if m.forms.generateKeyType < getKeyTypeCount()-1 {
+		if m.forms.generateKeyType < len(generateKeyTypeIDs())-1 {
 			m.forms.generateKeyType++
 		}
 		return m, nil
@@ -332,8 +303,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.forms.generateError = fmt.Sprintf("%s has no template details available", displayKeyType(keyType))
 			return m, nil
 		}
-		m.library.detailsReturnView = ViewGenerateForm
-		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
+		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl, ViewGenerateForm)
 		if errMsg != "" {
 			next.forms.generateError = errMsg
 			return next, nil
@@ -655,7 +625,7 @@ func (m Model) submitParamModal(
 	if spec.Overlay {
 		transformedParams = dropEmptyParameters(transformedParams)
 	}
-	if preset := m.forms.boundaryPreset; preset != nil && keyType == m.forms.boundaryKeyType {
+	if preset := m.activeBoundaryPreset(keyType); preset != nil {
 		// A preset's choice the form shows, such as the overlay form's rekey
 		// setting, is the operator's to change, so only the rest are fixed.
 		for name, value := range preset.Fixed {
@@ -713,10 +683,7 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	m.forms.genericLSigParamOrder = make([]string, len(params))
 	m.forms.genericLSigParamModes = make(map[string]int)
 	m.forms.genericLSigParamScroll = make(map[string]int)
-	preset := m.forms.boundaryPreset
-	if preset != nil && keyType != m.forms.boundaryKeyType {
-		preset = nil
-	}
+	preset := m.activeBoundaryPreset(keyType)
 	for i, p := range params {
 		m.forms.genericLSigParamOrder[i] = p.Name
 		m.forms.genericLSigParams[p.Name] = defaultParamValue(p)
@@ -936,14 +903,10 @@ func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef
 		return m
 	}
 	paramDef := params[paramIdx]
-	value := ""
-	if m.forms.genericLSigParams != nil {
-		value = m.forms.genericLSigParams[paramDef.Name]
-	}
 	if !isMultilineParamType(paramDef.Type) {
 		return m
 	}
-	lines := paramInputLines(value)
+	lines := strings.Split(m.forms.genericLSigParams[paramDef.Name], "\n")
 	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
 	m.setParamScroll(paramDef.Name, maxOffset)
 	return m
@@ -955,20 +918,12 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 		return m
 	}
 	paramDef := params[paramIdx]
-	current := 0
-	if m.forms.genericLSigParamScroll != nil {
-		current = m.forms.genericLSigParamScroll[paramDef.Name]
-	}
-	value := ""
-	if m.forms.genericLSigParams != nil {
-		value = m.forms.genericLSigParams[paramDef.Name]
-	}
 	if !isMultilineParamType(paramDef.Type) {
 		return m
 	}
-	lines := paramInputLines(value)
+	lines := strings.Split(m.forms.genericLSigParams[paramDef.Name], "\n")
 	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
-	next := current + delta
+	next := m.forms.genericLSigParamScroll[paramDef.Name] + delta
 	if next < 0 {
 		next = 0
 	}
@@ -984,14 +939,6 @@ func (m *Model) setParamScroll(paramName string, offset int) {
 		m.forms.genericLSigParamScroll = make(map[string]int)
 	}
 	m.forms.genericLSigParamScroll[paramName] = offset
-}
-
-func paramInputLines(value string) []string {
-	lines := strings.Split(value, "\n")
-	if len(lines) == 0 {
-		return []string{""}
-	}
-	return lines
 }
 
 func maxParamInputScrollOffset(lines []string, fieldHeight int) int {
@@ -1017,11 +964,7 @@ func currentParamLineLength(value string) int {
 func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "n":
-		// Cancel and return to key list
-		m.del.address = ""
-		m.del.keyType = ""
-		m.viewState = ViewKeyList
-		return m, nil
+		return m.cancelDeleteConfirm(), nil
 
 	case "tab", "left", "right", "h", "l":
 		// Toggle between Cancel and Delete buttons
@@ -1030,23 +973,30 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter", " ":
 		if m.del.focus == 0 {
-			// Cancel selected
-			m.del.address = ""
-			m.del.keyType = ""
-			m.viewState = ViewKeyList
-			return m, nil
+			return m.cancelDeleteConfirm(), nil
 		}
-		// Delete selected - send delete request
-		id := m.beginOperation(ViewDeleting)
-		return m, m.sendDeleteKeyCmd(m.del.address, id)
+		return m.sendDeleteConfirm()
 
 	case "y":
 		// Quick confirm delete
-		id := m.beginOperation(ViewDeleting)
-		return m, m.sendDeleteKeyCmd(m.del.address, id)
+		return m.sendDeleteConfirm()
 	}
 
 	return m, nil
+}
+
+// cancelDeleteConfirm closes the delete dialog and returns to the key list.
+func (m Model) cancelDeleteConfirm() Model {
+	m.del.address = ""
+	m.del.keyType = ""
+	m.viewState = ViewKeyList
+	return m
+}
+
+// sendDeleteConfirm sends the delete the dialog confirms.
+func (m Model) sendDeleteConfirm() (tea.Model, tea.Cmd) {
+	id := m.beginOperation(ViewDeleting)
+	return m, m.sendDeleteKeyCmd(m.del.address, id)
 }
 
 func (m Model) openManualLockConfirm() (tea.Model, tea.Cmd) {

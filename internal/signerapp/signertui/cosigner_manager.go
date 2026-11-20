@@ -18,10 +18,8 @@ import (
 func (m Model) sortedCosignerReferences() []CosignerReferenceInfo {
 	references := append([]CosignerReferenceInfo(nil), m.cosigner.references...)
 	sort.Slice(references, func(i, j int) bool {
-		left := strings.ToLower(references[i].Name)
-		right := strings.ToLower(references[j].Name)
-		if left != right {
-			return left < right
+		if references[i].Name != references[j].Name {
+			return references[i].Name < references[j].Name
 		}
 		if references[i].ComponentKey != references[j].ComponentKey {
 			return references[i].ComponentKey < references[j].ComponentKey
@@ -54,14 +52,9 @@ func (m Model) openCosignerReferenceManager() (tea.Model, tea.Cmd) {
 
 func (m Model) beginManagerCosignerImport() Model {
 	m.clearCosignerImportTransient()
-	m.cosigner.importPath = ""
-	m.cosigner.importName = ""
 	m.cosigner.importFocus = 0
-	m.cosigner.importError = ""
 	m.cosigner.paramName = ""
 	m.cosigner.returnView = ViewCosignerReferences
-	m.cosigner.requiredKeyTypes = nil
-	m.clearCosignerImportEnvelope()
 	m.viewState = ViewCosignerImportForm
 	return m
 }

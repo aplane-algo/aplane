@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/transport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,7 +29,6 @@ type queuedMsg struct {
 
 // IPCClient manages the IPC connection to aplane
 type IPCClient struct {
-	conn      io.ReadWriteCloser
 	stream    *transport.StreamClient
 	connector AdminConnector
 
@@ -97,7 +97,6 @@ func (c *IPCClient) Connect() error {
 	c.sessionID++
 	sessionID := c.sessionID
 
-	c.conn = conn
 	c.stream = transport.NewStreamClient(conn)
 	stream := c.stream
 	c.connected = true
@@ -123,10 +122,8 @@ func (c *IPCClient) Disconnect() {
 	}
 
 	done := c.done
-	conn := c.conn
 	stream := c.stream
 	c.done = nil
-	c.conn = nil
 	c.stream = nil
 	c.connected = false
 	c.serverEnded = false
@@ -134,17 +131,12 @@ func (c *IPCClient) Disconnect() {
 	c.sessionID++
 	c.mu.Unlock()
 
+	// Only Disconnect closes done, after taking it under the lock.
 	if done != nil {
-		select {
-		case <-done:
-		default:
-			close(done)
-		}
+		close(done)
 	}
 	if stream != nil {
 		_ = stream.Close()
-	} else if conn != nil {
-		_ = conn.Close()
 	}
 	c.discardStaleQueued()
 }
@@ -192,104 +184,6 @@ drain:
 			zeroSensitiveMsg(queued.msg)
 		}
 	}
-}
-
-// SendAuth sends an authentication request. It zeroes its copy of the
-// passphrase once sent; the caller zeroes its own.
-func (c *IPCClient) SendAuth(passphrase []byte) error {
-	protocolVersion := CurrentAdminProtocolVersion()
-	msg := AuthMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeAuth,
-			ID:   fmt.Sprintf("auth-%d", time.Now().UnixNano()),
-		},
-		Passphrase:      SensitiveBytes(cloneBytes(passphrase)),
-		ProtocolVersion: &protocolVersion,
-	}
-	defer msg.Passphrase.Zero()
-	return c.sendMessage(msg)
-}
-
-// SendUnlock sends an unlock request. It zeroes its copy of the passphrase
-// once sent; the caller zeroes its own.
-func (c *IPCClient) SendUnlock(passphrase []byte) error {
-	msg := UnlockMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeUnlock,
-			ID:   fmt.Sprintf("unlock-%d", time.Now().UnixNano()),
-		},
-		Passphrase: SensitiveBytes(cloneBytes(passphrase)),
-	}
-	defer msg.Passphrase.Zero()
-	return c.sendMessage(msg)
-}
-
-// SendLockIdentity requests an explicit lock of the bound identity.
-func (c *IPCClient) SendLockIdentity(reason string) error {
-	msg := LockIdentityMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeLockIdentity,
-			ID:   fmt.Sprintf("lock-%d", time.Now().UnixNano()),
-		},
-		Reason: reason,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendSignResponse sends a signing approval/rejection
-func (c *IPCClient) SendSignResponse(requestID string, approved bool, reason string) error {
-	msg := SignResponseMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeSignResponse,
-			ID:   requestID,
-		},
-		Approved: approved,
-		Reason:   reason,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendApproveEnrollment enrolls the key of a waiting enrollment request.
-func (c *IPCClient) SendApproveEnrollment(fingerprint, label string) error {
-	return c.sendMessage(ApproveEnrollmentMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeApproveEnrollment,
-			ID:   fmt.Sprintf("approve-%d", time.Now().UnixNano()),
-		},
-		Fingerprint: fingerprint,
-		Label:       label,
-	})
-}
-
-// SendRejectEnrollment drops a waiting enrollment request.
-func (c *IPCClient) SendRejectEnrollment(fingerprint string) error {
-	return c.sendMessage(RejectEnrollmentMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRejectEnrollment,
-			ID:   fmt.Sprintf("reject-%d", time.Now().UnixNano()),
-		},
-		Fingerprint: fingerprint,
-	})
-}
-
-// SendListPendingEnrollments asks for the waiting enrollment requests.
-func (c *IPCClient) SendListPendingEnrollments(id string) error {
-	return c.sendMessage(ListPendingEnrollmentsMessage{BaseMessage: BaseMessage{
-		Type: MsgTypeListPendingEnrollments,
-		ID:   id,
-	}})
-}
-
-// SendImportClientKey pre-enrolls an OpenSSH public-key line.
-func (c *IPCClient) SendImportClientKey(publicKey, label string) error {
-	return c.sendMessage(ImportClientKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeImportClientKey,
-			ID:   fmt.Sprintf("import-client-%d", time.Now().UnixNano()),
-		},
-		PublicKey: publicKey,
-		Label:     label,
-	})
 }
 
 // sendMessage sends a message over IPC
@@ -369,7 +263,6 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 			return
 		}
 		c.connected = false
-		c.conn = nil
 		c.stream = nil
 		serverEnded := c.serverEnded
 		c.mu.Unlock()
@@ -987,11 +880,23 @@ func operationCmd(client *IPCClient, id string, fn func(*IPCClient) error) tea.C
 	}
 }
 
+// clockRequestID names a request by its prefix and the time it is named.
+func clockRequestID(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
 // sendAuthCmd returns a tea.Cmd that sends an authentication request. The
 // command keeps its own copy of the passphrase and zeroes it once it has run.
 func (m Model) sendAuthCmd(passphrase []byte) tea.Cmd {
 	return secretCmd(passphrase, func(p []byte) tea.Cmd {
-		return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendAuth(p) })
+		return ipcCmd(m.adminClient, func(c *IPCClient) error {
+			protocolVersion := CurrentAdminProtocolVersion()
+			return c.sendMessage(AuthMessage{
+				BaseMessage:     BaseMessage{Type: MsgTypeAuth, ID: clockRequestID("auth")},
+				Passphrase:      SensitiveBytes(p),
+				ProtocolVersion: &protocolVersion,
+			})
+		})
 	})
 }
 
@@ -999,7 +904,12 @@ func (m Model) sendAuthCmd(passphrase []byte) tea.Cmd {
 // keeps its own copy of the passphrase and zeroes it once it has run.
 func (m Model) sendUnlockCmd(passphrase []byte) tea.Cmd {
 	return secretCmd(passphrase, func(p []byte) tea.Cmd {
-		return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendUnlock(p) })
+		return ipcCmd(m.adminClient, func(c *IPCClient) error {
+			return c.sendMessage(UnlockMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeUnlock, ID: clockRequestID("unlock")},
+				Passphrase:  SensitiveBytes(p),
+			})
+		})
 	})
 }
 
@@ -1013,14 +923,14 @@ func secretCmd(secret []byte, build func([]byte) tea.Cmd) tea.Cmd {
 	owned := newSecretCopy(secret)
 	send := build(owned)
 	return func() tea.Msg {
-		defer zeroBytes(owned)
+		defer crypto.ZeroBytes(owned)
 		return send()
 	}
 }
 
 // newSecretCopy makes the copy a secretCmd owns. Tests replace it to watch
 // that copy.
-var newSecretCopy = cloneBytes
+var newSecretCopy = func(secret []byte) []byte { return SensitiveBytes(secret).Clone() }
 
 // sendSignResponseCmd returns a tea.Cmd that sends a sign response
 func (m Model) sendSignResponseCmd(requestID string, approved bool) tea.Cmd {
@@ -1029,25 +939,51 @@ func (m Model) sendSignResponseCmd(requestID string, approved bool) tea.Cmd {
 		if !approved {
 			reason = "rejected by user"
 		}
-		return c.SendSignResponse(requestID, approved, reason)
+		return c.sendMessage(SignResponseMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeSignResponse, ID: requestID},
+			Approved:    approved,
+			Reason:      reason,
+		})
 	})
 }
 
-// sendClientEnrollmentResponseCmd returns a tea.Cmd that sends a client enrollment response
+// sendApproveEnrollmentCmd enrolls the key of a waiting enrollment request.
 func (m Model) sendApproveEnrollmentCmd(fingerprint, label string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendApproveEnrollment(fingerprint, label) })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ApproveEnrollmentMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeApproveEnrollment, ID: clockRequestID("approve")},
+			Fingerprint: fingerprint,
+			Label:       label,
+		})
+	})
 }
 
+// sendRejectEnrollmentCmd drops a waiting enrollment request.
 func (m Model) sendRejectEnrollmentCmd(fingerprint string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRejectEnrollment(fingerprint) })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(RejectEnrollmentMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeRejectEnrollment, ID: clockRequestID("reject")},
+			Fingerprint: fingerprint,
+		})
+	})
 }
 
+// sendListPendingEnrollmentsCmd asks for the waiting enrollment requests.
 func (m Model) sendListPendingEnrollmentsCmd(id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendListPendingEnrollments(id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ListPendingEnrollmentsMessage{BaseMessage: BaseMessage{Type: MsgTypeListPendingEnrollments, ID: id}})
+	})
 }
 
+// sendImportClientKeyCmd pre-enrolls an OpenSSH public-key line.
 func (m Model) sendImportClientKeyCmd(publicKey, label string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendImportClientKey(publicKey, label) })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ImportClientKeyMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeImportClientKey, ID: clockRequestID("import-client")},
+			PublicKey:   publicKey,
+			Label:       label,
+		})
+	})
 }
 
 // listen starts the listener wait. Only Update calls it: after ConnectCmd's
@@ -1070,162 +1006,66 @@ func (m Model) listenAgain() tea.Cmd {
 	return m.listen()
 }
 
-// SendDisplaceConfirm sends a displacement confirmation to the server
-func (c *IPCClient) SendDisplaceConfirm() error {
-	msg := DisplaceConfirmMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeDisplaceConfirm,
-		},
-	}
-	return c.sendMessage(msg)
-}
-
-// SendDisplaceConfirmCmd returns a tea.Cmd that sends a displace confirm message
+// sendDisplaceConfirmCmd returns a tea.Cmd that sends a displace confirm message
 func (m Model) sendDisplaceConfirmCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendDisplaceConfirm() })
-}
-
-// SendListKeys sends a request to list all keys
-func (c *IPCClient) SendListKeys() error {
-	msg := ListKeysMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeListKeys,
-			ID:   fmt.Sprintf("list-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
-}
-
-// SendBackup requests signer-managed creation of a backup archive. It zeroes
-// its copy of the passphrase once sent; the caller zeroes its own.
-func (c *IPCClient) SendBackup(exportPassphrase []byte, id string) error {
-	msg := BackupMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeBackup,
-			ID:   id,
-		},
-		ExportPassphrase: SensitiveBytes(cloneBytes(exportPassphrase)),
-	}
-	defer msg.ExportPassphrase.Zero()
-	return c.sendMessage(msg)
-}
-
-// SendListBackups requests signer-managed backup archives for the active identity.
-func (c *IPCClient) SendListBackups() error {
-	msg := ListBackupsMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeListBackups,
-			ID:   fmt.Sprintf("list-backups-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
-}
-
-// SendPreviewRestore requests a decrypted preview for a signer-managed backup archive.
-func (c *IPCClient) SendPreviewRestore(archivePath string, exportPassphrase []byte, id string) error {
-	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
-	defer passphrase.Zero()
-
-	msg := PreviewRestoreMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypePreviewRestore,
-			ID:   id,
-		},
-		ArchivePath:      archivePath,
-		ExportPassphrase: passphrase,
-	}
-	return c.sendMessage(msg)
-}
-
-func (c *IPCClient) SendRestoreBackup(
-	archivePath string,
-	addresses []string,
-	exportPassphrase []byte,
-	replaceExisting bool,
-	id string,
-) error {
-	passphrase := SensitiveBytes(append([]byte(nil), exportPassphrase...))
-	defer passphrase.Zero()
-	return c.sendMessage(RestoreBackupMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRestoreBackup,
-			ID:   id,
-		},
-		ArchivePath:      archivePath,
-		Addresses:        append([]string(nil), addresses...),
-		ExportPassphrase: passphrase,
-		ReplaceExisting:  replaceExisting,
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(DisplaceConfirmMessage{BaseMessage: BaseMessage{Type: MsgTypeDisplaceConfirm}})
 	})
 }
 
-func (c *IPCClient) SendRollbackRestore(id string) error {
-	return c.sendMessage(RollbackRestoreMessage{BaseMessage: BaseMessage{
-		Type: MsgTypeRollbackRestore,
-		ID:   id,
-	}})
-}
-
-func (c *IPCClient) SendReconcileStore(id string) error {
-	return c.sendMessage(ReconcileStoreMessage{BaseMessage: BaseMessage{
-		Type: MsgTypeReconcileStore,
-		ID:   id,
-	}})
-}
-
-// SendGenerateKey sends a request to generate a new key. params holds the
-// creation parameters of a parameterized key type, such as a generic LogicSig,
-// and is nil for any other.
-func (c *IPCClient) SendGenerateKey(keyType string, params map[string]string, id string) error {
-	msg := GenerateKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeGenerateKey,
-			ID:   id,
-		},
-		KeyType:    keyType,
-		Parameters: params,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendDeleteKey sends a request to delete a key
-func (c *IPCClient) SendDeleteKey(address string, id string) error {
-	msg := DeleteKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeDeleteKey,
-			ID:   id,
-		},
-		Address: address,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendListKeysCmd returns a tea.Cmd that sends a list keys request
+// sendListKeysCmd returns a tea.Cmd that sends a list keys request
 func (m Model) sendListKeysCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListKeys() })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ListKeysMessage{BaseMessage: BaseMessage{Type: MsgTypeListKeys, ID: clockRequestID("list")}})
+	})
 }
 
 // sendGenerateKeyCmd returns a tea.Cmd that sends a generate key request.
+// params holds the creation parameters of a parameterized key type, such as a
+// generic LogicSig, and is nil for any other.
 func (m Model) sendGenerateKeyCmd(keyType string, params map[string]string, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendGenerateKey(keyType, params, id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(GenerateKeyMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeGenerateKey, ID: id},
+			KeyType:     keyType,
+			Parameters:  params,
+		})
+	})
 }
 
 // sendBackupCmd returns a tea.Cmd that requests a backup. The command keeps
 // its own copy of the passphrase and zeroes it once it has run.
 func (m Model) sendBackupCmd(exportPassphrase []byte, id string) tea.Cmd {
 	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
-		return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendBackup(p, id) })
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+			return c.sendMessage(BackupMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeBackup, ID: id},
+				ExportPassphrase: SensitiveBytes(p),
+			})
+		})
 	})
 }
 
+// sendListBackupsCmd requests signer-managed backup archives for the active
+// identity.
 func (m Model) sendListBackupsCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListBackups() })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ListBackupsMessage{BaseMessage: BaseMessage{Type: MsgTypeListBackups, ID: clockRequestID("list-backups")}})
+	})
 }
 
-// sendPreviewRestoreCmd returns a tea.Cmd that requests a restore preview. The
-// command keeps its own copy of the passphrase and zeroes it once it has run.
+// sendPreviewRestoreCmd returns a tea.Cmd that requests a decrypted preview of
+// a signer-managed backup archive. The command keeps its own copy of the
+// passphrase and zeroes it once it has run.
 func (m Model) sendPreviewRestoreCmd(archivePath string, exportPassphrase []byte, id string) tea.Cmd {
 	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
-		return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendPreviewRestore(archivePath, p, id) })
+		return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+			return c.sendMessage(PreviewRestoreMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypePreviewRestore, ID: id},
+				ArchivePath:      archivePath,
+				ExportPassphrase: SensitiveBytes(p),
+			})
+		})
 	})
 }
 
@@ -1241,35 +1081,38 @@ func (m Model) sendRestoreBackupCmd(
 	selectedAddresses := append([]string(nil), addresses...)
 	return secretCmd(exportPassphrase, func(p []byte) tea.Cmd {
 		return operationCmd(m.adminClient, id, func(c *IPCClient) error {
-			return c.SendRestoreBackup(archivePath, selectedAddresses, p, replaceExisting, id)
+			return c.sendMessage(RestoreBackupMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeRestoreBackup, ID: id},
+				ArchivePath:      archivePath,
+				Addresses:        selectedAddresses,
+				ExportPassphrase: SensitiveBytes(p),
+				ReplaceExisting:  replaceExisting,
+			})
 		})
 	})
 }
 
 func (m Model) sendRollbackRestoreCmd(id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendRollbackRestore(id) })
-}
-
-func (m Model) sendReconcileStoreCmd(id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendReconcileStore(id) })
-}
-
-// SendPrepareGenerateKey asks what a generation request would create.
-func (c *IPCClient) SendPrepareGenerateKey(keyType string, params map[string]string, id string) error {
-	return c.sendMessage(PrepareGenerateKeyMessage{
-		BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateKey, ID: id},
-		KeyType:     keyType,
-		Parameters:  params,
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(RollbackRestoreMessage{BaseMessage: BaseMessage{Type: MsgTypeRollbackRestore, ID: id}})
 	})
 }
 
-func (m Model) sendPrepareGenerateKeyCmd(keyType string, params map[string]string, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendPrepareGenerateKey(keyType, params, id) })
+func (m Model) sendReconcileStoreCmd(id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ReconcileStoreMessage{BaseMessage: BaseMessage{Type: MsgTypeReconcileStore, ID: id}})
+	})
 }
 
-// SendReviewedGenerateKey generates the account an operator reviewed.
-func (c *IPCClient) SendReviewedGenerateKey(review PrepareGenerateResultMessage, id string) error {
-	return c.sendMessage(reviewedGenerateMessage(review, id))
+// sendPrepareGenerateKeyCmd asks what a generation request would create.
+func (m Model) sendPrepareGenerateKeyCmd(keyType string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(PrepareGenerateKeyMessage{
+			BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateKey, ID: id},
+			KeyType:     keyType,
+			Parameters:  params,
+		})
+	})
 }
 
 // reviewedGenerateMessage carries the resolved values, not the original request.
@@ -1283,300 +1126,166 @@ func reviewedGenerateMessage(review PrepareGenerateResultMessage, id string) Gen
 	}
 }
 
+// sendReviewedGenerateKeyCmd generates the account an operator reviewed.
 func (m Model) sendReviewedGenerateKeyCmd(review PrepareGenerateResultMessage, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendReviewedGenerateKey(review, id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.sendMessage(reviewedGenerateMessage(review, id)) })
 }
 
-// SendDeleteKeyCmd returns a tea.Cmd that sends a delete key request
+// sendDeleteKeyCmd returns a tea.Cmd that sends a delete key request
 func (m Model) sendDeleteKeyCmd(address, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeleteKey(address, id) })
-}
-
-// SendListEnrolledKeys asks for the enrolled client keys.
-func (c *IPCClient) SendListEnrolledKeys(id string) error {
-	return c.sendMessage(ListEnrolledKeysMessage{BaseMessage: BaseMessage{
-		Type: MsgTypeListEnrolledKeys,
-		ID:   id,
-	}})
-}
-
-// SendRevokeEnrolledKey revokes one enrolled client key.
-func (c *IPCClient) SendRevokeEnrolledKey(fingerprint string) error {
-	return c.sendMessage(RevokeEnrolledKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRevokeEnrolledKey,
-			ID:   fmt.Sprintf("revoke-%d", time.Now().UnixNano()),
-		},
-		Fingerprint: fingerprint,
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(DeleteKeyMessage{BaseMessage: BaseMessage{Type: MsgTypeDeleteKey, ID: id}, Address: address})
 	})
 }
 
-// SendRevokeAllEnrolledKeys revokes every enrolled client key.
-func (c *IPCClient) SendRevokeAllEnrolledKeys() error {
-	return c.sendMessage(RevokeAllEnrolledKeysMessage{BaseMessage: BaseMessage{
-		Type: MsgTypeRevokeAllEnrolledKeys,
-		ID:   fmt.Sprintf("revoke-all-%d", time.Now().UnixNano()),
-	}})
-}
-
+// sendListEnrolledKeysCmd asks for the enrolled client keys.
 func (m Model) sendListEnrolledKeysCmd(id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendListEnrolledKeys(id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ListEnrolledKeysMessage{BaseMessage: BaseMessage{Type: MsgTypeListEnrolledKeys, ID: id}})
+	})
 }
 
+// sendRevokeEnrolledKeyCmd revokes one enrolled client key.
 func (m Model) sendRevokeEnrolledKeyCmd(fingerprint string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeEnrolledKey(fingerprint) })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(RevokeEnrolledKeyMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeRevokeEnrolledKey, ID: clockRequestID("revoke")},
+			Fingerprint: fingerprint,
+		})
+	})
 }
 
+// sendRevokeAllEnrolledKeysCmd revokes every enrolled client key.
 func (m Model) sendRevokeAllEnrolledKeysCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendRevokeAllEnrolledKeys() })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(RevokeAllEnrolledKeysMessage{BaseMessage: BaseMessage{Type: MsgTypeRevokeAllEnrolledKeys, ID: clockRequestID("revoke-all")}})
+	})
 }
 
-// SendImportKeyWithParams sends a request to import a key; params is nil for a
-// key type that takes none.
-func (c *IPCClient) SendImportKeyWithParams(keyType, mnemonic string, params map[string]string, id string) error {
-	msg := ImportKeyMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeImportKey,
-			ID:   id,
-		},
-		KeyType:    keyType,
-		Mnemonic:   SensitiveBytes(mnemonic),
-		Parameters: params,
-	}
-	defer msg.Mnemonic.Zero()
-	return c.sendMessage(msg)
+// sendImportKeyCmd returns a tea.Cmd that sends an import request; params is
+// nil for a key type that takes none. The message's copy of the phrase is
+// zeroed once sent.
+func (m Model) sendImportKeyCmd(keyType, mnemonic string, params map[string]string, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		msg := ImportKeyMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeImportKey, ID: id},
+			KeyType:     keyType,
+			Mnemonic:    SensitiveBytes(mnemonic),
+			Parameters:  params,
+		}
+		defer msg.Mnemonic.Zero()
+		return c.sendMessage(msg)
+	})
 }
 
-// sendImportKeyCmd returns a tea.Cmd that sends an import request for a key
-// type that takes no parameters.
-func (m Model) sendImportKeyCmd(keyType, mnemonic, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, nil, id) })
-}
-
-// SendImportKeyWithParamsCmd returns a tea.Cmd that sends an import key request with parameters.
-func (m Model) sendImportKeyWithParamsCmd(keyType, mnemonic string, params map[string]string, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendImportKeyWithParams(keyType, mnemonic, params, id) })
-}
-
-// SendGetAdminSettings sends a request to get the current admin settings
-func (c *IPCClient) SendGetAdminSettings() error {
-	msg := GetAdminSettingsMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeGetAdminSettings,
-			ID:   fmt.Sprintf("admin-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
-}
-
-// SendUpdateAdminSetting sends a request to update a single admin setting
-func (c *IPCClient) SendUpdateAdminSetting(key, value string) error {
-	msg := UpdateAdminSettingMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeUpdateAdminSetting,
-			ID:   fmt.Sprintf("admin-set-%d", time.Now().UnixNano()),
-		},
-		Key:   key,
-		Value: value,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendGetAdminSettingsCmd returns a tea.Cmd that requests admin settings
+// sendGetAdminSettingsCmd returns a tea.Cmd that requests admin settings
 func (m Model) sendGetAdminSettingsCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetAdminSettings() })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(GetAdminSettingsMessage{BaseMessage: BaseMessage{Type: MsgTypeGetAdminSettings, ID: clockRequestID("admin")}})
+	})
 }
 
-// SendUpdateAdminSettingCmd returns a tea.Cmd that updates an admin setting
+// sendUpdateAdminSettingCmd returns a tea.Cmd that updates an admin setting
 func (m Model) sendUpdateAdminSettingCmd(key, value string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendUpdateAdminSetting(key, value) })
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(UpdateAdminSettingMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeUpdateAdminSetting, ID: clockRequestID("admin-set")},
+			Key:         key,
+			Value:       value,
+		})
+	})
 }
 
-// SendGetKeyDetails sends a request to get detailed information about a key
-func (c *IPCClient) SendGetKeyDetails(address string) error {
-	msg := GetKeyDetailsMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeGetKeyDetails,
-			ID:   fmt.Sprintf("details-%d", time.Now().UnixNano()),
-		},
-		Address: address,
-	}
-	return c.sendMessage(msg)
-}
-
-// SendGetKeyDetailsCmd returns a tea.Cmd that sends a get key details request
+// sendGetKeyDetailsCmd returns a tea.Cmd that sends a get key details request
 func (m Model) sendGetKeyDetailsCmd(address string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendGetKeyDetails(address) })
-}
-
-func (c *IPCClient) SendListLibraryTemplates() error {
-	msg := ListLibraryTemplatesMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeListLibraryTemplates,
-			ID:   fmt.Sprintf("tmpl-list-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(GetKeyDetailsMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeGetKeyDetails, ID: clockRequestID("details")},
+			Address:     address,
+		})
+	})
 }
 
 func (m Model) sendListLibraryTemplatesCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListLibraryTemplates() })
-}
-
-func (c *IPCClient) SendInstallLibraryTemplate(keyType, templateType string, id string) error {
-	msg := InstallLibraryTemplateMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeInstallLibraryTemplate,
-			ID:   id,
-		},
-		KeyType:      keyType,
-		TemplateType: templateType,
-	}
-	return c.sendMessage(msg)
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ListLibraryTemplatesMessage{BaseMessage: BaseMessage{Type: MsgTypeListLibraryTemplates, ID: clockRequestID("tmpl-list")}})
+	})
 }
 
 func (m Model) sendInstallLibraryTemplateCmd(keyType, templateType, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendInstallLibraryTemplate(keyType, templateType, id) })
-}
-
-func (c *IPCClient) SendShowLibraryTemplate(keyType, templateType, id string) error {
-	msg := ShowLibraryTemplateMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeShowLibraryTemplate,
-			ID:   id,
-		},
-		KeyType:      keyType,
-		TemplateType: templateType,
-	}
-	return c.sendMessage(msg)
-}
-
-func (c *IPCClient) SendShowInstalledTemplate(keyType, id string) error {
-	msg := ShowInstalledTemplateMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeShowInstalledTemplate,
-			ID:   id,
-		},
-		KeyType: keyType,
-	}
-	return c.sendMessage(msg)
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(InstallLibraryTemplateMessage{
+			BaseMessage:  BaseMessage{Type: MsgTypeInstallLibraryTemplate, ID: id},
+			KeyType:      keyType,
+			TemplateType: templateType,
+		})
+	})
 }
 
 func (m Model) sendShowInstalledTemplateCmd(keyType, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendShowInstalledTemplate(keyType, id) })
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ShowInstalledTemplateMessage{BaseMessage: BaseMessage{Type: MsgTypeShowInstalledTemplate, ID: id}, KeyType: keyType})
+	})
 }
 
 func (m Model) sendShowLibraryTemplateCmd(keyType, templateType, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendShowLibraryTemplate(keyType, templateType, id) })
-}
-
-func (c *IPCClient) SendActivateKeyType(keyType string, id string) error {
-	msg := ActivateKeyTypeMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeActivateKeyType,
-			ID:   id,
-		},
-		KeyType: keyType,
-	}
-	return c.sendMessage(msg)
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ShowLibraryTemplateMessage{
+			BaseMessage:  BaseMessage{Type: MsgTypeShowLibraryTemplate, ID: id},
+			KeyType:      keyType,
+			TemplateType: templateType,
+		})
+	})
 }
 
 func (m Model) sendActivateKeyTypeCmd(keyType, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendActivateKeyType(keyType, id) })
-}
-
-func (c *IPCClient) SendDeactivateKeyType(keyType string, id string) error {
-	msg := DeactivateKeyTypeMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeDeactivateKeyType,
-			ID:   id,
-		},
-		KeyType: keyType,
-	}
-	return c.sendMessage(msg)
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(ActivateKeyTypeMessage{BaseMessage: BaseMessage{Type: MsgTypeActivateKeyType, ID: id}, KeyType: keyType})
+	})
 }
 
 func (m Model) sendDeactivateKeyTypeCmd(keyType, id string) tea.Cmd {
-	return operationCmd(m.adminClient, id, func(c *IPCClient) error { return c.SendDeactivateKeyType(keyType, id) })
-}
-
-func (c *IPCClient) SendListKeyTypes() error {
-	msg := ListKeyTypesMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeListKeyTypes,
-			ID:   fmt.Sprintf("keytypes-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(DeactivateKeyTypeMessage{BaseMessage: BaseMessage{Type: MsgTypeDeactivateKeyType, ID: id}, KeyType: keyType})
+	})
 }
 
 func (m Model) sendListKeyTypesCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListKeyTypes() })
-}
-
-func (c *IPCClient) SendListCosignerReferences() error {
-	msg := ListCosignerReferencesMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeListCosignerReferences,
-			ID:   fmt.Sprintf("cosigner-references-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ListKeyTypesMessage{BaseMessage: BaseMessage{Type: MsgTypeListKeyTypes, ID: clockRequestID("keytypes")}})
+	})
 }
 
 func (m Model) sendListCosignerReferencesCmd() tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error { return c.SendListCosignerReferences() })
-}
-
-func (c *IPCClient) SendImportCosignerReference(name, envelopeJSON, id string) error {
-	msg := ImportCosignerReferenceMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeImportCosignerReference,
-			ID:   id,
-		},
-		Name:         name,
-		EnvelopeJSON: envelopeJSON,
-	}
-	return c.sendMessage(msg)
+	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+		return c.sendMessage(ListCosignerReferencesMessage{
+			BaseMessage: BaseMessage{Type: MsgTypeListCosignerReferences, ID: clockRequestID("cosigner-references")},
+		})
+	})
 }
 
 func (m Model) sendImportCosignerReferenceCmd(name, envelopeJSON, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
-		return c.SendImportCosignerReference(name, envelopeJSON, id)
+		return c.sendMessage(ImportCosignerReferenceMessage{
+			BaseMessage:  BaseMessage{Type: MsgTypeImportCosignerReference, ID: id},
+			Name:         name,
+			EnvelopeJSON: envelopeJSON,
+		})
 	})
-}
-
-func (c *IPCClient) SendRemoveCosignerReference(name, id string) error {
-	msg := RemoveCosignerReferenceMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeRemoveCosignerReference,
-			ID:   id,
-		},
-		Name: name,
-	}
-	return c.sendMessage(msg)
 }
 
 func (m Model) sendRemoveCosignerReferenceCmd(name, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
-		return c.SendRemoveCosignerReference(name, id)
+		return c.sendMessage(RemoveCosignerReferenceMessage{BaseMessage: BaseMessage{Type: MsgTypeRemoveCosignerReference, ID: id}, Name: name})
 	})
-}
-
-func (c *IPCClient) SendExportCosignerPublic(witnessKeyID, id string) error {
-	msg := ExportCosignerPublicMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeExportCosignerPublic,
-			ID:   id,
-		},
-		WitnessKeyID: witnessKeyID,
-	}
-	return c.sendMessage(msg)
 }
 
 func (m Model) sendExportCosignerPublicCmd(witnessKeyID, id string) tea.Cmd {
 	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
-		return c.SendExportCosignerPublic(witnessKeyID, id)
+		return c.sendMessage(ExportCosignerPublicMessage{
+			BaseMessage:  BaseMessage{Type: MsgTypeExportCosignerPublic, ID: id},
+			WitnessKeyID: witnessKeyID,
+		})
 	})
 }
 

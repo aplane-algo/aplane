@@ -29,29 +29,22 @@ type policyPresetPickState struct {
 	selected int
 }
 
-// policyPresetsOffered reports whether editing row starts with the picker.
-func (m Model) policyPresetsOffered(row policyRow) bool {
-	role, err := noderole.ParseRole(m.policies.policy.NodeRole)
-	if err != nil || len(policytext.Presets(role)) == 0 {
-		return false
-	}
-	return row.key == policy.DefaultKey || row.doc == nil
-}
-
 // openPolicyPresetPick shows the picker for row, or opens the editor when
-// the node has no presets for this row.
+// the node has no presets for this row. Presets are offered for the node
+// default and for a held key with no document of its own.
 func (m Model) openPolicyPresetPick(row policyRow) (tea.Model, tea.Cmd) {
-	if !m.policyEditAvailable() {
+	if !m.policySummaryReady() {
 		return m, nil
 	}
-	if !m.policyPresetsOffered(row) {
+	role, err := noderole.ParseRole(m.policies.policy.NodeRole)
+	if err != nil {
 		return m.openPolicyEditForRow(row)
 	}
-	if row.key != policy.DefaultKey && !m.policyKeyHeld(row.key) {
+	presets := policytext.Presets(role)
+	if len(presets) == 0 || (row.key != policy.DefaultKey && (row.doc != nil || !m.policyKeyHeld(row.key))) {
 		return m.openPolicyEditForRow(row)
 	}
-	role, _ := noderole.ParseRole(m.policies.policy.NodeRole)
-	m.policies.presetPick = policyPresetPickState{row: row, presets: policytext.Presets(role)}
+	m.policies.presetPick = policyPresetPickState{row: row, presets: presets}
 	m.policies.status = ""
 	m.viewState = ViewPolicyPresetPick
 	return m, nil

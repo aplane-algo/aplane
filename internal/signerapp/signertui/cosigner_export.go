@@ -21,28 +21,11 @@ import (
 const cosignerKeyFileSuffix = witness.CosignerPublicReferenceExtension
 
 func suggestedCosignerExportPath(witnessKeyID string) string {
-	compact := strings.ToLower(strings.TrimSpace(witnessKeyID))
-	if len(compact) > 10 {
-		compact = compact[:10]
-	}
+	compact := compactWitnessKeyID(witnessKeyID)
 	if compact == "" {
 		compact = "public"
 	}
 	return "cosigner-" + compact + cosignerKeyFileSuffix
-}
-
-func (m Model) openCosignerExport() (tea.Model, tea.Cmd) {
-	if !m.isCosignerNode() || !witness.IsKeyType(m.details.keyType) {
-		return m, nil
-	}
-	return m.openCosignerExportFor(m.details.address, m.details.keyType, ViewKeyDetails)
-}
-
-func (m Model) openGeneratedCosignerExport() (tea.Model, tea.Cmd) {
-	if !m.isCosignerNode() || !witness.IsKeyType(m.forms.generatedKeyType) {
-		return m, nil
-	}
-	return m.openCosignerExportFor(m.forms.generatedAddress, m.forms.generatedKeyType, ViewGenerateDisplay)
 }
 
 func (m Model) openCosignerExportFor(rawWitnessKeyID, keyType string, returnView ViewState) (tea.Model, tea.Cmd) {

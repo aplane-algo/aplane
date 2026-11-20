@@ -33,7 +33,7 @@ func preparedAccount(policy, rekey string, cosigner bool, recipients int) Prepar
 	prepared := PrepareGenerateResultMessage{
 		Success:           true,
 		KeyType:           boundedHostKeyType,
-		Parameters:        map[string]string{recipientsParameter: strings.Join(list, ",")},
+		Parameters:        map[string]string{boundary.ParameterRecipients: strings.Join(list, ",")},
 		Fingerprint:       "1:" + strings.Repeat("c", 64),
 		ReviewFingerprint: "1:" + strings.Repeat("d", 64),
 		BoundaryDigest:    strings.Repeat("e", 64),

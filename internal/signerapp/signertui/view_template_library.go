@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/keytypeux"
-	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 const libraryTypeCompiledProvider = "compiled_provider"
@@ -151,21 +150,24 @@ func ellipsize(s string, width int) string {
 	return string(runes[:width-3]) + "..."
 }
 
+// templateDetailsBoxLines lists a template's creation parameters and signing
+// arguments, or nothing when it has neither.
 func templateDetailsBoxLines(tmpl LibraryTemplateInfo) []string {
-	lines := make([]string, 0, (len(tmpl.Parameters)+len(tmpl.RuntimeArgs))*2+2)
+	var lines []string
 	if len(tmpl.Parameters) > 0 {
 		lines = append(lines, "Creation parameters:")
-		lines = append(lines, templateParameterLines(tmpl.Parameters)...)
+		for _, p := range tmpl.Parameters {
+			lines = append(lines, templateFieldLines(p.Label, p.Name, p.Type, p.Required, p.Description)...)
+		}
 	}
 	if len(tmpl.RuntimeArgs) > 0 {
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, "Signing arguments for generated keys:")
-		lines = append(lines, templateSigningArgLines(tmpl.RuntimeArgs)...)
-	}
-	if len(lines) == 0 {
-		return []string{""}
+		for _, a := range tmpl.RuntimeArgs {
+			lines = append(lines, templateFieldLines(a.Label, a.Name, a.Type, a.Required, a.Description)...)
+		}
 	}
 	return lines
 }
@@ -187,7 +189,7 @@ func renderCompiledProviderDetailsText(tmpl LibraryTemplateInfo) string {
 		sb.WriteString(fmt.Sprintf("Description: %s\n", terminalSafe(tmpl.Description)))
 	}
 	body := templateDetailsBoxLines(tmpl)
-	if len(body) == 1 && body[0] == "" {
+	if len(body) == 0 {
 		sb.WriteString("\nNo creation parameters or signing arguments.\n")
 		return sb.String()
 	}
@@ -197,46 +199,20 @@ func renderCompiledProviderDetailsText(tmpl LibraryTemplateInfo) string {
 	return sb.String()
 }
 
-func templateParameterLines(params []protocol.TemplateParamInfo) []string {
-	lines := make([]string, 0, len(params)*2)
-	for _, p := range params {
-		required := "optional"
-		if p.Required {
-			required = "required"
-		}
-		label := p.Label
-		if label == "" {
-			label = p.Name
-		}
-		lines = append(lines, terminalSafe(fmt.Sprintf("%s (%s, %s)", label, p.Type, required)))
-		if p.Description != "" {
-			lines = append(lines, "  "+terminalSafe(p.Description))
-		}
+// templateFieldLines describes one creation parameter or signing argument:
+// its label (its name when it has none), type and whether it is required,
+// then its description.
+func templateFieldLines(label, name, typ string, required bool, description string) []string {
+	requirement := "optional"
+	if required {
+		requirement = "required"
 	}
-	if len(lines) == 0 {
-		return []string{""}
+	if label == "" {
+		label = name
 	}
-	return lines
-}
-
-func templateSigningArgLines(args []protocol.TemplateArgInfo) []string {
-	lines := make([]string, 0, len(args)*2)
-	for _, a := range args {
-		required := "optional"
-		if a.Required {
-			required = "required"
-		}
-		label := a.Label
-		if label == "" {
-			label = a.Name
-		}
-		lines = append(lines, terminalSafe(fmt.Sprintf("%s (%s, %s)", label, a.Type, required)))
-		if a.Description != "" {
-			lines = append(lines, "  "+terminalSafe(a.Description))
-		}
-	}
-	if len(lines) == 0 {
-		return []string{""}
+	lines := []string{terminalSafe(fmt.Sprintf("%s (%s, %s)", label, typ, requirement))}
+	if description != "" {
+		lines = append(lines, "  "+terminalSafe(description))
 	}
 	return lines
 }
@@ -267,7 +243,7 @@ func (m Model) renderTemplateInstallConfirm() string {
 	if publisher := keyTypePublisher(tmpl.KeyType); publisher != "" {
 		sb.WriteString(templateDetailField("Publisher", publisher))
 	}
-	sb.WriteString(templateDetailField("Source", libraryTypeLabel(*tmpl)))
+	sb.WriteString(templateDetailField("Source", libraryTypeColumn(*tmpl)))
 	if tmpl.DisplayName != "" {
 		sb.WriteString(templateDetailField("Name", terminalSafe(tmpl.DisplayName)))
 	}
@@ -314,17 +290,17 @@ func (m Model) renderTemplateInstalling() string {
 // templateInstallingTitle says whether the pending entry is being enabled or
 // disabled: the opposite of what it is now.
 func templateInstallingTitle(pending *LibraryTemplateInfo) string {
-	switch {
-	case pending == nil:
+	if pending == nil {
 		return "Enabling Template Key Type"
-	case isCompiledProviderLibraryEntry(*pending) && pending.Installed:
-		return "Disabling Key Type"
-	case isCompiledProviderLibraryEntry(*pending):
-		return "Enabling Key Type"
-	case pending.Installed && pending.Enabled:
-		return "Disabling Template Key Type"
 	}
-	return "Enabling Template Key Type"
+	verb, noun := "Enabling", "Template Key Type"
+	if libraryEntryEnabled(*pending) {
+		verb = "Disabling"
+	}
+	if isCompiledProviderLibraryEntry(*pending) {
+		noun = "Key Type"
+	}
+	return verb + " " + noun
 }
 
 func templateDetailField(label, value string) string {
@@ -385,13 +361,6 @@ func libraryEntryNoun(tmpl LibraryTemplateInfo) string {
 		return "key type"
 	}
 	return "template"
-}
-
-func libraryTypeLabel(tmpl LibraryTemplateInfo) string {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		return compiledKeyTypeColumn(tmpl)
-	}
-	return tmpl.TemplateType
 }
 
 func libraryTypeColumn(tmpl LibraryTemplateInfo) string {
