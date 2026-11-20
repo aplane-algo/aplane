@@ -681,7 +681,5 @@ func dispatchIPCMessage(t *testing.T, session *adminserver.Session, msg any) {
 	if err != nil {
 		t.Fatalf("MarshalAdminMessage() error = %v", err)
 	}
-	if !session.Dispatch(data) {
-		t.Fatalf("Dispatch(%T) = false, want true", msg)
-	}
+	session.Dispatch(data)
 }

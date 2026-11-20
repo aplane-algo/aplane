@@ -30,7 +30,7 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	}
 	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer), adminserver.SessionDeps{}, adminserver.OriginLocal)
 	_ = registerPendingSession(server.manager, oldSession)
-	_, _ = server.manager.PromoteToActive(oldSession)
+	server.manager.PromoteToActive(oldSession)
 
 	newServer, newClient := net.Pipe()
 	defer func() { _ = newClient.Close() }()
@@ -78,10 +78,7 @@ func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing
 	if !registerPendingSession(server.manager, newSession) {
 		t.Fatal("registerPendingSession(newSession) = false, want true")
 	}
-	replaced, ok := server.manager.PromoteToActive(newSession)
-	if !ok {
-		t.Fatal("PromoteToActive(newSession) = false, want true")
-	}
+	replaced := server.manager.PromoteToActive(newSession)
 	if replaced != oldSession {
 		t.Fatal("PromoteToActive did not return old active session")
 	}
@@ -125,9 +122,7 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 	if !registerPendingSession(ipcServer.manager, oldSession) {
 		t.Fatal("registerPendingSession(oldSession) = false, want true")
 	}
-	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
-		t.Fatal("PromoteToActive(oldSession) = false, want true")
-	}
+	ipcServer.manager.PromoteToActive(oldSession)
 
 	serverConn, clientConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
@@ -201,9 +196,7 @@ func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
 	if !registerPendingSession(ipcServer.manager, oldSession) {
 		t.Fatal("registerPendingSession(oldSession) = false, want true")
 	}
-	if _, ok := ipcServer.manager.PromoteToActive(oldSession); !ok {
-		t.Fatal("PromoteToActive(oldSession) = false, want true")
-	}
+	ipcServer.manager.PromoteToActive(oldSession)
 
 	approvalResult := make(chan error, 1)
 	go func() {

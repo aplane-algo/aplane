@@ -181,3 +181,91 @@ func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
 		t.Fatalf("lock result code = %q, want %q", result.Code, protocol.ErrCodeAuthorizationDenied)
 	}
 }
+
+// A session bound without an identity is denied by an authorizer: both the
+// generic gate and the lock request answer authorization_denied and audit the
+// denial, and neither reaches the authorizer or locks the runtime.
+func TestAuthorizationWithoutIdentityRefuses(t *testing.T) {
+	newSession := func() (*Session, *productruntime.Runtime, *recordingAuthorizer, *recordingIdentityLockAudit, *queueConn) {
+		ir := productruntime.New(productruntime.Config{})
+		ir.SetUnlocked()
+		conn := &queueConn{}
+		authorizer := &recordingAuthorizer{}
+		audit := &recordingIdentityLockAudit{}
+		session := NewSession(conn, SessionDeps{Authorizer: authorizer, Audit: audit}, OriginLocal)
+		session.Bind(nil, ir)
+		return session, ir, authorizer, audit, conn
+	}
+	const wantCode = protocol.ErrCodeAuthorizationDenied
+	const wantAudits = 1
+
+	session, _, authorizer, audit, conn := newSession()
+	if session.authorize("req-1", auth.ActionKeysView, auth.Resource{Type: "keys"}) {
+		t.Fatal("authorize() = true, want false")
+	}
+	msgs := decodeAdminProtoWrites(t, conn)
+	if len(msgs) != 1 || msgs[0].Type != protocol.MsgTypeError || msgs[0].ID != "req-1" || msgs[0].Code != wantCode {
+		t.Fatalf("authorize() responses = %+v, want one %s error", msgs, wantCode)
+	}
+	if authorizer.calls != 0 || audit.calls != wantAudits {
+		t.Fatalf("authorize(): authorizer calls = %d, audit calls = %d, want 0 and %d", authorizer.calls, audit.calls, wantAudits)
+	}
+
+	session, ir, authorizer, audit, conn := newSession()
+	session.HandleLockIdentity(&protocol.LockIdentityMessage{BaseMessage: protocol.BaseMessage{ID: "lock-1"}})
+	if !ir.IsUnlocked() || audit.lockCalls != 0 {
+		t.Fatal("a lock request without an identity locked the runtime")
+	}
+	var result protocol.LockIdentityResultMessage
+	if len(conn.writes) != 1 {
+		t.Fatalf("lock write count = %d, want 1", len(conn.writes))
+	}
+	if err := json.Unmarshal(conn.writes[0], &result); err != nil {
+		t.Fatalf("decode lock result: %v", err)
+	}
+	if result.Success || result.ID != "lock-1" || result.Code != wantCode {
+		t.Fatalf("lock result = %+v, want %s", result, wantCode)
+	}
+	if authorizer.calls != 0 || audit.calls != wantAudits {
+		t.Fatalf("lock: authorizer calls = %d, audit calls = %d, want 0 and %d", authorizer.calls, audit.calls, wantAudits)
+	}
+}
+
+// A lock request on a session that has not authenticated, or is being
+// displaced, is refused before authorization.
+func TestHandleLockIdentityRefusesASessionThatIsNotAuthenticated(t *testing.T) {
+	ir := productruntime.New(productruntime.Config{})
+	ir.SetUnlocked()
+	conn := &queueConn{}
+	authorizer := &recordingAuthorizer{}
+	session := NewSession(conn, SessionDeps{Authorizer: authorizer}, OriginLocal)
+
+	session.HandleLockIdentity(&protocol.LockIdentityMessage{BaseMessage: protocol.BaseMessage{ID: "lock-1"}})
+
+	var result protocol.LockIdentityResultMessage
+	if len(conn.writes) != 1 {
+		t.Fatalf("write count = %d, want 1", len(conn.writes))
+	}
+	if err := json.Unmarshal(conn.writes[0], &result); err != nil {
+		t.Fatalf("decode lock result: %v", err)
+	}
+	if result.Success || result.Code != protocol.ErrCodeNoRuntimeBound || authorizer.calls != 0 || !ir.IsUnlocked() {
+		t.Fatalf("lock result = %+v, authorizer calls = %d, want no_runtime_bound before authorization", result, authorizer.calls)
+	}
+
+	// A bound session that was displaced still holds its runtime.
+	displacedConn := &queueConn{}
+	displaced := NewSession(displacedConn, SessionDeps{Authorizer: authorizer}, OriginLocal)
+	displaced.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+	DisplaceSession(displaced)
+	displaced.HandleLockIdentity(&protocol.LockIdentityMessage{BaseMessage: protocol.BaseMessage{ID: "lock-2"}})
+	if len(displacedConn.writes) != 2 {
+		t.Fatalf("displaced write count = %d, want the displaced notice and the lock result", len(displacedConn.writes))
+	}
+	if err := json.Unmarshal(displacedConn.writes[1], &result); err != nil {
+		t.Fatalf("decode lock result: %v", err)
+	}
+	if result.Success || result.Code != protocol.ErrCodeNoRuntimeBound || authorizer.calls != 0 || !ir.IsUnlocked() {
+		t.Fatalf("displaced lock result = %+v, authorizer calls = %d, want no_runtime_bound before authorization", result, authorizer.calls)
+	}
+}

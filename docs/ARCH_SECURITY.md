@@ -1037,7 +1037,8 @@ Enforced callsites:
   key revocation, cosigner-reference view/manage,
   generation inspection, quarantine prune, abandoned-generation discard, and
   deleted-archive prune through `s.authorize`. `lock_identity` is gated with
-  `authorizeIdentity` for `identity.lock`.
+  the same `authorizationRefusal` for `identity.lock`, after a check that the
+  session is still authenticated.
 
 `/health` is intentionally absent from the enforcement list. It is an
 unauthenticated health endpoint in [ARCH_SIGNING.md](ARCH_SIGNING.md#http-api-contract);

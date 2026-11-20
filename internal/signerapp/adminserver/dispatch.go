@@ -138,31 +138,32 @@ var authOnlyDispatchTypes = map[string]bool{
 	protocol.MsgTypeListPendingEnrollments: true,
 }
 
-// Dispatch handles the subset of protocol messages that already live entirely
-// within the transport-neutral admin protocol/session layer.
-func (s *Session) Dispatch(raw []byte) bool {
+// Dispatch answers one admin frame read after login. A frame that is not an
+// admin request, or names a request type the table does not hold, is answered
+// with an error.
+func (s *Session) Dispatch(raw []byte) {
 	base, err := protocol.ParseAdminBaseMessage(raw)
 	if err != nil {
 		_ = s.SendError("", protocol.ErrCodeInvalidMessageFormat, "invalid message format")
-		return true
+		return
 	}
 	if base.Kind != protocol.MessageKindRequest {
 		_ = s.SendError(base.ID, protocol.ErrCodeInvalidRequest, "expected request message")
-		return true
+		return
 	}
 
 	handle, ok := dispatchTable[base.Type]
 	if !ok {
-		return false
+		_ = s.SendError(base.ID, protocol.ErrCodeUnknownMessageType, "unknown message type: "+base.Type)
+		return
 	}
 	if s.nodeFailure != nil && s.nodeFailure() != nil {
 		_ = s.SendError(base.ID, protocol.ErrCodeNodeFailClosed, "signer node is fail-closed; restart required")
-		return true
+		return
 	}
 	if s.AuthenticatedOnly() && !authOnlyDispatchTypes[base.Type] {
 		_ = s.SendError(base.ID, protocol.ErrCodeAuthorizationDenied, "request is not permitted for an auth_only session")
-		return true
+		return
 	}
 	handle(s, raw, base.ID)
-	return true
 }

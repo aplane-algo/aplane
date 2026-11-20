@@ -419,6 +419,9 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 }
 
 func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
+	// Kept beside authorizationRefusal's bound-runtime check: a session being
+	// displaced, or closed, still holds its bound runtime, and only an
+	// authenticated session may lock it.
 	if s.State() != StateAuthenticated {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
@@ -426,32 +429,11 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 		))
 		return
 	}
+	if err := s.authorizationRefusal(auth.ActionIdentityLock, auth.Resource{Type: "identity"}); err != nil {
+		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(msg.ID, err))
+		return
+	}
 	ir := s.BoundRuntime()
-	if ir == nil {
-		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
-			msg.ID,
-			protocol.WithCode(protocol.ErrCodeNoRuntimeBound, fmt.Errorf("no product runtime bound to session")),
-		))
-		return
-	}
-
-	resource := auth.Resource{Type: "identity"}
-	identity := s.Identity()
-	if s.authorizer != nil && identity == nil {
-		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
-			msg.ID,
-			protocol.WithCode(protocol.ErrCodeNoRuntimeBound, fmt.Errorf("no product runtime bound to session")),
-		))
-		return
-	}
-	if err := s.authorizeIdentity(identity, auth.ActionIdentityLock, resource); err != nil {
-		s.logAuthorizationDenied(identity, auth.ActionIdentityLock, resource, err.Error())
-		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
-			msg.ID,
-			protocol.WithCode(protocol.ErrCodeAuthorizationDenied, fmt.Errorf("authorization denied")),
-		))
-		return
-	}
 
 	// The lock withdraws every signing request in flight, the one on screen
 	// and those queued behind it, as having outlived its session.

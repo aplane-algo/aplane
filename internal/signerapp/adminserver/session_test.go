@@ -421,8 +421,8 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 		newIdentity: auth.NewProductIdentity("ipc-passphrase"),
 	}.deps(), OriginLocal)
 
-	if !session.Authenticate() {
-		t.Fatal("Authenticate() = false, want true")
+	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want true")
 	}
 	if session.State() != StateAuthenticated {
 		t.Fatalf("State() = %v, want %v", session.State(), StateAuthenticated)
@@ -490,8 +490,8 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
 
-	if !session.Authenticate() {
-		t.Fatal("Authenticate() = false, want authenticate-only success")
+	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want authenticate-only success")
 	}
 	if svc.unlockCalls != 0 {
 		t.Fatalf("UnlockIdentity calls = %d, want 0", svc.unlockCalls)
@@ -530,9 +530,7 @@ func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T)
 	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	session.authenticatedOnly = true
 	raw := []byte(`{"kind":"request","type":"activate_key_type","id":"mutate-1"}`)
-	if !session.Dispatch(raw) {
-		t.Fatal("Dispatch() = false, want handled authorization rejection")
-	}
+	session.Dispatch(raw)
 	if len(conn.writes) != 1 {
 		t.Fatalf("writes = %d, want one authorization error", len(conn.writes))
 	}
@@ -622,9 +620,7 @@ func TestSessionDispatchInvalidTypedRequestPreservesRequestID(t *testing.T) {
 	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	raw := []byte(`{"kind":"request","type":"generate_key","id":"gen-1","key_type":123}`)
 
-	if !session.Dispatch(raw) {
-		t.Fatal("Dispatch() = false, want true")
-	}
+	session.Dispatch(raw)
 
 	msg := decodeProtocolError(t, conn)
 	if msg.ID != "gen-1" {
@@ -643,9 +639,7 @@ func TestSessionDispatchRejectsNonRequestEnvelope(t *testing.T) {
 	session := NewSession(conn, SessionDeps{}, OriginLocal)
 	raw := []byte(`{"kind":"response","type":"generate_key","id":"gen-1"}`)
 
-	if !session.Dispatch(raw) {
-		t.Fatal("Dispatch() = false, want true")
-	}
+	session.Dispatch(raw)
 
 	msg := decodeProtocolError(t, conn)
 	if msg.ID != "gen-1" {
@@ -671,9 +665,7 @@ func TestSessionDispatchAdminSettingsRequestPreservesRequestID(t *testing.T) {
 	}, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
-	if !session.Dispatch([]byte(`{"kind":"request","type":"get_admin_settings","id":"settings-1"}`)) {
-		t.Fatal("Dispatch(get_admin_settings) = false, want true")
-	}
+	session.Dispatch([]byte(`{"kind":"request","type":"get_admin_settings","id":"settings-1"}`))
 	var adminSettings protocol.AdminSettingsMessage
 	decodeOnlyMessage(t, conn, &adminSettings)
 	if adminSettings.ID != "settings-1" {
@@ -693,9 +685,7 @@ func TestSessionDispatchRejectsPreviouslyAuthenticatedAdminAfterNodeFailure(t *t
 	}, OriginLocal)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 
-	if !session.Dispatch([]byte(`{"kind":"request","type":"list_keys","id":"keys-1"}`)) {
-		t.Fatal("Dispatch(list_keys) = false, want handled fail-closed response")
-	}
+	session.Dispatch([]byte(`{"kind":"request","type":"list_keys","id":"keys-1"}`))
 	msg := decodeProtocolError(t, conn)
 	if msg.ID != "keys-1" || msg.Code != protocol.ErrCodeNodeFailClosed {
 		t.Fatalf("error = %#v, want node-fail-closed response for keys-1", msg)
@@ -722,10 +712,9 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 		newIdentity: &auth.Identity{ID: "alice", Type: "service", Method: "ssh-passphrase"},
 	}
 	session := NewSession(conn, svc.templateDeps(), OriginLocal)
-	session.SetAuthMethod("ssh-passphrase")
 
-	if !session.Authenticate() {
-		t.Fatal("Authenticate() = false, want true")
+	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want true")
 	}
 	if got := session.Identity(); got == nil || got.ID != "alice" {
 		t.Fatalf("authenticated principal = %#v, want alice", got)
@@ -743,10 +732,9 @@ func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 		unlockOK: true,
 	}
 	session := NewSession(conn, svc.templateDeps(), OriginLocal)
-	session.SetAuthMethod("ssh-passphrase")
 
-	if session.Authenticate() {
-		t.Fatal("Authenticate() = true, want false")
+	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true, want false")
 	}
 	if svc.verifyCalls != 0 {
 		t.Fatalf("VerifyPassphrase calls = %d, want 0", svc.verifyCalls)
@@ -782,8 +770,8 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	}
 	session := NewSession(conn, svc.templateDeps(), OriginLocal)
 
-	if session.Authenticate() {
-		t.Fatal("Authenticate() = true, want false")
+	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true, want false")
 	}
 	if svc.verifyCalls != 0 {
 		t.Fatalf("VerifyPassphrase calls = %d, want 0", svc.verifyCalls)
@@ -823,8 +811,8 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 		unlockOK:   true,
 	}.deps(), OriginLocal)
 
-	if !session.Authenticate() {
-		t.Fatal("Authenticate() = false, want true")
+	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want true")
 	}
 	if len(conn.writes) != 3 {
 		t.Fatalf("write count = %d, want 3", len(conn.writes))
@@ -899,8 +887,8 @@ func TestSessionAuthenticateMissingProductRuntimeIsGeneric(t *testing.T) {
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
-	if session.Authenticate() {
-		t.Fatal("Authenticate() = true, want false")
+	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true, want false")
 	}
 	if len(conn.writes) != 2 {
 		t.Fatalf("write count = %d, want 2", len(conn.writes))
@@ -940,8 +928,8 @@ func TestSessionAuthenticateRejectsAdminProtocolMajorMismatch(t *testing.T) {
 			conn := &queueConn{reads: [][]byte{authMsg}}
 			session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
-			if session.Authenticate() {
-				t.Fatal("Authenticate() = true, want false")
+			if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+				t.Fatal("authenticated = true, want false")
 			}
 			if len(conn.writes) != 2 {
 				t.Fatalf("write count = %d, want 2", len(conn.writes))
@@ -973,8 +961,8 @@ func TestSessionAuthenticateRejectsMissingAdminProtocolVersion(t *testing.T) {
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	session := NewSession(conn, stubServices{}.deps(), OriginLocal)
 
-	if session.Authenticate() {
-		t.Fatal("Authenticate() = true, want false")
+	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = true, want false")
 	}
 
 	var result protocol.AuthResultMessage
@@ -1006,7 +994,6 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{}, OriginLocal)
-	session.SetAuthMethod("test-method")
 
 	principal := &auth.Identity{
 		ID:     "admin-1",
@@ -1025,8 +1012,8 @@ func TestSessionBindUpdatesSessionContext(t *testing.T) {
 	if sessionCtx.AdminPrincipal.Metadata["role"] != "operator" {
 		t.Fatalf("AdminPrincipal.Metadata[role] = %q, want operator", sessionCtx.AdminPrincipal.Metadata["role"])
 	}
-	if sessionCtx.AuthMethod != "test-method" {
-		t.Fatalf("AuthMethod = %q, want test-method", sessionCtx.AuthMethod)
+	if sessionCtx.AuthMethod != "ipc-passphrase" {
+		t.Fatalf("AuthMethod = %q, want ipc-passphrase", sessionCtx.AuthMethod)
 	}
 	if sessionCtx.RemoteAddr != conn.RemoteAddr() {
 		t.Fatalf("RemoteAddr = %q, want the connection's %q", sessionCtx.RemoteAddr, conn.RemoteAddr())
@@ -1158,8 +1145,8 @@ func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
 	svc := &stubServices{runtime: ir, verifyErrs: []error{algocrypto.ErrInvalidPassphrase}, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
 	session := NewSession(&queueConn{reads: [][]byte{wrong, right}}, SessionDeps{Product: svc}, OriginLocal)
 
-	if !session.Authenticate() {
-		t.Fatal("Authenticate() = false, want the second attempt to succeed")
+	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
+		t.Fatal("authenticated = false, want the second attempt to succeed")
 	}
 	if svc.verifyCalls != 2 {
 		t.Fatalf("VerifyPassphrase calls = %d, want 2", svc.verifyCalls)
@@ -1172,8 +1159,8 @@ func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
 
 	refused := mustAuthFrame(t, "refused-secret", `"unexpected":1`)
 	session = NewSession(&queueConn{reads: [][]byte{refused}}, SessionDeps{Product: &stubServices{runtime: ir}}, OriginLocal)
-	if session.Authenticate() {
-		t.Fatal("Authenticate() accepted an auth frame with an unknown field")
+	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
+		t.Fatal("AuthenticateOutcome() accepted an auth frame with an unknown field")
 	}
 	if !isZeroedFrame(refused) {
 		t.Fatalf("refused login frame left as %q", refused)
@@ -1258,9 +1245,7 @@ func TestDecodeRequestZeroesPartialDecodeOnError(t *testing.T) {
 
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{Product: &stubServices{}}, OriginLocal)
-	if !session.Dispatch([]byte(`{"kind":"request","type":"unlock","id":"u","passphrase":7}`)) {
-		t.Fatal("Dispatch() did not handle a malformed unlock")
-	}
+	session.Dispatch([]byte(`{"kind":"request","type":"unlock","id":"u","passphrase":7}`))
 	var refusal protocol.ErrorMessage
 	if len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &refusal) != nil || refusal.Code != protocol.ErrCodeInvalidRequest {
 		t.Fatalf("malformed unlock answered with %q", conn.writes)
