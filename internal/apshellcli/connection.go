@@ -125,11 +125,7 @@ func buildHostKeyApproval(r *REPLState) sshtunnel.HostKeyApprovalHandler {
 		r.printf("\n[SSH] Unknown host: %s\n", host)
 		r.printf("[SSH] Host key fingerprint: %s\n", fingerprint)
 		r.println(sshtunnel.HostKeyApprovalTimeoutNotice())
-		response, err := r.readPromptResponse("Do you want to trust this server? [y/N]: ")
-		if err != nil {
-			return false, err
-		}
-		return response == "y" || response == "yes", nil
+		return r.confirm("Do you want to trust this server? [y/N]: ")
 	}
 }
 

@@ -28,7 +28,6 @@ type cosignedTarget struct {
 	Account                  string
 	CosignerComponentKeyType string
 	CosignerPublicKey        string
-	Route                    flowRoute
 	// BoundedMaxFee is a bounded host's fee ceiling, nil on a plain host.
 	BoundedMaxFee *uint64
 	// BoundedPath is the path the signer's base component named for a cosigned
@@ -42,9 +41,9 @@ type cosignerRequestKey struct {
 }
 
 // flowRoute is the client-side route a signing_flow label takes. Every flow
-// label is classified in exactly one place, routeForSigningFlow, and targets
-// carry the result, so the cosigned pre-check, target assembly, and resource
-// hints cannot disagree about a label.
+// label is classified in exactly one place, routeForSigningFlow, so the
+// cosigned pre-check and target assembly cannot disagree about a label: a
+// target exists only for a label routed through the cosigned flow.
 type flowRoute int
 
 const (
@@ -146,7 +145,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err := validateBoundedTargetFees(group.Txns, targets); err != nil {
 		return nil, nil, err
 	}
-	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.AppCallInfo, opts.Batch)
+	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.Batch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -244,16 +243,11 @@ func oneBasedPositions(indices []int) []int {
 	return numbers
 }
 
-// requestBoundedBaseComponents obtains the user signer's bounded base
-// component for every target over the frozen group. This is where user policy
-// and operator approval run for bounded targets, so every contextual position
-// carries the caller's app call description: the approval shows another
-// position's ABI method, as the cosigner's request does.
 // boundedBaseComponentRequest builds the /sign/component request over the
 // frozen group from the /plan requests. A non-target position names its
 // account, as it did on /plan, so the signer sizes it from the same records
 // and the two agree on the group's dummy count.
-func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo) signerapi.ComponentRequest {
+func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget) signerapi.ComponentRequest {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -263,13 +257,9 @@ func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignReq
 			})
 			continue
 		}
-		position := signerapi.ComponentContextPosition{
+		componentReq.ContextualPositions = append(componentReq.ContextualPositions, signerapi.ComponentContextPosition{
 			TargetIndex: i, AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
-		}
-		if i < len(appCallInfo) && appCallInfo[i] != nil {
-			position.AppCallInfo = appCallInfo[i]
-		}
-		componentReq.ContextualPositions = append(componentReq.ContextualPositions, position)
+		})
 	}
 	for i := group.OriginalCount; i < len(group.BytesHex); i++ {
 		componentReq.DummyPositions = append(componentReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
@@ -277,8 +267,14 @@ func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignReq
 	return componentReq
 }
 
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, appCallInfo []*signerapi.AppCallInfo, batch *signerapi.SignBatch) (map[int]signerapi.Component, string, error) {
-	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex, appCallInfo)
+// requestBoundedBaseComponents obtains the user signer's bounded base
+// component for every target over the frozen group. This is where user policy
+// and operator approval run for bounded targets, so every contextual position
+// carries the caller's app call description, which the /plan requests hold:
+// the approval shows another position's ABI method, as the cosigner's request
+// does.
+func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, batch *signerapi.SignBatch) (map[int]signerapi.Component, string, error) {
+	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex)
 	// The user signer's prompt is the one an operator answers, so the batch
 	// label goes on this request alone.
 	componentReq.Batch = batch
@@ -350,17 +346,7 @@ func (s *Signer) assembleAndSubmit(group frozenGroup, targets []signerapi.Assemb
 	if err := verifyAssembledAgainstFrozen(group.BytesHex, submittedTxns); err != nil {
 		return nil, nil, err
 	}
-	if opts.Simulate {
-		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, s.algod, w)
-		writeCosignedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
-		return txIDs, submittedTxns, simErr
-	}
-	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, s.algod, opts.WaitForConfirmation, w)
-	if err != nil {
-		return txIDs, submittedTxns, err
-	}
-	writeCosignedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, group.OriginalCount)
-	return txIDs, submittedTxns, nil
+	return clientsign.SimulateOrSubmit(opts, s.algod, signedBytes, signedObjects, submittedTxns, group.OriginalCount, w)
 }
 
 // signModeRequest builds the sign-mode request for original position i,
@@ -488,23 +474,19 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 	return signRequests, nonCosigned, nil
 }
 
+// cosignedLogicSigResourcePath carries the exact path the signer's base
+// component named into the later mixed-group /sign call, rather than the
+// maximum across unrelated paths.
 func cosignedLogicSigResourcePath(target cosignedTarget) (lsigresource.AuthorizationPath, error) {
-	switch target.Route {
-	case flowRouteBoundedCosigner:
-		// Carry the exact path the signer's base component named into the later
-		// mixed-group /sign call, rather than the maximum across unrelated paths.
-		switch target.BoundedPath {
-		case signerapi.ComponentPathSpend:
-			return lsigresource.PathSpend, nil
-		case signerapi.ComponentPathSpendingRekey:
-			return lsigresource.PathSpendingRekey, nil
-		case signerapi.ComponentPathListedRekey:
-			return lsigresource.PathListedRekey, nil
-		default:
-			return 0, fmt.Errorf("cosigned target has no base component path yet")
-		}
+	switch target.BoundedPath {
+	case signerapi.ComponentPathSpend:
+		return lsigresource.PathSpend, nil
+	case signerapi.ComponentPathSpendingRekey:
+		return lsigresource.PathSpendingRekey, nil
+	case signerapi.ComponentPathListedRekey:
+		return lsigresource.PathListedRekey, nil
 	default:
-		return 0, fmt.Errorf("cosigned target has unsupported flow route %d", target.Route)
+		return 0, fmt.Errorf("cosigned target has no base component path yet")
 	}
 }
 
@@ -571,8 +553,7 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 		sender := txn.Sender.String()
 		account := s.authCache.ResolveEffectiveSigner(sender)
 		flow := s.cache.SigningFlow(account)
-		route := routeForSigningFlow(flow)
-		switch route {
+		switch routeForSigningFlow(flow) {
 		case flowRoutePlain:
 			continue
 		case flowRouteBoundedCosigner:
@@ -601,7 +582,6 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 			Account:                  account,
 			CosignerComponentKeyType: cosignerComponentKeyType,
 			CosignerPublicKey:        canonicalPublicKey,
-			Route:                    route,
 			BoundedMaxFee:            boundedMaxFee,
 		})
 	}
@@ -736,10 +716,9 @@ func (s *Signer) requestCosignerComponentSignatures(ctx context.Context, w io.Wr
 		return nil, nil, err
 	}
 	defer snapshot.close()
-	required = distinctSortedCosignerRequestKeys(required)
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[cosignerRequestKey]string, len(byCosigner))
-	for _, cosignerKey := range required {
+	for _, cosignerKey := range snapshot.keys {
 		requestID, err := s.requestOneCosignerComponentSignatureSet(ctx, snapshot.routes[cosignerKey], groupBytesHex, originalCount, cosignerKey, byCosigner[cosignerKey], signatures, appCallInfo)
 		if err != nil {
 			return nil, nil, err
@@ -813,7 +792,7 @@ func collectComponentSignatures(resp *signerapi.ComponentResponse, expected []in
 		if seen[component.TargetIndex] {
 			return fmt.Errorf("duplicate signature for target index %d", component.TargetIndex)
 		}
-		if expectedScheme != "" && component.SignatureScheme != expectedScheme {
+		if component.SignatureScheme != expectedScheme {
 			return fmt.Errorf("signature for target index %d used scheme %s, want %s", component.TargetIndex, component.SignatureScheme, expectedScheme)
 		}
 		seen[component.TargetIndex] = true
@@ -848,18 +827,4 @@ func decodeCosignedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 		txns[i] = stxn.Txn
 	}
 	return signedBytes, signedObjects, txns, nil
-}
-
-func writeCosignedSubmittedTransactions(writer func(types.Transaction, string), txns []types.Transaction, txIDs []string, originalCount int) {
-	if writer == nil {
-		return
-	}
-	if originalCount > len(txns) {
-		originalCount = len(txns)
-	}
-	for i := 0; i < originalCount; i++ {
-		if i < len(txIDs) {
-			writer(txns[i], txIDs[i])
-		}
-	}
 }

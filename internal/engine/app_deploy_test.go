@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -49,6 +50,35 @@ func deployTestParams(t *testing.T, sender string, useFlatFee bool) AppDeployPar
 		Clear:      AppProgramSource{Path: clear, Compiled: true},
 		GlobalUint: 1, GlobalBytes: 2, LocalUint: 3, LocalBytes: 4, ExtraPages: 1,
 		Note: "deploy", Fee: 0, UseFlatFee: useFlatFee,
+	}
+}
+
+// TestPrepareAppDeployRequiresProgramsBeforeNetwork pins that a deploy
+// missing a program is refused before any algod request.
+func TestPrepareAppDeployRequiresProgramsBeforeNetwork(t *testing.T) {
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, refuseAlgodTransport{t: t})
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	program := AppProgramSource{Path: "program.teal"}
+	tests := []struct {
+		name   string
+		params AppDeployParams
+		want   string
+	}{
+		{"no programs", AppDeployParams{}, "missing approval program"},
+		{"no approval program", AppDeployParams{Clear: program}, "missing approval program"},
+		{"no clear program", AppDeployParams{Approval: program}, "missing clear program"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := NewEngine("testnet", WithAlgodClient(client))
+			tt.params.From = testAddress(1).String()
+			_, err := eng.PrepareAppDeploy(context.Background(), tt.params)
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("PrepareAppDeploy() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 

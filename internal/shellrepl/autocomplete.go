@@ -217,14 +217,8 @@ func (c *ContextCompleter) getSuggestionsForArgSpec(spec cmdspec.ArgSpec) []stri
 		return suggestions
 	case cmdspec.ArgTypeKeyword:
 		return spec.Values
-	case cmdspec.ArgTypeNumber, cmdspec.ArgTypeFile:
-		// No completion for numbers or files (let readline handle files)
-		return nil
-	case cmdspec.ArgTypeCustom:
-		// Custom completions require RPC call to plugin (future)
-		// For now, return empty
-		return nil
 	default:
+		// Numbers, files and custom types have no completion.
 		return nil
 	}
 }
@@ -585,66 +579,6 @@ func (c *ContextCompleter) completeRekey(lineStr string, allAddresses []string) 
 	return nil, 0, false
 }
 
-// getSuggestionsForType returns suggestions for a given ArgSpec type (standalone helper)
-func getSuggestionsForType(spec *cmdspec.ArgSpec, signerCache *cache.SignerCache, aliasCache *cache.AliasCache, asaCache *cache.ASACache, setCache *cache.SetCache, ensureSignerCache func() error) []string {
-	if spec == nil {
-		return nil
-	}
-	switch spec.Type {
-	case cmdspec.ArgTypeAddress:
-		return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
-	case cmdspec.ArgTypeAsset:
-		suggestions := []string{"algo"}
-		if asaCache != nil {
-			for _, info := range asaCache.Assets {
-				suggestions = append(suggestions, info.UnitName)
-			}
-		}
-		return suggestions
-	case cmdspec.ArgTypeSet:
-		var suggestions []string
-		if setCache != nil {
-			for setName := range setCache.Sets {
-				suggestions = append(suggestions, "@"+setName)
-			}
-		}
-		return suggestions
-	case cmdspec.ArgTypeKeyword:
-		return spec.Values
-	}
-	return nil
-}
-
-// buildPcItemForArgSpecs creates a PcItem with dynamic completion based on ArgSpecs
-func buildPcItemForArgSpecs(name string, specs []cmdspec.ArgSpec, signerCache *cache.SignerCache, aliasCache *cache.AliasCache, asaCache *cache.ASACache, setCache *cache.SetCache, ensureSignerCache func() error) *readline.PrefixCompleter {
-	if len(specs) == 0 {
-		return readline.PcItem(name)
-	}
-
-	// For PrefixCompleter, we provide suggestions based on ArgSpecs with branch support
-	return readline.PcItem(name,
-		readline.PcItemDynamic(func(line string) []string {
-			// Determine which argument position based on fields in line
-			parsed := parseCompletableCommandLine(line)
-			parts := parsed.parts
-			argIndex := len(parts) - 1 // Current position (0 = command itself)
-			if parsed.trailingSpace {
-				argIndex = len(parts)
-			}
-
-			// Get args typed so far (excluding command name)
-			args := []string{}
-			if len(parts) > 1 {
-				args = parts[1:]
-			}
-
-			// Resolve ArgSpec considering branches
-			spec := resolveArgSpec(specs, args, argIndex)
-			return getSuggestionsForType(spec, signerCache, aliasCache, asaCache, setCache, ensureSignerCache)
-		}),
-	)
-}
-
 // CreateDynamicCompleter creates a readline autocompleter with dynamic suggestions
 // based on the current state of aliases, ASAs, sets, and signer keys.
 // ensureSignerCache is called on tab-complete when the signer cache is empty, to auto-refresh after unlock.
@@ -662,8 +596,9 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 				Name:     cmd.Name,
 				ArgSpecs: cmd.ArgSpecs,
 			})
-			pluginItems = append(pluginItems,
-				buildPcItemForArgSpecs(cmd.Name, cmd.ArgSpecs, signerCache, aliasCache, asaCache, setCache, ensureSignerCache))
+			// The prefix tree completes only the name: completePluginArg
+			// owns the arguments.
+			pluginItems = append(pluginItems, readline.PcItem(cmd.Name))
 		}
 	}
 

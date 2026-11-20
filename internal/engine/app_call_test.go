@@ -134,6 +134,59 @@ func TestPrepareAppCallRaw_UpdateRequiresPrograms(t *testing.T) {
 	}
 }
 
+// refuseAlgodTransport fails the test on any algod request.
+type refuseAlgodTransport struct{ t *testing.T }
+
+func (r refuseAlgodTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.t.Errorf("unexpected algod request %s %s", req.Method, req.URL.Path)
+	return nil, io.ErrUnexpectedEOF
+}
+
+// TestPrepareAppCallRaw_ProgramRulesBeforeNetwork pins that the program rules
+// refuse a call before any algod request, whoever the caller is.
+func TestPrepareAppCallRaw_ProgramRulesBeforeNetwork(t *testing.T) {
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, refuseAlgodTransport{t: t})
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	from := testAddress(1).String()
+	program := AppProgramSource{Path: "program.teal"}
+	tests := []struct {
+		name   string
+		params RawAppCallParams
+		want   string
+	}{
+		{"update without programs",
+			RawAppCallParams{OnCompletion: types.UpdateApplicationOC},
+			"missing approval program for app update"},
+		{"update without a clear program",
+			RawAppCallParams{OnCompletion: types.UpdateApplicationOC, Approval: program},
+			"missing clear program for app update"},
+		{"update without an approval program",
+			RawAppCallParams{OnCompletion: types.UpdateApplicationOC, Clear: program},
+			"missing approval program for app update"},
+		{"an approval program without update",
+			RawAppCallParams{OnCompletion: types.NoOpOC, Approval: program},
+			"approval and clear programs are only supported with oncomp=update"},
+		{"a clear program on opt-in",
+			RawAppCallParams{OnCompletion: types.OptInOC, Clear: program},
+			"approval and clear programs are only supported with oncomp=update"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// An empty cache makes the sender unknown, so a signing context
+			// built first would need algod.
+			eng := NewEngine("testnet", WithAlgodClient(client))
+			tt.params.AppID = 123
+			tt.params.From = from
+			_, err := eng.PrepareAppCallRaw(context.Background(), tt.params)
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("PrepareAppCallRaw() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestEnsureAppReferences(t *testing.T) {
 	// The caller's list is kept exactly: order, the repeated 11, and the
 	// called app 10 all stay where they were put. Of the box apps, only 13 is

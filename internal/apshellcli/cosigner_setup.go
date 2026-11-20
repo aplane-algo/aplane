@@ -106,11 +106,11 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 			return nil, fmt.Errorf("endpoint alias %q has different settings; review the replacement in interactive apshell", plan.Alias)
 		}
 		if !options.replace {
-			response, promptErr := r.readPromptResponse(fmt.Sprintf("Replace existing cosigner endpoint %s? [y/N]: ", plan.Alias))
+			replace, promptErr := r.confirm(fmt.Sprintf("Replace existing cosigner endpoint %s? [y/N]: ", plan.Alias))
 			if promptErr != nil {
 				return nil, promptErr
 			}
-			if response != "y" && response != "yes" {
+			if !replace {
 				return nil, errors.New("cosigner setup cancelled")
 			}
 			options.replace = true
@@ -124,11 +124,11 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 		r.printf("Already configured as %s. Checking access...\n", plan.Alias)
 	case !r.AutoConfirm:
 		r.renderCosignerSetupReview(plan)
-		response, promptErr := r.readPromptResponse("Configure this connection and verify it? [y/N]: ")
+		proceed, promptErr := r.confirm("Configure this connection and verify it? [y/N]: ")
 		if promptErr != nil {
 			return nil, promptErr
 		}
-		if response != "y" && response != "yes" {
+		if !proceed {
 			return nil, errors.New("cosigner setup cancelled")
 		}
 	}
@@ -194,8 +194,9 @@ func (r *REPLState) offerCreatedConnectionRemoval(plan apshellapp.CosignerSetupP
 		return false
 	}
 	r.println(setupErr.Error())
-	response, err := r.readPromptResponse(fmt.Sprintf("Remove the connection %s that this run created? [y/N]: ", plan.Alias))
-	if err != nil || (response != "y" && response != "yes") {
+	// A failed read is a decline: the setup error is already reported.
+	remove, err := r.confirm(fmt.Sprintf("Remove the connection %s that this run created? [y/N]: ", plan.Alias))
+	if err != nil || !remove {
 		return false
 	}
 	if err := r.app().RemoveCreatedCosignerConnection(plan); err != nil {
@@ -264,39 +265,21 @@ func withPromptedCosignerURL[T any](r *REPLState, request *apshellapp.CosignerSe
 }
 
 func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {
-	restorePrompt := r.setTemporaryPrompt(prompt)
-	defer restorePrompt()
-	if !r.hasInteractiveLineReader() {
-		r.print("\n" + prompt)
-	}
-	value, err := r.readInteractiveLine()
-	if err != nil {
-		return "", err
-	}
-	value = strings.TrimSpace(value)
-	if value == "" {
+	value, err := r.readPromptLine(prompt)
+	if err == nil && value == "" {
 		return "", errors.New("value is required")
 	}
-	return value, nil
+	return value, err
 }
 
 // readSetupValueWithDefault prompts for a value and accepts an empty answer as
 // the offered default.
 func (r *REPLState) readSetupValueWithDefault(label, fallback string) (string, error) {
-	prompt := fmt.Sprintf("%s [%s]: ", label, fallback)
-	restorePrompt := r.setTemporaryPrompt(prompt)
-	defer restorePrompt()
-	if !r.hasInteractiveLineReader() {
-		r.print("\n" + prompt)
-	}
-	value, err := r.readInteractiveLine()
-	if err != nil {
-		return "", err
-	}
-	if value = strings.TrimSpace(value); value == "" {
+	value, err := r.readPromptLine(fmt.Sprintf("%s [%s]: ", label, fallback))
+	if err == nil && value == "" {
 		return fallback, nil
 	}
-	return value, nil
+	return value, err
 }
 
 func (r *REPLState) renderCosignerSetupReview(plan apshellapp.CosignerSetupPlan) {

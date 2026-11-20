@@ -51,15 +51,19 @@ func (r *REPLState) hasInteractiveLineReader() bool {
 	return r.LineReaderContext != nil || r.LineReader != nil
 }
 
-func (r *REPLState) readApprovalResponse() (string, error) {
-	return r.readPromptResponse("Proceed with signing and submission? [y/N]: ")
+// confirm asks a [y/N] question and reports whether the answer was y or
+// yes, in any case. Anything else, an empty answer included, is no.
+func (r *REPLState) confirm(prompt string) (bool, error) {
+	answer, err := r.readPromptLine(prompt)
+	if err != nil {
+		return false, err
+	}
+	answer = strings.ToLower(answer)
+	return answer == "y" || answer == "yes", nil
 }
 
-func (r *REPLState) readDeleteKeyResponse(address string) (string, error) {
-	return r.readPromptResponse("Delete key " + r.app().FormatAddress(address) + "? [y/N]: ")
-}
-
-func (r *REPLState) readPromptResponse(prompt string) (string, error) {
+// readPromptLine shows prompt and reads one line, trimmed.
+func (r *REPLState) readPromptLine(prompt string) (string, error) {
 	restorePrompt := r.setTemporaryPrompt(prompt)
 	defer restorePrompt()
 
@@ -71,5 +75,5 @@ func (r *REPLState) readPromptResponse(prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(strings.TrimSpace(line)), nil
+	return strings.TrimSpace(line), nil
 }

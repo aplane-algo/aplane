@@ -183,7 +183,7 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 		testPaymentTxn(t, testAddress(2), testAddress(3), "plain"),
 	}
 	targets, err := s.cosignedTargets(txns)
-	if err != nil || len(targets) != 1 || targets[0].Route != flowRouteBoundedCosigner {
+	if err != nil || len(targets) != 1 || targets[0].Index != 0 {
 		t.Fatalf("cosignedTargets() = %#v, %v", targets, err)
 	}
 	if targets[0].BoundedMaxFee == nil || *targets[0].BoundedMaxFee != 10_000 {
@@ -294,6 +294,19 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 				t.Fatalf("collectComponentSignatures() error = %q, want %q", err, tt.wantMessage)
 			}
 		})
+	}
+}
+
+// TestCollectComponentSignaturesAlwaysChecksTheScheme pins A11's scheme
+// check as unconditional: an empty expected scheme, which the caller's
+// selector derivation already refuses, still admits only an empty scheme.
+func TestCollectComponentSignaturesAlwaysChecksTheScheme(t *testing.T) {
+	resp := &signerapi.ComponentResponse{Components: []signerapi.Component{{
+		TargetIndex: 0, SignatureScheme: witness.Falcon1024V1, Signature: "aa",
+	}}}
+	err := collectComponentSignatures(resp, []int{0}, "", map[int]string{})
+	if err == nil || !strings.Contains(err.Error(), "signature for target index 0 used scheme "+witness.Falcon1024V1) {
+		t.Fatalf("collectComponentSignatures() error = %v, want the scheme refused", err)
 	}
 }
 
@@ -641,7 +654,6 @@ func cosignedTargetForTest(account, cosignerHex string) cosignedTarget {
 		Account:                  account,
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CosignerPublicKey:        cosignerHex,
-		Route:                    flowRouteBoundedCosigner,
 		BoundedPath:              signerapi.ComponentPathSpend,
 	}
 }

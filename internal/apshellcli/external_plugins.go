@@ -150,6 +150,18 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult, lsigA
 	return group, false, nil
 }
 
+// confirmPluginSubmission asks to sign and submit a reviewed plugin group,
+// and reports whether the user cancelled.
+func confirmPluginSubmission(r *REPLState) (bool, error) {
+	r.println()
+	proceed, err := r.confirm("Proceed with signing and submission? [y/N]: ")
+	if err != nil || proceed {
+		return false, err
+	}
+	r.println("Transaction cancelled by user")
+	return true, nil
+}
+
 // reviewDefaultDraft is the default mode's review: unsigned transactions for
 // APlane-managed accounts. The decoded draft is shown as information;
 // apsigner's policy and approval over the final group are the gate, and this
@@ -163,16 +175,7 @@ func reviewDefaultDraft(r *REPLState, group *apshellapp.PluginGroup) (bool, erro
 		return false, nil
 	}
 
-	r.println()
-	response, err := r.readApprovalResponse()
-	if err != nil {
-		return false, err
-	}
-	if response != "y" && response != "yes" {
-		r.println("Transaction cancelled by user")
-		return true, nil
-	}
-	return false, nil
+	return confirmPluginSubmission(r)
 }
 
 // reviewPregroupedSigned is the mandatory client-side review for a fully
@@ -188,16 +191,7 @@ func reviewPregroupedSigned(r *REPLState, group *apshellapp.PluginGroup) (bool, 
 		return false, err
 	}
 
-	r.println()
-	response, err := r.readApprovalResponse()
-	if err != nil {
-		return false, err
-	}
-	if response != "y" && response != "yes" {
-		r.println("Transaction cancelled by user")
-		return true, nil
-	}
-	return false, nil
+	return confirmPluginSubmission(r)
 }
 
 // reviewPresignPlan renders the honest presign-plan draft (managed vs plugin-signed
@@ -216,14 +210,5 @@ func reviewPresignPlan(r *REPLState, group *apshellapp.PluginGroup) (bool, error
 	if r.AutoConfirm {
 		return false, nil
 	}
-	r.println()
-	response, err := r.readApprovalResponse()
-	if err != nil {
-		return false, err
-	}
-	if response != "y" && response != "yes" {
-		r.println("Transaction cancelled by user")
-		return true, nil
-	}
-	return false, nil
+	return confirmPluginSubmission(r)
 }

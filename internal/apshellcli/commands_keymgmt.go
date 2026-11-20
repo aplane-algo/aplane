@@ -82,11 +82,11 @@ func (r *REPLState) generateFromBoundary(keyType, path string) (*apshellapp.Gene
 	}
 	if !r.AutoConfirm {
 		renderBoundaryPreview(r, preview)
-		response, err := r.readPromptResponse("Create this account? (y/N): ")
+		create, err := r.confirm("Create this account? (y/N): ")
 		if err != nil {
 			return nil, false, err
 		}
-		if response != "y" && response != "yes" {
+		if !create {
 			return nil, true, nil
 		}
 	}
@@ -190,11 +190,11 @@ func (r *REPLState) cmdDelete(args []string, _ *command.Context) (command.Result
 	}
 
 	if !r.AutoConfirm {
-		response, err := r.readDeleteKeyResponse(target.Address)
+		remove, err := r.confirm("Delete key " + r.app().FormatAddress(target.Address) + "? [y/N]: ")
 		if err != nil {
 			return nil, err
 		}
-		if response != "y" && response != "yes" {
+		if !remove {
 			return newShellCommandResult(func(w io.Writer) error {
 				_, err := fmt.Fprintln(w, "Cancelled.")
 				return err

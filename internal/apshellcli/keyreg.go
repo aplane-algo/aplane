@@ -4,18 +4,14 @@
 package apshellcli
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
-
-	"github.com/chzyer/readline"
 )
 
 // keyRegPasteMode handles multiline paste of goal partkeyinfo output. A
@@ -26,25 +22,24 @@ func (r *REPLState) keyRegPasteMode() (command.Result, error) {
 	r.println("Press Enter twice on empty lines when done, Ctrl+C to cancel.")
 	r.println()
 
-	// Read multiline input using LineReader (supports Ctrl+C) or fallback to scanner
-	var lines []string
-	if r.hasInteractiveLineReader() {
-		pasted, cancelled, err := r.readPastedLines()
-		if err != nil {
-			return nil, err
+	// Input ends at the second of two blank lines in a row; single blank
+	// lines are dropped.
+	blanks := 0
+	lines, cancelled, err := r.readLinesUntil(nil, func(line string) bool {
+		if strings.TrimSpace(line) != "" {
+			blanks = 0
+			return false
 		}
-		if cancelled {
-			return newTerminalCommandResult(nil), nil
-		}
-		lines = pasted
-	} else {
-		pasted, err := scanPastedLines()
-		if err != nil {
-			return nil, err
-		}
-		lines = pasted
+		blanks++
+		return blanks == 2
+	})
+	if err != nil {
+		return nil, err
 	}
-
+	if cancelled {
+		return newTerminalCommandResult(nil), nil
+	}
+	lines = slices.DeleteFunc(lines, func(line string) bool { return strings.TrimSpace(line) == "" })
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("no input provided")
 	}
@@ -132,57 +127,4 @@ func (r *REPLState) renderKeyRegResult(result *apshellapp.KeyRegCommandResult, s
 	case "offline":
 		r.printf("\nWhen confirmed, %s will be marked OFFLINE (temporary)\n", account)
 	}
-}
-
-// readPastedLines reads pasted lines from the interactive line reader until
-// two empty lines in a row. Ctrl+C cancels, which it says and reports.
-func (r *REPLState) readPastedLines() (lines []string, cancelled bool, err error) {
-	emptyLineCount := 0
-	// Use readline-based input (handles Ctrl+C gracefully)
-	r.clearInputPrompt()
-	for {
-		line, err := r.readInteractiveLine()
-		if err != nil {
-			if errors.Is(err, readline.ErrInterrupt) {
-				r.println("\nCancelled.")
-				return nil, true, nil
-			}
-			return nil, false, fmt.Errorf("error reading input: %w", err)
-		}
-		if strings.TrimSpace(line) == "" {
-			emptyLineCount++
-			if emptyLineCount >= 2 {
-				break
-			}
-		} else {
-			emptyLineCount = 0
-			lines = append(lines, line)
-		}
-	}
-	return lines, false, nil
-}
-
-// scanPastedLines reads pasted lines from standard input until two empty
-// lines in a row or the end of input. It has no Ctrl+C handling.
-func scanPastedLines() ([]string, error) {
-	var lines []string
-	emptyLineCount := 0
-	// Fallback: basic scanner mode (no Ctrl+C handling)
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			emptyLineCount++
-			if emptyLineCount >= 2 {
-				break
-			}
-		} else {
-			emptyLineCount = 0
-			lines = append(lines, line)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading input: %w", err)
-	}
-	return lines, nil
 }

@@ -16,21 +16,15 @@ import (
 
 // AppDeployRequest captures the parsed deploy request.
 type AppDeployRequest struct {
-	From             string
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	GlobalUint       uint64
-	GlobalBytes      uint64
-	LocalUint        uint64
-	LocalBytes       uint64
-	ExtraPages       uint32
-	Note             string
-	Wait             bool
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
+	From        string
+	GlobalUint  uint64
+	GlobalBytes uint64
+	LocalUint   uint64
+	LocalBytes  uint64
+	ExtraPages  uint32
+	Wait        bool
+	LsigArgs    cmdspec.LsigArgs
+	AppTxnOptions
 }
 
 func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {

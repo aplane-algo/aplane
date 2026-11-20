@@ -5,7 +5,6 @@ package apshellcli
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
@@ -66,41 +65,16 @@ func execVerbose(r *REPLState, args []string) (toggleOutcome, error) {
 // a one-shot simulated command: simulate send 5 algo from alice to bob
 func (r *REPLState) cmdSimulate(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) == 0 {
-		enabled := r.app().IsSimulateEnabled()
-		return newShellCommandResult(func(w io.Writer) error {
-			state := "off"
-			if enabled {
-				state = "on"
-			}
-			_, err := fmt.Fprintf(w, "Simulate mode: %s\n", state)
-			return err
-		}, struct {
-			Name    string `json:"name"`
-			Enabled bool   `json:"enabled"`
-		}{Name: "simulate", Enabled: enabled})
+		return r.toggleResult(toggleOutcome{Toggle: r.app().SimulateMode()})
 	}
 
 	// Check for on/off toggle (single arg only)
 	if len(args) == 1 {
 		switch strings.ToLower(args[0]) {
 		case "on", "true", "1":
-			r.app().SetSimulateMode(true)
-			return newShellCommandResult(func(w io.Writer) error {
-				_, err := fmt.Fprintln(w, "✓ Simulate mode enabled - transactions will be simulated, not submitted")
-				return err
-			}, struct {
-				Name    string `json:"name"`
-				Enabled bool   `json:"enabled"`
-			}{Name: "simulate", Enabled: true})
+			return r.toggleResult(toggleOutcome{Toggle: r.app().SetSimulateMode(true)})
 		case "off", "false", "0":
-			r.app().SetSimulateMode(false)
-			return newShellCommandResult(func(w io.Writer) error {
-				_, err := fmt.Fprintln(w, "✓ Simulate mode disabled")
-				return err
-			}, struct {
-				Name    string `json:"name"`
-				Enabled bool   `json:"enabled"`
-			}{Name: "simulate", Enabled: false})
+			return r.toggleResult(toggleOutcome{Toggle: r.app().SetSimulateMode(false)})
 		}
 	}
 
