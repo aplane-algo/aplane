@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -263,54 +262,15 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 	return ReadAndDecryptFile(keyFile, kr, ctx, "key file")
 }
 
-// ScanKeysDirectoryWithKeyring scans the product store's keys subdirectory,
-// opening each credential with the keyring. Only term envelopes are read.
-func ScanKeysDirectoryWithKeyring(paths storepaths.Paths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
-	active, err := genstore.Resolve(paths)
-	if err != nil {
-		return nil, err
-	}
-	return ScanKeysDirectoryWithKeyringActive(active, kr)
-}
-
-// ScanKeysDirectoryWithKeyringActive is ScanKeysDirectoryWithKeyring
-// against an authenticated generation capability.
-func ScanKeysDirectoryWithKeyringActive(active storepaths.GenPaths, kr *crypto.Keyring) (map[string]KeyScanInfo, error) {
-	report, err := ScanKeysDirectoryWithKeyringReportActive(active, kr)
-	if err != nil {
-		return nil, err
-	}
-	return report.Keys, nil
-}
-
-// ScanKeysDirectoryWithKeyringReportActive scans an authenticated
-// generation's keys directory and returns structured warnings for key files
-// that were skipped.
-func ScanKeysDirectoryWithKeyringReportActive(active storepaths.GenPaths, kr *crypto.Keyring) (*KeyScanReport, error) {
-	return scanKeysDirectoryInternalReport(active, nil, func(keyFile string) ([]byte, error) {
-		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
-	})
-}
-
-// ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive validates every
-// keys-namespace entry except managed credential files whose selectors are in
-// excluded. Recovery restore uses this to prove that all authority outside the
-// authenticated credential selection is healthy before replacing that exact
-// selection. Unexpected entries and public metadata are never excluded.
-func ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
-	active storepaths.GenPaths,
-	kr *crypto.Keyring,
-	excluded map[string]bool,
-) (*KeyScanReport, error) {
-	return scanKeysDirectoryInternalReport(active, excluded, func(keyFile string) ([]byte, error) {
-		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
-	})
-}
-
-// scanKeysDirectoryInternalReport is the shared implementation for scanning
-// keys. The decryptFunc parameter lets the caller supply either passphrase or
-// keyring decryption.
-func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelectors map[string]bool, decryptFunc func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
+// ScanKeysDirectory scans an authenticated generation's keys directory,
+// opening each managed credential with the keyring, and returns structured
+// warnings for key files that were skipped. Only term envelopes are read.
+//
+// Managed credential files whose selectors are in excluded, which may be nil,
+// are skipped. Recovery restore uses this to prove that all authority outside
+// the authenticated credential selection is healthy before replacing that
+// exact selection. Unexpected entries and public metadata are never excluded.
+func ScanKeysDirectory(active storepaths.GenPaths, kr *crypto.Keyring, excluded map[string]bool) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -339,10 +299,10 @@ func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelecto
 	// references (.cos.json) are the sole expected non-credential residents
 	// and are validated without decryption. Everything unrecognized is
 	// reported so store validation fails closed on unexpected content.
-	// Nothing outside the managed credential classes ever reaches decryptFunc.
+	// Nothing outside the managed credential classes is ever decrypted.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
-		if ok && !entry.IsDir() && excludedSelectors[filenameSelector] {
+		if ok && !entry.IsDir() && excluded[filenameSelector] {
 			continue
 		}
 		if entry.IsDir() || !ok {
@@ -365,7 +325,7 @@ func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelecto
 		keyFile := filepath.Join(keysDir, entry.Name())
 
 		// Read and decrypt the file ONCE to extract all needed info
-		data, err := decryptFunc(keyFile)
+		data, err := ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
 		if err != nil {
 			warn(KeyScanWarningReadFailed, keyFile, err)
 			continue

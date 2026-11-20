@@ -58,7 +58,7 @@ func Candidate(opts Options) error {
 		return err
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithKeyringReportActive(opts.Candidate, opts.Keyring)
+	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, nil)
 	if err != nil {
 		return fmt.Errorf("credentials: %w", err)
 	}
@@ -79,9 +79,7 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 	if err := validateDestinationAuthority(opts); err != nil {
 		return err
 	}
-	scan, err := keys.ScanKeysDirectoryWithKeyringReportExcludingSelectorsActive(
-		opts.Candidate, opts.Keyring, repairedSelectors,
-	)
+	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, repairedSelectors)
 	if err != nil {
 		return fmt.Errorf("unselected credentials: %w", err)
 	}

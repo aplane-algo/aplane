@@ -11,6 +11,7 @@ import (
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -45,10 +46,7 @@ func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("KeyFiles = %#v, want private file", result.KeyFiles)
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyring() error = %v", err)
-	}
+	scan := keystest.ScanKeys(t, paths, kr)
 	info, ok := scan[result.Address]
 	if !ok {
 		t.Fatalf("scan missing cosigner key %q", result.Address)

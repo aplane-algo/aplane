@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -64,10 +64,7 @@ func TestGenericLogicSigKeyRecordsValidRekeyTarget(t *testing.T) {
 			address := salted.Address.String()
 			recorded := func(label string) {
 				t.Helper()
-				scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-				if err != nil {
-					t.Fatal(err)
-				}
+				scanned := keystest.ScanKeys(t, paths, kr)
 				info, ok := scanned[address]
 				if !ok || info.ValidRekeyTarget != declared {
 					t.Fatalf("%s: scanned key %+v, want valid_rekey_target %v", label, info, declared)
@@ -124,10 +121,7 @@ teal: |
 			if err == nil || !strings.Contains(err.Error(), "valid_rekey_target declaration does not resolve") {
 				t.Fatalf("SaveGenericLSig() error = %v, want an unresolved declaration", err)
 			}
-			scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-			if err != nil {
-				t.Fatal(err)
-			}
+			scanned := keystest.ScanKeys(t, paths, kr)
 			if len(scanned) != 0 {
 				t.Fatalf("keys written: %v, want none", scanned)
 			}

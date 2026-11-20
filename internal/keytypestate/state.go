@@ -276,12 +276,12 @@ func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring)
 	if kr == nil {
 		return fmt.Errorf("an open keyring is required to verify a key type is unused")
 	}
-	scan, err := keys.ScanKeysDirectoryWithKeyringActive(active, kr)
+	scan, err := keys.ScanKeysDirectory(active, kr, nil)
 	if err != nil {
 		return err
 	}
 	var addresses []string
-	for address, info := range scan {
+	for address, info := range scan.Keys {
 		if strings.EqualFold(info.KeyType, keyType) {
 			addresses = append(addresses, address)
 		}

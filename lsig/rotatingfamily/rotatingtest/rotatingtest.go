@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/rotatingstage"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -264,10 +265,7 @@ func testScan(t *testing.T, s Scheme) {
 	if _, err := keys.SaveNewPayload(paths, payload, false, kr); err != nil {
 		t.Fatal(err)
 	}
-	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scanned := keystest.ScanKeys(t, paths, kr)
 	info, ok := scanned[address]
 	if !ok {
 		t.Fatalf("scan did not report %s; got %v", address, scanned)
@@ -314,10 +312,7 @@ func testGenerator(t *testing.T, s Scheme) {
 	if result.KeyType != s.KeyType {
 		t.Fatalf("generated key type %q, want %q", result.KeyType, s.KeyType)
 	}
-	scanned, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scanned := keystest.ScanKeys(t, paths, kr)
 	if info, ok := scanned[result.Address]; !ok {
 		t.Fatalf("generated account %s not found by scan", result.Address)
 	} else if info.ValidRekeyTarget {

@@ -1370,10 +1370,6 @@ func newComponentKeySession(store *componentKeyStore) *keystore.KeySession {
 	return session
 }
 
-func (s *componentKeyStore) List(context.Context) ([]keystore.KeyMetadata, error) {
-	return nil, nil
-}
-
 func (s *componentKeyStore) Get(_ context.Context, address string) (*coresigning.KeyMaterial, error) {
 	s.calls++
 	s.gotAddress = address
@@ -1381,22 +1377,6 @@ func (s *componentKeyStore) Get(_ context.Context, address string) (*coresigning
 		return nil, s.err
 	}
 	return s.key, nil
-}
-
-func (s *componentKeyStore) GetMetadata(context.Context, string) (*keystore.KeyMetadata, error) {
-	return nil, nil
-}
-
-func (s *componentKeyStore) Delete(context.Context, string) error {
-	return nil
-}
-
-func (s *componentKeyStore) WithKeyring(func([]byte) error) error {
-	return nil
-}
-
-func (s *componentKeyStore) Type() string {
-	return "test"
 }
 
 func TestLoadCosignerComponentKeyMapsMissingKey(t *testing.T) {

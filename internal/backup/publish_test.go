@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -31,7 +31,7 @@ func storeWithOneKeyForBackupTest(t *testing.T) storepaths.Paths {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {

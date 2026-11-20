@@ -246,7 +246,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 		t.Fatalf("ResolveStoreRoot() error = %v", err)
 	}
 	defer kr.Zero()
-	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(active, address)); err != nil {
+	if _, err := os.Stat(keystest.AccountKeyFilePath(active, address)); err != nil {
 		t.Fatalf("rebuilt key file missing: %v", err)
 	}
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(keystorePaths(), active, kr)
@@ -303,7 +303,7 @@ func TestCmdRebuildRoleOverrideRestoresCosignerBackup(t *testing.T) {
 	if role.Role != noderole.RoleCosigner {
 		t.Fatalf("rebuilt node role = %q, want cosigner", role.Role)
 	}
-	if _, err := os.Stat(apkeys.CosignerCredentialFilePathActive(active, componentKey)); err != nil {
+	if _, err := os.Stat(keystest.CosignerCredentialFilePath(active, componentKey)); err != nil {
 		t.Fatalf("rebuilt cosigner key file missing: %v", err)
 	}
 	env, ok, err := apkeys.ReadWitnessPublicMetadataActive(active, componentKey)
@@ -514,7 +514,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if _, err := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); err != nil {
+	if _, err := os.Stat(keystest.AccountKeyFilePath(genstoretest.Active(t, boundKeystorePaths(t)), address)); err != nil {
 		t.Fatalf("restored key file missing: %v", err)
 	}
 }
@@ -543,7 +543,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if !strings.Contains(err.Error(), "signing_metadata_version") {
 		t.Fatalf("restoreKey() error = %v, want signing metadata context", err)
 	}
-	if _, statErr := os.Stat(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, boundKeystorePaths(t)), address)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(keystest.AccountKeyFilePath(genstoretest.Active(t, boundKeystorePaths(t)), address)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no key file written after missing signing metadata, got stat err=%v", statErr)
 	}
 }

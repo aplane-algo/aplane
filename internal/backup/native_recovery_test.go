@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -40,7 +41,7 @@ func TestNativeFalconBackupPreservesRecoveryEntropy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := keys.ReadDecryptedKeyJSONWithKeyring(keys.AccountKeyFilePathActive(active, generated.Address), kr)
+	raw, err := keys.ReadDecryptedKeyJSONWithKeyring(keystest.AccountKeyFilePath(active, generated.Address), kr)
 	if err != nil {
 		t.Fatal(err)
 	}
