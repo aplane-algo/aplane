@@ -555,7 +555,9 @@ listing and is never hidden. That covers a record that does not parse, a
 file whose name is not a reference name, a file the signer cannot read, a
 directory, and a dangling symlink. The reference list reports each beside the
 valid references, with its path and why, and `/keytypes` leaves it out of
-the cosigner choices and logs a warning naming it. A cosigner picked by
+the cosigner choices. The signer logs a warning naming it when it first
+appears or its reason changes, not on every list, and a note when it is
+gone. A cosigner picked by
 Witness Key ID fails, naming such entries, only when no valid reference
 matches. `apadmin cosigner remove <name>` takes the name exactly as listed
 and clears an entry named for a reference name that it can read, whether or

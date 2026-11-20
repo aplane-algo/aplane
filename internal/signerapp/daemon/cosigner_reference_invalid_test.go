@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -88,5 +89,64 @@ func TestInvalidCosignerReferencesAreReportedAndLeftOut(t *testing.T) {
 	listed = svc.ListCosignerReferences()
 	if listed.Error != "" || len(listed.References) != 1 || !reflect.DeepEqual(listed.Invalid, want[:1]) {
 		t.Fatalf("ListCosignerReferences() after removal = %#v, want only the hand-deleted file reported", listed)
+	}
+}
+
+// Key type lists leave invalid reference entries out on every call, but log
+// them only when they change: an entry that is new or reported differently is
+// warned about once, and one that is no longer left out is noted once.
+func TestKeyTypeListsLogLeftOutReferencesOnlyWhenTheyChange(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+	svc := server.adminServices().templateServices()
+	paths := server.productRuntime().KeyPaths()
+	if err := os.MkdirAll(paths.CosignerRefsDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(paths.CosignerRefPath(name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func() {
+		t.Helper()
+		if result := svc.ListKeyTypes(); result.Error != "" {
+			t.Fatalf("ListKeyTypes() error = %s", result.Error)
+		}
+	}
+	leftOut := func(name string) int {
+		return strings.Count(logs.String(), fmt.Sprintf("left out of the key type list: %q", paths.CosignerRefPath(name)))
+	}
+	back := func(name string) int {
+		return strings.Count(logs.String(), fmt.Sprintf("cosigner reference file %q is no longer left out", paths.CosignerRefPath(name)))
+	}
+
+	write("bad", `{"schema":"wrong"}`)
+	list()
+	list()
+	if leftOut("bad") != 1 {
+		t.Fatalf("bad.json logged %d times over two lists, want once:\n%s", leftOut("bad"), logs.String())
+	}
+	write("other", `{"schema":"wrong"}`)
+	list()
+	if leftOut("bad") != 1 || leftOut("other") != 1 {
+		t.Fatalf("after a new entry, bad.json logged %d times and other.json %d, want once each:\n%s", leftOut("bad"), leftOut("other"), logs.String())
+	}
+	write("bad", `{"schema":"still wrong"}`)
+	list()
+	if leftOut("bad") != 2 || leftOut("other") != 1 {
+		t.Fatalf("after a changed entry, bad.json logged %d times and other.json %d, want 2 and 1:\n%s", leftOut("bad"), leftOut("other"), logs.String())
+	}
+	if err := os.Remove(paths.CosignerRefPath("bad")); err != nil {
+		t.Fatal(err)
+	}
+	list()
+	list()
+	if back("bad") != 1 || back("other") != 0 || leftOut("other") != 1 {
+		t.Fatalf("after bad.json went, it was noted %d times, want once:\n%s", back("bad"), logs.String())
 	}
 }

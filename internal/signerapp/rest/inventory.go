@@ -407,8 +407,8 @@ func (s Service) applyCosignerReferenceParams(ir *productruntime.Runtime, infos 
 	if err != nil {
 		return err
 	}
-	for _, bad := range invalid {
-		s.warnf("cosigner reference file left out of the key type list: %s", bad)
+	if s.Deps.ReportInvalidCosignerReferences != nil {
+		s.Deps.ReportInvalidCosignerReferences(invalid)
 	}
 	if len(refs) == 0 {
 		return nil
