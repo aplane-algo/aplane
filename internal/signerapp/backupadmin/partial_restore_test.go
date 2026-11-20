@@ -308,9 +308,10 @@ func writeArchiveForTest(t *testing.T, role noderole.Role, members map[string][]
 
 // An import is checked against the importing node's role. One in which
 // nothing would restore on this node is refused in the words a restore
-// uses, naming what it would skip; that covers a cosigner's backup on a
-// signer. An archive of another role with keys this node could hold
-// imports, saying where it came from: a restore here refuses it whole.
+// uses, naming what it would skip; a cosigner's backup on a signer is
+// refused in one line that says so. Neither is called invalid. A
+// hand-sealed archive of another role holding a key this node could hold
+// gets the ordinary handling.
 func TestImportIsCheckedAgainstThisNodesRole(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
@@ -324,16 +325,17 @@ func TestImportIsCheckedAgainstThisNodesRole(t *testing.T) {
 		role    noderole.Role
 		members map[string][]byte
 		want    string
+		skipped int
 	}{
 		{"nothing restorable", noderole.RoleSigner, map[string][]byte{"BAD": []byte(`{"format_version":3}`)},
-			"invalid backup contents: nothing to restore: the backup's only credential is skipped: BAD: " + badMemberReason},
+			"nothing to restore: the backup's only credential is skipped: BAD: " + badMemberReason, 1},
 		{"a cosigner's backup", noderole.RoleCosigner, map[string][]byte{witness: witnessJSON},
-			"invalid backup contents: nothing to restore: the backup's only credential is skipped: " + witness + ": role-forbidden: "},
+			"this is a cosigner backup; a signer node cannot restore it", 0},
 	} {
 		name := strings.ReplaceAll(tc.name, " ", "-") + ".tar.gz"
 		result := importArchiveForTest(t, service, writeImportArchiveForTest(t, tc.role, tc.members), name)
-		if result.Success || !strings.HasPrefix(result.Error, tc.want) || len(result.Skipped) != 1 {
-			t.Fatalf("%s: CommitBackupImport() = %+v, want prefix %q", tc.name, result, tc.want)
+		if result.Success || !strings.HasPrefix(result.Error, tc.want) || len(result.Skipped) != tc.skipped {
+			t.Fatalf("%s: CommitBackupImport() = %+v, want %q", tc.name, result, tc.want)
 		}
 		if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), name)); !os.IsNotExist(err) {
 			t.Fatalf("%s: refused import was published: %v", tc.name, err)
@@ -341,11 +343,8 @@ func TestImportIsCheckedAgainstThisNodesRole(t *testing.T) {
 	}
 
 	crossRole := importArchiveForTest(t, service, writeImportArchiveForTest(t, noderole.RoleCosigner, map[string][]byte{account: accountJSON}), "cross-role.tar.gz")
-	if !crossRole.Success || len(crossRole.Skipped) != 0 || crossRole.SourceNodeRole != string(noderole.RoleCosigner) {
-		t.Fatalf("CommitBackupImport(cross role) = %+v", crossRole)
-	}
-	if same := importArchiveForTest(t, service, writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{account: accountJSON}), "same-role.tar.gz"); !same.Success || same.SourceNodeRole != "" {
-		t.Fatalf("CommitBackupImport(same role) = %+v", same)
+	if !crossRole.Success || len(crossRole.Skipped) != 0 {
+		t.Fatalf("CommitBackupImport(hand-sealed cross role) = %+v", crossRole)
 	}
 }
 

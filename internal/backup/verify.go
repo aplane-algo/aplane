@@ -23,10 +23,8 @@ type VerifiedCredential struct {
 // reason.
 type VerifyReport struct {
 	BackupDir string
-	// SourceNodeRole is the role the archive was backed up from.
-	SourceNodeRole string
-	Verified       []VerifiedCredential
-	Skipped        []SkippedEntry
+	Verified  []VerifiedCredential
+	Skipped   []SkippedEntry
 }
 
 // DeepVerifyBackupBytes authenticates the exact archive inventory and admits
@@ -48,10 +46,9 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, 
 
 // VerifyImportedBackup admits every credential of an extracted archive for
 // role, the role of the node importing it, by the loader restore uses. It
-// refuses an archive in which nothing would restore on that node with a
-// SkipRefusalError, as restore does. An archive of another role is admitted
-// key by key all the same: the report names its source role, and a restore
-// on this node refuses it.
+// refuses an archive in which nothing would restore on that node, as
+// restore does: a backup of another node role in one line, and any other
+// with a SkipRefusalError.
 func VerifyImportedBackup(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
 	archive, err := openArchive(backupDir, passphrase)
 	if err != nil {
@@ -61,18 +58,19 @@ func VerifyImportedBackup(backupDir string, passphrase []byte, role noderole.Rol
 	if err != nil {
 		return nil, err
 	}
-	if len(report.Verified) == 0 {
+	switch {
+	case len(report.Verified) > 0:
+		return report, nil
+	case archive.manifest.SourceNodeRole != string(role):
+		return nil, &OtherRoleError{Backup: archive.manifest.SourceNodeRole, Node: string(role)}
+	default:
 		return nil, &SkipRefusalError{Skipped: report.Skipped}
 	}
-	return report, nil
 }
 
 // verify admits every credential of the archive for role.
 func (a openedArchive) verify(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
-	report := &VerifyReport{
-		BackupDir: backupDir, SourceNodeRole: a.manifest.SourceNodeRole,
-		Verified: make([]VerifiedCredential, 0, len(a.selectors)),
-	}
+	report := &VerifyReport{BackupDir: backupDir, Verified: make([]VerifiedCredential, 0, len(a.selectors))}
 	var err error
 	report.Skipped, err = a.admitEach(a.selectors, passphrase, role, func(entry CredentialEntry) error {
 		entry.ZeroSecrets()
@@ -97,4 +95,14 @@ func (r *VerifyReport) Incomplete() error {
 	first := r.Skipped[0]
 	return fmt.Errorf("%d of %d credentials would be skipped by restore; first %s: %s",
 		len(r.Skipped), len(r.Skipped)+len(r.Verified), first.Selector, first.Reason)
+}
+
+// OtherRoleError refuses an import of a backup of another node role, none of
+// whose credentials this node can hold.
+type OtherRoleError struct {
+	Backup, Node string
+}
+
+func (e *OtherRoleError) Error() string {
+	return fmt.Sprintf("this is a %s backup; a %s node cannot restore it", e.Backup, e.Node)
 }

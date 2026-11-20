@@ -41,21 +41,12 @@ func BackupCreatedTime(info protocol.BackupInfo) (time.Time, BackupTimeSource) {
 	return time.Unix(info.CreatedAt, 0).UTC(), BackupTimeFile
 }
 
-// ImportSkipHeading says what a restore on this node makes of an imported
-// archive's skipped keys, for the line before they are listed. It is empty
-// when there is nothing to say. An archive backed up from a node of another
-// role is refused whole by a restore on this node, so its keys are not ones
-// a restore would skip.
+// ImportSkipHeading is the line before an imported archive's skipped keys
+// are listed, empty when there are none.
 func ImportSkipHeading(result protocol.CommitBackupImportResultMessage) string {
 	skipped := len(result.Skipped) + result.SkippedOmitted
-	switch {
-	case result.SourceNodeRole != "" && skipped > 0:
-		return fmt.Sprintf("Backed up from a %s node, so a restore on this node refuses it. %d key(s) in it cannot be used on this node:", result.SourceNodeRole, skipped)
-	case result.SourceNodeRole != "":
-		return fmt.Sprintf("Backed up from a %s node, so a restore on this node refuses it.", result.SourceNodeRole)
-	case skipped > 0:
-		return fmt.Sprintf("A restore will skip %d key(s) in it that this node cannot use:", skipped)
-	default:
+	if skipped == 0 {
 		return ""
 	}
+	return fmt.Sprintf("A restore will skip %d key(s) in it that this node cannot use:", skipped)
 }

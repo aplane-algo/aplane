@@ -169,9 +169,6 @@ type CommitBackupImportResult struct {
 	Skipped []RestoreSkipped
 	// SkippedOmitted counts the skipped credentials left out of Skipped.
 	SkippedOmitted int
-	// SourceNodeRole is set when the archive was backed up from a node of
-	// another role, which a restore on this node refuses.
-	SourceNodeRole string
 	Code           string
 	Error          string
 }

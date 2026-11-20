@@ -138,9 +138,7 @@ func TestStoreBackupImportReportsSkippedKeys(t *testing.T) {
 	}
 }
 
-// The heading before an import's skipped keys says what a restore on this
-// node does with them: skips them, or, for an archive of another role,
-// refuses it whole.
+// The heading before an import's skipped keys counts every one.
 func TestImportSkipHeading(t *testing.T) {
 	skipped := []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "refused"}}
 	for _, tc := range []struct {
@@ -149,8 +147,6 @@ func TestImportSkipHeading(t *testing.T) {
 	}{
 		{protocol.CommitBackupImportResultMessage{}, ""},
 		{protocol.CommitBackupImportResultMessage{Skipped: skipped, SkippedOmitted: 2}, "A restore will skip 3 key(s) in it that this node cannot use:"},
-		{protocol.CommitBackupImportResultMessage{SourceNodeRole: "cosigner"}, "Backed up from a cosigner node, so a restore on this node refuses it."},
-		{protocol.CommitBackupImportResultMessage{SourceNodeRole: "cosigner", Skipped: skipped}, "Backed up from a cosigner node, so a restore on this node refuses it. 1 key(s) in it cannot be used on this node:"},
 	} {
 		if got := ImportSkipHeading(tc.result); got != tc.want {
 			t.Fatalf("ImportSkipHeading(%+v) = %q, want %q", tc.result, got, tc.want)

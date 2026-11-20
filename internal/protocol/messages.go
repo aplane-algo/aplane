@@ -423,11 +423,8 @@ type CommitBackupImportResultMessage struct {
 	// archive would skip, with the reason; they do not block the import.
 	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
 	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
-	// SourceNodeRole is set when the archive was backed up from a node of
-	// another role, which a restore on this node refuses.
-	SourceNodeRole string `json:"source_node_role,omitempty"`
-	Code           string `json:"code,omitempty"`
-	Error          string `json:"error,omitempty"`
+	Code           string           `json:"code,omitempty"`
+	Error          string           `json:"error,omitempty"`
 }
 
 type AbortBackupImportMessage struct {
