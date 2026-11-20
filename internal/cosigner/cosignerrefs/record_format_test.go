@@ -187,3 +187,16 @@ func TestInvalidReasonsAreBounded(t *testing.T) {
 		t.Fatalf("selection error is %d bytes, want it bounded", len(err.Error()))
 	}
 }
+
+// Importing over a file of the same name that is not a valid reference says
+// so, with the hint the list gives for it.
+func TestImportOverAnInvalidFileSaysHowToClearIt(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	writeRawRecordBytes(t, paths, "lab", []byte(`{"schema":"wrong"}`))
+	_, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab)))
+	want := `cannot import cosigner reference "lab" over a file that is not a valid reference: "` + paths.CosignerRefPath("lab") +
+		`": unsupported schema "wrong" (remove reference lab to clear it)`
+	if err == nil || err.Error() != want {
+		t.Fatalf("Import() error = %v, want %q", err, want)
+	}
+}

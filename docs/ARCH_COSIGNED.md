@@ -562,7 +562,9 @@ Witness Key ID fails, naming such entries, only when no valid reference
 matches. `apadmin cosigner remove <name>` takes the name exactly as listed
 and clears an entry named for a reference name that it can read, whether or
 not the record parses, and a dangling symlink; any other entry has to be
-deleted by hand. Only a reference directory that cannot be read fails the
+deleted by hand. Show, remove and import check an entry's type before
+reading it, so a directory or a FIFO is refused, not read, and an import over
+an invalid entry gives the same hint as the list. Only a reference directory that cannot be read fails the
 list. The admin protocol's cosigner references carry the same fields as the
 record, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.

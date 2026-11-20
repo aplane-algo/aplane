@@ -82,11 +82,11 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	existing, found, err := Get(paths, record.Name)
-	if err != nil {
-		return nil, err
+	existing, bad, missing := inspect(paths.CosignerRefPath(record.Name), record.Name)
+	if bad != nil {
+		return nil, fmt.Errorf("cannot import cosigner reference %q over a file that is not a valid reference: %s", record.Name, bad)
 	}
-	if found {
+	if !missing {
 		if sameReferenceAuthority(existing, *record) {
 			return &existing, nil
 		}
@@ -151,19 +151,17 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.CosignerRefPath(name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Record{}, false, nil
-		}
-		return Record{}, false, fmt.Errorf("failed to read cosigner reference %s: %w", name, err)
+	rec, bad, missing := inspect(paths.CosignerRefPath(name), name)
+	switch {
+	case missing:
+		return Record{}, false, nil
+	case bad == nil:
+		return rec, true, nil
+	case bad.Removable:
+		return Record{}, false, fmt.Errorf("%w %s: %s", ErrInvalidRecord, name, bad.Reason)
+	default:
+		return Record{}, false, fmt.Errorf("cosigner reference %s %s", name, bad.Reason)
 	}
-	rec, err := parseRecord(data, name)
-	if err != nil {
-		return Record{}, false, fmt.Errorf("%w %s: %s", ErrInvalidRecord, name, boundedReason(err.Error()))
-	}
-	return rec, true, nil
 }
 
 // InvalidRecord is a ".json" entry of the reference directory that is not a
@@ -230,41 +228,55 @@ func listEntry(dir string, entry os.DirEntry) (*Record, *InvalidRecord) {
 		bad.Reason = fmt.Sprintf("%q is not a reference name", bad.Stem)
 		return nil, bad
 	}
-	// Inspected before it is read, so a directory or a FIFO is reported, not
-	// read. Remove reads the record first, so what it cannot read it cannot
-	// remove.
-	info, err := os.Stat(bad.Path)
+	rec, invalid, missing := inspect(bad.Path, bad.Stem)
 	switch {
-	case os.IsNotExist(err) && entry.Type()&os.ModeSymlink == 0:
-		return nil, nil
-	case os.IsNotExist(err):
+	case missing && entry.Type()&os.ModeSymlink != 0:
 		// Remove reads a dangling symlink as absent and deletes it.
 		bad.Reason, bad.Removable = "symlink to a missing file", true
 		return nil, bad
+	case missing:
+		return nil, nil
+	case invalid != nil:
+		return nil, invalid
+	}
+	return &rec, nil
+}
+
+// inspect reads the reference file at path, named stem: the record, or the
+// file as an invalid one, or missing when nothing is there, a dangling
+// symlink included. A directory, a FIFO or another special file is refused
+// by its type and never read. Remove reads the record first, so a file this
+// cannot read is not removable.
+func inspect(path, stem string) (Record, *InvalidRecord, bool) {
+	bad := &InvalidRecord{Path: path, Stem: stem}
+	info, err := os.Stat(path)
+	switch {
+	case os.IsNotExist(err):
+		return Record{}, nil, true
 	case err != nil:
 		bad.Reason = "cannot be inspected: " + errorCause(err)
-		return nil, bad
 	case info.IsDir():
 		bad.Reason = "is a directory"
-		return nil, bad
 	case !info.Mode().IsRegular():
 		bad.Reason = "is not a regular file"
-		return nil, bad
 	}
-	data, err := os.ReadFile(bad.Path)
+	if bad.Reason != "" {
+		return Record{}, bad, false
+	}
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return Record{}, nil, true
 	}
 	if err != nil {
 		bad.Reason = "cannot be read: " + errorCause(err)
-		return nil, bad
+		return Record{}, bad, false
 	}
-	rec, err := parseRecord(data, bad.Stem)
+	rec, err := parseRecord(data, stem)
 	if err != nil {
 		bad.Reason, bad.Removable = boundedReason(err.Error()), true
-		return nil, bad
+		return Record{}, bad, false
 	}
-	return &rec, nil
+	return rec, nil, false
 }
 
 // maxReasonBytes bounds a reason, which can quote a value read from the file,
