@@ -593,7 +593,6 @@ verify_uninstall() {
     docker_exec_bash "test ! -e /usr/local/bin/appolicy"
     docker_exec_bash "test ! -e /etc/systemd/system/apsigner.service"
     docker_exec_bash "test ! -e /lib/systemd/system/apsigner.service"
-    docker_exec_bash "test ! -e /etc/sudoers.d/99-apsigner-systemctl"
     docker_exec_bash "test ! -e /var/lib/apsigner/install/uninstall.sh"
     docker_exec_as_tester "test ! -e $OPERATOR_ROOT/apclient"
     docker_exec_as_tester "test ! -e $OPERATOR_ROOT/apenv.sh"

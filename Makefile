@@ -320,7 +320,6 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		   bin/$${arch}/appolicy \
 		   bin/$${arch}/applugin-checksum dist/staging/aplane/bin/; \
 		cp installer/apsigner.service installer/apsigner.service.template \
-		   installer/sudoers.template \
 		   dist/staging/aplane/installer/; \
 		cp installer/scripts/systemd-setup.sh installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/; \
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \

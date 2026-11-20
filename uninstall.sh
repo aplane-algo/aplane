@@ -632,7 +632,6 @@ fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-}"
 
 SERVICE_REMOVED=0
-SUDOERS_REMOVED=0
 CLIENT_REMOVED=0
 CLIENT_SKIPPED_NO_OPERATOR_ROOT=0
 ENV_RC_CLEANED=0
@@ -644,7 +643,6 @@ SERVICE_ALREADY_INACTIVE=0
 SERVICE_DISABLED=0
 SERVICE_ALREADY_DISABLED=0
 SERVICE_ALREADY_ABSENT=0
-SUDOERS_ALREADY_ABSENT=0
 CLIENT_ALREADY_ABSENT=0
 UNINSTALLER_ALREADY_ABSENT=0
 DATA_DIR_ALREADY_ABSENT=0
@@ -696,8 +694,8 @@ else
     SERVICE_ALREADY_DISABLED=1
 fi
 
-# Remove service file and sudoers. Check both the current local-admin unit path
-# and the legacy packaged-unit path used by older installers.
+# Remove the service file. Check both the current local-admin unit path and
+# the legacy packaged-unit path used by older installers.
 for service_unit in /etc/systemd/system/apsigner.service /lib/systemd/system/apsigner.service; do
     if [ -f "$service_unit" ]; then
         rm -f "$service_unit"
@@ -708,14 +706,8 @@ done
 if [ "$SERVICE_REMOVED" != "1" ]; then
     SERVICE_ALREADY_ABSENT=1
 fi
-if [ -f /etc/sudoers.d/99-apsigner-systemctl ]; then
-    rm -f /etc/sudoers.d/99-apsigner-systemctl
-    SUDOERS_REMOVED=1
-else
-    SUDOERS_ALREADY_ABSENT=1
-fi
 systemctl daemon-reload
-echo "Removed systemd service and sudoers rules"
+echo "Removed systemd service"
 
 # Remove apshell config for the invoking user
 if [ -n "${SUDO_USER:-}" ]; then
@@ -811,11 +803,6 @@ if [ "$SERVICE_REMOVED" = "1" ]; then
     echo "  - removed apsigner systemd unit: ${REMOVED_SERVICE_UNITS[*]}"
 elif [ "$SERVICE_ALREADY_ABSENT" = "1" ]; then
     echo "  - systemd unit was already absent"
-fi
-if [ "$SUDOERS_REMOVED" = "1" ]; then
-    echo "  - removed sudoers rule at /etc/sudoers.d/99-apsigner-systemctl"
-elif [ "$SUDOERS_ALREADY_ABSENT" = "1" ]; then
-    echo "  - sudoers rule was already absent"
 fi
 if [ "$BINARIES_REMOVED" = "1" ]; then
     echo "  - removed binaries from $BINDIR: ${REMOVED_BINARIES[*]}"

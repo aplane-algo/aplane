@@ -1,9 +1,8 @@
 #!/bin/bash
-# systemd-setup.sh - Install the apsigner systemd service and sudoers rules
+# systemd-setup.sh - Install the apsigner systemd service
 #
 # Installs:
 #   /etc/systemd/system/apsigner.service  (from installer/apsigner.service.template)
-#   /etc/sudoers.d/99-apsigner-systemctl  (from installer/sudoers.template)
 #
 # Usage:
 #   sudo ./installer/scripts/systemd-setup.sh <username> <group> [bindir] [--data-dir <path>] [--memory-lock]
@@ -104,20 +103,13 @@ if [ ! -x "$BINDIR/apstore" ]; then
 fi
 
 TEMPLATE="$INSTALLER_DIR/apsigner.service.template"
-SUDOERS_TEMPLATE="$INSTALLER_DIR/sudoers.template"
 
 if [ ! -f "$TEMPLATE" ]; then
     echo "Error: service template not found at $TEMPLATE" >&2
     exit 1
 fi
 
-if [ ! -f "$SUDOERS_TEMPLATE" ]; then
-    echo "Error: sudoers template not found at $SUDOERS_TEMPLATE" >&2
-    exit 1
-fi
-
 SERVICE_DEST="/etc/systemd/system/apsigner.service"
-SUDOERS_DEST="/etc/sudoers.d/99-apsigner-systemctl"
 
 if ! command -v systemctl >/dev/null 2>&1; then
     echo "Error: systemctl is required for systemd setup." >&2
@@ -152,7 +144,6 @@ esac
 echo "=== apsigner systemd setup ==="
 echo ""
 echo "  Service:   $SERVICE_DEST"
-echo "  Sudoers:   $SUDOERS_DEST"
 echo "  Binary:    $BINDIR/apsigner"
 echo "  User:      $SVC_USER"
 echo "  Group:     $SVC_GROUP"
@@ -220,12 +211,6 @@ if [ -f "$cred_file" ]; then
     chmod 644 "$SERVICE_DEST"
     echo "Re-bound systemd-creds passphrase from $cred_file"
 fi
-
-# Install sudoers rules
-sed -e "s|@@USER@@|${SVC_USER}|g" \
-    "$SUDOERS_TEMPLATE" > "$SUDOERS_DEST"
-chmod 440 "$SUDOERS_DEST"
-echo "Installed $SUDOERS_DEST"
 
 systemctl daemon-reload
 echo "Ran systemctl daemon-reload"

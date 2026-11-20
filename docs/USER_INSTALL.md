@@ -530,7 +530,7 @@ The tarball contains:
 ```
 aplane/
 ├── bin/            # All binaries (apsigner, apshell, apadmin, etc.)
-├── installer/      # systemd files, sudoers template, and installer helper scripts
+├── installer/      # systemd files and installer helper scripts
 │   └── scripts/    # systemd, environment-audit, and MCP config helpers
 ├── library/
 │   └── templates/  # Template library copied into $APSIGNER_DATA/library/templates
@@ -605,7 +605,6 @@ Key systemd paths:
 | `/var/lib/apsigner/install/uninstall.sh` | Bundled systemd uninstaller |
 | `/var/lib/apsigner/install/service-principal.json` | Root-controlled service uid/gid used by signer-store permission repair |
 | `/etc/systemd/system/apsigner.service` | systemd service unit |
-| `/etc/sudoers.d/99-apsigner-systemctl` | sudoers rule allowing the service user to manage the service |
 | `<operator-root>/` | Operator workspace for the user who ran `sudo install.sh --systemd`; defaults to `~<installing-user>/aplane/` |
 | `<operator-root>/apclient/` | apshell client config, scripts, plugin activation config, and bundled plugin catalog |
 | `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APSIGNER_IPC_PATH`, `APCLIENT_DATA`, and `PATH` |
@@ -681,7 +680,7 @@ sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin aplane
 sudo chown aplane:aplane /var/lib/apsigner
 sudo chmod 700 /var/lib/apsigner
 
-# Install systemd service and sudoers
+# Install the systemd service
 sudo ./installer/scripts/systemd-setup.sh aplane aplane /usr/local/bin --data-dir /var/lib/apsigner
 
 # Write signer config
@@ -834,10 +833,7 @@ old store-local `bin/` subtree while the local signer is stopped.
 sudo ./installer/scripts/systemd-setup.sh aplane aplane /usr/local/bin --data-dir /var/lib/apsigner
 ```
 
-This installs:
-
-- `/etc/systemd/system/apsigner.service` — the service unit file
-- `/etc/sudoers.d/99-apsigner-systemctl` — allows the service user to start/stop/restart without a password
+This installs the service unit file, `/etc/systemd/system/apsigner.service`.
 
 ---
 
@@ -965,11 +961,10 @@ journalctl -u apsigner -f
 
 ## Managing the Service
 
-With the sudoers rules installed, the `aplane` user can manage the service with passwordless `sudo systemctl`:
+Manage the service with `systemctl` as an administrator:
 
 ```bash
-# As the service user (or via sudo -u aplane)
-sudo systemctl status apsigner
+systemctl status apsigner
 sudo systemctl restart apsigner
 sudo systemctl stop apsigner
 ```
@@ -1111,7 +1106,6 @@ The `installer/` directory contains service files and installer helper scripts f
 |------|----------|
 | `installer/apsigner.service` | Pre-built service unit. Hardcoded for `/var/lib/apsigner` as user `aplane` with binaries in `/usr/local/bin/`. Copy directly to `/etc/systemd/system/` for the simplest possible setup. |
 | `installer/apsigner.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, and `@@MEMORY_LOCK_SERVICE_LINES@@` placeholders. Used by `installer/scripts/systemd-setup.sh` for customizable installs. |
-| `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `apsigner` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
 | `installer/scripts/aplane-env-audit.sh` | Read-only environment audit for local configuration, ports, listeners, IPC socket state, SSH key permissions, and partial installs. |
 | `installer/scripts/config-mcp.sh` | Helper that writes `$APCLIENT_DATA/.mcp.json` and `$APCLIENT_DATA/.codex/config.toml` for `apshell --mcp`. Installers call the same configuration logic automatically. |
 
@@ -1249,7 +1243,7 @@ after you choose `systemd`; it does not select the mode for you.
 `--systemd` remains available as an explicit mode flag on Linux. On non-Linux
 platforms, local uninstall is the default and `--systemd` is rejected.
 Systemd uninstall stops and disables `apsigner`, removes the systemd unit,
-sudoers file, installed binaries, and the invoking user's operator workspace
+installed binaries, and the invoking user's operator workspace
 under the install-recorded operator root. Pass `[operator-root]` to override
 that recorded value. If no operator root is recorded and no `[operator-root]`
 is provided, systemd uninstall leaves user client directories untouched
@@ -1287,10 +1281,9 @@ every retained path with a one-line label. Security-relevant entries:
   Indexer endpoints, and ports). Preserved so uninstall does not silently discard operator state;
   product policy remains in the selected generation.
 
-What `uninstall.sh` *removes*: the `apsigner` systemd unit, the
-`/etc/sudoers.d/99-apsigner-systemctl` rule, the installed APlane binaries
-under the configured binary directory, and the operator workspace under the
-operator root.
+What `uninstall.sh` *removes*: the `apsigner` systemd unit, the installed
+APlane binaries under the configured binary directory, and the operator
+workspace under the operator root.
 
 The systemd `LoadCredentialEncrypted=` binding lives in the unit file and is
 removed along with it, but the underlying `passphrase.cred` is preserved. On a
