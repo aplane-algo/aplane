@@ -606,8 +606,8 @@ namespace and must not be treated as chain identity.
 Signer and cosigner endpoint routing lives in `endpoints.yaml`, not in
 `config.yaml`. The endpoint registry contains a `schema_version` and endpoint
 records with `role: signer` or `role: cosigner`; the one `signer` endpoint is
-the default for `connect` and `enroll`. Endpoint records own connection details: the `ssh://` URL,
-SSH identity file, and known-hosts path.
+the default for `connect` and `enroll`. Endpoint records own connection
+details: the `ssh://` URL, SSH identity file, and known-hosts path.
 
 Cosigner endpoint records do not contain key inventory. Cosigned and
 bounded-cosigner operations query authenticated `/keys` and retain routing only
