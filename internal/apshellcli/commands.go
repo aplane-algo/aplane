@@ -23,43 +23,6 @@ type Command struct {
 	RawArgs string // Raw argument string (preserves quotes for raw-tail commands like js/jssave)
 }
 
-// Transaction command wrappers
-
-// cmdValidate handles the validate command, checking account status.
-func (r *REPLState) cmdValidate(args []string, _ *command.Context) (command.Result, error) {
-	return r.runValidate(args)
-}
-
-// cmdRekey handles the rekey command, changing an account's auth address.
-func (r *REPLState) cmdRekey(args []string, _ *command.Context) (command.Result, error) {
-	return r.runRekey(args)
-}
-
-// cmdUnrekey handles the unrekey command, resetting an account's auth address to itself.
-func (r *REPLState) cmdUnrekey(args []string, _ *command.Context) (command.Result, error) {
-	return r.runUnrekey(args)
-}
-
-// cmdSend handles the send command for ALGO or ASA transfers.
-func (r *REPLState) cmdSend(args []string, _ *command.Context) (command.Result, error) {
-	return r.runSend(args)
-}
-
-// cmdSweep handles the sweep command, emptying an account or asset balance.
-func (r *REPLState) cmdSweep(args []string, _ *command.Context) (command.Result, error) {
-	return r.runSweep(args)
-}
-
-// cmdClose handles the close command, closing an account to another address.
-func (r *REPLState) cmdClose(args []string, _ *command.Context) (command.Result, error) {
-	return r.runClose(args)
-}
-
-// cmdSign handles the sign command, signing transactions from a file.
-func (r *REPLState) cmdSign(args []string, _ *command.Context) (command.Result, error) {
-	return r.runSign(args)
-}
-
 // cmdOptin handles the optin command for ASAs.
 func (r *REPLState) cmdOptin(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseOptinCommand(args)

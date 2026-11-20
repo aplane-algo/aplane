@@ -351,42 +351,6 @@ func newGroupSubmitSummary(txIDs []string, confirmed bool, output string, warnin
 	}
 }
 
-// CreatedAppDetails is the app-owned created-application identity view.
-type CreatedAppDetails struct {
-	AppID      uint64
-	AppAddress string
-}
-
-func createdAppDetailsFromEngine(result *engine.AppDeployResult) *CreatedAppDetails {
-	if result == nil {
-		return nil
-	}
-	return &CreatedAppDetails{
-		AppID:      result.AppID,
-		AppAddress: result.AppAddress,
-	}
-}
-
-// ConnectionDetails is the app-owned signer connection outcome.
-type ConnectionDetails struct {
-	AlreadyConnected bool
-	Target           string
-	KeyCount         int
-	Locked           bool
-}
-
-func connectionDetailsFromEngine(result *engine.ConnectionResult) *ConnectionDetails {
-	if result == nil {
-		return nil
-	}
-	return &ConnectionDetails{
-		AlreadyConnected: result.AlreadyConnected,
-		Target:           result.Target,
-		KeyCount:         result.KeyCount,
-		Locked:           result.Locked,
-	}
-}
-
 // SwitchNetworkResult describes the outcome of a network switch.
 type SwitchNetworkResult struct {
 	OldNetwork string
@@ -649,7 +613,6 @@ type RekeyCommandResult struct {
 	CurrentAuthAddress      string
 	IsUnrekey               bool
 	CanSignForTarget        bool
-	TargetIsLsig            bool
 	TargetAuthorizationKind algorithm.AuthorizationKind
 	TxID                    string
 	Confirmed               bool
@@ -880,11 +843,10 @@ type StartupConnectDecision struct {
 
 // CommandExecutionState exposes the shell-relevant runtime state needed by command dispatch.
 type CommandExecutionState struct {
-	Network       string
-	IsConnected   bool
-	IsTunnelBound bool
-	WriteMode     bool
-	Simulate      bool
+	Network     string
+	IsConnected bool
+	WriteMode   bool
+	Simulate    bool
 }
 
 // SigningContextResult describes the semantic outcome of signing-context resolution.

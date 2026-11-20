@@ -26,17 +26,7 @@ func newShellCommandResult(render func(io.Writer) error, projection interface{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal command result: %w", err)
 	}
-	return newShellCommandJSONResult(render, data)
-}
-
-func newShellCommandJSONResult(render func(io.Writer) error, data []byte) (command.Result, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("structured command returned an empty machine result")
-	}
-	if !json.Valid(data) {
-		return nil, fmt.Errorf("structured command returned invalid JSON")
-	}
-	return &shellCommandResult{render: render, machine: append([]byte(nil), data...)}, nil
+	return &shellCommandResult{render: render, machine: data}, nil
 }
 
 func newTerminalCommandResult(render func(io.Writer) error) command.Result {

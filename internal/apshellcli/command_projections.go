@@ -207,16 +207,18 @@ type endpointDiscoveryKey struct {
 }
 
 type pluginCommandProjection struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description,omitempty"`
-	Author      string   `json:"author,omitempty"`
-	Networks    []string `json:"networks,omitempty"`
-	Commands    []struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Usage       string `json:"usage,omitempty"`
-	} `json:"commands"`
+	Name        string                       `json:"name"`
+	Version     string                       `json:"version"`
+	Description string                       `json:"description,omitempty"`
+	Author      string                       `json:"author,omitempty"`
+	Networks    []string                     `json:"networks,omitempty"`
+	Commands    []pluginSubcommandProjection `json:"commands"`
+}
+
+type pluginSubcommandProjection struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Usage       string `json:"usage,omitempty"`
 }
 
 type pluginsProjection struct {
@@ -232,15 +234,9 @@ func projectPluginsResult(result *apshellapp.PluginsCommandResult) pluginsProjec
 			Name: plugin.Name, Version: plugin.Version, Description: plugin.Description,
 			Author: plugin.Author, Networks: plugin.Networks,
 		}
-		item.Commands = make([]struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Usage       string `json:"usage,omitempty"`
-		}, len(plugin.Commands))
+		item.Commands = make([]pluginSubcommandProjection, len(plugin.Commands))
 		for i, cmd := range plugin.Commands {
-			item.Commands[i].Name = cmd.Name
-			item.Commands[i].Description = cmd.Description
-			item.Commands[i].Usage = cmd.Usage
+			item.Commands[i] = pluginSubcommandProjection{Name: cmd.Name, Description: cmd.Description, Usage: cmd.Usage}
 		}
 		return item
 	}

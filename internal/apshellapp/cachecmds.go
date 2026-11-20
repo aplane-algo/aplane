@@ -6,26 +6,15 @@ package apshellapp
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/refname"
 )
 
-func validateAliasNameInput(name string) error {
-	return refname.ValidateAlias(name)
-}
-
 func validateSetNameInput(name string) error {
 	cleaned := strings.TrimPrefix(name, "@")
 	return refname.ValidateSet(cleaned)
-}
-
-func normalizeSetNameInput(name string) string {
-	return refname.NormalizeSet(name)
-}
-
-func normalizeAliasNameInput(name string) string {
-	return refname.NormalizeAlias(name)
 }
 
 // stripBrackets removes bracket notation from an address list.
@@ -71,8 +60,8 @@ func (a *App) Alias(ctx context.Context, args []string) (*AliasCommandResult, er
 		if len(args) != 2 {
 			return nil, fmt.Errorf("usage: alias delete <name>")
 		}
-		name := normalizeAliasNameInput(args[1])
-		if err := validateAliasNameInput(name); err != nil {
+		name := refname.NormalizeAlias(args[1])
+		if err := refname.ValidateAlias(name); err != nil {
 			return nil, err
 		}
 		address, err := a.eng.RemoveAlias(name)
@@ -87,8 +76,8 @@ func (a *App) Alias(ctx context.Context, args []string) (*AliasCommandResult, er
 	}
 
 	if len(args) == 1 {
-		name := normalizeAliasNameInput(args[0])
-		if err := validateAliasNameInput(name); err != nil {
+		name := refname.NormalizeAlias(args[0])
+		if err := refname.ValidateAlias(name); err != nil {
 			return nil, err
 		}
 		aliasResult := a.eng.GetAlias(name)
@@ -108,9 +97,9 @@ func (a *App) Alias(ctx context.Context, args []string) (*AliasCommandResult, er
 	}
 
 	if len(args) == 2 {
-		name := normalizeAliasNameInput(args[0])
+		name := refname.NormalizeAlias(args[0])
 		address := args[1]
-		if err := validateAliasNameInput(name); err != nil {
+		if err := refname.ValidateAlias(name); err != nil {
 			return nil, err
 		}
 		result, err := a.eng.AddAliasWithContext(ctx, name, address)
@@ -147,12 +136,12 @@ func (a *App) Sets(_ context.Context, args []string) (*SetsCommandResult, error)
 	}
 
 	if args[0] == "add" {
-		toIndex := indexOf(args, "to")
+		toIndex := slices.Index(args, "to")
 		if toIndex == -1 || toIndex == 1 || toIndex == len(args)-1 {
 			return nil, fmt.Errorf("usage: sets add <address>... to <name>")
 		}
 		addresses := stripBrackets(args[1:toIndex])
-		setName := normalizeSetNameInput(args[toIndex+1])
+		setName := refname.NormalizeSet(args[toIndex+1])
 		if err := validateSetNameInput(setName); err != nil {
 			return nil, err
 		}
@@ -168,12 +157,12 @@ func (a *App) Sets(_ context.Context, args []string) (*SetsCommandResult, error)
 	}
 
 	if args[0] == "remove" {
-		fromIndex := indexOf(args, "from")
+		fromIndex := slices.Index(args, "from")
 		if fromIndex == -1 || fromIndex == 1 || fromIndex == len(args)-1 {
 			return nil, fmt.Errorf("usage: sets remove <address>... from <name>")
 		}
 		addresses := stripBrackets(args[1:fromIndex])
-		setName := normalizeSetNameInput(args[fromIndex+1])
+		setName := refname.NormalizeSet(args[fromIndex+1])
 		if err := validateSetNameInput(setName); err != nil {
 			return nil, err
 		}
@@ -192,7 +181,7 @@ func (a *App) Sets(_ context.Context, args []string) (*SetsCommandResult, error)
 		if len(args) != 2 {
 			return nil, fmt.Errorf("usage: sets delete <name>")
 		}
-		setName := normalizeSetNameInput(args[1])
+		setName := refname.NormalizeSet(args[1])
 		if err := validateSetNameInput(setName); err != nil {
 			return nil, err
 		}
@@ -208,7 +197,7 @@ func (a *App) Sets(_ context.Context, args []string) (*SetsCommandResult, error)
 	}
 
 	if len(args) == 1 {
-		setRef := normalizeSetNameInput(args[0])
+		setRef := refname.NormalizeSet(args[0])
 		if err := validateSetNameInput(setRef); err != nil {
 			return nil, err
 		}
@@ -226,7 +215,7 @@ func (a *App) Sets(_ context.Context, args []string) (*SetsCommandResult, error)
 		}, nil
 	}
 
-	setName := normalizeSetNameInput(args[0])
+	setName := refname.NormalizeSet(args[0])
 	if err := validateSetNameInput(setName); err != nil {
 		return nil, err
 	}
@@ -263,13 +252,4 @@ func setsUsageLines() []string {
 		"sets remove <addr>... from <name>",
 		"sets delete <name>",
 	}
-}
-
-func indexOf(items []string, target string) int {
-	for i, item := range items {
-		if item == target {
-			return i
-		}
-	}
-	return -1
 }

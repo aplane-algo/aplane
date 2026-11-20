@@ -11,6 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 )
 
@@ -53,8 +54,8 @@ func TestBuildSigningContext_SimpleEd25519(t *testing.T) {
 	if ctx.KeyType != "ed25519" {
 		t.Errorf("KeyType = %q, want %q", ctx.KeyType, "ed25519")
 	}
-	if ctx.IsLSig {
-		t.Error("IsLSig should be false for ed25519")
+	if ctx.AuthorizationKind != algorithm.AuthorizationEd25519 {
+		t.Errorf("AuthorizationKind = %q, want %q", ctx.AuthorizationKind, algorithm.AuthorizationEd25519)
 	}
 }
 
@@ -166,8 +167,8 @@ func TestBuildSigningContext_FalconKeyType(t *testing.T) {
 	if ctx.KeyType != "aplane.falcon1024.v1" {
 		t.Errorf("KeyType = %q, want %q", ctx.KeyType, "aplane.falcon1024.v1")
 	}
-	if !ctx.IsLSig {
-		t.Error("IsLSig should be true for aplane.falcon1024.v1")
+	if ctx.AuthorizationKind != algorithm.AuthorizationLogicSig {
+		t.Errorf("AuthorizationKind = %q, want %q", ctx.AuthorizationKind, algorithm.AuthorizationLogicSig)
 	}
 }
 

@@ -15,8 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/scripting"
 )
 
-// runJSScriptMode runs a JavaScript script file.
-func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
+// RunJSScriptMode runs a JavaScript script file.
+func RunJSScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
 	// Initialize Engine
 	eng := engine.NewInitializedEngine(network, &cfg, dataDir)
 
@@ -43,8 +43,8 @@ func runJSScriptMode(network string, cfg config.Config, dataDir string, scriptPa
 	}
 }
 
-// runJSExpression runs a single JavaScript expression.
-func runJSExpression(network string, cfg config.Config, dataDir string, expr string) {
+// RunJSExpression runs a single JavaScript expression.
+func RunJSExpression(network string, cfg config.Config, dataDir string, expr string) {
 	// Initialize Engine
 	eng := engine.NewInitializedEngine(network, &cfg, dataDir)
 
@@ -59,12 +59,7 @@ func runJSExpression(network string, cfg config.Config, dataDir string, expr str
 
 	// Print result if not empty
 	if !result.IsEmpty {
-		switch v := result.Value.(type) {
-		case map[string]interface{}, []interface{}:
-			fmt.Printf("%v\n", v)
-		default:
-			fmt.Println(result.Value)
-		}
+		fmt.Println(result.Value)
 	}
 }
 

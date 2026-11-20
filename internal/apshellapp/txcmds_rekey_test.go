@@ -4,6 +4,7 @@
 package apshellapp
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
@@ -11,10 +12,10 @@ import (
 
 func TestDecorateRekeyResultForSignableLsigTarget(t *testing.T) {
 	result := &RekeyCommandResult{
-		From:             "FROM",
-		To:               "TO",
-		CanSignForTarget: true,
-		TargetIsLsig:     true,
+		From:                    "FROM",
+		To:                      "TO",
+		CanSignForTarget:        true,
+		TargetAuthorizationKind: algorithm.AuthorizationLogicSig,
 	}
 
 	decorateRekeyResult(result)
@@ -59,6 +60,35 @@ func TestDecorateRekeyResultForSignableNativePQTarget(t *testing.T) {
 
 	if got, want := result.ConfirmedLines[0], "Account {from} is now rekeyed to native post-quantum address {to}"; got != want {
 		t.Fatalf("ConfirmedLines[0] = %q, want %q", got, want)
+	}
+}
+
+// A signable target is named by its kind in all three lines: before
+// signing as an address of that kind, and once in effect as the lsig itself
+// or an address of the kind. A kind without its own name is Ed25519's.
+func TestDecorateRekeyResultNamesTheTargetKind(t *testing.T) {
+	tests := []struct {
+		kind                          algorithm.AuthorizationKind
+		preSubmit, confirmed, pending string
+	}{
+		{algorithm.AuthorizationLogicSig, "Rekeying account {from} to lsig address {to}...",
+			"Account {from} is now rekeyed to lsig {to}", "When confirmed, {from} will be rekeyed to lsig {to}"},
+		{algorithm.AuthorizationNativePQ, "Rekeying account {from} to native post-quantum address {to}...",
+			"Account {from} is now rekeyed to native post-quantum address {to}", "When confirmed, {from} will be rekeyed to native post-quantum address {to}"},
+		{algorithm.AuthorizationEd25519, "Rekeying account {from} to Ed25519 address {to}...",
+			"Account {from} is now rekeyed to Ed25519 address {to}", "When confirmed, {from} will be rekeyed to Ed25519 address {to}"},
+		{"", "Rekeying account {from} to Ed25519 address {to}...",
+			"Account {from} is now rekeyed to Ed25519 address {to}", "When confirmed, {from} will be rekeyed to Ed25519 address {to}"},
+	}
+	for _, tt := range tests {
+		result := &RekeyCommandResult{From: "FROM", To: "TO", CanSignForTarget: true, TargetAuthorizationKind: tt.kind}
+		decorateRekeyResult(result)
+		want := []string{tt.preSubmit, "WARNING: After this transaction, you must use the new auth address to sign!"}
+		if !reflect.DeepEqual(result.PreSubmitLines, want) ||
+			!reflect.DeepEqual(result.ConfirmedLines, []string{tt.confirmed}) ||
+			!reflect.DeepEqual(result.PendingLines, []string{tt.pending}) {
+			t.Errorf("kind %q: lines = %q / %q / %q", tt.kind, result.PreSubmitLines, result.ConfirmedLines, result.PendingLines)
+		}
 	}
 }
 

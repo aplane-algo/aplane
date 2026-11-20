@@ -74,18 +74,9 @@ func (e *Engine) PrepareAppDeploy(ctx context.Context, params AppDeployParams) (
 		return nil, fmt.Errorf("failed to load clear program: %w", err)
 	}
 
-	sp, err := e.AlgodClient.SuggestedParams().Do(ctx)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get suggested params: %w", err)
-	}
-	if err := checkSupportedConsensus(sp.ConsensusVersion); err != nil {
 		return nil, err
-	}
-	// Apply a flat fee whenever the caller opts in, including an explicit flat
-	// zero, matching the unified fee model used by send and getSuggestedParams.
-	if params.UseFlatFee {
-		sp.FlatFee = true
-		sp.Fee = types.MicroAlgos(params.Fee)
 	}
 
 	sender, err := types.DecodeAddress(signingCtx.Address)

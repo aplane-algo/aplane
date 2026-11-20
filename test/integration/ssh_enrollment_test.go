@@ -610,7 +610,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent-backed connect failed unexpectedly: %v", err)
 	}
-	if !eng.IsTunnelConnected() {
+	if !eng.IsConnected() {
 		t.Fatal("expected tunnel to be marked connected")
 	}
 	t.Cleanup(eng.Disconnect)
@@ -685,9 +685,6 @@ func TestActiveTunnelFailsCleanlyWhenKeyRevoked(t *testing.T) {
 		t.Fatal("timed out waiting for tunnel disconnect after key revocation")
 	}
 
-	if eng.IsTunnelConnected() {
-		t.Fatal("expected tunnel to be disconnected after key revocation")
-	}
 	if eng.IsConnected() {
 		t.Fatal("expected engine to be disconnected after key revocation")
 	}

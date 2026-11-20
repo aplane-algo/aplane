@@ -63,9 +63,7 @@ func ConnectCosignerWithSSH(ctx context.Context, cfg CosignerSSHConfig) (*signer
 	// fail on an already-canceled connection.
 	sshCtx, cancelSSH, detachSetup := newSSHLifetime(ctx)
 	sshConnection := sshtunnel.NewClient(cfg.Host, cfg.SSHPort, cfg.IdentityFile, cfg.KnownHostsPath)
-	if cfg.HostKeyApproval != nil {
-		sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
-	}
+	sshConnection.SetHostKeyApprovalHandler(cfg.HostKeyApproval)
 	sshConnection.SetIdentityCreatedCallback(cfg.IdentityCreated)
 	if err := sshConnection.ConnectWithKey(sshCtx); err != nil {
 		_ = detachSetup()

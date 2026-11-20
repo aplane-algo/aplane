@@ -6,7 +6,6 @@ package apshellcli
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 )
 
@@ -27,24 +26,4 @@ func ResolveNetworkOverride(longValue, shortValue string) (string, error) {
 		return shortValue, nil
 	}
 	return longValue, nil
-}
-
-func StartREPL(network string, cfg config.Config, dataDir string) {
-	startREPL(network, cfg, dataDir)
-}
-
-func RunScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
-	runScriptMode(network, cfg, dataDir, scriptPath)
-}
-
-func RunJSScriptMode(network string, cfg config.Config, dataDir string, scriptPath string) {
-	runJSScriptMode(network, cfg, dataDir, scriptPath)
-}
-
-func RunJSExpression(network string, cfg config.Config, dataDir string, expr string) {
-	runJSExpression(network, cfg, dataDir, expr)
-}
-
-func RunMCPMode(network string, cfg config.Config, dataDir string) {
-	runMCPMode(network, cfg, dataDir)
 }

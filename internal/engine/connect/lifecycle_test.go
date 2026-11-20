@@ -64,7 +64,6 @@ func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
-	state.TunnelConnected = true
 	cancelled := false
 	state.TunnelCancel = func() { cancelled = true }
 	state.ConnectionTarget = "remote-a"
@@ -79,7 +78,7 @@ func TestDisconnectClearsStateAndInvokesCallback(t *testing.T) {
 	if !callbackCalled {
 		t.Fatal("disconnect callback was not called")
 	}
-	if state.SignerClient != nil || state.SSHTunnelClient != nil || state.TunnelConnected || state.ConnectionTarget != "" || state.connectingTarget != "" {
+	if state.SignerClient != nil || state.SSHTunnelClient != nil || state.ConnectionTarget != "" || state.connectingTarget != "" {
 		t.Fatalf("state was not fully cleared: %+v", state)
 	}
 	if state.TunnelCancel != nil {
@@ -100,13 +99,12 @@ func TestClearLockedResetsConnectionState(t *testing.T) {
 	state := NewState()
 	state.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	state.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
-	state.TunnelConnected = true
 	state.ConnectionTarget = "remote-a"
 	state.connectingTarget = "remote-b"
 
 	state.clearLocked()
 
-	if state.SignerClient != nil || state.SSHTunnelClient != nil || state.TunnelConnected || state.ConnectionTarget != "" || state.connectingTarget != "" {
+	if state.SignerClient != nil || state.SSHTunnelClient != nil || state.ConnectionTarget != "" || state.connectingTarget != "" {
 		t.Fatalf("state was not fully cleared: %+v", state)
 	}
 }

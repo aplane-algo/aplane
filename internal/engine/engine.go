@@ -184,9 +184,7 @@ func (e *Core) rebuildAuthCache(ctx context.Context) error {
 	var before cache.AuthCacheSnapshot
 	var addresses map[string]bool
 	if err := e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
-		}
+		e.ReloadAliasCache()
 		before = cache.SnapshotAuthCache(e.CacheStore, e.Network)
 		addresses = e.collectAllAddresses()
 		return nil
@@ -195,9 +193,7 @@ func (e *Core) rebuildAuthCache(ctx context.Context) error {
 	}
 	answers := cache.QueryAuthAddresses(ctx, e.AlgodClient, addresses)
 	return e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AliasCache = cache.LoadAliasCacheFromStore(e.CacheStore)
-		}
+		e.ReloadAliasCache()
 		e.AuthCache = cache.MergeAuthCacheIntoStore(e.CacheStore, e.Network, before, answers, e.collectAllAddresses())
 		return nil
 	})

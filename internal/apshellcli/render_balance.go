@@ -11,32 +11,28 @@ import (
 )
 
 // showFullBalance shows ALGO + all ASA balances for an account.
-func (r *REPLState) showFullBalance(result *apshellapp.BalanceDetails) error {
+func (r *REPLState) showFullBalance(result *apshellapp.BalanceDetails) {
 	r.printf("%s\n", r.app().FormatAddress(result.Address))
 
 	algoMeta, _ := r.app().ResolveAssetMetadata("algo")
 	r.printf("  ALGO: %s\n", asa.FormatDisplayAmount(result.AlgoBalance, algoMeta))
 
-	if len(result.Assets) > 0 {
-		for _, asset := range result.Assets {
-			meta := asa.Metadata{
-				Network:  r.app().Network(),
-				AssetID:  asset.AssetID,
-				UnitName: asset.UnitName,
-				Decimals: asset.Decimals,
-			}
-			r.printf("  %s: %s\n", asa.DisplayRef(meta), asa.FormatDisplayAmount(asset.Amount, meta))
+	for _, asset := range result.Assets {
+		meta := asa.Metadata{
+			Network:  r.app().Network(),
+			AssetID:  asset.AssetID,
+			UnitName: asset.UnitName,
+			Decimals: asset.Decimals,
 		}
+		r.printf("  %s: %s\n", asa.DisplayRef(meta), asa.FormatDisplayAmount(asset.Amount, meta))
 	}
-
-	return nil
 }
 
 // showSingleAssetBalance shows balance for a specific asset.
-func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, meta asa.Metadata) error {
+func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, meta asa.Metadata) {
 	if meta.AssetID == 0 {
 		r.printf("%s: %s\n", r.app().FormatAddress(result.Address), asa.DisplayString(asa.AmountFromRaw(result.AlgoBalance, meta)))
-		return nil
+		return
 	}
 	asaID := meta.AssetID
 
@@ -49,12 +45,11 @@ func (r *REPLState) showSingleAssetBalance(result *apshellapp.BalanceDetails, me
 				Decimals: asset.Decimals,
 			}
 			r.printf("%s: %s\n", r.app().FormatAddress(result.Address), asa.DisplayString(asa.AmountFromRaw(asset.Amount, holdingMeta)))
-			return nil
+			return
 		}
 	}
 
 	r.printf("%s: 0 %s (not opted in)\n", r.app().FormatAddress(result.Address), asa.DisplayRef(meta))
-	return nil
 }
 
 // showMultiAccountBalances shows balances across multiple accounts.

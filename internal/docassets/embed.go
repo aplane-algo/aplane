@@ -29,11 +29,11 @@ var docsFS embed.FS
 
 // CuratedDocs returns the embedded curated reference documentation as a
 // filesystem rooted at the docs directory (so entries are plain "NAME.md").
-// Returns nil if the embedded tree cannot be opened.
 func CuratedDocs() fs.FS {
 	sub, err := fs.Sub(docsFS, "generated/docs")
 	if err != nil {
-		return nil
+		// fs.Sub fails only for an invalid path, and this one is constant.
+		panic(err)
 	}
 	return sub
 }
