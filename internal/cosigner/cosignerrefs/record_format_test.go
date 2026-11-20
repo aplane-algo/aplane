@@ -156,3 +156,34 @@ func TestGetReportsAnEarlierSchemaAsUnsupported(t *testing.T) {
 		t.Fatalf("Get() error = %v, want %q", err, want)
 	}
 }
+
+// A reason quotes values read from the file, so it is bounded: a 5 MiB schema
+// field cannot make a listing, a Get or a selection error outgrow the 4 MiB
+// admin frame.
+func TestInvalidReasonsAreBounded(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	writeRawRecord(t, paths, "huge", map[string]any{"schema": strings.Repeat("x", 5<<20)})
+
+	_, invalid, err := List(paths)
+	if err != nil || len(invalid) != 1 {
+		t.Fatalf("List() invalid = %d entries, %v", len(invalid), err)
+	}
+	reason := invalid[0].Reason
+	if len(reason) > maxReasonBytes+len("...(truncated)") || !strings.HasPrefix(reason, `unsupported schema "xxx`) || !strings.HasSuffix(reason, "...(truncated)") {
+		t.Fatalf("reason is %d bytes: %.80q...", len(reason), reason)
+	}
+	if _, _, err := Get(paths, "huge"); err == nil || len(err.Error()) > 300 {
+		t.Fatalf("Get() error is %d bytes, want it bounded", len(err.Error()))
+	}
+	other, err := witness.ID(witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: other})
+	if err == nil || len(err.Error()) > 500 {
+		t.Fatalf("selection error is %d bytes, want it bounded", len(err.Error()))
+	}
+}

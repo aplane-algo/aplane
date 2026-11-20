@@ -545,9 +545,9 @@ func (c Catalog) listCosigners() error {
 	}
 	for _, bad := range result.Invalid {
 		if bad.Removable {
-			c.warn("%s is not a valid cosigner reference: %s; clear it with: apadmin cosigner remove %s", bad.Path, bad.Reason, bad.Name)
+			c.warn("%q is not a valid cosigner reference: %s; clear it with: apadmin cosigner remove %s", bad.Path, bad.Reason, bad.Name)
 		} else {
-			c.warn("%s is not a valid cosigner reference: %s; apadmin cosigner remove does not reach it, so delete the file to clear it", bad.Path, bad.Reason)
+			c.warn("%q is not a valid cosigner reference: %s; apadmin cosigner remove does not reach it, so delete the file to clear it", bad.Path, bad.Reason)
 		}
 	}
 	return nil

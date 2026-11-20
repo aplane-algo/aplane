@@ -198,10 +198,10 @@ func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 	if !reflect.DeepEqual(invalid, want) {
 		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
 	}
-	if got, want := invalid[1].String(), invalid[1].Path+`: "Foo" is not a reference name (remove does not reach it; delete the file to clear it)`; got != want {
+	if got, want := invalid[1].String(), fmt.Sprintf("%q", invalid[1].Path)+`: "Foo" is not a reference name (remove does not reach it; delete the file to clear it)`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
-	if got, want := invalid[3].String(), invalid[3].Path+`: unsupported schema "wrong" (remove reference bad to clear it)`; got != want {
+	if got, want := invalid[3].String(), fmt.Sprintf("%q", invalid[3].Path)+`: unsupported schema "wrong" (remove reference bad to clear it)`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 
@@ -241,9 +241,12 @@ func TestResolveByWitnessKeyIDNamesInvalidFilesOnlyWithoutAMatch(t *testing.T) {
 	if resolved, err := resolve(matching); err != nil || resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(pub) {
 		t.Fatalf("resolve(match) = %v, %v; want the valid reference", resolved, err)
 	}
+	// A REST client gets this error, so it names the file, not its path on
+	// the signer.
 	_, err = resolve(other)
-	if !errors.Is(err, ErrInvalidRecord) || !strings.Contains(err.Error(), paths.CosignerRefPath("bad")) {
-		t.Fatalf("resolve(no match) error = %v, want the invalid file named", err)
+	if !errors.Is(err, ErrInvalidRecord) || !strings.HasSuffix(err.Error(), `these reference files are not valid: "bad.json": unsupported schema "wrong"`) ||
+		strings.Contains(err.Error(), paths.CosignerRefsDir()) {
+		t.Fatalf("resolve(no match) error = %v, want the invalid file named by its file name", err)
 	}
 }
 

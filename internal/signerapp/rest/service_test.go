@@ -711,7 +711,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
 		t.Fatalf("cosigner options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
-	want := "cosigner reference file left out of the key type list: " + ir.KeyPaths().CosignerRefPath("corrupt") +
+	want := fmt.Sprintf("cosigner reference file left out of the key type list: %q", ir.KeyPaths().CosignerRefPath("corrupt")) +
 		`: unsupported schema "wrong" (remove reference corrupt to clear it)`
 	if len(warnings) != 1 || warnings[0] != want {
 		t.Fatalf("warnings = %q, want %q", warnings, want)

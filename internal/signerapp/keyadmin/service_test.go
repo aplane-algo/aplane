@@ -292,6 +292,22 @@ teal: |
 		summary.BoundedAuthorization.Cosigner.ComponentKeyID != componentKey {
 		t.Fatalf("stored bounded cosigner metadata = %#v", summary.BoundedAuthorization)
 	}
+
+	// A Witness Key ID no valid reference holds, beside a reference file that
+	// is not valid, is the client's bad input, and the error names the file
+	// by its name, not by its path on the signer.
+	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("stray"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := witness.ID(witness.Falcon1024V1, bytes.Repeat([]byte{0x62}, falconfamily.PublicKeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, svcErr = (Service{Runtime: ir}).GenerateKey(context.Background(), keyType, map[string]string{cosignerrefs.ParamCosignerName: unknown})
+	if svcErr == nil || svcErr.Kind != ErrorInvalidInput || !strings.Contains(svcErr.Message, `"stray.json": unsupported schema "wrong"`) ||
+		strings.Contains(svcErr.Message, ir.KeyPaths().CosignerRefsDir()) {
+		t.Fatalf("GenerateKey(unknown Witness Key ID) error = %#v, want the stray file named by its file name", svcErr)
+	}
 }
 
 func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {

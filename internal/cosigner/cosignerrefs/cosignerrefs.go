@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
@@ -160,7 +161,7 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	}
 	rec, err := parseRecord(data, name)
 	if err != nil {
-		return Record{}, false, fmt.Errorf("%w %s: %w", ErrInvalidRecord, name, err)
+		return Record{}, false, fmt.Errorf("%w %s: %s", ErrInvalidRecord, name, boundedReason(err.Error()))
 	}
 	return rec, true, nil
 }
@@ -179,9 +180,9 @@ type InvalidRecord struct {
 
 func (r InvalidRecord) String() string {
 	if r.Removable {
-		return fmt.Sprintf("%s: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
+		return fmt.Sprintf("%q: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
 	}
-	return fmt.Sprintf("%s: %s (remove does not reach it; delete the file to clear it)", r.Path, r.Reason)
+	return fmt.Sprintf("%q: %s (remove does not reach it; delete the file to clear it)", r.Path, r.Reason)
 }
 
 // List returns the valid cosigner references and, beside them, every other
@@ -260,10 +261,25 @@ func listEntry(dir string, entry os.DirEntry) (*Record, *InvalidRecord) {
 	}
 	rec, err := parseRecord(data, bad.Stem)
 	if err != nil {
-		bad.Reason, bad.Removable = err.Error(), true
+		bad.Reason, bad.Removable = boundedReason(err.Error()), true
 		return nil, bad
 	}
 	return &rec, nil
+}
+
+// maxReasonBytes bounds a reason, which can quote a value read from the file,
+// so a listing stays far below the admin frame limit.
+const maxReasonBytes = 200
+
+func boundedReason(reason string) string {
+	if len(reason) <= maxReasonBytes {
+		return reason
+	}
+	cut := maxReasonBytes
+	for cut > 0 && !utf8.RuneStart(reason[cut]) {
+		cut--
+	}
+	return reason[:cut] + "...(truncated)"
 }
 
 // errorCause drops the path a filesystem error repeats: the entry names it.
@@ -372,7 +388,9 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, 
 		if len(invalid) > 0 {
 			described := make([]string, len(invalid))
 			for i, bad := range invalid {
-				described[i] = bad.String()
+				// A REST client gets this error: it names each entry by its
+				// file name, not by its path on the signer.
+				described[i] = fmt.Sprintf("%q: %s", filepath.Base(bad.Path), bad.Reason)
 			}
 			return Record{}, false, fmt.Errorf("%w: no valid cosigner reference has Witness Key ID %s, and these reference files are not valid: %s",
 				ErrInvalidRecord, componentKey, strings.Join(described, "; "))

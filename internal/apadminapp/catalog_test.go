@@ -472,8 +472,8 @@ func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
 		t.Fatalf("list stdout = %q", stdout.String())
 	}
 	for _, want := range []string{
-		`warning: /store/cosigners/bad.json is not a valid cosigner reference: unsupported schema "wrong"; clear it with: apadmin cosigner remove bad` + "\n",
-		`warning: /store/cosigners/Lab.json is not a valid cosigner reference: "Lab" is not a reference name; apadmin cosigner remove does not reach it, so delete the file to clear it` + "\n",
+		`warning: "/store/cosigners/bad.json" is not a valid cosigner reference: unsupported schema "wrong"; clear it with: apadmin cosigner remove bad` + "\n",
+		`warning: "/store/cosigners/Lab.json" is not a valid cosigner reference: "Lab" is not a reference name; apadmin cosigner remove does not reach it, so delete the file to clear it` + "\n",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("list stderr = %q, want %q", stderr.String(), want)
