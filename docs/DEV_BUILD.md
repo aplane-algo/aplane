@@ -15,8 +15,7 @@ This project builds several first-party commands and developer helpers:
 11. **approbe** - installer-facing signer liveness probe
 12. **appolicy** - offline policy file editor, check, format, and explain
 13. **applugin-checksum** - plugin checksum generator
-14. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
-15. **configdoc** - configuration reference generator
+14. **configdoc** - configuration reference generator
 
 ## Project Structure
 
@@ -36,7 +35,6 @@ aplane/
 │   ├── approbe/                # Installer liveness probe
 │   ├── appolicy/               # Offline policy file editor, check, format, explain
 │   ├── applugin-checksum/      # Plugin integrity helper
-│   ├── compile_teal/         # TEAL-to-Go bytecode generator
 │   └── configdoc/            # Config reference generator
 ├── internal/
 │   ├── apshellapp/           # Shell command workflows and result APIs
@@ -165,8 +163,8 @@ make clean
 `make all` builds the default runtime binaries and runs `compile-teal` first.
 Precompiled token files are committed, but if `resources/dummy.teal` is newer
 than the token files then `goal` must be available to recompile them.
-Most developer helpers, such as `compile_teal` and `configdoc`, are built or
-run separately when needed. `applugin-checksum` is built by `make all` because
+Developer helpers such as `configdoc` are built or run separately when
+needed. `applugin-checksum` is built by `make all` because
 the bundled plugin checksum target depends on it.
 
 `make bin-windows-amd64` builds only the client-side `apshell.exe`; Windows
@@ -220,7 +218,6 @@ CGO_ENABLED=0 go build -o bin/appass-systemd-creds ./cmd/appass-systemd-creds
 CGO_ENABLED=0 go build -o bin/approbe ./cmd/approbe
 CGO_ENABLED=0 go build -o bin/appolicy ./cmd/appolicy
 CGO_ENABLED=0 go build -o bin/applugin-checksum ./cmd/applugin-checksum
-CGO_ENABLED=0 go build -o bin/compile_teal ./cmd/compile_teal
 CGO_ENABLED=0 go build -o bin/configdoc ./cmd/configdoc
 
 # Regenerate config reference docs

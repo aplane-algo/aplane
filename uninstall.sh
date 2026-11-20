@@ -366,14 +366,14 @@ if [ "$CLIENT_MODE" = "1" ]; then
     CLIENT_BINDIR="$APCLIENT_DIR/bin"
 
     # Remove client binaries from client bindir
-    if [ -f "$CLIENT_BINDIR/apshell" ]; then
-        rm -f "$CLIENT_BINDIR/apshell"
-        echo "Removed $CLIENT_BINDIR/apshell"
-    else
-        echo "No apshell found at $CLIENT_BINDIR/apshell"
-    fi
-    # Retired client binaries an older release may have left.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
+    for binary in apshell aplocalnet; do
+        if [ -f "$CLIENT_BINDIR/$binary" ]; then
+            rm -f "$CLIENT_BINDIR/$binary"
+            echo "Removed $CLIENT_BINDIR/$binary"
+        else
+            echo "No $binary found at $CLIENT_BINDIR/$binary"
+        fi
+    done
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Clean up shell rc
@@ -476,7 +476,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     ENV_SH="$LOCAL_PARENT/apenv.sh"
 
     SIGNER_BINARIES_REMOVED=0
-    CLIENT_BINARY_REMOVED=0
+    CLIENT_BINARIES_REMOVED=0
     ROOT_ARTIFACTS_REMOVED=0
     MCP_CONFIG_REMOVED=0
     MCP_TEMPLATE_REMOVED=0
@@ -484,6 +484,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     CODEX_MCP_TEMPLATE_REMOVED=0
     ENV_RC_CLEANED=0
     REMOVED_SIGNER_BINARIES=()
+    REMOVED_CLIENT_BINARIES=()
     REMOVED_ROOT_ARTIFACTS=()
 
     # Remove installed local binaries but keep signer configuration, identities,
@@ -498,12 +499,14 @@ if [ "$LOCAL_MODE" = "1" ]; then
     done
     rmdir "$SIGNER_BINDIR" 2>/dev/null || true
 
-    if [ -e "$CLIENT_BINDIR/apshell" ]; then
-        rm -f "$CLIENT_BINDIR/apshell"
-        CLIENT_BINARY_REMOVED=1
-    fi
-    # Retired client binaries an older release may have left.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin"
+    for binary in apshell aplocalnet; do
+        binary_path="$CLIENT_BINDIR/$binary"
+        if [ -e "$binary_path" ]; then
+            rm -f "$binary_path"
+            REMOVED_CLIENT_BINARIES+=("$binary")
+            CLIENT_BINARIES_REMOVED=1
+        fi
+    done
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Remove installer-generated MCP config only if it still points at this
@@ -531,7 +534,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
         rmdir "$APCLIENT_DIR/.codex" 2>/dev/null || true
     fi
 
-    for artifact in apenv.sh apconsole.yaml start.sh start-tmux.sh start-screen.sh; do
+    for artifact in apenv.sh apconsole.yaml start.sh; do
         artifact_path="$LOCAL_PARENT/$artifact"
         if [ -e "$artifact_path" ]; then
             rm -f "$artifact_path"
@@ -576,10 +579,10 @@ if [ "$LOCAL_MODE" = "1" ]; then
     else
         echo "  - no signer-side binaries were present in $SIGNER_BINDIR"
     fi
-    if [ "$CLIENT_BINARY_REMOVED" = "1" ]; then
-        echo "  - removed client binary from $CLIENT_BINDIR/apshell"
+    if [ "$CLIENT_BINARIES_REMOVED" = "1" ]; then
+        echo "  - removed client binaries from $CLIENT_BINDIR: ${REMOVED_CLIENT_BINARIES[*]}"
     else
-        echo "  - no client binary was present at $CLIENT_BINDIR/apshell"
+        echo "  - no client binaries were present in $CLIENT_BINDIR"
     fi
     if [ "$MCP_CONFIG_REMOVED" = "1" ]; then
         echo "  - removed installer-generated MCP config at $APCLIENT_DIR/.mcp.json"
@@ -636,7 +639,6 @@ fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-}"
 
 SERVICE_REMOVED=0
-SUDOERS_REMOVED=0
 CLIENT_REMOVED=0
 CLIENT_SKIPPED_NO_OPERATOR_ROOT=0
 ENV_RC_CLEANED=0
@@ -648,7 +650,6 @@ SERVICE_ALREADY_INACTIVE=0
 SERVICE_DISABLED=0
 SERVICE_ALREADY_DISABLED=0
 SERVICE_ALREADY_ABSENT=0
-SUDOERS_ALREADY_ABSENT=0
 CLIENT_ALREADY_ABSENT=0
 UNINSTALLER_ALREADY_ABSENT=0
 DATA_DIR_ALREADY_ABSENT=0
@@ -700,8 +701,8 @@ else
     SERVICE_ALREADY_DISABLED=1
 fi
 
-# Remove service file and sudoers. Check both the current local-admin unit path
-# and the legacy packaged-unit path used by older installers.
+# Remove the service file. Check both the current local-admin unit path and
+# the legacy packaged-unit path used by older installers.
 for service_unit in /etc/systemd/system/apsigner.service /lib/systemd/system/apsigner.service; do
     if [ -f "$service_unit" ]; then
         rm -f "$service_unit"
@@ -712,14 +713,8 @@ done
 if [ "$SERVICE_REMOVED" != "1" ]; then
     SERVICE_ALREADY_ABSENT=1
 fi
-if [ -f /etc/sudoers.d/99-apsigner-systemctl ]; then
-    rm -f /etc/sudoers.d/99-apsigner-systemctl
-    SUDOERS_REMOVED=1
-else
-    SUDOERS_ALREADY_ABSENT=1
-fi
 systemctl daemon-reload
-echo "Removed systemd service and sudoers rules"
+echo "Removed systemd service"
 
 # Remove apshell config for the invoking user
 if [ -n "${SUDO_USER:-}" ]; then
@@ -770,9 +765,8 @@ else
     DATA_DIR_ALREADY_ABSENT=1
 fi
 
-# Remove binaries, and the retired ones an earlier release may have installed.
-rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
-for binary in apsigner apshell apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
+# Remove binaries
+for binary in apsigner apshell aplocalnet apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
     binary_path="$BINDIR/$binary"
     if [ -e "$binary_path" ]; then
         rm -f "$binary_path"
@@ -816,11 +810,6 @@ if [ "$SERVICE_REMOVED" = "1" ]; then
     echo "  - removed apsigner systemd unit: ${REMOVED_SERVICE_UNITS[*]}"
 elif [ "$SERVICE_ALREADY_ABSENT" = "1" ]; then
     echo "  - systemd unit was already absent"
-fi
-if [ "$SUDOERS_REMOVED" = "1" ]; then
-    echo "  - removed sudoers rule at /etc/sudoers.d/99-apsigner-systemctl"
-elif [ "$SUDOERS_ALREADY_ABSENT" = "1" ]; then
-    echo "  - sudoers rule was already absent"
 fi
 if [ "$BINARIES_REMOVED" = "1" ]; then
     echo "  - removed binaries from $BINDIR: ${REMOVED_BINARIES[*]}"

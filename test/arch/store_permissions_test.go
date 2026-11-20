@@ -4,11 +4,15 @@
 package arch_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -217,9 +221,151 @@ func TestEnvironmentAuditUsesManagedSocketWithoutSharedTempFiles(t *testing.T) {
 	if strings.Contains(audit, "/tmp/aplane-audit-version") {
 		t.Error("aplane-env-audit.sh retains a predictable shared-temp version probe")
 	}
-	if strings.Contains(audit, `read_top_level_value "$SIGNER_CONFIG" "ipc_path"`) {
+	if strings.Contains(audit, `yaml_value "$SIGNER_CONFIG" ipc_path`) {
 		t.Error("aplane-env-audit.sh still parses ipc_path independently of approbe")
 	}
+}
+
+// TestEnvironmentAuditReadsInstalledLayouts runs the audit on scratch installs
+// whose config files come from install.sh's own writers, and on the
+// four-space endpoints.yaml apshell rewrites, here holding a second node on
+// this machine as well.
+func TestEnvironmentAuditReadsInstalledLayouts(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	var writers []string
+	for _, name := range []string{
+		"write_signer_config",
+		"write_apshell_local_config",
+		"write_apshell_endpoint_registry",
+		"write_apshell_cosigner_endpoint_registry",
+		"write_apshell_endpoint_registry_for_role",
+	} {
+		writers = append(writers, shellFunction(t, installer, name))
+	}
+	apshellWritten := func(primaryPort int) string {
+		return fmt.Sprintf("schema_version: 2\nendpoints:\n"+
+			"    cos.a:\n        role: cosigner\n        url: ssh://localhost:2227\n"+
+			"    primary:\n        role: signer\n        url: ssh://127.0.0.1:%d\n", primaryPort)
+	}
+	cases := []struct {
+		name      string
+		role      string // the installer writes endpoints.yaml for this role
+		endpoints string // otherwise this is endpoints.yaml
+		want      string
+	}{
+		{name: "signer", role: "signer", want: `PASS SSH port match\s+primary: 1127`},
+		{name: "cosigner", role: "cosigner", want: `PASS SSH port match\s+local-cosigner: 1127`},
+		{name: "beside another node", endpoints: apshellWritten(1127), want: `PASS SSH port match\s+primary: 1127`},
+		{name: "mismatch", endpoints: apshellWritten(1128),
+			want: `WARN SSH port mismatch\s+no endpoint on this machine uses signer port 1127: cos\.a=2227 primary=1128`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			signer := filepath.Join(home, "aplane", "apsigner")
+			client := filepath.Join(home, "aplane", "apclient")
+			identity := filepath.Join(signer, "identities", "default")
+			for _, dir := range []string{
+				filepath.Join(signer, ".ssh"),
+				filepath.Join(identity, ".ssh"),
+				filepath.Join(identity, "generations", "g1", "keys"),
+				filepath.Join(identity, "generations", ".staging-g2"),
+				filepath.Join(client, ".ssh"),
+			} {
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Chmod(signer, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{
+				filepath.Join(identity, ".keystore"),
+				filepath.Join(identity, "store-root.enc"),
+				filepath.Join(identity, ".ssh", "authorized_keys"),
+				filepath.Join(signer, ".ssh", "ssh_host_key"),
+				filepath.Join(client, ".ssh", "id_ed25519"),
+				filepath.Join(client, ".ssh", "known_hosts"),
+			} {
+				if err := os.WriteFile(file, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			script := strings.Join(writers, "\n") + `
+write_signer_config "$1/config.yaml" 11270 1127
+write_apshell_local_config "$2/config.yaml"
+if [ -n "$3" ]; then
+    write_apshell_endpoint_registry_for_role "$2/endpoints.yaml" "$3" 127.0.0.1 1127
+fi
+`
+			if out, err := exec.Command(bash, "-c", script, "bash", signer, client, tc.role).CombinedOutput(); err != nil {
+				t.Fatalf("installer writers: %v\n%s", err, out)
+			}
+			if tc.endpoints != "" {
+				if err := os.WriteFile(filepath.Join(client, "endpoints.yaml"), []byte(tc.endpoints), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			audit := exec.Command(bash, filepath.Join(root, "installer", "scripts", "aplane-env-audit.sh"),
+				"--signer-data", signer, "--client-data", client)
+			audit.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+			out, err := audit.CombinedOutput()
+			if err != nil {
+				t.Fatalf("audit: %v\n%s", err, out)
+			}
+			for _, want := range []string{
+				tc.want,
+				`PASS client endpoints\s`,
+				`PASS store root\s`,
+				`PASS generations\s+\S+ \(1\)`,
+			} {
+				if !regexp.MustCompile(`(?m)^` + want).Match(out) {
+					t.Errorf("audit output lacks %q:\n%s", want, out)
+				}
+			}
+			if tc.name != "mismatch" && strings.Contains(string(out), "WARN SSH port mismatch") {
+				t.Errorf("audit reports a port mismatch:\n%s", out)
+			}
+			if strings.Contains(string(out), "key directory") {
+				t.Errorf("audit still looks for a pre-generations key directory:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestInstallerAndAuditReadEndpointsAlike keeps install.sh's copy of the
+// audit's endpoints.yaml and URL helpers the same as the audit's, apart from
+// indentation, so the installer's port check and the audit agree.
+func TestInstallerAndAuditReadEndpointsAlike(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	audit := readTextFile(t, filepath.Join(root, "installer", "scripts", "aplane-env-audit.sh"))
+	for _, name := range []string{
+		"yaml_scalars", "yaml_value", "endpoint_authority", "endpoint_host", "endpoint_port", "is_loopback_host",
+	} {
+		installed := strings.Fields(shellFunction(t, installer, name))
+		audited := strings.Fields(shellFunction(t, audit, name))
+		if !slices.Equal(installed, audited) {
+			t.Errorf("install.sh and aplane-env-audit.sh define %s differently", name)
+		}
+	}
+}
+
+// shellFunction returns one top-level function, name() { ... }, from a script.
+func shellFunction(t *testing.T, script, name string) string {
+	t.Helper()
+	_, rest, found := strings.Cut(script, "\n"+name+"() {\n")
+	body, _, closed := strings.Cut(rest, "\n}\n")
+	if !found || !closed {
+		t.Fatalf("script has no function %s", name)
+	}
+	return name + "() {\n" + body + "\n}"
 }
 
 func readTextFile(t *testing.T, path string) string {

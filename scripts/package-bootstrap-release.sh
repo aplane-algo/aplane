@@ -198,7 +198,6 @@ main() {
 
     cp "$ROOT_DIR/installer/apsigner.service" \
         "$ROOT_DIR/installer/apsigner.service.template" \
-        "$ROOT_DIR/installer/sudoers.template" \
         "$staging/aplane/installer/"
     cp "$ROOT_DIR/installer/scripts/systemd-setup.sh" \
         "$ROOT_DIR/installer/scripts/aplane-env-audit.sh" \
