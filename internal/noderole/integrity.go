@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/integritysidecar"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"gopkg.in/yaml.v3"
 )
 
 const IntegrityKeyID = "keystore-master-hkdf-node-role-v1"
@@ -55,34 +56,32 @@ func Load(paths storepaths.Paths) (Document, []byte, error) {
 	return doc, data, nil
 }
 
-func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte, Document, error) {
+func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte, error) {
 	path := paths.NodeRolePath()
 	if _, err := os.Stat(path); err == nil {
-		return nil, Document{}, roleError(ErrRoleFileExists, "node role %s already exists", path)
+		return nil, roleError(ErrRoleFileExists, "node role %s already exists", path)
 	} else if err != nil && !os.IsNotExist(err) {
-		return nil, Document{}, roleWrap(ErrRoleFileUnread, err, "failed to stat node role %s", path)
+		return nil, roleWrap(ErrRoleFileUnread, err, "failed to stat node role %s", path)
 	}
 	doc, err := NewDocument(role, createdAt)
 	if err != nil {
-		return nil, Document{}, err
+		return nil, err
 	}
-	data, err := MarshalDocument(doc)
+	data, err := yaml.Marshal(doc)
 	if err != nil {
-		return nil, Document{}, err
+		return nil, fmt.Errorf("failed to marshal node role document: %w", err)
 	}
 	if err := fsutil.WriteFileDurable(path, data); err != nil {
-		return nil, Document{}, fmt.Errorf("failed to write node role %s: %w", path, err)
+		return nil, fmt.Errorf("failed to write node role %s: %w", path, err)
 	}
-	return data, doc, nil
+	return data, nil
 }
 
 // SaveGenerationSidecarWithKeyring authenticates the immutable data-root node
 // role into one already-resolved generation.
 func SaveGenerationSidecarWithKeyring(active storepaths.GenPaths, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
-	return saveSidecarAtPath(active.NodeRoleIntegritySidecar(), roleBytes, kr, signedAt)
-}
-
-func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) error {
+	// Every caller passes SaveInitial's bytes; the parse is kept so this
+	// exported signing step never authenticates an invalid document.
 	if _, err := ParseDocument(roleBytes); err != nil {
 		return err
 	}
@@ -94,6 +93,7 @@ func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyrin
 	if err != nil {
 		return err
 	}
+	sidecarPath := active.NodeRoleIntegritySidecar()
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(sidecarPath)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
@@ -106,15 +106,11 @@ func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyrin
 // LoadAndVerifyGenerationWithKeyring verifies the immutable data-root node
 // role against the sidecar in one already-resolved generation.
 func LoadAndVerifyGenerationWithKeyring(paths storepaths.Paths, active storepaths.GenPaths, kr *apcrypto.Keyring) (Document, error) {
-	return loadAndVerifyAtPath(paths, active.NodeRoleIntegritySidecar(), kr)
-}
-
-func loadAndVerifyAtPath(paths storepaths.Paths, sidecarPath string, kr *apcrypto.Keyring) (Document, error) {
 	doc, roleBytes, err := Load(paths)
 	if err != nil {
 		return Document{}, err
 	}
-	sidecar, err := LoadSidecar(sidecarPath)
+	sidecar, err := LoadSidecar(active.NodeRoleIntegritySidecar())
 	if err != nil {
 		return Document{}, err
 	}
@@ -128,9 +124,6 @@ func Sign(roleBytes []byte, kr *apcrypto.Keyring, signedAt time.Time) (*Integrit
 	header, err := nodeRoleSidecar.Sign(roleBytes, kr)
 	if err != nil {
 		return nil, err
-	}
-	if signedAt.IsZero() {
-		signedAt = time.Now()
 	}
 	sum := sha256.Sum256(roleBytes)
 	return &IntegritySidecar{

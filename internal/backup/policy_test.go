@@ -39,7 +39,7 @@ func cosignerStoreWithPolicy(t *testing.T) (storepaths.Paths, string, []byte) {
 	if err := os.WriteFile(apkeys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 	doc := cosignerPolicyDocForBackupTest(selector, "source")

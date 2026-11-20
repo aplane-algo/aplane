@@ -5,7 +5,6 @@ package noderole
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 )
@@ -44,27 +43,6 @@ func TestParseDocumentRejectsUnknownFields(t *testing.T) {
 	_, err := ParseDocument([]byte("schema_version: 1\nrole: signer\nextra: true\n"))
 	if !errors.Is(err, ErrInvalidDocument) {
 		t.Fatalf("ParseDocument() error = %v, want ErrInvalidDocument", err)
-	}
-}
-
-func TestMarshalDocument(t *testing.T) {
-	data, err := MarshalDocument(Document{
-		Role:      RoleSigner,
-		CreatedAt: "2026-06-07T00:00:00Z",
-	})
-	if err != nil {
-		t.Fatalf("MarshalDocument() error = %v", err)
-	}
-	got, _, found := strings.Cut(string(data), "\n")
-	if !found || got != "schema_version: 1" {
-		t.Fatalf("first yaml line = %q, want schema_version", got)
-	}
-	doc, err := ParseDocument(data)
-	if err != nil {
-		t.Fatalf("ParseDocument(marshaled) error = %v", err)
-	}
-	if doc.Role != RoleSigner {
-		t.Fatalf("Role = %q, want %q", doc.Role, RoleSigner)
 	}
 }
 

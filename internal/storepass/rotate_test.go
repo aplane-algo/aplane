@@ -44,7 +44,7 @@ func newRotateFixture(t *testing.T) rotateFixture {
 		t.Fatal(err)
 	}
 	defer kr.Zero()
-	roleBytes, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_785_200_000, 0))
+	roleBytes, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_785_200_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}

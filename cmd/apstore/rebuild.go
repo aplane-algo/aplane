@@ -247,7 +247,7 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 }
 
 func initializeRebuildNodeRole(role noderole.Role) ([]byte, error) {
-	roleBytes, _, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
+	roleBytes, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node role: %w", err)
 	}

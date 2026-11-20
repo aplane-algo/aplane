@@ -40,7 +40,7 @@ func TestCreateAllKeysArchiveUsesPrivateManagedBackupPermissions(t *testing.T) {
 	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
 	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
@@ -106,7 +106,7 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	if err := os.WriteFile(apkeys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), selector), encrypted, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleCosigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 	cosignerPolicy := []byte(policytest.MustDocument(noderole.RoleCosigner, selector, ""))
@@ -218,7 +218,7 @@ func TestCreateAllKeysArchiveFailsIfAnyCredentialIsInvalid(t *testing.T) {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
 	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {

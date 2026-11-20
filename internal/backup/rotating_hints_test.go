@@ -46,7 +46,7 @@ func TestRotatingHintArchiveRestoreAndRebuild(t *testing.T) {
 	if err := os.WriteFile(keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), account), sealed, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
 		t.Fatal(err)
 	}
 	round := uint64(123)

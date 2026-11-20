@@ -94,7 +94,7 @@ func setupTestNodeWithUnlockMethod(t *testing.T, role noderole.Role, defaultPoli
 	if err != nil {
 		t.Fatalf("Failed to create keyring: %v", err)
 	}
-	roleBytes, _, err := noderole.SaveInitial(keyPaths, role, time.Now())
+	roleBytes, err := noderole.SaveInitial(keyPaths, role, time.Now())
 	if err != nil {
 		t.Fatalf("Failed to create node role: %v", err)
 	}

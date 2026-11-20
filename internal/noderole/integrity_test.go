@@ -20,12 +20,9 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 	active := paths.GenerationPaths("gen-1-0123abcd")
 	masterKey := []byte("01234567890123456789012345678901")
 
-	roleBytes, doc, err := SaveInitial(paths, RoleSigner, time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC))
+	roleBytes, err := SaveInitial(paths, RoleSigner, time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
-	}
-	if doc.Role != RoleSigner {
-		t.Fatalf("Role = %q, want %q", doc.Role, RoleSigner)
 	}
 	if err := SaveGenerationSidecarWithKeyring(active, roleBytes, cryptotest.Keyring(t, masterKey), time.Unix(100, 0)); err != nil {
 		t.Fatalf("SaveGenerationSidecarWithKeyring() error = %v", err)
@@ -48,10 +45,10 @@ func TestSaveInitialAndVerifyWithKeyring(t *testing.T) {
 
 func TestSaveInitialRefusesOverwrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if _, _, err := SaveInitial(paths, RoleSigner, time.Now()); err != nil {
+	if _, err := SaveInitial(paths, RoleSigner, time.Now()); err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
-	_, _, err := SaveInitial(paths, RoleCosigner, time.Now())
+	_, err := SaveInitial(paths, RoleCosigner, time.Now())
 	if !errors.Is(err, ErrRoleFileExists) {
 		t.Fatalf("SaveInitial(overwrite) error = %v, want ErrRoleFileExists", err)
 	}
@@ -62,7 +59,7 @@ func TestVerifyRejectsTamperedNodeRole(t *testing.T) {
 	active := paths.GenerationPaths("gen-1-0123abcd")
 	masterKey := []byte("01234567890123456789012345678901")
 
-	roleBytes, _, err := SaveInitial(paths, RoleSigner, time.Now())
+	roleBytes, err := SaveInitial(paths, RoleSigner, time.Now())
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
@@ -85,7 +82,7 @@ func TestVerifyRejectsWrongMasterKey(t *testing.T) {
 	wrongKey := []byte("abcdefghijklmnopqrstuvwxyz123456")
 	defer apcrypto.ZeroBytes(wrongKey)
 
-	roleBytes, _, err := SaveInitial(paths, RoleSigner, time.Now())
+	roleBytes, err := SaveInitial(paths, RoleSigner, time.Now())
 	if err != nil {
 		t.Fatalf("SaveInitial() error = %v", err)
 	}
