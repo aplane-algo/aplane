@@ -213,10 +213,11 @@ reject an on-curve result. The key file records
 must not also contain `salt_counter`.
 
 Templates that omit `derivation_version` remain unsalted and succeed only when
-their unmodified compiled bytecode already derives an off-curve address. The
-retired marker and bytecblock counter styles remain in `internal/lsigsalt` only
-for compatibility with already-created manual-counter key files and focused
-validation tests. New template definitions reject derivation versions 1 and 2
+their unmodified compiled bytecode already derives an off-curve address; their
+key files record no `lsig_derivation` and `salt_counter: 0`. APlane has no
+counter-byte salt of its own: `internal/lsigsalt` only validates a final
+program's address, and no load, scan, restore or rebuild re-derives or patches a
+stored program. New template definitions reject derivation versions 1 and 2
 and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.

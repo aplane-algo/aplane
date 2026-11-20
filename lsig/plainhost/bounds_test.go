@@ -5,6 +5,7 @@ package plainhost_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -839,29 +840,27 @@ func TestFingerprintScopes(t *testing.T) {
 // A shape composes with its host's salt style, not the template schema's, so an
 // account and a plain key on the same spending key differ only by their bounds.
 func TestShapesFollowTheHostSaltStyle(t *testing.T) {
-	pushbytes, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes})
+	unsalted, err := plainhost.Wrap(&falconv1.Falcon1024V1{}, plainhost.Base{Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleNone})
 	if err != nil {
 		t.Fatal(err)
 	}
-	preamble, err := lsigsalt.StylePushbytes.SourcePreamble()
-	if err != nil || preamble == "" {
-		t.Fatalf("preamble %q, %v", preamble, err)
-	}
 	b := bases(t)[0]
+	client := characterizationAlgod(t)
 	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}
 	for name, test := range map[string]struct {
-		provider *plainhost.Provider
-		want     bool
-	}{"pushbytes host": {pushbytes, true}, "auto-salt host": {b.provider, false}} {
-		teal, err := test.provider.GenerateTEAL(b.spendingKey, shapeRequest(shape, testRecipients(2)))
+		provider   *plainhost.Provider
+		autoSalted bool
+	}{"unsalted host": {unsalted, false}, "auto-salt host": {b.provider, true}} {
+		test.provider.SetAlgodClient(client)
+		derived, err := test.provider.DeriveLsigWithSalt(context.Background(), b.spendingKey, shapeRequest(shape, testRecipients(2)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(teal, preamble) != test.want {
-			t.Fatalf("%s: pushbytes salt preamble present = %v", name, !test.want)
+		if derived.CompilerAutoSalted != test.autoSalted {
+			t.Fatalf("%s: compiler auto-salted = %v, want %v", name, derived.CompilerAutoSalted, test.autoSalted)
 		}
 	}
-	if pushbytes.ShapeFingerprintForTest(shape) == b.provider.ShapeFingerprintForTest(shape) {
+	if unsalted.ShapeFingerprintForTest(shape) == b.provider.ShapeFingerprintForTest(shape) {
 		t.Fatal("the salt style is not part of a shape's provenance")
 	}
 }

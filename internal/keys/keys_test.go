@@ -22,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -699,7 +699,7 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	address, bytecode, counter := saltedLogicSigForScanTest(t)
+	address, bytecode, counter := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
@@ -729,7 +729,7 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	_, bytecode, counter := saltedLogicSigForScanTest(t)
+	_, bytecode, counter := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
@@ -833,13 +833,11 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 	}
 }
 
-func saltedLogicSigForScanTest(t *testing.T) (string, []byte, byte) {
+// unsaltedLogicSigForScanTest returns an off-curve program as an unsalted
+// template would store it, with no lsig_derivation and its salt counter.
+func unsaltedLogicSigForScanTest(t *testing.T) (string, []byte, byte) {
 	t.Helper()
-	base := []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}
-	result, err := lsigsalt.FindOffCurve(base, lsigsalt.BytecblockLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
+	result := lsigsalttest.OffCurve(t, []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}, 4)
 	return result.Address.String(), result.Bytecode, result.Counter
 }
 

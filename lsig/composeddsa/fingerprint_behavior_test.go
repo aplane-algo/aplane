@@ -24,7 +24,7 @@ func fingerprintBaseConfig() Config {
 		Description:  "test",
 		Ops:          testOps{},
 		TemplateMode: "strict",
-		SaltStyle:    lsigsalt.StylePushbytes,
+		SaltStyle:    lsigsalt.StyleAlgodAutoSalt,
 		TEALSuffix:   "$owner_const\nlen\nint 32\n==\nassert\nint 1\nreturn\n",
 		TemplateVars: []tealtemplate.TemplateVariable{{
 			Name:      "owner_const",
@@ -99,7 +99,7 @@ func TestComposedFingerprintBehaviorSensitive(t *testing.T) {
 
 	mutate("base_primitive token", func(c *Config) { c.BaseKeyType = "aplane.ed25519.v1" })
 	mutate("teal suffix", func(c *Config) { c.TEALSuffix = "int 1\nreturn\n" })
-	mutate("salt style", func(c *Config) { c.SaltStyle = lsigsalt.StyleTrailingBytecblock })
+	mutate("salt style", func(c *Config) { c.SaltStyle = lsigsalt.StyleNone })
 	mutate("template mode", func(c *Config) { c.TemplateMode = "generated"; c.TemplateVars = nil })
 	mutate("template variables", func(c *Config) {
 		c.TemplateVars = append(c.TemplateVars, tealtemplate.TemplateVariable{

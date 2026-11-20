@@ -211,7 +211,7 @@ parameters:
 func fixedAllowlistTestProvider() *ComposedDSA {
 	return NewComposedDSA(Config{
 		KeyType: "aplane.test-fixed-allowlist.v1", BaseKeyType: "aplane.falcon1024.v1",
-		FamilyName: "aplane.test", Version: 1, Ops: boundedTestOps{}, SaltStyle: lsigsalt.StylePushbytes,
+		FamilyName: "aplane.test", Version: 1, Ops: boundedTestOps{}, SaltStyle: lsigsalt.StyleNone,
 		TemplateMode: "generated", Params: fixedAllowlistTestParams(), Bounded: fixedAllowlistTestProfile(),
 		Layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})

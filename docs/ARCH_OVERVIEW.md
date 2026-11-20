@@ -789,8 +789,7 @@ The provider layer supports multiple signing and LogicSig families:
 - key generation in `internal/keygen`
 - mnemonic support in `internal/mnemonic`
 - unified LogicSig provider registry in `internal/lsigprovider`
-- shared off-curve LogicSig validation and derivation helpers, including legacy
-  manual-counter support, in `internal/lsigsalt`
+- shared off-curve LogicSig address validation in `internal/lsigsalt`
 
 Registration is explicit and happens from binary entrypoints via `RegisterProviders()`, not via package-global magic hidden from `main`.
 

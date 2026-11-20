@@ -129,25 +129,7 @@ func (f *testFalcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []b
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
-	counter, err := lsigsalt.CounterFromBytecode(bytecode, lsigsalt.BytecblockLocator)
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	var pub falcongo.PublicKey
-	copy(pub[:], publicKey)
-	lsigAcct, err := fakeDeriveLogicSig(pub)
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	addr, err := lsigAcct.Address()
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	return lsigsalt.FindResult{
-		Bytecode: bytecode,
-		Address:  addr,
-		Counter:  counter,
-	}, nil
+	return lsigsalt.UseUnmodifiedOffCurve(bytecode)
 }
 
 func (f *testFalcon1024V1) Sign(privateKey []byte, message []byte) ([]byte, error) {
@@ -825,7 +807,7 @@ func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
 }
 
 // fakeDeriveLogicSig is a deterministic, offline stand-in for Falcon address
-// derivation: a manual-salt program that only has to be stable and off-curve.
+// derivation: a program that only has to be stable and off-curve.
 // It is not the production derivation (see lsig/falcon1024/v1 for that).
 func fakeDeriveLogicSig(publicKey falcongo.PublicKey) (algocrypto.LogicSigAccount, error) {
 	for counter := range 256 {

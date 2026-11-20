@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -134,13 +134,10 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	defer cleanup()
 
 	svc := New(paths)
-	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
-	if err != nil {
-		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
-	}
+	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
 	// Creation needs the template's valid_rekey_target declaration.
 	keyType := registerRekeyTargetTemplate(t, "timed-policy", false)
-	err = svc.SaveGenericLSig(
+	err := svc.SaveGenericLSig(
 		keyType,
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,

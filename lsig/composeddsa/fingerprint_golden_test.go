@@ -14,6 +14,10 @@ import (
 func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
 	min := uint64(1)
 	max := uint64(999)
+	// SaltStyle is the style this config resolved to when the golden was
+	// recorded, before counter salting was retired. The fingerprint hashes a
+	// configured style as it is, so naming it keeps the hashed bytes, and the
+	// golden, unchanged; GenerateTEAL would refuse it.
 	dsa := NewComposedDSA(Config{
 		KeyType:      "synthetic-dsa-v7",
 		FamilyName:   "synthetic-dsa",
@@ -21,6 +25,7 @@ func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
 		DisplayName:  "Synthetic DSA",
 		Description:  "Exercises every canonical fingerprint field",
 		Ops:          testOps{},
+		SaltStyle:    "pushbytes",
 		TemplateMode: "strict",
 		TEALSuffix:   "$owner_const\nlen\nint 32\n==\nassert\nint 1\nreturn\n",
 		TemplateVars: []tealtemplate.TemplateVariable{{

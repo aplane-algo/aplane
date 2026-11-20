@@ -25,7 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -352,20 +352,8 @@ func containsKeyType(items []string, keyType string) bool {
 
 func configureCosignedCompileMock(t *testing.T) {
 	t.Helper()
-	bytecode := []byte{13, 0x81, 0}
-	var hash string
-	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
-		bytecode[2] = byte(counter)
-		result, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-		if err == nil {
-			hash = result.Address.String()
-			break
-		}
-	}
-	if hash == "" {
-		t.Fatal("failed to find deterministic compiler-auto-salted test bytecode")
-	}
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, cosignedCompileMockTransport{bytecode: bytecode, hash: hash})
+	program := lsigsalttest.OffCurve(t, []byte{13, 0x81, 0}, 2)
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, cosignedCompileMockTransport{bytecode: program.Bytecode, hash: program.Address.String()})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
@@ -400,19 +388,13 @@ func (m cosignedCompileMockTransport) RoundTrip(req *http.Request) (*http.Respon
 
 func canonicalGenericKeyJSON(t *testing.T, keyType string, parameters map[string]string, tealSource string) []byte {
 	t.Helper()
-	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
-	if err != nil {
-		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
-	}
+	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
 	return keystest.GenericLSigKeyJSON(t, keyType, salted.Bytecode, salted.Counter, parameters, tealSource)
 }
 
 func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte {
 	t.Helper()
-	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
-	if err != nil {
-		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
-	}
+	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
 	return keystest.DSALSigKeyJSON(t, keyType, "test.base.v1", publicKey, []byte{0x01}, salted.Bytecode, salted.Counter)
 }
 

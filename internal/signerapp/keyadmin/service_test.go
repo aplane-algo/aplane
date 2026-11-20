@@ -33,7 +33,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -758,20 +758,8 @@ teal: |
 
 func configureFalconCompileMock(t *testing.T) {
 	t.Helper()
-	bytecode := []byte{13, 0x81, 0}
-	var hash string
-	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
-		bytecode[2] = byte(counter)
-		candidate, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-		if err == nil {
-			hash = candidate.Address.String()
-			break
-		}
-	}
-	if hash == "" {
-		t.Fatal("failed to construct compiler-auto-salted mock bytecode")
-	}
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{bytecode: bytecode, hash: hash})
+	program := lsigsalttest.OffCurve(t, []byte{13, 0x81, 0}, 2)
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, falconCompileMockTransport{bytecode: program.Bytecode, hash: program.Address.String()})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}

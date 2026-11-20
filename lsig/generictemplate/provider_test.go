@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 
@@ -1343,15 +1344,7 @@ func unsaltedOffCurveBytecodeForTest(t *testing.T) []byte {
 
 func unsaltedOffCurveBytecodeForVersion(t *testing.T, version byte) []byte {
 	t.Helper()
-	bytecode := []byte{version, 0x81, 0x00}
-	for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
-		bytecode[2] = byte(counter)
-		if _, err := lsigsalt.UseUnmodifiedOffCurve(bytecode); err == nil {
-			return append([]byte(nil), bytecode...)
-		}
-	}
-	t.Fatal("failed to find deterministic off-curve unsalted bytecode")
-	return nil
+	return lsigsalttest.OffCurve(t, []byte{version, 0x81, 0x00}, 2).Bytecode
 }
 
 func TestDefaultDisplayColor(t *testing.T) {

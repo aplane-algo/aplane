@@ -108,7 +108,7 @@ type Config struct {
 }
 
 // ComposedDSA composes:
-//  1. Standard LogicSig structure (preamble + optional suffix + verify footer)
+//  1. Standard LogicSig structure (pragma + verify footer + optional suffix)
 //  2. Runtime TEAL compilation via algod
 //  3. Algorithm-specific verify operations via DSAOps
 type ComposedDSA struct {
@@ -471,7 +471,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		BasePrimitive:    lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
 		OpcodeProfile:    c.opcodeProfile,
 		TEALSuffix:       strings.TrimSpace(c.tealSuffix),
-		SaltStyle:        c.fingerprintSaltStyle(),
+		SaltStyle:        string(c.saltStyle),
 		TemplateMode:     c.templateMode,
 		TemplateVars:     c.templateVars,
 		Parameters:       params,
@@ -485,10 +485,10 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 // GenerateTEAL generates the complete TEAL source for this composed LogicSig.
 //
 // Empty-suffix programs preserve the canonical bare-DSA layout:
-// preamble + algorithm-specific verify footer.
+// pragma + algorithm-specific verify footer.
 //
 // Non-empty suffixes use verifier-first composition:
-// preamble + verify footer + assert + substituted suffix + final return.
+// pragma + verify footer + assert + substituted suffix + final return.
 // The suffix is a predicate fragment, not a standalone TEAL program, and must
 // not contain its own return instructions.
 func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
@@ -535,8 +535,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 
 	mode := c.templateMode
 	hasSuffix := c.hasSuffix()
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
+	if err := c.checkSaltStyle(); err != nil {
 		return "", err
 	}
 	var strictSuffix tealtemplate.RenderedTemplate
@@ -563,14 +562,6 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 	}
 
-	if style != lsigsalt.StyleNone && style != lsigsalt.StyleAlgodAutoSalt && style != lsigsalt.StyleTrailingBytecblock {
-		preamble, err := c.saltPreamble(style)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(preamble)
-	}
-
 	verifyFooter, err := c.ops.BuildVerifyTEAL(publicKey)
 	if err != nil {
 		return "", err
@@ -581,7 +572,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	}
 
 	if boundedProfile == nil && !hasSuffix {
-		return c.finishSaltedTEAL(b.String(), style)
+		return b.String(), nil
 	}
 
 	b.WriteString("assert\n\n")
@@ -648,39 +639,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		b.WriteString("int 1\nreturn\n")
 	}
 
-	return c.finishSaltedTEAL(b.String(), style)
-}
-
-func (c *ComposedDSA) saltPreamble(style lsigsalt.Style) (string, error) {
-	preamble, err := style.SourcePreamble()
-	if err != nil {
-		return "", err
-	}
-	return "// Counter byte (varied 0-255 to avoid ed25519 curve addresses)\n" + preamble + "\n", nil
-}
-
-func (c *ComposedDSA) finishSaltedTEAL(teal string, style lsigsalt.Style) (string, error) {
-	trailer, err := style.SourceTrailer()
-	if err != nil {
-		return "", err
-	}
-	if trailer == "" {
-		return teal, nil
-	}
-	return strings.TrimRight(teal, "\n") +
-		"\n\n// Counter byte (varied 0-255 to avoid ed25519 curve addresses)\n" +
-		strings.TrimSuffix(trailer, "\n") + "\n", nil
-}
-
-func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return nil, err
-	}
-	if style == lsigsalt.StyleNone || style == lsigsalt.StyleAlgodAutoSalt {
-		return nil, fmt.Errorf("LogicSig salt style %q has no salt locator", style)
-	}
-	return style.Locator()
+	return b.String(), nil
 }
 
 func (c *ComposedDSA) hasSuffix() bool {
@@ -693,40 +652,21 @@ func (c *ComposedDSA) hasAuthorTEAL() bool {
 	return strings.TrimSpace(c.tealSuffix) != ""
 }
 
-func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {
-	if c.saltStyle != "" {
-		if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
-			if c.ops.TEALVersion() < 13 {
-				return "", fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
-			}
-			return c.saltStyle, nil
+// checkSaltStyle refuses a salt style the composer cannot derive with. Algod's
+// TEAL v13 assembler salts an auto-salt program; an unsalted one is used as
+// compiled, so its address must already be off the curve.
+func (c *ComposedDSA) checkSaltStyle() error {
+	switch c.saltStyle {
+	case lsigsalt.StyleNone:
+		return nil
+	case lsigsalt.StyleAlgodAutoSalt:
+		if c.ops.TEALVersion() < 13 {
+			return fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
 		}
-		if c.saltStyle == lsigsalt.StyleNone {
-			return c.saltStyle, nil
-		}
-		if c.saltStyle == lsigsalt.StyleBytecblock && c.hasSuffix() {
-			return "", fmt.Errorf("composed DSA salt style %q cannot be used with a TEAL suffix; use %q", c.saltStyle, lsigsalt.StylePushbytes)
-		}
-		if c.saltStyle == lsigsalt.StyleTrailingBytecblock && !c.hasSuffix() {
-			return "", fmt.Errorf("composed DSA salt style %q requires a TEAL suffix with a composer-owned final return", c.saltStyle)
-		}
-		if _, err := c.saltStyle.Locator(); err != nil {
-			return "", err
-		}
-		return c.saltStyle, nil
+		return nil
+	default:
+		return fmt.Errorf("composed DSA salt style %q is not %q or %q", c.saltStyle, lsigsalt.StyleNone, lsigsalt.StyleAlgodAutoSalt)
 	}
-	if c.hasSuffix() {
-		return lsigsalt.StylePushbytes, nil
-	}
-	return lsigsalt.StyleBytecblock, nil
-}
-
-func (c *ComposedDSA) fingerprintSaltStyle() string {
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return string(c.saltStyle)
-	}
-	return string(style)
 }
 
 func validateSuffixControlFlow(teal string) error {
@@ -794,33 +734,19 @@ func (c *ComposedDSA) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, 
 		return lsigsalt.FindResult{}, fmt.Errorf("failed to decode compiled bytecode: %w", err)
 	}
 
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	if style == lsigsalt.StyleAlgodAutoSalt {
+	// GenerateTEAL has refused any other salt style.
+	if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
 		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
 		if err != nil {
 			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
 		}
 		return autoSalted, nil
 	}
-	if style == lsigsalt.StyleNone {
-		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-		if err != nil {
-			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
-		}
-		return unsalted, nil
-	}
-	locate, err := c.saltLocator()
+	unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
 	if err != nil {
-		return lsigsalt.FindResult{}, err
+		return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
 	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, locate)
-	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
-	}
-	return salted, nil
+	return unsalted, nil
 }
 
 // Compile-time interface checks.

@@ -483,7 +483,7 @@ func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, t
 func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 		TemplateMode: "generated",
 		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
 	})
@@ -492,7 +492,7 @@ func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProf
 func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes, TemplateMode: "generated", Bounded: profile,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", Bounded: profile,
 		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
 		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
