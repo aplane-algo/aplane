@@ -61,7 +61,8 @@ func beforeSubmitApp(t *testing.T) *App {
 	}
 	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	// The source accounts' keys are listed, but no signer is connected.
-	eng.SignerCache.Keys = map[string]string{beforeSubmitFrom: "ed25519", beforeSubmitAuth: "ed25519"}
+	eng.SignerCache.AddAddress(beforeSubmitFrom, "ed25519", "ed25519")
+	eng.SignerCache.AddAddress(beforeSubmitAuth, "ed25519", "ed25519")
 	return New(eng, config.DefaultConfig(), t.TempDir())
 }
 

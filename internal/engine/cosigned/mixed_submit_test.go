@@ -35,14 +35,14 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosigned, 1500)
 		c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 			ProgramBytes: 77,
 			Spend:        &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 		})
 		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
-		c.AddAddress(nonCosigned, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519", "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{
@@ -92,8 +92,8 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	if mode, _ := req.Requests[1].Mode(); mode != signerapi.RequestModeSign {
 		t.Fatalf("non-cosigned request[1] mode = %q, want sign", mode)
 	}
-	if req.Requests[1].AuthAddress != nonCosigned || req.Requests[1].TxnSender != nonCosigned {
-		t.Fatalf("non-cosigned request[1] auth/sender = %q/%q, want %q", req.Requests[1].AuthAddress, req.Requests[1].TxnSender, nonCosigned)
+	if req.Requests[1].AuthAddress != nonCosigned {
+		t.Fatalf("non-cosigned request[1] auth = %q, want %q", req.Requests[1].AuthAddress, nonCosigned)
 	}
 	if mode, _ := req.Requests[2].Mode(); mode != signerapi.RequestModeForeign {
 		t.Fatalf("dummy request[2] mode = %q, want foreign", mode)
@@ -112,10 +112,10 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 	stranger := testAddress(3)
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosigned, 1_500)
 		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
-		c.AddAddress(nativeFalcon, "falcon1024")
+		c.AddAddress(nativeFalcon, "falcon1024", "native_pq")
 	})
 
 	txns := []types.Transaction{
@@ -171,10 +171,10 @@ func TestRequestNonCosignedSignaturesUsesCosignedAuthorizerResources(t *testing.
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosignedAuthorizer, "aplane.falcon1024.v1")
+		c.AddAddress(cosignedAuthorizer, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosignedAuthorizer, 1500)
 		c.SetCosignerPublicKeyForAddress(cosignedAuthorizer, cosignerHex)
-		c.AddAddress(nonCosigned, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519", "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{
@@ -225,13 +225,13 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "test.bounded-cosigner.v1")
+		c.AddAddress(cosigned, "test.bounded-cosigner.v1", "logic_sig")
 		c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 			ProgramBytes:  2_500,
 			Spend:         &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 1_700},
 			SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 2_846, MaxOpcodeCost: 45_000},
 		})
-		c.AddAddress(nonCosigned, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519", "ed25519")
 	})
 
 	txns := []types.Transaction{
@@ -286,10 +286,10 @@ func TestBuildGroupSignRequestsCarriesCosignedTargetAppCallInfo(t *testing.T) {
 	nonCosigned := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosigned, 1500)
 		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
-		c.AddAddress(nonCosigned, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519", "ed25519")
 	})
 	txns := []types.Transaction{
 		testPaymentTxn(t, testAddress(1), testAddress(5), "cosigned"),
@@ -397,7 +397,7 @@ func TestRequestNonCosignedSignaturesAllCosignedMakesNoSignerCall(t *testing.T) 
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosigned, 1500)
 		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
 	})
@@ -438,10 +438,10 @@ func TestRequestNonCosignedSignaturesRejectsMissingSignature(t *testing.T) {
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(cosigned, "aplane.falcon1024.v1")
+		c.AddAddress(cosigned, "aplane.falcon1024.v1", "logic_sig")
 		setTestCosignedResources(c, cosigned, 1500)
 		c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
-		c.AddAddress(nonCosigned, "ed25519")
+		c.AddAddress(nonCosigned, "ed25519", "ed25519")
 	})
 
 	plannedTxns := []types.Transaction{

@@ -290,7 +290,7 @@ func syncClonedKnownHosts(signerDataDir, clientDataDir string) error {
 	if err != nil {
 		return err
 	}
-	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	_, endpoint, ok := cfg.Endpoints.SignerEndpoint()
 	if !ok {
 		return fmt.Errorf("client endpoint registry missing default signer endpoint")
 	}

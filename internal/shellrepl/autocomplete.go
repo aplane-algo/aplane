@@ -795,7 +795,6 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 			readline.PcItem("create"),
 			readline.PcItem("import"),
 			readline.PcItem("discover-cosigners"),
-			readline.PcItem("default"),
 			readline.PcItem("delete"),
 		),
 

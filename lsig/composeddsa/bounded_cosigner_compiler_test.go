@@ -13,7 +13,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -62,7 +62,7 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

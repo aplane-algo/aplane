@@ -167,8 +167,7 @@ directory. `algokit-localnet` is maintained there rather than as an example.
 }
 ```
 
-`manifest_format` names the manifest schema. Schema `2.0` is command-only; the
-retired `functions` metadata field from schema `1.0` is rejected.
+`manifest_format` names the manifest schema. Schema `2.0` is command-only.
 
 ### 2. Implement the JSON-RPC Protocol
 
@@ -176,15 +175,13 @@ Your plugin must handle these methods:
 
 - **initialize** - Called when plugin starts
 - **execute** - Called to run a command
-- **getInfo** - Returns plugin information
 - **shutdown** - Clean shutdown request
 
 JSON-RPC frames use `jsonrpc: "2.0"`. `manifest_format` is the manifest schema
 version. The host does not send the APlane plugin protocol identifier. Return
 the plugin-owned constant `"aplane-plugin/2"` in
 `initialize.result.protocol`; startup rejects a missing or different
-declaration. Your plugin's semantic package version stays in `manifest.json`
-and `getInfo`.
+declaration. Your plugin's semantic package version stays in `manifest.json`.
 
 ### 3. Communication Protocol
 
@@ -254,7 +251,7 @@ See `/internal/plugin/jsonrpc/methods.go` for the complete protocol definition i
 ## Debugging Tips
 
 - Use stderr for debug output: `fmt.Fprintf(os.Stderr, "Debug: %v\n", data)`
-- Test manually: `echo '{"jsonrpc":"2.0","method":"getInfo","id":1}' | ./my-plugin`
+- Test manually: `echo '{"jsonrpc":"2.0","method":"initialize","params":{"network":"testnet","algodUrl":"","algodToken":""},"id":1}' | ./my-plugin`
 - Check manifest validity: `cat manifest.json | jq .`
 - Inspect discovered plugin metadata with `plugins`
 
@@ -361,10 +358,9 @@ return {
 };
 ```
 
-Do not return top-level `localSigners`. APlane Shell rejects plugin-supplied
-secret keys. Plugins that need to sign their own accounts should use
-`groupMode:"presign-plan"` with `pluginSigners`, or return a complete signed
-group with `groupMode:"pregrouped-signed"`.
+Plugins that need to sign their own accounts use `groupMode:"presign-plan"`
+with `pluginSigners`, or return a complete signed group with
+`groupMode:"pregrouped-signed"`.
 
 Use `echo-plugin` as the minimal in-repo reference implementation and `reti`
 as a protocol example for a real DeFi integration whose runtime payload is

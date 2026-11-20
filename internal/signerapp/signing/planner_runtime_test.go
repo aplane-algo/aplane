@@ -533,7 +533,6 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	_, planErr := planner.PlanGroup(signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
 			AuthAddress: authAddr,
-			TxnSender:   "caller-spoofed-sender",
 			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		}},
 	})
@@ -545,9 +544,6 @@ func TestPlannerAuditsDecodedTxnSender(t *testing.T) {
 	}
 	if got, want := audit.entries[0].txnSender, txn.Sender.String(); got != want {
 		t.Fatalf("audit txn sender = %q, want decoded sender %q", got, want)
-	}
-	if got := audit.entries[0].txnSender; got == "caller-spoofed-sender" {
-		t.Fatal("audit used caller-supplied txn sender")
 	}
 }
 

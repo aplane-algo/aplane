@@ -24,10 +24,9 @@ import (
 )
 
 const (
-	pluginName    = "algokit-localnet"
-	pluginVersion = "0.1.0"
+	pluginName = "algokit-localnet"
 	// pluginProtocol is declared independently during initialization. It is
-	// distinct from the JSON-RPC envelope and this plugin's release version.
+	// distinct from the JSON-RPC envelope and the manifest's release version.
 	pluginProtocol    = "aplane-plugin/2"
 	defaultAlgodURL   = "http://localhost:4001"
 	defaultKMDURL     = "http://localhost:4002"
@@ -114,15 +113,6 @@ type PresentationTableRow struct {
 	Cells []string `json:"cells"`
 }
 
-type GetInfoResult struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description"`
-	Commands    []string `json:"commands"`
-	Networks    []string `json:"networks"`
-	Status      string   `json:"status"`
-}
-
 type ShutdownResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
@@ -201,8 +191,6 @@ func handleRequest(req *Request) *Response {
 		return handleInitialize(req)
 	case "execute":
 		return handleExecute(req)
-	case "getInfo":
-		return handleGetInfo(req)
 	case "shutdown":
 		return handleShutdown(req)
 	default:
@@ -243,13 +231,8 @@ func handleExecute(req *Request) *Response {
 	if execNetwork != "" && execNetwork != "localnet" {
 		return errorResponse(req.ID, -32000, "algokit-localnet only supports localnet", execNetwork)
 	}
-	cfg.network = firstNonEmpty(execNetwork, "localnet")
 
 	args := params.Args
-	if params.Command != "" && params.Command != "localnet" {
-		args = append([]string{params.Command}, params.Args...)
-	}
-
 	subcommand := "help"
 	if len(args) > 0 {
 		subcommand = strings.ToLower(args[0])
@@ -278,17 +261,6 @@ func handleExecute(req *Request) *Response {
 		return errorResponse(req.ID, -32000, err.Error(), nil)
 	}
 	return successResponse(req.ID, result)
-}
-
-func handleGetInfo(req *Request) *Response {
-	return successResponse(req.ID, GetInfoResult{
-		Name:        pluginName,
-		Version:     pluginVersion,
-		Description: "AlgoKit LocalNet operations for status, KMD account listing, and local funding",
-		Commands:    []string{"localnet"},
-		Networks:    []string{"localnet"},
-		Status:      "ready",
-	})
 }
 
 func handleShutdown(req *Request) *Response {

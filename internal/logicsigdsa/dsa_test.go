@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -91,7 +91,7 @@ func TestGetAll(t *testing.T) {
 
 func TestFalcon1024V1GenerateAndDerive(t *testing.T) {
 	// Configure algod client (required for DeriveLsig)
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestIsLogicSigType(t *testing.T) {
 
 func TestConfigureAlgodClient(t *testing.T) {
 	// Create a mock algod client
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}

@@ -20,7 +20,7 @@ import (
 func TestShellEndpointStateLivesInApshellApp(t *testing.T) {
 	dir := filepath.Join("..", "..", "internal", "apshellcli")
 	forbidden := []string{
-		"config.LoadConfig(", "ClientEndpointsOrDefault(", ".DefaultEndpoint(",
+		"config.LoadConfig(", "ClientEndpointsOrDefault(", ".SignerEndpoint(",
 		"EndpointRegistry", "LoadClientEndpointRegistry(", "LoadStoredClientEndpointRegistry(",
 	}
 	fset := token.NewFileSet()

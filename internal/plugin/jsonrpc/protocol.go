@@ -48,7 +48,6 @@ func (e *Error) Error() string {
 const (
 	InvalidRequest = -32600
 	MethodNotFound = -32601
-	InternalError  = -32603
 )
 
 // NewRequest creates a new JSON-RPC request

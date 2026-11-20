@@ -54,7 +54,7 @@ func TestAuthorizationFeeReserveCountsTheDummyProgramCost(t *testing.T) {
 func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
 	const address = "ADDR"
 	engine := NewEngine("test")
-	engine.SignerCache.AddAddress(address, "falcon1024")
+	engine.SignerCache.AddAddress(address, "falcon1024", "native_pq")
 
 	got, err := engine.AuthorizationFeeReserve(address)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
 func TestAuthorizationFeeReserveDoesNotReadTheAuthCache(t *testing.T) {
 	const account, stage = "ACCOUNT", "STAGE"
 	engine := NewEngine("test")
-	engine.SignerCache.AddAddress(account, rotatingkey.RotatingTripleXmssV1)
+	engine.SignerCache.AddAddress(account, rotatingkey.RotatingTripleXmssV1, "logic_sig")
 	engine.SignerCache.SetSigningFlowForAddress(account, signerapi.SigningFlowRotating1)
 	engine.SignerCache.SetLogicSigResourceProfile(account, lsigresource.Profile{
 		ProgramBytes: 4_500,

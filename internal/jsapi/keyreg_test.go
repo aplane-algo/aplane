@@ -74,7 +74,7 @@ func newKeyregFixture(t *testing.T) *keyregFixture {
 		if r.Method == http.MethodGet && r.URL.Path == "/keys" {
 			keys := []signerapi.KeyInfo{}
 			for _, address := range []string{keyregEligible, keyregIneligible, keyregUnknown} {
-				keys = append(keys, signerapi.KeyInfo{Address: address, KeyType: "ed25519"})
+				keys = append(keys, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
@@ -105,8 +105,8 @@ func newKeyregFixture(t *testing.T) *keyregFixture {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	eng.SignerCache.Keys = map[string]string{
-		keyregEligible: "ed25519", keyregIneligible: "ed25519", keyregUnknown: "ed25519",
+	for _, address := range []string{keyregEligible, keyregIneligible, keyregUnknown} {
+		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
 	}
 	// Each account signs for itself, so only the eligibility read asks
 	// algod about the account.

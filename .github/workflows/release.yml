@@ -238,12 +238,12 @@ jobs:
                bin/${arch}/appolicy \
                bin/${arch}/applugin-checksum dist/staging/aplane/bin/
             cp installer/apsigner.service installer/apsigner.service.template \
-               installer/sudoers.template \
                dist/staging/aplane/installer/
             cp installer/scripts/systemd-setup.sh installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
             cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/
             scripts/stage-bundled-plugins.sh --os linux --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/
+            if [ -f install_readme.txt ]; then cp install_readme.txt dist/staging/aplane/; fi
             write_release_metadata dist/staging/aplane
             tar -czf "dist/${archive}" -C dist/staging aplane
             echo "Created dist/${archive}"
@@ -283,6 +283,7 @@ jobs:
             cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
             scripts/stage-bundled-plugins.sh --os darwin --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/
+            if [ -f install_readme.txt ]; then cp install_readme.txt dist/staging/aplane/; fi
             write_release_metadata dist/staging/aplane
             tar -czf "dist/${archive}" -C dist/staging aplane
             echo "Created dist/${archive}"

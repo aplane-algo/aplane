@@ -140,46 +140,6 @@ func TestCallWithTimeoutIgnoresNullResponseID(t *testing.T) {
 	}
 }
 
-func TestReadLoopDispatchesInboundRequest(t *testing.T) {
-	serverToClientReader, serverToClientWriter := io.Pipe()
-	clientToServerReader, clientToServerWriter := io.Pipe()
-	defer func() { _ = serverToClientReader.Close() }()
-	defer func() { _ = clientToServerReader.Close() }()
-
-	client := NewClient(serverToClientReader, clientToServerWriter)
-	client.SetRequestHandler(RequestHandlerFunc(func(method string, params json.RawMessage) (interface{}, *Error) {
-		if method != CallbackGetBalance {
-			t.Errorf("callback method = %q, want %q", method, CallbackGetBalance)
-		}
-		var req GetBalanceParams
-		if err := json.Unmarshal(params, &req); err != nil {
-			t.Errorf("callback params unmarshal: %v", err)
-		}
-		if req.Address != "ADDR" || req.AssetID != 7 {
-			t.Errorf("callback params = %+v, want ADDR/7", req)
-		}
-		return GetBalanceResult{Balance: 42}, nil
-	}))
-	client.Start()
-
-	_, _ = serverToClientWriter.Write([]byte(`{"jsonrpc":"2.0","method":"getBalance","params":{"address":"ADDR","assetId":7},"id":99}` + "\n"))
-
-	var response struct {
-		Result GetBalanceResult `json:"result"`
-		Error  *Error           `json:"error"`
-		ID     float64          `json:"id"`
-	}
-	if err := json.NewDecoder(clientToServerReader).Decode(&response); err != nil {
-		t.Fatalf("callback response decode error: %v", err)
-	}
-	if response.Error != nil {
-		t.Fatalf("callback response error = %v, want nil", response.Error)
-	}
-	if response.ID != 99 || response.Result.Balance != 42 {
-		t.Fatalf("callback response = %+v, want id 99 balance 42", response)
-	}
-}
-
 func TestReadLoopDoesNotTreatInboundRequestAsPendingResponse(t *testing.T) {
 	serverToClientReader, serverToClientWriter := io.Pipe()
 	clientToServerReader, clientToServerWriter := io.Pipe()
@@ -187,9 +147,6 @@ func TestReadLoopDoesNotTreatInboundRequestAsPendingResponse(t *testing.T) {
 	defer func() { _ = clientToServerReader.Close() }()
 
 	client := NewClient(serverToClientReader, clientToServerWriter)
-	client.SetRequestHandler(RequestHandlerFunc(func(method string, params json.RawMessage) (interface{}, *Error) {
-		return LogResult{Success: true}, nil
-	}))
 	client.Start()
 
 	errCh := make(chan error, 1)
@@ -271,7 +228,7 @@ func TestWriteFrameWritesSingleJSONLineFrame(t *testing.T) {
 	writer := &recordingWriter{}
 	client := NewClient(&bytes.Buffer{}, writer)
 
-	if err := client.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Level: "info", Message: "hello"}, nil), 0); err != nil {
+	if err := client.writeFrame(context.Background(), NewRequest(MethodExecute, ExecuteParams{}, nil), 0); err != nil {
 		t.Fatalf("writeFrame() error = %v", err)
 	}
 	if len(writer.writes) != 1 {

@@ -121,8 +121,7 @@ func newApshellResponsivePluginInstance(t *testing.T, plugin *discovery.Plugin) 
 						"success": true,
 						"message": "ok",
 						"data": map[string]any{
-							"localSigners": []any{"ADDR1"},
-							"amount":       123,
+							"amount": 123,
 						},
 					},
 				})

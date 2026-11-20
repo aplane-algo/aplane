@@ -11,7 +11,7 @@ import "github.com/aplane-algo/aplane/internal/config"
 // key is discovered as an authentication failure at connect time.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
 	registry := a.Config.ClientEndpointsOrDefault()
-	_, endpoint, ok := registry.DefaultEndpoint()
+	_, endpoint, ok := registry.SignerEndpoint()
 	decision := &StartupConnectDecision{}
 
 	if ok {

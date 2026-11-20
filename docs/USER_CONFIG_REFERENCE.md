@@ -29,8 +29,7 @@ Signer and cosigner endpoint routing lives here, not in `config.yaml`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `schema_version` | int | `2` | Endpoint registry schema version |
-| `default` | string | `(operator-chosen)` | Default signer endpoint alias |
-| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `cosigner` |
+| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` (at most one; the default for `connect` and `enroll`) or `cosigner` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]` |
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path (the enrolled client key), resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |
@@ -43,7 +42,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 |-------|------|---------|-------------|
 | `schema_version` | int | `1` | Signer config schema version |
 | `endpoint` | object | default endpoint settings | Signer endpoint exposure settings |
-| `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL used by apadmin endpoint export when --host/--url are omitted, and shown after a cosigner key export as the address clients add |
+| `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL, ssh://host[:port], used by apadmin endpoint export when --host/--url are omitted, and shown after a cosigner key export as the address clients add |
 | `endpoint.signer_port` | int | `11270` | Loopback REST API port behind the endpoint |
 | `endpoint.ssh` | object | default SSH settings | SSH tunnel settings for apsigner endpoint access |
 | `endpoint.ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |

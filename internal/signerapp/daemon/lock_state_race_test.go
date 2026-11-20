@@ -75,7 +75,7 @@ func TestHandleSignReturnsForbiddenWhenKeySessionLocksMidRequest(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
-	var resp signerapi.GroupSignResponse
+	var resp signerapi.ErrorResponse
 	decodeResponse(t, w, &resp)
 	if resp.Error != "signer is locked" {
 		t.Fatalf("error = %q, want signer is locked", resp.Error)
@@ -96,7 +96,7 @@ func TestHandleAdminGenerateReturnsForbiddenWhenMasterKeyClearedMidRequest(t *te
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
-	var resp AdminGenerateResponse
+	var resp signerapi.ErrorResponse
 	decodeResponse(t, w, &resp)
 	if resp.Error != "signer is locked" {
 		t.Fatalf("error = %q, want signer is locked", resp.Error)

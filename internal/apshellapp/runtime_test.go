@@ -4,8 +4,13 @@
 package apshellapp
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	"github.com/aplane-algo/aplane/internal/addressdisplay"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
@@ -44,13 +49,61 @@ func TestConfigurePluginsUsesCurrentNetworkConfig(t *testing.T) {
 	app := New(eng, cfg, t.TempDir())
 	app.Plugins = plugins
 
-	if err := app.ConfigurePlugins(); err != nil {
-		t.Fatalf("ConfigurePlugins() error = %v", err)
-	}
+	app.ConfigurePlugins()
 	if plugins.network != "testnet" {
 		t.Fatalf("plugin network = %q, want testnet", plugins.network)
 	}
 	if plugins.algodURL != "https://testnet.example" || plugins.algodToken != "test-token" {
 		t.Fatalf("plugin algod config = %q/%q", plugins.algodURL, plugins.algodToken)
+	}
+}
+
+// A network with no algod settings gives plugins the network and empty algod
+// settings.
+func TestConfigurePluginsWithoutAlgodConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Algod = config.AlgodConfig{
+		"mainnet": &config.AlgodNetworkConfig{Server: "https://mainnet.example", Token: "main-token"},
+	}
+	plugins := &fakePluginRuntime{algodURL: "stale", algodToken: "stale"}
+	app := New(engine.NewEngine("testnet"), cfg, t.TempDir())
+	app.Plugins = plugins
+
+	app.ConfigurePlugins()
+	if plugins.network != "testnet" || plugins.algodURL != "" || plugins.algodToken != "" {
+		t.Fatalf("plugin config = %q %q/%q, want testnet with no algod", plugins.network, plugins.algodURL, plugins.algodToken)
+	}
+}
+
+// The display marker and signableAddresses() are one rule,
+// cache.IsAccountSignable: a key the signer lists with no authorization kind,
+// or with one this client does not know, is neither marked nor listed, and
+// neither is an account rekeyed to one.
+func TestSignableMarkerAgreesWithSignableAddresses(t *testing.T) {
+	addressdisplay.SetColorSupported(false)
+	defer addressdisplay.ResetColorSupport()
+
+	known, noKind, unknownKind := types.Address{1}.String(), types.Address{2}.String(), types.Address{3}.String()
+	toKnown, toNoKind, toUnknownKind := types.Address{4}.String(), types.Address{5}.String(), types.Address{6}.String()
+	eng := engine.NewEngine("testnet")
+	eng.SignerCache.AddAddress(known, "ed25519", "ed25519")
+	eng.SignerCache.AddAddress(noKind, "ed25519", "")
+	eng.SignerCache.AddAddress(unknownKind, "ed25519", "quantum_magic")
+	// A rekeyed account is known to the client by its alias.
+	eng.AliasCache.Aliases = map[string]string{"to-known": toKnown, "to-no-kind": toNoKind, "to-unknown-kind": toUnknownKind}
+	eng.AuthCache.AuthAddresses = map[string]string{toKnown: known, toNoKind: noKind, toUnknownKind: unknownKind}
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+
+	signable := eng.GetSignableAddresses()
+	want := []string{known, toKnown}
+	slices.Sort(want)
+	if !slices.Equal(signable, want) {
+		t.Fatalf("GetSignableAddresses() = %v, want %v", signable, want)
+	}
+	for _, address := range []string{known, noKind, unknownKind, toKnown, toNoKind, toUnknownKind} {
+		formatted := app.FormatAddress(address)
+		if marked, listed := strings.HasSuffix(formatted, " @"), slices.Contains(signable, address); marked != listed {
+			t.Errorf("FormatAddress(%s) = %q (marked %v), but listed as signable = %v", address, formatted, marked, listed)
+		}
 	}
 }

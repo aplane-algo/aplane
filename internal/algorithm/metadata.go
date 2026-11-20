@@ -96,7 +96,7 @@ func (m *basicMetadata) DefaultDerivation() string            { return m.default
 func (m *basicMetadata) DisplayColor() string                 { return m.displayColor }
 
 // RequiresLogicSig reports whether accounts of this key type authorize with a
-// LogicSig. The wire fields named requires_logicsig are this projection.
+// LogicSig.
 func RequiresLogicSig(meta SignatureMetadata) bool {
 	return meta.AuthorizationKind() == AuthorizationLogicSig
 }

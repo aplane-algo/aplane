@@ -24,7 +24,7 @@ func pluginCompleter(specs []cmdspec.ArgSpec, address string) interface {
 	Do([]rune, int) ([][]rune, int)
 } {
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 	plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
 		Name:     "branchy",
 		Commands: []manifest.Command{{Name: "branchy", ArgSpecs: specs}},
@@ -288,7 +288,7 @@ func FuzzResolveArgSpec(f *testing.F) {
 func TestPluginCompletionOffersEachPositionItsOwnSpec(t *testing.T) {
 	addr := crypto.GenerateAccount().Address.String()
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 	plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
 		Name: "pace",
 		Commands: []manifest.Command{{Name: "pace", ArgSpecs: []cmdspec.ArgSpec{

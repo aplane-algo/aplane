@@ -318,7 +318,7 @@ func (s *SignerHarness) GetURL() string {
 	if err != nil {
 		s.t.Fatalf("load client config for signer tunnel: %v", err)
 	}
-	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	_, endpoint, ok := cfg.Endpoints.SignerEndpoint()
 	if !ok {
 		s.t.Fatalf("client endpoint registry in %s has no default signer endpoint", clientDataDir)
 	}

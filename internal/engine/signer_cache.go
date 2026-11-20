@@ -77,30 +77,21 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
-// signerCacheAuthorizationKind classifies an address from one consistent
-// signer-cache snapshot. The boolean reports whether the address is present;
-// a present address with an empty kind has invalid or unknown key metadata.
+// signerCacheAuthorizationKind returns the authorization kind the signer
+// reported for an address on /keys, when this client knows it
+// (SignerCache.AuthorizationKind). The boolean reports whether the address is
+// present. A present address with an empty kind has none this client knows.
+// The prepare path (BuildSigningContext, CanSignForAddressWithKind) refuses
+// such a key, and cache.IsAccountSignable does not call it signable. A
+// pre-built group reads no kind: it leaves its authorization to the signer,
+// which holds the key.
 func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	if !e.SignerCache.HasAddress(address) {
 		return "", false
 	}
-	if e.SignerCache.IsGenericLsig(address) {
-		return algorithm.AuthorizationLogicSig, true
-	}
-	if _, ok := e.SignerCache.LogicSigResourceProfile(address); ok {
-		return algorithm.AuthorizationLogicSig, true
-	}
-	keyType := e.SignerCache.GetKeyType(address)
-	if keyType == "ed25519" {
-		return algorithm.AuthorizationEd25519, true
-	}
-	metadata, err := algorithm.GetMetadata(keyType)
-	if err != nil {
-		return "", true
-	}
-	return metadata.AuthorizationKind(), true
+	return e.SignerCache.AuthorizationKind(address), true
 }
 
 // AuthorizationFeeReserve returns the additional microAlgo fee a standalone
@@ -251,6 +242,8 @@ func (e *Core) SignerCacheAddresses() []string {
 	return addresses
 }
 
+// isAccountSignable applies cache.IsAccountSignable, the rule the display
+// marker uses too, under the signer cache lock.
 func (e *Core) isAccountSignable(address string) bool {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

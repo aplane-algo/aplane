@@ -305,8 +305,8 @@ The exact message contracts are documented in
 
 ## Plugins And SDKs
 
-Plugins receive the active network context token in execution context and
-environment. Plugins must treat it as an opaque string and use the execution
+Plugins receive the active network context token in execution context and in
+initialize. Plugins must treat it as an opaque string and use the execution
 context network, not only the initialization network.
 
 The Go SDK config loader follows the same free-form token syntax as the client

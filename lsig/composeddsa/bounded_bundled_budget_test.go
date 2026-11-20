@@ -13,7 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
@@ -24,7 +24,7 @@ import (
 
 func TestBoundedFixtureCompiledBudgetMatrix(t *testing.T) {
 	falcon1024.RegisterClient()
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

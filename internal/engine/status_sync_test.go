@@ -54,7 +54,7 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 	addr := testAddr(32)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
@@ -88,7 +88,7 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	addr := testAddr(33)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path != "/status" {

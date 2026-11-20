@@ -857,7 +857,6 @@ configure_client_endpoints() {
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -1317,7 +1316,6 @@ schema_version: 1
 YAML
         cat > '$data_dir/endpoints.yaml' <<YAML
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

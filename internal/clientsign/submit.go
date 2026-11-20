@@ -94,7 +94,6 @@ func SignAndSubmitViaGroup(
 
 		requests[i] = signerapi.SignRequest{
 			AuthAddress: effectiveSigner,
-			TxnSender:   sender,
 			TxnBytesHex: hex.EncodeToString(txnutil.EncodeWithPrefix(txn)),
 			LsigArgs:    lsigArgsHex,
 		}

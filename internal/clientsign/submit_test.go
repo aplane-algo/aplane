@@ -134,7 +134,7 @@ func TestSignAndSubmitViaGroupSendsTheBatchLabel(t *testing.T) {
 				t.Fatalf("decode request: %v", err)
 			}
 			sent = &req
-			return jsonResponse(r, http.StatusOK, signerapi.GroupSignResponse{Error: "stop here"})
+			return jsonResponse(r, http.StatusBadRequest, signerapi.ErrorResponse{Error: "stop here"})
 		})}
 		authCache := cache.NewAuthAddressCacheForStore(nil)
 		algodClient, err := algod.MakeClient("http://algod.test", "")

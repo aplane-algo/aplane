@@ -75,13 +75,12 @@ type Manager struct {
 	network    string
 	algodURL   string
 	algodToken string
-	indexerURL string
 
 	// dataDir is the apshell data dir; per-plugin state directories live under
 	// dataDir/plugin-state/<name>. Empty disables persistent plugin state.
 	dataDir string
 
-	startPluginInstanceHook func(*discovery.Plugin, runtimeConfig) (*Instance, error)
+	startPluginInstanceHook func(*discovery.Plugin) (*Instance, error)
 	initializePluginHook    func(*Instance, runtimeConfig) error
 }
 
@@ -89,7 +88,6 @@ type runtimeConfig struct {
 	network    string
 	algodURL   string
 	algodToken string
-	indexerURL string
 }
 
 // TestHooks provides narrow manager hooks for package-external tests.
@@ -151,13 +149,7 @@ func (m *Manager) SetCachedPluginsForTest(plugins []*discovery.Plugin) {
 func (m *Manager) SetTestHooks(hooks TestHooks) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if hooks.StartPluginInstance != nil {
-		m.startPluginInstanceHook = func(plugin *discovery.Plugin, _ runtimeConfig) (*Instance, error) {
-			return hooks.StartPluginInstance(plugin)
-		}
-	} else {
-		m.startPluginInstanceHook = nil
-	}
+	m.startPluginInstanceHook = hooks.StartPluginInstance
 	if hooks.InitializePlugin != nil {
 		m.initializePluginHook = func(instance *Instance, _ runtimeConfig) error {
 			return hooks.InitializePlugin(instance)
@@ -190,13 +182,12 @@ func NewTestInstanceForHooks(
 }
 
 // SetConfig configures the manager
-func (m *Manager) SetConfig(network, algodURL, algodToken, indexerURL string) {
+func (m *Manager) SetConfig(network, algodURL, algodToken string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.network = network
 	m.algodURL = algodURL
 	m.algodToken = algodToken
-	m.indexerURL = indexerURL
 }
 
 // DiscoverPluginsCached returns cached plugin list, discovering if needed.
@@ -310,7 +301,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	}
 	m.mu.Unlock()
 
-	instance, err := startFn(plugin, cfg)
+	instance, err := startFn(plugin)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +324,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 }
 
 // startPluginInstance starts a plugin subprocess
-func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, error) {
 	execPath := plugin.Manifest.GetExecutablePath(plugin.Dir)
 
 	stateDir, err := m.pluginStateDir(plugin.Manifest.Name)
@@ -350,18 +341,6 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		}
 	}
 
-	// Build environment
-	env := append(os.Environ(),
-		fmt.Sprintf("APSHELL_NETWORK=%s", cfg.network),
-		fmt.Sprintf("APSHELL_ALGOD_URL=%s", cfg.algodURL),
-		fmt.Sprintf("APSHELL_ALGOD_TOKEN=%s", cfg.algodToken),
-		fmt.Sprintf("APSHELL_INDEXER_URL=%s", cfg.indexerURL),
-		"APSHELL_PLUGIN=1",
-	)
-	if stateDir != "" {
-		env = append(env, fmt.Sprintf("APSHELL_PLUGIN_STATE_DIR=%s", stateDir))
-	}
-
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
 		PluginName: plugin.Manifest.Name,
@@ -369,7 +348,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		StateDir:   stateDir,
 		ExecPath:   execPath,
 		Args:       plugin.Manifest.Args,
-		Env:        env,
+		Env:        pluginEnv(os.Environ(), stateDir),
 	}
 
 	cmd, sandboxName, err := sandbox.BuildCommand(sandboxCfg)
@@ -434,22 +413,27 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	return instance, nil
 }
 
+// pluginEnv is the environment a plugin starts with, before the sandbox filters
+// it: the host's, plus the plugin's state directory when it has one. Coming
+// last, the state directory overrides an operator's copy of the name. The
+// network and algod settings reach the plugin in initialize instead.
+func pluginEnv(host []string, stateDir string) []string {
+	if stateDir == "" {
+		return host
+	}
+	return append(host, "APSHELL_PLUGIN_STATE_DIR="+stateDir)
+}
+
 // initializePlugin sends the initialize request to the plugin
 func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error {
 	params := jsonrpc.InitializeParams{
 		Network:    cfg.network,
 		AlgodURL:   cfg.algodURL,
 		AlgodToken: cfg.algodToken,
-		IndexerURL: cfg.indexerURL,
 	}
 
 	var result jsonrpc.InitializeResult
-	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-
-	err := instance.Client.CallWithTimeout(jsonrpc.MethodInitialize, params, &result, timeout)
+	err := instance.Client.CallWithTimeout(jsonrpc.MethodInitialize, params, &result, callTimeout(instance))
 	if err != nil {
 		return err
 	}
@@ -471,7 +455,6 @@ func (m *Manager) configSnapshot() runtimeConfig {
 		network:    m.network,
 		algodURL:   m.algodURL,
 		algodToken: m.algodToken,
-		indexerURL: m.indexerURL,
 	}
 }
 
@@ -592,11 +575,7 @@ func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string
 // it within abandonGrace rather than waiting for it to finish what it was
 // asked.
 func (m *Manager) call(ctx context.Context, pluginName string, instance *Instance, method string, params, result interface{}) error {
-	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-	err := instance.Client.CallContext(ctx, method, params, result, timeout)
+	err := instance.Client.CallContext(ctx, method, params, result, callTimeout(instance))
 	if err == nil {
 		return nil
 	}
@@ -607,6 +586,16 @@ func (m *Manager) call(ctx context.Context, pluginName string, instance *Instanc
 		m.discardInstance(pluginName, instance)
 	}
 	return err
+}
+
+// callTimeout bounds one call to instance: its manifest's timeout, or 30
+// seconds when the manifest sets none. A loaded manifest always has one; a
+// manifest built in code may not.
+func callTimeout(instance *Instance) time.Duration {
+	if instance.Plugin.Manifest.Timeout == 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
 }
 
 // SignTransactions asks a running plugin to sign the canonical bytes for the slots

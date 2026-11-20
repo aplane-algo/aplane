@@ -122,15 +122,14 @@ func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T
 	}
 }
 
-func TestMCPPluginResultProjectionPreservesStructuredJSONAndFiltersShellOnlyData(t *testing.T) {
+func TestMCPPluginResultProjectionPreservesStructuredJSON(t *testing.T) {
 	result := &PluginResult{Plugin: appresult.Plugin{
 		Plugin:  "swap",
 		Success: true,
 		Message: "ok",
 		TxIDs:   []string{"TX1"},
 		Data: map[string]any{
-			"amount":       123,
-			"localSigners": []any{"ADDR1"},
+			"amount": 123,
 		},
 		Presentation: &jsonrpc.Presentation{
 			Title:   "Swap Quote",
@@ -142,7 +141,7 @@ func TestMCPPluginResultProjectionPreservesStructuredJSONAndFiltersShellOnlyData
 		}},
 	}}
 
-	machineData, err := json.Marshal(projectPluginResult(result))
+	machineData, err := json.Marshal(result.Plugin)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
@@ -165,9 +164,6 @@ func TestMCPPluginResultProjectionPreservesStructuredJSONAndFiltersShellOnlyData
 	if !ok {
 		t.Fatalf("data type = %T, want map", got["data"])
 	}
-	if _, exists := data["localSigners"]; exists {
-		t.Fatalf("data.localSigners unexpectedly present in MCP projection: %#v", data)
-	}
 	if data["amount"] != float64(123) {
 		t.Fatalf("data.amount = %#v, want 123", data["amount"])
 	}
@@ -177,6 +173,30 @@ func TestMCPPluginResultProjectionPreservesStructuredJSONAndFiltersShellOnlyData
 	}
 	if presentation["title"] != "Swap Quote" {
 		t.Fatalf("presentation.title = %#v, want Swap Quote", presentation["title"])
+	}
+}
+
+// The MCP projection carries a plugin's data as the plugin returned it.
+func TestMCPPluginProjectionData(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data any
+		want string
+	}{
+		{name: "none", want: `{"plugin":"p","success":true}`},
+		{name: "not an object", data: "plain", want: `{"plugin":"p","success":true,"data":"plain"}`},
+		{name: "object", data: map[string]any{"amount": 1}, want: `{"plugin":"p","success":true,"data":{"amount":1}}`},
+		{name: "empty object", data: map[string]any{}, want: `{"plugin":"p","success":true,"data":{}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := json.Marshal(appresult.Plugin{Plugin: "p", Success: true, Data: tc.data})
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("projection = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -234,7 +254,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 	if _, err := eng.AddAliasWithContext(context.Background(), "alice", addr); err != nil {
 		t.Fatalf("AddAlias() error = %v", err)
 	}
-	eng.SignerCache.Keys[addr] = "ed25519"
+	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	type outcome struct {
 		cmd  string

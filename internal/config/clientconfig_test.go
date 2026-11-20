@@ -219,7 +219,6 @@ func TestLoadConfigAppliesSSHDefaultsFromEndpointRegistry(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -232,9 +231,9 @@ endpoints:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	_, endpoint, ok := cfg.Endpoints.SignerEndpoint()
 	if !ok {
-		t.Fatal("default endpoint missing")
+		t.Fatal("signer endpoint missing")
 	}
 	endpointSSH, err := ResolveClientEndpointSSH(endpoint)
 	if err != nil {
@@ -281,7 +280,7 @@ func TestLoadClientEndpointRegistryRejectsSelfForEveryRole(t *testing.T) {
 				t.Fatalf("write endpoints: %v", err)
 			}
 			_, err := LoadClientEndpointRegistry(dataDir)
-			if err == nil || !strings.Contains(err.Error(), `url "self" is not supported`) {
+			if err == nil || !strings.Contains(err.Error(), `unsupported url scheme ""; endpoints are ssh://host[:port]`) {
 				t.Fatalf("LoadClientEndpointRegistry() error = %v, want unsupported self URL", err)
 			}
 		})

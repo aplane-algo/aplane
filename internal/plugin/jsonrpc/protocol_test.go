@@ -5,6 +5,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,11 +63,21 @@ func TestPluginProtocolIdentifier(t *testing.T) {
 	}
 }
 
-func TestPluginSignerRejectsRetiredLogicSigSize(t *testing.T) {
-	var signer PluginSigner
-	err := json.Unmarshal([]byte(`{"address":"A","kind":"plugin-callback","signerRef":"r","lsigSize":4000}`), &signer)
-	if err == nil || !strings.Contains(err.Error(), `field "lsigSize" is unsupported`) {
-		t.Fatalf("Unmarshal() error = %v, want retired lsigSize rejection", err)
+func TestPluginSignerDecodesItsDeclaration(t *testing.T) {
+	var signers []PluginSigner
+	err := json.Unmarshal([]byte(`[
+		{"address":"A","kind":"plugin-callback","signerRef":"r","lsigResources":{"programBytes":1,"argumentBytes":2,"maxOpcodeCost":3}},
+		{"address":"B","kind":"plugin-callback","signerRef":"s","pqScheme":"f1","unknown":true}
+	]`), &signers)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	want := []PluginSigner{
+		{Address: "A", Kind: PluginSignerKindCallback, SignerRef: "r", LsigResources: &PluginLogicSigResources{ProgramBytes: 1, ArgumentBytes: 2, MaxOpcodeCost: 3}},
+		{Address: "B", Kind: PluginSignerKindCallback, SignerRef: "s", PQScheme: "f1"},
+	}
+	if !reflect.DeepEqual(signers, want) {
+		t.Fatalf("decoded = %+v, want %+v", signers, want)
 	}
 }
 
@@ -151,7 +162,6 @@ func TestErrorCodes(t *testing.T) {
 	}{
 		{"InvalidRequest", InvalidRequest, -32600},
 		{"MethodNotFound", MethodNotFound, -32601},
-		{"InternalError", InternalError, -32603},
 	}
 
 	for _, tt := range tests {
@@ -192,52 +202,6 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCallbackPayloadJSONShapes(t *testing.T) {
-	tests := []struct {
-		name string
-		in   interface{}
-		want string
-	}{
-		{
-			name: "list accounts result",
-			in:   ListAccountsResult{Accounts: []string{"ADDR1", "ADDR2"}},
-			want: `{"accounts":["ADDR1","ADDR2"]}`,
-		},
-		{
-			name: "get asset info params",
-			in:   GetAssetInfoParams{AssetID: 10458941},
-			want: `{"assetId":10458941}`,
-		},
-		{
-			name: "get asset info result",
-			in:   GetAssetInfoResult{AssetID: 10458941, Name: "USD Coin", UnitName: "USDC", Decimals: 6},
-			want: `{"assetId":10458941,"name":"USD Coin","unitName":"USDC","decimals":6}`,
-		},
-		{
-			name: "get app info params",
-			in:   GetAppInfoParams{AppID: 1234},
-			want: `{"appId":1234}`,
-		},
-		{
-			name: "get app info result",
-			in:   GetAppInfoResult{AppID: 1234, Creator: "ADDR"},
-			want: `{"appId":1234,"creator":"ADDR"}`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := json.Marshal(tt.in)
-			if err != nil {
-				t.Fatalf("Marshal() error = %v", err)
-			}
-			if string(got) != tt.want {
-				t.Fatalf("Marshal() = %s, want %s", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestPluginExecutionContextOmitsReservedZeroFields(t *testing.T) {
 	data, err := json.Marshal(Context{
 		Accounts: []string{"ADDR1"},
@@ -252,22 +216,6 @@ func TestPluginExecutionContextOmitsReservedZeroFields(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("Context JSON = %s, should omit %s", got, unwanted)
 		}
-	}
-}
-
-func TestExecuteResultUnsupportedLocalSignersJSONShape(t *testing.T) {
-	result := ExecuteResult{
-		Success:      true,
-		LocalSigners: []json.RawMessage{json.RawMessage(`{"address":"ADDR1","secretKey":"SECRET"}`)},
-	}
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-
-	want := `{"success":true,"localSigners":[{"address":"ADDR1","secretKey":"SECRET"}]}`
-	if string(data) != want {
-		t.Fatalf("Marshal() = %s, want %s", data, want)
 	}
 }
 

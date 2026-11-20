@@ -328,7 +328,7 @@ func TestAccountAliasSetAndSignerHelpers(t *testing.T) {
 		t.Fatal("missing alias should return null")
 	}
 
-	eng.SignerCache.Keys = map[string]string{addr1: "ed25519"}
+	eng.SignerCache.AddAddress(addr1, "ed25519", "ed25519")
 	accounts := api.jsAccounts(goja.FunctionCall{}).Export().([]interface{})
 	if len(accounts) != 1 {
 		t.Fatalf("accounts() len = %d, want 1", len(accounts))
@@ -343,7 +343,7 @@ func TestJSAliasAndAccountHelpersMatchMCPProjectionSemantics(t *testing.T) {
 		api.runtime.ToValue("alice"),
 		api.runtime.ToValue(addr),
 	}})
-	eng.SignerCache.Keys = map[string]string{addr: "ed25519"}
+	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	jsAliases := api.jsAliases(goja.FunctionCall{}).Export().(map[string]interface{})
 	if jsAliases["alice"] != addr {
@@ -566,7 +566,6 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		value := api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
 			map[string]interface{}{
 				"authAddress": "AUTHADDR",
-				"txnSender":   "SENDERADDR",
 				"txnBytesHex": signHex,
 				"lsigArgs": map[string]interface{}{
 					"alpha": "00ff",
@@ -591,7 +590,6 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		if !reflect.DeepEqual(gotReq.Requests, []signerapi.SignRequest{
 			{
 				AuthAddress: "AUTHADDR",
-				TxnSender:   "SENDERADDR",
 				TxnBytesHex: signHex,
 				LsigArgs: map[string]string{
 					"alpha": "00ff",
@@ -653,7 +651,6 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 					DisplayName:       "Generic LSig",
 					Description:       "scripted signer",
 					AuthorizationKind: "logic_sig",
-					RequiresLogicSig:  true,
 					MnemonicWordCount: 25,
 					MnemonicImport:    true,
 					MnemonicScheme:    "bip39",
@@ -706,7 +703,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 	default:
 		t.Fatalf("keyTypes() = %#v, want slice", result)
 	}
-	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
+	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["mnemonicImport"] != true {
 		t.Fatalf("keyTypes()[0] = %#v, want top-level metadata", entry)
 	}
 
@@ -1082,10 +1079,10 @@ func TestAdditionalErrorPaths(t *testing.T) {
 			eng.AliasCache.Aliases = make(map[string]string)
 		}
 		eng.AliasCache.Aliases["alice"] = addr1
-		eng.SignerCache.Keys = map[string]string{addr1: "ed25519"}
+		eng.SignerCache.AddAddress(addr1, "ed25519", "ed25519")
 
 		got := api.jsCanSignFor(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue("alice")}}).Export().(map[string]interface{})
-		if got["canSign"] != true || got["isLsig"] != false {
+		if got["canSign"] != true || fmt.Sprint(got["authorizationKind"]) != "ed25519" {
 			t.Fatalf("canSignFor() = %#v, want signer state", got)
 		}
 	})

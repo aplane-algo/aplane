@@ -455,23 +455,6 @@ func TestAdminGenerate_Success(t *testing.T) {
 	}
 }
 
-func TestAdminGenerate_ErrorResponse(t *testing.T) {
-	resp := signerapi.AdminGenerateResponse{
-		Error: "unsupported key type",
-	}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	_, err := c.AdminGenerateWithContext(context.Background(), "badtype", nil)
-	if err == nil {
-		t.Fatal("expected error for error response")
-	}
-	if !strings.Contains(err.Error(), "unsupported key type") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestAdminGenerate_ServerError(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		return mockResponse(500, `server error`), nil
@@ -486,7 +469,7 @@ func TestAdminGenerate_ServerError(t *testing.T) {
 // --- AdminDeleteKey ---
 
 func TestAdminDeleteKey_Success(t *testing.T) {
-	resp := signerapi.AdminDeleteResponse{Success: true}
+	resp := signerapi.AdminDeleteResponse{}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.Method != "DELETE" {
 			t.Errorf("method = %q, want DELETE", req.Method)
@@ -497,27 +480,8 @@ func TestAdminDeleteKey_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.AdminDeleteKeyWithContext(context.Background(), "TESTADDR")
-	if err != nil {
+	if err := c.AdminDeleteKeyWithContext(context.Background(), "TESTADDR"); err != nil {
 		t.Fatalf("AdminDeleteKey() error = %v", err)
-	}
-	if !got.Success {
-		t.Error("expected Success = true")
-	}
-}
-
-func TestAdminDeleteKey_ErrorResponse(t *testing.T) {
-	resp := signerapi.AdminDeleteResponse{Error: "key not found"}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	_, err := c.AdminDeleteKeyWithContext(context.Background(), "NOADDR")
-	if err == nil {
-		t.Fatal("expected error for error response")
-	}
-	if !strings.Contains(err.Error(), "key not found") {
-		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -637,24 +601,6 @@ func TestRequestComponentsRejectsOutOfGroupTargetIndex(t *testing.T) {
 	}
 }
 
-func TestRequestGroupSign_ErrorField(t *testing.T) {
-	resp := signerapi.GroupSignResponse{Error: "rejected by policy"}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-	c.cacheApprovalWaitSeconds(60)
-
-	_, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
-		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
-	})
-	if err == nil {
-		t.Fatal("expected error for error response")
-	}
-	if !strings.Contains(err.Error(), "rejected by policy") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestRequestGroupSign_ServerError(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		return mockResponse(500, `server error`), nil
@@ -708,7 +654,7 @@ func TestRequestGroupSignCancelsApprovalWhenContextCanceled(t *testing.T) {
 				t.Fatalf("decode /sign/cancel request: %v", err)
 			}
 			cancelReceived <- cancelReq.RequestID
-			return mockResponse(200, jsonBody(t, signerapi.CancelSignResponse{Success: true})), nil
+			return mockResponse(200, jsonBody(t, signerapi.CancelSignResponse{State: signerapi.SignCancelStateCanceled})), nil
 		default:
 			t.Fatalf("unexpected request path %q", req.URL.Path)
 			return nil, nil
@@ -858,23 +804,6 @@ func TestRequestGroupPlan_Success(t *testing.T) {
 	}
 	if len(got.Transactions) != 2 {
 		t.Errorf("len(Transactions) = %d, want 2", len(got.Transactions))
-	}
-}
-
-func TestRequestGroupPlan_ErrorField(t *testing.T) {
-	resp := signerapi.GroupPlanResponse{Error: "planning failed"}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	_, err := c.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
-		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
-	})
-	if err == nil {
-		t.Fatal("expected error for error response")
-	}
-	if !strings.Contains(err.Error(), "planning failed") {
-		t.Errorf("unexpected error: %v", err)
 	}
 }
 

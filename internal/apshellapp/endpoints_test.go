@@ -167,9 +167,9 @@ func TestEndpointUpsertsReportWhatBecameOfTheAlias(t *testing.T) {
 		want []string
 	}{
 		{"import dry run", func() []string { return importAs(true) },
-			[]string{"Would import signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+			[]string{"Would import signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223"}},
 		{"import", func() []string { return importAs(false) },
-			[]string{"Imported signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+			[]string{"Imported signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223"}},
 		{"import again", func() []string { return importAs(false) },
 			[]string{"Imported signer endpoint sig (unchanged)", "  url: ssh://127.0.0.1:2223"}},
 		{"cosigner dry run", func() []string { return cosigner("ssh://127.0.0.1:3333", true) },
@@ -313,7 +313,7 @@ func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *t
 	}
 }
 
-func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
+func TestEndpointDeleteUpdatesLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := upsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
@@ -322,14 +322,88 @@ func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
-	if _, err := app.EndpointDefault(t.Context(), "primary"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := app.EndpointDelete(t.Context(), "secondary"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := app.eng.EndpointRegistry.Endpoint("secondary"); ok {
 		t.Fatal("deleted endpoint remained in live registry")
+	}
+}
+
+// An envelope that apadmin endpoint export writes is one apshell endpoints
+// import reads: export and import apply the same URL rules, and an imported
+// URL is the exported one.
+func TestEndpointExportImportRoundTrip(t *testing.T) {
+	tests := []struct {
+		url       string
+		wantURL   string
+		exportErr string
+		importErr string
+	}{
+		{url: "ssh://signer.example:2223", wantURL: "ssh://signer.example:2223"},
+		{url: "ssh://signer.example:2223/", wantURL: "ssh://signer.example:2223"},
+		{url: "ssh://[::1]:2223", wantURL: "ssh://[::1]:2223"},
+		{url: "https://signer.example:8443", exportErr: `unsupported url scheme "https"; endpoints are ssh://host[:port]`},
+		{url: "http://127.0.0.1:11270", exportErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+		{url: "http://signer.example:11270", exportErr: `unsupported url scheme "http"; endpoints are ssh://host[:port]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			dataDir := t.TempDir()
+			data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: tt.url})
+			if tt.exportErr != "" {
+				if err == nil || err.Error() != tt.exportErr {
+					t.Fatalf("export error = %v, want %q", err, tt.exportErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("export error = %v", err)
+			}
+			path := filepath.Join(dataDir, "signer.endpoint.json")
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
+				Alias: "main", Role: config.ClientEndpointRoleSigner, Path: path,
+			})
+			if tt.importErr != "" {
+				if err == nil || err.Error() != tt.importErr {
+					t.Fatalf("import error = %v, want %q", err, tt.importErr)
+				}
+				if _, statErr := os.Stat(config.GetClientEndpointsPath(dataDir)); !os.IsNotExist(statErr) {
+					t.Fatalf("a refused import wrote endpoints.yaml: %v", statErr)
+				}
+				return
+			}
+			if err != nil || result.URL != tt.wantURL {
+				t.Fatalf("import = %+v, %v; want URL %q", result, err, tt.wantURL)
+			}
+			stored, err := config.LoadStoredClientEndpointRegistry(dataDir)
+			if err != nil || stored.Endpoints["main"].URL != tt.wantURL {
+				t.Fatalf("stored registry = %+v, %v; want main at %q", stored, err, tt.wantURL)
+			}
+		})
+	}
+}
+
+// The signer endpoint is the one endpoints delete refuses; the refusal
+// leaves the live registry as it was.
+func TestEndpointDeleteRefusesSignerEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := upsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
+		t.Fatal(err)
+	}
+	app := newEndpointTestApp(t, dataDir)
+	_, err := app.EndpointDelete(t.Context(), "primary")
+	if err == nil || err.Error() != `endpoint alias "primary" is the signer endpoint` {
+		t.Fatalf("EndpointDelete(primary) error = %v", err)
+	}
+	if _, err := app.EndpointsList(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := app.eng.EndpointRegistry.Endpoint("primary"); !ok {
+		t.Fatal("a refused delete dropped the signer endpoint from the live registry")
 	}
 }
 

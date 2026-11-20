@@ -38,6 +38,28 @@ fi
 
 set -euo pipefail
 
+# The directory install.sh sits in: the release archive root or the checkout.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# A release can carry install_readme.txt beside install.sh: a note from the
+# maintainer that every operator sees before anything else, --help and
+# argument errors included. It is printed verbatim and nothing waits on it,
+# so unattended installs carry on. A note that exists but cannot be read
+# stops the install, since what it says may matter to it.
+show_install_readme() {
+    local note="$SCRIPT_DIR/install_readme.txt"
+    [ -f "$note" ] || return 0
+    local text
+    if ! text="$(cat -- "$note" 2>/dev/null)"; then
+        echo "Error: cannot read install_readme.txt at $note" >&2
+        exit 1
+    fi
+    [[ "$text" == *[![:space:]]* ]] || return 0
+    printf '==> Release notes for this installer (install_readme.txt)\n%s\n%s\n\n' \
+        "$text" "================================================================================"
+}
+show_install_readme
+
 # Track how the user invoked us so the Ctrl+C trap can tell them how to
 # re-run. Starts as the literal invocation, but prompt_install_mode may
 # update it after the user picks systemd mode. If we were launched
@@ -844,214 +866,153 @@ find_available_port() {
     done
 }
 
-read_top_level_int() {
-    local path="$1"
-    local key="$2"
-    [ -f "$path" ] || return 0
-    awk -F: -v key="$key" '
-        $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
-            value = $2
-            sub(/[[:space:]]*#.*/, "", value)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$path"
-}
-
-read_ssh_port() {
+# yaml_scalars, yaml_value and the endpoint URL helpers below are the ones in
+# installer/scripts/aplane-env-audit.sh, which explains them; an arch test
+# keeps the two copies the same. They read endpoints.yaml in any indentation,
+# as the installer writes it or as apshell rewrites it.
+yaml_scalars() {
     local path="$1"
     [ -f "$path" ] || return 0
-    awk -F: '
-        /^[[:space:]]*ssh[[:space:]]*:[[:space:]]*($|#)/ {
-            in_ssh = 1
-            next
-        }
-        /^[^[:space:]#][^:]*:/ {
-            in_ssh = 0
-        }
-        in_ssh && /^[[:space:]]*port[[:space:]]*:/ {
-            value = $2
-            sub(/[[:space:]]*#.*/, "", value)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$path"
-}
-
-read_signer_endpoint_signer_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+    awk '
+        /^[[:space:]]*(#|$)/ {
             next
         }
         {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 1
+            match($0, /^[[:space:]]*/)
+            indent = RLENGTH
+            line = substr($0, indent + 1)
+            if (index(line, ":") == 0) {
                 next
             }
-            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 0
-            }
-            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
-                value = $2
-                sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                print value
-                exit
-            }
-        }
-    ' "$path"
-}
-
-read_signer_endpoint_ssh_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 1
-                next
-            }
-            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*ssh[[:space:]]*:/) {
-                in_endpoint_ssh = 1
-                next
-            }
-            if (in_endpoint_ssh && indent <= 2 && $0 !~ /^[[:space:]]*ssh[[:space:]]*:/) {
-                in_endpoint_ssh = 0
-            }
-            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 0
-                in_endpoint_ssh = 0
-            }
-            if (in_endpoint_ssh && indent == 4 && $0 ~ /^[[:space:]]*port[[:space:]]*:/) {
-                value = $2
-                sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                print value
-                exit
-            }
-        }
-    ' "$path"
-}
-
-read_primary_endpoint_ssh_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function trim_endpoint_url(value, quote) {
+            key = line
+            sub(/[[:space:]]*:.*/, "", key)
+            gsub(/^"|"$/, "", key)
+            value = line
+            sub(/^[^:]*:/, "", value)
+            sub(/[[:space:]]+#.*/, "", value)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            quote = sprintf("%c", 39)
-            if (substr(value, 1, 1) == "\"" || substr(value, 1, 1) == quote) {
-                value = substr(value, 2)
+            gsub(/^"|"$/, "", value)
+            while (depth > 0 && indents[depth] >= indent) {
+                depth--
             }
-            if (substr(value, length(value), 1) == "\"" || substr(value, length(value), 1) == quote) {
-                value = substr(value, 1, length(value) - 1)
+            depth++
+            indents[depth] = indent
+            keys[depth] = key
+            key_path = keys[1]
+            for (i = 2; i <= depth; i++) {
+                key_path = key_path "\036" keys[i]
             }
-            return value
-        }
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoints[[:space:]]*:/) {
-                in_endpoints = 1
-                next
-            }
-            if (in_endpoints && indent == 2 && $0 ~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 1
-                next
-            }
-            if (in_primary && indent <= 2 && $0 !~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 0
-            }
-            if (in_primary && $0 ~ /^[[:space:]]*url[[:space:]]*:/) {
-                value = $0
-                sub(/^[[:space:]]*url[[:space:]]*:[[:space:]]*/, "", value)
-                sub(/[[:space:]]*#.*/, "", value)
-                value = trim_endpoint_url(value)
-                n = split(value, parts, ":")
-                if (n >= 3) {
-                    print parts[n]
-                }
-                exit
-            }
+            print key_path "\037" value
         }
     ' "$path"
+}
+
+yaml_value() {
+    local path="$1"
+    shift
+    local want line
+    want="$(IFS=$'\036'; printf '%s' "$*")"
+    while IFS= read -r line; do
+        if [ "${line%%$'\037'*}" = "$want" ]; then
+            printf '%s\n' "${line#*$'\037'}"
+            return 0
+        fi
+    done < <(yaml_scalars "$path")
+}
+
+endpoint_authority() {
+    local authority="${1#ssh://}"
+    authority="${authority%%/*}"
+    printf '%s\n' "${authority##*@}"
+}
+
+endpoint_host() {
+    local authority
+    authority="$(endpoint_authority "$1")"
+    case "$authority" in
+        \[*) authority="${authority#[}"; printf '%s\n' "${authority%%]*}" ;;
+        *) printf '%s\n' "${authority%%:*}" ;;
+    esac
+}
+
+endpoint_port() {
+    local authority
+    authority="$(endpoint_authority "$1")"
+    authority="${authority##*]}"
+    case "$authority" in
+        *:*) printf '%s\n' "${authority##*:}" ;;
+        *) printf '%s\n' "1127" ;;
+    esac
 }
 
 check_local_config_consistency() {
     local signer_config="$1"
-    local client_config="$2"
+    local client_endpoints="$2"
     [ -f "$signer_config" ] || return 0
-    [ -f "$client_config" ] || return 0
 
-    # Only the SSH port must agree: the signer's SSH server forwards every
+    # Only the SSH port must agree: the node's SSH server forwards every
     # client channel to its own REST listener, so the client never names it.
-    local signer_ssh_port client_ssh_port client_ports_source
-    client_ports_source="config"
-    signer_ssh_port="$(read_signer_endpoint_ssh_port "$signer_config")"
-    client_ssh_port="$(read_ssh_port "$client_config")"
-    if [ -z "$client_ssh_port" ]; then
-        local client_endpoints
-        client_endpoints="$(dirname "$client_config")/endpoints.yaml"
-        client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
-        client_ports_source="endpoints"
-    fi
+    # Endpoints for other nodes on this machine use their own ports, so one
+    # loopback endpoint at this node's port is enough.
+    local signer_ssh_port line url port loopback_ports="" matched=0
+    signer_ssh_port="$(yaml_value "$signer_config" endpoint ssh port)"
+    while IFS= read -r line; do
+        case "${line%%$'\037'*}" in
+            endpoints$'\036'*$'\036'url) ;;
+            *) continue ;;
+        esac
+        url="${line#*$'\037'}"
+        is_loopback_host "$(endpoint_host "$url")" || continue
+        port="$(endpoint_port "$url")"
+        loopback_ports="$loopback_ports $port"
+        if [ "$port" = "$signer_ssh_port" ]; then
+            matched=1
+        fi
+    done < <(yaml_scalars "$client_endpoints")
 
-    if [ -z "$signer_ssh_port" ] || [ -z "$client_ssh_port" ]; then
+    if [ -z "$signer_ssh_port" ] || [ -z "$loopback_ports" ]; then
         echo "Warning: could not verify local signer/client SSH port consistency."
-        echo "  Signer config: $signer_config"
-        echo "  Client config: $client_config"
+        echo "  Signer config:    $signer_config"
+        echo "  Client endpoints: $client_endpoints"
         return 0
     fi
 
-    if [ "$signer_ssh_port" = "$client_ssh_port" ]; then
+    if [ "$matched" = "1" ]; then
         return 0
     fi
 
     echo ""
     echo "WARNING: local signer/client SSH ports do not match."
-    echo "  Signer config: $signer_config"
+    echo "  Signer config:    $signer_config"
     echo "    endpoint.ssh.port: $signer_ssh_port"
-    echo "  Client config: $client_config"
-    echo "    ssh.port:    $client_ssh_port"
+    echo "  Client endpoints: $client_endpoints"
+    echo "    ports of endpoints on this machine:$loopback_ports"
     echo ""
-    if [ "$client_ports_source" = "endpoints" ]; then
-        echo "'apshell enroll' and 'connect' use $client_endpoints."
-        echo "Edit $client_endpoints manually before connecting."
-        return 0
-    fi
-    echo "Client config still uses legacy signer settings in $client_config."
-    echo "apshell now requires $client_endpoints for default signer routing."
-    echo "Write $client_endpoints manually (the legacy migrate-config-v1 utility is obsolete and no longer shipped)."
+    echo "'apshell enroll' and 'connect' use $client_endpoints."
+    echo "Edit $client_endpoints manually before connecting."
     return 0
 }
 
-# Resolve script directory (works from repo checkout and extracted tarball)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC="$SCRIPT_DIR/bin"
 RELEASE_METADATA_SRC="$SCRIPT_DIR/release.json"
+# The binaries a release ships, as scripts/package-bootstrap-release.sh lists
+# them. Only these are installed, so a helper or stale build left in a
+# checkout's bin/ never is. macOS archives carry no appass-systemd-creds.
+RELEASE_BINARIES=(
+    apshell
+    apsigner
+    apadmin
+    apconsole
+    apapprover
+    apstore
+    appass
+    aplocalnet
+    appass-file
+    appass-systemd-creds
+    approbe
+    appolicy
+    applugin-checksum
+)
 
 if [ ! -d "$BIN_SRC" ]; then
     echo "Error: bin/ directory not found at $BIN_SRC" >&2
@@ -1233,7 +1194,6 @@ write_apshell_endpoint_registry() {
 # See docs/USER_CONFIG.md for full documentation.
 
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -1349,7 +1309,6 @@ install_template_library() {
     local library_root="$data_dir/library"
     local dest="$library_root/templates"
     local copied=0
-    local dir
 
     if [ ! -d "$src" ]; then
         echo "Template library not found at $src; skipping template copy."
@@ -1357,16 +1316,6 @@ install_template_library() {
     fi
 
     mkdir -p "$dest"
-    # Earlier releases also installed a retired directory beside templates.
-    # This release can no longer parse those, so an upgraded node drops them.
-    if [ -n "$data_dir" ] && [ -d "$library_root/retired" ]; then
-        rm -rf -- "$library_root/retired"
-        echo "Removed retired templates from $library_root/retired."
-    fi
-    # v0.49.0's bounded templates are retired too: the plain hosts' bounds
-    # replace them, and this release can't parse them, so the KeyType Library
-    # would list them as invalid with no way to remove them.
-    rm -f -- "$dest/aplane.corridor.v1.yaml" "$dest/aplane.falcon1024-allowlist-alock.v1.yaml" "$dest/aplane.falcon1024-allowlist.v1.yaml" "$dest/aplane.falcon1024-allowlist.v2.yaml" "$dest/aplane.falcon1024-timelock.v1.yaml"
     for file in "$src"/*; do
         [ -f "$file" ] || continue
         case "$(basename "$file")" in
@@ -1379,18 +1328,12 @@ install_template_library() {
 
     if [ -n "$owner" ] && [ -n "$group" ]; then
         chown "$owner:$group" "$library_root"
+        chown -R "$owner:$group" "$dest"
     fi
-    chmod 700 "$library_root"
-    for dir in "$dest"; do
-        [ -d "$dir" ] || continue
-        if [ -n "$owner" ] && [ -n "$group" ]; then
-            chown -R "$owner:$group" "$dir"
-        fi
-        chmod 700 "$dir"
-        for file in "$dir"/*; do
-            [ -f "$file" ] || continue
-            chmod 600 "$file"
-        done
+    chmod 700 "$library_root" "$dest"
+    for file in "$dest"/*; do
+        [ -f "$file" ] || continue
+        chmod 600 "$file"
     done
 
     echo "Installed template library to $dest ($copied file(s))."
@@ -1711,17 +1654,6 @@ install_builtin_plugins() {
     return 0
 }
 
-run_as_service_user() {
-    if command -v runuser >/dev/null 2>&1; then
-        runuser -u "$SVC_USER" -- "$@"
-    elif command -v sudo >/dev/null 2>&1; then
-        sudo -u "$SVC_USER" -- "$@"
-    else
-        echo "Error: need runuser or sudo to initialize the keystore as $SVC_USER." >&2
-        return 1
-    fi
-}
-
 ensure_prod_data_dir_permissions() {
     local data_dir="$1"
     local service_uid
@@ -1790,7 +1722,7 @@ abort_if_macos_install_processes_running() {
     install_root="${install_root%/}"
     local found=0
     local pid exe
-    for name in apsigner apadmin apconsole apshell aprekey apbounded-admin apstore apapprover appass aplocalnet; do
+    for name in "${RELEASE_BINARIES[@]}"; do
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             exe="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
@@ -1952,8 +1884,6 @@ if [ "$CLIENT_MODE" = "1" ]; then
     mkdir -p "$BINDIR" "$APCLIENT_DIR/.ssh" "$APCLIENT_DIR/plugins.available" "$APCLIENT_DIR/scripts"
     install_release_metadata "$CLIENT_PATH/install"
     echo "Installing client binaries to $BINDIR..."
-    # Retired client binaries: an upgraded install must not keep offering them.
-    rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin" "$BINDIR/appolicy"
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
@@ -2183,20 +2113,12 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
     chmod 700 "$INSTALL_ROOT"
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/apbounded-admin"
-    # appolicy ships with the signer binaries; remove a client-side copy left
-    # by a release that installed the retired binary there.
-    rm -f "$CLIENT_BINDIR/appolicy"
 
     # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
-    for bin in "$BIN_SRC"/*; do
+    for name in "${RELEASE_BINARIES[@]}"; do
+        bin="$BIN_SRC/$name"
         [ -f "$bin" ] || continue
-        name="$(basename "$bin")"
-        if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
-            echo "  skipping obsolete $name"
-            continue
-        fi
         if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ]; then
             cp "$bin" "$CLIENT_BINDIR/"
             chmod 755 "$CLIENT_BINDIR/$name"
@@ -2209,9 +2131,6 @@ if [ "$LOCAL_MODE" = "1" ]; then
             echo "  $name → $SIGNER_BINDIR"
         fi
     done
-    # A retired binary an older build left in the source bin directory was
-    # copied with the rest; it is not part of this release.
-    rm -f "$CLIENT_BINDIR/aprekey" "$CLIENT_BINDIR/apbounded-admin" "$SIGNER_BINDIR/aprekey" "$SIGNER_BINDIR/apbounded-admin"
 
     MEMORY_LOCK_ENABLED=0
     if [ "$MEMORY_LOCK_REQUESTED" = "1" ]; then
@@ -2314,7 +2233,6 @@ exec apconsole -config "$SCRIPT_DIR/apconsole.yaml"
 STARTEOF
     chmod +x "$START_SH"
     bash -n "$START_SH"
-    rm -f "$LOCAL_PATH/start-tmux.sh" "$LOCAL_PATH/start-screen.sh"
 
     # Copy uninstall helper
     if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
@@ -2346,7 +2264,7 @@ STARTEOF
         echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
     else
         echo "Writing $APCLIENT_CONFIG..."
-        write_apshell_local_config "$APCLIENT_CONFIG" "$SIGNER_PORT" "$SSH_PORT"
+        write_apshell_local_config "$APCLIENT_CONFIG"
         WROTE_APCLIENT_CONFIG=1
     fi
     if [ -f "$APCLIENT_ENDPOINTS" ]; then
@@ -2356,9 +2274,7 @@ STARTEOF
         write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 "$SSH_PORT"
     fi
 
-    if [ "$NODE_ROLE" = "signer" ]; then
-        check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
-    fi
+    check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_ENDPOINTS"
     write_mcp_config "$APCLIENT_DIR" "$CLIENT_BINDIR/apshell"
 
     offer_localnet_setup "$CLIENT_BINDIR/aplocalnet" "$APCLIENT_DIR" "$DATA_DIR"
@@ -2536,26 +2452,15 @@ fi
 
 # Step 2: Copy binaries outside the signer store
 echo "Installing binaries to $BINDIR..."
-for bin in "$BIN_SRC"/*; do
+for name in "${RELEASE_BINARIES[@]}"; do
+    bin="$BIN_SRC/$name"
     [ -f "$bin" ] || continue
-    name="$(basename "$bin")"
-    if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
-        echo "  skipping obsolete $name"
-        continue
-    fi
     cp "$bin" "$BINDIR/"
-    # Passphrase helpers must be executable by the unprivileged service user.
-    # The appass-file secret itself stays protected by product-store 0600 files.
-    case "$name" in
-        appass-file)          chmod 755 "$BINDIR/$name" ;;
-        appass-systemd-creds) chmod 755 "$BINDIR/$name" ;;
-        *)                  chmod 755 "$BINDIR/$name" ;;
-    esac
+    # The service user runs these, passphrase helpers included. The appass-file
+    # secret itself stays protected by product-store 0600 files.
+    chmod 755 "$BINDIR/$name"
     echo "  $name"
 done
-# Retired binaries an earlier release installed here, or an older build left in
-# the source bin directory and the loop copied.
-rm -f "$BINDIR/aprekey" "$BINDIR/apbounded-admin"
 
 # Step 3: Bootstrap managed metadata, migrate the store, and install systemd files
 echo ""

@@ -277,7 +277,7 @@ redirect it.
 | `signers(addresses)` | Filtered array containing only addresses that are signer keys |
 | `keys()` | `[{ address, keyType }]` from the connected signer |
 | `signableAddresses()` | Address array |
-| `canSignFor(addressOrAlias)` | `{ canSign, isLsig, authorizationKind }` where the kind is `ed25519`, `native_pq`, or `logic_sig` |
+| `canSignFor(addressOrAlias)` | `{ canSign, authorizationKind }` where the kind is `ed25519`, `native_pq`, or `logic_sig` |
 | `keyTypes()` | Available key type metadata from the signer |
 | `generateKey(keyType, params = {})` | `{ address, keyType, warnings }`. `warnings` is an array of the signer's notes about the account, empty when there are none. The account is created either way, so check it. |
 | `deleteKey(addressOrAlias)` | `{ address, deleted: true }` |
@@ -291,7 +291,6 @@ redirect it.
   displayName: "falcon1024",
   description: "...",
   authorizationKind: "native_pq",
-  requiresLogicSig: false,
   mnemonicWordCount: 25,
   mnemonicImport: true,
   mnemonicScheme: "algorand",
@@ -615,7 +614,6 @@ fields:
 ```javascript
 {
   authAddress,
-  txnSender,
   txnBytesHex,
   signedTxnHex,
   lsigArgs: { name: "hex-string" }
@@ -881,9 +879,6 @@ more than one such step adds `data.steps`, one `{ message, txids }` per step.
 The IDs include any budget dummy transactions the signer added. In such a run
 a plugin's own `steps` field is replaced as `txids` is, and when a run
 submitted transactions, plugin data that is not an object is not returned.
-`data` has
-`localSigners` removed in every outcome; data the plugin returned as an object
-stays an object, empty if `localSigners` was all it held.
 
 Before the run has produced any transaction IDs, a cancelled review or the
 plugin's own failure returns `{ success: false, message }`. Once it has, from

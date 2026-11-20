@@ -62,7 +62,6 @@ func (r LogicSigResourceUsage) validate() error {
 type SignRequest struct {
 	// Sign mode fields (server signs this transaction)
 	AuthAddress   string                 `json:"auth_address,omitempty"`   // Auth address (which key to use for signing)
-	TxnSender     string                 `json:"txn_sender,omitempty"`     // Client-stated sender; the signer does not read it and takes the sender from txn bytes
 	TxnBytesHex   string                 `json:"txn_bytes_hex,omitempty"`  // Full transaction bytes (TX + msgpack) - server derives what to sign from this
 	LsigArgs      map[string]string      `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs (name -> hex value)
 	LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Selected-path resource hint for a foreign or passthrough LogicSig
@@ -138,9 +137,7 @@ type CancelSignRequest struct {
 
 // CancelSignResponse is the response payload for /sign/cancel.
 type CancelSignResponse struct {
-	Success bool            `json:"success"`
-	State   SignCancelState `json:"state,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	State SignCancelState `json:"state,omitempty"`
 }
 
 // RequestMode describes the mutually exclusive mode selected by a SignRequest.
@@ -304,7 +301,6 @@ type MutationReport struct {
 type GroupSignResponse struct {
 	Signed    []string        `json:"signed,omitempty"`    // Array of signed transactions (hex-encoded msgpack)
 	Mutations *MutationReport `json:"mutations,omitempty"` // Modifications made by server (nil if none)
-	Error     string          `json:"error,omitempty"`
 }
 
 // GroupPlanResponse is the response from the /plan endpoint.
@@ -313,7 +309,6 @@ type GroupSignResponse struct {
 type GroupPlanResponse struct {
 	Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns (final group)
 	Mutations    *MutationReport `json:"mutations,omitempty"`    // Modifications that would be made by server
-	Error        string          `json:"error,omitempty"`
 }
 
 // ErrorResponse is the standard HTTP error body for non-2xx signer responses.
@@ -488,7 +483,6 @@ type KeyTypeInfo struct {
 	DisplayName       string `json:"display_name"`
 	Description       string `json:"description"`
 	AuthorizationKind string `json:"authorization_kind,omitempty"`
-	RequiresLogicSig  bool   `json:"requires_logicsig"`
 	MnemonicWordCount int    `json:"mnemonic_word_count"`
 	MnemonicImport    bool   `json:"mnemonic_import"`
 	MnemonicScheme    string `json:"mnemonic_scheme"`
@@ -577,7 +571,6 @@ type KeyInfo struct {
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
 	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
-	IsSpendingAccount        *bool                     `json:"is_spending_account,omitempty"`
 	SigningArgs              []RuntimeArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
@@ -605,21 +598,17 @@ type AdminGenerateRequest struct {
 
 // AdminGenerateResponse is the response from POST /admin/generate.
 type AdminGenerateResponse struct {
-	Address           string            `json:"address,omitempty"`
-	PublicKeyHex      string            `json:"public_key_hex,omitempty"`
-	KeyType           string            `json:"key_type,omitempty"`
-	IsWitnessKey      bool              `json:"is_witness_key,omitempty"`
-	IsSpendingAccount *bool             `json:"is_spending_account,omitempty"`
-	Parameters        map[string]string `json:"parameters,omitempty"`
+	Address      string            `json:"address,omitempty"`
+	PublicKeyHex string            `json:"public_key_hex,omitempty"`
+	KeyType      string            `json:"key_type,omitempty"`
+	IsWitnessKey bool              `json:"is_witness_key,omitempty"`
+	Parameters   map[string]string `json:"parameters,omitempty"`
 	// Warnings are the signer's advice about the account it created, such as a
 	// fee limit below what the account's own transactions cost. They refused
 	// nothing.
 	Warnings []string `json:"warnings,omitempty"`
-	Error    string   `json:"error,omitempty"`
 }
 
-// AdminDeleteResponse is the response from DELETE /admin/keys.
-type AdminDeleteResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
-}
+// AdminDeleteResponse is the response from DELETE /admin/keys: an empty
+// object. A failure is a non-2xx ErrorResponse.
+type AdminDeleteResponse struct{}

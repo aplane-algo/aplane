@@ -15,7 +15,6 @@ import (
 
 	"github.com/dop251/goja"
 
-	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/engine"
 )
 
@@ -377,7 +376,7 @@ func (a *API) jsSignableAddresses(call goja.FunctionCall) goja.Value {
 }
 
 // jsCanSignFor checks if we can sign for an address.
-// canSignFor(address) - Returns {canSign: bool, isLsig: bool, authorizationKind: string}
+// canSignFor(address) - Returns {canSign: bool, authorizationKind: string}
 func (a *API) jsCanSignFor(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "canSignFor() requires an address argument")
 	addressOrAlias := a.stringArg(call, 0)
@@ -390,7 +389,6 @@ func (a *API) jsCanSignFor(call goja.FunctionCall) goja.Value {
 
 	return a.runtime.ToValue(map[string]interface{}{
 		"canSign":           canSign,
-		"isLsig":            authorizationKind == algorithm.AuthorizationLogicSig,
 		"authorizationKind": authorizationKind,
 	})
 }

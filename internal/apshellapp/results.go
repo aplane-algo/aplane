@@ -774,14 +774,13 @@ type EndpointPublicKeyResult struct {
 
 // EndpointImportResult describes a public endpoint-envelope import.
 type EndpointImportResult struct {
-	Alias          string
-	Role           string
-	URL            string
-	DryRun         bool
-	Created        bool
-	Updated        bool
-	DefaultChanged bool
-	RenderLines    []string
+	Alias       string
+	Role        string
+	URL         string
+	DryRun      bool
+	Created     bool
+	Updated     bool
+	RenderLines []string
 }
 
 // EndpointCreateCosignerResult describes manual creation of a cosigner endpoint
@@ -794,13 +793,6 @@ type EndpointCreateCosignerResult struct {
 	Created     bool
 	Updated     bool
 	RenderLines []string
-}
-
-// EndpointDefaultResult describes a default endpoint change.
-type EndpointDefaultResult struct {
-	Alias         string
-	PreviousAlias string
-	RenderLines   []string
 }
 
 // EndpointDeleteResult describes an endpoint deletion.

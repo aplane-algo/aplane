@@ -287,14 +287,7 @@ func (c *Client) RequestGroupPlanWithContext(ctx context.Context, requests []sig
 		return nil, fmt.Errorf("invalid group plan request: %w", err)
 	}
 
-	planResp, err := doJSON[signerapi.GroupPlanResponse](c, ctx, "POST", "/plan", groupReq, groupPlanTimeout, "failed to make request to Signer")
-	if err != nil {
-		return nil, err
-	}
-	if planResp.Error != "" {
-		return nil, fmt.Errorf("group planning failed: %s", planResp.Error)
-	}
-	return planResp, nil
+	return doJSON[signerapi.GroupPlanResponse](c, ctx, "POST", "/plan", groupReq, groupPlanTimeout, "failed to make request to Signer")
 }
 
 // RequestGroupSignWithContext sends transactions to the /sign endpoint for group signing.
@@ -326,9 +319,6 @@ func (c *Client) RequestGroupSignInBatchWithContext(ctx context.Context, request
 	err = c.postSignApprovalRequest(ctx, "/sign", requestID, jsonBody, func(resp *http.Response) error {
 		if err := json.NewDecoder(resp.Body).Decode(&groupResp); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
-		}
-		if groupResp.Error != "" {
-			return fmt.Errorf("group signing failed: %s", groupResp.Error)
 		}
 		return nil
 	})
@@ -516,9 +506,6 @@ func (c *Client) CancelSignRequestWithContext(ctx context.Context, requestID str
 	if err := json.NewDecoder(resp.Body).Decode(&cancelResp); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
-	if cancelResp.Error != "" {
-		return fmt.Errorf("sign cancel failed: %s", cancelResp.Error)
-	}
 	return nil
 }
 
@@ -578,27 +565,14 @@ func (c *Client) AdminGenerateWithContext(ctx context.Context, keyType string, p
 		Parameters: params,
 	}
 
-	genResp, err := doJSON[signerapi.AdminGenerateResponse](c, ctx, "POST", "/admin/generate", reqBody, mutationTimeout, "failed to generate key")
-	if err != nil {
-		return nil, err
-	}
-	if genResp.Error != "" {
-		return nil, fmt.Errorf("key generation failed: %s", genResp.Error)
-	}
-	return genResp, nil
+	return doJSON[signerapi.AdminGenerateResponse](c, ctx, "POST", "/admin/generate", reqBody, mutationTimeout, "failed to generate key")
 }
 
 // AdminDeleteKeyWithContext requests key deletion from Signer.
-func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
+func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) error {
 	path := "/admin/keys?" + url.Values{"address": []string{address}}.Encode()
-	delResp, err := doJSON[signerapi.AdminDeleteResponse](c, ctx, "DELETE", path, nil, mutationTimeout, "failed to delete key")
-	if err != nil {
-		return nil, err
-	}
-	if delResp.Error != "" {
-		return nil, fmt.Errorf("key deletion failed: %s", delResp.Error)
-	}
-	return delResp, nil
+	_, err := doJSON[signerapi.AdminDeleteResponse](c, ctx, "DELETE", path, nil, mutationTimeout, "failed to delete key")
+	return err
 }
 
 // RotatingRecoverWithContext starts or cancels an operator stage recovery

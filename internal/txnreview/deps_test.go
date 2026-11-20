@@ -32,6 +32,7 @@ func TestDescriberStaysClientSafe(t *testing.T) {
 		// The describer's own needs.
 		"internal/asaset": true, "internal/termsafe": true,
 		"internal/config": true, "internal/asa/registry": true, "internal/fsutil": true,
+		"internal/endpointrefs": true, // internal/config's endpoint URL rule
 		// internal/txeffects and its closure.
 		"internal/txeffects": true, "internal/boundedmeta": true, "internal/witness": true,
 		"internal/rekeylist": true, "internal/falconparams": true, "internal/lsigresource": true,

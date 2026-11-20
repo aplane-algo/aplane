@@ -386,40 +386,6 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name: "retired functions field",
-			content: `{
-				"name": "defi-plugin",
-				"version": "2.0.0",
-				"description": "DeFi plugin",
-				"executable": "defi",
-				"commands": [{"name": "swap", "description": "Swap tokens"}],
-				"functions": [
-					{
-						"name": "getPrice",
-						"description": "Get token price",
-						"params": [{"name": "token", "type": "string"}],
-						"returns": "number",
-						"command": ["price", "$token"]
-					}
-				]
-			}`,
-			wantErr: true,
-			errMsg:  "functions is no longer supported in manifest_format 2.0; expose executable commands only",
-		},
-		{
-			name: "legacy protocol version field",
-			content: `{
-				"name": "legacy-plugin",
-				"version": "1.0.0",
-				"description": "Legacy manifest",
-				"executable": "legacy",
-				"commands": [{"name": "test", "description": "Test command"}],
-				"protocol_version": "1.0"
-			}`,
-			wantErr: true,
-			errMsg:  "protocol_version is no longer supported; use manifest_format",
-		},
-		{
 			name:    "invalid json",
 			content: `{invalid json`,
 			wantErr: true,
@@ -539,40 +505,27 @@ func TestCommandFields(t *testing.T) {
 	}
 }
 
-func TestRetiredFunctionsFieldRejectedWhenManifestFormatIsOmitted(t *testing.T) {
+// Manifest decoding is not strict: a field the schema does not have is
+// ignored, and the manifest loads with the fields it does have.
+func TestLoadIgnoresUnknownFields(t *testing.T) {
+	dir := t.TempDir()
 	content := `{
-		"name": "typed-plugin",
+		"name": "p",
 		"version": "1.0.0",
-		"description": "Plugin with typed functions",
-		"executable": "typed",
-		"commands": [{"name": "base", "description": "Base command"}],
-		"functions": [
-			{
-				"name": "transfer",
-				"description": "Transfer tokens",
-				"params": [
-					{"name": "from", "type": "address", "description": "Sender address"},
-					{"name": "to", "type": "address", "description": "Receiver address"},
-					{"name": "amount", "type": "number", "description": "Amount to transfer"}
-				],
-				"returns": "{ txid: string, confirmed: boolean }",
-				"command": ["transfer", "$from", "$to", "$amount"]
-			}
-		]
+		"description": "Plugin with an extra field",
+		"executable": "p",
+		"commands": [{"name": "c", "description": "Command"}],
+		"extra": {"nested": [1, 2]}
 	}`
-
-	tmpDir := t.TempDir()
-	manifestPath := filepath.Join(tmpDir, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	_, err := load(manifestPath)
-	if err == nil {
-		t.Fatal("load() expected retired functions error")
+	m, err := LoadFromDir(dir)
+	if err != nil {
+		t.Fatalf("LoadFromDir() error = %v", err)
 	}
-	if want := "functions is no longer supported in manifest_format 2.0; expose executable commands only"; !strings.Contains(err.Error(), want) {
-		t.Fatalf("load() error = %q, want containing %q", err, want)
+	if m.Name != "p" || len(m.Commands) != 1 || m.Commands[0].Name != "c" {
+		t.Fatalf("manifest = %+v, want name p and command c", m)
 	}
 }
 

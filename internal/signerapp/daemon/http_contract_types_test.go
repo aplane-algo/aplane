@@ -10,6 +10,7 @@ import (
 type AdminGenerateRequest = signerapi.AdminGenerateRequest
 type AdminGenerateResponse = signerapi.AdminGenerateResponse
 type AdminDeleteResponse = signerapi.AdminDeleteResponse
+type ErrorResponse = signerapi.ErrorResponse
 
 func TestSignerAPIAdminGenerateRequestJSONShape(t *testing.T) {
 	body, err := json.Marshal(signerapi.AdminGenerateRequest{
@@ -58,13 +59,14 @@ func TestSignerAPIAdminGenerateResponseWarningsJSONShape(t *testing.T) {
 	}
 }
 
+// A deletion's answer is an empty object, which an SDK still reads as one.
 func TestSignerAPIAdminDeleteResponseJSONShape(t *testing.T) {
-	body, err := json.Marshal(signerapi.AdminDeleteResponse{Success: true})
+	body, err := json.Marshal(signerapi.AdminDeleteResponse{})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	want := `{"success":true}`
+	want := `{}`
 	if string(body) != want {
 		t.Fatalf("Marshal = %s, want %s", body, want)
 	}

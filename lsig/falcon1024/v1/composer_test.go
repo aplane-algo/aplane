@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
@@ -290,7 +290,7 @@ func TestComposedFalconHashlockDeriveLsigRequiresClient(t *testing.T) {
 // TestComposedFalconHashlockDeriveLsig tests full derivation with a real algod client.
 func TestComposedFalconHashlockDeriveLsig(t *testing.T) {
 	// Create algod client for mainnet (read-only operations)
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestComposedFalconHashlockDeriveLsig(t *testing.T) {
 
 // TestComposedFalconHashlockAddressDeterminism verifies same inputs produce same address.
 func TestComposedFalconHashlockAddressDeterminism(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestComposedFalconHashlockAddressDeterminism(t *testing.T) {
 
 // TestComposedFalconHashlockDifferentHashDifferentAddress verifies different hashes produce different addresses.
 func TestComposedFalconHashlockDifferentHashDifferentAddress(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}

@@ -52,7 +52,7 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 			},
 		},
 	}
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		m.configSnapshot() // Takes the manager lock, so holding it here would hang.
 		return newTestPluginInstance(t), nil
 	}
@@ -127,7 +127,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	}
 
 	var started []*Instance
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		inst := newTestPluginInstance(t)
 		started = append(started, inst)
 		return inst, nil
@@ -189,7 +189,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 
 	var started []*Instance
 	attempt := 0
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		attempt++
 		var inst *Instance
 		if attempt == 1 {
@@ -294,6 +294,42 @@ func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 				t.Fatalf("initializePlugin() error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// initialize carries the network and its algod, and nothing else.
+func TestInitializePluginSendsTheRuntimeConfig(t *testing.T) {
+	params := make(chan string, 1)
+	inst := newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
+		raw, _ := json.Marshal(req["params"])
+		params <- string(raw)
+		return map[string]interface{}{
+			"jsonrpc": jsonrpc.Version,
+			"id":      req["id"],
+			"result":  map[string]interface{}{"success": true, "protocol": jsonrpc.PluginProtocol},
+		}
+	})
+	defer inst.Stop()
+
+	cfg := runtimeConfig{network: "localnet", algodURL: "http://localhost:4001", algodToken: "tok"}
+	if err := NewManagerWithDataDir("").initializePlugin(inst, cfg); err != nil {
+		t.Fatalf("initializePlugin() error = %v", err)
+	}
+	const want = `{"algodToken":"tok","algodUrl":"http://localhost:4001","network":"localnet"}`
+	if got := <-params; got != want {
+		t.Fatalf("initialize params = %s, want %s", got, want)
+	}
+}
+
+func TestCallTimeoutIsTheManifestsOrThirtySeconds(t *testing.T) {
+	for _, tc := range []struct {
+		seconds int
+		want    time.Duration
+	}{{0, 30 * time.Second}, {5, 5 * time.Second}} {
+		inst := &Instance{Plugin: &discovery.Plugin{Manifest: &manifest.Manifest{Timeout: tc.seconds}}}
+		if got := callTimeout(inst); got != tc.want {
+			t.Errorf("callTimeout(manifest timeout %d) = %v, want %v", tc.seconds, got, tc.want)
+		}
 	}
 }
 

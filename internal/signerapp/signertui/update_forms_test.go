@@ -364,10 +364,10 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 func TestGenerateFormTemplateShortcutSynthesizesDefaultCompiledProviderDetails(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:          "aplane.falcon1024.v1",
-		DisplayName:      "Falcon-1024",
-		Description:      "Default post-quantum signer",
-		RequiresLogicSig: true,
+		KeyType:           "aplane.falcon1024.v1",
+		DisplayName:       "Falcon-1024",
+		Description:       "Default post-quantum signer",
+		AuthorizationKind: "logic_sig",
 	}})
 
 	m := Model{viewState: ViewGenerateForm, forms: formsState{generateKeyType: 0}}

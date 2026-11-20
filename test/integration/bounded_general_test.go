@@ -974,7 +974,7 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 		}
 		before := balance(allowed)
 		status, response, body := sign(spend(raised, clientFee, "fee-ceiling-raised"))
-		if status != http.StatusOK || response.Error != "" || len(response.Signed) == 0 {
+		if status != http.StatusOK || len(response.Signed) == 0 {
 			t.Fatalf("a ceiling of 20000 refused a fee of %d: status %d\n%s", clientFee, status, body)
 		}
 		signedFee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee)
@@ -1009,7 +1009,7 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 			spend(unfunded, 0, "fee-ceiling-zero-sponsored"),
 			signerapi.SignRequest{AuthAddress: sponsor, TxnBytesHex: txnHexForMatrix(sponsorTxn)},
 		)
-		if status != http.StatusOK || response.Error != "" || len(response.Signed) < 2 {
+		if status != http.StatusOK || len(response.Signed) < 2 {
 			t.Fatalf("the sponsored group was refused: status %d\n%s", status, body)
 		}
 		spendTxn, paid := decodeSignedTxnHex(t, response.Signed[0]).Txn, decodeSignedTxnHex(t, response.Signed[1]).Txn
@@ -1051,7 +1051,7 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 		assertAuthorAllowlistInventory(t, client, account, composeddsa.Layer3PolicyFixedAllowlist)
 	}
 	status, response, body := sign(spend(raised, 15_000, "fee-ceiling-raised-after-restart"))
-	if status != http.StatusOK || response.Error != "" || len(response.Signed) == 0 {
+	if status != http.StatusOK || len(response.Signed) == 0 {
 		t.Fatalf("after a restart a ceiling of 20000 refused a fee of 15000: status %d\n%s", status, body)
 	}
 	if fee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee); fee <= plainhost.DefaultMaxFee || fee > 20_000 {

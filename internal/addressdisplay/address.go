@@ -5,6 +5,8 @@ package addressdisplay
 
 import (
 	"fmt"
+
+	"github.com/aplane-algo/aplane/internal/cache"
 )
 
 // AliasLookup provides reverse alias lookup for display.
@@ -12,33 +14,10 @@ type AliasLookup interface {
 	GetAliasForAddress(address string) string
 }
 
-// SignerLookup provides signer key availability for display.
-type SignerLookup interface {
-	HasAddress(address string) bool
-	GetKeyType(address string) string
-	// IsRotating reports a rotating account the signer holds. Its current
-	// stage authorizes it, a program the signer derives and never lists, so
-	// it is signable whatever the chain shows as its auth address.
-	IsRotating(address string) bool
-}
-
-// AuthLookup provides cached authorization addresses for rekey-aware display.
-type AuthLookup interface {
-	GetAuthAddress(address string) (string, bool)
-}
-
-// FormatAddress formats an address with optional alias display.
-func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, auth AuthLookup, colorFormatter ColorFormatter) string {
-	effectiveSigningAddress := address
-
-	// A rotating account keeps its own key type: its stage address is in no
-	// cache.
-	if (signer == nil || !signer.IsRotating(address)) && auth != nil {
-		if cachedAuthAddr, exists := auth.GetAuthAddress(address); exists && cachedAuthAddr != "" {
-			effectiveSigningAddress = cachedAuthAddr
-		}
-	}
-
+// FormatAddress formats an address with optional alias display. An account
+// apshell calls signable (cache.IsAccountSignable) is coloured by the key
+// type of the key that signs for it, or marked " @" where there is no colour.
+func FormatAddress(address string, aliases AliasLookup, signer *cache.SignerCache, auth *cache.AuthAddressCache, colorFormatter ColorFormatter) string {
 	formatted := address
 	if aliases != nil {
 		if alias := aliases.GetAliasForAddress(address); alias != "" {
@@ -46,8 +25,8 @@ func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, aut
 		}
 	}
 
-	if isAccountSignable(address, signer, auth) {
-		keyType := signer.GetKeyType(effectiveSigningAddress)
+	if cache.IsAccountSignable(address, signer, auth) {
+		keyType := signer.GetKeyType(cache.SigningAddress(address, signer, auth))
 		colored, applied := formatWithKeyColorApplied(formatted, keyType, colorFormatter)
 		if applied {
 			return colored
@@ -59,25 +38,4 @@ func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, aut
 	}
 
 	return formatted
-}
-
-// isAccountSignable is cache.IsAccountSignable's rule over the lookups: a
-// rotating account the signer holds, or an account whose auth address (or,
-// when not rekeyed, whose own address) the signer holds.
-func isAccountSignable(address string, signer SignerLookup, auth AuthLookup) bool {
-	if signer == nil {
-		return false
-	}
-	if signer.IsRotating(address) {
-		return true
-	}
-
-	if auth != nil {
-		authAddr, hasRekey := auth.GetAuthAddress(address)
-		if hasRekey && authAddr != "" {
-			return signer.HasAddress(authAddr)
-		}
-	}
-
-	return signer.HasAddress(address)
 }

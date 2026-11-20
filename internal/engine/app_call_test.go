@@ -419,7 +419,7 @@ func newAppCallTestEngine(t *testing.T, client *algod.Client, address string) *E
 		WithAuthCache(cache.NewAuthAddressCacheForStore(nil)),
 	)
 
-	eng.SignerCache.AddAddress(address, "ed25519")
+	eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
 	eng.AuthCache.AuthAddresses[address] = ""
 	return eng
 }

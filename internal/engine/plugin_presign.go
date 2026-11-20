@@ -334,10 +334,8 @@ func managedPositions(txns []types.Transaction, pluginSignerRefs map[string]stri
 // managedSignRequest builds an apsigner sign-mode request for a managed slot,
 // naming the sender's effective signer and attaching lsig args.
 func (e *Engine) managedSignRequest(txn types.Transaction, lsigArgs map[string][]byte) signerapi.SignRequest {
-	sender := txn.Sender.String()
 	req := signerapi.SignRequest{
-		AuthAddress: e.AuthCache.ResolveEffectiveSigner(sender),
-		TxnSender:   sender,
+		AuthAddress: e.AuthCache.ResolveEffectiveSigner(txn.Sender.String()),
 		TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 		AppCallInfo: pluginAppCallInfo(txn),
 	}

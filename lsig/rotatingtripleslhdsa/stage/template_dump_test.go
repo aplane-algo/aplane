@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
@@ -36,7 +36,7 @@ func TestDumpTemplate(t *testing.T) {
 	if dir == "" {
 		t.Skip("SLHDSA_TEMPLATE_DIR not set")
 	}
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), algo.ResolveTEALCompileAlgodToken())
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), algotest.ResolveTEALCompileAlgodToken())
 	if err != nil {
 		t.Fatal(err)
 	}

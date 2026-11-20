@@ -2,7 +2,8 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package endpointrefs defines public endpoint handoff envelopes used by
-// apadmin export and apshell import.
+// apadmin export and apshell import, and the URL rule every endpoint URL
+// follows.
 package endpointrefs
 
 import (
@@ -10,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -67,50 +67,37 @@ func Normalize(env Envelope) (Envelope, error) {
 	}
 
 	env.URL = strings.TrimRight(strings.TrimSpace(env.URL), "/")
-	if err := ValidatePortableURL(env.URL); err != nil {
+	if _, _, err := ParseURL(env.URL); err != nil {
 		return Envelope{}, err
 	}
 	return env, nil
 }
 
-// ValidatePortableURL validates a URL that is safe to put in a public endpoint
-// handoff envelope.
-func ValidatePortableURL(raw string) error {
+// ParseURL parses an endpoint URL, which is ssh://host[:port]. A node is
+// reached only through its SSH server, which authenticates the client's
+// enrolled key and hands each API channel to the node's REST handler with
+// that identity; no other scheme could carry it. port is 0 when the URL
+// names none.
+func ParseURL(raw string) (host string, port int, err error) {
 	if raw == "" {
-		return fmt.Errorf("url is required")
-	}
-	if raw == "self" {
-		return fmt.Errorf("url %q is not allowed in exported endpoint envelopes", raw)
+		return "", 0, fmt.Errorf("url is required")
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("invalid url: %w", err)
+		return "", 0, fmt.Errorf("invalid url: %w", err)
 	}
-	switch parsed.Scheme {
-	case "ssh", "https", "http":
-	default:
-		return fmt.Errorf("unsupported url scheme %q", parsed.Scheme)
+	if parsed.Scheme != "ssh" {
+		return "", 0, fmt.Errorf("unsupported url scheme %q; endpoints are ssh://host[:port]", parsed.Scheme)
 	}
-	if parsed.Hostname() == "" {
-		return fmt.Errorf("url host is required")
+	host = parsed.Hostname()
+	if host == "" {
+		return "", 0, fmt.Errorf("url host is required")
 	}
 	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
+		port, err = strconv.Atoi(parsed.Port())
 		if err != nil || port <= 0 || port > 65535 {
-			return fmt.Errorf("invalid url port %q", parsed.Port())
+			return "", 0, fmt.Errorf("invalid url port %q", parsed.Port())
 		}
 	}
-	if parsed.Scheme == "http" && !isLoopbackHost(parsed.Hostname()) {
-		return fmt.Errorf("raw http endpoints must be loopback; use ssh:// or https:// for remote endpoints")
-	}
-	return nil
-}
-
-func isLoopbackHost(host string) bool {
-	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return host, port, nil
 }

@@ -40,7 +40,7 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 
 func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
+	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
 	called := false
 	eng.handleConnectionClosed(func() { called = true })()
 
@@ -58,7 +58,7 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache = cache.NewSignerCache()
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
+	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
 
 	eng.Disconnect()
 	if eng.Connection.IsConnected() {
@@ -77,7 +77,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	eng.Connection.ConnectionTarget = "remote-a"
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
+	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
 
 	dir := t.TempDir()
 	_, err := eng.RequestEnrollmentWithContext(context.Background(), "127.0.0.1", 1, dir+"/id_ed25519", dir+"/known_hosts", "", nil, nil)
@@ -94,7 +94,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 
 func TestHandleConnectionClosedWithoutCallbackStillResetsCache(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.SignerCache.AddAddress(testAddr(2), "ed25519")
+	eng.SignerCache.AddAddress(testAddr(2), "ed25519", "ed25519")
 
 	eng.handleConnectionClosed(nil)()
 
