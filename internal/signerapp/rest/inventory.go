@@ -431,15 +431,15 @@ func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.
 		if len(componentIDs) == 0 {
 			continue
 		}
-		cosignerParam := signerapi.CreationParamInfo{
+		cosignerParam := keytypemeta.CreationParam(lsigprovider.ParameterDef{
 			Name:        cosignerrefs.ParamCosignerName,
 			Label:       "Witness Key ID",
 			Description: "Imported Witness Key ID to embed in the cosigned account",
 			Type:        "select",
 			Required:    true,
-			Options:     append([]string(nil), componentIDs...),
+			Options:     componentIDs,
 			Default:     componentIDs[0],
-		}
+		})
 		infos[i].CreationParams = replaceCosignerPublicKeyParam(infos[i].CreationParams, cosignerParam)
 	}
 }
@@ -509,7 +509,7 @@ func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerap
 	info.RequiresLogicSig = true
 	info.MnemonicWordCount = 24
 	info.SigningFlow = signerapi.SigningFlowRotating1
-	info.CreationParams = []signerapi.CreationParamInfo{{
+	info.CreationParams = keytypemeta.CreationParams([]lsigprovider.ParameterDef{{
 		Name:        rotatingkey.RotatingNetworkParameter,
 		Label:       rotatingkey.RotatingNetworkParameterLabel,
 		Description: rotatingkey.RotatingNetworkParameterDescription,
@@ -518,7 +518,7 @@ func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerap
 		Options:     networks,
 		Default:     defaultRotatingNetwork(networks),
 		Example:     rotatingkey.RotatingNetworkParameterExample,
-	}}
+	}})
 	return info
 }
 

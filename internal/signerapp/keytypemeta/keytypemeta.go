@@ -20,25 +20,32 @@ import (
 func CreationParams(params []lsigprovider.ParameterDef) []signerapi.CreationParamInfo {
 	out := make([]signerapi.CreationParamInfo, len(params))
 	for i, p := range params {
-		out[i] = signerapi.CreationParamInfo{
-			Name:        p.Name,
-			Label:       p.Label,
-			Description: lsigprovider.DescriptionText(p.Description),
-			Type:        p.Type,
-			Required:    p.Required,
-			MaxLength:   p.MaxLength,
-			InputModes:  inputModes(p.InputModes),
-			Options:     append([]string(nil), p.Options...),
-			MinItems:    p.MinItems,
-			MaxItems:    p.MaxItems,
-			Example:     p.Example,
-			Placeholder: p.Placeholder,
-			Min:         p.Min,
-			Max:         p.Max,
-			Default:     p.Default,
-		}
+		out[i] = CreationParam(p)
 	}
 	return out
+}
+
+// CreationParam projects one creation parameter, such as one the signer
+// declares itself rather than a provider: a rotating account's network, or
+// the Witness Key ID selector that stands in for a cosigner public key.
+func CreationParam(p lsigprovider.ParameterDef) signerapi.CreationParamInfo {
+	return signerapi.CreationParamInfo{
+		Name:        p.Name,
+		Label:       p.Label,
+		Description: lsigprovider.DescriptionText(p.Description),
+		Type:        p.Type,
+		Required:    p.Required,
+		MaxLength:   p.MaxLength,
+		InputModes:  inputModes(p.InputModes),
+		Options:     append([]string(nil), p.Options...),
+		MinItems:    p.MinItems,
+		MaxItems:    p.MaxItems,
+		Example:     p.Example,
+		Placeholder: p.Placeholder,
+		Min:         p.Min,
+		Max:         p.Max,
+		Default:     p.Default,
+	}
 }
 
 func inputModes(modes []lsigprovider.InputMode) []signerapi.InputModeInfo {
