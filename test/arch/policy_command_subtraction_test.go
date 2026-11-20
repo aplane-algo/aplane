@@ -4,16 +4,19 @@
 package arch_test
 
 import (
+	"context"
 	"go/parser"
 	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestAppolicyShipsWithTheSignerBinaries pins where appolicy is built,
@@ -238,14 +241,15 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 	note := "This release is new-install only: run the old uninstall.sh first.\n" +
 		"100% of %s keys move by recovery phrase; C:\\new\\table \\n \\e[31m \x1b[1mbold\x1b[0m\n" +
 		"$(touch pwned) ${HOME} `touch pwned`\n\n"
-	shown := "==> Release notes for this installer (install_readme.txt)\n" +
-		strings.TrimRight(note, "\n") + "\n" + strings.Repeat("=", 80) + "\n\n"
+	rule := strings.Repeat("=", 80)
+	shown := "\n\n\n" + rule + "\n" + strings.TrimRight(note, "\n") + "\n" + rule + "\n\n"
 	cases := []struct {
 		name       string
 		written    bool
 		unreadable bool // want is then exactly the error naming the note
 		note       string
 		arg        string
+		reRun      bool // run as the sudo re-run, which passes --install-readme-shown
 		code       int
 		want       string
 	}{
@@ -255,6 +259,7 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 		{name: "empty", written: true, note: " \n\t\n", arg: "--help", want: "Usage:\n"},
 		{name: "absent", arg: "--help", want: "Usage:\n"},
 		{name: "unreadable", written: true, unreadable: true, note: note, arg: "--help", code: 1},
+		{name: "not again in the sudo re-run", written: true, note: note, arg: "--help", reRun: true, want: "Usage:\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -279,7 +284,14 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(work, "install_readme.txt"), []byte("not the archive's note\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			cmd := exec.Command(bash, filepath.Join(archive, "install.sh"), tc.arg)
+			args := []string{filepath.Join(archive, "install.sh"), tc.arg}
+			if tc.reRun {
+				args = []string{filepath.Join(archive, "install.sh"), "--install-readme-shown", tc.arg}
+			}
+			cmd := exec.Command(bash, args...)
+			// No controlling terminal, as in an unattended install: the
+			// installer must not wait for Enter.
+			detachFromTerminal(cmd)
 			cmd.Dir = work
 			cmd.Env = []string{"HOME=" + work, "PATH=/usr/bin:/bin"}
 			out, err := cmd.CombinedOutput()
@@ -292,7 +304,7 @@ func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
 			if !strings.HasPrefix(string(out), want) || tc.unreadable && string(out) != want {
 				t.Errorf("install.sh %s output does not start with\n%q\ngot\n%q", tc.arg, want, out)
 			}
-			if got := strings.Count(string(out), "==> Release notes"); got > 1 || strings.Contains(string(out), "not the archive's") {
+			if got := strings.Count(string(out), rule); got > 2 || strings.Contains(string(out), "not the archive's") {
 				t.Errorf("install.sh %s printed a note %d times or the working directory's note:\n%s", tc.arg, got, out)
 			}
 			if _, err := os.Stat(filepath.Join(work, "pwned")); !os.IsNotExist(err) {
@@ -374,5 +386,46 @@ func TestPolicyWorkflowImportsStayInOwningBoundaries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// TestInstallerWaitsForEnterAfterTheInstallReadme runs install.sh on a
+// pseudo-terminal, as an operator would: after the note it asks for Enter,
+// and it carries on once Enter arrives.
+func TestInstallerWaitsForEnterAfterTheInstallReadme(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses util-linux script(1) for a pseudo-terminal")
+	}
+	script, err := exec.LookPath("script")
+	if err != nil {
+		t.Skip("script(1) is not available")
+	}
+	archive := t.TempDir()
+	installer := readTextFile(t, filepath.Join(repositoryRoot(t), "install.sh"))
+	if err := os.WriteFile(filepath.Join(archive, "install.sh"), []byte(installer), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "install_readme.txt"), []byte("Read me first.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, script, "-q", "-e", "-c", "bash "+filepath.Join(archive, "install.sh")+" --help", "/dev/null")
+	cmd.Dir = archive
+	cmd.Env = []string{"HOME=" + archive, "PATH=/usr/bin:/bin", "TERM=dumb"}
+	cmd.Stdin = strings.NewReader("\n")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("install.sh did not continue after Enter:\n%s", out)
+	}
+	if err != nil {
+		t.Fatalf("install.sh --help on a terminal: %v\n%s", err, out)
+	}
+	text := strings.ReplaceAll(string(out), "\r", "")
+	note := strings.Index(text, "Read me first.")
+	prompt := strings.Index(text, "Press Enter to continue, or Ctrl+C to stop...")
+	usage := strings.Index(text, "Usage:")
+	if note < 0 || prompt < note || usage < prompt {
+		t.Fatalf("want the note, then the Enter prompt, then the usage; got:\n%s", text)
 	}
 }

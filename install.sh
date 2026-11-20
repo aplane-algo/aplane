@@ -46,7 +46,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # argument errors included. It is printed verbatim and nothing waits on it,
 # so unattended installs carry on. A note that exists but cannot be read
 # stops the install, since what it says may matter to it.
+INSTALL_README_SHOWN=0
 show_install_readme() {
+    local arg
+    for arg in "$@"; do
+        # The sudo re-run of an install whose note was already shown and confirmed.
+        [ "$arg" = "--install-readme-shown" ] && return 0
+    done
     local note="$SCRIPT_DIR/install_readme.txt"
     [ -f "$note" ] || return 0
     local text
@@ -55,10 +61,17 @@ show_install_readme() {
         exit 1
     fi
     [[ "$text" == *[![:space:]]* ]] || return 0
-    printf '==> Release notes for this installer (install_readme.txt)\n%s\n%s\n\n' \
-        "$text" "================================================================================"
+    local rule="================================================================================"
+    printf '\n\n\n%s\n%s\n%s\n\n' "$rule" "$text" "$rule"
+    INSTALL_README_SHOWN=1
+    # Wait only when a terminal can answer, so unattended installs keep running.
+    if { : </dev/tty; } 2>/dev/null; then
+        printf 'Press Enter to continue, or Ctrl+C to stop... ' >/dev/tty
+        read -r _ </dev/tty || true
+        printf '\n'
+    fi
 }
-show_install_readme
+show_install_readme "$@"
 
 # Track how the user invoked us so the Ctrl+C trap can tell them how to
 # re-run. Starts as the literal invocation, but prompt_install_mode may
@@ -189,6 +202,10 @@ while [ $# -gt 0 ]; do
             ;;
         -f|--force)
             FORCE_UPGRADE=1
+            shift
+            ;;
+        --install-readme-shown)
+            # Internal: passed to the sudo re-run so install_readme.txt shows once.
             shift
             ;;
         --role)
@@ -585,6 +602,9 @@ prompt_install_mode() {
                 echo "  $RERUN_CMD"
             fi
             echo ""
+            if [ "$INSTALL_README_SHOWN" = "1" ]; then
+                reexec_args+=(--install-readme-shown)
+            fi
             if [ -n "${APLANE_BOOTSTRAP_RERUN:-}" ]; then
                 exec sudo APLANE_BOOTSTRAP_RERUN="$APLANE_BOOTSTRAP_RERUN" "$0" "${reexec_args[@]}" </dev/tty
             fi

@@ -194,7 +194,9 @@ tag. `release.yml`, `make release-local` and
 archive that ships `install.sh`, and ship none when there is none; the
 client-only archives have no installer and do not carry it. `install.sh`
 prints it before anything else, `--help` and argument errors included, as
-plain text: nothing in it is expanded. Remove or replace it once the release
+plain text: nothing in it is expanded. When a terminal is attached it then
+waits for Enter; the Docker smokes answer that prompt in their `expect`
+scripts. Remove or replace it once the release
 is cut, or the next release carries it too. A checkout install from a commit
 that has one shows it the same way.
 

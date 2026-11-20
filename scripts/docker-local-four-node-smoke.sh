@@ -513,6 +513,7 @@ set timeout 180
 set completed 0
 spawn ./install.sh --role $role /home/$TEST_USER/aplane
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Proceed with installation?*\" { send \"\r\" }
   timeout { exit 11 }
 }
@@ -551,6 +552,7 @@ set timeout 120
 set completed 0
 spawn ./install.sh --client /home/$TEST_USER/aplane
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
   \"=== Installation complete ===\" { set completed 1; exp_continue }
   timeout { exit 16 }

@@ -200,6 +200,7 @@ set timeout 180
 set completed 0
 spawn env SUDO_USER=$TEST_USER ./install.sh --systemd $OPERATOR_ROOT
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Proceed with systemd install?*\" { send \"\r\" }
   timeout { exit 10 }
 }
@@ -524,6 +525,7 @@ set timeout 180
 set completed 0
 spawn env SUDO_USER=$TEST_USER ./install.sh --systemd $OPERATOR_ROOT
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Proceed with systemd install?*\" { send \"\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
   \"=== Installation complete ===\" { set completed 1; exp_continue }

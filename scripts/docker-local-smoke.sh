@@ -191,6 +191,7 @@ set timeout 180
 set completed 0
 spawn ./install.sh
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Choose mode *\" { send \"\r\" }
   timeout { exit 9 }
 }
@@ -472,6 +473,7 @@ set timeout 180
 set completed 0
 spawn ./install.sh /home/$TEST_USER/aplane
 expect {
+  \"Press Enter to continue*\" { send \"\r\"; exp_continue }
   \"Proceed with installation?*\" { send \"\r\"; exp_continue }
   \"Enable enforced memory locking for apsigner?*\" { send \"n\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }

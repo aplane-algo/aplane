@@ -545,13 +545,14 @@ aplane/
 A release can carry `install_readme.txt` beside `install.sh`: a note from the
 maintainers about this release, such as that it installs only into a fresh
 root, or that an old install must be removed first. `install.sh` prints it
-before anything else, in every mode and for `--help` too, between a
-`==> Release notes for this installer (install_readme.txt)` header and a
-closing rule, and then carries on without waiting. Read it before you
-answer the installer's prompts; in an unattended install it is the first
-thing install.sh writes to the log. When you choose systemd at the mode
-prompt and the installer re-runs itself under sudo, it shows the note again.
-An empty note prints nothing. If the note is there but cannot be read, the
+before anything else, in every mode and for `--help` too, after a few blank
+lines, between two rules of `=` characters. When a terminal is attached, it then waits for
+Enter (`Press Enter to continue, or Ctrl+C to stop...`), so the note can't
+scroll past unread; an unattended install, with no terminal, carries on
+without waiting, and the note is the first thing install.sh writes to the
+log. When you choose systemd at the mode prompt and the installer re-runs
+itself under sudo, the re-run does not show the note again. An empty note
+prints nothing. If the note is there but cannot be read, the
 installer stops with `Error: cannot read install_readme.txt at <path>`.
 
 `install.sh --systemd` accepts an optional operator root path plus `--bindir`
