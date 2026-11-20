@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 
@@ -17,54 +16,6 @@ import (
 func TestMain(m *testing.M) {
 	setServiceFile(filepath.Join(os.TempDir(), "aplane-appass-test-missing.service"))
 	os.Exit(m.Run())
-}
-
-func TestEnforceAppassExecutionModeRejectsRootForLocalDataDir(t *testing.T) {
-	oldCurrentEUID := currentEUID
-	defer func() {
-		currentEUID = oldCurrentEUID
-	}()
-
-	dataDir := t.TempDir()
-	currentEUID = func() int { return 0 }
-
-	err := enforceAppassExecutionMode(dataDir, false)
-	if err == nil {
-		t.Fatal("enforceAppassExecutionMode() error = nil, want local root refusal")
-	}
-	for _, want := range []string{
-		"local signer data directory",
-		"must not be managed as root",
-		"appass -d " + dataDir,
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %q, want substring %q", err.Error(), want)
-		}
-	}
-}
-
-func TestEnforceAppassExecutionModeRejectsNonRootForProductionDataDir(t *testing.T) {
-	oldCurrentEUID := currentEUID
-	defer func() {
-		currentEUID = oldCurrentEUID
-	}()
-
-	dataDir := t.TempDir()
-	currentEUID = func() int { return 1000 }
-
-	err := enforceAppassExecutionMode(dataDir, true)
-	if err == nil {
-		t.Fatal("enforceAppassExecutionMode() error = nil, want production non-root refusal")
-	}
-	for _, want := range []string{
-		"systemd-managed data directory",
-		"requires root",
-		"sudo appass -d " + dataDir,
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %q, want substring %q", err.Error(), want)
-		}
-	}
 }
 
 func TestParseAppassOptions(t *testing.T) {

@@ -147,9 +147,6 @@ func cmdPermissionsPrepareManagedRoot(args []string) error {
 	if err != nil {
 		return err
 	}
-	if currentEUID() != 0 {
-		return fmt.Errorf("permissions prepare-managed-root requires root")
-	}
 	result, err := storeperm.PrepareManagedRoot(dataDirectory, uid, gid)
 	if err != nil {
 		return err
@@ -162,9 +159,6 @@ func cmdPermissionsConvertManaged(args []string) error {
 	uid, gid, err := parseManagedPrincipalFlags("permissions convert-managed", args)
 	if err != nil {
 		return err
-	}
-	if currentEUID() != 0 {
-		return fmt.Errorf("permissions convert-managed requires root")
 	}
 	if _, err := storeperm.PreflightShared(dataDirectory); err != nil {
 		return err

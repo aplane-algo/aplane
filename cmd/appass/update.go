@@ -132,64 +132,48 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handlePassphraseInputKeys handles key input on the first passphrase entry screen.
 func (m Model) handlePassphraseInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.viewState = ViewHome
-		m.clearPassphrases()
-		m.passphraseError = ""
-		return m, nil
-
-	case "enter":
-		if len(m.passphraseInput) == 0 {
-			m.passphraseError = "Passphrase must not be empty"
-			return m, nil
-		}
-		// The first entry moves to passphraseFirst; nothing is copied.
-		clear(m.passphraseFirst)
-		m.passphraseFirst = m.passphraseInput
-		m.passphraseInput = nil
-		m.passphraseError = ""
-		m.viewState = ViewConfirmPassphrase
-
-	case "backspace":
-		if len(m.passphraseInput) > 0 {
-			m.passphraseInput = secretbuf.TrimRune(m.passphraseInput)
-			m.passphraseError = ""
-		}
-
-	case "tab":
-		m.passphraseMasked = !m.passphraseMasked
-
-	default:
-		if len(msg.String()) == 1 {
-			m.passphraseInput = secretbuf.AppendText(m.passphraseInput, msg.String())
-			m.passphraseError = ""
-		}
+	if msg.String() != "enter" {
+		return m.editPassphrase(msg), nil
 	}
-
+	if len(m.passphraseInput) == 0 {
+		m.passphraseError = "Passphrase must not be empty"
+		return m, nil
+	}
+	// The first entry moves to passphraseFirst; nothing is copied.
+	clear(m.passphraseFirst)
+	m.passphraseFirst = m.passphraseInput
+	m.passphraseInput = nil
+	m.passphraseError = ""
+	m.viewState = ViewConfirmPassphrase
 	return m, nil
 }
 
 // handleConfirmKeys handles key input on the confirm passphrase screen.
 func (m Model) handleConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() != "enter" {
+		return m.editPassphrase(msg), nil
+	}
+	if !bytes.Equal(m.passphraseInput, m.passphraseFirst) {
+		m.passphraseError = "Passphrases do not match"
+		m.clearPassphraseInput()
+		return m, nil
+	}
+	// The confirmed entry moves to the action, which zeroes it once done.
+	passphrase := m.passphraseInput
+	m.passphraseInput = nil
+	m.clearPassphrases()
+	return m.dispatchAction(passphrase)
+}
+
+// editPassphrase applies a key other than enter on either passphrase screen:
+// esc goes back home, discarding both entries, and the rest edit the entry
+// being typed or toggle its mask.
+func (m Model) editPassphrase(msg tea.KeyMsg) Model {
 	switch msg.String() {
 	case "esc":
 		m.viewState = ViewHome
 		m.clearPassphrases()
 		m.passphraseError = ""
-		return m, nil
-
-	case "enter":
-		if !bytes.Equal(m.passphraseInput, m.passphraseFirst) {
-			m.passphraseError = "Passphrases do not match"
-			m.clearPassphraseInput()
-			return m, nil
-		}
-		// The confirmed entry moves to the action, which zeroes it once done.
-		passphrase := m.passphraseInput
-		m.passphraseInput = nil
-		m.clearPassphrases()
-		return m.dispatchAction(passphrase)
 
 	case "backspace":
 		if len(m.passphraseInput) > 0 {
@@ -206,8 +190,7 @@ func (m Model) handleConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.passphraseError = ""
 		}
 	}
-
-	return m, nil
+	return m
 }
 
 // handleResultKeys handles key input on the result screen — any key returns to home.

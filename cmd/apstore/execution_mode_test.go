@@ -189,3 +189,40 @@ func TestEnforceApstoreExecutionModeAllowsExternalVerifyWithoutStore(t *testing.
 		t.Fatalf("enforceApstoreExecutionMode(verify) error = %v", err)
 	}
 }
+
+// The refusals name the exact command to run instead, quoted for a shell.
+func TestEnforceApstoreExecutionModeRefusalText(t *testing.T) {
+	oldEUID := currentEUID
+	t.Cleanup(func() { currentEUID = oldEUID })
+
+	local := filepath.Join(t.TempDir(), "it's local")
+	if err := os.Mkdir(local, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managed := t.TempDir()
+	if err := os.WriteFile(filepath.Join(managed, ".prod"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"rebuild", "/mnt/usb/a b.tar.gz", "--address", ""}
+
+	currentEUID = func() int { return 0 }
+	err := enforceApstoreExecutionMode(local, args)
+	want := "local signer data directory " + local + " must not be managed as root; rerun without sudo:\n" +
+		"  apstore -d '" + filepath.Dir(local) + "/it'\"'\"'s local' rebuild '/mnt/usb/a b.tar.gz' --address ''"
+	if err == nil || err.Error() != want {
+		t.Fatalf("local as root:\n got %v\nwant %s", err, want)
+	}
+
+	currentEUID = func() int { return 1000 }
+	err = enforceApstoreExecutionMode(managed, args)
+	want = "systemd-managed data directory " + managed + " requires root for apstore; run:\n" +
+		"  sudo apstore -d " + managed + " rebuild '/mnt/usb/a b.tar.gz' --address ''"
+	if err == nil || err.Error() != want {
+		t.Fatalf("managed as non-root:\n got %v\nwant %s", err, want)
+	}
+
+	currentEUID = func() int { return 0 }
+	if err := enforceApstoreExecutionMode(managed, args); err != nil {
+		t.Fatalf("managed as root: %v", err)
+	}
+}
