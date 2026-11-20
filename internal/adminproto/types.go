@@ -332,15 +332,12 @@ type ReconcileStoreResult struct {
 // CosignerReferenceInfo is the admin-domain projection of a stored public
 // cosigner reference. It never contains private witness material.
 type CosignerReferenceInfo struct {
-	Schema            string
-	Name              string
-	ComponentKey      string
-	KeyType           string
-	PublicKeyEncoding string
-	PublicKeyHex      string
-	PublicKeySize     int
-	PublicKeySHA256   string
-	ImportedAt        string
+	Schema       string
+	Name         string
+	ComponentKey string
+	KeyType      string
+	PublicKeyHex string
+	ImportedAt   string
 }
 
 type ListCosignerReferencesResult struct {

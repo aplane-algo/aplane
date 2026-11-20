@@ -7,8 +7,6 @@ package cosignerrefs
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,16 +37,15 @@ var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 
 type ExportEnvelope = witness.PublicReference
 
+// Record is a stored cosigner reference. ComponentKey is the Witness Key ID
+// KeyType and PublicKeyHex derive; every read checks that it does.
 type Record struct {
-	Schema            string `json:"schema"`
-	Name              string `json:"name"`
-	ComponentKey      string `json:"component_key"`
-	KeyType           string `json:"key_type"`
-	PublicKeyEncoding string `json:"public_key_encoding"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	PublicKeySize     int    `json:"public_key_size"`
-	PublicKeySHA256   string `json:"public_key_sha256"`
-	ImportedAt        string `json:"imported_at"`
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	ComponentKey string `json:"component_key"`
+	KeyType      string `json:"key_type"`
+	PublicKeyHex string `json:"public_key_hex"`
+	ImportedAt   string `json:"imported_at"`
 }
 
 func NormalizeName(name string) (string, error) {
@@ -101,10 +98,7 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 func sameReferenceAuthority(a, b Record) bool {
 	return a.ComponentKey == b.ComponentKey &&
 		a.KeyType == b.KeyType &&
-		a.PublicKeyEncoding == b.PublicKeyEncoding &&
-		a.PublicKeyHex == b.PublicKeyHex &&
-		a.PublicKeySize == b.PublicKeySize &&
-		a.PublicKeySHA256 == b.PublicKeySHA256
+		a.PublicKeyHex == b.PublicKeyHex
 }
 
 func ParseImport(name string, data []byte) (*Record, error) {
@@ -116,19 +110,12 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cosigner public-key envelope: %w", err)
 	}
-	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
-	if err != nil {
-		return nil, err
-	}
 	return &Record{
-		Schema:            RecordSchema,
-		Name:              name,
-		ComponentKey:      env.WitnessKeyID,
-		KeyType:           env.KeyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     publicKeySize,
-		PublicKeySHA256:   publicKeySHA256,
+		Schema:       RecordSchema,
+		Name:         name,
+		ComponentKey: env.WitnessKeyID,
+		KeyType:      env.KeyType,
+		PublicKeyHex: env.PublicKeyHex,
 	}, nil
 }
 
@@ -325,48 +312,12 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
-	if err != nil {
-		return Record{}, err
-	}
-	if rec.PublicKeyEncoding != "" && rec.PublicKeyEncoding != "hex" {
-		return Record{}, fmt.Errorf("unsupported public_key_encoding %q", rec.PublicKeyEncoding)
-	}
-	if rec.PublicKeySize != 0 && rec.PublicKeySize != publicKeySize {
-		return Record{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", rec.PublicKeySize, publicKeySize)
-	}
-	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
-		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
-	}
 	return Record{
-		Schema:            RecordSchema,
-		Name:              name,
-		ComponentKey:      env.WitnessKeyID,
-		KeyType:           env.KeyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     publicKeySize,
-		PublicKeySHA256:   publicKeySHA256,
-		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
+		Schema:       RecordSchema,
+		Name:         name,
+		ComponentKey: env.WitnessKeyID,
+		KeyType:      env.KeyType,
+		PublicKeyHex: env.PublicKeyHex,
+		ImportedAt:   strings.TrimSpace(rec.ImportedAt),
 	}, nil
-}
-
-// publicKeyDigest returns the size and SHA-256 of a cosigner public key.
-// Its callers have had witness.NewPublicReference accept the key; the decode
-// and size checks here are a deliberately layered check on untrusted import
-// input, so a digest is never taken of a key that reference did not vouch for.
-func publicKeyDigest(keyType, publicKeyHex string) (int, string, error) {
-	publicKey, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		return 0, "", fmt.Errorf("public key must be hex: %w", err)
-	}
-	wantSize, ok := witness.PublicKeySize(keyType)
-	if !ok {
-		return 0, "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
-	}
-	if len(publicKey) != wantSize {
-		return 0, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
-	}
-	sum := sha256.Sum256(publicKey)
-	return len(publicKey), hex.EncodeToString(sum[:]), nil
 }

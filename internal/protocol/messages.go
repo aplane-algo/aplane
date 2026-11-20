@@ -1395,15 +1395,12 @@ type ApplyPolicyResultMessage struct {
 }
 
 type CosignerReferenceInfo struct {
-	Schema            string `json:"schema"`
-	Name              string `json:"name"`
-	ComponentKey      string `json:"component_key"`
-	KeyType           string `json:"key_type"`
-	PublicKeyEncoding string `json:"public_key_encoding"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	PublicKeySize     int    `json:"public_key_size"`
-	PublicKeySHA256   string `json:"public_key_sha256"`
-	ImportedAt        string `json:"imported_at,omitempty"`
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	ComponentKey string `json:"component_key"`
+	KeyType      string `json:"key_type"`
+	PublicKeyHex string `json:"public_key_hex"`
+	ImportedAt   string `json:"imported_at,omitempty"`
 }
 
 type ListCosignerReferencesMessage struct{ BaseMessage }

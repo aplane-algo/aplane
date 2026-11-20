@@ -16,12 +16,11 @@ const testWitnessKeyID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST"
 func testCosignerReferences() []CosignerReferenceInfo {
 	return []CosignerReferenceInfo{
 		{
-			Name:            "west",
-			ComponentKey:    testWitnessKeyID,
-			KeyType:         "aplane.falcon1024.v1",
-			PublicKeyHex:    "deadbeefcafebabe",
-			PublicKeySHA256: "0123456789abcdef",
-			ImportedAt:      "2026-09-01T12:00:00Z",
+			Name:         "west",
+			ComponentKey: testWitnessKeyID,
+			KeyType:      "aplane.falcon1024.v1",
+			PublicKeyHex: "deadbeefcafebabe",
+			ImportedAt:   "2026-09-01T12:00:00Z",
 		},
 		{
 			Name:         "alpha",
@@ -97,6 +96,9 @@ func TestCosignerManagerSortsAliasesAndKeepsPublicKeyOutOfViews(t *testing.T) {
 	}
 	if strings.Contains(details, "deadbeefcafebabe") {
 		t.Fatalf("details exposed raw public key:\n%s", details)
+	}
+	if want := "Public key SHA-256: 3f8a286ab667f1b60da3a12c138461dac343cab1eb3928c433a8062a61d417f8"; !strings.Contains(details, want) {
+		t.Fatalf("details missing %q:\n%s", want, details)
 	}
 }
 

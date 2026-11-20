@@ -743,9 +743,7 @@ func identityStoreInspectionError(err error, fallbackCode string) (string, strin
 func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerReferenceInfo {
 	return adminproto.CosignerReferenceInfo{
 		Schema: record.Schema, Name: record.Name, ComponentKey: record.ComponentKey, KeyType: record.KeyType,
-		PublicKeyEncoding: record.PublicKeyEncoding, PublicKeyHex: record.PublicKeyHex,
-		PublicKeySize: record.PublicKeySize, PublicKeySHA256: record.PublicKeySHA256,
-		ImportedAt: record.ImportedAt,
+		PublicKeyHex: record.PublicKeyHex, ImportedAt: record.ImportedAt,
 	}
 }
 

@@ -660,9 +660,7 @@ func ProtocolPruneDeletedArchiveResultMessage(id string, result adminproto.Prune
 func protocolCosignerReference(item adminproto.CosignerReferenceInfo) protocol.CosignerReferenceInfo {
 	return protocol.CosignerReferenceInfo{
 		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
-		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
-		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
-		ImportedAt: item.ImportedAt,
+		PublicKeyHex: item.PublicKeyHex, ImportedAt: item.ImportedAt,
 	}
 }
 

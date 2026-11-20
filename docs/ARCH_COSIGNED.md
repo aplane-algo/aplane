@@ -538,17 +538,16 @@ not contain `..`. The persisted record schema is:
   "name": "lab-cosigner",
   "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
   "key_type": "aplane.witness-falcon1024.v1",
-  "public_key_encoding": "hex",
   "public_key_hex": "0000...0000",
-  "public_key_size": 1793,
-  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a",
   "imported_at": "2026-06-04T00:00:00Z"
 }
 ```
 
 The catalog is populated only by explicit operator import. Only the version 2
 record schema is read; records in any other schema, or carrying fields outside
-it, are rejected.
+it, are rejected. Every read checks that `component_key` is the Witness Key ID
+`key_type` and `public_key_hex` derive. The admin protocol's cosigner
+references carry the same fields, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a
 controlling terminal. Unsupported

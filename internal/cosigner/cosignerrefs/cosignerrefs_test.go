@@ -381,20 +381,3 @@ func bytesOfLen(n int, fill byte) []byte {
 	}
 	return b
 }
-
-func TestPublicKeyDigestRefusesWhatTheReferenceWouldRefuse(t *testing.T) {
-	key := strings.Repeat("ab", witness.Ed25519PublicKeySize)
-	size, digest, err := publicKeyDigest(witness.Ed25519V1, key)
-	if err != nil || size != witness.Ed25519PublicKeySize || len(digest) != 64 {
-		t.Fatalf("publicKeyDigest(valid) = %d, %q, %v", size, digest, err)
-	}
-	for _, tc := range []struct{ keyType, hex, want string }{
-		{witness.Ed25519V1, "zz", "public key must be hex"},
-		{witness.Ed25519V1, "abcd", "component public key length 2 invalid"},
-		{"unknown", key, "is not a cosigner key type"},
-	} {
-		if _, _, err := publicKeyDigest(tc.keyType, tc.hex); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("publicKeyDigest(%q, %q) error = %v, want %q", tc.keyType, tc.hex, err, tc.want)
-		}
-	}
-}

@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"sort"
@@ -360,8 +362,10 @@ func (m Model) renderCosignerReferenceDetails() string {
 	body.WriteString("\nWitness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(90)))
 	body.WriteString("\n")
-	if reference.PublicKeySHA256 != "" {
-		body.WriteString("\nPublic key SHA-256: " + reference.PublicKeySHA256 + "\n")
+	// The details show the public key's digest, not the key itself.
+	if publicKey, err := hex.DecodeString(reference.PublicKeyHex); err == nil && len(publicKey) > 0 {
+		digest := sha256.Sum256(publicKey)
+		body.WriteString("\nPublic key SHA-256: " + hex.EncodeToString(digest[:]) + "\n")
 	}
 	if reference.ImportedAt != "" {
 		body.WriteString("Imported: " + reference.ImportedAt + "\n")
