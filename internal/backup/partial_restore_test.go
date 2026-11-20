@@ -210,3 +210,45 @@ func TestBackupCreationRefusesAnArchiveRestoreWouldSkip(t *testing.T) {
 		}
 	}
 }
+
+// A member whose name extends another's with a byte below '.' does not hide
+// it: "<ADDR>-B.apb" is listed before "<ADDR>.apb" by file name. A selection
+// naming <ADDR> restores it, and its policy is not an orphan.
+func TestArchiveSelectorsSortBeforeSearching(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+	root, keysDir := newAdmissionArchive(t)
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	sealAdmissionMember(t, keysDir, address, keyJSON, admissionPassphrase)
+	sealAdmissionMember(t, keysDir, address+"-B", keyJSON, admissionPassphrase)
+	sealAdmissionPolicy(t, root, address, []byte(policytest.MustDocument(noderole.RoleSigner, address, "")))
+	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), admissionPassphrase, nil); err != nil {
+		t.Fatal(err)
+	}
+	managed := BuildManagedArchivePath(paths, "sorted-selectors")
+	if err := CreateTarGzArchive(root, managed); err != nil {
+		t.Fatal(err)
+	}
+	misnamed := "selector mismatch: filename=" + address + "-B derived=" + address
+
+	report, err := DeepVerifyBackupBytes(root, admissionPassphrase)
+	if err != nil || len(report.Verified) != 1 || !report.Verified[0].HasPolicy || len(report.Skipped) != 1 || report.Skipped[0].Reason != misnamed {
+		t.Fatalf("DeepVerifyBackupBytes() = %+v, %v", report, err)
+	}
+	preview, err := PreviewRestoreWithNodeRole(paths, managed, admissionPassphrase, noderole.RoleSigner)
+	if err != nil || len(preview.Keys) != 1 || len(preview.Skipped) != 1 {
+		t.Fatalf("PreviewRestoreWithNodeRole() = %+v, %v", preview, err)
+	}
+	for _, selectors := range [][]string{nil, {address}} {
+		set, err := LoadManagedRestoreSet(paths, managed, selectors, admissionPassphrase, noderole.RoleSigner)
+		if err != nil || len(set.Entries) != 1 || set.Entries[0].Selector() != address || set.Entries[0].Policy == nil {
+			t.Fatalf("LoadManagedRestoreSet(%q) = %+v, %v", selectors, set, err)
+		}
+		set.ZeroSecrets()
+		rebuild, err := LoadRebuildSet(root, selectors, admissionPassphrase, noderole.RoleSigner)
+		if err != nil || len(rebuild.Entries) != 1 || rebuild.Entries[0].Selector() != address {
+			t.Fatalf("LoadRebuildSet(%q) = %+v, %v", selectors, rebuild, err)
+		}
+		rebuild.ZeroSecrets()
+	}
+}

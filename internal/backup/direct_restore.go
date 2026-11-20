@@ -274,9 +274,9 @@ func openArchive(sourceRoot string, exportPassphrase []byte) (openedArchive, err
 	return archive, nil
 }
 
-// archiveSelectors lists the credentials an extracted archive holds, in
-// order, refusing a policy that belongs to none of them. A member whose name
-// is not its credential's selector is admission's to skip.
+// archiveSelectors lists the credentials an extracted archive holds, sorted,
+// refusing a policy that belongs to none of them. A member whose name is not
+// its credential's selector is admission's to skip.
 func archiveSelectors(keysDir string) ([]string, error) {
 	selectors, err := ScanBackupFiles(keysDir)
 	if err != nil {
@@ -285,6 +285,10 @@ func archiveSelectors(keysDir string) ([]string, error) {
 	if len(selectors) == 0 {
 		return nil, fmt.Errorf("no .apb files found in backup")
 	}
+	// The scan is in file-name order, which is not selector order when one
+	// selector extends another with a byte below '.': "A-B.apb" sorts before
+	// "A.apb". The searches below need selector order.
+	slices.Sort(selectors)
 	keysWithPolicy, err := scanBackupPolicies(keysDir)
 	if err != nil {
 		return nil, err
