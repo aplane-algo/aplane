@@ -364,8 +364,8 @@ state directs the operator to the permission migration command.
 
 Installer-owned management scripts, release metadata, operator metadata, and
 the template library are installed only after migration succeeds. In
-particular, recursive template ownership repair never runs against a legacy
-tree. The shell installer does not repair `.apstore.lock`; the descriptor-based
+particular, recursive template ownership repair never runs against a tree
+that has not been migrated. The shell installer does not repair `.apstore.lock`; the descriptor-based
 Go migrator owns that operation.
 
 ### Implemented rollout
@@ -378,8 +378,8 @@ The migration order is fixed:
 4. move the socket to the protected runtime directory;
 5. audit and migrate a stopped shared-group store to the private layout;
 6. enable strict startup enforcement and private creation defaults;
-7. remove legacy group-shared behavior from normal writers, retaining only the
-   read-only legacy profile needed to validate supported upgrades.
+7. remove group-shared behavior from normal writers, keeping only the
+   read-only structural preflight that conversion and installer upgrades run.
 
 The systemd installer performs this ordering while the service is stopped and
 runs both migration and post-migration audit before starting the daemon.
