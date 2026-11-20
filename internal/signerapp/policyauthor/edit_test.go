@@ -98,7 +98,7 @@ func TestEditSpecDecimals(t *testing.T) {
 // the document byte-for-byte as it was, so no editor can quietly change a
 // value it only shows.
 func TestEveryFieldEditsToItself(t *testing.T) {
-	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json", "signer_default.json"} {
+	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json", "signer_default.json", "cosigner_key_external_checks.json"} {
 		f := LoadFile(writeFile(t, t.TempDir(), name, fixture(t, name)))
 		before, _ := f.Draft.Canonical()
 		edited := 0

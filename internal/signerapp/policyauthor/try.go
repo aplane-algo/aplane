@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -85,8 +86,22 @@ type TryResult struct {
 	Outcome    policyeval.Outcome
 	RuleID     string
 	Violations []policy.LintViolation
-	Summary    string
-	Assumes    []string
+	// ExternalChecks is set when a cosigner document that has external
+	// checks would sign: they decide next.
+	ExternalChecks *TryExternalChecks
+	Summary        string
+	Assumes        []string
+}
+
+// TryExternalChecks is what follows a cosigner policy that would sign under a
+// document with external checks. Nothing is looked up.
+type TryExternalChecks struct {
+	// Apply are the IDs of the checks that would make a lookup for the
+	// transaction, in document order.
+	Apply []string
+	// Refusal, when set, says why the cosigner refuses the request whatever
+	// the checks would answer.
+	Refusal string
 }
 
 // Try asks what f's document decides for txn, as the signer's evaluator
@@ -127,6 +142,13 @@ func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
 		Outcome:    verdict.Outcome,
 		RuleID:     verdict.RuleID,
 		Violations: verdict.Violations,
+	}
+	if f.Role == noderole.RoleCosigner && verdict.Outcome == policyeval.Approve && len(f.Document.ExternalChecks) > 0 {
+		network, _ := networks.Resolver.NetworkForGenesisHashBytes(built.GenesisHash[:])
+		result.ExternalChecks = &TryExternalChecks{
+			Apply:   applicableExternalChecks(f.Document, network, built),
+			Refusal: externalChecksRefusal,
+		}
 	}
 	result.Summary = trySummary(result)
 	result.Assumes = tryAssumptions(f.Role, txn, built, networks)
@@ -202,12 +224,46 @@ func buildTryTxn(t TryTxn, networks Networks) (types.Transaction, error) {
 	return txn, nil
 }
 
+// applicableExternalChecks lists the IDs of doc's checks that would make a
+// lookup for txn on network: those covering the network, and for a movement
+// check, covering one of txn's movements.
+func applicableExternalChecks(doc *policy.PolicyV1, network string, txn types.Transaction) []string {
+	movements := policy.ExtractTransferMovements(txn)
+	var out []string
+	for _, c := range doc.ExternalChecks {
+		if !c.CoversNetwork(network) {
+			continue
+		}
+		if c.Scope == policy.ExternalScopeMovement && !slices.ContainsFunc(movements, func(m policy.TransferMovement) bool { return c.CoversMovementKind(m.Kind) }) {
+			continue
+		}
+		out = append(out, c.ID)
+	}
+	return out
+}
+
 func trySummary(r TryResult) string {
 	if r.Role == noderole.RoleCosigner {
-		if r.Outcome == policyeval.Approve {
-			return "this cosigner policy document permits the supplied transaction"
+		if r.Outcome != policyeval.Approve {
+			return "this cosigner policy document rejects the supplied transaction"
 		}
-		return "this cosigner policy document rejects the supplied transaction"
+		permits := "this cosigner policy document permits the supplied transaction"
+		x := r.ExternalChecks
+		if x == nil {
+			return permits
+		}
+		next := "no external check applies to it"
+		switch len(x.Apply) {
+		case 0:
+		case 1:
+			next = "then external check " + x.Apply[0] + " decides"
+		default:
+			next = "then external checks " + joinAnd(x.Apply) + " decide"
+		}
+		if x.Refusal != "" {
+			next += ", and " + x.Refusal
+		}
+		return permits + "; " + next
 	}
 	switch r.Outcome {
 	case policyeval.Reject:

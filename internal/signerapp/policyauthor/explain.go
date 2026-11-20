@@ -74,6 +74,10 @@ func (e *explainer) render() string {
 		e.line("")
 		e.sets()
 	}
+	if len(d.ExternalChecks) > 0 {
+		e.line("")
+		e.externalChecks()
+	}
 
 	e.line("")
 	e.line("Routes match a transaction's sender; this document governs whatever its key signs.")

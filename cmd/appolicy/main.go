@@ -111,9 +111,10 @@ damaged export, or files from two exports, is an error.
   try      ask what one valid document decides for one transaction, through
            the signer's own policy evaluator: rejects, requires review,
            approves, or leaves it to the operator default. A cosigner
-           document permits or rejects. It answers for the document only and
-           lists what it assumed; the network mapping is the node's, else
-           the built-in networks. Exit 0 whatever the verdict, 2 for bad
+           document permits or rejects; when it has external checks, a permit
+           names the checks that decide next. It answers for the document
+           only and lists what it assumed; the network mapping is the node's,
+           else the built-in networks. Exit 0 whatever the verdict, 2 for bad
            input.
   test     run the saved cases in DIR/.appolicy/cases.json (DIR defaults to
            the current directory): each is a try with the answer expected.

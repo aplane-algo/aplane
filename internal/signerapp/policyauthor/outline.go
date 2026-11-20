@@ -273,6 +273,9 @@ func (o *outliner) build() {
 		known["rekey_policy"] = true
 		o.add(Section{ID: "rekey", Title: "Rekey edges", Pointer: "/rekey_policy", Fields: o.rekey(root.Member("rekey_policy")),
 			Adds: []AddAction{rekeyEdgeAdd()}})
+		known["external_sources"], known["external_checks"] = true, true
+		o.externalSources(root.Member("external_sources"))
+		o.externalChecks(root.Member("external_checks"), root.Member("external_sources"))
 	}
 
 	if other := unknownFields(root, known, "a "+roleName(o.role)+" document"); len(other) > 0 {
@@ -834,14 +837,28 @@ func render(n policy.DraftNode) string {
 	return compact(n)
 }
 
-// compact writes a value as one-line JSON.
-func compact(n policy.DraftNode) string {
+// compact writes a value as one line, in JSON form, for display.
+func compact(n policy.DraftNode) string { return writeCompact(n, strconv.Quote) }
+
+// compactJSON writes a value as one line of JSON, for an editor to start
+// from: its strings are JSON strings, whatever they hold.
+func compactJSON(n policy.DraftNode) string {
+	return writeCompact(n, func(s string) string {
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(s)
+		return strings.TrimSuffix(b.String(), "\n")
+	})
+}
+
+func writeCompact(n policy.DraftNode, quote func(string) string) string {
 	var b strings.Builder
 	var write func(n policy.DraftNode)
 	write = func(n policy.DraftNode) {
 		switch n.Kind() {
 		case "string":
-			b.WriteString(strconv.Quote(n.Text()))
+			b.WriteString(quote(n.Text()))
 		case "number":
 			b.WriteString(n.Text())
 		case "boolean":
@@ -863,7 +880,7 @@ func compact(n policy.DraftNode) string {
 				if i > 0 {
 					b.WriteString(", ")
 				}
-				b.WriteString(strconv.Quote(k) + ": ")
+				b.WriteString(quote(k) + ": ")
 				write(n.Member(k))
 			}
 			b.WriteByte('}')

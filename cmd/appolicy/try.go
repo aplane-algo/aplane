@@ -33,15 +33,23 @@ type tryViolation struct {
 	Message string `json:"message"`
 }
 
+// tryExternalChecks is what follows a cosigner policy that would sign under a
+// document with external checks.
+type tryExternalChecks struct {
+	Apply   []string `json:"apply"`
+	Refusal string   `json:"refusal,omitempty"`
+}
+
 type tryReport struct {
-	File       string         `json:"file"`
-	Role       string         `json:"role"`
-	Key        string         `json:"key"`
-	Outcome    string         `json:"outcome"`
-	RuleID     string         `json:"rule_id,omitempty"`
-	Violations []tryViolation `json:"violations,omitempty"`
-	Summary    string         `json:"summary"`
-	Assumes    []string       `json:"assumes"`
+	File           string             `json:"file"`
+	Role           string             `json:"role"`
+	Key            string             `json:"key"`
+	Outcome        string             `json:"outcome"`
+	RuleID         string             `json:"rule_id,omitempty"`
+	Violations     []tryViolation     `json:"violations,omitempty"`
+	ExternalChecks *tryExternalChecks `json:"external_checks,omitempty"`
+	Summary        string             `json:"summary"`
+	Assumes        []string           `json:"assumes"`
 }
 
 func runTry(args []string, stdout, stderr io.Writer) int {
@@ -105,6 +113,9 @@ func runTry(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, v := range result.Violations {
 		report.Violations = append(report.Violations, tryViolation{RuleID: v.RuleID, Message: v.Message})
+	}
+	if x := result.ExternalChecks; x != nil {
+		report.ExternalChecks = &tryExternalChecks{Apply: append([]string{}, x.Apply...), Refusal: x.Refusal}
 	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
