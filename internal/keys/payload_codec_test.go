@@ -572,13 +572,13 @@ func TestPayloadCategoryValidation(t *testing.T) {
 			want: `incompatible key file format: category "generic_lsig" forbids recovery_entropy; `,
 		},
 		{
-			name: "format follows the category",
+			name: "every category is format 1",
 			payload: func() *Payload {
 				p := NewEd25519Payload(publicKey, privateKey)
-				p.FormatVersion = NativePQKeyFormatVersion
+				p.FormatVersion = 2
 				return p
 			}(),
-			want: `incompatible key file format: format_version 2 is not supported for category "ed25519"; expected 1; `,
+			want: `incompatible key file format: format_version 2 is not supported by this runtime; expected 1; `,
 		},
 		{
 			name: "generic forbids private key",

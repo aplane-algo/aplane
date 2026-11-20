@@ -1350,7 +1350,7 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   supported.
 
 Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`
-and `format_version: 2`; every other category uses format 1. The public key
+and `format_version: 1`, the one format every category uses. The public key
 is exactly 1793 bytes and the private key exactly 2305 bytes. The key file
 stores neither the protocol scheme nor the address salt: both follow from the
 key type and public key, and `keys.NativePQAddress` is the one place that

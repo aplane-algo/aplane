@@ -48,8 +48,9 @@ func goldenNativeFalconPayload(t *testing.T) *Payload {
 // recovery_entropy. A key file's encrypted payload is these bytes, so they
 // must not change. The digests were taken from the encoder that held both
 // fields as hex strings, native_pq's again when native Falcon key files
-// dropped pq_scheme and pq_address_salt; keystest's
-// TestPreChangeNativeFalconKeyJSONIsTheEarlierEncoding pins the earlier bytes.
+// dropped pq_scheme and pq_address_salt and moved to format_version 1;
+// keystest's TestPreChangeNativeFalconKeyJSONIsTheEarlierEncoding pins the
+// earlier bytes.
 func TestMarshalPayloadGoldenBytes(t *testing.T) {
 	registerGoldenTestCodecs()
 	edPublic, edPrivate := canonicalEd25519Pair(t, 0x11)
@@ -63,7 +64,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 		digest  string
 	}{
 		{"ed25519", NewEd25519Payload(edPublic, edPrivate), "e8a4354115b677b16da4cf36b69b7bcb24d99b4f61494e13fdf56826810c03ea"},
-		{"native_pq", goldenNativeFalconPayload(t), "1cda1c45fc16669cc7ec3e5be3a89177bed25ed32ad7262b1acf94ea83fe177e"},
+		{"native_pq", goldenNativeFalconPayload(t), "57f9278481410d698d37dfceb80561bfbb39bef1791dface858c55b17b989362"},
 		{"witness", NewWitnessPayload(witness.Falcon1024V1, componentPublic, componentPrivate), "d6e494aa574e43ba93dc1be7994fee193d6d57277bfaa5d0f7cf1e711a43d70f"},
 		{"dsa_lsig", payloadWithOpcodeProfile(t, NewDSALSigPayload(
 			"test.dsa.v1", "test.base.v1", []byte{0x01, 0x02}, []byte{0x03, 0x04},

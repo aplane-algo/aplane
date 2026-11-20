@@ -18,8 +18,9 @@ import (
 // PreChangeNativeFalconKeyJSON rebuilds the earlier encoder's bytes from the
 // current ones: the digests are the ones keys' golden test pinned for that
 // encoder's two native Falcon formats, on the same payload. A native Falcon
-// file in the current shape differs from it only by pq_scheme and
-// pq_address_salt, and for format 1 by recovery_entropy.
+// file in the current shape differs from it only by pq_scheme,
+// pq_address_salt and format_version 2, or for the old format 1 by
+// pq_scheme, pq_address_salt and recovery_entropy.
 func TestPreChangeNativeFalconKeyJSONIsTheEarlierEncoding(t *testing.T) {
 	// The golden pair does not derive from the entropy, so accept any pair.
 	keys.RegisterNativePQKeyPairValidator(nativefalcon.Scheme, func(_, _, _ []byte) error { return nil })

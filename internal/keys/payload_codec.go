@@ -58,7 +58,7 @@ type Payload struct {
 	CreatedAt        time.Time
 }
 
-// payloadWire is the canonical JSON DTO for decrypted payload versions 1 and 2.
+// payloadWire is the canonical JSON DTO for decrypted payload version 1.
 // It remains private so durable JSON field ownership stays in this package.
 // Its secret fields are zeroable buffers, cleared with zeroSecrets once the
 // wire value is used.
@@ -115,7 +115,7 @@ func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
 // and public key.
 func NewNativeFalconPayload(publicKey, privateKey, recoveryEntropy []byte) *Payload {
 	return &Payload{
-		FormatVersion:   NativePQKeyFormatVersion,
+		FormatVersion:   CurrentKeyFormatVersion,
 		Category:        CategoryNativePQ,
 		KeyType:         nativefalcon.KeyType,
 		PublicKey:       bytes.Clone(publicKey),
@@ -380,8 +380,8 @@ func (p *Payload) validate(verifyRecovery bool) error {
 	if p == nil {
 		return incompatibleKeyFormat("key payload is nil")
 	}
-	if want := formatVersionForCategory(p.Category); p.FormatVersion != want {
-		return incompatibleKeyFormat("format_version %d is not supported for category %q; expected %d", p.FormatVersion, p.Category, want)
+	if p.FormatVersion != CurrentKeyFormatVersion {
+		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected %d", p.FormatVersion, CurrentKeyFormatVersion)
 	}
 	if p.KeyType == "" || p.KeyType != strings.TrimSpace(p.KeyType) {
 		return incompatibleKeyFormat("key_type must be non-empty and canonical")

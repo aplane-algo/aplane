@@ -338,8 +338,7 @@ the on-disk category.
 
 Durable signing metadata includes:
 
-- `format_version`, which follows from the category: 2 for `native_pq`, 1 for
-  every other category,
+- `format_version`, 1 for every category,
 - `category`,
 - `key_type`,
 - public/private key material where applicable,

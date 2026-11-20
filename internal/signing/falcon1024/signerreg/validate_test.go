@@ -44,7 +44,7 @@ func TestNativePQPayloadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.Category != keys.CategoryNativePQ || parsed.FormatVersion != keys.NativePQKeyFormatVersion {
+	if parsed.Category != keys.CategoryNativePQ || parsed.FormatVersion != keys.CurrentKeyFormatVersion {
 		t.Fatalf("parsed native PQ payload is category %q, format %d", parsed.Category, parsed.FormatVersion)
 	}
 	_, address, err := keys.NativePQAddress(nativefalcon.KeyType, parsed.PublicKey)
@@ -98,16 +98,16 @@ func TestNativeRecoveryPayloadRoundTripAndValidation(t *testing.T) {
 		trim   int
 		want   string
 	}{
-		{"format 1", 1, 32, `incompatible key file format: format_version 1 is not supported for category "native_pq"; expected 2; restore or regenerate the key file using the current key schema`},
-		{"short entropy", 2, 31, "incompatible key file format: native Falcon recovery_entropy length 31 invalid (expected 32 bytes); restore or regenerate the key file using the current key schema"},
-		{"no entropy", 2, 0, "incompatible key file format: native Falcon recovery_entropy length 0 invalid (expected 32 bytes); restore or regenerate the key file using the current key schema"},
+		{"format 2", 2, 32, "incompatible key file format: format_version 2 is not supported by this runtime; expected 1; restore or regenerate the key file using the current key schema"},
+		{"short entropy", 1, 31, "incompatible key file format: native Falcon recovery_entropy length 31 invalid (expected 32 bytes); restore or regenerate the key file using the current key schema"},
+		{"no entropy", 1, 0, "incompatible key file format: native Falcon recovery_entropy length 0 invalid (expected 32 bytes); restore or regenerate the key file using the current key schema"},
 	} {
 		parsed.FormatVersion, parsed.RecoveryEntropy = tc.format, entropy[:tc.trim]
 		if err := parsed.Validate(); err == nil || err.Error() != tc.want {
 			t.Fatalf("%s: Validate() error = %v, want %q", tc.name, err, tc.want)
 		}
 	}
-	parsed.FormatVersion, parsed.RecoveryEntropy = keys.NativePQKeyFormatVersion, entropy
+	parsed.FormatVersion, parsed.RecoveryEntropy = keys.CurrentKeyFormatVersion, entropy
 	secret := payload.RecoveryEntropy
 	payload.ZeroSecrets()
 	if !bytes.Equal(secret, make([]byte, len(secret))) {

@@ -104,8 +104,9 @@ func NativeFalconKeyJSON(t testing.TB, entropy []byte) (address string, keyJSON 
 
 // PreChangeNativeFalconKeyJSON returns keyJSON, a canonical native Falcon
 // payload, as writers wrote it before key files dropped pq_scheme and
-// pq_address_salt: both fields after the key material. With recovery false
-// it is a format 1 file from before native Falcon kept recovery entropy.
+// pq_address_salt: format_version 2 and both fields after the key material.
+// With recovery false it is a format 1 file from before native Falcon kept
+// recovery entropy.
 func PreChangeNativeFalconKeyJSON(t testing.TB, keyJSON []byte, recovery bool) []byte {
 	t.Helper()
 	var fields struct {
@@ -130,13 +131,11 @@ func PreChangeNativeFalconKeyJSON(t testing.TB, keyJSON []byte, recovery bool) [
 			out = append(out, `  "pq_scheme": "f1",`, fmt.Sprintf(`  "pq_address_salt": %d,`, salt))
 			inserted = true
 		}
-		if !recovery {
-			if strings.HasPrefix(line, `  "recovery_entropy": `) {
-				continue
-			}
-			if line == `  "format_version": 2,` {
-				line = `  "format_version": 1,`
-			}
+		if !recovery && strings.HasPrefix(line, `  "recovery_entropy": `) {
+			continue
+		}
+		if recovery && line == `  "format_version": 1,` {
+			line = `  "format_version": 2,`
 		}
 		out = append(out, line)
 	}

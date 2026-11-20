@@ -158,8 +158,8 @@ transaction signing live below that package and link `github.com/algorand/falcon
 Recovery uses a 25-word Algorand mnemonic encoding 32 bytes of entropy. It is
 not compatible with the BIP-39 seed derivation or key material used by the
 LogicSig key type `aplane.falcon1024.v1`. Every native Falcon credential keeps
-the original entropy inside its encrypted payload (format 2), so local apadmin
-can explicitly export it. The payload stores no scheme or address salt:
+the original entropy inside its encrypted payload, so local apadmin can
+explicitly export it. The payload stores no scheme or address salt:
 `keys.NativePQAddress` derives the salt and address from the public key, and
 the scheme is fixed by the key type.
 
@@ -499,8 +499,7 @@ term envelope and canonical payload codec; category determines the sole valid
 extension. Compatibility is split across:
 
 - `envelope_version` for the encryption envelope
-- `format_version` for the decrypted payload schema, which follows from the
-  category: 2 for native Falcon, 1 for every other category
+- `format_version` for the decrypted payload schema, 1 for every category
 
 LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
 metadata, and parameters rather than reconstructing authorization from a live
