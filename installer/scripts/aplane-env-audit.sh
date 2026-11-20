@@ -524,24 +524,31 @@ for ((i = 0; i < ${#endpoint_aliases[@]}; i++)); do
   info "endpoint ${endpoint_aliases[i]}" "${endpoint_roles[i]:-no role} ${endpoint_urls[i]:-no url}"
 done
 
-# An endpoint on this machine must use the local signer's SSH port.
+# One of the endpoints on this machine must reach this node. The others may
+# reach other nodes installed beside it, each on its own port.
+loopback_endpoints=""
+matching_endpoints=""
 for ((i = 0; i < ${#endpoint_aliases[@]}; i++)); do
   endpoint_url="${endpoint_urls[i]}"
   [ -n "$endpoint_url" ] || continue
   endpoint_ssh_host="$(endpoint_host "$endpoint_url")"
   is_loopback_host "$endpoint_ssh_host" || continue
   endpoint_ssh_port="$(endpoint_port "$endpoint_url")"
-  if [ -n "$signer_ssh_port" ]; then
-    if [ "$signer_ssh_port" = "$endpoint_ssh_port" ]; then
-      pass "SSH port match" "${endpoint_aliases[i]}: $signer_ssh_port"
-    else
-      warn "SSH port mismatch" "${endpoint_aliases[i]}: signer=$signer_ssh_port client=$endpoint_ssh_port"
-    fi
+  loopback_endpoints="$loopback_endpoints ${endpoint_aliases[i]}=$endpoint_ssh_port"
+  if [ "$endpoint_ssh_port" = "$signer_ssh_port" ]; then
+    matching_endpoints="$matching_endpoints ${endpoint_aliases[i]}"
   fi
   if [ "$(uname -s)" = "Darwin" ] && [ "$endpoint_ssh_host" = "localhost" ]; then
     info "macOS localhost" "${endpoint_aliases[i]} uses localhost; current apshell dials IPv4 for localhost"
   fi
 done
+if [ -n "$signer_ssh_port" ] && [ -n "$loopback_endpoints" ]; then
+  if [ -n "$matching_endpoints" ]; then
+    pass "SSH port match" "${matching_endpoints# }: $signer_ssh_port"
+  else
+    warn "SSH port mismatch" "no endpoint on this machine uses signer port $signer_ssh_port:$loopback_endpoints"
+  fi
+fi
 
 section "Runtime State"
 processes="$(print_processes "apsigner" || true)"
