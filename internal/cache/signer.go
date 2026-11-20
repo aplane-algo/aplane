@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -73,9 +74,16 @@ func (cache *SignerCache) AddAddress(address, keyType, authorizationKind string)
 }
 
 // AuthorizationKind returns the authorization kind the signer reported for
-// an address, or "" when it reported none.
-func (cache *SignerCache) AuthorizationKind(address string) string {
-	return cache.AuthorizationKinds[address]
+// an address when it is one of the closed set this client knows, and ""
+// otherwise: the signer reported none (a witness key) or a kind outside the
+// set. The client never derives a kind from the key type.
+func (cache *SignerCache) AuthorizationKind(address string) algorithm.AuthorizationKind {
+	switch kind := algorithm.AuthorizationKind(cache.AuthorizationKinds[address]); kind {
+	case algorithm.AuthorizationEd25519, algorithm.AuthorizationNativePQ, algorithm.AuthorizationLogicSig:
+		return kind
+	default:
+		return ""
+	}
 }
 
 // Count returns the number of addresses in the cache
@@ -289,28 +297,26 @@ func (cache *SignerCache) ValidateLsigArgs(address string, providedArgs map[stri
 	return nil
 }
 
-// IsAccountSignable checks if an account can be signed for with the available keys
-// Returns true if either:
-//   - The account is not rekeyed and we have its key on Signer
-//   - The account is rekeyed to an address whose key we have on Signer
+// SigningAddress returns the address whose key signs for address: a rotating
+// account the signer holds signs with its own key, since its current stage
+// is in no cache; any other account signs with the auth address it is rekeyed
+// to, or with its own when it is not rekeyed.
+func SigningAddress(address string, signerCache *SignerCache, authCache *AuthAddressCache) string {
+	if signerCache != nil && signerCache.IsRotating(address) {
+		return address
+	}
+	return authCache.ResolveEffectiveSigner(address)
+}
+
+// IsAccountSignable is apshell's one rule for calling an account signable:
+// the signer holds the key that signs for it (SigningAddress) and reports an
+// authorization kind for that key this client knows. The signable listings
+// and the display marker all use it, so they agree with the prepare path,
+// which refuses a key without a known kind.
 func IsAccountSignable(address string, signerCache *SignerCache, authCache *AuthAddressCache) bool {
 	if signerCache == nil {
 		return false
 	}
-
-	if signerCache.IsRotating(address) {
-		return true
-	}
-
-	// Get the auth address (who needs to sign for this account)
-	if authCache != nil {
-		authAddr, hasRekey := authCache.GetAuthAddress(address)
-		if hasRekey && authAddr != "" {
-			// Rekeyed - check if we have the auth address's key
-			return signerCache.HasAddress(authAddr)
-		}
-	}
-
-	// No rekey (or no authCache provided) - check if we have the key directly
-	return signerCache.HasAddress(address)
+	key := SigningAddress(address, signerCache, authCache)
+	return signerCache.HasAddress(key) && signerCache.AuthorizationKind(key) != ""
 }

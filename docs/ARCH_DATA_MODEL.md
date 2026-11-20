@@ -727,12 +727,14 @@ are rejected.
   The client takes an address's authorization kind from `authorization_kinds`
   and never derives it from the key type. A key the signer lists with no kind
   (a witness key) or with one outside the closed set is refused on the
-  prepare path (`BuildSigningContext` and `canSignFor`), and is not listed as
-  signable (`signableAddresses()`, `signers()`, `accounts()`'s `isSignable`). A
-  pre-built group reads no kind: JavaScript `sign()`, a transaction file and a
-  plugin's default group (`signAndSubmitGroup`, `checkReadyToSign`),
-  presign-plan managed slots and cosigned contextual positions leave its
-  authorization to the signer, which holds the key and chooses the envelope.
+  prepare path (`BuildSigningContext` and `canSignFor`), and is neither listed
+  nor shown as signable (`signableAddresses()`, `signers()`, `accounts()`'s
+  `isSignable`, the address colour and `@` marker), all by one rule,
+  `cache.IsAccountSignable`. A pre-built group reads no kind: JavaScript
+  `sign()`, a transaction file and a plugin's default group
+  (`signAndSubmitGroup`, `checkReadyToSign`), presign-plan managed slots and
+  cosigned contextual positions leave its authorization to the signer, which
+  holds the key and chooses the envelope.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
   aliases reserve `list`, `delete`, and `remove`; sets reserve `list`, `add`,

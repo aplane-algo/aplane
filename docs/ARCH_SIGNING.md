@@ -1138,7 +1138,9 @@ The same read gives each account's authorizer. It is not shown; it only
 settles whether the review calls the account signable, by the rule apshell's
 account list uses (`cache.IsAccountSignable`): a rotating account the signer
 holds is signable at any stage, and any other account only when the signer
-holds an aplane key for its authorizer. Until the chain is read, or where it
+holds an aplane key for its authorizer. apshell's rule also asks for an
+authorization kind it knows, which every key a signer holds for an
+authorizer has. Until the chain is read, or where it
 can't be, an account the signer holds or the request signs for is signable.
 
 The node is chosen from the genesis hash and checked as the rotating flow's
@@ -2255,7 +2257,7 @@ warning does not establish that no leaf was reused.
   envelope. Witness rows omit it because they are not spending accounts.
   Clients read it rather than derive it from `key_type`. apshell refuses a
   row without a kind it knows on the prepare path (building a transaction,
-  `canSignFor`) and does not list it as signable; a pre-built group
+  `canSignFor`) and neither lists nor shows it as signable; a pre-built group
   (JavaScript `sign()`, a transaction file, a plugin's default group,
   presign-plan managed slots, cosigned contextual positions) reads no kind and
   leaves authorization to the signer.

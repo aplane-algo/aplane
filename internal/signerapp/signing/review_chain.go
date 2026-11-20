@@ -33,9 +33,11 @@ func (s *ApprovalService) reviewChainTimeout() time.Duration {
 
 // addChainState reads each of the review's accounts from the signer's node
 // and adds its balance. The chain's authorizer settles whether the review
-// calls an account signable, by apshell's rule (cache.IsAccountSignable): a
-// rotating account the signer holds is signable at any stage, and any other
-// account only when the signer holds an aplane key for its authorizer. The
+// calls an account signable, by apshell's rule (cache.IsAccountSignable)
+// less its authorization-kind check, which every spending key the signer
+// holds passes: a rotating account the signer holds is signable at any
+// stage, and any other account only when the signer holds an aplane key for
+// its authorizer. The
 // authorizer is not shown. The read runs only once a request is to be put to
 // an operator, after every gate, and what it reads decides nothing. A read
 // that fails or runs past its deadline leaves the review saying why, and the
