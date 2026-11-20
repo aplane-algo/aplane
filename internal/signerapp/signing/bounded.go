@@ -73,7 +73,7 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 }
 
 func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta.Metadata, path boundedPath) (map[string][]byte, *ServiceError) {
-	decoded, err := DecodeHexRuntimeArgs(encoded)
+	decoded, err := decodeHexRuntimeArgs(encoded)
 	if err != nil {
 		return nil, badRequest(err.Error())
 	}

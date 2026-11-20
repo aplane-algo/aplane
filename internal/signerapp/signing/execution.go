@@ -33,9 +33,8 @@ type AuditFailLogger interface {
 	LogSignFailed(authAddress, txnSender, reason string)
 }
 
-type DecodeRuntimeArgsFunc func(lsigArgs map[string]string) (map[string][]byte, error)
-
-func DecodeHexRuntimeArgs(lsigArgs map[string]string) (map[string][]byte, error) {
+// decodeHexRuntimeArgs decodes a request's hex runtime arguments by name.
+func decodeHexRuntimeArgs(lsigArgs map[string]string) (map[string][]byte, error) {
 	if len(lsigArgs) == 0 {
 		return nil, nil
 	}
@@ -51,9 +50,8 @@ func DecodeHexRuntimeArgs(lsigArgs map[string]string) (map[string][]byte, error)
 }
 
 type Executor struct {
-	AuditLog          AuditFailLogger
-	Console           Console
-	DecodeRuntimeArgs DecodeRuntimeArgsFunc
+	AuditLog AuditFailLogger
+	Console  Console
 }
 
 type ExecuteResult struct {
@@ -226,7 +224,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 		return nil, keyType, missingLogicSigSigningMetadata(keyType)
 	}
 
-	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
+	decodedArgs, err := decodeHexRuntimeArgs(lsigArgs)
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
@@ -442,7 +440,7 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 		return e.assembleBoundedLogicSig(txn, authAddr, txnSender, boundedItem, keyMaterial, signatureArgs, keyType)
 	}
 
-	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
+	decodedArgs, err := decodeHexRuntimeArgs(lsigArgs)
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}

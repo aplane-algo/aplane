@@ -82,7 +82,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	resourcePlan, sizingLsigIndices, err := s.Planner.CalculateDummies(snapshot, sizing, originals, sizingItems, map[int]bool{}, sizingForeign, nil, false, false)
+	resourcePlan, sizingLsigIndices, err := calculateLogicSigResources(s.Planner.Console, snapshot, sizing, originals, sizingItems, map[int]bool{}, sizingForeign, nil, false, false)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}

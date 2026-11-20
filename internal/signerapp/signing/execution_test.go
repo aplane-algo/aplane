@@ -355,11 +355,7 @@ func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testi
 func TestExecutorSignGenericLSigRejectsMissingRequiredRuntimeArg(t *testing.T) {
 	keyType := "test-required-runtime-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
@@ -396,11 +392,7 @@ func TestExecutorSignGenericLSigRejectsMissingRequiredRuntimeArg(t *testing.T) {
 func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 	keyType := "test-malformed-runtime-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return nil, fmt.Errorf("arg secret: invalid hex")
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
@@ -429,7 +421,7 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 	if err.Kind != ErrorBadRequest {
 		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
 	}
-	if err.Message != "arg secret: invalid hex" {
+	if err.Message != "invalid hex for arg secret: encoding/hex: invalid byte: U+0078 'x'" {
 		t.Fatalf("error message = %q, want runtime arg decode failure", err.Message)
 	}
 }
@@ -437,11 +429,7 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 func TestExecutorSignGenericLSigRejectsMissingSigningMetadata(t *testing.T) {
 	keyType := "test-generic-missing-signing-metadata-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
@@ -473,11 +461,7 @@ func TestExecutorSignGenericLSigRejectsMissingSigningMetadata(t *testing.T) {
 func TestExecutorSignGenericLSigUsesStoredSigningArgsWithoutProvider(t *testing.T) {
 	keyType := "test-standalone-generic-runtime-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
@@ -514,20 +498,13 @@ func TestExecutorSignGenericLSigUsesStoredSigningArgsWithoutProvider(t *testing.
 func TestExecutorSignGenericLSigOrdersStoredSigningArgsOnSuccess(t *testing.T) {
 	keyType := "test-standalone-generic-runtime-success-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{
-				"first":  {0x01},
-				"second": {0x02},
-			}, nil
-		},
-	}
+	exec := &Executor{}
 
 	signedBytes, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
 		"AUTHADDR",
 		"",
-		map[string]string{"first": "ignored", "second": "ignored"},
+		map[string]string{"first": "01", "second": "02"},
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryGenericLsig,
@@ -559,17 +536,13 @@ func TestExecutorSignGenericLSigIgnoresLiveTemplateMetadata(t *testing.T) {
 		}},
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{"stored": {0x7a}}, nil
-		},
-	}
+	exec := &Executor{}
 
 	signedBytes, gotKeyType, err := exec.signGenericLSig(
 		types.Transaction{},
 		"AUTHADDR",
 		"",
-		map[string]string{"stored": "ignored"},
+		map[string]string{"stored": "7a"},
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryGenericLsig,
@@ -599,11 +572,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 		family:  "test-dsa-required-runtime-base",
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},
@@ -644,11 +613,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 func TestExecutorAssembleDSALogicSigRejectsMissingSigningMetadata(t *testing.T) {
 	keyType := "test-dsa-missing-signing-metadata-v1"
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},
@@ -688,11 +653,7 @@ func TestExecutorAssembleDSALogicSigUsesStoredSigningArgsWithoutComposedProvider
 		family:  "test-standalone-base-dsa",
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},
@@ -738,21 +699,14 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 		family:  "test-standalone-base-dsa-success",
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{
-				"alpha": {0x0a},
-				"beta":  {0x0b},
-			}, nil
-		},
-	}
+	exec := &Executor{}
 	signature := []byte{0x99, 0x88}
 
 	signedBytes, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},
 		"AUTHADDR",
 		"",
-		map[string]string{"alpha": "ignored", "beta": "ignored"},
+		map[string]string{"alpha": "0a", "beta": "0b"},
 		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
@@ -1033,18 +987,14 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 		}},
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{"stored": {0x55}}, nil
-		},
-	}
+	exec := &Executor{}
 	signature := []byte{0x99, 0x88}
 
 	signedBytes, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},
 		"AUTHADDR",
 		"",
-		map[string]string{"stored": "ignored"},
+		map[string]string{"stored": "55"},
 		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
@@ -1078,11 +1028,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.
 		family:  "test-missing-base-composed-dsa",
 	})
 
-	exec := &Executor{
-		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{}, nil
-		},
-	}
+	exec := &Executor{}
 
 	_, gotKeyType, err := exec.assembleDSALogicSig(
 		types.Transaction{},

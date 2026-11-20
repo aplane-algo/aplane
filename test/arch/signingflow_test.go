@@ -139,7 +139,7 @@ func TestFrozenComponentValidatorNeverCanonicalizes(t *testing.T) {
 	}
 	forbidden := map[string]bool{
 		"PlanGroup": true, "planGroupWhileSignable": true,
-		"BuildFinalGroup": true, "CreateDummyTransactions": true,
+		"finalizeGroup": true, "buildFinalGroupWithoutFees": true, "CreateDummyTransactions": true,
 		"ComputeGroupID": true,
 	}
 	ast.Inspect(file, func(node ast.Node) bool {

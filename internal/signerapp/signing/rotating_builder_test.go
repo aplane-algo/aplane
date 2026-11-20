@@ -39,7 +39,7 @@ func previousRotatingGroup(t *testing.T, txn types.Transaction, profile *lsigres
 		t.Fatal(err)
 	}
 	dummies := int(resourcePlan.DummyCount)
-	allTxns, _, _, _, buildErr := buildFinalGroupWithoutFees(nil, []types.Transaction{txn}, dummies, false)
+	allTxns, _, _, buildErr := buildFinalGroupWithoutFees(nil, []types.Transaction{txn}, dummies, false)
 	if buildErr != nil {
 		t.Fatal(buildErr)
 	}

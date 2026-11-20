@@ -86,13 +86,6 @@ type policyAuditLogger interface {
 	LogSignRejected(authAddress, txnSender, reason string)
 }
 
-func (s *Service) PlanGroup(req signerapi.GroupSignRequest) (*PlanResult, *ServiceError) {
-	if s.Planner == nil {
-		return nil, internal("planner not configured")
-	}
-	return s.planGroupWhileSignable(req)
-}
-
 func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupSignRequest, session *keystore.KeySession) (*SignGroupResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()

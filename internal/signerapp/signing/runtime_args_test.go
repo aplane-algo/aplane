@@ -16,12 +16,12 @@ import (
 )
 
 func TestDecodeHexRuntimeArgs(t *testing.T) {
-	decoded, err := DecodeHexRuntimeArgs(map[string]string{
+	decoded, err := decodeHexRuntimeArgs(map[string]string{
 		"recipient": "001122",
 		"secret":    "aabbcc",
 	})
 	if err != nil {
-		t.Fatalf("DecodeHexRuntimeArgs: %v", err)
+		t.Fatalf("decodeHexRuntimeArgs: %v", err)
 	}
 	if got := decoded["recipient"]; !bytes.Equal(got, []byte{0x00, 0x11, 0x22}) {
 		t.Fatalf("recipient = %x, want 001122", got)
@@ -32,25 +32,25 @@ func TestDecodeHexRuntimeArgs(t *testing.T) {
 }
 
 func TestDecodeHexRuntimeArgsEmpty(t *testing.T) {
-	decoded, err := DecodeHexRuntimeArgs(nil)
+	decoded, err := decodeHexRuntimeArgs(nil)
 	if err != nil {
-		t.Fatalf("DecodeHexRuntimeArgs(nil): %v", err)
+		t.Fatalf("decodeHexRuntimeArgs(nil): %v", err)
 	}
 	if decoded != nil {
-		t.Fatalf("DecodeHexRuntimeArgs(nil) = %#v, want nil", decoded)
+		t.Fatalf("decodeHexRuntimeArgs(nil) = %#v, want nil", decoded)
 	}
 
-	decoded, err = DecodeHexRuntimeArgs(map[string]string{})
+	decoded, err = decodeHexRuntimeArgs(map[string]string{})
 	if err != nil {
-		t.Fatalf("DecodeHexRuntimeArgs(empty): %v", err)
+		t.Fatalf("decodeHexRuntimeArgs(empty): %v", err)
 	}
 	if decoded != nil {
-		t.Fatalf("DecodeHexRuntimeArgs(empty) = %#v, want nil", decoded)
+		t.Fatalf("decodeHexRuntimeArgs(empty) = %#v, want nil", decoded)
 	}
 }
 
 func TestDecodeHexRuntimeArgsReportsArgumentName(t *testing.T) {
-	_, err := DecodeHexRuntimeArgs(map[string]string{"recipient": "not-hex"})
+	_, err := decodeHexRuntimeArgs(map[string]string{"recipient": "not-hex"})
 	if err == nil {
 		t.Fatal("expected invalid hex error")
 	}
