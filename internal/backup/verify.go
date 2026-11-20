@@ -5,113 +5,104 @@ package backup
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
-// VerifyResult contains the result of verifying one complete credential.
-type VerifyResult struct {
-	Address  string
-	FileName string
-	Size     int64
-	Valid    bool
-	Error    string
-	KeyType  string
+// VerifiedCredential is one archived credential deep verify admitted.
+type VerifiedCredential struct {
+	Address string
+	KeyType string
+	// HasPolicy reports that the archive carries this key's own policy,
+	// which verified with it.
+	HasPolicy bool
 }
 
+// VerifyReport classifies every credential of an archive as a whole-archive
+// restore into a node of one role would: admitted, or skipped with the
+// reason.
 type VerifyReport struct {
-	BackupDir   string
-	TotalFiles  int
-	ValidFiles  int
-	FailedFiles int
-	Results     []VerifyResult
+	BackupDir string
+	Verified  []VerifiedCredential
+	Skipped   []SkippedEntry
 }
 
-// DeepVerifyBackupBytes authenticates the exact archive inventory and checks
-// that every member is a self-contained, canonical credential supported by
-// the source node role. Verification has no network or template dependency.
+// DeepVerifyBackupBytes authenticates the exact archive inventory and admits
+// every credential, with its archived policy, for the source node role, by
+// the loader restore uses. An archive-level failure is an error; a credential
+// restore would skip is listed in the report. Verification has no network or
+// template dependency.
 func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, error) {
-	manifest, err := OpenSealedManifest(backupDir, passphrase)
+	archive, err := openArchive(backupDir, passphrase)
 	if err != nil {
 		return nil, err
 	}
-	role, err := noderole.ParseRole(manifest.SourceNodeRole)
+	role, err := noderole.ParseRole(archive.manifest.SourceNodeRole)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backup source node role: %w", err)
 	}
-	keysDir := filepath.Join(backupDir, "apb")
-	addresses, err := ScanBackupFiles(keysDir)
+	return archive.verify(backupDir, passphrase, role)
+}
+
+// VerifyImportedBackup admits every credential of an extracted archive for
+// role, the role of the node importing it, by the loader restore uses. It
+// refuses an archive in which nothing would restore on that node, as
+// restore does: a backup of another node role in one line, and any other
+// with a SkipRefusalError.
+func VerifyImportedBackup(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
+	archive, err := openArchive(backupDir, passphrase)
 	if err != nil {
 		return nil, err
 	}
-	if len(addresses) == 0 {
-		return nil, fmt.Errorf("no .apb files found in %s", keysDir)
-	}
-	report := &VerifyReport{BackupDir: backupDir, Results: make([]VerifyResult, 0, len(addresses))}
-	for _, address := range addresses {
-		result := verifyFileDeep(keysDir, address, passphrase, role)
-		report.Results = append(report.Results, result)
-		if result.Valid {
-			report.ValidFiles++
-		} else {
-			report.FailedFiles++
-		}
-	}
-	policyKeys, err := scanBackupPolicies(keysDir)
+	report, err := archive.verify(backupDir, passphrase, role)
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range policyKeys {
-		result := verifyPolicyDeep(keysDir, key, passphrase, role, report.Results)
-		report.Results = append(report.Results, result)
-		if result.Valid {
-			report.ValidFiles++
-		} else {
-			report.FailedFiles++
-		}
+	switch {
+	case len(report.Verified) > 0:
+		return report, nil
+	case archive.manifest.SourceNodeRole != string(role):
+		return nil, &OtherRoleError{Backup: archive.manifest.SourceNodeRole, Node: string(role)}
+	default:
+		return nil, &SkipRefusalError{Skipped: report.Skipped}
 	}
-	report.TotalFiles = len(report.Results)
+}
+
+// verify admits every credential of the archive for role.
+func (a openedArchive) verify(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
+	report := &VerifyReport{BackupDir: backupDir, Verified: make([]VerifiedCredential, 0, len(a.selectors))}
+	var err error
+	report.Skipped, err = a.admitEach(a.selectors, passphrase, role, func(entry CredentialEntry) error {
+		entry.ZeroSecrets()
+		report.Verified = append(report.Verified, VerifiedCredential{
+			Address: entry.Selector(), KeyType: entry.KeyType(), HasPolicy: entry.Policy != nil,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return report, nil
 }
 
-// verifyPolicyDeep checks one archived policy: it must belong to a
-// credential in the archive and decode as that key's v1 document for role.
-func verifyPolicyDeep(keysDir, key string, passphrase []byte, role noderole.Role, credentials []VerifyResult) VerifyResult {
-	result := VerifyResult{Address: key, FileName: backupPoliciesDir + "/" + key + ".apb", KeyType: "policy"}
-	hasCredential := false
-	for _, c := range credentials {
-		if c.Address == key && c.Valid {
-			hasCredential = true
-		}
+// Incomplete fails a report in which a whole-archive restore would skip a
+// credential, naming how many and the first. It is nil when every credential
+// verified.
+func (r *VerifyReport) Incomplete() error {
+	if len(r.Skipped) == 0 {
+		return nil
 	}
-	if !hasCredential {
-		result.Error = "policy has no credential in the archive"
-		return result
-	}
-	if _, err := readBackupPolicy(keysDir, key, passphrase, role); err != nil {
-		result.Error = err.Error()
-		return result
-	}
-	result.Valid = true
-	return result
+	first := r.Skipped[0]
+	return fmt.Errorf("%d of %d credentials would be skipped by restore; first %s: %s",
+		len(r.Skipped), len(r.Skipped)+len(r.Verified), first.Selector, first.Reason)
 }
 
-// verifyFileDeep admits one archived credential with restore's loader, so a
-// credential that verifies is one restore accepts.
-func verifyFileDeep(keysDir, address string, passphrase []byte, role noderole.Role) VerifyResult {
-	result := VerifyResult{Address: address, FileName: address + ".apb"}
-	if info, err := os.Stat(filepath.Join(keysDir, result.FileName)); err == nil {
-		result.Size = info.Size()
-	}
-	entry, err := loadCredentialEntry(keysDir, address, passphrase, role)
-	if err != nil {
-		result.Error = err.Error()
-		return result
-	}
-	entry.ZeroSecrets()
-	result.Valid = true
-	result.KeyType = entry.KeyType()
-	return result
+// OtherRoleError refuses an import of a backup of another node role, none of
+// whose credentials this node can hold.
+type OtherRoleError struct {
+	Backup, Node string
+}
+
+func (e *OtherRoleError) Error() string {
+	return fmt.Sprintf("this is a %s backup; a %s node cannot restore it", e.Backup, e.Node)
 }

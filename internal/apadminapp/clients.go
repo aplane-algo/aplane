@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 const clientsUsage = "usage: apadmin clients <list|approve|reject|import|revoke>"
@@ -151,7 +152,7 @@ func (c Catalog) listClients() error {
 				line += "  from " + req.RemoteAddr
 			}
 			line += "  " + time.Unix(req.RequestedAt, 0).UTC().Format(time.RFC3339)
-			_, _ = fmt.Fprintln(out, line)
+			_, _ = fmt.Fprintln(out, termsafe.Line(line))
 		}
 	}
 	if len(enrolled.Keys) == 0 {
@@ -167,7 +168,7 @@ func (c Catalog) listClients() error {
 		if key.Connected {
 			line += "  (connected)"
 		}
-		_, _ = fmt.Fprintln(out, line)
+		_, _ = fmt.Fprintln(out, termsafe.Line(line))
 	}
 	return nil
 }

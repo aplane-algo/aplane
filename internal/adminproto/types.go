@@ -162,8 +162,13 @@ type CommitBackupImportResult struct {
 	Success bool
 	Backup  BackupInfo
 	Warning string
-	Code    string
-	Error   string
+	// Skipped lists the archived credentials a restore of the imported
+	// archive would skip, with the reason; they do not block the import.
+	Skipped []RestoreSkipped
+	// SkippedOmitted counts the skipped credentials left out of Skipped.
+	SkippedOmitted int
+	Code           string
+	Error          string
 }
 
 type AbortBackupImportRequest struct {
@@ -220,6 +225,7 @@ type ChangeStorePassphraseResult struct {
 	Error                  string
 }
 
+// RestoreKeyInfo is an archived credential the restore would admit.
 type RestoreKeyInfo struct {
 	StageHint      *uint64
 	StageHintRound *uint64
@@ -227,12 +233,6 @@ type RestoreKeyInfo struct {
 	KeyType        string
 	AlreadyExists  bool
 	HasPolicy      bool
-	Error          string
-}
-
-type RestoreError struct {
-	Address string
-	Error   string
 }
 
 type PreviewRestoreRequest struct {
@@ -244,7 +244,8 @@ type RestorePreviewResult struct {
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
-	Errors           []RestoreError
+	Skipped          []RestoreSkipped
+	SkippedOmitted   int
 	Code             string
 	Error            string
 }
@@ -265,6 +266,16 @@ type RestoreConflict struct {
 	KeyType        string
 	ExistingSHA256 string
 	Reason         string
+}
+
+// RestoreSkipped is an archived credential a restore leaves out because the
+// node cannot admit it, with the reason. Its archived policy is left out
+// with it. A result lists at most 64, each with its selector and reason
+// bounded, so it fits one admin frame whatever the archive holds; the
+// result counts the ones it leaves out.
+type RestoreSkipped struct {
+	Selector string
+	Reason   string
 }
 
 // RestoreBackupRequest performs one direct, generational credential restore.
@@ -289,9 +300,19 @@ type RestoreBackupResult struct {
 	// (genstore.RootCommitUncertain), and is deliberately not projected onto
 	// the admin protocol.
 	CommitUncertain bool
-	Restored        []RestoreCredential
-	Identical       []RestoreCredential
-	Conflicts       []RestoreConflict
+	// Restored, Identical and Conflicts each list at most 64, and the
+	// matching omitted count says how many more there are.
+	Restored         []RestoreCredential
+	RestoredOmitted  int
+	Identical        []RestoreCredential
+	IdenticalOmitted int
+	Conflicts        []RestoreConflict
+	ConflictsOmitted int
+	// Skipped lists the archived credentials the restore left out, or, on
+	// a refusal for what it would skip, the ones it would have; it lists at
+	// most 64, and SkippedOmitted counts the rest.
+	Skipped        []RestoreSkipped
+	SkippedOmitted int
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string

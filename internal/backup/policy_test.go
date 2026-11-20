@@ -68,7 +68,7 @@ func TestBackupCarriesCosignerPolicyEncryptedAndVerified(t *testing.T) {
 		t.Fatal("archived policy is stored in plaintext")
 	}
 	report, err := DeepVerifyBackupBytes(extractDir, []byte("export-passphrase"))
-	if err != nil || report.FailedFiles != 0 || report.TotalFiles != 2 {
+	if err != nil || len(report.Verified) != 1 || !report.Verified[0].HasPolicy || len(report.Skipped) != 0 {
 		t.Fatalf("DeepVerifyBackupBytes() = %+v, %v; want the credential and its policy valid", report, err)
 	}
 
@@ -146,22 +146,6 @@ func TestPartialBackupCarriesOnlySelectedPolicies(t *testing.T) {
 	}
 }
 
-func TestDeepVerifyRejectsPolicyWithoutCredential(t *testing.T) {
-	paths, selector, _ := cosignerStoreWithPolicy(t)
-	archivePath := BuildManagedArchivePath(paths, "20260721-010205")
-	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, nil, noderole.RoleCosigner, cryptotest.Keyring(t, testExportMasterKey))); err != nil {
-		t.Fatal(err)
-	}
-	extractDir := t.TempDir()
-	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
-		t.Fatal(err)
-	}
-	result := verifyPolicyDeep(filepath.Join(extractDir, "apb"), selector, []byte("export-passphrase"), noderole.RoleCosigner, nil)
-	if result.Valid || !strings.Contains(result.Error, "no credential") {
-		t.Fatalf("verifyPolicyDeep(without credential) = %+v", result)
-	}
-}
-
 func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 	paths, selector, doc := cosignerStoreWithPolicy(t)
 	archivePath := BuildManagedArchivePath(paths, "20260721-010206")
@@ -176,8 +160,8 @@ func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 
 	dest := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
 	destActive := activePathsForBackupTest(t, dest)
-	if _, err := RestoreForRebuild(destActive, noderole.RoleCosigner, ResolveBackupKeysDir(extractDir), selector, kr, []byte("export-passphrase"), nil); err != nil {
-		t.Fatalf("RestoreForRebuild() error = %v", err)
+	if _, err := rebuildForTest(t, destActive, noderole.RoleCosigner, extractDir, selector, kr, []byte("export-passphrase")); err != nil {
+		t.Fatalf("rebuild error = %v", err)
 	}
 	if stored, ok, err := policy.LoadVerifiedKeyPolicy(destActive, noderole.RoleCosigner, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
 		t.Fatalf("rebuilt policy = %q, %v, %v", stored.Bytes, ok, err)

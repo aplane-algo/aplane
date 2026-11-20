@@ -6,20 +6,25 @@ package backupadmin
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"path/filepath"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
-// RestoreBackup authenticates and validates an archive completely before
-// committing its managed credentials through one generation transaction.
+// RestoreBackup authenticates an archive and admits its selected credentials
+// before committing the admitted ones through one generation transaction. A
+// credential the node cannot admit is skipped and reported, unless the
+// request named it.
 // Destination policy, templates, and key-type generation state are neither
 // read from the archive nor changed by this operation.
 func (s Service) RestoreBackup(
@@ -51,7 +56,7 @@ func (s Service) RestoreBackup(
 
 	run := &restoreRun{
 		s: s, req: req, result: &result, passphrase: passphrase, archivePath: archivePath,
-		wasRecovery: ir.IsRecovery(), hints: make(map[string]backup.RotatingStageHint),
+		wasRecovery: ir.IsRecovery(),
 	}
 	err = s.Deps.WithStoreMutation(run.mutate)
 	if err != nil {
@@ -70,8 +75,8 @@ func (s Service) RestoreBackup(
 	limiter.RecordSuccess(archivePath)
 	result.Success = true
 	s.Deps.Logf(
-		"restored %d credential(s) from archive %s as generation %s",
-		len(result.Restored), result.ArchiveSHA256, result.GenerationID,
+		"restored %d credential(s) from archive %s as generation %s; skipped %d",
+		len(result.Restored)+result.RestoredOmitted, result.ArchiveSHA256, result.GenerationID, len(result.Skipped)+result.SkippedOmitted,
 	)
 	return result
 }
@@ -178,15 +183,16 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	)
 	if loadErr != nil {
 		r.archiveAuthenticated = backup.ArchiveAuthenticated(loadErr)
+		var refusal *backup.SkipRefusalError
+		if errors.As(loadErr, &refusal) {
+			result.Skipped, result.SkippedOmitted = projectSkippedEntries(refusal.Skipped)
+		}
 		return loadErr
 	}
 	r.archiveAuthenticated = true
 	defer set.ZeroSecrets()
-	for _, entry := range set.Entries {
-		if entry.StageHint != nil {
-			r.hints[entry.Selector()] = *entry.StageHint
-		}
-	}
+	result.Skipped, result.SkippedOmitted = projectSkippedEntries(set.Skipped)
+	r.hints = set.StageHints()
 	result.ArchiveSHA256 = set.ArchiveSHA256
 
 	current, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
@@ -202,8 +208,8 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	if classifyErr != nil {
 		return classifyErr
 	}
-	result.Identical = projectCredentialEntries(classification.Identical)
-	result.Conflicts = projectRestoreConflicts(classification.Conflicts)
+	result.Identical, result.IdenticalOmitted = projectCredentialEntries(classification.Identical)
+	result.Conflicts, result.ConflictsOmitted = projectRestoreConflicts(classification.Conflicts)
 	if len(classification.Conflicts) > 0 && !req.ReplaceExisting {
 		return restoreFailure(
 			protocol.ResultCodeRestoreConflict,
@@ -221,18 +227,76 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 		for i := range classification.Pending {
 			repaired[classification.Pending[i].Selector()] = true
 		}
-		if validateErr := storevalidate.RecoveryDestination(storevalidate.Options{
+		opts := storevalidate.Options{
 			Paths: s.Deps.KeyPaths(), Candidate: current, Keyring: masterKey,
 			ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-		}, repaired); validateErr != nil {
-			return restoreFailure(
-				protocol.ResultCodeRecoveryBlocked,
-				"recovery restore refused because destination authority outside the authenticated credential selection is damaged: %v",
-				validateErr,
-			)
+		}
+		if validateErr := storevalidate.RecoveryDestination(opts, repaired); validateErr != nil {
+			return recoveryRefusal(opts, repaired, set.Skipped, validateErr)
 		}
 	}
 	return r.commit(current, set, classification, masterKey)
+}
+
+// recoveryRefusal explains a recovery restore refused for destination damage
+// outside what it repairs. When the damage lies only in credentials the
+// backup holds but skips, it names the damaged ones with the skip reason: a
+// skipped copy repairs nothing. It keeps the validation's own error. It only
+// words the refusal, which is already decided, so the checks it runs never
+// let a restore through.
+func recoveryRefusal(
+	opts storevalidate.Options,
+	repaired map[string]bool,
+	skipped []backup.SkippedEntry,
+	validateErr error,
+) error {
+	if damaged := damagedSkippedRepairs(opts, repaired, skipped); len(damaged) > 0 {
+		more := ""
+		if len(damaged) > 1 {
+			more = fmt.Sprintf(" (and %d more)", len(damaged)-1)
+		}
+		return restoreFailure(
+			protocol.ResultCodeRecoveryBlocked,
+			"recovery restore refused: damaged destination credential %s%s is in the backup, but its copy there is skipped (%s): %v",
+			damaged[0].Quoted().Selector, more, damaged[0].Quoted().Reason, validateErr,
+		)
+	}
+	return restoreFailure(
+		protocol.ResultCodeRecoveryBlocked,
+		"recovery restore refused because destination authority outside the authenticated credential selection is damaged: %v",
+		validateErr,
+	)
+}
+
+// damagedSkippedRepairs returns the skipped credentials whose destination
+// file is damaged, when the destination's damage lies in them alone, and
+// nothing otherwise.
+func damagedSkippedRepairs(opts storevalidate.Options, repaired map[string]bool, skipped []backup.SkippedEntry) []backup.SkippedEntry {
+	bySelector := make(map[string]backup.SkippedEntry, len(skipped))
+	for _, entry := range skipped {
+		bySelector[entry.Selector] = entry
+	}
+	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, repaired)
+	if err != nil {
+		return nil
+	}
+	widened := maps.Clone(repaired)
+	var damaged []backup.SkippedEntry
+	for _, warning := range scan.Warnings {
+		selector, _, ok := keys.ParseManagedCredentialFilename(filepath.Base(warning.KeyFile))
+		entry, held := bySelector[selector]
+		if !ok || !held {
+			return nil
+		}
+		if !widened[selector] {
+			widened[selector] = true
+			damaged = append(damaged, entry)
+		}
+	}
+	if len(damaged) == 0 || storevalidate.RecoveryDestination(opts, widened) != nil {
+		return nil
+	}
+	return damaged
 }
 
 // commit mints the generation that holds the restored entries. A mint that
@@ -308,7 +372,7 @@ func (r *restoreRun) commit(
 	}
 	result.GenerationID = generationID
 	r.committedGeneration = generationID
-	result.Restored = projectCredentialEntries(classification.Pending)
+	result.Restored, result.RestoredOmitted = projectCredentialEntries(classification.Pending)
 	for _, entry := range classification.Policies {
 		result.PoliciesRestored = append(result.PoliciesRestored, entry.Selector())
 	}
@@ -316,28 +380,65 @@ func (r *restoreRun) commit(
 	return nil
 }
 
-func projectCredentialEntries(entries []backup.CredentialEntry) []adminproto.RestoreCredential {
-	result := make([]adminproto.RestoreCredential, len(entries))
-	for i := range entries {
+// projectCredentialEntries lists the first credentials for a result and
+// returns how many it left out.
+func projectCredentialEntries(entries []backup.CredentialEntry) ([]adminproto.RestoreCredential, int) {
+	listed, omitted := reported(entries)
+	result := make([]adminproto.RestoreCredential, len(listed))
+	for i := range listed {
 		result[i] = adminproto.RestoreCredential{
-			Selector: entries[i].Selector(),
-			Category: entries[i].Category(),
-			KeyType:  entries[i].KeyType(),
+			Selector: listed[i].Selector(),
+			Category: listed[i].Category(),
+			KeyType:  listed[i].KeyType(),
 		}
 	}
-	return result
+	return result, omitted
 }
 
-func projectRestoreConflicts(conflicts []backup.RestoreConflict) []adminproto.RestoreConflict {
-	result := make([]adminproto.RestoreConflict, len(conflicts))
-	for i := range conflicts {
+// A result lists at most maxReportedEntries skipped, restored, identical or
+// conflicting credentials, and counts the rest, so a reply fits one admin
+// frame whatever the archive holds: a restore that committed must never read
+// as a transport failure. The audit record bounds its lists the same way.
+const maxReportedEntries = 64
+
+// reported returns the first maxReportedEntries items and how many it left
+// out.
+func reported[T any](items []T) ([]T, int) {
+	return items[:min(len(items), maxReportedEntries)], max(len(items)-maxReportedEntries, 0)
+}
+
+// projectSkippedEntries lists the first skipped credentials for a result,
+// each as a reply quotes it, and returns how many it left out.
+func projectSkippedEntries(skipped []backup.SkippedEntry) ([]adminproto.RestoreSkipped, int) {
+	listed, omitted := reported(skipped)
+	if len(listed) == 0 {
+		return nil, omitted
+	}
+	result := make([]adminproto.RestoreSkipped, len(listed))
+	for i, entry := range listed {
+		quoted := entry.Quoted()
+		result[i] = adminproto.RestoreSkipped{Selector: quoted.Selector, Reason: quoted.Reason}
+	}
+	return result, omitted
+}
+
+// maxConflictReasonBytes bounds a conflict's reason, which can quote a
+// destination read error.
+const maxConflictReasonBytes = 1024
+
+// projectRestoreConflicts lists the first conflicts for a result and returns
+// how many it left out.
+func projectRestoreConflicts(conflicts []backup.RestoreConflict) ([]adminproto.RestoreConflict, int) {
+	listed, omitted := reported(conflicts)
+	result := make([]adminproto.RestoreConflict, len(listed))
+	for i := range listed {
 		result[i] = adminproto.RestoreConflict{
-			Selector:       conflicts[i].Selector,
-			Category:       conflicts[i].Category,
-			KeyType:        conflicts[i].KeyType,
-			ExistingSHA256: conflicts[i].ExistingSHA256,
-			Reason:         conflicts[i].Reason,
+			Selector:       listed[i].Selector,
+			Category:       listed[i].Category,
+			KeyType:        listed[i].KeyType,
+			ExistingSHA256: listed[i].ExistingSHA256,
+			Reason:         backup.BoundText(listed[i].Reason, maxConflictReasonBytes),
 		}
 	}
-	return result
+	return result, omitted
 }

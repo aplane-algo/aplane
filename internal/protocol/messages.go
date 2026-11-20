@@ -419,8 +419,12 @@ type CommitBackupImportResultMessage struct {
 	Success bool       `json:"success"`
 	Backup  BackupInfo `json:"backup,omitempty"`
 	Warning string     `json:"warning,omitempty"`
-	Code    string     `json:"code,omitempty"`
-	Error   string     `json:"error,omitempty"`
+	// Skipped lists the archived credentials a restore of the imported
+	// archive would skip, with the reason; they do not block the import.
+	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
+	Code           string           `json:"code,omitempty"`
+	Error          string           `json:"error,omitempty"`
 }
 
 type AbortBackupImportMessage struct {
@@ -458,6 +462,7 @@ type PreviewRestoreMessage struct {
 	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
 }
 
+// RestoreKeyInfo is an archived credential the restore would admit.
 type RestoreKeyInfo struct {
 	StageHint      *uint64 `json:"stage_hint,omitempty"`
 	StageHintRound *uint64 `json:"stage_hint_round,omitempty"`
@@ -465,12 +470,15 @@ type RestoreKeyInfo struct {
 	KeyType        string  `json:"key_type,omitempty"`
 	AlreadyExists  bool    `json:"already_exists,omitempty"`
 	HasPolicy      bool    `json:"has_policy,omitempty"`
-	Error          string  `json:"error,omitempty"`
 }
 
-type RestoreError struct {
-	Address string `json:"address,omitempty"`
-	Error   string `json:"error"`
+// RestoreSkipped is an archived credential the restore skips because the
+// node cannot admit it, with the reason; its archived policy is skipped
+// with it. A message lists at most 64, with selector and reason bounded,
+// and counts the rest in skipped_omitted.
+type RestoreSkipped struct {
+	Selector string `json:"selector"`
+	Reason   string `json:"reason"`
 }
 
 type RestorePreviewMessage struct {
@@ -479,7 +487,8 @@ type RestorePreviewMessage struct {
 	// ArchiveCreatedAt is the creation time from the authenticated manifest.
 	ArchiveCreatedAt int64            `json:"archive_created_at,omitempty"`
 	Keys             []RestoreKeyInfo `json:"keys,omitempty"`
-	Errors           []RestoreError   `json:"errors,omitempty"`
+	Skipped          []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted   int              `json:"skipped_omitted,omitempty"`
 	Code             string           `json:"code,omitempty"`
 	Error            string           `json:"error,omitempty"`
 }
@@ -510,13 +519,22 @@ type RestoreBackupMessage struct {
 
 type RestoreBackupResultMessage struct {
 	BaseMessage
-	Success       bool                `json:"success"`
-	OperationID   string              `json:"operation_id,omitempty"`
-	ArchiveSHA256 string              `json:"archive_sha256,omitempty"`
-	GenerationID  string              `json:"generation_id,omitempty"`
-	Restored      []RestoreCredential `json:"restored,omitempty"`
-	Identical     []RestoreCredential `json:"identical,omitempty"`
-	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
+	Success       bool   `json:"success"`
+	OperationID   string `json:"operation_id,omitempty"`
+	ArchiveSHA256 string `json:"archive_sha256,omitempty"`
+	GenerationID  string `json:"generation_id,omitempty"`
+	// Restored, Identical and Conflicts each list at most 64, and the
+	// matching omitted count says how many more there are.
+	Restored         []RestoreCredential `json:"restored,omitempty"`
+	RestoredOmitted  int                 `json:"restored_omitted,omitempty"`
+	Identical        []RestoreCredential `json:"identical,omitempty"`
+	IdenticalOmitted int                 `json:"identical_omitted,omitempty"`
+	Conflicts        []RestoreConflict   `json:"conflicts,omitempty"`
+	ConflictsOmitted int                 `json:"conflicts_omitted,omitempty"`
+	// Skipped lists the archived credentials the restore left out, or, on a
+	// refusal for what it would skip, the ones it would have.
+	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string `json:"policies_restored,omitempty"`

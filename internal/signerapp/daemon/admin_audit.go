@@ -135,9 +135,9 @@ func (s signerAdminServices) LogBackupCreatedContext(ctx adminserver.SessionCont
 	}
 }
 
-func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, fileName string, size int64) {
+func (s signerAdminServices) LogBackupImportedContext(ctx adminserver.SessionContext, result adminproto.CommitBackupImportResult) {
 	if audit := s.signer.auditLog; audit != nil {
-		audit.LogBackupImportedContext(ctx, fileName, size)
+		audit.LogBackupImportedContext(ctx, result)
 	}
 }
 
@@ -153,9 +153,9 @@ func (s signerAdminServices) LogBackupFailedContext(ctx adminserver.SessionConte
 	}
 }
 
-func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, archivePath string, keyCount int) {
+func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, result adminproto.RestorePreviewResult) {
 	if audit := s.signer.auditLog; audit != nil {
-		audit.LogBackupRestorePreviewedContext(ctx, archivePath, keyCount)
+		audit.LogBackupRestorePreviewedContext(ctx, result)
 	}
 }
 

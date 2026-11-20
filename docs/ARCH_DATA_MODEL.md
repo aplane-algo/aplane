@@ -1089,15 +1089,18 @@ document, encrypted under the export passphrase), and `manifest.sealed`, the
 archive's authenticated description, carrying the member inventory and source
 node role. Opening an archive
 verifies every member against that inventory. The manifest role is a rebuild
-default; an explicit `apstore rebuild --role` overrides that default. Credential
-classes must be compatible with the chosen destination role.
+default; an explicit `apstore rebuild --role` overrides that default. A
+credential whose class the chosen destination role forbids is skipped.
 `.apb` is the cryptographic backup unit; the tarball is packaging.
 
 Live restore is generation-transaction oriented:
 
-- preview decrypts and reports without mutation,
-- direct restore validates the complete selected set and classifies
-  canonical-plaintext destination conflicts before any write,
+- preview decrypts and reports without mutation: the credentials a restore
+  would admit and the ones it would skip, with the reason,
+- direct restore admits each selected credential, skipping and reporting one
+  the node cannot admit (refusing instead when the request named it or
+  nothing is left), and classifies canonical-plaintext destination conflicts
+  before any write,
 - one generation mint commits credential changes behind a single durable
   `store-root.enc` replacement, then reloads,
 - an uncommitted attempt leaves the prior generation active; a commit with
@@ -1478,7 +1481,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Backup archive | authoritative packaged backup | `backups/default/*.tar.gz` | archive metadata and restore source | `internal/backup` | Tarball is packaging; `.apb` is cryptographic unit. |
 | `.apb` file | encrypted backup payload | standalone encryption envelope | one canonical managed credential (`apb/`) or one per-key policy document (`policies/`) | `internal/backup` | Envelope and payload versions checked; internal bundle wrappers and unsupported versions reject. |
-| Restore preview | request-scoped runtime model | archive plus export passphrase | credential identities, destination presence, and errors | `internal/backup`, `internal/signerapp/backupadmin` | No mutation during preview. |
+| Restore preview | request-scoped runtime model | archive plus export passphrase | admitted credential identities with destination presence, and skipped credentials with the reason | `internal/backup`, `internal/signerapp/backupadmin` | No mutation during preview. |
 | Direct restore set | request-scoped secret model | authenticated archive credentials in memory | one staged generation transaction | `internal/backup`, `internal/signerapp/backupadmin` | Complete validation precedes any write; secrets are zeroed after use. |
 
 ### Envelopes And Public Handoff Files

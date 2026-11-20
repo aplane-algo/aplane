@@ -6,6 +6,7 @@ package backup
 import (
 	"encoding/hex"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -75,9 +76,14 @@ func TestRotatingHintArchiveRestoreAndRebuild(t *testing.T) {
 	if len(set.Entries) != 1 || set.Entries[0].StageHint == nil || set.Entries[0].StageHint.Stage != 50000 {
 		t.Fatal("restore lost candidate")
 	}
-	hints, err := LoadRebuildHints(root, nil, req.ExportPassphrase)
-	if err != nil || len(hints) != 1 {
-		t.Fatalf("rebuild hints: %v %+v", err, hints)
+	rebuild, err := LoadRebuildSet(root, nil, req.ExportPassphrase, noderole.RoleSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rebuild.ZeroSecrets()
+	hints := rebuild.StageHints()
+	if len(hints) != 1 || !reflect.DeepEqual(hints, set.StageHints()) {
+		t.Fatalf("rebuild hints = %+v, want the restore's %+v", hints, set.StageHints())
 	}
 	tables := stagetable.NewStore(storepaths.NewPaths(t.TempDir()))
 	PublishRotatingHints(tables, hints, t.Logf)

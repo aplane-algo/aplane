@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/transport"
 	"golang.org/x/term"
 )
@@ -108,26 +109,26 @@ func (p *adminBatchPrompt) confirm(message string) bool {
 func runCatalogCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
 	mode, err := apadminapp.CatalogAuthMode(command, args)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 2
 	}
 
 	prompt := newAdminBatchPrompt(streams.stdin, streams.stderr)
 	passphrase, err := catalogPassphrase(command, args, prompt, streams.stderr)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	defer crypto.ZeroBytes(passphrase)
 
 	session, err := selectAdminTransport(globals)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	client, err := apadminapp.Open(session, passphrase, mode)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	defer client.Close()
@@ -138,7 +139,7 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 		Confirm: prompt.confirm,
 	}).Run(command, args)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return adminBatchExitCode(err)
 	}
 	return 0
@@ -162,7 +163,7 @@ func catalogPassphrase(command string, args []string, prompt *adminBatchPrompt, 
 func runStoreCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
 	mode, err := apadminapp.StoreAuthMode(command, args)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 2
 	}
 	prompt := newAdminBatchPrompt(streams.stdin, streams.stderr)
@@ -188,7 +189,7 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 	if err != nil {
 		crypto.ZeroBytes(current)
 		crypto.ZeroBytes(next)
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	defer crypto.ZeroBytes(current)
@@ -196,12 +197,12 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 
 	session, err := selectAdminTransport(globals)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	client, err := apadminapp.Open(session, current, mode)
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	defer client.Close()
@@ -226,7 +227,7 @@ func runStoreCommand(command string, args []string, globals adminBatchGlobalOpti
 		err = store.ChangePassphrase(current, next)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
+		printBatchError(streams.stderr, err)
 		return adminBatchExitCode(err)
 	}
 	return 0
@@ -278,4 +279,11 @@ func resolveIPCPath(globals adminBatchGlobalOptions) (dataDir, ipcPath string, e
 		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
 	})
 	return dataDir, ipcPath, err
+}
+
+// printBatchError prints a batch command's error on one line. Its text can
+// carry what the daemon sent, such as an archive's entry names, so terminal
+// controls and line breaks in it are shown escaped rather than acted on.
+func printBatchError(w io.Writer, err error) {
+	_, _ = fmt.Fprintf(w, "apadmin: %s\n", termsafe.Line(err.Error()))
 }

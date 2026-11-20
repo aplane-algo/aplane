@@ -234,21 +234,23 @@ type restoreState struct {
 	passphrase          []byte
 	passphraseError     string
 	previewing          bool
-	previewKeys         []RestoreKeyInfo
-	previewErrors       []RestoreError
+	previewKeys         []RestoreKeyInfo // the keys the restore would admit
+	previewSkipped      []RestoreSkipped // the keys it skips, listed after them; selectedKey indexes both
+	previewSkipOmitted  int              // the skipped keys the preview counted but did not list
 	selected            map[string]bool
 	selectedKey         int
 	previewScrollOffset int
 	previewError        string
 	// previewFocus selects the key list (restoreFocusList) or the Restore
 	// button (restoreFocusAction) on the preview screen.
-	previewFocus        int
-	replaceExisting     bool
-	replaceConflicts    []RestoreConflict
-	returnToRecovery    bool
-	displaySelectedKey  int
-	displayScrollOffset int
-	result              RestoreDisplayResult
+	previewFocus            int
+	replaceExisting         bool
+	replaceConflicts        []RestoreConflict
+	replaceConflictsOmitted int // the conflicts the refusal counted but did not list
+	returnToRecovery        bool
+	displaySelectedKey      int
+	displayScrollOffset     int
+	result                  RestoreDisplayResult
 
 	recoveryError string
 	// progressLabel names the operation ViewRestoring is waiting on.
@@ -817,7 +819,8 @@ type RestorePreviewMsg struct {
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
-	Errors           []RestoreError
+	Skipped          []RestoreSkipped
+	SkippedOmitted   int
 	Error            string
 }
 
@@ -826,8 +829,14 @@ type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
 	Activated   []RestoreKeyInfo
-	KeyCount    int
-	Error       string
+	// ActivatedOmitted counts the restored keys the result did not list.
+	ActivatedOmitted int
+	// Skipped lists the archived keys the node cannot admit, which were
+	// never restorable; SkippedOmitted counts those not listed.
+	Skipped        []RestoreSkipped
+	SkippedOmitted int
+	KeyCount       int
+	Error          string
 }
 
 type RestoreBackupResultMsg struct {
