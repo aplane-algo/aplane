@@ -80,6 +80,7 @@ func DiffPolicyV1(current, next *PolicyV1, label AssetLabel) []PolicyChange {
 	d.addresses("/transfer_policy/blocked_destinations", current.BlockedDestinations, next.BlockedDestinations, PolicyChangeTightened)
 	d.routes(current.Routes, next.Routes)
 	d.rekeyRules(current.RekeyPolicy, next.RekeyPolicy)
+	d.externalChecks(current, next)
 	return d.sorted()
 }
 

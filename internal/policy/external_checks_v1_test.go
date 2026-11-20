@@ -340,3 +340,129 @@ func TestExternalChecksCompile(t *testing.T) {
 		t.Fatalf("rule ID = %q", got)
 	}
 }
+
+func externalAdvisories(t *testing.T, change func(doc map[string]any)) []ConfigAdvisory {
+	t.Helper()
+	raw := externalFixture(t)
+	if change != nil {
+		change(raw)
+	}
+	doc, err := decodeExternalDoc(t, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []ConfigAdvisory
+	for _, a := range doc.Advisories() {
+		if strings.HasPrefix(a.RuleID, "external_check:") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func TestExternalCheckAdvisories(t *testing.T) {
+	// The fixture: one http source, and nothing else worth a second look.
+	got := externalAdvisories(t, nil)
+	if len(got) != 1 || got[0].RuleID != ConfigAdvisoryExternalPlainHTTP || got[0].Pointer != "/external_sources/ops/base_url" {
+		t.Fatalf("fixture advisories = %+v, want the plain http source only", got)
+	}
+	for _, tt := range []struct {
+		name    string
+		change  func(doc map[string]any)
+		ruleID  string
+		pointer string
+		msg     string
+	}{
+		{"amount on every kind", func(d map[string]any) { delete(externalCheckAt(d, 2), "movement_kinds") },
+			ConfigAdvisoryExternalFactAlwaysAbsent, "/external_checks/2", "pay_close and asset_close"},
+		{"amount on one close kind", func(d map[string]any) { externalCheckAt(d, 2)["movement_kinds"] = []any{"pay", "asset_close"} },
+			ConfigAdvisoryExternalFactAlwaysAbsent, "/external_checks/2", "every asset_close it sees"},
+		{"asset_source off a clawback", func(d map[string]any) { externalCheckAt(d, 1)["path"] = "/v2/addresses/{asset_source}" },
+			ConfigAdvisoryExternalFactAlwaysAbsent, "/external_checks/1", "every pay, axfer it sees"},
+		{"rekey_to", func(d map[string]any) {
+			check := externalCheckAt(d, 0)
+			check["scope"] = "transaction"
+			check["path"] = "/handover/{rekey_to}"
+		}, ConfigAdvisoryExternalFactAlwaysAbsent, "/external_checks/0", "does not rekey"},
+		{"network no route covers", func(d map[string]any) {
+			route := d["transfer_policy"].(map[string]any)["routes"].([]any)[0].(map[string]any)
+			route["networks"] = []any{"testnet"}
+		}, ConfigAdvisoryExternalNetworkWithoutRoute, "/external_checks/1/networks/0", "no route covers"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var found bool
+			for _, a := range externalAdvisories(t, tt.change) {
+				if a.RuleID == tt.ruleID && a.Pointer == tt.pointer && strings.Contains(a.Message, tt.msg) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("no advisory %s at %s containing %q in %+v", tt.ruleID, tt.pointer, tt.msg, externalAdvisories(t, tt.change))
+			}
+		})
+	}
+	// A clawback-only check may use asset_source.
+	clean := externalAdvisories(t, func(d map[string]any) {
+		check := externalCheckAt(d, 1)
+		check["path"] = "/v2/addresses/{asset_source}"
+		check["movement_kinds"] = []any{"clawback"}
+	})
+	for _, a := range clean {
+		if a.RuleID == ConfigAdvisoryExternalFactAlwaysAbsent {
+			t.Fatalf("clawback-only check got %+v", a)
+		}
+	}
+}
+
+func TestExternalChecksDiff(t *testing.T) {
+	decode := func(change func(doc map[string]any)) *PolicyV1 {
+		raw := externalFixture(t)
+		if change != nil {
+			change(raw)
+		}
+		doc, err := decodeExternalDoc(t, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	base := decode(nil)
+	if changes := DiffPolicyV1(base, decode(nil), nil); len(changes) != 0 {
+		t.Fatalf("diff of a document with itself = %+v", changes)
+	}
+	without := decode(func(d map[string]any) {
+		delete(d, "external_sources")
+		delete(d, "external_checks")
+	})
+	want := func(changes []PolicyChange, path string, effect PolicyChangeEffect, summary string) {
+		t.Helper()
+		for _, c := range changes {
+			if c.Path == path && c.Effect == effect && strings.Contains(c.Summary, summary) {
+				return
+			}
+		}
+		t.Fatalf("no %s change at %s containing %q in %+v", effect, path, summary, changes)
+	}
+	added := DiffPolicyV1(without, base, nil)
+	want(added, "/external_checks/ops-switch", PolicyChangeTightened, "check added")
+	want(added, "/external_sources/ops", PolicyChangeNeutral, "http://127.0.0.1:8650")
+	removed := DiffPolicyV1(base, without, nil)
+	want(removed, "/external_checks/screen-destination", PolicyChangeLoosened, "check removed")
+
+	changed := DiffPolicyV1(base, decode(func(d map[string]any) {
+		externalRuleAt(d, 1, 1)["number"] = "50"
+		externalCheckAt(d, 1)["networks"] = []any{"*"}
+		screening := externalSourceNamed(d, "screening")
+		screening["base_url"] = "https://screen2.example.com/api"
+		delete(screening, "token")
+		externalSourceNamed(d, "treasury")["tls_spki_sha256"] = []any{
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+	}), nil)
+	want(changed, "/external_checks/screen-destination", PolicyChangeNeutral, "networks, require")
+	want(changed, "/external_sources/screening/base_url", PolicyChangeNeutral, "screen2")
+	want(changed, "/external_sources/screening/token", PolicyChangeNeutral, "token in Authorization → no token")
+	want(changed, "/external_sources/treasury/tls_spki_sha256", PolicyChangeNeutral, "1 pinned key → 2 pinned keys")
+	if len(changed) != 4 {
+		t.Fatalf("changed = %+v, want 4 changes", changed)
+	}
+}
