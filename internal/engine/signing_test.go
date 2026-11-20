@@ -75,7 +75,7 @@ func TestBuildSigningContext_RekeyedAccount_CacheHit(t *testing.T) {
 
 	eng := setupEngineWithMockAlgod(t, transport)
 	// Ensure auth addr is in signer cache
-	eng.SignerCache.AddAddress(authAddr, "ed25519")
+	eng.SignerCache.AddAddress(authAddr, "ed25519", "ed25519")
 
 	ctx, err := eng.BuildSigningContext(context.Background(), sender)
 	if err != nil {
@@ -136,29 +136,12 @@ func TestBuildSigningContext_RekeyedNotSignable(t *testing.T) {
 	}
 }
 
-func TestBuildSigningContext_DefaultKeyType(t *testing.T) {
-	addr := testAddr(1)
-	transport := newAccountMockTransport(t)
-	transport.addAccount(addr, 1_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-	// Set key type to empty string
-	eng.SignerCache.AddAddress(addr, "")
-
-	ctx, err := eng.BuildSigningContext(context.Background(), addr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ctx.KeyType != "ed25519" {
-		t.Errorf("KeyType = %q, want %q (default)", ctx.KeyType, "ed25519")
-	}
-}
-
 func TestBuildSigningContext_FalconKeyType(t *testing.T) {
 	addr := testAddr(1)
 	transport := newAccountMockTransport(t)
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.AddAddress(addr, "aplane.falcon1024.v1")
+	eng.SignerCache.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
 
 	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {
@@ -242,7 +225,7 @@ func TestBuildSigningContext_StaleAuthCacheRefreshed(t *testing.T) {
 			})
 			eng := setupEngineWithMockAlgod(t, transport)
 			eng.SignerCache = cache.NewSignerCache()
-			eng.SignerCache.AddAddress(tc.held, "ed25519")
+			eng.SignerCache.AddAddress(tc.held, "ed25519", "ed25519")
 			eng.AuthCache.AuthAddresses[sender] = tc.cached
 
 			ctx, err := eng.BuildSigningContext(context.Background(), sender)

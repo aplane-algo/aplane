@@ -51,25 +51,19 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 		keyType := keyTypesCopy[address]
 		summary := signingSummary[address]
 		category := summary.Category
-		isGeneric := keys.IsGenericKey(category)
-		isComponent := keys.IsWitnessKey(category)
 
 		keyInfo := signerapi.KeyInfo{
 			Address:           address,
 			PublicKeyHex:      publicKeyHexMap[address],
 			KeyType:           keyType,
 			AuthorizationKind: authorizationKindForCategory(category),
-			IsGenericLsig:     isGeneric,
+			IsGenericLsig:     keys.IsGenericKey(category),
+			IsWitnessKey:      keys.IsWitnessKey(category),
 			// The value the aplane key recorded at creation, not the key
 			// type's current declaration (that is /keytypes').
 			ValidRekeyTarget: summary.ValidRekeyTarget,
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
-		if isComponent {
-			spending := false
-			keyInfo.IsWitnessKey = true
-			keyInfo.IsSpendingAccount = &spending
-		}
 		if rotatingkey.IsRotatingKeyType(keyType) {
 			// Stage keys never leave the signer; only the account address does.
 			keyInfo.PublicKeyHex = ""
@@ -242,7 +236,6 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		if err == nil {
 			info.Family = meta.RoutingFamily()
 			info.AuthorizationKind = string(meta.AuthorizationKind())
-			info.RequiresLogicSig = algorithm.RequiresLogicSig(meta)
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
 			info.MnemonicScheme = meta.MnemonicScheme()
@@ -285,7 +278,6 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			KeyType:           tmpl.KeyType(),
 			Family:            tmpl.RoutingFamily(),
 			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
-			RequiresLogicSig:  true,
 			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(tmpl.KeyType()),
 		}
 		// A generic template is a provider like any other, described alike.
@@ -506,7 +498,6 @@ func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerap
 	info.DisplayName = profile.DisplayName
 	info.Description = profile.Description
 	info.AuthorizationKind = string(algorithm.AuthorizationLogicSig)
-	info.RequiresLogicSig = true
 	info.MnemonicWordCount = 24
 	info.SigningFlow = signerapi.SigningFlowRotating1
 	info.CreationParams = keytypemeta.CreationParams([]lsigprovider.ParameterDef{{

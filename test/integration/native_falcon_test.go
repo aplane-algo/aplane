@@ -241,9 +241,6 @@ func signNativeFalconGroup(t *testing.T, signerURL string, requests []signerapi.
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("decode native Falcon sign response: %v", err)
 	}
-	if response.Error != "" {
-		t.Fatalf("native Falcon sign response = %#v", response)
-	}
 	return response
 }
 

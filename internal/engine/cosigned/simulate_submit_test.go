@@ -508,7 +508,7 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 	defer closeAlgod()
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
-		c.AddAddress(account, "test.bounded-cosigner.v1")
+		c.AddAddress(account, "test.bounded-cosigner.v1", "logic_sig")
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
@@ -578,11 +578,11 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 			// position through /sign.
 			ordinary := txns[1].Sender.String()
 			s, signerCache := newCosignedTestSigner(t, cosigned, 1500, cosignerHex)
-			signerCache.AddAddress(ordinary, "ed25519")
+			signerCache.AddAddress(ordinary, "ed25519", "ed25519")
 			if tc.bounded {
 				s, _ = newTestSigner(t, func(c *cache.SignerCache) {
-					c.AddAddress(ordinary, "ed25519")
-					c.AddAddress(cosigned, "test.bounded-cosigner.v1")
+					c.AddAddress(ordinary, "ed25519", "ed25519")
+					c.AddAddress(cosigned, "test.bounded-cosigner.v1", "logic_sig")
 					c.SetSigningFlowForAddress(cosigned, signerapi.SigningFlowCosigned1)
 					c.SetCosignerComponentKeyTypeForAddress(cosigned, witness.Falcon1024V1)
 					c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
@@ -647,7 +647,7 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 
 	s, _ := newTestSigner(t, func(c *cache.SignerCache) {
 		account := txn.Sender.String()
-		c.AddAddress(account, "test.bounded-cosigner.v1")
+		c.AddAddress(account, "test.bounded-cosigner.v1", "logic_sig")
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)

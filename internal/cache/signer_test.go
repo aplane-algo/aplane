@@ -278,8 +278,8 @@ func TestSignerCache_BasicCRUD(t *testing.T) {
 	}
 
 	// Add
-	cache.AddAddress("ADDR1", "ed25519")
-	cache.AddAddress("ADDR2", "aplane.falcon1024.v1")
+	cache.AddAddress("ADDR1", "ed25519", "ed25519")
+	cache.AddAddress("ADDR2", "aplane.falcon1024.v1", "logic_sig")
 
 	if cache.Count() != 2 {
 		t.Errorf("Count() = %d, want 2", cache.Count())
@@ -359,8 +359,8 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	// Create and populate cache
 	original := NewSignerCache()
 	original.BindStore(store)
-	original.AddAddress("ADDR1", "ed25519")
-	original.AddAddress("ADDR2", "aplane.falcon1024.v1")
+	original.AddAddress("ADDR1", "ed25519", "ed25519")
+	original.AddAddress("ADDR2", "aplane.falcon1024.v1", "logic_sig")
 	original.SetGenericLsig("ADDR3", true)
 	original.SetLogicSigResourceProfile("ADDR2", lsigresource.Profile{
 		ProgramBytes: 3_577,
@@ -486,7 +486,7 @@ func TestSignerCache_LoadTamperedCacheReturnsEmpty(t *testing.T) {
 
 	original := NewSignerCache()
 	original.BindStore(store)
-	original.AddAddress("ADDR1", "ed25519")
+	original.AddAddress("ADDR1", "ed25519", "ed25519")
 	if err := original.SaveCache(); err != nil {
 		t.Fatalf("SaveCache() error = %v", err)
 	}

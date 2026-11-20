@@ -26,9 +26,8 @@ func lookalikeTestApp(t *testing.T, aliases map[string]string, held ...string) *
 	t.Helper()
 	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = aliases
-	eng.SignerCache.Keys = map[string]string{}
 	for _, address := range held {
-		eng.SignerCache.Keys[address] = "falcon1024"
+		eng.SignerCache.AddAddress(address, "falcon1024", "native_pq")
 	}
 	return New(eng, config.DefaultConfig(), t.TempDir())
 }

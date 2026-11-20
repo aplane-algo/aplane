@@ -35,9 +35,6 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 `pkg/signerapi/types.go`. The wire-relevant fields are:
 
 - `auth_address` — which signer-managed key to use for signing (sign mode).
-- `txn_sender` — transaction sender as the client states it. The signer does
-  not read it: approval display, policy and audit take the sender from the
-  decoded `txn_bytes_hex`.
 - `txn_bytes_hex` — TX-prefixed msgpack-encoded unsigned transaction, hex
   encoded. Required for sign mode and foreign mode.
 - `lsig_args` — name-keyed caller runtime arguments for generic or composed
@@ -55,6 +52,9 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
   when available.
 - `signed_txn_hex` — already-signed transaction bytes (msgpack, hex) for
   passthrough mode; mutually exclusive with the sign-mode fields.
+
+A request names no sender: approval display, policy and audit take the sender
+from the decoded `txn_bytes_hex`.
 
 Foreign-mode semantics:
 
@@ -126,8 +126,7 @@ This is the same format that Ed25519 transactions sign, ensuring consistency.
 
 Sign-mode request construction encodes the unsigned transaction with the `TX`
 prefix via `txnutil.EncodeWithPrefix`, hex-encodes the result into
-`TxnBytesHex`, and attaches `AuthAddress`, `TxnSender`, and any generic
-LogicSig args. See `internal/clientsign/submit.go` for the standard
+`TxnBytesHex`, and attaches `AuthAddress` and any generic LogicSig args. See `internal/clientsign/submit.go` for the standard
 sign-and-submit path. The other call sites are
 `internal/engine/plugin_presign.go` (plugin pre-sign planning) and
 `internal/engine/cosigned/submit.go` (cosigned and bounded-cosigner groups).

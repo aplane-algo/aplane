@@ -34,8 +34,9 @@ type AliasCache struct {
 // ("aplane.falcon1024.v1", "ed25519", ...).
 type SignerCache struct {
 	SchemaVersion             int                             `json:"schema_version,omitempty"`
-	Keys                      map[string]string               `json:"keys"`          // address -> key type
-	GenericLsigs              map[string]bool                 `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
+	Keys                      map[string]string               `json:"keys"`                          // address -> key type
+	AuthorizationKinds        map[string]string               `json:"authorization_kinds,omitempty"` // address -> the signer's authorization_kind; absent when it reports none
+	GenericLsigs              map[string]bool                 `json:"generic_lsigs"`                 // address -> true if generic lsig (no signature needed)
 	LogicSigResources         map[string]lsigresource.Profile `json:"logic_sig_resources,omitempty"`
 	SigningArgs               map[string][]SigningArgInfo     `json:"signing_args"`                           // address -> key-file signing arg schema for LogicSigs
 	SigningFlows              map[string]string               `json:"signing_flows,omitempty"`                // address -> signing choreography label (e.g. "cosigned1"); empty = plain /sign

@@ -23,12 +23,11 @@ import (
 func TestDynamicSetsAreSorted(t *testing.T) {
 	eng := setupTestEngine(t)
 	eng.AliasCache.Aliases = map[string]string{}
-	eng.SignerCache.Keys = map[string]string{}
 	var want []string
 	for i := 0; i < 20; i++ {
 		address := crypto.GenerateAccount().Address.String()
 		eng.AliasCache.Aliases[fmt.Sprintf("a%02d", i)] = address
-		eng.SignerCache.Keys[address] = "ed25519"
+		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
 		want = append(want, address)
 	}
 	sort.Strings(want)

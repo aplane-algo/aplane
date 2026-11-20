@@ -398,60 +398,49 @@ func expectTransferRoutingSignOK(t *testing.T, signerURL string, req signerapi.G
 	t.Helper()
 
 	status, body := postSignRequest(t, signerURL, req)
-	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d: %s", status, string(body))
 	}
-	if resp.Error != "" {
-		t.Fatalf("signer returned unexpected error: %s", resp.Error)
-	}
+	resp := decodeTransferRoutingResponse[signerapi.GroupSignResponse](t, body)
 	if got := len(resp.Signed); got != 1 {
 		t.Fatalf("signed transaction count = %d, want 1", got)
 	}
 	return resp
 }
 
-func expectTransferRoutingReject(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantRuleID string) signerapi.GroupSignResponse {
+func expectTransferRoutingReject(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantRuleID string) {
 	t.Helper()
 
 	status, body := postSignRequest(t, signerURL, req)
-	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden, got %d: %s", status, string(body))
 	}
+	resp := decodeTransferRoutingResponse[signerapi.ErrorResponse](t, body)
 	if !strings.Contains(resp.Error, "policy engine rejected request") {
 		t.Fatalf("expected policy rejection, got %q", resp.Error)
 	}
 	if !strings.Contains(resp.Error, wantRuleID) {
 		t.Fatalf("expected rejection rule %q, got %q", wantRuleID, resp.Error)
 	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("signed transaction count = %d, want 0", len(resp.Signed))
-	}
-	return resp
 }
 
-func expectTransferRoutingBadRequest(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantError string) signerapi.GroupSignResponse {
+func expectTransferRoutingBadRequest(t *testing.T, signerURL string, req signerapi.GroupSignRequest, wantError string) {
 	t.Helper()
 
 	status, body := postSignRequest(t, signerURL, req)
-	resp := decodeTransferRoutingSignResponse(t, body)
 	if status != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request, got %d: %s", status, string(body))
 	}
+	resp := decodeTransferRoutingResponse[signerapi.ErrorResponse](t, body)
 	if !strings.Contains(resp.Error, wantError) {
 		t.Fatalf("expected error containing %q, got %q", wantError, resp.Error)
 	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("signed transaction count = %d, want 0", len(resp.Signed))
-	}
-	return resp
 }
 
-func decodeTransferRoutingSignResponse(t *testing.T, body []byte) signerapi.GroupSignResponse {
+func decodeTransferRoutingResponse[T any](t *testing.T, body []byte) T {
 	t.Helper()
 
-	var resp signerapi.GroupSignResponse
+	var resp T
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to decode sign response: %v\nbody: %s", err, string(body))
 	}

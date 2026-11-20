@@ -84,10 +84,7 @@ func (fs *Signer) handleSignCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := ir.CancelSigningApproval(req.RequestID, signerapproval.SignRequestCancelReasonClientCanceled)
-	writeJSON(w, http.StatusOK, signerapi.CancelSignResponse{
-		Success: true,
-		State:   signCancelState(result.State),
-	})
+	writeJSON(w, http.StatusOK, signerapi.CancelSignResponse{State: signCancelState(result.State)})
 }
 
 func signCancelState(state signerapproval.SignRequestCancelState) signerapi.SignCancelState {

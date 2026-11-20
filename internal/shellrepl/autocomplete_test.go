@@ -18,7 +18,7 @@ func TestDeleteCommandAddressCompletion(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -45,7 +45,7 @@ func TestAliasCommandCompletesAddressAsSecondArgument(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -72,7 +72,7 @@ func TestAddressCompletionUsesParsedKeywordPosition(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -129,7 +129,7 @@ func TestSetsAddCompletesAddressFromParsedPosition(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -208,7 +208,7 @@ func TestRekeyRefreshCompletesAddress(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -235,7 +235,7 @@ func TestPluginCompletionUsesQuotedCommandParsing(t *testing.T) {
 	address := account.Address.String()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 
 	completer := &ContextCompleter{
 		signerCache: &signerCache,
@@ -313,7 +313,7 @@ func completionsFor(t *testing.T, line string, addresses ...string) []string {
 	t.Helper()
 	signerCache := cache.NewSignerCache()
 	for _, address := range addresses {
-		signerCache.AddAddress(address, "ed25519")
+		signerCache.AddAddress(address, "ed25519", "ed25519")
 	}
 	completer := CreateDynamicCompleter(&cache.AliasCache{Aliases: map[string]string{}}, &cache.ASACache{}, &cache.SetCache{}, &signerCache, nil, nil, nil)
 	suggestions, offset := completer.Do([]rune(line), len(line))

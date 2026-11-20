@@ -79,13 +79,8 @@ func run() error {
 	var failed []error
 	deleted := 0
 	for _, key := range keys.Keys {
-		resp, err := client.AdminDeleteKeyWithContext(context.Background(), key.Address)
-		if err != nil {
+		if err := client.AdminDeleteKeyWithContext(context.Background(), key.Address); err != nil {
 			failed = append(failed, fmt.Errorf("%s: %w", key.Address, err))
-			continue
-		}
-		if resp == nil || !resp.Success {
-			failed = append(failed, fmt.Errorf("%s: signer returned unsuccessful delete response", key.Address))
 			continue
 		}
 		deleted++

@@ -216,7 +216,6 @@ type SignBatch struct {
 type SignRequest struct {
     // Sign mode fields
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
-    TxnSender    string            `json:"txn_sender,omitempty"`    // Client-stated sender; the signer does not read it
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
@@ -265,7 +264,6 @@ Aligning the grammar across `/plan` and `/sign` lets clients send one canonical 
 type GroupSignResponse struct {
     Signed    []string        `json:"signed,omitempty"`    // Signed transactions (msgpack, hex)
     Mutations *MutationReport `json:"mutations,omitempty"` // Server modifications (nil if none)
-    Error     string          `json:"error,omitempty"`     // Legacy; never set (failures use ErrorResponse)
 }
 
 type MutationReport struct {
@@ -406,7 +404,6 @@ the shape if no extra dummies are needed.
 type GroupPlanResponse struct {
     Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns
     Mutations    *MutationReport `json:"mutations,omitempty"`
-    Error        string          `json:"error,omitempty"` // Legacy; never set (failures use ErrorResponse)
 }
 ```
 
@@ -1141,7 +1138,9 @@ The same read gives each account's authorizer. It is not shown; it only
 settles whether the review calls the account signable, by the rule apshell's
 account list uses (`cache.IsAccountSignable`): a rotating account the signer
 holds is signable at any stage, and any other account only when the signer
-holds an aplane key for its authorizer. Until the chain is read, or where it
+holds an aplane key for its authorizer. apshell's rule also asks for an
+authorization kind it knows, which every key a signer holds for an
+authorizer has. Until the chain is read, or where it
 can't be, an account the signer holds or the request signs for is signable.
 
 The node is chosen from the genesis hash and checked as the rotating flow's
@@ -1264,7 +1263,6 @@ txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(
 requests := []signerapi.SignRequest{
     {
         AuthAddress: "ABC123...",
-        TxnSender:   "ABC123...",
         TxnBytesHex: hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...)),
     },
 }
@@ -1511,7 +1509,7 @@ from `pkg/signerapi/types.go`:
 
 - top-level fields: optional `request_id`, `requests[]`, optional `batch`
 - each entry is one of:
-  - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
+  - sign: `auth_address`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
   - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
     `lsig_resources` is required
   - foreign: `txn_bytes_hex` without `auth_address`, with at most one
@@ -1541,9 +1539,8 @@ never meet its threshold. A LogicSig with a program and no delegation is an
 escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
 `/sign/assemble` apply the same check.
 
-`txn_sender` is the transaction sender as the client states it. The signer
-does not read it: approval display, authority, policy, and audit use the
-sender decoded from `txn_bytes_hex`.
+A request names no sender: approval display, authority, policy, and audit use
+the sender decoded from `txn_bytes_hex`.
 
 `app_call_info` is approval-rendering metadata on the shared request DTO:
 
@@ -1561,7 +1558,7 @@ is refused with 400 on every request that takes it (`/sign`, `/plan`, the
 component and rotating sign requests). The signer cannot check it: it shows
 it as the client's (`Request 2 of 3 from the client, each approved on its
 own` in the text, `batch` in the review) and it decides nothing. It is not
-part of the approval binding, as `app_call_info` and `txn_sender` are not.
+part of the approval binding, as `app_call_info` is not.
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
 The label is the client's claim: the signer shows it only when the call's
@@ -1631,8 +1628,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `signed`
 - optional `mutations`
-- optional `error`: legacy DTO field the current server never populates;
-  errors arrive as a non-2xx `ErrorResponse`
+
+Errors arrive as a non-2xx `ErrorResponse`.
 
 `/sign` response semantics:
 
@@ -1748,8 +1745,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `transactions`
 - optional `mutations`
-- optional `error`: legacy DTO field the current server never populates;
-  errors arrive as a non-2xx `ErrorResponse`
+
+Errors arrive as a non-2xx `ErrorResponse`.
 
 `MutationReport` fields:
 
@@ -2258,6 +2255,12 @@ warning does not establish that no leaf was reused.
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
   envelope. Witness rows omit it because they are not spending accounts.
+  Clients read it rather than derive it from `key_type`. apshell refuses a
+  row without a kind it knows on the prepare path (building a transaction,
+  `canSignFor`) and neither lists nor shows it as signable; a pre-built group
+  (JavaScript `sign()`, a transaction file, a plugin's default group,
+  presign-plan managed slots, cosigned contextual positions) reads no kind and
+  leaves authorization to the signer.
 - optional `signing_flow`: explicit signing choreography label. `bounded1`
   selects bounded routing without an online cosigner (a bounded or plain host
   without a cosigner), `cosigned1` selects the user-first bounded
@@ -2294,8 +2297,8 @@ warning does not establish that no leaf was reused.
   from its key type's declaration then (always present). When it is false, the
   signer refuses a rekey of any account to this address, the account's own
   included, under every `rekeys` setting (`rekey_target_not_valid`)
-- optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
-  `address` as the Witness Key ID, not as an Algorand spending address.
+- optional `is_witness_key`: cosigner-key rows set it and use `address` as
+  the Witness Key ID, not as an Algorand spending address.
   Witness Key IDs are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   `public_key_hex` carries the full component public key.
@@ -2390,15 +2393,10 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `requires_logicsig` (true exactly when `authorization_kind` is `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`
-
-The older `requires_logicsig` boolean remains
-present on key-type inventory for compatibility and is true only for
-`logic_sig` entries. Clients must not infer that every false value means
-Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 
 `per_key_contract: true` marks a type whose accounts each select their own contract at
 generation. It has no `signing_flow` or `bounded_authorization`, so clients route its
@@ -2448,7 +2446,7 @@ stored metadata resolve the provider and any composed template's base primitive.
 - request has `key_type`, optional `parameters`
 - no `name` field
 - response has `address`, optional `public_key_hex`, `key_type`, optional
-  `is_witness_key`, optional `is_spending_account`, optional `parameters`, and
+  `is_witness_key`, optional `parameters`, and
   optional `warnings`: a list of strings, the signer's advice about the account it
   created, such as a fee limit below what the account's own transactions cost,
   or a cosigner key this signer also holds as an account's key.
@@ -2458,7 +2456,8 @@ stored metadata resolve the provider and any composed template's base primitive.
 `/admin/keys`:
 
 - `DELETE` with query param `address`
-- success response is `success: true`; non-2xx failures use `ErrorResponse`
+- success response is the empty object `{}`; non-2xx failures use
+  `ErrorResponse`
 
 `/health`:
 
@@ -2494,15 +2493,13 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 `/sign/cancel` response (`signerapi.CancelSignResponse`):
 
-- `success`
 - `state`
-- optional `error`
 
 `/sign/cancel` withdraws a live `/sign`, `/sign/rotating/sign`, or
 approval-bearing user or bounded-base
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
-`success:true`; cancellation miss is represented in `state`, not as an HTTP
+its `state`; cancellation miss is represented in `state`, not as an HTTP
 error. Cosigner-only `/sign/component` and `/sign/assemble` request IDs are
 correlation fields rather than live cancel handles and return `not_found` if
 supplied to `/sign/cancel`.

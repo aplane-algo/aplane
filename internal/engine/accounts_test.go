@@ -176,10 +176,8 @@ func TestListAccounts(t *testing.T) {
 	// Add aliases and signers
 	eng.AliasCache.Aliases["alice"] = "ADDR_ALICE"
 	eng.AliasCache.Aliases["bob"] = "ADDR_BOB"
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR_ALICE":  "ed25519",
-		"ADDR_SIGNER": "falcon1024",
-	}
+	eng.SignerCache.AddAddress("ADDR_ALICE", "ed25519", "ed25519")
+	eng.SignerCache.AddAddress("ADDR_SIGNER", "falcon1024", "native_pq")
 
 	accounts, err = eng.ListAccounts()
 	if err != nil {
@@ -222,10 +220,8 @@ func TestGetSignableAddresses(t *testing.T) {
 	}
 
 	// Add signer keys
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR1": "ed25519",
-		"ADDR2": "falcon1024",
-	}
+	eng.SignerCache.AddAddress("ADDR1", "ed25519", "ed25519")
+	eng.SignerCache.AddAddress("ADDR2", "falcon1024", "native_pq")
 
 	addrs = eng.GetSignableAddresses()
 	if len(addrs) != 2 {
@@ -308,9 +304,7 @@ func TestIsSignable(t *testing.T) {
 	}
 
 	// Add to signer cache
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR1": "ed25519",
-	}
+	eng.SignerCache.AddAddress("ADDR1", "ed25519", "ed25519")
 
 	if !eng.isSignable("ADDR1") {
 		t.Error("isSignable() should return true for address in signer cache")
@@ -375,7 +369,7 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 	}))
 	defer server.Close()
 	eng := setupTestEngine(t)
-	eng.SignerCache.AddAddress("CACHED", "ed25519")
+	eng.SignerCache.AddAddress("CACHED", "ed25519", "ed25519")
 
 	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("CurrentKeys() with no signer client error = %v, want ErrNotConnected", err)

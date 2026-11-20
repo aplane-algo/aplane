@@ -43,8 +43,8 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 	transport.addAccount(cosigned, 1_000_000)
 
 	staleSignerCache := cache.NewSignerCache()
-	staleSignerCache.AddAddress(sender, "ed25519")
-	staleSignerCache.AddAddress(cosigned, "ed25519")
+	staleSignerCache.AddAddress(sender, "ed25519", "ed25519")
+	staleSignerCache.AddAddress(cosigned, "ed25519", "ed25519")
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)

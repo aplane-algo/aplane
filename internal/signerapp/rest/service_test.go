@@ -363,12 +363,8 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 		t.Fatalf("Keys authorization kind = %q, want %q", keysResp.Keys[0].AuthorizationKind, algorithm.AuthorizationEd25519)
 	}
 
-	delResp, delErr := svc.AdminDelete(context.Background(), ir, genResp.Address)
-	if delErr != nil {
+	if delErr := svc.AdminDelete(context.Background(), ir, genResp.Address); delErr != nil {
 		t.Fatalf("AdminDelete error = %v, want nil", delErr)
-	}
-	if !delResp.Success {
-		t.Fatalf("AdminDelete response = %#v, want success", delResp)
 	}
 }
 
@@ -414,9 +410,6 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if !genResp.IsWitnessKey {
 		t.Fatal("AdminGenerate is_witness_key = false, want true")
 	}
-	if genResp.IsSpendingAccount == nil || *genResp.IsSpendingAccount {
-		t.Fatalf("AdminGenerate is_spending_account = %#v, want false pointer", genResp.IsSpendingAccount)
-	}
 
 	keysResp, err := svc.Keys(ir)
 	if err != nil {
@@ -434,9 +427,6 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	}
 	if !row.IsWitnessKey {
 		t.Fatal("component row is_witness_key = false, want true")
-	}
-	if row.IsSpendingAccount == nil || *row.IsSpendingAccount {
-		t.Fatalf("component row is_spending_account = %#v, want false pointer", row.IsSpendingAccount)
 	}
 }
 
@@ -578,7 +568,7 @@ func TestServiceKeyTypesIncludesNativeAndFalconCosigner(t *testing.T) {
 		if keyType.KeyType == nativefalcon.KeyType {
 			foundNativeFalcon = true
 			if keyType.DisplayName != "Native Falcon-1024" ||
-				keyType.AuthorizationKind != "native_pq" || keyType.RequiresLogicSig ||
+				keyType.AuthorizationKind != "native_pq" ||
 				keyType.MnemonicWordCount != nativefalcon.MnemonicWordCount {
 				t.Fatalf("native Falcon key type info = %#v", keyType)
 			}

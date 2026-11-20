@@ -100,13 +100,15 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 		t.Fatalf("post /plan: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var refusal signerapi.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&refusal)
+		t.Fatalf("/plan status = %d: %s", resp.StatusCode, refusal.Error)
+	}
 
 	var planResp signerapi.GroupPlanResponse
 	if err := json.NewDecoder(resp.Body).Decode(&planResp); err != nil {
 		t.Fatalf("decode plan response: %v", err)
-	}
-	if planResp.Error != "" {
-		t.Fatalf("plan error: %s", planResp.Error)
 	}
 
 	canonical := make([]types.Transaction, len(planResp.Transactions))

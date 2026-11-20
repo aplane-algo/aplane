@@ -119,7 +119,7 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 	addr := testAddr(12)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		switch {
@@ -127,7 +127,7 @@ func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 			if got := req.URL.Query().Get("address"); got != addr {
 				t.Fatalf("delete request address = %q, want %q", got, addr)
 			}
-			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
+			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
 				Count: 0,
@@ -200,12 +200,12 @@ func TestEngineGenerateKeyIgnoresRefreshFailure(t *testing.T) {
 func TestEngineDeleteKeyIgnoresRefreshFailure(t *testing.T) {
 	addr := testAddr(22)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodDelete && req.URL.Path == "/admin/keys":
-			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
+			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtTextResponse(http.StatusInternalServerError, "refresh failed", req), nil
 		default:

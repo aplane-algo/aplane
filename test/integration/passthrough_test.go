@@ -184,10 +184,6 @@ func TestPassthroughMixedGroup(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if groupResp.Error != "" {
-		t.Fatalf("Server returned error: %s", groupResp.Error)
-	}
-
 	// Verify we got 2 signed transactions back
 	if len(groupResp.Signed) != 2 {
 		t.Fatalf("Expected 2 signed transactions, got %d", len(groupResp.Signed))
@@ -367,9 +363,6 @@ func TestPassthroughResign(t *testing.T) {
 	if err := json.Unmarshal(respBody, &signResp); err != nil {
 		t.Fatalf("Failed to parse sign response: %v", err)
 	}
-	if signResp.Error != "" {
-		t.Fatalf("Initial sign returned error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 2 {
 		t.Fatalf("Expected 2 signed transactions, got %d", len(signResp.Signed))
 	}
@@ -423,9 +416,6 @@ func TestPassthroughResign(t *testing.T) {
 	var resignResp signerapi.GroupSignResponse
 	if err := json.Unmarshal(respBody, &resignResp); err != nil {
 		t.Fatalf("Failed to parse resign response: %v", err)
-	}
-	if resignResp.Error != "" {
-		t.Fatalf("Resign returned error: %s", resignResp.Error)
 	}
 	if len(resignResp.Signed) != 2 {
 		t.Fatalf("Expected 2 signed transactions from resign, got %d", len(resignResp.Signed))

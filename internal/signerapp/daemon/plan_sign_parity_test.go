@@ -85,9 +85,6 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 
 	var planResp signerapi.GroupPlanResponse
 	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
 	if len(planResp.Transactions) != 1 {
 		t.Fatalf("/plan transactions = %d, want 1", len(planResp.Transactions))
 	}
@@ -100,9 +97,6 @@ func TestPlanAndSignProduceMatchingCanonicalTransactionForEd25519(t *testing.T) 
 
 	var signResp signerapi.GroupSignResponse
 	decodeResponse(t, signW, &signResp)
-	if signResp.Error != "" {
-		t.Fatalf("/sign returned error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("/sign signed count = %d, want 1", len(signResp.Signed))
 	}
@@ -220,9 +214,6 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 
 	var planResp signerapi.GroupPlanResponse
 	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
 	if len(planResp.Transactions) != 2 {
 		t.Fatalf("/plan transactions = %d, want 2", len(planResp.Transactions))
 	}
@@ -239,9 +230,6 @@ func TestPlanAndSignPreserveCanonicalTransactionsForMixedSignAndPassthroughGroup
 
 	var signResp signerapi.GroupSignResponse
 	decodeResponse(t, signW, &signResp)
-	if signResp.Error != "" {
-		t.Fatalf("/sign returned error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 2 {
 		t.Fatalf("/sign signed count = %d, want 2", len(signResp.Signed))
 	}
@@ -350,9 +338,6 @@ func TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions(t *
 
 	var planResp signerapi.GroupPlanResponse
 	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
 	if len(planResp.Transactions) != 2 {
 		t.Fatalf("/plan transactions = %d, want 2", len(planResp.Transactions))
 	}
@@ -387,9 +372,6 @@ func TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions(t *
 
 	var signResp signerapi.GroupSignResponse
 	decodeResponse(t, signW, &signResp)
-	if signResp.Error != "" {
-		t.Fatalf("/sign returned error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 2 {
 		t.Fatalf("/sign signed count = %d, want 2", len(signResp.Signed))
 	}
@@ -470,9 +452,6 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 
 	var planResp signerapi.GroupPlanResponse
 	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
 	if planResp.Mutations == nil {
 		t.Fatal("/plan expected mutations for single falcon group")
 	}
@@ -503,9 +482,6 @@ func TestPlanAndSignAgreeOnDummyAndFeeMutationsForSingleFalconGroup(t *testing.T
 
 	var signResp signerapi.GroupSignResponse
 	decodeResponse(t, signW, &signResp)
-	if signResp.Error != "" {
-		t.Fatalf("/sign returned error: %s", signResp.Error)
-	}
 	if signResp.Mutations == nil {
 		t.Fatal("/sign expected mutations for single falcon group")
 	}
@@ -620,9 +596,6 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	}
 	var planResp signerapi.GroupPlanResponse
 	decodeResponse(t, planW, &planResp)
-	if planResp.Error != "" {
-		t.Fatalf("/plan returned error: %s", planResp.Error)
-	}
 
 	// Move to snapshot B: remove the key file from disk and reload the index.
 	active, err := server.productRuntime().ActivePaths()

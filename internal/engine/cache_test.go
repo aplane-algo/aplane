@@ -42,7 +42,7 @@ func setupTestEngine(t *testing.T) *Engine {
 	eng := NewEngine("testnet",
 		WithAliasCache(cache.AliasCache{Aliases: make(map[string]string)}),
 		WithSetCache(cache.SetCache{Sets: make(map[string][]string)}),
-		WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
+		WithSignerCache(cache.NewSignerCache()),
 		WithAuthCache(cache.AuthAddressCache{AuthAddresses: make(map[string]string)}),
 	)
 
@@ -238,7 +238,7 @@ func TestAddAliasResultMatchesSubsequentCacheBackedViews(t *testing.T) {
 	eng := setupTestEngine(t)
 
 	addr := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-	eng.SignerCache.Keys[addr] = "ed25519"
+	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
 	eng.AuthCache.AuthAddresses[addr] = ""
 
 	result, err := eng.AddAliasWithContext(context.Background(), "alice", addr)
@@ -587,7 +587,7 @@ func TestAddAliasPreservesConcurrentDiskUpdates(t *testing.T) {
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
 			WithSetCache(cache.LoadSetCacheFromStore(cacheStore)),
-			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
+			WithSignerCache(cache.NewSignerCache()),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
 		return eng
@@ -625,7 +625,7 @@ func TestInterleavedAliasAndSetWritesPreserveSharedStoreState(t *testing.T) {
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
 			WithSetCache(cache.LoadSetCacheFromStore(cacheStore)),
-			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
+			WithSignerCache(cache.NewSignerCache()),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
 		return eng
@@ -673,7 +673,7 @@ func TestMultipleEnginesConvergeOnSharedStoreAfterReload(t *testing.T) {
 			WithCacheStore(cacheStore),
 			WithAliasCache(cache.LoadAliasCacheFromStore(cacheStore)),
 			WithSetCache(cache.LoadSetCacheFromStore(cacheStore)),
-			WithSignerCache(cache.SignerCache{Keys: make(map[string]string)}),
+			WithSignerCache(cache.NewSignerCache()),
 			WithAuthCache(cache.NewAuthAddressCacheForStore(cacheStore)),
 		)
 		return eng

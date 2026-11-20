@@ -114,7 +114,7 @@ func (e *Engine) DeleteKey(ctx context.Context, address string) error {
 	if !e.IsConnected() {
 		return ErrNotConnected
 	}
-	if _, err := e.AdminDeleteKeyWithContext(ctx, address); err != nil {
+	if err := e.AdminDeleteKeyWithContext(ctx, address); err != nil {
 		return fmt.Errorf("failed to delete key: %w", err)
 	}
 	// Refresh signer cache to reflect the deletion

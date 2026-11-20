@@ -180,7 +180,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 	}
 
 	signerClient = signerclient.NewSignerClient(signerd.GetURL())
-	if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), lsigAddr); err != nil {
+	if err := signerClient.AdminDeleteKeyWithContext(context.Background(), lsigAddr); err != nil {
 		t.Fatalf("failed to delete lifecycle generic LSig key %s: %v", lsigAddr, err)
 	}
 	if !waitForKeyMissing(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
@@ -301,7 +301,7 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	}
 
 	signerClient = signerclient.NewSignerClient(signerd.GetURL())
-	if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), lsigAddr); err != nil {
+	if err := signerClient.AdminDeleteKeyWithContext(context.Background(), lsigAddr); err != nil {
 		t.Fatalf("failed to delete composed DSA LSig key %s: %v", lsigAddr, err)
 	}
 	if !waitForKeyMissing(t, signerd.GetURL(), lsigAddr, 10*time.Second) {
@@ -581,7 +581,7 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	}
 
 	// Delete the key
-	if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), originalAddress); err != nil {
+	if err := signerClient.AdminDeleteKeyWithContext(context.Background(), originalAddress); err != nil {
 		t.Fatalf("failed to delete key %s: %v", originalAddress, err)
 	}
 	t.Logf("Deleted key %s", originalAddress)
@@ -598,7 +598,7 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 
 	// Clean up the regenerated key
 	t.Cleanup(func() {
-		if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), resp2.Address); err != nil {
+		if err := signerClient.AdminDeleteKeyWithContext(context.Background(), resp2.Address); err != nil {
 			t.Logf("failed to delete regenerated key %s: %v", resp2.Address, err)
 		}
 	})

@@ -261,9 +261,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			if err := json.Unmarshal(body, &signResp); err != nil {
 				t.Fatalf("failed to parse positive batch sign response: %v", err)
 			}
-			if signResp.Error != "" {
-				t.Fatalf("unexpected positive batch sign error: %s", signResp.Error)
-			}
 			assertMatrixPlannerDummies(t, signResp, len(req.Requests), expectedDummies)
 			assertMatrixAccountsSettleExactly(t, signResp.Signed, signTxns)
 
@@ -295,9 +292,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 					var negativeResp signerapi.GroupSignResponse
 					if err := json.Unmarshal(negativeBody, &negativeResp); err != nil {
 						t.Fatalf("failed to parse sign response: %v", err)
-					}
-					if negativeResp.Error != "" {
-						t.Fatalf("unexpected sign error: %s", negativeResp.Error)
 					}
 					assertMatrixPlannerDummies(t, negativeResp, len(negativeReq.Requests), 0)
 					submitSignedTxnGroupExpectFailure(t, testnet, negativeResp.Signed)
@@ -406,9 +400,6 @@ func prepareMatrixRekeyCleanup(
 	var signResp signerapi.GroupSignResponse
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("parse cleanup rekey sign response: %v", err)
-	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected cleanup rekey sign error: %s", signResp.Error)
 	}
 	assertMatrixPlannerDummies(t, signResp, len(req.Requests), 0)
 	target := decodeSignedTxnHex(t, signResp.Signed[0])

@@ -683,8 +683,9 @@ local, rebuildable state:
 JSON cache files use an HMAC envelope version plus a payload-level
 `schema_version`, which every write records. The signed envelope has
 `version: 1`; alias, set, ASA, and auth-address payloads carry
-`schema_version: 1`, while `signer_cache.json` carries `schema_version: 2` for
-structured LogicSig resources. A missing or unsupported payload
+`schema_version: 1`, while `signer_cache.json` carries `schema_version: 4`
+(structured LogicSig resources, `bounded_contracts`, and
+`authorization_kinds`). A missing or unsupported payload
 version is rejected and the cache is rebuilt from empty or seed data; the
 signer cache then rebuilds from authenticated signer inventory without
 invalidating unrelated client caches. Cache
@@ -703,7 +704,8 @@ have precedence over convenience aliases, while ambiguous symbolic references
 are rejected.
 
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
-  inventory. It may persist address key types, generic-LogicSig flags,
+  inventory. It may persist address key types, the `authorization_kinds`
+  the signer reports (`authorization_kind` per address), generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
   `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
@@ -722,6 +724,17 @@ are rejected.
   account's fee ceiling from `bounded_max_fees` only when its cached
   `bounded_contracts` entry is `bounded2`; a `plain1` account has none, and
   a missing or unknown contract fails closed until `/keys` is refreshed.
+  The client takes an address's authorization kind from `authorization_kinds`
+  and never derives it from the key type. A key the signer lists with no kind
+  (a witness key) or with one outside the closed set is refused on the
+  prepare path (`BuildSigningContext` and `canSignFor`), and is neither listed
+  nor shown as signable (`signableAddresses()`, `signers()`, `accounts()`'s
+  `isSignable`, the address colour and `@` marker), all by one rule,
+  `cache.IsAccountSignable`. A pre-built group reads no kind: JavaScript
+  `sign()`, a transaction file and a plugin's default group
+  (`signAndSubmitGroup`, `checkReadyToSign`), presign-plan managed slots and
+  cosigned contextual positions leave its authorization to the signer, which
+  holds the key and chooses the envelope.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
   aliases reserve `list`, `delete`, and `remove`; sets reserve `list`, `add`,
@@ -1397,16 +1410,16 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Health response | wire projection | process liveness | `signerapi.HealthResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Unauthenticated `GET /health`; not product-store state. |
 | Status response | wire projection | authenticated product runtime state | `signerapi.StatusResponse` | `internal/signerapp/daemon`, `internal/signerapp/rest`, `pkg/signerapi` | `keyset_revision` is process-local, not durable, and starts at a random value in each process; clients compare it for equality only. |
 | Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Cosigner-key rows use Witness Key ID as `address`; cosigned rows expose non-secret params. |
-| Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key`/`is_spending_account` disambiguate selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
+| Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key` disambiguates selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
 | Key types response | wire projection | enabled providers/templates and cosigner refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args; may carry `signing_flow`. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
-| Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is client-stated; the signer does not read it and takes the sender from the decoded bytes. |
+| Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | Names no sender; the signer takes it from the decoded bytes. |
 | Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
 | Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/daemon`, `internal/signerapp/approval` | `/sign`, `/sign/rotating/sign`, and approval-bearing user/bounded-base component request IDs are live cancel handles; cosigner-component and assembly IDs are correlation only. |
 | Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/rest`, `internal/signerapp/keyadmin` | No mnemonic in REST response. |
-| Admin delete DTO | wire request/projection | address query parameter | delete response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
+| Admin delete DTO | wire request/projection | address query parameter | empty `{}` response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
 | Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `cosigner` or `bounded-base` (the retired `user` kind is refused), one kind per request; every original group position is a target or contextual position, and omitted request IDs are generated. |
 | Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Cosigner components carry one signature; bounded-base components carry base signatures, validated runtime args, an assembly receipt, and the classified `path`. |
 | Assembly request | wire request | group bytes plus `bounded-cosigner` targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Each target carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey; the retired `cosigned` kind is refused. Mixed kinds are rejected per `/sign/component` request. |

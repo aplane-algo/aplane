@@ -35,12 +35,11 @@ func (fs *Signer) handleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	address := r.URL.Query().Get("address")
-	response, err := fs.restService().AdminDelete(keyMutationAuditContext(r), ir, address)
-	if err != nil {
+	if err := fs.restService().AdminDelete(keyMutationAuditContext(r), ir, address); err != nil {
 		writeServiceErrorJSON(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, signerapi.AdminDeleteResponse{})
 }
 
 // keyMutationAuditContext attributes a REST key mutation's audit events to the

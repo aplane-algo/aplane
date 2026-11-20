@@ -496,3 +496,27 @@ func TestPlanRefusalCanBeCaught(t *testing.T) {
 		t.Fatalf("script = %v (%v), want %q", value, err, want)
 	}
 }
+
+// A request names no sender: the signer reads it from the transaction, so a
+// txnSender key is refused like any other key plan() does not read.
+func TestPlanRefusesATxnSenderKey(t *testing.T) {
+	sign := planTestTxn(t, "sign")
+	vm := planTestAPI(t, func(drafts []types.Transaction) signerapi.GroupPlanResponse {
+		t.Fatal("plan() reached the signer")
+		return signerapi.GroupPlanResponse{}
+	})
+	requests := []map[string]interface{}{{
+		"authAddress": sign.Sender.String(),
+		"txnSender":   sign.Sender.String(),
+		"txnBytesHex": txnutil.EncodeWithPrefixHex(sign),
+	}}
+	encoded, err := json.Marshal(requests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := vm.RunString(`try { plan(` + string(encoded) + `); "planned" } catch (e) { "caught: " + e }`)
+	want := `caught: plan() request 1 key "txnSender" is not known (known: authAddress, lsigArgs, lsigResources, pqScheme, signedTxnHex, txnBytesHex)`
+	if err != nil || value.String() != want {
+		t.Fatalf("script = %v (%v), want %q", value, err, want)
+	}
+}

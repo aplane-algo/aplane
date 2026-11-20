@@ -332,7 +332,7 @@ func TestSignerClientRequestsDecodeStrictly(t *testing.T) {
 	ctx := context.Background()
 	appCall := &signerapi.AppCallInfo{Mode: "abi", Method: "pay(uint64)void"}
 	resources := &signerapi.LogicSigResourceUsage{ProgramBytes: 100, ArgumentBytes: 10, MaxOpcodeCost: 700}
-	signEntry := signerapi.SignRequest{AuthAddress: "AUTH", TxnSender: "SENDER", TxnBytesHex: "00", LsigArgs: map[string]string{"a": "00"}, AppCallInfo: appCall}
+	signEntry := signerapi.SignRequest{AuthAddress: "AUTH", TxnBytesHex: "00", LsigArgs: map[string]string{"a": "00"}, AppCallInfo: appCall}
 	withForeign := []signerapi.SignRequest{
 		signEntry,
 		{TxnBytesHex: "01", LsigResources: resources},

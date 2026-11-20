@@ -104,7 +104,7 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
 			var infos []signerapi.KeyInfo
 			for address := range keys {
-				infos = append(infos, signerapi.KeyInfo{Address: address, KeyType: "ed25519"})
+				infos = append(infos, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
 			}
 			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(infos), Keys: infos})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
@@ -146,9 +146,8 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 	}
 	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	eng.SignerCache.Keys = map[string]string{}
 	for address := range keys {
-		eng.SignerCache.Keys[address] = "ed25519"
+		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
 	}
 	state := &REPLState{Out: out, App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 	state.CommandRegistry = state.initCommandRegistry()
