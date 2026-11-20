@@ -19,36 +19,46 @@ const clientsUsage = "usage: apadmin clients <list|approve|reject|import|revoke>
 // maxClientPublicKeyBytes bounds a public-key file before it is read.
 const maxClientPublicKeyBytes = 16 * 1024
 
-// clientsCommandAuth validates the clients subcommand and reports the session
-// it needs. Listing is read-only; enrollment changes take an unlocked
-// session like other registry mutations.
-func clientsCommandAuth(args []string) (AuthMode, error) {
+// parseClients parses a clients command. Listing is read-only; enrollment
+// changes take an unlocked session like other registry mutations.
+func parseClients(args []string) (catalogCommand, error) {
 	if len(args) == 0 {
-		return AuthUnlock, fmt.Errorf("%s", clientsUsage)
+		return catalogCommand{}, errors.New(clientsUsage)
 	}
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return AuthReadOnly, fmt.Errorf("usage: apadmin clients list")
+			return catalogCommand{}, errors.New("usage: apadmin clients list")
 		}
-		return AuthReadOnly, nil
+		return readOnlyCommand(Catalog.listClients), nil
 	case "approve":
-		if _, _, err := parseClientsFingerprintArgs("approve", args[1:], true); err != nil {
-			return AuthUnlock, err
+		fingerprint, label, err := parseClientsFingerprintArgs("approve", args[1:], true)
+		if err != nil {
+			return catalogCommand{}, err
 		}
-		return AuthUnlock, nil
-	case "reject", "revoke":
-		if _, _, err := parseClientsFingerprintArgs(args[0], args[1:], false); err != nil {
-			return AuthUnlock, err
+		return unlockedCommand(func(c Catalog) error { return c.approveClient(fingerprint, label) }), nil
+	case "reject":
+		fingerprint, _, err := parseClientsFingerprintArgs("reject", args[1:], false)
+		if err != nil {
+			return catalogCommand{}, err
 		}
-		return AuthUnlock, nil
+		return unlockedCommand(func(c Catalog) error { return c.rejectClient(fingerprint) }), nil
+	case "revoke":
+		fingerprint, _, err := parseClientsFingerprintArgs("revoke", args[1:], false)
+		if err != nil {
+			return catalogCommand{}, err
+		}
+		return unlockedCommand(func(c Catalog) error { return c.revokeClient(fingerprint) }), nil
 	case "import":
-		if _, _, err := parseClientsImportArgs(args[1:]); err != nil {
-			return AuthUnlock, err
+		path, label, err := parseClientsImportArgs(args[1:])
+		if err != nil {
+			return catalogCommand{}, err
 		}
-		return AuthUnlock, nil
+		cmd := unlockedCommand(func(c Catalog) error { return c.importClient(path, label) })
+		cmd.readsStdin = path == "-"
+		return cmd, nil
 	}
-	return AuthUnlock, fmt.Errorf("%s", clientsUsage)
+	return catalogCommand{}, errors.New(clientsUsage)
 }
 
 func parseClientsFingerprintArgs(verb string, args []string, allowLabel bool) (fingerprint, label string, err error) {
@@ -111,42 +121,6 @@ func splitClientsLabelFlag(args []string) (positional []string, label string, la
 		label, labelSet = value, true
 	}
 	return positional, label, labelSet, nil
-}
-
-func (c Catalog) runClients(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s", clientsUsage)
-	}
-	switch args[0] {
-	case "list":
-		return c.listClients()
-	case "approve":
-		fingerprint, label, err := parseClientsFingerprintArgs("approve", args[1:], true)
-		if err != nil {
-			return err
-		}
-		return c.approveClient(fingerprint, label)
-	case "reject":
-		fingerprint, _, err := parseClientsFingerprintArgs("reject", args[1:], false)
-		if err != nil {
-			return err
-		}
-		return c.rejectClient(fingerprint)
-	case "revoke":
-		fingerprint, _, err := parseClientsFingerprintArgs("revoke", args[1:], false)
-		if err != nil {
-			return err
-		}
-		return c.revokeClient(fingerprint)
-	case "import":
-		path, label, err := parseClientsImportArgs(args[1:])
-		if err != nil {
-			return err
-		}
-		return c.importClient(path, label)
-	default:
-		return fmt.Errorf("%s", clientsUsage)
-	}
 }
 
 // listClients prints the waiting enrollment requests and the enrolled keys.
