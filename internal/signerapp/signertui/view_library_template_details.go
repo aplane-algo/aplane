@@ -101,11 +101,7 @@ func (m Model) libraryTemplateDetailsVisibleLines() int {
 func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
-		returnView := m.library.detailsReturnView
-		if returnView == 0 {
-			returnView = ViewTemplateLibrary
-		}
-		m.viewState = returnView
+		m.viewState = m.library.detailsReturnView
 		m.library.detailsContent = ""
 		m.library.detailsError = ""
 		m.library.detailsSourcePath = ""

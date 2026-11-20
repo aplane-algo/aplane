@@ -303,8 +303,7 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.forms.generateError = fmt.Sprintf("%s has no template details available", displayKeyType(keyType))
 			return m, nil
 		}
-		m.library.detailsReturnView = ViewGenerateForm
-		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
+		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl, ViewGenerateForm)
 		if errMsg != "" {
 			next.forms.generateError = errMsg
 			return next, nil

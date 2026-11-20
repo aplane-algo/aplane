@@ -31,9 +31,6 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var activityCmd tea.Cmd
 	m, activityCmd = m.recordUserActivity(time.Now())
 	next, cmd := m.handleKeyPress(msg)
-	if got, ok := next.(Model); ok {
-		return got, tea.Batch(activityCmd, cmd)
-	}
 	return next, tea.Batch(activityCmd, cmd)
 }
 
@@ -81,7 +78,6 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewAuth)
 			m.clearAuthPassphrase()
-			m.auth.loggingIn = false
 		}
 	}
 	return m, nil
@@ -139,7 +135,6 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
 			m.clearAuthPassphrase()
-			m.auth.loggingIn = false
 		}
 	}
 	return m, nil

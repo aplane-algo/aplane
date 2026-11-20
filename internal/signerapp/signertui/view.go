@@ -288,12 +288,6 @@ func (m Model) AdminTitle() string {
 	return "Signer Admin"
 }
 
-// AdminHeaderMeta returns the unstyled role-specific endpoint summary for pane
-// chrome owned by apconsole.
-func (m Model) AdminHeaderMeta() string {
-	return m.adminHeaderMeta()
-}
-
 func (m Model) renderAdminHeader() string {
 	p := theme.Current()
 	title := lipgloss.NewStyle().
@@ -301,7 +295,7 @@ func (m Model) renderAdminHeader() string {
 		Foreground(lipgloss.Color(p.Button)).
 		Render(m.AdminTitle())
 
-	meta := m.adminHeaderMeta()
+	meta := m.AdminHeaderMeta()
 	if meta == "" {
 		return title
 	}
@@ -325,10 +319,9 @@ func (m Model) renderAdminHeader() string {
 	return title + strings.Repeat(" ", spaces) + renderedMeta
 }
 
-func (m Model) adminHeaderMeta() string {
-	if m.admin.settings == nil {
-		return ""
-	}
+// AdminHeaderMeta returns the unstyled role-specific endpoint summary for the
+// admin header and for pane chrome owned by apconsole.
+func (m Model) AdminHeaderMeta() string {
 	// The REST port is a loopback detail behind the SSH endpoint; the header
 	// shows only what a client needs.
 	if endpoint := m.adminEndpointDisplayURL(); endpoint != "" {

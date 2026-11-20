@@ -17,16 +17,12 @@ func (m *Model) clearAuthPassphrase() {
 
 // handleAuthKeys handles keyboard input on authentication screen
 func (m Model) handleAuthKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handlePassphraseKeys(msg, func(passphrase []byte) tea.Cmd {
-		return m.sendAuthCmd(passphrase)
-	})
+	return m.handlePassphraseKeys(msg, m.sendAuthCmd)
 }
 
 // handleUnlockKeys handles keyboard input on unlock screen
 func (m Model) handleUnlockKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handlePassphraseKeys(msg, func(passphrase []byte) tea.Cmd {
-		return m.sendUnlockRequest(passphrase)
-	})
+	return m.handlePassphraseKeys(msg, m.sendUnlockCmd)
 }
 
 // handlePassphraseKeys handles common keyboard input for passphrase entry
@@ -39,18 +35,6 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func([]byte) tea.Cm
 	case "esc":
 		m.quitting = true
 		return m, tea.Quit
-
-	case "c":
-		// Allow reconnect when disconnected
-		if m.connectionState == ConnectionDisconnected {
-			m.connectionState = ConnectionConnecting
-			m.clearAuthPassphrase()
-			m.auth.endedReason = ""
-			return m, m.reconnectCmd()
-		}
-		// Otherwise treat as regular character
-		m.auth.passphraseInput = secretbuf.AppendText(m.auth.passphraseInput, msg.String())
-		m.auth.passphraseError = "" // Clear error on input
 
 	case "enter":
 		// Don't submit if disconnected
@@ -73,7 +57,8 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func([]byte) tea.Cm
 		m.auth.passphraseMasked = !m.auth.passphraseMasked
 
 	default:
-		// Add character to passphrase input (only when connected)
+		// Add character to passphrase input (only when connected; while
+		// disconnected, handleKeyPress takes "c" as reconnect first).
 		if m.connectionState != ConnectionDisconnected && len(msg.String()) == 1 {
 			m.auth.passphraseInput = secretbuf.AppendText(m.auth.passphraseInput, msg.String())
 			m.auth.passphraseError = "" // Clear error on input

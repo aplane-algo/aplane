@@ -36,12 +36,11 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "t", "T":
-		if len(m.library.templates) == 0 || m.library.selectedTemplate < 0 || m.library.selectedTemplate >= len(m.library.templates) {
+		tmpl, ok := m.selectedLibraryTemplate()
+		if !ok {
 			return m, nil
 		}
-		tmpl := m.library.templates[m.library.selectedTemplate]
-		m.library.detailsReturnView = ViewTemplateLibrary
-		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
+		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl, ViewTemplateLibrary)
 		if errMsg != "" {
 			m = next
 			m.library.installStatus = ""
@@ -51,10 +50,10 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return next, cmd
 
 	case "enter":
-		if len(m.library.templates) == 0 || m.library.selectedTemplate < 0 || m.library.selectedTemplate >= len(m.library.templates) {
+		tmpl, ok := m.selectedLibraryTemplate()
+		if !ok {
 			return m, nil
 		}
-		tmpl := m.library.templates[m.library.selectedTemplate]
 		if tmpl.Invalid != "" {
 			m.library.installError = "Cannot " + libraryActionVerb(tmpl) + " invalid " + libraryEntryNoun(tmpl) + ": " + tmpl.Invalid
 			m.library.installStatus = ""
@@ -76,7 +75,17 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.Cmd, string) {
+// selectedLibraryTemplate is the library entry under the cursor, if any.
+func (m Model) selectedLibraryTemplate() (LibraryTemplateInfo, bool) {
+	if m.library.selectedTemplate < 0 || m.library.selectedTemplate >= len(m.library.templates) {
+		return LibraryTemplateInfo{}, false
+	}
+	return m.library.templates[m.library.selectedTemplate], true
+}
+
+// openLibraryTemplateDetails shows tmpl's details; Esc returns to returnView.
+func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo, returnView ViewState) (Model, tea.Cmd, string) {
+	m.library.detailsReturnView = returnView
 	m.library.detailsKeyType = tmpl.KeyType
 	m.library.detailsTemplateType = tmpl.TemplateType
 	m.library.detailsSourceSHA256 = ""
@@ -84,9 +93,6 @@ func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.
 	m.library.detailsContent = ""
 	m.library.detailsError = ""
 	m.library.detailsScrollOffset = 0
-	if m.library.detailsReturnView == 0 {
-		m.library.detailsReturnView = ViewTemplateLibrary
-	}
 
 	if isCompiledProviderLibraryEntry(tmpl) {
 		// No YAML on disk for compiled providers; synthesize a parameter
@@ -149,14 +155,7 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 			m.library.pendingTemplate = nil
 			return m, nil
 		}
-		if m.library.pendingTemplate == nil {
-			m.library.installError = "No library entry selected"
-			m.viewState = ViewTemplateLibrary
-			return m, nil
-		}
-		tmpl := *m.library.pendingTemplate
-		id := m.beginOperation(ViewTemplateInstalling)
-		return m, m.libraryActionCmd(tmpl, id)
+		fallthrough
 
 	case "y", "Y":
 		if m.library.pendingTemplate == nil {

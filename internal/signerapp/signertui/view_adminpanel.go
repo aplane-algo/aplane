@@ -37,22 +37,22 @@ func (m Model) adminRows() []adminRow {
 		{section: "User-Editable", label: "Lock-on-disconnect", key: adminproto.AdminSettingLockOnDisconnect, value: boolStr(s.LockOnDisconnect), editable: isPromptMode, isBool: true},
 		{section: "User-Editable", label: "Passphrase timeout", key: adminproto.AdminSettingPassphraseTimeout, value: s.PassphraseTimeout, editable: isPromptMode, isBool: false},
 		{section: "User-Editable", label: "Color theme", key: adminproto.AdminSettingTheme, value: themeDisplay(s.Theme), editable: true, choices: []string{"auto", "dark", "light"}},
-		{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
-		{section: "Runtime", label: "Node role", key: "", value: nodeRoleDisplay(s.NodeRole), editable: false},
-		{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
-		{section: "Runtime", label: m.rolePortLabel(), key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
-		{section: "Runtime", label: "TEAL compile network", key: "", value: s.TEALCompileNet, editable: false},
-		{section: "Runtime", label: "Policies", key: "", value: "view active policy", editable: false, action: "open_policies"},
 	}
-
 	if !m.isCosignerNode() {
 		// A cosigner node holds no accounts to restrict.
-		bounded := []adminRow{
-			{section: "User-Editable", label: "Require contained accounts", key: adminproto.AdminSettingRequireContained, value: boolStr(s.RequireContained), editable: true, isBool: true},
-			{section: "User-Editable", label: "Require cosigned accounts", key: adminproto.AdminSettingRequireCosigner, value: boolStr(s.RequireCosigner), editable: true, isBool: true},
-		}
-		rows = append(rows[:4:4], append(bounded, rows[4:]...)...)
+		rows = append(rows,
+			adminRow{section: "User-Editable", label: "Require contained accounts", key: adminproto.AdminSettingRequireContained, value: boolStr(s.RequireContained), editable: true, isBool: true},
+			adminRow{section: "User-Editable", label: "Require cosigned accounts", key: adminproto.AdminSettingRequireCosigner, value: boolStr(s.RequireCosigner), editable: true, isBool: true},
+		)
 	}
+	rows = append(rows,
+		adminRow{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
+		adminRow{section: "Runtime", label: "Node role", key: "", value: nodeRoleDisplay(s.NodeRole), editable: false},
+		adminRow{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
+		adminRow{section: "Runtime", label: m.rolePortLabel(), key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
+		adminRow{section: "Runtime", label: "TEAL compile network", key: "", value: s.TEALCompileNet, editable: false},
+		adminRow{section: "Runtime", label: "Policies", key: "", value: "view active policy", editable: false, action: "open_policies"},
+	)
 
 	if s.SSHEnabled {
 		rows = append(rows,

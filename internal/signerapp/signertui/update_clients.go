@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // openEnrolledClients opens the enrolled-clients screen and asks the signer
@@ -267,31 +268,19 @@ func (m Model) handleEnrolledClientsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) selectedPendingRequest() (pendingRequestRow, bool) {
+func (m Model) selectedPendingRequest() (protocol.PendingEnrollmentInfo, bool) {
 	if m.clients.selected < len(m.clients.pending) {
-		req := m.clients.pending[m.clients.selected]
-		return pendingRequestRow{Fingerprint: req.Fingerprint, Label: req.Label}, true
+		return m.clients.pending[m.clients.selected], true
 	}
-	return pendingRequestRow{}, false
+	return protocol.PendingEnrollmentInfo{}, false
 }
 
-type pendingRequestRow struct {
-	Fingerprint string
-	Label       string
-}
-
-func (m Model) selectedEnrolledKey() (enrolledKeyRow, bool) {
+func (m Model) selectedEnrolledKey() (protocol.EnrolledKeyInfo, bool) {
 	index := m.clients.selected - len(m.clients.pending)
 	if index >= 0 && index < len(m.clients.keys) {
-		key := m.clients.keys[index]
-		return enrolledKeyRow{Fingerprint: key.Fingerprint, Label: key.Label}, true
+		return m.clients.keys[index], true
 	}
-	return enrolledKeyRow{}, false
-}
-
-type enrolledKeyRow struct {
-	Fingerprint string
-	Label       string
+	return protocol.EnrolledKeyInfo{}, false
 }
 
 // handleRevokeClientConfirmKeys handles keyboard input on the client key
