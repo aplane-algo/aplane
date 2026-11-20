@@ -187,7 +187,7 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 		t.Fatalf("Rotate() error = %v", err)
 	}
 	if !result.RootCommitted || result.KeysMigrated != 2 || result.TemplatesMigrated != 2 ||
-		result.PolicySidecarsMigrated != 2 || result.NodeRoleSidecarsMigrated != 1 {
+		result.PolicySidecarsMigrated != 2 {
 		t.Fatalf("Rotate() result = %+v", result)
 	}
 	if _, _, err := genstore.ResolveStoreRoot(fixture.paths, fixture.oldPassphrase); err == nil {
@@ -223,9 +223,9 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		term, err := crypto.EnvelopeTerm(encoded)
-		if err != nil || term != kr.CurrentTerm() {
-			t.Fatalf("%s term = %d, %v", item.path, term, err)
+		term, present, err := crypto.InspectTermEnvelope(encoded)
+		if err != nil || !present || term != kr.CurrentTerm() {
+			t.Fatalf("%s term = %d, %v, %v", item.path, term, present, err)
 		}
 		plaintext, err := kr.Open(encoded, item.ctx)
 		if err != nil || string(plaintext) != item.want {
@@ -322,7 +322,7 @@ func TestRotatePreRootFailureLeavesOldAuthorityAndQuarantinableSuccessor(t *test
 	if _, _, err := genstore.ResolveStoreRoot(fixture.paths, newPassphrase); err == nil {
 		t.Fatal("new passphrase opened after precommit failure")
 	}
-	report, err := genstore.ReconcileStoreRoot(fixture.paths, kr, nil)
+	report, err := genstore.ReconcileStoreRoot(fixture.paths, kr)
 	if err != nil {
 		t.Fatalf("ReconcileStoreRoot() error = %v", err)
 	}

@@ -206,14 +206,14 @@ func (kr *Keyring) Open(sealed []byte, ctx ObjectContext) ([]byte, error) {
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
-	term, err := envelopeTerm(sealed)
+	encrypted, err := parseTermEnvelope(sealed)
 	if err != nil {
 		return nil, err
 	}
-	if term != kr.currentTerm {
-		return nil, fmt.Errorf("term %d is not authorized for current state", term)
+	if encrypted.Term != kr.currentTerm {
+		return nil, fmt.Errorf("term %d is not authorized for current state", encrypted.Term)
 	}
-	return openUnderTerm(sealed, kr.terms[term], term, ctx)
+	return openUnderTerm(encrypted, kr.terms[encrypted.Term], ctx)
 }
 
 func (kr *Keyring) OpenHistoricalGenerationEnvelope(sealed []byte, ctx ObjectContext, expectedTerm int64) ([]byte, error) {
@@ -223,18 +223,18 @@ func (kr *Keyring) OpenHistoricalGenerationEnvelope(sealed []byte, ctx ObjectCon
 	if err := ctx.validate(); err != nil {
 		return nil, err
 	}
-	term, err := envelopeTerm(sealed)
+	encrypted, err := parseTermEnvelope(sealed)
 	if err != nil {
 		return nil, err
 	}
-	if expectedTerm < FirstTerm || term != expectedTerm {
-		return nil, fmt.Errorf("historical generation envelope term %d does not match sealed entry term %d", term, expectedTerm)
+	if expectedTerm < FirstTerm || encrypted.Term != expectedTerm {
+		return nil, fmt.Errorf("historical generation envelope term %d does not match sealed entry term %d", encrypted.Term, expectedTerm)
 	}
-	key, ok := kr.terms[term]
+	key, ok := kr.terms[encrypted.Term]
 	if !ok {
-		return nil, fmt.Errorf("keyring has no key for historical term %d", term)
+		return nil, fmt.Errorf("keyring has no key for historical term %d", encrypted.Term)
 	}
-	return openUnderTerm(sealed, key, term, ctx)
+	return openUnderTerm(encrypted, key, ctx)
 }
 
 // VerifyKnownTermEnvelope authenticates one exact envelope buffer under its
@@ -249,17 +249,17 @@ func (kr *Keyring) VerifyKnownTermEnvelope(sealed []byte, ctx ObjectContext) (te
 	if err := ctx.validate(); err != nil {
 		return 0, false, err
 	}
-	term, err = envelopeTerm(sealed)
+	encrypted, err := parseTermEnvelope(sealed)
 	if err != nil {
 		return 0, false, err
 	}
-	key, ok := kr.terms[term]
+	key, ok := kr.terms[encrypted.Term]
 	if !ok {
-		return term, false, nil
+		return encrypted.Term, false, nil
 	}
-	plaintext, err := openUnderTerm(sealed, key, term, ctx)
+	plaintext, err := openUnderTerm(encrypted, key, ctx)
 	ZeroBytes(plaintext)
-	return term, true, err
+	return encrypted.Term, true, err
 }
 
 func (kr *Keyring) sortedTerms() []int64 {
@@ -365,10 +365,12 @@ func aadFor(term int64, ctx ObjectContext) []byte {
 	return appendAADField(out, []byte(ctx.Selector))
 }
 
-func checkKDFParams(kdfTime, kdfMemory uint32, kdfThreads uint8) error {
+// checkKDFParams refuses Argon2id parameters other than this release's;
+// label names the envelope in the error.
+func checkKDFParams(label string, kdfTime, kdfMemory uint32, kdfThreads uint8) error {
 	if kdfTime != argon2Time || kdfMemory != argon2Memory || kdfThreads != argon2Threads {
-		return fmt.Errorf("keyring KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
-			kdfTime, kdfMemory, kdfThreads, argon2Time, argon2Memory, argon2Threads)
+		return fmt.Errorf("%s KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
+			label, kdfTime, kdfMemory, kdfThreads, argon2Time, argon2Memory, argon2Threads)
 	}
 	return nil
 }

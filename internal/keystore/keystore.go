@@ -8,10 +8,7 @@
 // KeySession type in this package.
 package keystore
 
-import (
-	"errors"
-	"time"
-)
+import "errors"
 
 // Common keystore errors
 var (
@@ -21,25 +18,3 @@ var (
 	// ErrStoreLocked indicates the keystore is locked and requires unlock
 	ErrStoreLocked = errors.New("keystore is locked")
 )
-
-// KeyMetadata contains non-sensitive information about a stored key
-type KeyMetadata struct {
-	// Address is the Algorand address derived from the public key
-	Address string
-
-	// KeyType identifies the key algorithm ("ed25519", "aplane.falcon1024.v1")
-	KeyType string
-
-	// CreatedAt is when the key was stored (if known)
-	CreatedAt time.Time
-
-	// StorageType indicates the backend ("file", "hsm", "cloud-kms")
-	StorageType string
-
-	// Exportable indicates whether key material can be exported
-	// HSM and cloud KMS keys are typically not exportable
-	Exportable bool
-
-	// FilePath is the path to the key file (file backend only)
-	FilePath string
-}

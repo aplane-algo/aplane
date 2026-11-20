@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,8 +87,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		SkipCandidateValidation: true,
 		GenerationID:            genC, Parent: second.GenerationID(),
 		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
-		RollbackSourceGenerationID: first.GenerationID(),
-		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
+		CreatedAt: time.Unix(1_785_300_002, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
 		},
@@ -125,16 +125,22 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 	}
 }
 
-// The ASA set is plaintext authority taken from the outgoing generation:
-// rollback classifies its members instead of refusing them.
-func TestRollbackMemberContextAcceptsTheASASet(t *testing.T) {
-	for _, path := range []string{storepaths.ASASetFileName, storepaths.ASASetFileName + ".hmac"} {
-		if _, sealed, err := rollbackMemberContext(genstore.InventoryEntry{Path: path}); err != nil || sealed {
-			t.Fatalf("rollbackMemberContext(%s) = sealed %v, %v; want plaintext authority", path, sealed, err)
+// Rollback reconstructs only keys/ and keytypes/ through
+// rollbackMemberContext; the outgoing generation keeps everything else, so
+// the classifier refuses any other member rather than rewrite it.
+func TestRollbackMemberContextRefusesWhatTheOutgoingGenerationKeeps(t *testing.T) {
+	for _, path := range []string{
+		storepaths.ASASetFileName, storepaths.ASASetFileName + ".hmac",
+		storepaths.DefaultPolicyFileName, storepaths.NodeRoleSidecarName,
+		"policies/ACCOUNT.json", "deleted/keys/ACCOUNT.key",
+	} {
+		_, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: path})
+		if err == nil || !strings.Contains(err.Error(), "unsupported inventory member") {
+			t.Fatalf("rollbackMemberContext(%s) error = %v, want an unsupported member", path, err)
 		}
-		if _, _, err := rollbackMemberContext(genstore.InventoryEntry{Path: path, Term: 1}); err == nil {
-			t.Fatalf("rollbackMemberContext(%s) accepted a term", path)
-		}
+	}
+	if _, sealed, err := rollbackMemberContext(genstore.InventoryEntry{Path: "keytypes/example.v1.json"}); err != nil || sealed {
+		t.Fatalf("rollbackMemberContext(key type state) = sealed %v, %v; want plaintext", sealed, err)
 	}
 }
 
@@ -189,8 +195,7 @@ func TestRollbackKeepsTheOutgoingASASet(t *testing.T) {
 		SkipCandidateValidation: true,
 		GenerationID:            genC, Parent: second.GenerationID(),
 		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
-		RollbackSourceGenerationID: first.GenerationID(),
-		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
+		CreatedAt: time.Unix(1_785_300_002, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
 		},

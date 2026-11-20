@@ -389,8 +389,7 @@ user cannot traverse `/var/lib/apsigner` while the same user can reach
 
 This section is the storage contract for the product store. The only
 supported layout uses one authenticated commit record for both cryptographic
-authority and active-generation selection. There is no compatibility path for
-the retired `CURRENT` plus `keyring.enc` layout.
+authority and active-generation selection.
 
 ### Store root
 
@@ -433,8 +432,8 @@ different from the unwrapped current term, and any selection-MAC mismatch.
 
 The static marker is version 6 with layout `store-root/v1`. No older marker or
 layout is readable, translated, or migrated in place. Initialization refuses
-retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
-from credential backup into a fresh store.
+any other marker, and any store with a generation on disk, and directs
+operators to restore credentials into a freshly initialized store.
 
 Store initialization stages the first generation with its generation-scoped
 node-role sidecar and the role's default policy before the sole commit
@@ -475,9 +474,10 @@ Behavior:
   caller asked for
 - passphrase rotation re-encrypts under a new term key with the same context,
   so a rotation cannot relabel a file while it rewrites it
-- `crypto.EnvelopeTerm` exposes only the positive term header. Any caller
-  using that term as inventory authority must open the same byte buffer with
-  its expected logical context; inspecting the header alone is insufficient.
+- `crypto.InspectTermEnvelope` exposes only the positive term header. Any
+  caller using that term as inventory authority must open the same byte buffer
+  with its expected logical context; inspecting the header alone is
+  insufficient.
 
 ### Active-path capability
 
@@ -612,6 +612,8 @@ Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
 comparison to fail. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
+The rollback generation does not record its source again: its manifest's parent
+is the restore generation, whose capability names the source.
 Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
 restore installs a key's archived policy with the key on both node roles. Each
 restored policy document is checked against the source seal and written with a
@@ -634,8 +636,8 @@ generation. Until that succeeds, it deletes nothing.
 
 - Incomplete `.staging-*` directories and durable-write temporary files have
   never carried authority and are removed.
-- Sealed, referenced, and declared-parent generations are retained.
-- A complete, non-current, unsealed, unreferenced final directory is ambiguous:
+- Sealed and declared-parent generations are retained.
+- Any other complete, non-current, unsealed final directory is ambiguous:
   it may be crashed-mint residue or newer state orphaned by restoration of an
   older authentic root. It is classified and quarantined, never adopted or
   deleted.

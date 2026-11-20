@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -520,5 +521,71 @@ func TestStoreRootReportsOnlyAPassphraseFailureAsInvalidPassphrase(t *testing.T)
 		if errors.Is(err, ErrInvalidPassphrase) {
 			t.Fatalf("VerifyPassphraseWithStoreRoot(%s) error = %v, reported as a wrong passphrase", name, err)
 		}
+	}
+}
+
+// An authenticated selection refuses a root whose selection does not bind to
+// the keyring, naming the check that refused it: the term must be the
+// keyring's current term, and the MAC must match exactly.
+func TestStoreRootSelectionRefusals(t *testing.T) {
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	root, err := SealStoreRoot(kr, []byte("passphrase"), testStoreRootGenerationA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection, err := AuthenticateStoreRoot(root, kr); err != nil || selection.CurrentGenerationID != testStoreRootGenerationA {
+		t.Fatalf("AuthenticateStoreRoot() = %+v, %v", selection, err)
+	}
+	mutate := func(edit func(*storeRootFile)) []byte {
+		t.Helper()
+		file, err := parseStoreRoot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		edit(&file)
+		encoded, err := json.Marshal(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	unrelated, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unrelated.Zero()
+	const macFailed = "store root selection MAC verification failed"
+	tests := []struct {
+		name string
+		root []byte
+		kr   *Keyring
+		want string
+	}{
+		{"another generation", mutate(func(f *storeRootFile) { f.CurrentGenerationID = testStoreRootGenerationB }), kr, macFailed},
+		{"an edited MAC", mutate(func(f *storeRootFile) {
+			last := "0"
+			if strings.HasSuffix(f.SelectionMAC, "0") {
+				last = "1"
+			}
+			f.SelectionMAC = f.SelectionMAC[:len(f.SelectionMAC)-1] + last
+		}), kr, macFailed},
+		{"another keyring", root, unrelated, macFailed},
+		{"another term", mutate(func(f *storeRootFile) { f.SelectionTerm++ }), kr, fmt.Sprintf(
+			"store root selection term %d does not equal keyring current term %d", kr.CurrentTerm()+1, kr.CurrentTerm(),
+		)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := AuthenticateStoreRoot(tt.root, tt.kr); err == nil || err.Error() != tt.want {
+				t.Fatalf("AuthenticateStoreRoot() error = %v, want %q", err, tt.want)
+			}
+			if _, err := ReselectStoreRoot(tt.root, tt.kr, testStoreRootGenerationB); err == nil || err.Error() != tt.want {
+				t.Fatalf("ReselectStoreRoot() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

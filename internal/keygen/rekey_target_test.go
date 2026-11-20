@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	nativeed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
@@ -64,10 +65,7 @@ func TestSaveNewKeyFailsForAnUnresolvedKeyType(t *testing.T) {
 	if result, err := SaveNewKey(paths, payload, kr); err == nil || result != nil || !strings.Contains(err.Error(), "does not resolve") {
 		t.Fatalf("SaveNewKey() = %+v, %v; want an unresolved declaration", result, err)
 	}
-	scanned, err := apkeys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scanned := keystest.ScanKeys(t, paths, kr)
 	if len(scanned) != 0 {
 		t.Fatalf("keys written: %v, want none", scanned)
 	}

@@ -6,15 +6,10 @@ package keystore
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +18,11 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -33,13 +32,6 @@ import (
 
 // testMasterKey is a 32-byte key for testing (AES-256 requires exactly 32 bytes)
 var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
-
-// testKeyPair represents a minimal key pair for testing
-type testKeyPair struct {
-	KeyType       string `json:"key_type"`
-	PublicKeyHex  string `json:"public_key"`
-	PrivateKeyHex string `json:"private_key"`
-}
 
 // setupTestKeysDir creates a temporary keys directory and explicit keystore paths.
 // Returns the product-store keys directory, path helper, and a cleanup function.
@@ -54,49 +46,6 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	return active.KeysDir(), paths, func() {}
-}
-
-// createTestKeyFile creates an encrypted test key file
-// masterKey should be exactly 32 bytes for encryption
-func createTestKeyFile(t *testing.T, keysDir, address string, masterKey []byte) string {
-	t.Helper()
-
-	// Generate a valid Ed25519 key pair
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("Failed to generate key: %v", err)
-	}
-
-	keyPair := testKeyPair{
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(pubKey),
-		PrivateKeyHex: hex.EncodeToString(privKey),
-	}
-
-	keyJSON, err := json.MarshalIndent(keyPair, "", "  ")
-	if err != nil {
-		t.Fatalf("Failed to marshal key: %v", err)
-	}
-	defer crypto.ZeroBytes(keyJSON)
-
-	filePath := filepath.Join(keysDir, address+".key")
-	var dataToWrite []byte
-	if len(masterKey) > 0 {
-		encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
-		if err != nil {
-			t.Fatalf("Failed to encrypt key: %v", err)
-		}
-		dataToWrite = encrypted
-	} else {
-		dataToWrite = make([]byte, len(keyJSON))
-		copy(dataToWrite, keyJSON)
-	}
-
-	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
-		t.Fatalf("Failed to write test key file: %v", err)
-	}
-
-	return filePath
 }
 
 // TestFileKeyStore_NewFileKeyStore tests store creation
@@ -189,61 +138,6 @@ func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
 	}
 }
 
-// TestFileKeyStore_List_EmptyCache tests List with empty cache
-func TestFileKeyStore_List_EmptyCache(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	ctx := context.Background()
-
-	keys, err := store.List(ctx)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-
-	if len(keys) != 0 {
-		t.Errorf("Expected empty list, got %d keys", len(keys))
-	}
-}
-
-// TestFileKeyStore_List_WithCache tests List returns cached keys
-func TestFileKeyStore_List_WithCache(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	ctx := context.Background()
-
-	// Create a test file
-	addr := "TESTADDR1234567890"
-	filePath := createTestKeyFile(t, keysDir, addr, nil)
-
-	// Manually add to cache (simulating scan)
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "ed25519"}
-
-	keys, err := store.List(ctx)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-
-	if len(keys) != 1 {
-		t.Errorf("Expected 1 key, got %d", len(keys))
-	}
-
-	if keys[0].Address != addr {
-		t.Errorf("Address = %s, want %s", keys[0].Address, addr)
-	}
-
-	if keys[0].StorageType != "file" {
-		t.Errorf("StorageType = %s, want 'file'", keys[0].StorageType)
-	}
-
-	if !keys[0].Exportable {
-		t.Error("FileKeyStore keys should be exportable")
-	}
-}
-
 // TestFileKeyStore_Get_KeyNotFound tests Get for missing key
 func TestFileKeyStore_Get_KeyNotFound(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
@@ -305,134 +199,6 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	}
 	if errors.Is(err, crypto.ErrInvalidPassphrase) {
 		t.Fatalf("Get() error = %v, should not be ErrInvalidPassphrase for key file corruption", err)
-	}
-}
-
-// TestFileKeyStore_GetMetadata tests metadata retrieval
-func TestFileKeyStore_GetMetadata(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	ctx := context.Background()
-
-	// Add key to cache
-	addr := "METADATATEST1234"
-	filePath := createTestKeyFile(t, keysDir, addr, nil)
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "ed25519"}
-
-	meta, err := store.GetMetadata(ctx, addr)
-	if err != nil {
-		t.Fatalf("GetMetadata failed: %v", err)
-	}
-
-	if meta.Address != addr {
-		t.Errorf("Address = %s, want %s", meta.Address, addr)
-	}
-
-	if meta.FilePath != filePath {
-		t.Errorf("FilePath = %s, want %s", meta.FilePath, filePath)
-	}
-
-	if meta.StorageType != "file" {
-		t.Errorf("StorageType = %s, want 'file'", meta.StorageType)
-	}
-}
-
-// TestFileKeyStore_GetMetadata_NotFound tests metadata for missing key
-func TestFileKeyStore_GetMetadata_NotFound(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	ctx := context.Background()
-
-	_, err := store.GetMetadata(ctx, "NONEXISTENT")
-	if err != ErrKeyNotFound {
-		t.Errorf("Expected ErrKeyNotFound, got %v", err)
-	}
-}
-
-// TestFileKeyStore_Store_Success tests storing a new key
-// TestFileKeyStore_Delete_Success tests deleting a key
-func TestFileKeyStore_Delete_Success(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
-	ctx := context.Background()
-
-	// Create test key
-	addr := "DELETETEST12345"
-	filePath := createTestKeyFile(t, keysDir, addr, nil)
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "ed25519"}
-
-	err := store.Delete(ctx, addr)
-	if err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
-
-	// Verify removed from cache
-	if _, exists := store.cache[addr]; exists {
-		t.Error("Key should be removed from cache after Delete")
-	}
-
-	// Verify file was deleted
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-		t.Error("Key file should be deleted")
-	}
-}
-
-// TestFileKeyStore_Delete_NotFound tests deleting non-existent key
-func TestFileKeyStore_Delete_NotFound(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
-	ctx := context.Background()
-
-	err := store.Delete(ctx, "NONEXISTENT")
-	if err != ErrKeyNotFound {
-		t.Errorf("Expected ErrKeyNotFound, got %v", err)
-	}
-}
-
-func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	store.setKeyringDirectlyForTest(cryptotest.Keyring(t, testMasterKey))
-	ctx := context.Background()
-
-	addr := "DELETEFAIL12345"
-	blockingDir := filepath.Join(keysDir, "nonempty")
-	if err := os.MkdirAll(blockingDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll(blockingDir) error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(blockingDir, "child"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("WriteFile(blocking child) error = %v", err)
-	}
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: blockingDir, KeyType: "ed25519"}
-
-	err := store.Delete(ctx, addr)
-	if err == nil {
-		t.Fatal("Delete() error = nil, want remove failure")
-	}
-	if _, exists := store.cache[addr]; !exists {
-		t.Fatal("cache entry was evicted despite remove failure")
-	}
-}
-
-// TestFileKeyStore_Type tests Type returns "file"
-func TestFileKeyStore_Type(t *testing.T) {
-	dummyPaths := utilkeys.NewPaths(t.TempDir())
-	dummyPaths = genstoretest.MintFirst(t, dummyPaths)
-	store := NewAtomicFileKeyStoreForPaths(dummyPaths)
-	if store.Type() != "file" {
-		t.Errorf("Type = %s, want 'file'", store.Type())
 	}
 }
 
@@ -577,13 +343,13 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encryptWithTermKey() error = %v", err)
 	}
-	if err := os.WriteFile(keys.CosignerCredentialFilePathActive(genstoretest.Active(t, paths), componentKey), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(keystest.CosignerCredentialFilePath(genstoretest.Active(t, paths), componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 
-	report, err := keys.ScanKeysDirectoryWithKeyringReportActive(genstoretest.Active(t, paths), cryptotest.Keyring(t, testMasterKey))
+	report, err := keys.ScanKeysDirectory(genstoretest.Active(t, paths), cryptotest.Keyring(t, testMasterKey), nil)
 	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyringReportActive(genstoretest.Active(t, )) error = %v", err)
+		t.Fatalf("ScanKeysDirectory() error = %v", err)
 	}
 	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 		t.Fatalf("scan report = %#v, want one rejected key", report)
@@ -593,38 +359,17 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	}
 }
 
-func TestFileKeyStoreDeleteRejectsLockedStoreWithCachedEntry(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	keyPath := createTestKeyFile(t, keysDir, "LOCKEDDELETE", nil)
-	store.cache["LOCKEDDELETE"] = keys.KeyScanInfo{
-		KeyFile: keyPath,
-		KeyType: "ed25519",
-	}
-	err := store.Delete(context.Background(), "LOCKEDDELETE")
-	if !errors.Is(err, ErrStoreLocked) {
-		t.Fatalf("Delete() error = %v, want locked-store failure", err)
-	}
-	if _, statErr := os.Stat(keyPath); statErr != nil {
-		t.Fatalf("Delete() removed a cached key while locked: %v", statErr)
-	}
-}
-
 // TestFileKeyStore_CacheConcurrency tests thread-safe cache operations
 func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
 	store := NewAtomicFileKeyStoreForPaths(paths)
-	ctx := context.Background()
 
 	const numGoroutines = 50
 	const numIterations = 100
 
 	var wg sync.WaitGroup
-	errChan := make(chan error, numGoroutines*numIterations)
 
 	// Concurrent reads
 	for i := 0; i < numGoroutines; i++ {
@@ -632,10 +377,7 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numIterations; j++ {
-				_, err := store.List(ctx)
-				if err != nil {
-					errChan <- err
-				}
+				_ = store.GetPublicKeyHexMap()
 				_ = store.GetCache()
 				_ = store.GetKeyTypes()
 				_ = store.GetSigningSummary()
@@ -659,12 +401,6 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		t.Errorf("Concurrent operation error: %v", err)
-	}
 }
 
 // TestClearKeysBlocksDuringWithKeyring proves that ClearKeys() blocks while

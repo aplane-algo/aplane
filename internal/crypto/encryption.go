@@ -4,14 +4,12 @@
 package crypto
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -36,14 +34,14 @@ func validateGCMNonce(nonce []byte, gcm cipher.AEAD) error {
 	return nil
 }
 
-// sealWithRandomNonce encrypts plaintext with a random nonce.
+// sealWithRandomNonce encrypts plaintext with a random nonce, binding aad.
 // Returns the nonce and ciphertext separately.
-func sealWithRandomNonce(gcm cipher.AEAD, plaintext []byte) (nonce, ciphertext []byte, err error) {
+func sealWithRandomNonce(gcm cipher.AEAD, plaintext, aad []byte) (nonce, ciphertext []byte, err error) {
 	nonce = make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	ciphertext = gcm.Seal(nil, nonce, plaintext, nil)
+	ciphertext = gcm.Seal(nil, nonce, plaintext, aad)
 	return nonce, ciphertext, nil
 }
 
@@ -115,7 +113,7 @@ func EncryptStandalone(plaintext, passphrase []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext)
+	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -151,16 +149,7 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 	}
 
 	var encrypted EncryptedDataStandalone
-	decoder := json.NewDecoder(bytes.NewReader(encryptedJSON))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&encrypted); err != nil {
-		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("failed to parse encrypted data: trailing JSON value")
-		}
+	if err := decodeJSONStrict(encryptedJSON, &encrypted); err != nil {
 		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
 	}
 	if encrypted.EnvelopeVersion != 2 {
@@ -169,7 +158,7 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 			encrypted.EnvelopeVersion,
 		)
 	}
-	if err := encrypted.validateKDFParams(); err != nil {
+	if err := checkKDFParams("standalone envelope", encrypted.KDFTime, encrypted.KDFMemory, encrypted.KDFThreads); err != nil {
 		return nil, err
 	}
 
@@ -208,15 +197,4 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 	}
 
 	return plaintext, nil
-}
-
-func (e EncryptedDataStandalone) validateKDFParams() error {
-	if e.KDFTime != argon2Time || e.KDFMemory != argon2Memory || e.KDFThreads != argon2Threads {
-		return fmt.Errorf(
-			"standalone envelope KDF parameters (%d, %d, %d) do not match envelope version 2 (%d, %d, %d)",
-			e.KDFTime, e.KDFMemory, e.KDFThreads,
-			argon2Time, argon2Memory, argon2Threads,
-		)
-	}
-	return nil
 }

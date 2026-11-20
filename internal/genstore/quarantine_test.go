@@ -173,7 +173,7 @@ func TestPruneQuarantinedRemovesOnlySelectedQuarantineState(t *testing.T) {
 	mintTestGeneration(t, paths, testGenD, map[string]string{
 		"keys/ACCOUNT.key": "candidate",
 	})
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
@@ -209,11 +209,11 @@ func TestListQuarantinedReturnsNonAuthoritativeMetadata(t *testing.T) {
 	mintTestGeneration(t, paths, testGenD, map[string]string{
 		"keys/ACCOUNT.key": "candidate",
 	})
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
-	records, err := ListQuarantined(paths)
+	records, err := ListQuarantined(paths, nil)
 	if err != nil {
 		t.Fatalf("ListQuarantined() error = %v", err)
 	}

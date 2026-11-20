@@ -5,7 +5,6 @@ package crypto
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -95,40 +94,12 @@ type encryptedDataTerm struct {
 	Ciphertext      string `json:"ciphertext"`
 }
 
-// envelopeTerm reads the term a term-envelope names, without decrypting.
-func envelopeTerm(encryptedJSON []byte) (int64, error) {
-	var probe struct {
-		EnvelopeVersion int `json:"envelope_version"`
-	}
-	if err := json.Unmarshal(encryptedJSON, &probe); err != nil {
-		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-	if probe.EnvelopeVersion != TermEnvelopeVersion {
-		return 0, fmt.Errorf(
-			"envelope_version %d is not a term envelope (expected %d)",
-			probe.EnvelopeVersion, TermEnvelopeVersion,
-		)
-	}
-	encrypted, err := parseTermEnvelope(encryptedJSON)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-	return encrypted.Term, nil
-}
-
-// EnvelopeTerm reports the term named by a term envelope without returning
-// key material or decrypting its payload. Callers that use the result as
-// authority must also open the same byte buffer with its expected logical
-// ObjectContext.
-func EnvelopeTerm(encryptedJSON []byte) (int64, error) {
-	return envelopeTerm(encryptedJSON)
-}
-
 // InspectTermEnvelope reports whether data declares an encryption-envelope
 // version and, when it does, requires the current term-envelope format and a
 // positive term. Plaintext generation members do not declare the field and
 // return present=false. The term is 0 whenever present is false or err is
-// set.
+// set. It never decrypts: callers that use the term as authority must also
+// open the same byte buffer with its expected logical ObjectContext.
 func InspectTermEnvelope(data []byte) (term int64, present bool, err error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(data, &object); err != nil {
@@ -137,26 +108,14 @@ func InspectTermEnvelope(data []byte) (term int64, present bool, err error) {
 		// mistaken for an envelope because it declares no parsed version.
 		return 0, false, nil
 	}
-	rawVersion, present := object["envelope_version"]
-	if !present {
+	if _, present := object["envelope_version"]; !present {
 		return 0, false, nil
 	}
-	var version int
-	if err := json.Unmarshal(rawVersion, &version); err != nil {
-		return 0, true, fmt.Errorf("invalid envelope_version: %w", err)
-	}
-	if version != TermEnvelopeVersion {
-		return 0, true, fmt.Errorf(
-			"envelope_version %d is not a term envelope (expected %d)",
-			version,
-			TermEnvelopeVersion,
-		)
-	}
-	term, err = EnvelopeTerm(data)
+	encrypted, err := parseTermEnvelope(data)
 	if err != nil {
 		return 0, true, err
 	}
-	return term, true, nil
+	return encrypted.Term, true, nil
 }
 
 func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
@@ -164,11 +123,10 @@ func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext, aadFor(term, ctx))
+	if err != nil {
+		return nil, err
 	}
-	ciphertext := gcm.Seal(nil, nonce, plaintext, aadFor(term, ctx))
 	return json.MarshalIndent(encryptedDataTerm{
 		EnvelopeVersion: TermEnvelopeVersion,
 		Term:            term,
@@ -177,14 +135,9 @@ func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte
 	}, "", "  ")
 }
 
-func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]byte, error) {
-	encrypted, err := parseTermEnvelope(encryptedJSON)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse encrypted data: %w", err)
-	}
-	if encrypted.Term != term {
-		return nil, fmt.Errorf("term envelope names term %d, expected %d", encrypted.Term, term)
-	}
+// openUnderTerm opens an envelope parseTermEnvelope returned, under the
+// term it names.
+func openUnderTerm(encrypted encryptedDataTerm, key []byte, ctx ObjectContext) ([]byte, error) {
 	nonce, err := base64.StdEncoding.DecodeString(encrypted.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode nonce: %w", err)
@@ -200,7 +153,7 @@ func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]
 	if err := validateGCMNonce(nonce, gcm); err != nil {
 		return nil, err
 	}
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, aadFor(term, ctx))
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, aadFor(encrypted.Term, ctx))
 	if err != nil {
 		// A wrong key, an edited term, and a mismatched object identity are
 		// deliberately indistinguishable here: all three mean this envelope
@@ -210,26 +163,35 @@ func openUnderTerm(encryptedJSON, key []byte, term int64, ctx ObjectContext) ([]
 	return plaintext, nil
 }
 
+// parseTermEnvelope strictly parses one canonical term envelope without
+// decrypting it. The version is probed first, so another envelope version is
+// refused as such rather than for the fields this format does not have.
 func parseTermEnvelope(encoded []byte) (encryptedDataTerm, error) {
-	var encrypted encryptedDataTerm
-	if err := decodeJSONStrict(encoded, &encrypted); err != nil {
-		return encryptedDataTerm{}, err
+	var probe struct {
+		EnvelopeVersion int `json:"envelope_version"`
 	}
-	if encrypted.EnvelopeVersion != TermEnvelopeVersion {
+	if err := json.Unmarshal(encoded, &probe); err != nil {
+		return encryptedDataTerm{}, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
+	if probe.EnvelopeVersion != TermEnvelopeVersion {
 		return encryptedDataTerm{}, fmt.Errorf(
 			"envelope_version %d is not a term envelope (expected %d)",
-			encrypted.EnvelopeVersion, TermEnvelopeVersion,
+			probe.EnvelopeVersion, TermEnvelopeVersion,
 		)
 	}
+	var encrypted encryptedDataTerm
+	if err := decodeJSONStrict(encoded, &encrypted); err != nil {
+		return encryptedDataTerm{}, fmt.Errorf("failed to parse encrypted data: %w", err)
+	}
 	if encrypted.Term <= 0 {
-		return encryptedDataTerm{}, fmt.Errorf("term envelope has no term")
+		return encryptedDataTerm{}, fmt.Errorf("failed to parse encrypted data: term envelope has no term")
 	}
 	canonical, err := json.MarshalIndent(encrypted, "", "  ")
 	if err != nil {
 		return encryptedDataTerm{}, fmt.Errorf("canonicalize term envelope: %w", err)
 	}
 	if !bytes.Equal(encoded, canonical) {
-		return encryptedDataTerm{}, fmt.Errorf("term envelope is not canonical JSON")
+		return encryptedDataTerm{}, fmt.Errorf("failed to parse encrypted data: term envelope is not canonical JSON")
 	}
 	return encrypted, nil
 }

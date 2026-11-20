@@ -26,7 +26,7 @@ func TestScanProjectsPayloadFields(t *testing.T) {
 	keyJSON, _ = json.MarshalIndent(keyData, "", "  ")
 	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
-	result, err := ScanKeysDirectoryWithKeyring(paths, cryptotest.Keyring(t, masterKey))
+	result, err := scanKeysForTest(t, paths, cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatal(err)
 	}

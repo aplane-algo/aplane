@@ -42,7 +42,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if result.Address != selector {
 		t.Fatalf("Address = %q, want %q", result.Address, selector)
 	}
-	if result.PrivateFile != AccountKeyFilePathActive(mustResolveActiveForTest(t, paths), selector) {
+	if result.PrivateFile != accountKeyFileForTest(t, paths, selector) {
 		t.Fatalf("PrivateFile = %q, want canonical selector path", result.PrivateFile)
 	}
 
@@ -91,7 +91,7 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	if result.Address != componentKey {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
 	}
-	wantPrivateFile := CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), componentKey)
+	wantPrivateFile := cosignerCredentialFileForTest(t, paths, componentKey)
 	if result.PrivateFile != wantPrivateFile {
 		t.Fatalf("PrivateFile = %q, want %q", result.PrivateFile, wantPrivateFile)
 	}
@@ -102,7 +102,7 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	if !crypto.IsEncrypted(privateData) {
 		t.Fatal("saved cosigner credential should be encrypted")
 	}
-	if _, err := os.Stat(AccountKeyFilePathActive(mustResolveActiveForTest(t, paths), componentKey)); !os.IsNotExist(err) {
+	if _, err := os.Stat(accountKeyFileForTest(t, paths, componentKey)); !os.IsNotExist(err) {
 		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
 	}
 
@@ -193,7 +193,7 @@ func TestSavePayloadRefusesCosignerCredentialPastCap(t *testing.T) {
 		t.Fatalf("SaveNewPayload(past the cap) error = %v, want ErrCosignerCredentialLimit", err)
 	}
 	selector, _ := payload.Selector()
-	if _, err := os.Stat(CosignerCredentialFilePathActive(mustResolveActiveForTest(t, paths), selector)); !os.IsNotExist(err) {
+	if _, err := os.Stat(cosignerCredentialFileForTest(t, paths, selector)); !os.IsNotExist(err) {
 		t.Fatalf("refused save wrote a credential: %v", err)
 	}
 }

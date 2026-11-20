@@ -59,7 +59,7 @@ func cmdGenerations(args []string) error {
 				return err
 			}
 		}
-		removed, err := genstore.CollectGarbageStoreRoot(paths, nil, retainRollbackParent, kr)
+		removed, err := genstore.CollectGarbageStoreRoot(paths, retainRollbackParent, kr)
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,7 @@ func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, active st
 	if defects := templateReport.ContentDefectKeyTypes(); len(defects) > 0 {
 		return fmt.Errorf("refusing to prune: %d template/key-type defect(s) in the current generation (first: %s)", len(defects), defects[0])
 	}
-	scan, err := keys.ScanKeysDirectoryWithKeyringReportActive(active, kr)
+	scan, err := keys.ScanKeysDirectory(active, kr, nil)
 	if err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}

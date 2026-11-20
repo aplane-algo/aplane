@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -128,8 +127,8 @@ func CommitReplacementStoreRoot(
 }
 
 // CommitInitialStoreRoot publishes the first root only after the first
-// generation is complete. It refuses every retired layout artifact; the only
-// accepted retry state is a v6 marker with no visible root.
+// generation is complete. The only accepted retry state is a v6 marker with
+// no visible root.
 func CommitInitialStoreRoot(
 	paths storepaths.Paths,
 	kr *crypto.Keyring,
@@ -138,16 +137,6 @@ func CommitInitialStoreRoot(
 ) error {
 	if err := validateStoreRootCommitTarget(paths, generationID); err != nil {
 		return err
-	}
-	for _, retired := range []string{
-		filepath.Join(paths.ProductDir(), "CURRENT"),
-		filepath.Join(paths.ProductDir(), "keyring.enc"),
-	} {
-		if _, err := os.Lstat(retired); err == nil {
-			return fmt.Errorf("refusing atomic store-root initialization over retired layout artifact %s", retired)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
 	}
 	if err := crypto.InitializeStoreRootMarker(paths.ProductDir()); err != nil {
 		return err

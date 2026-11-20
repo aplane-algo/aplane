@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -34,7 +33,7 @@ func TestPreviewRestoreReportsSealedCreationTime(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(keys.AccountKeyFilePathActive(active, address), sealed, 0o600)
+		return os.WriteFile(keystest.AccountKeyFilePath(active, address), sealed, 0o600)
 	}); err != nil {
 		t.Fatal(err)
 	}

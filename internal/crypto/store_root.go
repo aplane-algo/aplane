@@ -95,6 +95,12 @@ func SealStoreRoot(
 	if err != nil {
 		return nil, err
 	}
+	// Deliberately the readers' own header check: sealStoreRootKeyring does
+	// not bound its output, and this is what refuses a keyring too large for
+	// any reader to reopen before a root carrying it is written.
+	if err := validateStoreRootKeyringHeader(wrapped); err != nil {
+		return nil, err
+	}
 	return encodeStoreRoot(kr, wrapped, generationID)
 }
 
@@ -173,6 +179,11 @@ func ReselectStoreRoot(
 	return encodeStoreRoot(kr, slices.Clone(file.Keyring), generationID)
 }
 
+// encodeStoreRoot binds wrappedKeyring to generationID under the current
+// term. It trusts its two callers, SealStoreRoot and ReselectStoreRoot, to
+// pass a validated generation ID and a wrapped keyring header that they have
+// validated, SealStoreRoot after sealing it and ReselectStoreRoot through
+// parseStoreRoot.
 func encodeStoreRoot(
 	kr *Keyring,
 	wrappedKeyring []byte,
@@ -180,12 +191,6 @@ func encodeStoreRoot(
 ) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
 		return nil, ErrKeyringNotOpen
-	}
-	if err := storepaths.ValidateGenerationID(generationID); err != nil {
-		return nil, err
-	}
-	if err := validateStoreRootKeyringHeader(wrappedKeyring); err != nil {
-		return nil, err
 	}
 	selectionMAC, err := storeRootSelectionMAC(
 		kr,
@@ -202,7 +207,7 @@ func encodeStoreRoot(
 		Keyring:             slices.Clone(wrappedKeyring),
 		CurrentGenerationID: generationID,
 		SelectionTerm:       kr.currentTerm,
-		SelectionMAC:        selectionMAC,
+		SelectionMAC:        hex.EncodeToString(selectionMAC),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal store root: %w", err)
@@ -269,18 +274,13 @@ func verifyStoreRootSelection(file storeRootFile, kr *Keyring) error {
 	if err != nil {
 		return err
 	}
-	wantBytes, err := hex.DecodeString(want)
-	if err != nil {
-		return fmt.Errorf("decode expected store root selection MAC: %w", err)
-	}
-	gotBytes, err := hex.DecodeString(file.SelectionMAC)
+	// parseStoreRoot admitted only a canonical SHA-256 hex MAC; hmac.Equal
+	// compares the raw bytes in constant time and refuses a length mismatch.
+	got, err := hex.DecodeString(file.SelectionMAC)
 	if err != nil {
 		return fmt.Errorf("decode store root selection MAC: %w", err)
 	}
-	if len(wantBytes) != sha256.Size || len(gotBytes) != sha256.Size {
-		return fmt.Errorf("store root selection MAC has invalid length")
-	}
-	if !hmac.Equal(gotBytes, wantBytes) {
+	if !hmac.Equal(got, want) {
 		return fmt.Errorf("store root selection MAC verification failed")
 	}
 	return nil
@@ -291,13 +291,13 @@ func storeRootSelectionMAC(
 	wrappedKeyring []byte,
 	generationID string,
 	selectionTerm int64,
-) (string, error) {
+) ([]byte, error) {
 	if kr == nil || len(kr.terms) == 0 {
-		return "", ErrKeyringNotOpen
+		return nil, ErrKeyringNotOpen
 	}
 	key, ok := kr.terms[selectionTerm]
 	if !ok {
-		return "", fmt.Errorf("keyring has no key for selection term %d", selectionTerm)
+		return nil, fmt.Errorf("keyring has no key for selection term %d", selectionTerm)
 	}
 	wrappedDigest := sha256.Sum256(wrappedKeyring)
 	var numeric [8]byte
@@ -313,12 +313,12 @@ func storeRootSelectionMAC(
 		key, []byte(storeRootSelectionMACHKDFInfo), sha256.Size, "store root selection MAC",
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer ZeroBytes(macKey)
 	mac := hmac.New(sha256.New, macKey)
 	_, _ = mac.Write(macInput)
-	return hex.EncodeToString(mac.Sum(nil)), nil
+	return mac.Sum(nil), nil
 }
 
 func sealStoreRootKeyring(kr *Keyring, passphrase []byte) ([]byte, error) {
@@ -506,7 +506,7 @@ func decodeStoreRootKeyringHeader(
 			file.EnvelopeVer,
 		)
 	}
-	if err := checkKDFParams(file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
+	if err := checkKDFParams("keyring", file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
 		return keyringFile{}, nil, nil, nil, err
 	}
 	salt, err := decodeCanonicalBase64("store root keyring salt", file.Salt)

@@ -9,11 +9,13 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -43,7 +45,7 @@ func TestRotatingHintArchiveRestoreAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(keys.AccountKeyFilePathActive(genstoretest.Active(t, paths), account), sealed, 0600); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), account), sealed, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {

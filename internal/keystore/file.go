@@ -6,12 +6,9 @@ package keystore
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"maps"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -110,7 +107,7 @@ func (f *FileKeyStore) Scan() error {
 		err = fmt.Errorf("failed to resolve active key store layout: %w", selectErr)
 	} else if validateErr := genstore.ValidateStoreRootSelection(selected); validateErr != nil {
 		err = fmt.Errorf("failed to resolve active key store layout: %w", validateErr)
-	} else if report, err = keys.ScanKeysDirectoryWithKeyringReportActive(selected, keyring); err != nil {
+	} else if report, err = keys.ScanKeysDirectory(selected, keyring, nil); err != nil {
 		err = fmt.Errorf("failed to scan keys directory: %w", err)
 	}
 	f.cacheLock.RUnlock()
@@ -258,38 +255,6 @@ func (f *FileKeyStore) ClearCache() {
 	f.cacheLock.Unlock()
 }
 
-// List returns metadata for all available keys
-func (f *FileKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
-	f.cacheLock.RLock()
-	defer f.cacheLock.RUnlock()
-
-	result := make([]KeyMetadata, 0, len(f.cache))
-	for address, info := range f.cache {
-		meta := KeyMetadata{
-			Address:     address,
-			StorageType: "file",
-			Exportable:  true,
-			FilePath:    info.KeyFile,
-			KeyType:     info.KeyType, // Now available from scan
-		}
-
-		if info.CreatedAt != "" {
-			if t, err := time.Parse(time.RFC3339, info.CreatedAt); err == nil {
-				meta.CreatedAt = t
-			}
-		}
-		if meta.CreatedAt.IsZero() {
-			if fileInfo, err := os.Stat(info.KeyFile); err == nil {
-				meta.CreatedAt = fileInfo.ModTime()
-			}
-		}
-
-		result = append(result, meta)
-	}
-
-	return result, nil
-}
-
 // Get retrieves key material for signing.
 // The keystore must be unlocked (via Unlock or Scan) before calling Get.
 // Holds the cache read lock through decryption to prevent ClearKeys() from
@@ -391,14 +356,9 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	return km, nil
 }
 
-// GenericLsigData holds data for generic lsig types (timelock, etc.)
-// These don't have cryptographic keys - just bytecode.
-type GenericLsigData struct {
-	BytecodeHex string
-}
-
 // loadGenericLsigKeys loads key material for generic lsig types (timelock, etc.)
-// These don't have cryptographic keys - just bytecode that gets attached to transactions.
+// These don't have cryptographic keys - just bytecode that gets attached to
+// transactions - so Value stays nil.
 func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) *signing.KeyMaterial {
 	return &signing.KeyMaterial{
 		Type:                   keyType,
@@ -408,7 +368,6 @@ func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys
 		SigningArgs:            signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
 		BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
-		Value:                  &GenericLsigData{BytecodeHex: hex.EncodeToString(payload.LogicSigBytecode)},
 	}
 }
 
@@ -438,84 +397,6 @@ func loadWitnessKeyMaterial(payload *keys.Payload, keyType string, signingMeta k
 			PrivateKey:   privateKey,
 		},
 	}, nil
-}
-
-// GetMetadata returns metadata for a single key
-func (f *FileKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMetadata, error) {
-	f.cacheLock.RLock()
-	info, exists := f.cache[address]
-	f.cacheLock.RUnlock()
-
-	if !exists {
-		return nil, ErrKeyNotFound
-	}
-
-	meta := &KeyMetadata{
-		Address:     address,
-		StorageType: "file",
-		Exportable:  true,
-		FilePath:    info.KeyFile,
-		KeyType:     info.KeyType,
-	}
-
-	if info.CreatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, info.CreatedAt); err == nil {
-			meta.CreatedAt = t
-		}
-	}
-	if meta.CreatedAt.IsZero() {
-		if fileInfo, err := os.Stat(info.KeyFile); err == nil {
-			meta.CreatedAt = fileInfo.ModTime()
-		}
-	}
-
-	return meta, nil
-}
-
-// Delete removes a key from the store
-func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
-	f.cacheLock.RLock()
-	if f.keyring == nil {
-		f.cacheLock.RUnlock()
-		return fmt.Errorf("keystore mutation blocked: %w", ErrStoreLocked)
-	}
-	info, exists := f.cache[address]
-	f.cacheLock.RUnlock()
-	if !exists {
-		return ErrKeyNotFound
-	}
-
-	// Remove the file
-	if err := os.Remove(info.KeyFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete key file: %w", err)
-	}
-
-	f.cacheLock.Lock()
-	if current, ok := f.cache[address]; ok && current.KeyFile == info.KeyFile {
-		delete(f.cache, address)
-	}
-	f.cacheLock.Unlock()
-
-	return nil
-}
-
-// Type returns the storage backend type
-func (f *FileKeyStore) Type() string {
-	return "file"
-}
-
-// GetKeyType returns the key type for an address.
-// Uses cached key type from scan - no decryption needed.
-func (f *FileKeyStore) GetKeyType(ctx context.Context, address string) (string, error) {
-	f.cacheLock.RLock()
-	info, exists := f.cache[address]
-	f.cacheLock.RUnlock()
-
-	if !exists {
-		return "", ErrKeyNotFound
-	}
-
-	return info.KeyType, nil
 }
 
 // GetCache returns a copy of the address -> key file path map. The template

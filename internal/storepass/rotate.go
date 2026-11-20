@@ -40,13 +40,12 @@ type RotateOptions struct {
 }
 
 type RotateResult struct {
-	KeysMigrated             int
-	TemplatesMigrated        int
-	PolicySidecarsMigrated   int
-	NodeRoleSidecarsMigrated int
-	PriorGenerations         int
-	HelperWarning            string
-	RootCommitted            bool
+	KeysMigrated           int
+	TemplatesMigrated      int
+	PolicySidecarsMigrated int
+	PriorGenerations       int
+	HelperWarning          string
+	RootCommitted          bool
 }
 
 func VerifyCurrentPassphrase(paths storepaths.Paths, passphrase []byte) error {
@@ -95,7 +94,7 @@ func Rotate(
 	if active.GenerationID() != selected.GenerationID() {
 		return result, fmt.Errorf("store root selection changed during changepass preflight")
 	}
-	preview, err := genstore.InspectStoreRoot(paths, oldKeyring, nil)
+	preview, err := genstore.InspectStoreRoot(paths, oldKeyring)
 	if err != nil {
 		return result, err
 	}
@@ -183,7 +182,6 @@ func Rotate(
 			result.KeysMigrated = counts.keys
 			result.TemplatesMigrated = counts.templates
 			result.PolicySidecarsMigrated = counts.policies
-			result.NodeRoleSidecarsMigrated = 1
 			return nil
 		},
 	})
@@ -320,7 +318,7 @@ func reencryptSealedGeneration(
 		} else if entry.Term != 0 {
 			return counts, fmt.Errorf("plaintext member %s carries term %d", entry.Path, entry.Term)
 		}
-		if entry.Path == "node.yaml.hmac" || isPolicySidecarMember(entry.Path) || entry.Path == asaSetSidecarMember {
+		if entry.Path == storepaths.NodeRoleSidecarName || isPolicySidecarMember(entry.Path) || entry.Path == asaSetSidecarMember {
 			continue
 		}
 		if err := os.WriteFile(filepath.Join(staged.Dir(), filepath.FromSlash(entry.Path)), output, 0o600); err != nil {
@@ -350,7 +348,7 @@ func reencryptSealedGeneration(
 		return counts, err
 	}
 
-	nodeSidecar, err := noderole.ParseSidecar(members["node.yaml.hmac"])
+	nodeSidecar, err := noderole.ParseSidecar(members[storepaths.NodeRoleSidecarName])
 	if err != nil {
 		return counts, err
 	}
@@ -374,7 +372,7 @@ func reencryptSealedGeneration(
 func generationMemberContext(relative string) (crypto.ObjectContext, bool, string, error) {
 	base := filepath.Base(relative)
 	switch {
-	case relative == "node.yaml.hmac", isPolicyDocumentMember(relative), isPolicySidecarMember(relative),
+	case relative == storepaths.NodeRoleSidecarName, isPolicyDocumentMember(relative), isPolicySidecarMember(relative),
 		relative == storepaths.ASASetFileName, relative == asaSetSidecarMember:
 		return crypto.ObjectContext{}, false, "", nil
 	case strings.HasPrefix(relative, "keys/"), strings.HasPrefix(relative, "deleted/keys/"):

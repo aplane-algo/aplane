@@ -96,14 +96,15 @@ func (s Service) RollbackRestore(
 			if err != nil {
 				return err
 			}
+			// The successor does not record the source again: its ParentID
+			// names current, whose manifest's rollback capability names it.
 			_, mintErr := genstore.Mint(paths, genstore.MintRequest{
-				GenerationID:               generationID,
-				Parent:                     current.GenerationID(),
-				Operation:                  genstore.OperationCredentialRestoreRollback,
-				OperationID:                req.OperationID,
-				RollbackSourceGenerationID: capability.SourceGenerationID,
-				CreatedAt:                  time.Now(),
-				Integrity:                  masterKey,
+				GenerationID: generationID,
+				Parent:       current.GenerationID(),
+				Operation:    genstore.OperationCredentialRestoreRollback,
+				OperationID:  req.OperationID,
+				CreatedAt:    time.Now(),
+				Integrity:    masterKey,
 				ValidateCandidate: func(staged storepaths.GenPaths) error {
 					return storevalidate.Candidate(storevalidate.Options{
 						Paths: paths, Candidate: staged, Keyring: masterKey,

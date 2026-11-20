@@ -14,13 +14,14 @@ import (
 func TestManagedArchiveNameTime(t *testing.T) {
 	for name, want := range map[string]time.Time{
 		"aplane-backup-20261102-070725.677012380.tar.gz": time.Date(2026, 11, 2, 7, 7, 25, 677012380, time.UTC),
-		"aplane-backup-20260423-010203.tar.gz":           time.Date(2026, 4, 23, 1, 2, 3, 0, time.UTC),
+		"aplane-backup-20260423-010203.000000000.tar.gz": time.Date(2026, 4, 23, 1, 2, 3, 0, time.UTC),
 	} {
 		if got, ok := ManagedArchiveNameTime(name); !ok || !got.Equal(want) {
 			t.Errorf("ManagedArchiveNameTime(%q) = %v, %v; want %v", name, got, ok, want)
 		}
 	}
-	for _, name := range []string{"lab-signer.tar.gz", "aplane-backup-older.tar.gz", "aplane-backup-20260423-010203.tgz"} {
+	// A name without the nanoseconds the producer writes carries no time.
+	for _, name := range []string{"lab-signer.tar.gz", "aplane-backup-older.tar.gz", "aplane-backup-20260423-010203.tgz", "aplane-backup-20260423-010203.tar.gz"} {
 		if _, ok := ManagedArchiveNameTime(name); ok {
 			t.Errorf("ManagedArchiveNameTime(%q) parsed a time", name)
 		}

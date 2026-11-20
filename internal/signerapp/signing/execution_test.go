@@ -93,23 +93,12 @@ type cancelAfterGetKeyStore struct {
 	after func()
 }
 
-func (s cancelAfterGetKeyStore) List(context.Context) ([]keystore.KeyMetadata, error) {
-	return nil, nil
-}
 func (s cancelAfterGetKeyStore) Get(context.Context, string) (*coresigning.KeyMaterial, error) {
 	if s.after != nil {
 		s.after()
 	}
 	return s.key, nil
 }
-func (s cancelAfterGetKeyStore) GetMetadata(context.Context, string) (*keystore.KeyMetadata, error) {
-	return nil, nil
-}
-func (s cancelAfterGetKeyStore) Delete(context.Context, string) error { return nil }
-func (s cancelAfterGetKeyStore) WithKeyring(func([]byte) error) error {
-	return nil
-}
-func (s cancelAfterGetKeyStore) Type() string { return "test" }
 
 func TestExecutorExecuteGroupSigningHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

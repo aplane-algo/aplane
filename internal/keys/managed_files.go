@@ -162,20 +162,6 @@ func CanonicalManagedCredentialPathActive(active storepaths.GenPaths, selector, 
 	return filepath.Join(active.KeysDir(), name), nil
 }
 
-// AccountKeyFilePathActive is for code that already owns a validated Algorand
-// account address. Canonical writers should prefer
-// CanonicalManagedCredentialPathActive.
-func AccountKeyFilePathActive(active storepaths.GenPaths, address string) string {
-	return filepath.Join(active.KeysDir(), address+AccountKeyExtension)
-}
-
-// CosignerCredentialFilePathActive is for code that already owns a validated
-// Witness Key ID. Canonical writers should prefer
-// CanonicalManagedCredentialPathActive.
-func CosignerCredentialFilePathActive(active storepaths.GenPaths, witnessKeyID string) string {
-	return filepath.Join(active.KeysDir(), witnessKeyID+CosignerCredentialExtension)
-}
-
 // ManagedCredentialDestinationActive reports the canonical destination and
 // whether it exists, while rejecting an active file in the contradictory class.
 func ManagedCredentialDestinationActive(active storepaths.GenPaths, selector, category string) (string, bool, error) {

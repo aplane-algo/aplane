@@ -218,5 +218,5 @@ func (g GenPaths) DeletedPoliciesDir() string {
 // NodeRoleIntegritySidecar is the generation-owned integrity record for the
 // immutable data-root node role document.
 func (g GenPaths) NodeRoleIntegritySidecar() string {
-	return filepath.Join(g.root, "node.yaml.hmac")
+	return filepath.Join(g.root, NodeRoleSidecarName)
 }

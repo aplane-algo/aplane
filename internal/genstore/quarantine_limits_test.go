@@ -51,13 +51,13 @@ func requireQuarantinedAndReadable(t *testing.T, paths storepaths.Paths, generat
 	if _, err := os.Lstat(paths.QuarantinedGenerationDir(generationID)); err != nil {
 		t.Fatalf("generation %s was not quarantined: %v", generationID, err)
 	}
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("reconcile after quarantine: %v", err)
 	}
-	if _, err := InspectStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := InspectStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("inspect after quarantine: %v", err)
 	}
-	records, err := ListQuarantined(paths)
+	records, err := ListQuarantined(paths, nil)
 	if err != nil {
 		t.Fatalf("list quarantine: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestQuarantineAcceptsOnlyWhatItCanReadBack(t *testing.T) {
 			id := fmt.Sprintf("gen-1753501000-%08x", members)
 			attempt := mintTestGeneration(t, paths, id, generatedKeyFiles(members-3))
 
-			if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+			if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 				if !strings.Contains(err.Error(), "preserved in place") {
 					t.Fatalf("reconcile error = %v, want a classification refusal", err)
 				}
@@ -139,7 +139,7 @@ func TestQuarantineCandidateLimitIsOneRuleAtTheBoundary(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			paths, usage := build(t)
 			withQuarantineCandidateLimits(t, tt.limits(usage))
-			_, err := ReconcileStoreRoot(paths, testKeyring(t), nil)
+			_, err := ReconcileStoreRoot(paths, testKeyring(t))
 			if !tt.accept {
 				if err == nil || !strings.Contains(err.Error(), "preserved in place") {
 					t.Fatalf("reconcile error = %v, want the candidate preserved in place", err)
@@ -152,7 +152,7 @@ func TestQuarantineCandidateLimitIsOneRuleAtTheBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reconcile at the limits: %v", err)
 			}
-			records, err := ListQuarantined(paths)
+			records, err := ListQuarantined(paths, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -215,7 +215,7 @@ func TestMintPublishesOnlyWhatQuarantineCanHold(t *testing.T) {
 		if _, err := Mint(paths, request(t, 2)); !errors.Is(err, crash) {
 			t.Fatalf("Mint error = %v, want the injected failure after publication", err)
 		}
-		if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+		if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 			t.Fatalf("reconcile the abandoned publication: %v", err)
 		}
 		requireQuarantinedAndReadable(t, paths, testGenD)
@@ -249,7 +249,7 @@ func TestDiscardAbandonedRemovesWhatQuarantineRefuses(t *testing.T) {
 	attempt := mintTestGeneration(t, paths, testGenD, nil)
 	writeUnquarantinableTree(t, attempt.Dir(), target)
 
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err == nil || !strings.Contains(err.Error(), "preserved in place") {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err == nil || !strings.Contains(err.Error(), "preserved in place") {
 		t.Fatalf("reconcile error = %v, want the candidate preserved in place", err)
 	}
 	results, err := DiscardAbandoned(paths, []string{testGenD}, testKeyring(t))
@@ -265,7 +265,7 @@ func TestDiscardAbandonedRemovesWhatQuarantineRefuses(t *testing.T) {
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("discard followed the symlink: %v", err)
 	}
-	if _, err := ReconcileStoreRoot(paths, testKeyring(t), nil); err != nil {
+	if _, err := ReconcileStoreRoot(paths, testKeyring(t)); err != nil {
 		t.Fatalf("reconcile after discard: %v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestPruneQuarantinedRemovesWhatAccountingRefuses(t *testing.T) {
 	}
 	writeUnquarantinableTree(t, paths.QuarantinedGenerationDir(testGenD), target)
 
-	if _, err := ListQuarantined(paths); err == nil {
+	if _, err := ListQuarantined(paths, nil); err == nil {
 		t.Fatal("ListQuarantined read a quarantine entry holding a symlink")
 	}
 	results, err := PruneQuarantined(paths, []string{testGenD})
@@ -294,7 +294,7 @@ func TestPruneQuarantinedRemovesWhatAccountingRefuses(t *testing.T) {
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("prune followed the symlink: %v", err)
 	}
-	if records, err := ListQuarantined(paths); err != nil || len(records) != 0 {
+	if records, err := ListQuarantined(paths, nil); err != nil || len(records) != 0 {
 		t.Fatalf("ListQuarantined() after prune = %#v, %v", records, err)
 	}
 }

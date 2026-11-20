@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -629,7 +629,7 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActivePaths() error = %v", err)
 	}
-	keyPath := keys.AccountKeyFilePathActive(active, genResp.Address)
+	keyPath := keystest.AccountKeyFilePath(active, genResp.Address)
 	if err := os.Remove(keyPath); err != nil {
 		t.Fatalf("os.Remove(%q) error = %v", keyPath, err)
 	}

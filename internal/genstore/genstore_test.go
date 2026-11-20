@@ -394,6 +394,32 @@ func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
 	}
 }
 
+// Binding refuses a seed whose provenance is incomplete, naming the missing
+// field.
+func TestBindRollbackCapabilityRefusesIncompleteProvenance(t *testing.T) {
+	complete := RollbackCapability{
+		OriginOperationID:  "restore-op",
+		ArchiveSHA256:      strings.Repeat("b", 64),
+		SourceGenerationID: testGenA,
+		CleanAtCutover:     true,
+	}
+	for _, tt := range []struct {
+		edit func(*RollbackCapability)
+		want string
+	}{
+		{func(c *RollbackCapability) { c.OriginOperationID = "" }, "origin_operation_id is required"},
+		{func(c *RollbackCapability) { c.ArchiveSHA256 = "" }, "archive_sha256: must be 64 lowercase hexadecimal characters"},
+		{func(c *RollbackCapability) { c.SourceGenerationID = "" }, `source_generation_id: invalid generation ID ""`},
+		{func(c *RollbackCapability) { c.CleanAtCutover = false }, "clean_at_cutover must be true"},
+	} {
+		seed := complete
+		tt.edit(&seed)
+		if _, err := bindRollbackCapability(&seed, nil); err == nil || err.Error() != tt.want {
+			t.Fatalf("bindRollbackCapability(%+v) error = %v, want %q", seed, err, tt.want)
+		}
+	}
+}
+
 func inventoryEntry(t *testing.T, inventory []InventoryEntry, path string) InventoryEntry {
 	t.Helper()
 	index := slices.IndexFunc(inventory, func(entry InventoryEntry) bool {

@@ -13,6 +13,7 @@ import (
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -50,10 +51,7 @@ func TestWitnessEd25519GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("Address = %q, want the Witness Key ID %q", result.Address, wantID)
 	}
 
-	scan, err := keys.ScanKeysDirectoryWithKeyring(paths, kr)
-	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithKeyring() error = %v", err)
-	}
+	scan := keystest.ScanKeys(t, paths, kr)
 	info, ok := scan[result.Address]
 	if !ok {
 		t.Fatalf("scan missing cosigner key %q", result.Address)

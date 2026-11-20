@@ -207,27 +207,25 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 			s.logPassphraseChangeFailed(ctx, err.Error())
 		}
 		return adminproto.ChangeStorePassphraseResult{
-			KeysMigrated:             rotation.KeysMigrated,
-			TemplatesMigrated:        rotation.TemplatesMigrated,
-			PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
-			NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
-			PriorGenerations:         rotation.PriorGenerations,
-			HelperWarning:            rotation.HelperWarning,
-			RootCommitted:            rotation.RootCommitted,
-			Code:                     protocol.ResultCodePassphraseChangeFailed,
-			Error:                    err.Error(),
+			KeysMigrated:           rotation.KeysMigrated,
+			TemplatesMigrated:      rotation.TemplatesMigrated,
+			PolicySidecarsMigrated: rotation.PolicySidecarsMigrated,
+			PriorGenerations:       rotation.PriorGenerations,
+			HelperWarning:          rotation.HelperWarning,
+			RootCommitted:          rotation.RootCommitted,
+			Code:                   protocol.ResultCodePassphraseChangeFailed,
+			Error:                  err.Error(),
 		}
 	}
 	s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated)
 	return adminproto.ChangeStorePassphraseResult{
-		Success:                  true,
-		KeysMigrated:             rotation.KeysMigrated,
-		TemplatesMigrated:        rotation.TemplatesMigrated,
-		PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
-		NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
-		PriorGenerations:         rotation.PriorGenerations,
-		HelperWarning:            rotation.HelperWarning,
-		RootCommitted:            rotation.RootCommitted,
+		Success:                true,
+		KeysMigrated:           rotation.KeysMigrated,
+		TemplatesMigrated:      rotation.TemplatesMigrated,
+		PolicySidecarsMigrated: rotation.PolicySidecarsMigrated,
+		PriorGenerations:       rotation.PriorGenerations,
+		HelperWarning:          rotation.HelperWarning,
+		RootCommitted:          rotation.RootCommitted,
 	}
 }
 
