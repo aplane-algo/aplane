@@ -549,7 +549,9 @@ transaction type is one more entry in `fields` and needs no client change.
   `backup_result`: `success`, optional `archive_path`,
   `archive_checksum`, `archive_size`, `key_count`, `addresses[]`,
   `verified`, optional `warning`, `code`, `error`. Backup is all-or-nothing;
-  a selected credential that fails canonical validation fails the request.
+  a selected credential that fails canonical validation fails the request,
+  and so does an address named twice in `addresses[]`, before anything is
+  written (restore likewise refuses a duplicate selector).
   `verified` means the archive itself was extracted and every payload and
   the manifest opened. `warning` reports an archive published without a
   durable directory entry, as `commit_backup_import_result` does.
