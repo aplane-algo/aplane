@@ -173,7 +173,13 @@ limited to 1 GiB and starting a new import replaces an incomplete prior
 transfer for the product store. The daemon
 verifies size, checksum, and archive structure and publishes the archive under
 `<signer-data>/backups/default/` only after the sealed inventory and every
-complete credential record validate.
+complete credential record check out. A damaged archive is refused, and so
+is one with no key this node can restore, such as a cosigner's backup on a
+signer. A key this node's restore would skip, such as one whose format or key
+type this release does not support, does not block the import: the import
+names such keys with the reason (the first 64, and how many more; the
+backup's `restore preview` lists the same), and a restore from the archive
+restores the rest.
 LogicSig bytecode, argument contracts, and other durable signing metadata are
 carried by the credential itself, while templates are outside the backup
 contract.
@@ -195,10 +201,12 @@ private signer store.
 ./apstore verify /mnt/usb/aplane-backup.tar.gz
 ```
 
-Verification is fail-closed: an archive-level failure or any credential that
-cannot be decrypted and validated returns the `verification_failed` result and
-a nonzero process exit. Invalid credentials are never reported as warnings on
-an otherwise successful verification.
+Verification checks the archive as a restore would: it lists every key a
+restore would skip, with the reason, such as a key type this release does not
+support. It is fail-closed: an archive-level failure, or any key a restore
+would skip, returns the `verification_failed` result and a nonzero process
+exit. Skipped keys are never reported as warnings on an otherwise successful
+verification.
 
 ### Backup Output
 
@@ -464,10 +472,16 @@ restore it:
 ```
 
 `backup import` and restore both ask for the backup export passphrase.
-`restore apply` authenticates the complete archive, validates every selected
-credential, and atomically commits one new generation. Use `--address ADDRESS`
-one or more times to select a subset. Use `--replace-existing` only when you
-explicitly intend to replace a different or unreadable destination credential.
+`restore apply` authenticates the complete archive, admits each selected
+credential, and atomically commits the admitted ones as one new generation. A
+key this node cannot admit, such as one whose format or key type this release
+does not support, or one the node role forbids, is skipped with its policy and
+reported with the reason; `restore preview` lists the same keys first. A
+damaged archive is refused whole. Use `--address ADDRESS` one or more times to
+select a subset; naming a key that would be skipped refuses the restore, and so
+does a restore with nothing left to restore. Use `--replace-existing` only when
+you explicitly intend to replace a different or unreadable destination
+credential.
 
 The core ownership rule is:
 
@@ -690,8 +704,11 @@ restores credentials from the backup archive, and writes a new store encrypted u
 the new store passphrase you enter. Rebuild uses `manifest.sealed`
 `source_node_role` metadata as the default destination role. Pass `--role signer` or
 `--role cosigner` to set the replacement store role explicitly; if that differs
-from the manifest, rebuild warns and uses the explicit role. Restored key
-classes are still validated against the destination role.
+from the manifest, rebuild warns and uses the explicit role. Rebuild admits
+keys as a restore does, before it asks for the new store passphrase: it prints
+each key it skips with the reason, including a key class the destination role
+forbids, and rebuilds the rest. Naming a skipped key with `--address`, or a
+rebuild with nothing left to rebuild, is refused and writes nothing.
 
 ### Verifying Restoration
 

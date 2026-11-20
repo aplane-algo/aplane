@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -91,15 +90,67 @@ func (e *CredentialEntry) ZeroSecrets() {
 	e.credential.keyJSON = nil
 }
 
-// RestoreSet is a fully authenticated and payload-validated archive selection.
-// It is intentionally process-local: direct restore does not publish a second
-// destination-encrypted lifecycle outside the generation transaction.
+// RestoreSet is a fully authenticated archive selection: the credentials
+// this node admits, and the ones it skips. It is intentionally process-local:
+// direct restore does not publish a second destination-encrypted lifecycle
+// outside the generation transaction.
 type RestoreSet struct {
 	ArchiveName      string
 	ArchiveSHA256    string
 	SourceNodeRole   string
 	ArchiveCreatedAt int64
 	Entries          []CredentialEntry
+	// Skipped lists the selected credentials this node cannot admit.
+	Skipped []SkippedEntry
+}
+
+// SkippedEntry is an archived credential this node cannot admit, and why.
+// Its archived policy is skipped with it.
+type SkippedEntry struct {
+	Selector string
+	Reason   string
+}
+
+// A reply or an error that quotes a skipped credential bounds its selector
+// and reason, which an archive can make as long as a member allows, so the
+// reply fits one admin frame.
+const (
+	maxQuotedSelector = 128
+	maxQuotedReason   = 1024
+)
+
+// Quoted is the entry as a reply or an error quotes it: its selector and
+// reason cut at a character boundary and marked with their length.
+func (e SkippedEntry) Quoted() SkippedEntry {
+	return SkippedEntry{Selector: BoundText(e.Selector, maxQuotedSelector), Reason: BoundText(e.Reason, maxQuotedReason)}
+}
+
+// SkipRefusalError refuses a restore or rebuild for what admission would
+// skip: a credential the request named, or every credential the archive
+// holds. An explicit selection is never narrowed, and a restore with nothing
+// to restore is no restore.
+type SkipRefusalError struct {
+	// Skipped is never empty: loadRestoreSet and VerifyImportedBackup
+	// refuse only for what they skipped.
+	Skipped []SkippedEntry
+	// Named reports that the request named its credentials, so each skipped
+	// one is a credential it asked for.
+	Named bool
+}
+
+func (e *SkipRefusalError) Error() string {
+	quoted := e.Skipped[0].Quoted()
+	first := quoted.Selector + ": " + quoted.Reason
+	switch {
+	case e.Named && len(e.Skipped) == 1:
+		return "selected credential cannot be restored: " + first
+	case e.Named:
+		return fmt.Sprintf("%d selected credentials cannot be restored; first %s", len(e.Skipped), first)
+	case len(e.Skipped) == 1:
+		return "nothing to restore: the backup's only credential is skipped: " + first
+	default:
+		return fmt.Sprintf("nothing to restore: all %d credentials in the backup are skipped; first %s", len(e.Skipped), first)
+	}
 }
 
 // AuthenticatedArchiveError marks a restore failure that occurred only after
@@ -158,12 +209,14 @@ type RestoreClassification struct {
 	Conflicts []RestoreConflict
 }
 
-// LoadManagedRestoreSet snapshots, authenticates, decrypts, canonicalizes, and
-// validates every selected archive credential without mutating destination
-// storage. An empty selectors slice selects the complete archive.
+// LoadManagedRestoreSet snapshots and authenticates a managed archive and
+// admits each selected credential without mutating destination storage. An
+// empty selectors slice selects the complete archive. A credential this node
+// cannot admit is skipped and listed in the set, unless the request named it
+// or nothing would be left to restore: a SkipRefusalError then refuses the
+// whole restore.
 func LoadManagedRestoreSet(
 	paths storepaths.Paths,
-
 	archivePath string,
 	selectors []string,
 	exportPassphrase []byte,
@@ -185,69 +238,207 @@ func LoadManagedRestoreSet(
 	}
 	defer cleanupSource()
 
-	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
+	archive, err := openArchive(sourceRoot, exportPassphrase)
 	if err != nil {
 		return nil, err
 	}
-	keysDir := ResolveBackupKeysDir(sourceRoot)
-	if manifest.SourceNodeRole != string(role) {
-		return nil, authenticatedArchiveError(fmt.Errorf("backup source node role %q cannot be restored into %q", manifest.SourceNodeRole, role))
+	if err := archive.requireSourceRole(role); err != nil {
+		return nil, err
 	}
-	selected, err := normalizeCredentialSelectors(keysDir, selectors)
+	set, err := archive.loadRestoreSet(selectors, exportPassphrase, role)
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-
-	set := &RestoreSet{
-		ArchiveName:      filepath.Base(resolvedArchive),
-		ArchiveSHA256:    archiveSHA256,
-		SourceNodeRole:   manifest.SourceNodeRole,
-		ArchiveCreatedAt: manifest.CreatedAtUnix,
-		Entries:          make([]CredentialEntry, 0, len(selected)),
-	}
-	success := false
-	defer func() {
-		if !success {
-			set.ZeroSecrets()
-		}
-	}()
-	for _, selector := range selected {
-		entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
-		if err != nil {
-			return nil, authenticatedArchiveError(fmt.Errorf("validate backup credential %s: %w", selector, err))
-		}
-		if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
-			entry.ZeroSecrets()
-			return nil, authenticatedArchiveError(err)
-		}
-		entry.StageHint = validatedRotatingHint(entry, manifest.RotatingStageHints)
-		set.Entries = append(set.Entries, entry)
-	}
-	success = true
+	set.ArchiveName = filepath.Base(resolvedArchive)
+	set.ArchiveSHA256 = archiveSHA256
 	return set, nil
 }
 
-// loadCredentialEntry reads and decrypts one archived credential and admits
-// it. Deep verify, restore, its preview and rebuild all load credentials
-// here, so a credential that verifies is one restore admits.
-func loadCredentialEntry(
-	keysDir, selector string,
+// LoadRebuildSet admits the selected credentials of an extracted archive for
+// a fresh store of role, as LoadManagedRestoreSet does for a live one. The
+// role may differ from the archive's source role.
+func LoadRebuildSet(sourceRoot string, selectors []string, exportPassphrase []byte, role noderole.Role) (*RestoreSet, error) {
+	archive, err := openArchive(sourceRoot, exportPassphrase)
+	if err != nil {
+		return nil, err
+	}
+	return archive.loadRestoreSet(selectors, exportPassphrase, role)
+}
+
+// openedArchive is an extracted archive whose sealed manifest authenticated,
+// with the selectors of the credentials it holds.
+type openedArchive struct {
+	keysDir   string
+	manifest  Manifest
+	selectors []string
+}
+
+// openArchive authenticates an extracted archive against its sealed manifest
+// and checks its structure: it holds a credential, and each policy it holds
+// belongs to one. A failure after the manifest authenticated is an
+// AuthenticatedArchiveError.
+func openArchive(sourceRoot string, exportPassphrase []byte) (openedArchive, error) {
+	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
+	if err != nil {
+		return openedArchive{}, withArchivePaths(sourceRoot, err)
+	}
+	archive := openedArchive{keysDir: ResolveBackupKeysDir(sourceRoot), manifest: manifest}
+	if archive.selectors, err = archiveSelectors(archive.keysDir); err != nil {
+		return openedArchive{}, authenticatedArchiveError(withArchivePaths(sourceRoot, err))
+	}
+	return archive, nil
+}
+
+// archiveSelectors lists the credentials an extracted archive holds, sorted,
+// refusing a policy that belongs to none of them. A member whose name is not
+// its credential's selector is admission's to skip.
+func archiveSelectors(keysDir string) ([]string, error) {
+	selectors, err := ScanBackupFiles(keysDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(selectors) == 0 {
+		return nil, fmt.Errorf("no .apb files found in backup")
+	}
+	// The scan is in file-name order, which is not selector order when one
+	// selector extends another with a byte below '.': "A-B.apb" sorts before
+	// "A.apb". The searches below need selector order.
+	slices.Sort(selectors)
+	keysWithPolicy, err := scanBackupPolicies(keysDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keysWithPolicy {
+		if _, held := slices.BinarySearch(selectors, key); !held {
+			return nil, fmt.Errorf("backup policy %s has no credential in the archive", key)
+		}
+	}
+	return selectors, nil
+}
+
+func (a openedArchive) requireSourceRole(role noderole.Role) error {
+	if a.manifest.SourceNodeRole != string(role) {
+		return authenticatedArchiveError(fmt.Errorf("backup source node role %q cannot be restored into %q", a.manifest.SourceNodeRole, role))
+	}
+	return nil
+}
+
+// loadRestoreSet admits each requested credential for role; none requested
+// selects them all. It refuses a request that names a credential admission
+// skips, and one that leaves nothing to restore.
+func (a openedArchive) loadRestoreSet(requested []string, exportPassphrase []byte, role noderole.Role) (*RestoreSet, error) {
+	selected, err := a.selectCredentials(requested)
+	if err != nil {
+		return nil, err
+	}
+	set := &RestoreSet{
+		SourceNodeRole:   a.manifest.SourceNodeRole,
+		ArchiveCreatedAt: a.manifest.CreatedAtUnix,
+		Entries:          make([]CredentialEntry, 0, len(selected)),
+	}
+	set.Skipped, err = a.admitEach(selected, exportPassphrase, role, func(entry CredentialEntry) error {
+		set.Entries = append(set.Entries, entry)
+		return nil
+	})
+	if err == nil && ((len(requested) > 0 && len(set.Skipped) > 0) || len(set.Entries) == 0) {
+		err = &SkipRefusalError{Skipped: set.Skipped, Named: len(requested) > 0}
+	}
+	if err != nil {
+		set.ZeroSecrets()
+		return nil, err
+	}
+	return set, nil
+}
+
+// selectCredentials returns the requested selectors in order, or every
+// credential the archive holds when none is requested. A request naming a
+// credential twice, or one the archive lacks, is refused.
+func (a openedArchive) selectCredentials(requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return a.selectors, nil
+	}
+	selected := slices.Clone(requested)
+	slices.Sort(selected)
+	for i, selector := range selected {
+		if i > 0 && selected[i-1] == selector {
+			return nil, fmt.Errorf("duplicate backup selector %q", selector)
+		}
+		if _, held := slices.BinarySearch(a.selectors, selector); !held {
+			return nil, fmt.Errorf("backup has no credential %q", selector)
+		}
+	}
+	return selected, nil
+}
+
+// admitEach admits each of selectors for role, in order. It hands every
+// admitted entry to admitted, which then owns the entry's secrets, and
+// returns the entries it skipped. A member that cannot be read or decrypted
+// stops it with an error, and so does an error from admitted.
+func (a openedArchive) admitEach(
+	selectors []string,
 	exportPassphrase []byte,
 	role noderole.Role,
-) (CredentialEntry, error) {
-	srcFile := filepath.Join(keysDir, selector+".apb")
+	admitted func(CredentialEntry) error,
+) ([]SkippedEntry, error) {
+	var skipped []SkippedEntry
+	for _, selector := range selectors {
+		entry, skip, err := a.loadCredentialEntry(selector, exportPassphrase, role)
+		if err != nil {
+			return nil, withArchivePaths(filepath.Dir(a.keysDir), fmt.Errorf("backup credential %s: %w", selector, err))
+		}
+		if skip != nil {
+			skipped = append(skipped, *skip)
+			continue
+		}
+		if err := admitted(entry); err != nil {
+			return nil, err
+		}
+	}
+	return skipped, nil
+}
+
+// loadCredentialEntry reads and decrypts one archived credential and its
+// archived policy, then admits them. Deep verify, restore, its preview and
+// rebuild all load credentials here, so they admit and skip the same ones.
+//
+// A member that cannot be read or decrypted is an error: the sealed manifest
+// holds its digest, so it is damage to the archive, not a credential this
+// node cannot use. A decrypted credential or policy this node does not admit
+// is returned as skipped, with the reason.
+func (a openedArchive) loadCredentialEntry(
+	selector string,
+	exportPassphrase []byte,
+	role noderole.Role,
+) (CredentialEntry, *SkippedEntry, error) {
+	srcFile := filepath.Join(a.keysDir, selector+".apb")
 	// #nosec G304 -- keysDir is the private extracted archive root and selector
-	// is restricted to one validated basename before this function is called.
+	// is one validated archive member basename.
 	data, _, err := fsutil.ReadRegularFileLimited(srcFile, crypto.MaxStandaloneEnvelopeBytes)
 	if err != nil {
-		return CredentialEntry{}, fmt.Errorf("read backup file: %w", err)
+		return CredentialEntry{}, nil, fmt.Errorf("read backup file: %w", err)
 	}
 	plaintext, err := crypto.DecryptStandalone(data, exportPassphrase)
 	if err != nil {
-		return CredentialEntry{}, fmt.Errorf("decrypt backup file: %w", err)
+		return CredentialEntry{}, nil, fmt.Errorf("decrypt backup file: %w", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
-	return admitCredentialEntry(plaintext, selector, role)
+	document, err := readBackupPolicy(a.keysDir, selector, exportPassphrase)
+	if err != nil {
+		return CredentialEntry{}, nil, err
+	}
+	entry, err := admitCredentialEntry(plaintext, selector, role)
+	if err == nil && document != nil {
+		if _, err = policy.DecodePolicyV1(document, selector, role); err != nil {
+			entry.ZeroSecrets()
+			err = fmt.Errorf("backup policy for %s: %w", selector, err)
+		}
+	}
+	if err != nil {
+		return CredentialEntry{}, &SkippedEntry{Selector: selector, Reason: err.Error()}, nil
+	}
+	entry.Policy = document
+	entry.StageHint = validatedRotatingHint(entry, a.manifest.RotatingStageHints)
+	return entry, nil, nil
 }
 
 // admitCredentialEntry parses keyJSON once, checks that it derives selector,
@@ -306,30 +497,6 @@ func requireRuntimeSupport(payload *keys.Payload) error {
 		return fmt.Errorf("unsupported managed credential category %q", payload.Category)
 	}
 	return nil
-}
-
-func normalizeCredentialSelectors(keysDir string, selectors []string) ([]string, error) {
-	if len(selectors) == 0 {
-		var err error
-		selectors, err = ScanBackupFiles(keysDir)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(selectors) == 0 {
-		return nil, fmt.Errorf("no .apb files found in backup")
-	}
-	selected := slices.Clone(selectors)
-	slices.Sort(selected)
-	for i, selector := range selected {
-		if selector == "" || filepath.Base(selector) != selector || strings.ContainsAny(selector, `/\`+"\x00") {
-			return nil, fmt.Errorf("invalid backup selector %q", selector)
-		}
-		if i > 0 && selected[i-1] == selector {
-			return nil, fmt.Errorf("duplicate backup selector %q", selector)
-		}
-	}
-	return selected, nil
 }
 
 func snapshotCredentialBackupArchive(archivePath string) (string, string, func(), error) {

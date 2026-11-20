@@ -21,12 +21,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -83,7 +84,7 @@ func TestBackupTransferImportsAndExportsInBoundedChunks(t *testing.T) {
 
 func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -120,7 +121,7 @@ func TestBackupImportReportsCommittedWarningAfterDirectorySyncFailure(t *testing
 
 func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "bad.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
@@ -142,7 +143,7 @@ func TestBackupTransferRejectsWrongOffsetAndChecksum(t *testing.T) {
 
 func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -172,7 +173,7 @@ func TestBackupTransferRejectsWrongPassphraseBeforePublication(t *testing.T) {
 func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	deps := &lockingBackupTransferDeps{paths: paths}
-	service := Service{Deps: deps}
+	service := Service{Deps: deps, Runtime: importTestRuntime()}
 	archivePath := writeLargeValidImportArchive(t)
 	archiveBytes, err := os.ReadFile(archivePath)
 	if err != nil {
@@ -191,10 +192,10 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 	originalVerify := deepVerifyImportedBackup
 	verifyStarted := make(chan struct{})
 	releaseVerify := make(chan struct{})
-	deepVerifyImportedBackup = func(root string, passphrase []byte) (*backup.VerifyReport, error) {
+	deepVerifyImportedBackup = func(root string, passphrase []byte, role noderole.Role) (*backup.VerifyReport, error) {
 		close(verifyStarted)
 		<-releaseVerify
-		return originalVerify(root, passphrase)
+		return originalVerify(root, passphrase, role)
 	}
 	t.Cleanup(func() { deepVerifyImportedBackup = originalVerify })
 
@@ -231,7 +232,7 @@ func TestBackupImportDeepVerificationDoesNotHoldIdentityMutationLock(t *testing.
 
 func TestBackupTransferRejectsExtractableInvalidContentsBeforePublication(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "payload.bin"), []byte("not a credential backup"), 0o600); err != nil {
 		t.Fatal(err)
@@ -320,7 +321,7 @@ func appendBackupImportBytes(t *testing.T, service Service, uploadID string, dat
 
 func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	begin := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "large.tar.gz"})
 	if !begin.Success {
 		t.Fatalf("BeginBackupImport() = %#v", begin)
@@ -339,7 +340,7 @@ func TestBackupTransferCapsIncompleteUploadSize(t *testing.T) {
 
 func TestBeginBackupImportRemovesAbandonedUpload(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	service := Service{Deps: backupServiceTestDeps{paths: paths}}
+	service := Service{Deps: backupServiceTestDeps{paths: paths}, Runtime: importTestRuntime()}
 	first := service.BeginBackupImport(adminproto.BeginBackupImportRequest{FileName: "first.tar.gz"})
 	if !first.Success {
 		t.Fatalf("first BeginBackupImport() = %#v", first)
@@ -437,4 +438,10 @@ func TestBackupTransferErrorTextRedactsStoreRoot(t *testing.T) {
 	if !strings.Contains(got, "<signer-store>/backups/default/archive.tar.gz") {
 		t.Fatalf("backupTransferErrorText() = %q, want redacted relative context", got)
 	}
+}
+
+// importTestRuntime is the runtime of a signer node an import checks its
+// archive against.
+func importTestRuntime() *productruntime.Runtime {
+	return productruntime.New(productruntime.Config{NodeRole: noderole.RoleSigner})
 }

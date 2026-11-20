@@ -148,8 +148,8 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 		if result.Code == protocol.ResultCodeRestoreRateLimited {
 			t.Fatalf("authenticated preview attempt %d was rate limited: %+v", i+1, result)
 		}
-		if len(result.Errors) == 0 {
-			t.Fatalf("authenticated preview attempt %d = %+v, want credential error", i+1, result)
+		if len(result.Skipped) == 0 {
+			t.Fatalf("authenticated preview attempt %d = %+v, want a skipped credential", i+1, result)
 		}
 	}
 }

@@ -144,8 +144,8 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	}
 
 	next, _ := m.Update(RestorePreviewMsg{
-		ID:     "preview-restore-1",
-		Errors: []RestoreError{{Error: "invalid backup export passphrase"}},
+		ID:    "preview-restore-1",
+		Error: "invalid backup export passphrase",
 	})
 	got := next.(Model)
 	if got.viewState != ViewRestorePassphrase {

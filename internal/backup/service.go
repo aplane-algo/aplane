@@ -211,8 +211,8 @@ func publishVerifiedArchive(stageDir, archivePath string, passphrase []byte) (pu
 	if err != nil {
 		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %w", err)
 	}
-	if verifyReport.FailedFiles > 0 {
-		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %d file(s) failed verification", verifyReport.FailedFiles)
+	if err := verifyReport.Incomplete(); err != nil {
+		return publishedArchive{}, fmt.Errorf("failed to verify backup archive: %w", err)
 	}
 	checksum, size, err := FileSHA256(partial)
 	if err != nil {

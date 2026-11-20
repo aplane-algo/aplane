@@ -27,7 +27,7 @@ func TestRestoreKeyRejectsWrongExportPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyType, err := restoreKey(backupDir, address, cryptotest.Keyring(t, bytes32(0x11)), []byte("wrong-export-passphrase"))
-	if err == nil || keyType != "" || err.Error() != "decrypt backup file: failed to decrypt data: cipher: message authentication failed" {
+	if err == nil || keyType != "" || err.Error() != "backup credential "+address+": decrypt backup file: failed to decrypt data: cipher: message authentication failed" {
 		t.Fatalf("key type=%q error=%v", keyType, err)
 	}
 }

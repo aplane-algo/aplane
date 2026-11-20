@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/secretbuf"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -323,7 +324,7 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 			imp.err = "Import failed: " + backupResultText(msg.Result.Error, "the signer refused the archive")
 			return m, nil
 		}
-		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result.Warning), false)
+		m.setBackupsStatus(importedStatus(imp.source.Name, msg.Result), false)
 		if m.viewState != ViewBackupImport {
 			return m, nil
 		}
@@ -337,7 +338,7 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	if !msg.Result.Success {
 		m.setBackupsStatus("Import of "+name+" failed: "+backupResultText(msg.Result.Error, "the signer refused the archive"), true)
 	} else {
-		m.setBackupsStatus(importedStatus(name, msg.Result.Warning), false)
+		m.setBackupsStatus(importedStatus(name, msg.Result), false)
 	}
 	if m.viewState == ViewBackups {
 		next, cmd := m.refreshBackups()
@@ -346,10 +347,32 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	return m, nil
 }
 
-func importedStatus(name, warning string) string {
+// importStatusSkips and importStatusKeyRunes keep an import's skipped keys
+// to a few lines of the Backups page, so the backup list stays in view at
+// the minimum window. The batch import and the backup's restore preview
+// list up to 64 of them, with each reason in full, and count the rest.
+const (
+	importStatusSkips    = 3
+	importStatusKeyRunes = 70
+)
+
+// importedStatus reports an import that committed, with the count of keys in
+// it a restore would skip and the first few, each on one line.
+func importedStatus(name string, result protocol.CommitBackupImportResultMessage) string {
 	status := "Imported " + name + ". Restoring from it is a separate step."
-	if warning != "" {
-		status += "\nWarning: " + warning
+	if result.Warning != "" {
+		status += "\nWarning: " + result.Warning
+	}
+	if heading := apadminapp.ImportSkipHeading(result); heading != "" {
+		status += "\n" + heading
+	}
+	shown := result.Skipped[:min(len(result.Skipped), importStatusSkips)]
+	for _, skipped := range shown {
+		key := ellipsizeMiddle(terminalSafe(skipped.Selector), keyAddressShortWidth)
+		status += "\n  " + ellipsize(key+": "+terminalSafe(skipped.Reason), importStatusKeyRunes)
+	}
+	if more := len(result.Skipped) + result.SkippedOmitted - len(shown); more > 0 {
+		status += fmt.Sprintf("\n  and %d more; the backup's preview lists up to 64", more)
 	}
 	return status
 }

@@ -127,14 +127,23 @@ func TestCmdRebuildRemovesItsNodeRoleWhenTheMintFails(t *testing.T) {
 	}()
 
 	archivePath, address := writeSignerRebuildArchiveForTest(t)
-	missing, _ := testEd25519KeyJSON(t) // a key the archive does not hold
 	const input = "export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n"
 
+	// The staged credential cannot be written, so the mint fails before it
+	// commits.
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpRename && filepath.Base(path) == address+apkeys.AccountKeyExtension {
+			return errors.New("simulated credential write failure")
+		}
+		return nil
+	}
+	t.Cleanup(func() { fsutil.TestHook = nil })
 	err := withTestStdin(input, func() error {
-		return cmdRebuild([]string{archivePath, "--address", missing})
+		return cmdRebuild([]string{archivePath, "--address", address})
 	})
+	fsutil.TestHook = nil
 	if err == nil || !strings.Contains(err.Error(), "nothing was committed") {
-		t.Fatalf("cmdRebuild(missing address) error = %v, want a failure before commit", err)
+		t.Fatalf("cmdRebuild(failed write) error = %v, want a failure before commit", err)
 	}
 	if _, err := os.Lstat(keystorePaths().NodeRolePath()); !os.IsNotExist(err) {
 		t.Fatalf("node role file after a failed rebuild: %v, want it removed", err)
@@ -398,7 +407,7 @@ func TestRestoreKeyRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 	if keyType != "" {
 		t.Fatalf("restoreKey() keyType = %q, want empty on failure", keyType)
 	}
-	if err.Error() != "decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)" {
+	if err.Error() != "backup credential "+address+": decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)" {
 		t.Fatalf("restoreKey() error = %v, want unsupported envelope rejection", err)
 	}
 }

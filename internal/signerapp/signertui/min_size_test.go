@@ -188,9 +188,10 @@ func TestListsKeepTheirContentAtMinSize(t *testing.T) {
 		}}}, []string{
 			"wide.v1]  exists  +policy", "slhdsa.v1]  exists  +policy", "[ed25519]",
 		}},
-		{"restore row error", Model{viewState: ViewRestorePreview, restore: restoreState{previewKeys: []RestoreKeyInfo{
-			{Address: address, KeyType: longType, AlreadyExists: true, Error: "archive entry failed its integrity check"},
-		}}}, []string{"exists  archive entry"}},
+		{"restore row skipped", Model{viewState: ViewRestorePreview, restore: restoreState{
+			previewKeys:    []RestoreKeyInfo{{Address: address, KeyType: longType, AlreadyExists: true}},
+			previewSkipped: []RestoreSkipped{{Selector: address, Reason: "failed to parse backup credential: an unknown field"}},
+		}}, []string{"wide.v1]  exists", "skipped: failed to parse"}},
 		{"cosigner references", Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: []CosignerReferenceInfo{
 			{Name: "a-reference-name-that-is-longer-than-any-window-has-room-for", ComponentKey: witnessKey, KeyType: "aplane.falcon1024.v1"},
 			{Name: "ops", ComponentKey: witnessKey, KeyType: "ed25519"},

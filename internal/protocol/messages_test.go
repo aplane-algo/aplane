@@ -564,6 +564,26 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "commit_backup_import_result",
+			msg: CommitBackupImportResultMessage{
+				BaseMessage:    BaseMessage{Type: MsgTypeCommitBackupImportResult, ID: "backup-import-commit-1"},
+				Success:        true,
+				Backup:         BackupInfo{FileName: "backup.tar.gz", Size: 4096},
+				Skipped:        []RestoreSkipped{{Selector: "ADDR2", Reason: "failed to parse backup credential"}},
+				SkippedOmitted: 1,
+			},
+			wantMap: map[string]any{
+				"skipped_omitted": float64(1),
+				"type":            MsgTypeCommitBackupImportResult,
+				"id":              "backup-import-commit-1",
+				"success":         true,
+				"backup":          map[string]any{"path": "", "file_name": "backup.tar.gz", "size": float64(4096)},
+				"skipped": []any{
+					map[string]any{"selector": "ADDR2", "reason": "failed to parse backup credential"},
+				},
+			},
+		},
+		{
 			name: "backups_list",
 			msg: BackupsListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeBackupsList, ID: "backups-1"},
@@ -597,9 +617,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					KeyType:       "ed25519",
 					AlreadyExists: true,
 				}},
-				Errors: []RestoreError{{
-					Address: "ADDR2",
-					Error:   "failed to decrypt backup",
+				Skipped: []RestoreSkipped{{
+					Selector: "ADDR2",
+					Reason:   "failed to parse backup credential",
 				}},
 			},
 			wantMap: map[string]any{
@@ -613,12 +633,58 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"already_exists": true,
 					},
 				},
-				"errors": []any{
+				"skipped": []any{
 					map[string]any{
-						"address": "ADDR2",
-						"error":   "failed to decrypt backup",
+						"selector": "ADDR2",
+						"reason":   "failed to parse backup credential",
 					},
 				},
+			},
+		},
+		{
+			name: "restore_backup_result",
+			msg: RestoreBackupResultMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeRestoreBackupResult, ID: "restore-1"},
+				Success:          true,
+				OperationID:      "restore-1",
+				ArchiveSHA256:    "abc",
+				GenerationID:     "gen-2",
+				Restored:         []RestoreCredential{{Selector: "ADDR1", Category: "ed25519", KeyType: "ed25519"}},
+				RestoredOmitted:  3,
+				Identical:        []RestoreCredential{{Selector: "ADDR2", Category: "ed25519", KeyType: "ed25519"}},
+				IdenticalOmitted: 4,
+				ConflictsOmitted: 5,
+				Conflicts:        []RestoreConflict{{Selector: "ADDR3", Category: "ed25519", KeyType: "ed25519", Reason: "existing credential differs from backup"}},
+				Skipped:          []RestoreSkipped{{Selector: "ADDR4", Reason: "failed to parse backup credential"}},
+				SkippedOmitted:   2,
+				PoliciesRestored: []string{"ADDR1"},
+				KeyCount:         3,
+			},
+			wantMap: map[string]any{
+				"type":           MsgTypeRestoreBackupResult,
+				"id":             "restore-1",
+				"success":        true,
+				"operation_id":   "restore-1",
+				"archive_sha256": "abc",
+				"generation_id":  "gen-2",
+				"restored": []any{
+					map[string]any{"selector": "ADDR1", "category": "ed25519", "key_type": "ed25519"},
+				},
+				"identical": []any{
+					map[string]any{"selector": "ADDR2", "category": "ed25519", "key_type": "ed25519"},
+				},
+				"conflicts": []any{
+					map[string]any{"selector": "ADDR3", "category": "ed25519", "key_type": "ed25519", "reason": "existing credential differs from backup"},
+				},
+				"skipped": []any{
+					map[string]any{"selector": "ADDR4", "reason": "failed to parse backup credential"},
+				},
+				"skipped_omitted":   float64(2),
+				"policies_restored": []any{"ADDR1"},
+				"key_count":         float64(3),
+				"restored_omitted":  float64(3),
+				"identical_omitted": float64(4),
+				"conflicts_omitted": float64(5),
 			},
 		},
 		{

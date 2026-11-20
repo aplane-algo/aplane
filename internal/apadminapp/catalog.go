@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"gopkg.in/yaml.v3"
@@ -788,11 +789,30 @@ func (c Catalog) requestID(prefix string) string {
 }
 
 func (c Catalog) info(format string, args ...any) {
-	_, _ = fmt.Fprintf(c.Streams.Stderr, format+"\n", args...)
+	_, _ = fmt.Fprintf(c.Streams.Stderr, format+"\n", escaped(args)...)
 }
 
 func (c Catalog) warn(format string, args ...any) {
-	_, _ = fmt.Fprintf(c.Streams.Stderr, "warning: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(c.Streams.Stderr, "warning: "+format+"\n", escaped(args)...)
+}
+
+// escaped returns args with each string and error escaped for one terminal
+// line. The batch client's messages carry text the daemon sends, which can
+// hold an archive's entry names, and a name can hold terminal controls or a
+// line break.
+func escaped(args []any) []any {
+	out := make([]any, len(args))
+	for i, arg := range args {
+		switch v := arg.(type) {
+		case string:
+			out[i] = termsafe.Line(v)
+		case error:
+			out[i] = termsafe.Line(v.Error())
+		default:
+			out[i] = arg
+		}
+	}
+	return out
 }
 
 func resultError(prefix, code, message string) error {

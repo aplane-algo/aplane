@@ -492,7 +492,8 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			ArchivePath:      preview.ArchivePath,
 			ArchiveCreatedAt: preview.ArchiveCreatedAt,
 			Keys:             preview.Keys,
-			Errors:           preview.Errors,
+			Skipped:          preview.Skipped,
+			SkippedOmitted:   preview.SkippedOmitted,
 			Error:            preview.Error,
 		}
 	}),

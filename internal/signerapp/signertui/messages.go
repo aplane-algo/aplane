@@ -131,7 +131,7 @@ type (
 	PreviewRestoreMessage                = protocol.PreviewRestoreMessage
 	SensitiveBytes                       = protocol.SensitiveBytes
 	RestoreKeyInfo                       = protocol.RestoreKeyInfo
-	RestoreError                         = protocol.RestoreError
+	RestoreSkipped                       = protocol.RestoreSkipped
 	RestorePreviewMessage                = protocol.RestorePreviewMessage
 	RestoreBackupMessage                 = protocol.RestoreBackupMessage
 	RestoreBackupResultMessage           = protocol.RestoreBackupResultMessage

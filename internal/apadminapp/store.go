@@ -242,9 +242,10 @@ func (s Store) backupList() error {
 	}
 	for _, item := range result.Backups {
 		created, source := BackupCreatedTime(item)
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n",
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n", escaped([]any{
 			item.FileName, backup.FormatFileSize(item.Size), item.Checksum,
-			created.Format(time.RFC3339), source.Label())
+			created.Format(time.RFC3339), source.Label(),
+		})...)
 	}
 	return nil
 }
@@ -324,6 +325,15 @@ func (s Store) backupImport(sourcePath string) error {
 		s.warn("backup import warning: %s", commit.Warning)
 	}
 	s.info("backup imported: %s", name)
+	if heading := ImportSkipHeading(commit); heading != "" {
+		s.warn("%s", heading)
+	}
+	for _, skipped := range commit.Skipped {
+		s.warn("  %s: %s", skipped.Selector, skipped.Reason)
+	}
+	if commit.SkippedOmitted > 0 {
+		s.warn("  and %d more not listed", commit.SkippedOmitted)
+	}
 	s.info("size: %s", backup.FormatFileSize(size))
 	s.info("checksum: %s", checksum)
 	return nil
@@ -464,8 +474,8 @@ func (s Store) restorePreview(name string, secret []byte) error {
 	if result.Error != "" {
 		return resultError("restore preview failed", result.Code, result.Error)
 	}
-	if len(result.Errors) > 0 {
-		return fmt.Errorf("restore preview found %d error(s)", len(result.Errors))
+	if len(result.Keys) == 0 {
+		return fmt.Errorf("nothing to restore: every key in the backup would be skipped")
 	}
 	return nil
 }
@@ -484,13 +494,23 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 	}, &result); err != nil {
 		return err
 	}
+	for _, skipped := range result.Skipped {
+		s.warn("skipped %s: %s", skipped.Selector, skipped.Reason)
+	}
+	if result.SkippedOmitted > 0 {
+		s.warn("and %d more skipped key(s) not listed", result.SkippedOmitted)
+	}
 	if !result.Success {
 		for _, conflict := range result.Conflicts {
 			s.warn("credential conflict: %s (%s, %s): %s", conflict.Selector, conflict.Category, conflict.KeyType, conflict.Reason)
 		}
+		if result.ConflictsOmitted > 0 {
+			s.warn("and %d more credential conflict(s) not listed", result.ConflictsOmitted)
+		}
 		return resultError("credential restore failed", result.Code, result.Error)
 	}
-	s.info("restored %d credential(s); %d already identical", len(result.Restored), len(result.Identical))
+	s.info("restored %d credential(s); %d already identical; %d skipped",
+		len(result.Restored)+result.RestoredOmitted, len(result.Identical)+result.IdenticalOmitted, len(result.Skipped)+result.SkippedOmitted)
 	if len(result.PoliciesRestored) > 0 {
 		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
 	}
@@ -540,22 +560,16 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 		if key.AlreadyExists {
 			status = "exists"
 		}
-		if key.Error != "" {
-			status = "error: " + key.Error
-		}
-		parts := []string{key.Address}
-		if key.KeyType != "" {
-			parts = append(parts, key.KeyType)
-		}
-		parts = append(parts, status)
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s\n", strings.Join(parts, "  "))
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s\n", escaped([]any{key.Address, key.KeyType, status})...)
 	}
-	for _, item := range result.Errors {
-		if item.Address != "" {
-			s.warn("%s: %s", item.Address, item.Error)
-		} else {
-			s.warn("%s", item.Error)
-		}
+	for _, skipped := range result.Skipped {
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", escaped([]any{skipped.Selector, skipped.Reason})...)
+	}
+	if result.SkippedOmitted > 0 {
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  and %d more skipped key(s) not listed\n", result.SkippedOmitted)
+	}
+	if len(result.Skipped) > 0 {
+		s.warn("%d key(s) cannot be restored on this node and would be skipped", len(result.Skipped)+result.SkippedOmitted)
 	}
 }
 
@@ -615,11 +629,11 @@ func (s Store) requestID(prefix string) string {
 }
 
 func (s Store) info(format string, args ...any) {
-	_, _ = fmt.Fprintf(s.Streams.Stderr, format+"\n", args...)
+	_, _ = fmt.Fprintf(s.Streams.Stderr, format+"\n", escaped(args)...)
 }
 
 func (s Store) warn(format string, args ...any) {
-	_, _ = fmt.Fprintf(s.Streams.Stderr, "warning: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(s.Streams.Stderr, "warning: "+format+"\n", escaped(args)...)
 }
 
 type backupExportPublication struct{ Warnings []string }
