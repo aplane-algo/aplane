@@ -63,7 +63,7 @@ var deletedArchiveNamespaces = []string{"keys", "keytypes", "policies"}
 // generationAuthorityFiles are generation-root files whose exact bytes are
 // part of the selected authority state and which every generation carries.
 var generationAuthorityFiles = []string{
-	"node.yaml.hmac",
+	storepaths.NodeRoleSidecarName,
 }
 
 // generationOptionalAuthorityFiles are authority files that genstore itself

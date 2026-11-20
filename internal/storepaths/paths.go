@@ -111,6 +111,10 @@ const DefaultPolicyFileName = "default.json"
 // assets only.
 const ASASetFileName = "asa_set.json"
 
+// NodeRoleSidecarName is the generation-root integrity record for the
+// data-root node role document.
+const NodeRoleSidecarName = "node.yaml.hmac"
+
 var (
 	witnessKeyIDPattern = regexp.MustCompile(`^[A-Z2-7]{52}$`)
 	addressPattern      = regexp.MustCompile(`^[A-Z2-7]{58}$`)

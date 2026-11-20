@@ -599,9 +599,6 @@ func (s Store) ChangePassphrase(current, next []byte) error {
 	if result.PolicySidecarsMigrated > 0 {
 		s.info("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
 	}
-	if result.NodeRoleSidecarsMigrated > 0 {
-		s.info("  - %d node role sidecar(s) re-signed", result.NodeRoleSidecarsMigrated)
-	}
 	s.info("  - keystore metadata updated")
 	if result.HelperWarning != "" {
 		s.warn("%s", result.HelperWarning)

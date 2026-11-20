@@ -310,16 +310,15 @@ type ChangeStorePassphraseMessage struct {
 
 type ChangeStorePassphraseResultMessage struct {
 	BaseMessage
-	Success                  bool   `json:"success"`
-	KeysMigrated             int    `json:"keys_migrated,omitempty"`
-	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
-	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
-	NodeRoleSidecarsMigrated int    `json:"node_role_sidecars_migrated,omitempty"`
-	PriorGenerations         int    `json:"prior_generations,omitempty"`
-	HelperWarning            string `json:"helper_warning,omitempty"`
-	RootCommitted            bool   `json:"root_committed,omitempty"`
-	Code                     string `json:"code,omitempty"`
-	Error                    string `json:"error,omitempty"`
+	Success                bool   `json:"success"`
+	KeysMigrated           int    `json:"keys_migrated,omitempty"`
+	TemplatesMigrated      int    `json:"templates_migrated,omitempty"`
+	PolicySidecarsMigrated int    `json:"policy_sidecars_migrated,omitempty"`
+	PriorGenerations       int    `json:"prior_generations,omitempty"`
+	HelperWarning          string `json:"helper_warning,omitempty"`
+	RootCommitted          bool   `json:"root_committed,omitempty"`
+	Code                   string `json:"code,omitempty"`
+	Error                  string `json:"error,omitempty"`
 }
 
 // BackupMessage requests signer-managed creation of a portable key backup for
