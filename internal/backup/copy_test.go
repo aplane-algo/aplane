@@ -22,7 +22,7 @@ import (
 
 var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 
-func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
+func TestExportUsesCosignerCredentialSource(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
 	selector, keyJSON := testCosignerComponentBackupKeyJSON(t)
@@ -39,15 +39,15 @@ func TestExportKeyUsesCosignerCredentialSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if err := ExportKey(active.KeysDir(), destination, selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
-		t.Fatalf("ExportKey() error = %v", err)
+	if _, err := exportCredentials(active.KeysDir(), destination, []string{selector}, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase")); err != nil {
+		t.Fatalf("exportCredentials() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
 		t.Fatalf("witness .apb missing: %v", err)
 	}
 }
 
-func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
+func TestExportRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
 	selector, keyJSON := testCosignerComponentBackupKeyJSON(t)
@@ -64,9 +64,9 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	err = ExportKey(active.KeysDir(), t.TempDir(), selector, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, err = exportCredentials(active.KeysDir(), t.TempDir(), []string{selector}, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
-		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
+		t.Fatalf("exportCredentials() error = %v, want ambiguity rejection", err)
 	}
 }
 

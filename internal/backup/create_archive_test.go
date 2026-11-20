@@ -200,8 +200,8 @@ func TestCreateKeysArchiveRefusals(t *testing.T) {
 		want      string
 	}{
 		{"complete", nil, "ambiguous managed credential " + ambiguous + ": " + ambiguous + ".cos and " + ambiguous + ".key"},
-		{"selected ambiguous", []string{clean, ambiguous}, "failed to export " + ambiguous + ": ambiguous managed credential " + ambiguous + ": both filename classes are present"},
-		{"selected unknown", []string{clean, unknown}, "failed to export " + unknown + ": managed credential not found: " + unknown},
+		{"selected ambiguous", []string{clean, ambiguous}, "ambiguous managed credential " + ambiguous + ": " + ambiguous + ".cos and " + ambiguous + ".key"},
+		{"selected unknown", []string{clean, unknown}, "managed credential not found: " + unknown},
 	} {
 		archive := BuildManagedArchivePath(paths, "20261120-000102")
 		_, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archive, tc.selection, noderole.RoleSigner, kr))
