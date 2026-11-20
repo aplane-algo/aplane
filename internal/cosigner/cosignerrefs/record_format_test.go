@@ -130,3 +130,29 @@ func TestGetRefusesARecordWithoutItsImportTime(t *testing.T) {
 		})
 	}
 }
+
+// A record written in the earlier v2 shape is reported by its schema, not by
+// the fields that shape carried.
+func TestGetReportsAnEarlierSchemaAsUnsupported(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	id, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRawRecord(t, paths, "lab", map[string]any{
+		"schema":              "aplane.cosigner-public-key-ref.v2",
+		"name":                "lab",
+		"component_key":       id,
+		"key_type":            witness.Falcon1024V1,
+		"public_key_encoding": "hex",
+		"public_key_hex":      hex.EncodeToString(pub),
+		"public_key_size":     len(pub),
+		"public_key_sha256":   strings.Repeat("0", 64),
+		"imported_at":         "2026-08-17T00:00:00Z",
+	})
+	want := `invalid cosigner reference lab: unsupported schema "aplane.cosigner-public-key-ref.v2"`
+	if _, _, err := Get(paths, "lab"); err == nil || err.Error() != want {
+		t.Fatalf("Get() error = %v, want %q", err, want)
+	}
+}

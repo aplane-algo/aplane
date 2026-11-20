@@ -534,7 +534,7 @@ not contain `..`. The persisted record schema is:
 
 ```json
 {
-  "schema": "aplane.cosigner-public-key-ref.v2",
+  "schema": "aplane.cosigner-public-key-ref.v3",
   "name": "lab-cosigner",
   "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
   "key_type": "aplane.witness-falcon1024.v1",
@@ -543,9 +543,9 @@ not contain `..`. The persisted record schema is:
 }
 ```
 
-The catalog is populated only by explicit operator import. Only the version 2
-record schema is read; records in any other schema, or carrying fields outside
-it, are rejected. Every read checks that `component_key` is the Witness Key ID
+The catalog is populated only by explicit operator import. Only the version 3
+record schema is read; a record in any other schema is reported as an
+unsupported schema, and one carrying fields outside it is rejected. Every read checks that `component_key` is the Witness Key ID
 `key_type` and `public_key_hex` derive, and that `imported_at` is the RFC 3339
 time the import stamped. A record that fails these checks is refused, never
 skipped: listing the references fails and names it, and `/keytypes` and a

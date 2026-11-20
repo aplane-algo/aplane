@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	RecordSchema = "aplane.cosigner-public-key-ref.v2"
+	RecordSchema = "aplane.cosigner-public-key-ref.v3"
 
 	// ParamCosignerName is the generation parameter that selects an imported
 	// cosigner reference by name.
@@ -276,12 +276,20 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, 
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {
+	// The schema is read first, so a record of another schema is reported as
+	// that, not as the fields its shape carries.
+	var header struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return Record{}, fmt.Errorf("failed to parse record: %w", err)
+	}
+	if header.Schema != RecordSchema {
+		return Record{}, fmt.Errorf("unsupported schema %q", header.Schema)
+	}
 	var rec Record
 	if err := decodeRecordStrict(data, &rec); err != nil {
 		return Record{}, err
-	}
-	if rec.Schema != RecordSchema {
-		return Record{}, fmt.Errorf("unsupported schema %q", rec.Schema)
 	}
 	rec, err := normalizeRecord(rec)
 	if err != nil {
