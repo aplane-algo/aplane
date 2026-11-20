@@ -206,7 +206,7 @@ func DiffCandidate(role noderole.Role, key string, current, next string, ownCurr
 	if err != nil {
 		return nil, false, fmt.Errorf("active policy: %w", err)
 	}
-	changes := policy.DiffPolicyV1Labelled(currentDoc, nextDoc, label)
+	changes := policy.DiffPolicyV1(currentDoc, nextDoc, label)
 	if !ownCurrent && key != policy.DefaultKey {
 		changes = append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
 			Summary: "the key gets a policy of its own; compared with the node default it followed"}}, changes...)
@@ -226,7 +226,7 @@ func DiffRemoval(role noderole.Role, key string, own, nextDefault string, label 
 	if err != nil {
 		return nil, fmt.Errorf("default policy: %w", err)
 	}
-	changes := policy.DiffPolicyV1Labelled(ownDoc, defaultDoc, label)
+	changes := policy.DiffPolicyV1(ownDoc, defaultDoc, label)
 	return append([]policy.PolicyChange{{Path: "/", Effect: policy.PolicyChangeNeutral,
 		Summary: "policy of its own removed; the key follows the node default"}}, changes...), nil
 }

@@ -5,6 +5,7 @@ package policy
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -27,7 +28,7 @@ func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 	cfg.AlwaysReviewWarnings = d.AlwaysReviewWarnings
 	cfg.AutoApproveSelfNoOpTransfer = d.AutoApproveSelfNoOpTransfer
 	cfg.MaxFeeMicroAlgos = d.MaxFeeMicroAlgos
-	cfg.TransactionTypes = d.TransactionTypes.Clone()
+	cfg.TransactionTypes = maps.Clone(d.TransactionTypes)
 	cfg.RekeyPolicy = nil
 	setConfigLimitsV1(cfg, d.Limits)
 	addressSets, assetSets := compileSetsV1(d.AddressSets, d.AssetSets)
@@ -40,9 +41,6 @@ func (d *PolicyV1) Compile(defaults *Config) (*Config, error) {
 		if cfg.RekeyPolicy, err = compileRekeyPolicyV1(d.RekeyPolicy, addressSets); err != nil {
 			return nil, fmt.Errorf("rekey_policy: %w", err)
 		}
-	}
-	if err := ValidateTransferGuards(cfg); err != nil {
-		return nil, err
 	}
 	return cfg, nil
 }

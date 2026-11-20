@@ -154,18 +154,16 @@ func StoredAlerts(docs []policy.StoredDocument, ctx *policycontext.Context) []st
 	var out []string
 	more := 0
 	for _, stored := range docs {
-		if len(out) == MaxStoredAlerts {
-			if doc, err := policy.DecodePolicyV1(stored.Bytes, stored.Key, ctx.Role()); err == nil && len(Check(doc, ctx)) > 0 {
-				more++
-			}
-			continue
-		}
 		doc, err := policy.DecodePolicyV1(stored.Bytes, stored.Key, ctx.Role())
 		if err != nil {
 			continue // a stored document that does not decode fails its load first
 		}
 		problems := Check(doc, ctx)
 		if len(problems) == 0 {
+			continue
+		}
+		if len(out) == MaxStoredAlerts {
+			more++
 			continue
 		}
 		line := fmt.Sprintf("policy %s: %s (at %s)", stored.Key, problems[0].Message, problems[0].Pointer)

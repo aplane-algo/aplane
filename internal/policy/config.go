@@ -4,6 +4,8 @@
 package policy
 
 import (
+	"maps"
+
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 
@@ -82,37 +84,14 @@ func (c *Config) Clone() *Config {
 		return nil
 	}
 	cp := *c
-	cp.TransactionTypes = c.TransactionTypes.Clone()
-	if c.MaxASAAmounts != nil {
-		cp.MaxASAAmounts = cloneASAAmounts(c.MaxASAAmounts)
-	}
-	if c.ReviewASAAmounts != nil {
-		cp.ReviewASAAmounts = cloneASAAmounts(c.ReviewASAAmounts)
-	}
-	if c.MaxAlgoPayments != nil {
-		cp.MaxAlgoPayments = cloneUintMap(c.MaxAlgoPayments)
-	}
-	if c.ReviewAlgoPayments != nil {
-		cp.ReviewAlgoPayments = cloneUintMap(c.ReviewAlgoPayments)
-	}
-	if c.TransferPolicy != nil {
-		cp.TransferPolicy = c.TransferPolicy.Clone()
-	}
-	if c.RekeyPolicy != nil {
-		cp.RekeyPolicy = c.RekeyPolicy.Clone()
-	}
+	cp.TransactionTypes = maps.Clone(c.TransactionTypes)
+	cp.MaxASAAmounts = cloneASAAmounts(c.MaxASAAmounts)
+	cp.ReviewASAAmounts = cloneASAAmounts(c.ReviewASAAmounts)
+	cp.MaxAlgoPayments = maps.Clone(c.MaxAlgoPayments)
+	cp.ReviewAlgoPayments = maps.Clone(c.ReviewAlgoPayments)
+	cp.TransferPolicy = c.TransferPolicy.Clone()
+	cp.RekeyPolicy = c.RekeyPolicy.Clone()
 	return &cp
-}
-
-func cloneUintMap(in map[string]uint64) map[string]uint64 {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]uint64, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func cloneASAAmounts(in map[string]map[uint64]uint64) map[string]map[uint64]uint64 {
@@ -121,15 +100,7 @@ func cloneASAAmounts(in map[string]map[uint64]uint64) map[string]map[uint64]uint
 	}
 	out := make(map[string]map[uint64]uint64, len(in))
 	for network, limits := range in {
-		if limits == nil {
-			out[network] = nil
-			continue
-		}
-		copied := make(map[uint64]uint64, len(limits))
-		for assetID, amount := range limits {
-			copied[assetID] = amount
-		}
-		out[network] = copied
+		out[network] = maps.Clone(limits)
 	}
 	return out
 }

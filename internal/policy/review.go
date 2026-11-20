@@ -26,38 +26,3 @@ func CheckTxnReviewPolicyLints(txn types.Transaction, cfg *Config) []LintViolati
 	}
 	return reviewAmountThresholds(cfg).check(txn, cfg)
 }
-
-// ValidateTransferGuards rejects transfer guard configurations where a deny
-// threshold is below the matching review threshold.
-func ValidateTransferGuards(cfg *Config) error {
-	if cfg == nil {
-		return nil
-	}
-
-	for network, reviewAmount := range cfg.ReviewAlgoPayments {
-		if reviewAmount == 0 {
-			continue
-		}
-		denyAmount := cfg.MaxAlgoPayments[network]
-		if denyAmount > 0 && denyAmount < reviewAmount {
-			return fmt.Errorf("max_algo_payments[%s] must be greater than or equal to review_algo_payments[%s]", network, network)
-		}
-	}
-
-	for network, reviewAmounts := range cfg.ReviewASAAmounts {
-		if len(reviewAmounts) == 0 {
-			continue
-		}
-		denyAmounts := cfg.MaxASAAmounts[network]
-		for assetID, reviewAmount := range reviewAmounts {
-			if reviewAmount == 0 {
-				continue
-			}
-			if denyAmount := denyAmounts[assetID]; denyAmount > 0 && denyAmount < reviewAmount {
-				return fmt.Errorf("max_asa_amounts[%s][%d] must be greater than or equal to review_asa_amounts[%s][%d]", network, assetID, network, assetID)
-			}
-		}
-	}
-
-	return nil
-}

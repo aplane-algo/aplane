@@ -67,29 +67,21 @@ func ExtractTransferMovements(txn types.Transaction) []TransferMovement {
 // CheckTxnTransferRoutingPolicyLints evaluates transfer routing outcomes that
 // hard-reject the transaction.
 func CheckTxnTransferRoutingPolicyLints(txn types.Transaction, cfg *Config) []LintViolation {
-	verdicts := evaluateTransferRouting(txn, cfg)
-	out := make([]LintViolation, 0, len(verdicts))
-	for _, verdict := range verdicts {
-		if verdict.Tier != transferRoutingDeny {
-			continue
-		}
-		out = append(out, LintViolation{
-			RuleID:   verdict.RuleID,
-			Scope:    "txn",
-			TxnIndex: -1,
-			Message:  verdict.Msg,
-		})
-	}
-	return out
+	return transferRoutingLints(txn, cfg, transferRoutingDeny)
 }
 
 // CheckTxnTransferRoutingReviewPolicyLints evaluates transfer routing outcomes
 // that force operator review after hard-reject policy has passed.
 func CheckTxnTransferRoutingReviewPolicyLints(txn types.Transaction, cfg *Config) []LintViolation {
+	return transferRoutingLints(txn, cfg, transferRoutingReview)
+}
+
+// transferRoutingLints returns the routing verdicts of one tier as lints.
+func transferRoutingLints(txn types.Transaction, cfg *Config, tier transferRoutingTier) []LintViolation {
 	verdicts := evaluateTransferRouting(txn, cfg)
 	out := make([]LintViolation, 0, len(verdicts))
 	for _, verdict := range verdicts {
-		if verdict.Tier != transferRoutingReview {
+		if verdict.Tier != tier {
 			continue
 		}
 		out = append(out, LintViolation{
@@ -244,14 +236,14 @@ func evaluateTransferMovement(movement TransferMovement, cfg *Config) (transferR
 	if isCloseMovement(movement.Kind) && !anyRouteAllowsClose(matches) {
 		return transferRoutingVerdict{
 			Tier:   transferRoutingDeny,
-			RuleID: closeRejectedRuleID(matches),
+			RuleID: TransferRoutingRouteRuleID(matches[0].ID, TransferRoutingCloseRejectedOutcome),
 			Msg:    fmt.Sprintf("transfer routing rejected %s movement without close.allow route", movement.Kind),
 		}, true
 	}
 	if movement.Kind == TransferMovementClawback && !anyRouteAllowsClawback(matches) {
 		return transferRoutingVerdict{
 			Tier:   transferRoutingDeny,
-			RuleID: clawbackRejectedRuleID(matches),
+			RuleID: TransferRoutingRouteRuleID(matches[0].ID, TransferRoutingClawbackRejectedOutcome),
 			Msg:    "transfer routing rejected clawback movement without clawback.allow route",
 		}, true
 	}
@@ -466,18 +458,4 @@ func effectiveRouteLimits(route CompiledTransferRoute, network string, asset Tra
 
 func isCloseMovement(kind TransferMovementKind) bool {
 	return kind == TransferMovementPayClose || kind == TransferMovementAssetClose
-}
-
-func closeRejectedRuleID(routes []CompiledTransferRoute) string {
-	if len(routes) == 0 {
-		return TransferRoutingCloseRejectedRuleID
-	}
-	return TransferRoutingRouteRuleID(routes[0].ID, TransferRoutingCloseRejectedOutcome)
-}
-
-func clawbackRejectedRuleID(routes []CompiledTransferRoute) string {
-	if len(routes) == 0 {
-		return TransferRoutingClawbackRejectedRuleID
-	}
-	return TransferRoutingRouteRuleID(routes[0].ID, TransferRoutingClawbackRejectedOutcome)
 }

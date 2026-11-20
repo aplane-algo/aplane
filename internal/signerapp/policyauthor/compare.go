@@ -66,7 +66,7 @@ func Compare(base, other *File) Comparison {
 
 func comparePolicy(base, other *policy.PolicyV1) Comparison {
 	c := Comparison{Mode: ComparePolicy}
-	for _, ch := range policy.DiffPolicyV1(base, other) {
+	for _, ch := range policy.DiffPolicyV1(base, other, nil) {
 		c.Changes = append(c.Changes, Change{Effect: string(ch.Effect), Path: ch.Path, Summary: ch.Summary})
 	}
 	if base.Key != other.Key {

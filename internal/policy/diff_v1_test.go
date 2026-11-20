@@ -27,7 +27,7 @@ func assertChanges(t *testing.T, got []PolicyChange, want ...string) {
 func TestDiffPolicyIgnoresFormattingAndKeyOrder(t *testing.T) {
 	a := mustSignerDoc(t, DefaultKey, `{"reject_clawback":true,"max_fee_microalgos":"2000"}`)
 	b := mustSignerDoc(t, DefaultKey, "{\n  \"max_fee_microalgos\": \"2000\",\n  \"reject_clawback\": true\n}\n")
-	assertChanges(t, DiffPolicyV1(a, b))
+	assertChanges(t, DiffPolicyV1(a, b, nil))
 }
 
 func TestDiffPolicyComparesAcrossKeys(t *testing.T) {
@@ -35,7 +35,7 @@ func TestDiffPolicyComparesAcrossKeys(t *testing.T) {
 	// differing key is not a change.
 	def := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"2000"}`)
 	own := mustSignerDoc(t, v1Ops.String(), `{"max_fee_microalgos":"2000"}`)
-	assertChanges(t, DiffPolicyV1(def, own))
+	assertChanges(t, DiffPolicyV1(def, own, nil))
 }
 
 func TestDiffPolicySettingsAndLimits(t *testing.T) {
@@ -43,7 +43,7 @@ func TestDiffPolicySettingsAndLimits(t *testing.T) {
 		"limits":{"testnet":{"algo":{"reject_above":"50000000"},"asa:7":{"review_above":"10"}}}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"rekeys": "allow_rekeys","auto_approve_self_noop_transfer":true,
 		"limits":{"testnet":{"algo":{"reject_above":"100000000","review_above":"1000000"}}}}`)
-	assertChanges(t, DiffPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next, nil),
 		"loosened /auto_approve_self_noop_transfer: false → true",
 		"loosened /limits/testnet/algo/reject_above: 50 ALGO → 100 ALGO",
 		"tightened /limits/testnet/algo/review_above: none → 1 ALGO",
@@ -70,7 +70,7 @@ func TestDiffPolicyLabelsKnownAssets(t *testing.T) {
 		}
 		return "", 0, false
 	}
-	assertChanges(t, DiffPolicyV1Labelled(current, next, label),
+	assertChanges(t, DiffPolicyV1(current, next, label),
 		"loosened /limits/mainnet/asa:7/review_above: 1 base units → 2 base units",
 		"loosened /limits/testnet/asa:7/review_above: 1.5 XY?Z (150 base units; 2 decimals, asset 7 on testnet) → 25 XY?Z (2500 base units; 2 decimals, asset 7 on testnet)",
 		"loosened /limits/testnet/asa:8/review_above: 5 base units → 6 base units",
@@ -80,7 +80,7 @@ func TestDiffPolicyLabelsKnownAssets(t *testing.T) {
 func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow"}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject","pay":"allow","axfer":"allow","keyreg":"review"}}`)
-	assertChanges(t, DiffPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next, nil),
 		"tightened /transaction_types/*: allow → reject (types without an entry of their own)",
 		"tightened /transaction_types/acfg: allow → reject",
 		"tightened /transaction_types/afrz: allow → reject",
@@ -89,7 +89,7 @@ func TestDiffPolicyTransactionTypesReportEffectiveVerdicts(t *testing.T) {
 		"tightened /transaction_types/keyreg: allow → review",
 		"tightened /transaction_types/stpf: allow → reject",
 	)
-	assertChanges(t, DiffPolicyV1(next, current),
+	assertChanges(t, DiffPolicyV1(next, current, nil),
 		"loosened /transaction_types/*: reject → allow (types without an entry of their own)",
 		"loosened /transaction_types/acfg: reject → allow",
 		"loosened /transaction_types/afrz: reject → allow",
@@ -106,10 +106,10 @@ func TestDiffPolicyWildcardChangeWithEveryTypeNamed(t *testing.T) {
 	explicit := `"pay":"allow","axfer":"allow","acfg":"allow","afrz":"allow","appl":"allow","keyreg":"allow","stpf":"allow","hb":"allow"`
 	current := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"reject",`+explicit+`}}`)
 	next := mustSignerDoc(t, DefaultKey, `{"transaction_types":{"*":"allow",`+explicit+`}}`)
-	assertChanges(t, DiffPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next, nil),
 		"loosened /transaction_types/*: reject → allow (types without an entry of their own)",
 	)
-	assertChanges(t, DiffPolicyV1(next, current),
+	assertChanges(t, DiffPolicyV1(next, current, nil),
 		"tightened /transaction_types/*: allow → reject (types without an entry of their own)",
 	)
 }
@@ -127,7 +127,7 @@ func TestDiffPolicyRoutesSetsAndRouteMiss(t *testing.T) {
 	q := func(a fmt.Stringer) string { return fmt.Sprintf("%q", a.String()) }
 	current := doc("reject", q(v1Bad), q(v1Ops), route("pay", q(v1Vendor), `,"limits":{"testnet":{"algo":{"reject_above":"5"}}}`)+","+route("old", q(v1Vendor), ""))
 	next := doc("review", "", q(v1Ops)+","+q(v1Other), route("pay", q(v1Vendor)+","+q(v1Other), `,"allow_close":true,"limits":{"testnet":{"algo":{"reject_above":"9"}}}`)+","+route("new", `"*"`, ""))
-	assertChanges(t, DiffPolicyV1(current, next),
+	assertChanges(t, DiffPolicyV1(current, next, nil),
 		"loosened /address_sets/ops: added "+v1Other.String(),
 		"loosened /transfer_policy/blocked_destinations: removed "+v1Bad.String(),
 		"loosened /transfer_policy/on_no_route: reject → review",
@@ -142,12 +142,12 @@ func TestDiffPolicyRoutesSetsAndRouteMiss(t *testing.T) {
 func TestDiffCosignerPolicyRekey(t *testing.T) {
 	base := mustCosignerDoc(t, testWitnessKeyIDV1, "")
 	withRekey := mustCosignerDoc(t, testWitnessKeyIDV1, fmt.Sprintf(`{"reject_close_remainder":true,"rekey_policy":{"allowed":[{"sender":%q,"targets":[%q]}]}}`, v1Ops.String(), v1Vendor.String()))
-	assertChanges(t, DiffPolicyV1(base, withRekey),
+	assertChanges(t, DiffPolicyV1(base, withRekey, nil),
 		"tightened /reject_close_remainder: false → true",
 		"loosened /rekey_policy/allowed: added "+v1Ops.String()+" → "+v1Vendor.String(),
 	)
 	rejectAll := mustCosignerDoc(t, testWitnessKeyIDV1, `{"reject_rekey":true}`)
-	assertChanges(t, DiffPolicyV1(base, rejectAll), "tightened /reject_rekey: false → true")
+	assertChanges(t, DiffPolicyV1(base, rejectAll, nil), "tightened /reject_rekey: false → true")
 }
 
 func TestDiffAddressSetComparesCoverageAcrossForms(t *testing.T) {
@@ -158,13 +158,13 @@ func TestDiffAddressSetComparesCoverageAcrossForms(t *testing.T) {
 	}
 	a := v1Ops.String()
 	perNetwork, flat := doc(fmt.Sprintf(`{"testnet":[%q]}`, a)), doc(fmt.Sprintf(`[%q]`, a))
-	assertChanges(t, DiffPolicyV1(perNetwork, flat), "loosened /address_sets/ops/(other networks): added "+a)
-	assertChanges(t, DiffPolicyV1(flat, perNetwork), "tightened /address_sets/ops/(other networks): removed "+a)
+	assertChanges(t, DiffPolicyV1(perNetwork, flat, nil), "loosened /address_sets/ops/(other networks): added "+a)
+	assertChanges(t, DiffPolicyV1(flat, perNetwork, nil), "tightened /address_sets/ops/(other networks): removed "+a)
 }
 
 func TestDiffFeeCapTreatsZeroAsNoCap(t *testing.T) {
 	capped := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"2000"}`)
 	zero := mustSignerDoc(t, DefaultKey, `{"max_fee_microalgos":"0"}`)
-	assertChanges(t, DiffPolicyV1(capped, zero), "loosened /max_fee_microalgos: 0.002 ALGO → no cap")
-	assertChanges(t, DiffPolicyV1(zero, capped), "tightened /max_fee_microalgos: no cap → 0.002 ALGO")
+	assertChanges(t, DiffPolicyV1(capped, zero, nil), "loosened /max_fee_microalgos: 0.002 ALGO → no cap")
+	assertChanges(t, DiffPolicyV1(zero, capped, nil), "tightened /max_fee_microalgos: no cap → 0.002 ALGO")
 }

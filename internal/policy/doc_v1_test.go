@@ -234,7 +234,7 @@ func TestCosignerTransactionTypesWildcardOptional(t *testing.T) {
 			t.Errorf("%s verdict = %q, want %q", txType, got, want)
 		}
 	}
-	if changes := DiffPolicyV1(explicit, omitted); len(changes) != 0 {
+	if changes := DiffPolicyV1(explicit, omitted, nil); len(changes) != 0 {
 		t.Fatalf("omitting \"*\" diffs as %v, want no change", changes)
 	}
 	if _, err := DecodePolicyV1(signerJSON(t, DefaultKey, `{"transaction_types":{"pay":"allow"}}`), DefaultKey, noderole.RoleSigner); err == nil {

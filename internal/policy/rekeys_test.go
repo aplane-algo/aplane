@@ -98,9 +98,9 @@ func TestRekeysSettingDiffRanksStrictness(t *testing.T) {
 	doc := func(setting SignerRekeys) *PolicyV1 {
 		return mustSignerDoc(t, DefaultKey, `{"rekeys": "`+string(setting)+`"}`)
 	}
-	assertChanges(t, DiffPolicyV1(doc(RekeysAllow), doc(RekeysRejectAll)), "tightened /rekeys: allow_rekeys → reject_all_rekeys")
-	assertChanges(t, DiffPolicyV1(doc(RekeysRejectAll), doc(RekeysRejectForeign)), "loosened /rekeys: reject_all_rekeys → reject_foreign_rekey")
-	assertChanges(t, DiffPolicyV1(doc(RekeysRejectForeign), doc(RekeysRejectForeign)))
+	assertChanges(t, DiffPolicyV1(doc(RekeysAllow), doc(RekeysRejectAll), nil), "tightened /rekeys: allow_rekeys → reject_all_rekeys")
+	assertChanges(t, DiffPolicyV1(doc(RekeysRejectAll), doc(RekeysRejectForeign), nil), "loosened /rekeys: reject_all_rekeys → reject_foreign_rekey")
+	assertChanges(t, DiffPolicyV1(doc(RekeysRejectForeign), doc(RekeysRejectForeign), nil))
 }
 
 // O8: an account's own rekey-to list is the owner's standing statement, so

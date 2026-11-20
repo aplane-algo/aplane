@@ -9,8 +9,6 @@
 package policyexport
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -88,15 +86,14 @@ func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, s
 			return nil, fmt.Errorf("policy document %q is listed twice", doc.Key)
 		}
 		seen[doc.Key] = true
-		sum := sha256.Sum256([]byte(doc.Document))
-		if hex.EncodeToString(sum[:]) != doc.SHA256 {
+		if policy.PolicySHA256([]byte(doc.Document)) != doc.SHA256 {
 			return nil, ErrPolicyChanged
 		}
 		stored = append(stored, policy.StoredDocument{Key: doc.Key, Bytes: []byte(doc.Document)})
 		digests = append(digests, policy.DocumentDigest{Key: doc.Key, SHA256: doc.SHA256})
 		names = append(names, name)
 	}
-	if policy.PolicySetSHA256(stored) != setSHA256 {
+	if policy.PolicySetSHA256OfDigests(digests) != setSHA256 {
 		return nil, ErrPolicyChanged
 	}
 	export, err := policycontext.NewExport(ctx, digests, at)

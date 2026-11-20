@@ -4,7 +4,6 @@
 package policy
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,7 +88,7 @@ func (d *PolicyV1) References() References {
 					refs.Assets = append(refs.Assets, AssetRef{
 						Network: net,
 						AssetID: asset.ASAID,
-						Pointer: base + "/" + escapeJSONPointer(net) + "/" + escapeJSONPointer(assetKey(asset)),
+						Pointer: base + "/" + escapeJSONPointer(net) + "/" + escapeJSONPointer(assetRefString(asset)),
 					})
 				}
 			}
@@ -133,11 +132,9 @@ func (d *PolicyV1) References() References {
 			case strings.HasPrefix(term, "@"):
 				ra.Sets = append(ra.Sets, strings.TrimPrefix(term, "@"))
 			case strings.HasPrefix(term, "asa:"):
-				id, err := strconv.ParseUint(strings.TrimPrefix(term, "asa:"), 10, 64)
-				if err != nil {
-					// The decoder accepted the term, so this cannot happen.
-					panic(fmt.Sprintf("policy: decoded route asset term %q: %v", term, err))
-				}
+				// The decoder accepted the term, so it parses.
+				ref, _ := parseAssetRefV1("", term)
+				id := ref.ASAID
 				ra.DirectAssets = append(ra.DirectAssets, id)
 				refs.DirectRouteAssets = append(refs.DirectRouteAssets, DirectRouteAsset{
 					AssetID: id, Pointer: pointer, Route: route.ID,
@@ -154,12 +151,4 @@ func (d *PolicyV1) References() References {
 	sort.Slice(refs.Networks, func(i, j int) bool { return refs.Networks[i].Pointer < refs.Networks[j].Pointer })
 	sort.Slice(refs.Assets, func(i, j int) bool { return refs.Assets[i].Pointer < refs.Assets[j].Pointer })
 	return refs
-}
-
-// assetKey is an asset's spelling as a limits key.
-func assetKey(a TransferAssetRef) string {
-	if a.Algo {
-		return "algo"
-	}
-	return "asa:" + strconv.FormatUint(a.ASAID, 10)
 }
