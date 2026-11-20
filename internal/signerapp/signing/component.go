@@ -44,6 +44,10 @@ func prepareComponentSigning(req componentPlanRequest) *ComponentSignPlan {
 
 	targets := make([]ComponentSignTarget, len(targetIndices))
 	for i, targetIndex := range targetIndices {
+		// No bounds check here: signerapi.ComponentRequest.Validate, which
+		// SignComponentsWithContext runs first, refuses a target index that
+		// is negative, repeated or outside the group's original prefix
+		// (TestComponentRequestValidateRefusesBadTargetIndices).
 		entry := req.Group.Entries[targetIndex]
 		targets[i] = ComponentSignTarget{
 			TargetIndex: targetIndex,

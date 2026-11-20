@@ -1405,8 +1405,9 @@ LogicSig key files whose stored bytecode derives an on-curve address are
 rejected during key scan. Key files with no `lsig_derivation` (the manual
 salt counter) require `salt_counter`; `algod_v13_auto_salt` derivations forbid
 it and require final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
-LogicSig key files without `signing_metadata_version` are rejected when
-signing or restore would need durable signing metadata. Key files with
+LogicSig key files without `signing_metadata_version` are refused by the key
+parser, which runs at key scan, on every key load and at restore, so none
+reaches signing. Key files with
 `signing_metadata_version >= 1` are **versioned signing-metadata keys**;
 non-bounded keys use version 1 and bounded
 keys require version 2 plus durable `bounded_authorization`. DSA LogicSig

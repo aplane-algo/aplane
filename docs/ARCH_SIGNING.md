@@ -2525,7 +2525,7 @@ Invalid `request_id` syntax returns `400`.
 | Invalid request shape, hex, msgpack, groups, params | 400 |
 | Unknown address / missing key | 400 |
 | Missing key on delete | 404 |
-| LogicSig key file missing `signing_metadata_version` when used for signing | 500 |
+| LogicSig key file missing `signing_metadata_version`, or carrying the wrong version | Rejected when the file is parsed: at scan, at every key load and at restore. May surface as unknown address or restore failure, or as 500 if the file changed after the scan |
 | LogicSig key file has a missing or inconsistent derivation record (`lsig_derivation`, plus `salt_counter` only for compatible manual-counter keys) | Rejected during scan/restore; may surface as unknown address or restore failure |
 | LogicSig key file bytecode derives an on-curve address | Rejected during scan/restore; may surface as unknown address or restore failure; if detected during signing, 500 |
 | Internal provider failure | 500 |

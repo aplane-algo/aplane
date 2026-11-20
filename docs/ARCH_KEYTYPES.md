@@ -1200,9 +1200,9 @@ runtime arg schema and use the stored copy at signing time. LogicSig key files
 whose derivation metadata does not match their bytecode, or whose stored
 bytecode derives an on-curve LogicSig address, are rejected during key scan.
 LogicSig key files without
-`signing_metadata_version` are rejected when signing or restore would otherwise
-depend on missing durable signing metadata; the live provider schema is not used
-as a fallback.
+`signing_metadata_version` are refused by the key parser, which runs at key
+scan, on every key load and at restore, so no such file reaches signing; the
+live provider schema is not used as a fallback.
 
 ```go
 // Generic template - no signature
