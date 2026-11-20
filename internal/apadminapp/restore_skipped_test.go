@@ -157,3 +157,26 @@ func TestImportSkipHeading(t *testing.T) {
 		}
 	}
 }
+
+// Text the daemon sends, such as an archive's entry names, reaches the
+// terminal escaped: a name holding a screen clear or a line break neither
+// acts nor starts a line of its own.
+func TestStoreEscapesDaemonText(t *testing.T) {
+	hostile := "BAD\x1b[2J\nfake line"
+	store, stdout, stderr := previewStoreForTest(protocol.RestorePreviewMessage{
+		ArchivePath: "backup.tar.gz",
+		Keys:        []protocol.RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519"}},
+		Skipped:     []protocol.RestoreSkipped{{Selector: hostile, Reason: "refused " + hostile}},
+	})
+	if err := store.RunRestore([]string{"preview", "backup.tar.gz"}); err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string]string{"stdout": stdout.String(), "stderr": stderr.String()} {
+		if strings.Contains(out, "\x1b") || strings.Contains(out, "\nfake line") {
+			t.Fatalf("%s carries raw daemon text: %q", name, out)
+		}
+	}
+	if !strings.Contains(stdout.String(), `BAD\x1b[2J\nfake line  skipped: refused BAD\x1b[2J\nfake line`) {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}

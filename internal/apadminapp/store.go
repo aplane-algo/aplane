@@ -242,9 +242,10 @@ func (s Store) backupList() error {
 	}
 	for _, item := range result.Backups {
 		created, source := BackupCreatedTime(item)
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n",
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "%s  %s  %s  %s  %s\n", escaped([]any{
 			item.FileName, backup.FormatFileSize(item.Size), item.Checksum,
-			created.Format(time.RFC3339), source.Label())
+			created.Format(time.RFC3339), source.Label(),
+		})...)
 	}
 	return nil
 }
@@ -559,10 +560,10 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 		if key.AlreadyExists {
 			status = "exists"
 		}
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s\n", key.Address, key.KeyType, status)
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s\n", escaped([]any{key.Address, key.KeyType, status})...)
 	}
 	for _, skipped := range result.Skipped {
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", skipped.Selector, skipped.Reason)
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", escaped([]any{skipped.Selector, skipped.Reason})...)
 	}
 	if result.SkippedOmitted > 0 {
 		_, _ = fmt.Fprintf(s.Streams.Stdout, "  and %d more skipped key(s) not listed\n", result.SkippedOmitted)
@@ -628,11 +629,11 @@ func (s Store) requestID(prefix string) string {
 }
 
 func (s Store) info(format string, args ...any) {
-	_, _ = fmt.Fprintf(s.Streams.Stderr, format+"\n", args...)
+	_, _ = fmt.Fprintf(s.Streams.Stderr, format+"\n", escaped(args)...)
 }
 
 func (s Store) warn(format string, args ...any) {
-	_, _ = fmt.Fprintf(s.Streams.Stderr, "warning: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(s.Streams.Stderr, "warning: "+format+"\n", escaped(args)...)
 }
 
 type backupExportPublication struct{ Warnings []string }

@@ -274,3 +274,13 @@ func TestAdminBatchExitCodeUsesStructuredProtocolCode(t *testing.T) {
 		}
 	}
 }
+
+// A batch error, which can carry what the daemon sent, prints on one line
+// with terminal controls and line breaks escaped.
+func TestPrintBatchErrorEscapesDaemonText(t *testing.T) {
+	var buf bytes.Buffer
+	printBatchError(&buf, errors.New("archive entry escapes destination: ../\x1b[2J\nfake line"))
+	if got, want := buf.String(), `apadmin: archive entry escapes destination: ../\x1b[2J\nfake line`+"\n"; got != want {
+		t.Fatalf("printBatchError() = %q, want %q", got, want)
+	}
+}
