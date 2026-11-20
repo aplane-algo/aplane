@@ -143,8 +143,8 @@ func TestJavaScriptSignerQueries(t *testing.T) {
 		Keys      []string `json:"keys"`
 		Signable  []string `json:"signable"`
 		Funding   struct {
-			CanSign bool `json:"canSign"`
-			IsLSig  bool `json:"isLsig"`
+			CanSign           bool   `json:"canSign"`
+			AuthorizationKind string `json:"authorizationKind"`
 		} `json:"funding"`
 	}](t, output)
 
@@ -163,7 +163,7 @@ func TestJavaScriptSignerQueries(t *testing.T) {
 	if !containsString(result.Signable, env.fundingAddr) || !containsString(result.Signable, addr) {
 		t.Fatalf("signableAddresses() = %#v, want funding and generated addresses", result.Signable)
 	}
-	if !result.Funding.CanSign || result.Funding.IsLSig {
+	if !result.Funding.CanSign || result.Funding.AuthorizationKind != "ed25519" {
 		t.Fatalf("canSignFor() = %#v, want signer-backed non-lsig account", result.Funding)
 	}
 }

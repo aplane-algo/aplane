@@ -651,7 +651,6 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 					DisplayName:       "Generic LSig",
 					Description:       "scripted signer",
 					AuthorizationKind: "logic_sig",
-					RequiresLogicSig:  true,
 					MnemonicWordCount: 25,
 					MnemonicImport:    true,
 					MnemonicScheme:    "bip39",
@@ -704,7 +703,7 @@ func TestKeyTypesMapsFullMetadata(t *testing.T) {
 	default:
 		t.Fatalf("keyTypes() = %#v, want slice", result)
 	}
-	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["requiresLogicSig"] != true || entry["mnemonicImport"] != true {
+	if entry["keyType"] != "generic-lsig" || entry["family"] != "logic" || entry["authorizationKind"] != "logic_sig" || entry["mnemonicImport"] != true {
 		t.Fatalf("keyTypes()[0] = %#v, want top-level metadata", entry)
 	}
 
@@ -1083,7 +1082,7 @@ func TestAdditionalErrorPaths(t *testing.T) {
 		eng.SignerCache.Keys = map[string]string{addr1: "ed25519"}
 
 		got := api.jsCanSignFor(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue("alice")}}).Export().(map[string]interface{})
-		if got["canSign"] != true || got["isLsig"] != false {
+		if got["canSign"] != true || fmt.Sprint(got["authorizationKind"]) != "ed25519" {
 			t.Fatalf("canSignFor() = %#v, want signer state", got)
 		}
 	})

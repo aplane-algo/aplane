@@ -2390,15 +2390,10 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `requires_logicsig` (true exactly when `authorization_kind` is `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`
-
-The older `requires_logicsig` boolean remains
-present on key-type inventory for compatibility and is true only for
-`logic_sig` entries. Clients must not infer that every false value means
-Ed25519; native Falcon-1024 also has `requires_logicsig:false`.
 
 `per_key_contract: true` marks a type whose accounts each select their own contract at
 generation. It has no `signing_flow` or `bounded_authorization`, so clients route its

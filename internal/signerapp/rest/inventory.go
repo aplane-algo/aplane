@@ -236,7 +236,6 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		if err == nil {
 			info.Family = meta.RoutingFamily()
 			info.AuthorizationKind = string(meta.AuthorizationKind())
-			info.RequiresLogicSig = algorithm.RequiresLogicSig(meta)
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
 			info.MnemonicScheme = meta.MnemonicScheme()
@@ -279,7 +278,6 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			KeyType:           tmpl.KeyType(),
 			Family:            tmpl.RoutingFamily(),
 			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
-			RequiresLogicSig:  true,
 			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(tmpl.KeyType()),
 		}
 		// A generic template is a provider like any other, described alike.
@@ -500,7 +498,6 @@ func rotatingKeyTypeInfo(info signerapi.KeyTypeInfo, networks []string) signerap
 	info.DisplayName = profile.DisplayName
 	info.Description = profile.Description
 	info.AuthorizationKind = string(algorithm.AuthorizationLogicSig)
-	info.RequiresLogicSig = true
 	info.MnemonicWordCount = 24
 	info.SigningFlow = signerapi.SigningFlowRotating1
 	info.CreationParams = keytypemeta.CreationParams([]lsigprovider.ParameterDef{{

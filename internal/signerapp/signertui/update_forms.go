@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/secretbuf"
@@ -362,7 +363,7 @@ func (m Model) generateTemplateDetailsForKeyType(keyType string) (LibraryTemplat
 		return tmpl, true
 	}
 	info, ok := findServerKeyType(keyType)
-	if !ok || !info.RequiresLogicSig {
+	if !ok || info.AuthorizationKind != string(algorithm.AuthorizationLogicSig) {
 		return LibraryTemplateInfo{}, false
 	}
 	return LibraryTemplateInfo{

@@ -64,7 +64,6 @@ type AlgorithmMetadataInfo struct {
 	MnemonicWordCount     int    `json:"mnemonic_word_count"`
 	MnemonicScheme        string `json:"mnemonic_scheme"`
 	AuthorizationKind     string `json:"authorization_kind"`
-	RequiresLogicSig      bool   `json:"requires_logicsig"`
 	CurrentLsigVersion    int    `json:"current_lsig_version,omitempty"`
 	SupportedLsigVersions []int  `json:"supported_lsig_versions,omitempty"`
 	DefaultDerivation     string `json:"default_derivation"`
@@ -123,7 +122,6 @@ func Generate() *ProviderManifest {
 			MnemonicWordCount: meta.MnemonicWordCount(),
 			MnemonicScheme:    meta.MnemonicScheme(),
 			AuthorizationKind: string(meta.AuthorizationKind()),
-			RequiresLogicSig:  algorithm.RequiresLogicSig(meta),
 			DefaultDerivation: meta.DefaultDerivation(),
 			DisplayColor:      meta.DisplayColor(),
 		}
