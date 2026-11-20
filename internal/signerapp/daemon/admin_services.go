@@ -503,7 +503,9 @@ func (s signerAdminServices) RemoveCosignerReference(req adminproto.RemoveCosign
 	var componentKey string
 	err := s.withStoreMutation(func() error {
 		existing, found, err := cosignerrefs.Get(ir.KeyPaths(), req.Name)
-		if err != nil {
+		// A record that does not parse fails the reference list; removing it
+		// is how the operator clears it.
+		if err != nil && !errors.Is(err, cosignerrefs.ErrInvalidRecord) {
 			return err
 		}
 		if found {

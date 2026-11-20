@@ -190,7 +190,9 @@ func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeI
 	}
 	validTypes := filterKeyTypesForNodeRole(keymgmt.GetValidKeyTypesWithActivated(enabled), ir.NodeRole())
 	infos := s.buildKeyTypes(validTypes, enabled)
-	applyCosignerReferenceParams(ir, infos)
+	if err := applyCosignerReferenceParams(ir, infos); err != nil {
+		return nil, err
+	}
 	return infos, nil
 }
 
@@ -394,13 +396,13 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	return info
 }
 
-func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) {
+func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) error {
 	if ir == nil {
-		return
+		return nil
 	}
 	refs, err := cosignerrefs.List(ir.KeyPaths())
 	if err != nil || len(refs) == 0 {
-		return
+		return err
 	}
 
 	componentIDsByComponentType := make(map[string]map[string]struct{})
@@ -442,6 +444,7 @@ func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.
 		})
 		infos[i].CreationParams = replaceCosignerPublicKeyParam(infos[i].CreationParams, cosignerParam)
 	}
+	return nil
 }
 
 func replaceCosignerPublicKeyParam(params []signerapi.CreationParamInfo, replacement signerapi.CreationParamInfo) []signerapi.CreationParamInfo {
@@ -478,7 +481,7 @@ func (s Service) KeyTypes(ir *productruntime.Runtime) (*signerapi.KeyTypesRespon
 	}
 	keyTypes, err := s.BuildKeyTypes(ir)
 	if err != nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "failed to read key type activations"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "failed to read key type activations or cosigner references"}
 	}
 	return &signerapi.KeyTypesResponse{KeyTypes: keyTypes}, nil
 }

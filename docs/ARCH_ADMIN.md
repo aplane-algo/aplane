@@ -738,10 +738,10 @@ Policy selection semantics:
 
 #### Cosigner References And Generation Inventory
 
-- `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
+- `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records. A record that does not parse fails the list with `list_failed`, naming it. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
 - `get_cosigner_reference`: `name` -> `cosigner_reference`: `success`, optional `reference`, `code`, `error`
 - `import_cosigner_reference`: `name`, `envelope_json` -> `import_cosigner_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
-- `remove_cosigner_reference`: `name` -> `remove_cosigner_reference_result`: `success`, `name`, `removed`, `code`, `error`
+- `remove_cosigner_reference`: `name` -> `remove_cosigner_reference_result`: `success`, `name`, `removed`, `code`, `error`; a record that does not parse is removed too
 - `export_cosigner_public`: `witness_key_id` -> `export_cosigner_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
 - `list_generations` -> `generations_list`: current generation, sealed priors,
   bounded non-authoritative `quarantined[]` metadata, pending staging, retained

@@ -547,7 +547,10 @@ The catalog is populated only by explicit operator import. Only the version 2
 record schema is read; records in any other schema, or carrying fields outside
 it, are rejected. Every read checks that `component_key` is the Witness Key ID
 `key_type` and `public_key_hex` derive, and that `imported_at` is the RFC 3339
-time the import stamped. The admin protocol's cosigner
+time the import stamped. A record that fails these checks is refused, never
+skipped: listing the references fails and names it, and `/keytypes` and a
+generation that picks a cosigner by Witness Key ID fail too, until the
+operator removes it with `apadmin cosigner remove <name>`. The admin protocol's cosigner
 references carry the same fields, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a

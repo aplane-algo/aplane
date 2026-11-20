@@ -6,6 +6,7 @@ package cosignerrefs
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -157,27 +158,37 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	}
 }
 
-func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.T) {
+// A record that does not parse fails the list, naming it, and so does a
+// generation choice by Witness Key ID, which reads the list. Delete clears it.
+func TestListRefusesAnInvalidRecordUntilItIsDeleted(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.CosignerRefsDir(), 0o700); err != nil {
-		t.Fatalf("MkdirAll(cosigners) error = %v", err)
+	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
+
+	if records, err := List(paths); !errors.Is(err, ErrInvalidRecord) || !strings.HasPrefix(err.Error(), "invalid cosigner reference bad: ") || records != nil {
+		t.Fatalf("List() = %#v, %v; want the invalid record refused", records, err)
 	}
-	if err := os.WriteFile(paths.CosignerRefPath("bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
-		t.Fatalf("WriteFile(bad reference) error = %v", err)
+	if _, _, err := Get(paths, "bad"); !errors.Is(err, ErrInvalidRecord) || !strings.HasPrefix(err.Error(), "invalid cosigner reference bad: ") {
+		t.Fatalf("Get(bad) error = %v, want the invalid record refused", err)
+	}
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := map[string]string{ParamCosignerName: componentKey}
+	if _, err := ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, params); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("ResolveCreationParamsForComponents(by ID) error = %v, want the invalid record refused", err)
 	}
 
+	if removed, err := Delete(paths, "bad"); err != nil || !removed {
+		t.Fatalf("Delete(bad) = %v, %v", removed, err)
+	}
 	records, err := List(paths)
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
-	}
-	if len(records) != 1 || records[0].Name != "valid" {
-		t.Fatalf("List() = %#v, want only valid reference", records)
-	}
-	if _, _, err := Get(paths, "bad"); err == nil || !strings.Contains(err.Error(), "invalid cosigner reference bad") {
-		t.Fatalf("Get(bad) error = %v, want explicit validation failure", err)
+	if err != nil || len(records) != 1 || records[0].Name != "valid" {
+		t.Fatalf("List() after Delete = %#v, %v", records, err)
 	}
 }
 

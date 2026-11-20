@@ -8,6 +8,7 @@ package cosignerrefs
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,10 @@ const (
 )
 
 var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+
+// ErrInvalidRecord marks a stored reference that does not parse or does not
+// hold together. Delete removes one all the same.
+var ErrInvalidRecord = errors.New("invalid cosigner reference")
 
 type ExportEnvelope = witness.PublicReference
 
@@ -154,14 +159,14 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	}
 	rec, err := parseRecord(data, name)
 	if err != nil {
-		return Record{}, false, fmt.Errorf("invalid cosigner reference %s: %w", name, err)
+		return Record{}, false, fmt.Errorf("%w %s: %w", ErrInvalidRecord, name, err)
 	}
 	return rec, true, nil
 }
 
-// List returns every independently valid cosigner reference. A malformed record
-// is omitted rather than hiding unrelated generation choices; direct Get of
-// that record still returns its validation error.
+// List returns every cosigner reference. A record that does not parse fails
+// the list, naming it, as Get of it does, so a broken record is never read as
+// one the operator did not import.
 func List(paths storepaths.Paths) ([]Record, error) {
 	dir := paths.CosignerRefsDir()
 	entries, err := os.ReadDir(dir)
@@ -186,7 +191,7 @@ func List(paths storepaths.Paths) ([]Record, error) {
 		}
 		rec, err := parseRecord(data, name)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("%w %s: %w", ErrInvalidRecord, name, err)
 		}
 		records = append(records, rec)
 	}
