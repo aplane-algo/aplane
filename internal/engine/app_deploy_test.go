@@ -53,8 +53,6 @@ func deployTestParams(t *testing.T, sender string, useFlatFee bool) AppDeployPar
 	}
 }
 
-// A deploy is built from algod's suggested parameters, with the fee the
-// caller set when it asked for a flat one, an explicit zero included.
 // TestPrepareAppDeployRequiresProgramsBeforeNetwork pins that a deploy
 // missing a program is refused before any algod request.
 func TestPrepareAppDeployRequiresProgramsBeforeNetwork(t *testing.T) {
@@ -84,6 +82,8 @@ func TestPrepareAppDeployRequiresProgramsBeforeNetwork(t *testing.T) {
 	}
 }
 
+// A deploy is built from algod's suggested parameters, with the fee the
+// caller set when it asked for a flat one, an explicit zero included.
 func TestPrepareAppDeployBuildsFromSuggestedParams(t *testing.T) {
 	testnet := testGenesisHash(t, config.AlgorandTestnetGenesisHash)
 	sender := types.Address{9}
