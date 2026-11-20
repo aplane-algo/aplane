@@ -37,6 +37,10 @@ type Config struct {
 	MaxASAAmounts      map[string]map[uint64]uint64
 	TransferPolicy     *TransferPolicy
 	RekeyPolicy        *RekeyPolicy
+	// DocumentKey is the key of the document this Config was compiled from:
+	// DefaultKey, or the selector of the one key it governs. A source's
+	// token is looked up under it.
+	DocumentKey string
 	// ExternalSources and ExternalChecks are a cosigner document's refuse-only
 	// checks. They are read-only once compiled, so clones share them. A
 	// Config with checks signs nothing unless they run and pass.
