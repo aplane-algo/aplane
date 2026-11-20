@@ -649,6 +649,39 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	}
 }
 
+// An auto-salted record must carry a valid opcode profile for its kind: the
+// default path alone for a key without bounded_authorization.
+func TestAutoSaltedLogicSigPayloadRequiresAValidOpcodeProfile(t *testing.T) {
+	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecodeForVersion(t, 13))
+	record := func(profile string) string {
+		return `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex +
+			`","lsig_derivation":"algod_v13_auto_salt"` + profile + `,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`
+	}
+	const prefix = "incompatible key file format: invalid lsig_opcode_profile: invalid LogicSig resource usage: "
+	const suffix = "; restore or regenerate the key file using the current key schema"
+	for name, test := range map[string]struct{ profile, want string }{
+		"missing":          {"", "default opcode ceiling is missing"},
+		"empty":            {`,"lsig_opcode_profile":{}`, "default opcode ceiling is missing"},
+		"bounded path":     {`,"lsig_opcode_profile":{"default":20000,"spend":20000}`, "spend opcode ceiling is not valid for this profile"},
+		"over the maximum": {`,"lsig_opcode_profile":{"default":320001}`, "default opcode ceiling 320001 exceeds maximum 320000"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := ParsePayload([]byte(record(test.profile)))
+			if payload != nil {
+				payload.ZeroSecrets()
+			}
+			if want := prefix + test.want + suffix; !errors.Is(err, ErrIncompatibleKeyFormat) || err.Error() != want {
+				t.Fatalf("ParsePayload() error = %v, want %q", err, want)
+			}
+		})
+	}
+	payload, err := ParsePayload([]byte(record(`,"lsig_opcode_profile":{"default":20000}`)))
+	if err != nil {
+		t.Fatalf("ParsePayload(valid profile) error = %v", err)
+	}
+	payload.ZeroSecrets()
+}
+
 func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 	publicKey, privateKey := canonicalEd25519Pair(t, 0x33)
 	componentPublicKey, componentPrivateKey := canonicalFalconComponentPair(t, 0x34)

@@ -208,7 +208,9 @@ Rules:
 
 1. The derivation record must be known and internally consistent: an unsalted
    key has no `lsig_derivation`, and an `algod_v13_auto_salt` key stores final
-   TEAL v13+ bytecode.
+   TEAL v13+ bytecode and an `lsig_opcode_profile` valid for its kind (the
+   default path alone without `bounded_authorization`, the three bounded paths
+   with it).
 2. The stored bytecode, not derivation metadata alone, determines the LogicSig
    address.
 3. Changing derivation metadata without changing stored bytecode does not
@@ -331,7 +333,8 @@ identity is still derived from bytecode.
 AcceptedLogicSigKey(key) =>
   key.lsig_derivation in {absent, algod_v13_auto_salt} and
   (key.lsig_derivation = algod_v13_auto_salt =>
-     TEALVersion(key.stored_bytecode) >= 13)
+     TEALVersion(key.stored_bytecode) >= 13 and
+     ValidOpcodeProfile(key.lsig_opcode_profile, Bounded(key)))
 AddressIdentity(key) = AddressOf(key.stored_bytecode)
 ```
 
@@ -488,7 +491,8 @@ High-value test anchors:
 
 - LogicSig keys without `signing_metadata_version` reject for signing/restore,
 - LogicSig keys with unknown or inconsistent derivation records reject,
-- compiler-auto-salted keys whose bytecode predates TEAL v13 reject,
+- compiler-auto-salted keys whose bytecode predates TEAL v13, or whose
+  `lsig_opcode_profile` is missing or invalid, reject,
 - on-curve LogicSig bytecode rejects,
 - conflicting key payload aliases reject,
 - generic LogicSig signing uses stored `signing_args`,
