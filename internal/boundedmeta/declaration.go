@@ -59,9 +59,6 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 		RekeyList:    metadata.RekeyList != nil,
 	}
 	declaration.MaxFee = CloneMaxFee(metadata.MaxFee)
-	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
-		return PathDeclaration{}, err
-	}
 	if metadata.Cosigner != nil {
 		declaration.Cosigner = &CosignerOverlay{
 			ComponentKeyType: metadata.Cosigner.ComponentKeyType,

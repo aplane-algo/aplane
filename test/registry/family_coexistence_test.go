@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -42,7 +43,7 @@ func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 	registerAll()
 
 	// RoutingFamily keeps them in separate registry slots.
-	if got := logicsigdsa.RoutingFamily(lsigEd25519); got != lsigEd25519Family {
+	if got := lsigprovider.RoutingFamily(lsigEd25519); got != lsigEd25519Family {
 		t.Fatalf("RoutingFamily(%q) = %q, want %q", lsigEd25519, got, lsigEd25519Family)
 	}
 
@@ -98,10 +99,10 @@ func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 func TestOldEd25519LsigKeyTypeIsGone(t *testing.T) {
 	registerAll()
 
-	if logicsigdsa.IsRegistered("aplane.ed25519lsig.v1") {
+	if logicsigdsa.IsLogicSigType("aplane.ed25519lsig.v1") {
 		t.Fatal("aplane.ed25519lsig.v1 is still registered; it was renamed to aplane.ed25519.v1")
 	}
-	if !logicsigdsa.IsRegistered(lsigEd25519) {
+	if !logicsigdsa.IsLogicSigType(lsigEd25519) {
 		t.Fatalf("%q is not registered", lsigEd25519)
 	}
 }

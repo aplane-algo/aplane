@@ -18,7 +18,7 @@ import (
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -205,5 +205,5 @@ func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
 		return
 	}
 
-	logicsigdsa.ConfigureAlgodClient(client)
+	lsigprovider.ConfigureAlgodClient(client)
 }

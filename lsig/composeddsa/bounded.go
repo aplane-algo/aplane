@@ -5,6 +5,7 @@ package composeddsa
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -199,67 +200,67 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	var encoded []byte
 	encoded = boundedmeta.AppendField(encoded, []byte(boundedProfileDomain))
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Contract))
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.SpendEffects)))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(canonical.SpendEffects)))
 	for _, effect := range canonical.SpendEffects {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
 	// The contract name leads the encoding, so a plain host's has no fee field
 	// rather than a placeholder, and a bounded host's encoding is unchanged.
 	if canonical.MaxFee != nil {
-		encoded = boundedmeta.AppendUint64(encoded, *canonical.MaxFee)
+		encoded = binary.BigEndian.AppendUint64(encoded, *canonical.MaxFee)
 	}
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
 	// The list's contract and depth, never its root: the root is an instance
 	// value, and the review digest binds the entries it comes from instead.
 	if canonical.RekeyList == nil {
-		encoded = boundedmeta.AppendUint32(encoded, 0)
+		encoded = binary.BigEndian.AppendUint32(encoded, 0)
 	} else {
-		encoded = boundedmeta.AppendUint32(encoded, 1)
+		encoded = binary.BigEndian.AppendUint32(encoded, 1)
 		encoded = boundedmeta.AppendField(encoded, []byte(canonical.RekeyList.Contract))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(canonical.RekeyList.Depth))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(canonical.RekeyList.Depth))
 	}
 	if canonical.Cosigner == nil {
-		encoded = boundedmeta.AppendUint32(encoded, 0)
+		encoded = binary.BigEndian.AppendUint32(encoded, 0)
 	} else {
-		encoded = boundedmeta.AppendUint32(encoded, 1)
+		encoded = binary.BigEndian.AppendUint32(encoded, 1)
 		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.Contract))
 		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.ComponentKeyType))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(canonical.Cosigner.SignatureMaxSize))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(len(canonical.Cosigner.RequiredOn)))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(canonical.Cosigner.SignatureMaxSize))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(canonical.Cosigner.RequiredOn)))
 		for _, path := range canonical.Cosigner.RequiredOn {
 			encoded = boundedmeta.AppendField(encoded, []byte(path))
 		}
 	}
 	encoded = boundedmeta.AppendField(encoded, []byte(metadata.Layer3Policy))
-	encoded = boundedmeta.AppendUint32(encoded, uint32(metadata.BaseSignatureArgLayout.Count))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(metadata.BaseSignatureArgLayout.Count))
 	for _, maxSize := range metadata.BaseSignatureArgLayout.MaxSizes {
-		encoded = boundedmeta.AppendUint32(encoded, uint32(maxSize))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(maxSize))
 	}
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(metadata.DerivedArgs)))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.DerivedArgs)))
 	for _, arg := range metadata.DerivedArgs {
 		encoded = boundedmeta.AppendField(encoded, []byte(arg.Name))
 		encoded = boundedmeta.AppendField(encoded, []byte(arg.Kind))
 		encoded = boundedmeta.AppendField(encoded, []byte(arg.Parameter))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(arg.MaxSize))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(arg.MaxSize))
 	}
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(metadata.RuntimeArgs)))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.RuntimeArgs)))
 	for _, arg := range metadata.RuntimeArgs {
 		encoded = boundedmeta.AppendField(encoded, []byte(arg.Name))
 		encoded = boundedmeta.AppendField(encoded, []byte(arg.Type))
 		if arg.Required {
-			encoded = boundedmeta.AppendUint32(encoded, 1)
+			encoded = binary.BigEndian.AppendUint32(encoded, 1)
 		} else {
-			encoded = boundedmeta.AppendUint32(encoded, 0)
+			encoded = binary.BigEndian.AppendUint32(encoded, 0)
 		}
-		encoded = boundedmeta.AppendUint32(encoded, uint32(arg.ByteLength))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(arg.MaxSize))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(arg.ByteLength))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(arg.MaxSize))
 	}
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(metadata.ArgumentLayout)))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.ArgumentLayout)))
 	for _, slot := range metadata.ArgumentLayout {
-		encoded = boundedmeta.AppendUint32(encoded, uint32(slot.Index))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(slot.Index))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Name))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Source))
-		encoded = boundedmeta.AppendUint32(encoded, uint32(slot.MaxSize))
+		encoded = binary.BigEndian.AppendUint32(encoded, uint32(slot.MaxSize))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.Spend))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.SpendingRekey))
 		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.ListedRekey))
@@ -714,7 +715,7 @@ func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.P
 
 	var encoded []byte
 	encoded = boundedmeta.AppendField(encoded, []byte(boundedBehaviorParametersDomainV1))
-	encoded = boundedmeta.AppendUint32(encoded, uint32(len(defs)))
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(defs)))
 	for _, def := range defs {
 		value, present := normalized[def.Name]
 		var canonical []byte
@@ -752,10 +753,10 @@ func canonicalParameterValue(def lsigprovider.ParameterDef, value string) ([]byt
 		if err != nil {
 			return nil, err
 		}
-		return boundedmeta.AppendUint64(nil, number), nil
+		return binary.BigEndian.AppendUint64(nil, number), nil
 	case "address[]":
 		items := splitCanonicalList(value)
-		encoded := boundedmeta.AppendUint32(nil, uint32(len(items)))
+		encoded := binary.BigEndian.AppendUint32(nil, uint32(len(items)))
 		for _, item := range items {
 			address, err := types.DecodeAddress(item)
 			if err != nil {
@@ -766,13 +767,13 @@ func canonicalParameterValue(def lsigprovider.ParameterDef, value string) ([]byt
 		return encoded, nil
 	case "uint64[]":
 		items := splitCanonicalList(value)
-		encoded := boundedmeta.AppendUint32(nil, uint32(len(items)))
+		encoded := binary.BigEndian.AppendUint32(nil, uint32(len(items)))
 		for _, item := range items {
 			number, err := strconv.ParseUint(item, 10, 64)
 			if err != nil {
 				return nil, err
 			}
-			encoded = boundedmeta.AppendField(encoded, boundedmeta.AppendUint64(nil, number))
+			encoded = boundedmeta.AppendField(encoded, binary.BigEndian.AppendUint64(nil, number))
 		}
 		return encoded, nil
 	case "string":

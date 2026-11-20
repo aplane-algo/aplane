@@ -95,7 +95,7 @@ func TestFalcon1024V1GenerateAndDerive(t *testing.T) {
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}
-	logicsigdsa.ConfigureAlgodClient(client)
+	lsigprovider.ConfigureAlgodClient(client)
 
 	dsa := logicsigdsa.Get("aplane.falcon1024.v1")
 	if dsa == nil {
@@ -212,7 +212,7 @@ func TestConfigureAlgodClient(t *testing.T) {
 	}
 
 	// Call ConfigureAlgodClient - this should set the client on all configurable DSAs
-	logicsigdsa.ConfigureAlgodClient(client)
+	lsigprovider.ConfigureAlgodClient(client)
 
 	// Verify aplane.falcon1024.v1 (which implements AlgodConfigurable) is configured
 	dsa := logicsigdsa.Get("aplane.falcon1024.v1")

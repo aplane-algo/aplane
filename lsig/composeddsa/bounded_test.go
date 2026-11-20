@@ -5,6 +5,7 @@ package composeddsa
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -70,7 +71,7 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 		t.Fatalf("CanonicalBoundedBehaviorParameters(absent) error = %v", err)
 	}
 	want := boundedmeta.AppendField(nil, []byte(boundedBehaviorParametersDomainV1))
-	want = boundedmeta.AppendUint32(want, 1)
+	want = binary.BigEndian.AppendUint32(want, 1)
 	want = boundedmeta.AppendField(want, []byte(def.Name))
 	want = boundedmeta.AppendField(want, []byte(def.Type))
 	want = boundedmeta.AppendField(want, nil)

@@ -11,10 +11,10 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -100,7 +100,7 @@ func GetGenerator(keyType string) (Generator, error) {
 	}
 
 	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")
-	family := logicsigdsa.RoutingFamily(keyType)
+	family := lsigprovider.RoutingFamily(keyType)
 	if family != keyType {
 		if generator, exists := registry.generators[family]; exists {
 			return generator, nil

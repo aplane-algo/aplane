@@ -115,9 +115,6 @@ func CreationFingerprint(keyType string, params map[string]string) (string, erro
 	if provider == nil {
 		return "", nil
 	}
-	if _, ok := provider.(InstanceResolver); !ok {
-		return TemplateFingerprintForKeyType(keyType), nil
-	}
 	instance, err := ResolveInstance(provider, params)
 	if err != nil {
 		return "", fmt.Errorf("resolve creation fingerprint: %w", err)

@@ -78,8 +78,8 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 		if li != lj {
 			return !li // standard types first
 		}
-		fi := logicsigdsa.RoutingFamily(types[i])
-		fj := logicsigdsa.RoutingFamily(types[j])
+		fi := lsigprovider.RoutingFamily(types[i])
+		fj := lsigprovider.RoutingFamily(types[j])
 		if fi != fj {
 			return fi < fj
 		}
