@@ -368,14 +368,16 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		// No keyring: a file that reached decryption would be reported as
-		// unreadable.
-		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), nil, nil)
+		decryptCalls := 0
+		report, err := scanKeysDirectory(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {
+			decryptCalls++
+			return nil, fmt.Errorf("unexpected decrypt")
+		})
 		if err != nil {
-			t.Fatalf("ScanKeysDirectory() error = %v", err)
+			t.Fatalf("scanKeysDirectory() error = %v", err)
 		}
-		if len(report.Keys) != 0 {
-			t.Fatalf("keys = %d, want none", len(report.Keys))
+		if decryptCalls != 0 || len(report.Keys) != 0 {
+			t.Fatalf("decrypt calls/keys = %d/%d, want witness files kept away from decrypt", decryptCalls, len(report.Keys))
 		}
 		got := map[KeyScanWarningCode]int{}
 		for _, warning := range report.Warnings {
@@ -389,9 +391,6 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			if warning.Code == KeyScanWarningUnexpectedEntry && !strings.Contains(warning.Message(), "not a managed credential") {
 				t.Fatalf("unexpected-entry warning = %q, want the unexpected-entry message", warning.Message())
 			}
-		}
-		if got[KeyScanWarningReadFailed] != 0 {
-			t.Fatalf("warnings = %#v, want witness files kept away from decryption", report.Warnings)
 		}
 		if len(report.Warnings) != 4 || got[KeyScanWarningWitnessMetadataInvalid] != want[KeyScanWarningWitnessMetadataInvalid] || got[KeyScanWarningUnexpectedEntry] != want[KeyScanWarningUnexpectedEntry] {
 			t.Fatalf("warnings = %#v, want 2 invalid-metadata + 2 unexpected-entry", report.Warnings)
@@ -425,9 +424,16 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(keysDir, otherKeyID+".cos.json"), envelopeJSON, 0600); err != nil {
 			t.Fatal(err)
 		}
-		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), nil, nil)
+		decryptCalls := 0
+		report, err := scanKeysDirectory(mustResolveActiveForTest(t, paths), nil, func(string) ([]byte, error) {
+			decryptCalls++
+			return nil, fmt.Errorf("unexpected decrypt")
+		})
 		if err != nil {
-			t.Fatalf("ScanKeysDirectory() error = %v", err)
+			t.Fatalf("scanKeysDirectory() error = %v", err)
+		}
+		if decryptCalls != 0 {
+			t.Fatalf("decrypt calls = %d, want the witness sidecar kept away from decrypt", decryptCalls)
 		}
 		if len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningWitnessMetadataInvalid {
 			t.Fatalf("warnings = %#v, want one ID-mismatch rejection", report.Warnings)

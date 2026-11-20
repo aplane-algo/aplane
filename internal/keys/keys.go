@@ -271,6 +271,15 @@ func ReadDecryptedKeyJSONWithKeyring(keyFile string, kr *crypto.Keyring) ([]byte
 // the authenticated credential selection is healthy before replacing that
 // exact selection. Unexpected entries and public metadata are never excluded.
 func ScanKeysDirectory(active storepaths.GenPaths, kr *crypto.Keyring, excluded map[string]bool) (*KeyScanReport, error) {
+	return scanKeysDirectory(active, excluded, func(keyFile string) ([]byte, error) {
+		return ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
+	})
+}
+
+// scanKeysDirectory is ScanKeysDirectory with its one decryption step passed
+// in, so tests can prove that nothing outside the managed credential classes
+// ever reaches it.
+func scanKeysDirectory(active storepaths.GenPaths, excluded map[string]bool, decrypt func(keyFile string) ([]byte, error)) (*KeyScanReport, error) {
 	keysMap := make(map[string]KeyScanInfo)
 	addressFiles := make(map[string][]string)
 	var warnings []KeyScanWarning
@@ -299,7 +308,7 @@ func ScanKeysDirectory(active storepaths.GenPaths, kr *crypto.Keyring, excluded 
 	// references (.cos.json) are the sole expected non-credential residents
 	// and are validated without decryption. Everything unrecognized is
 	// reported so store validation fails closed on unexpected content.
-	// Nothing outside the managed credential classes is ever decrypted.
+	// Nothing outside the managed credential classes ever reaches decrypt.
 	for _, entry := range entries {
 		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
 		if ok && !entry.IsDir() && excluded[filenameSelector] {
@@ -325,7 +334,7 @@ func ScanKeysDirectory(active storepaths.GenPaths, kr *crypto.Keyring, excluded 
 		keyFile := filepath.Join(keysDir, entry.Name())
 
 		// Read and decrypt the file ONCE to extract all needed info
-		data, err := ReadDecryptedKeyJSONWithKeyring(keyFile, kr)
+		data, err := decrypt(keyFile)
 		if err != nil {
 			warn(KeyScanWarningReadFailed, keyFile, err)
 			continue
