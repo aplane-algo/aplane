@@ -622,6 +622,40 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "restore_backup_result",
+			msg: RestoreBackupResultMessage{
+				BaseMessage:      BaseMessage{Type: MsgTypeRestoreBackupResult, ID: "restore-1"},
+				Success:          true,
+				OperationID:      "restore-1",
+				ArchiveSHA256:    "abc",
+				GenerationID:     "gen-2",
+				Restored:         []RestoreCredential{{Selector: "ADDR1", Category: "ed25519", KeyType: "ed25519"}},
+				Identical:        []RestoreCredential{{Selector: "ADDR2", Category: "ed25519", KeyType: "ed25519"}},
+				Conflicts:        []RestoreConflict{{Selector: "ADDR3", Category: "ed25519", KeyType: "ed25519", Reason: "existing credential differs from backup"}},
+				PoliciesRestored: []string{"ADDR1"},
+				KeyCount:         3,
+			},
+			wantMap: map[string]any{
+				"type":           MsgTypeRestoreBackupResult,
+				"id":             "restore-1",
+				"success":        true,
+				"operation_id":   "restore-1",
+				"archive_sha256": "abc",
+				"generation_id":  "gen-2",
+				"restored": []any{
+					map[string]any{"selector": "ADDR1", "category": "ed25519", "key_type": "ed25519"},
+				},
+				"identical": []any{
+					map[string]any{"selector": "ADDR2", "category": "ed25519", "key_type": "ed25519"},
+				},
+				"conflicts": []any{
+					map[string]any{"selector": "ADDR3", "category": "ed25519", "key_type": "ed25519", "reason": "existing credential differs from backup"},
+				},
+				"policies_restored": []any{"ADDR1"},
+				"key_count":         float64(3),
+			},
+		},
+		{
 			name: "library_templates",
 			msg: LibraryTemplatesMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeLibraryTemplates, ID: "tmpl-list-1"},
