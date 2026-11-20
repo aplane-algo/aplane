@@ -42,8 +42,16 @@ type CreateKeysArchiveRequest struct {
 }
 
 // CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
-// When Addresses is empty, all active keys are exported.
+// When Addresses is empty, all active keys are exported. A selection that
+// names an address twice is refused before anything is written.
 func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
+	var selected []string
+	if len(req.Addresses) > 0 {
+		var err error
+		if selected, err = selectedBackupAddresses(req.Addresses); err != nil {
+			return nil, err
+		}
+	}
 	if err := prepareManagedArchiveDestination(req.Paths, req.ArchivePath); err != nil {
 		return nil, err
 	}
@@ -63,7 +71,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 
 	keysDestDir := filepath.Join(stageDir, "apb")
 	var exported []string
-	if len(req.Addresses) == 0 {
+	if len(selected) == 0 {
 		if err := ExportAllKeys(
 			activeKeysDir,
 			stageDir,
@@ -80,10 +88,7 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		if err := os.MkdirAll(keysDestDir, 0750); err != nil {
 			return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
 		}
-		for _, address := range req.Addresses {
-			if address == "" {
-				continue
-			}
+		for _, address := range selected {
 			if err := ExportKey(
 				activeKeysDir,
 				keysDestDir,
@@ -94,9 +99,6 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 				return nil, fmt.Errorf("failed to export %s: %w", address, err)
 			}
 			exported = append(exported, address)
-		}
-		if len(exported) == 0 {
-			return nil, fmt.Errorf("no addresses selected for backup")
 		}
 	}
 	nodeRole, _, err := noderole.Load(req.Paths)
@@ -143,6 +145,29 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 		Verified:        true,
 		Warning:         published.warning,
 	}, nil
+}
+
+// selectedBackupAddresses is the selection a selected-keys backup exports, in
+// request order and without the empty entries a caller may pass. It refuses
+// an address named twice, which would be exported and counted twice, as
+// restore refuses a duplicate selector.
+func selectedBackupAddresses(addresses []string) ([]string, error) {
+	selected := make([]string, 0, len(addresses))
+	seen := make(map[string]bool, len(addresses))
+	for _, address := range addresses {
+		if address == "" {
+			continue
+		}
+		if seen[address] {
+			return nil, fmt.Errorf("duplicate backup address %q", address)
+		}
+		seen[address] = true
+		selected = append(selected, address)
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("no addresses selected for backup")
+	}
+	return selected, nil
 }
 
 // PartialArchiveSuffix marks an archive still being written or verified.

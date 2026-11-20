@@ -138,6 +138,51 @@ func TestCreateAllKeysArchiveExportsCosignerCredential(t *testing.T) {
 	}
 }
 
+// A selected-keys backup that names an address twice would export it twice and
+// count it twice. It is refused before anything is written, as restore refuses
+// a duplicate selector; the same address named once is backed up.
+func TestCreateSelectedKeysArchiveRefusesADuplicateAddress(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := storepaths.NewPaths(t.TempDir())
+	paths = mintFirstGenerationForBackupTest(t, paths)
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	encryptedKey, err := cryptotest.Keyring(t, testExportMasterKey).Seal(keyJSON, crypto.AccountKeyContext(address))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.WriteEmbeddedDefault(activePathsForBackupTest(t, paths), noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey), timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, selection := range [][]string{{address, address}, {address, "", address}} {
+		archivePath := BuildManagedArchivePath(paths, "20261120-010203")
+		result, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, selection, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey)))
+		if err == nil || !strings.Contains(err.Error(), "duplicate backup address") {
+			t.Fatalf("CreateKeysArchive(%q) = %+v, %v; want a duplicate address refused", selection, result, err)
+		}
+		if _, statErr := os.Lstat(archivePath); !os.IsNotExist(statErr) {
+			t.Fatalf("archive stat error = %v, want no archive", statErr)
+		}
+	}
+	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, BuildManagedArchivePath(paths, "20261120-010204"), []string{"", ""}, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey))); err == nil || !strings.Contains(err.Error(), "no addresses selected for backup") {
+		t.Fatalf("CreateKeysArchive(empty entries) error = %v, want no addresses selected", err)
+	}
+
+	result, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, BuildManagedArchivePath(paths, "20261120-010205"), []string{"", address}, noderole.RoleSigner, cryptotest.Keyring(t, testExportMasterKey)))
+	if err != nil {
+		t.Fatalf("CreateKeysArchive(once) error = %v", err)
+	}
+	if result.KeyCount != 1 || len(result.Addresses) != 1 || result.Addresses[0] != address {
+		t.Fatalf("archive result = %+v, want %s once", result, address)
+	}
+}
+
 func timeForBackupTest() time.Time {
 	return time.Unix(1700000000, 0)
 }

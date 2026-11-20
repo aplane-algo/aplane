@@ -59,7 +59,7 @@ var (
 func argsTestKeys() []signerapi.KeyInfo {
 	htlc := func(address string) signerapi.KeyInfo {
 		return signerapi.KeyInfo{Address: address, KeyType: "aplane.htlc.v1", IsGenericLsig: true,
-			SigningArgs: []signerapi.SigningArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}
+			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}
 	}
 	return []signerapi.KeyInfo{
 		{Address: argsNative, KeyType: "ed25519"},
@@ -70,7 +70,7 @@ func argsTestKeys() []signerapi.KeyInfo {
 				ProgramBytes: 4_500, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}},
 		htlc(argsHTLC), htlc(argsHTLC2),
 		{Address: argsSecret, KeyType: "example.secret.v1", IsGenericLsig: true,
-			SigningArgs: []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
+			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
 	}
 }
 

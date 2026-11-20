@@ -580,7 +580,7 @@ func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 		KeyType:       "aplane.falcon1024.v1",
 		IsGenericLsig: true,
 		SigningFlow:   "cosigned1",
-		SigningArgs:   []signerapi.SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}},
+		SigningArgs:   []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true}},
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
 			Contract: "bounded2",
 			MaxFee:   &maxFee,

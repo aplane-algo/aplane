@@ -681,7 +681,7 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	var boundedArgs []lsigprovider.RuntimeArgDef
 	if spec.Bounded != nil {
 		for _, arg := range spec.Bounded.RuntimeArgs {
-			boundedArgs = append(boundedArgs, lsigprovider.RuntimeArgDef{Name: arg.Name, Label: arg.Label, Description: descriptionText(arg.Description)})
+			boundedArgs = append(boundedArgs, lsigprovider.RuntimeArgDef{Name: arg.Name, Label: arg.Label, Description: lsigprovider.DescriptionText(arg.Description)})
 		}
 	}
 	if err := checkTemplateText(parsed, boundedArgs); err != nil {
@@ -690,21 +690,17 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	return parsed, nil
 }
 
-// descriptionText is a template description as its author means it. Every
-// display field is one line of text, but a YAML block scalar (description: |
-// or >) ends its text with a line break, which is no part of it.
-func descriptionText(s string) string { return strings.TrimRight(s, "\n") }
-
-// trimDescriptions drops that line break from every description parsed holds,
-// so the library checks and lists the text without it. The template's YAML is
-// installed as written.
+// trimDescriptions drops the line break a YAML block scalar ends a
+// description with (lsigprovider.DescriptionText) from every description
+// parsed holds, so the library checks and lists the text without it. The
+// template's YAML is installed as written.
 func trimDescriptions(parsed *ParsedTemplate) {
-	parsed.Description = descriptionText(parsed.Description)
+	parsed.Description = lsigprovider.DescriptionText(parsed.Description)
 	for i := range parsed.Parameters {
-		parsed.Parameters[i].Description = descriptionText(parsed.Parameters[i].Description)
+		parsed.Parameters[i].Description = lsigprovider.DescriptionText(parsed.Parameters[i].Description)
 	}
 	for i := range parsed.RuntimeArgs {
-		parsed.RuntimeArgs[i].Description = descriptionText(parsed.RuntimeArgs[i].Description)
+		parsed.RuntimeArgs[i].Description = lsigprovider.DescriptionText(parsed.RuntimeArgs[i].Description)
 	}
 }
 

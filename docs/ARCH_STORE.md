@@ -1952,6 +1952,9 @@ cap; backup creation refuses to package an archive extraction would reject.
 An all-credentials backup is fail-hard: if any selected active credential
 cannot be read, decrypted, canonicalized, or exported, no archive is
 published. It never silently reports a partial archive as a complete backup.
+A selected-keys backup that names an address twice is refused before
+anything is written, as restore refuses a duplicate selector; it would
+otherwise export and count the key twice.
 
 A managed archive contains exactly:
 
