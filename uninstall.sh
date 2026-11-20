@@ -366,12 +366,14 @@ if [ "$CLIENT_MODE" = "1" ]; then
     CLIENT_BINDIR="$APCLIENT_DIR/bin"
 
     # Remove client binaries from client bindir
-    if [ -f "$CLIENT_BINDIR/apshell" ]; then
-        rm -f "$CLIENT_BINDIR/apshell"
-        echo "Removed $CLIENT_BINDIR/apshell"
-    else
-        echo "No apshell found at $CLIENT_BINDIR/apshell"
-    fi
+    for binary in apshell aplocalnet; do
+        if [ -f "$CLIENT_BINDIR/$binary" ]; then
+            rm -f "$CLIENT_BINDIR/$binary"
+            echo "Removed $CLIENT_BINDIR/$binary"
+        else
+            echo "No $binary found at $CLIENT_BINDIR/$binary"
+        fi
+    done
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Clean up shell rc
@@ -474,7 +476,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     ENV_SH="$LOCAL_PARENT/apenv.sh"
 
     SIGNER_BINARIES_REMOVED=0
-    CLIENT_BINARY_REMOVED=0
+    CLIENT_BINARIES_REMOVED=0
     ROOT_ARTIFACTS_REMOVED=0
     MCP_CONFIG_REMOVED=0
     MCP_TEMPLATE_REMOVED=0
@@ -482,6 +484,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     CODEX_MCP_TEMPLATE_REMOVED=0
     ENV_RC_CLEANED=0
     REMOVED_SIGNER_BINARIES=()
+    REMOVED_CLIENT_BINARIES=()
     REMOVED_ROOT_ARTIFACTS=()
 
     # Remove installed local binaries but keep signer configuration, identities,
@@ -496,10 +499,14 @@ if [ "$LOCAL_MODE" = "1" ]; then
     done
     rmdir "$SIGNER_BINDIR" 2>/dev/null || true
 
-    if [ -e "$CLIENT_BINDIR/apshell" ]; then
-        rm -f "$CLIENT_BINDIR/apshell"
-        CLIENT_BINARY_REMOVED=1
-    fi
+    for binary in apshell aplocalnet; do
+        binary_path="$CLIENT_BINDIR/$binary"
+        if [ -e "$binary_path" ]; then
+            rm -f "$binary_path"
+            REMOVED_CLIENT_BINARIES+=("$binary")
+            CLIENT_BINARIES_REMOVED=1
+        fi
+    done
     rmdir "$CLIENT_BINDIR" 2>/dev/null || true
 
     # Remove installer-generated MCP config only if it still points at this
@@ -572,10 +579,10 @@ if [ "$LOCAL_MODE" = "1" ]; then
     else
         echo "  - no signer-side binaries were present in $SIGNER_BINDIR"
     fi
-    if [ "$CLIENT_BINARY_REMOVED" = "1" ]; then
-        echo "  - removed client binary from $CLIENT_BINDIR/apshell"
+    if [ "$CLIENT_BINARIES_REMOVED" = "1" ]; then
+        echo "  - removed client binaries from $CLIENT_BINDIR: ${REMOVED_CLIENT_BINARIES[*]}"
     else
-        echo "  - no client binary was present at $CLIENT_BINDIR/apshell"
+        echo "  - no client binaries were present in $CLIENT_BINDIR"
     fi
     if [ "$MCP_CONFIG_REMOVED" = "1" ]; then
         echo "  - removed installer-generated MCP config at $APCLIENT_DIR/.mcp.json"
@@ -759,7 +766,7 @@ else
 fi
 
 # Remove binaries
-for binary in apsigner apshell apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
+for binary in apsigner apshell aplocalnet apconsole apadmin apapprover apstore appolicy appass appass-file appass-systemd-creds approbe applugin-checksum; do
     binary_path="$BINDIR/$binary"
     if [ -e "$binary_path" ]; then
         rm -f "$binary_path"

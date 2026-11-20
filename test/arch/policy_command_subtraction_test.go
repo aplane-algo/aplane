@@ -72,7 +72,9 @@ func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 
 // TestInstallerInstallsTheReleaseBinaries pins install.sh's binary list to the
 // release package's, so an install from a checkout installs what a release
-// ships and nothing else that happens to sit in bin/.
+// ships and nothing else that happens to sit in bin/. uninstall.sh must remove
+// each of them: systemd mode from one bindir, local mode from the signer and
+// client bindirs, and client-only mode the same client binaries.
 func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 	root := filepath.Join("..", "..")
 	list := func(name, opener string) []string {
@@ -92,6 +94,37 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 	packaged := list(filepath.Join("scripts", "package-bootstrap-release.sh"), "local binaries=(")
 	if !slices.Equal(installed, packaged) {
 		t.Errorf("install.sh installs %v, but a release packages %v", installed, packaged)
+	}
+
+	uninstaller, err := os.ReadFile(filepath.Join(root, "uninstall.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var systemd, localSigner []string
+	var clients [][]string
+	removal := regexp.MustCompile(`(?m)^\s*for binary in ([^;\n]+); do$`)
+	for _, match := range removal.FindAllStringSubmatch(string(uninstaller), -1) {
+		names := strings.Fields(match[1])
+		switch {
+		case slices.Contains(names, "apsigner") && slices.Contains(names, "apshell"):
+			systemd = names
+		case slices.Contains(names, "apsigner"):
+			localSigner = names
+		default:
+			clients = append(clients, names)
+		}
+	}
+	want := slices.Sorted(slices.Values(installed))
+	if got := slices.Sorted(slices.Values(systemd)); !slices.Equal(got, want) {
+		t.Errorf("systemd uninstall removes %v, want %v", got, want)
+	}
+	if len(clients) != 2 {
+		t.Fatalf("uninstall.sh has %d client binary removal lists, want 2 (client-only and local)", len(clients))
+	}
+	for _, client := range clients {
+		if got := slices.Sorted(slices.Values(slices.Concat(localSigner, client))); !slices.Equal(got, want) {
+			t.Errorf("signer bindir plus client bindir removal lists cover %v, want %v", got, want)
+		}
 	}
 }
 

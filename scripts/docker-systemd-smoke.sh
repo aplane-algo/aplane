@@ -590,6 +590,7 @@ sha256sum -c /tmp/aplane-preflight-unit.before"
 verify_uninstall() {
     docker_exec_bash "test ! -e /usr/local/bin/apsigner"
     docker_exec_bash "test ! -e /usr/local/bin/approbe"
+    docker_exec_bash "test ! -e /usr/local/bin/aplocalnet"
     docker_exec_bash "test ! -e /usr/local/bin/appolicy"
     docker_exec_bash "test ! -e /etc/systemd/system/apsigner.service"
     docker_exec_bash "test ! -e /lib/systemd/system/apsigner.service"
