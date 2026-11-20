@@ -464,7 +464,7 @@ func (s signerAdminServices) ListCosignerReferences() adminproto.ListCosignerRef
 	}
 	for _, bad := range invalid {
 		result.Invalid = append(result.Invalid, adminproto.InvalidCosignerReference{
-			Path: bad.Path, Name: bad.Stem, Reason: bad.Reason, Removable: bad.Removable(),
+			Path: bad.Path, Name: bad.Stem, Reason: bad.Reason, Removable: bad.Removable,
 		})
 	}
 	return result

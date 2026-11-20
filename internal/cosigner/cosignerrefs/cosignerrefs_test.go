@@ -192,16 +192,11 @@ func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 		{Path: filepath.Join(paths.CosignerRefsDir(), "._lab.json"), Stem: "._lab", Reason: `"._lab" is not a reference name`},
 		{Path: filepath.Join(paths.CosignerRefsDir(), "Foo.json"), Stem: "Foo", Reason: `"Foo" is not a reference name`},
 		{Path: filepath.Join(paths.CosignerRefsDir(), "a..b.json"), Stem: "a..b", Reason: `"a..b" is not a reference name`},
-		{Path: paths.CosignerRefPath("bad"), Stem: "bad", Reason: `unsupported schema "wrong"`},
+		{Path: paths.CosignerRefPath("bad"), Stem: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
 		{Path: filepath.Join(paths.CosignerRefsDir(), "my ref.json"), Stem: "my ref", Reason: `"my ref" is not a reference name`},
 	}
 	if !reflect.DeepEqual(invalid, want) {
 		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
-	}
-	for _, bad := range invalid {
-		if bad.Removable() != (bad.Stem == "bad") {
-			t.Errorf("%s Removable() = %v", bad.Path, bad.Removable())
-		}
 	}
 	if got, want := invalid[1].String(), invalid[1].Path+`: "Foo" is not a reference name (remove does not reach it; delete the file to clear it)`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
@@ -488,5 +483,64 @@ func TestRemoveRefusesANameNotAsListed(t *testing.T) {
 	records, invalid, err := List(paths)
 	if err != nil || len(records) != 0 || len(invalid) != 1 || invalid[0].Path != upper {
 		t.Fatalf("List() after Remove(foo) = %+v, %+v, %v; want only Foo.json reported", records, invalid, err)
+	}
+}
+
+// An entry that cannot be read, or is not a regular file, is reported, not
+// fatal, and Remove does not reach it. A dangling symlink is reported too, and
+// Remove deletes it. Only a directory that cannot be read fails the list.
+func TestListReportsEntriesItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode 000 file")
+	}
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "foo", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	dir := paths.CosignerRefsDir()
+	if err := os.WriteFile(filepath.Join(dir, "locked.json"), []byte("{}"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, link := range map[string]string{"todir.json": target, "dangling.json": filepath.Join(dir, "missing")} {
+		if err := os.Symlink(link, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	records, invalid, err := List(paths)
+	if err != nil || len(records) != 1 || records[0].Name != "foo" {
+		t.Fatalf("List() = %+v, %v; want the valid reference", records, err)
+	}
+	want := []InvalidRecord{
+		{Path: filepath.Join(dir, "dangling.json"), Stem: "dangling", Reason: "symlink to a missing file", Removable: true},
+		{Path: filepath.Join(dir, "dir.json"), Stem: "dir", Reason: "is a directory"},
+		{Path: filepath.Join(dir, "locked.json"), Stem: "locked", Reason: "cannot be read: permission denied"},
+		{Path: filepath.Join(dir, "todir.json"), Stem: "todir", Reason: "is a directory"},
+	}
+	if !reflect.DeepEqual(invalid, want) {
+		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
+	}
+	if removal, err := Remove(paths, "dangling"); err != nil || !removal.Removed {
+		t.Fatalf("Remove(dangling) = %+v, %v", removal, err)
+	}
+	for _, name := range []string{"locked", "todir", "dir"} {
+		if removal, err := Remove(paths, name); err == nil || removal.Removed {
+			t.Fatalf("Remove(%s) = %+v, %v; want it refused", name, removal, err)
+		}
+	}
+
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, _, err := List(paths); err == nil || !strings.HasPrefix(err.Error(), "failed to read cosigner reference directory: ") {
+		t.Fatalf("List() of an unreadable directory error = %v, want it to fail", err)
 	}
 }

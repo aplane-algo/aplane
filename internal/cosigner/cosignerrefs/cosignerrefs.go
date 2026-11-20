@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -164,32 +165,29 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	return rec, true, nil
 }
 
-// InvalidRecord is a ".json" file in the reference directory that is not a
+// InvalidRecord is a ".json" entry of the reference directory that is not a
 // valid cosigner reference.
 type InvalidRecord struct {
-	Path   string // the file, as it is named in the directory
+	Path   string // the entry, as it is named in the directory
 	Stem   string // its name without ".json"
 	Reason string
-}
-
-// Removable reports whether Delete reaches the file: only a file named for a
-// reference name is. Any other one has to be deleted by hand.
-func (r InvalidRecord) Removable() bool {
-	name, err := NormalizeName(r.Stem)
-	return err == nil && name == r.Stem
+	// Removable says whether Remove of Stem clears it. Only an entry named for
+	// a reference name that Remove can read, or a dangling symlink, is; any
+	// other one has to be deleted by hand.
+	Removable bool
 }
 
 func (r InvalidRecord) String() string {
-	if r.Removable() {
+	if r.Removable {
 		return fmt.Sprintf("%s: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
 	}
 	return fmt.Sprintf("%s: %s (remove does not reach it; delete the file to clear it)", r.Path, r.Reason)
 }
 
 // List returns the valid cosigner references and, beside them, every other
-// ".json" file in the reference directory with why it is not one. One bad
-// file never hides the rest. A directory or a file that cannot be read fails
-// the list.
+// ".json" entry of the reference directory with why it is not one: one bad
+// entry never hides the rest. Only a directory that cannot be read fails the
+// list.
 func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 	dir := paths.CosignerRefsDir()
 	entries, err := os.ReadDir(dir)
@@ -202,29 +200,16 @@ func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 	records := make([]Record, 0, len(entries))
 	var invalid []InvalidRecord
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		bad := InvalidRecord{Path: filepath.Join(dir, entry.Name()), Stem: strings.TrimSuffix(entry.Name(), ".json")}
-		if !bad.Removable() {
-			bad.Reason = fmt.Sprintf("%q is not a reference name", bad.Stem)
-			invalid = append(invalid, bad)
-			continue
+		rec, bad := listEntry(dir, entry)
+		switch {
+		case rec != nil:
+			records = append(records, *rec)
+		case bad != nil:
+			invalid = append(invalid, *bad)
 		}
-		data, err := os.ReadFile(bad.Path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, nil, fmt.Errorf("failed to read cosigner reference %s: %w", bad.Stem, err)
-		}
-		rec, err := parseRecord(data, bad.Stem)
-		if err != nil {
-			bad.Reason = err.Error()
-			invalid = append(invalid, bad)
-			continue
-		}
-		records = append(records, rec)
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
@@ -233,6 +218,61 @@ func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 		return invalid[i].Path < invalid[j].Path
 	})
 	return records, invalid, nil
+}
+
+// listEntry reads one ".json" entry of the reference directory: a record, or
+// the entry as an invalid one, or neither when the entry was removed after
+// the directory was read.
+func listEntry(dir string, entry os.DirEntry) (*Record, *InvalidRecord) {
+	bad := &InvalidRecord{Path: filepath.Join(dir, entry.Name()), Stem: strings.TrimSuffix(entry.Name(), ".json")}
+	if name, err := NormalizeName(bad.Stem); err != nil || name != bad.Stem {
+		bad.Reason = fmt.Sprintf("%q is not a reference name", bad.Stem)
+		return nil, bad
+	}
+	// Inspected before it is read, so a directory or a FIFO is reported, not
+	// read. Remove reads the record first, so what it cannot read it cannot
+	// remove.
+	info, err := os.Stat(bad.Path)
+	switch {
+	case os.IsNotExist(err) && entry.Type()&os.ModeSymlink == 0:
+		return nil, nil
+	case os.IsNotExist(err):
+		// Remove reads a dangling symlink as absent and deletes it.
+		bad.Reason, bad.Removable = "symlink to a missing file", true
+		return nil, bad
+	case err != nil:
+		bad.Reason = "cannot be inspected: " + errorCause(err)
+		return nil, bad
+	case info.IsDir():
+		bad.Reason = "is a directory"
+		return nil, bad
+	case !info.Mode().IsRegular():
+		bad.Reason = "is not a regular file"
+		return nil, bad
+	}
+	data, err := os.ReadFile(bad.Path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		bad.Reason = "cannot be read: " + errorCause(err)
+		return nil, bad
+	}
+	rec, err := parseRecord(data, bad.Stem)
+	if err != nil {
+		bad.Reason, bad.Removable = err.Error(), true
+		return nil, bad
+	}
+	return &rec, nil
+}
+
+// errorCause drops the path a filesystem error repeats: the entry names it.
+func errorCause(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err.Error()
+	}
+	return err.Error()
 }
 
 // Removal is what Remove did.
