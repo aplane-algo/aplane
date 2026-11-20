@@ -34,7 +34,7 @@ type InitializeParams struct {
 	Network    string `json:"network"`    // Network context token
 	AlgodURL   string `json:"algodUrl"`   // Algorand node API URL
 	AlgodToken string `json:"algodToken"` // Algod API token (empty for public nodes)
-	IndexerURL string `json:"indexerUrl"` // Indexer URL if available
+	IndexerURL string `json:"indexerUrl"` // Always empty: apshell has no indexer to give
 }
 
 // InitializeResult returned from plugin initialization

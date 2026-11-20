@@ -41,8 +41,7 @@ func (a *App) SwitchNetwork(ctx context.Context, req SwitchNetworkRequest) (*Swi
 	}
 
 	if a.Plugins != nil {
-		algodURL, algodToken := getAlgodConfig(a.Config.Algod, req.Network)
-		a.Plugins.SetConfig(req.Network, algodURL, algodToken, "")
+		a.ConfigurePlugins()
 		a.Plugins.StopAll()
 	}
 
@@ -53,13 +52,4 @@ func (a *App) SwitchNetwork(ctx context.Context, req SwitchNetworkRequest) (*Swi
 			Message: fmt.Sprintf("Switched to %s", req.Network),
 		},
 	}, nil
-}
-
-// getAlgodConfig returns the algod URL and token for the given network.
-// Returns empty strings if not configured in config.yaml.
-func getAlgodConfig(algod config.AlgodConfig, network string) (string, string) {
-	if cfg, err := algod.GetNetwork(network); err == nil && cfg.Server != "" {
-		return cfg.Server, cfg.Token
-	}
-	return "", ""
 }
