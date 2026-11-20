@@ -12,6 +12,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -31,7 +32,7 @@ func promptForReviewTest(t *testing.T, req signerapi.GroupSignRequest, plan *Pla
 func promptForReviewTestWith(t *testing.T, req signerapi.GroupSignRequest, plan *PlanResult, known map[string]bool, cfg *policy.Config) signerapproval.Prompt {
 	t.Helper()
 	var got *signerapproval.Prompt
-	describe := DescribeTxnFunc(txdesc.DetailTxn)
+	describe := describeOnBuiltinNetworks
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove: false,
@@ -365,4 +366,10 @@ func TestPromptShowsTheClientsBatchLabel(t *testing.T) {
 			t.Errorf("%s: an unlabeled request shows a batch: %+v\n%s", tc.name, plain.Review.Batch, plain.Description)
 		}
 	}
+}
+
+// describeOnBuiltinNetworks describes a transaction as the signer does,
+// naming its network from the built-in table.
+func describeOnBuiltinNetworks(txn types.Transaction) txnreview.Details {
+	return txdesc.DetailTxnWithResolver(txn, apconfig.DefaultGenesisHashNetworkResolver())
 }
