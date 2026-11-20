@@ -438,3 +438,25 @@ func firstRoundedBoxHasBottomBorder(rendered string) bool {
 	}
 	return false
 }
+
+// ellipsizeMiddle is the one middle ellipsis: for an odd number of kept
+// characters the extra one goes to the end, which for an ID or path is the
+// part that tells it apart. The generate review, the boundary file and the
+// generated-key warnings use it as well.
+func TestEllipsizeMiddleKeepsTheExtraCharacterAtTheEnd(t *testing.T) {
+	for _, tt := range []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"abcdefghij", 8, "ab...hij"},
+		{"abcdefghij", 9, "abc...hij"},
+		{"abcdefghij", 10, "abcdefghij"},
+		{"abcdefghij", 3, "abc"},
+		{"abcdefghij", 0, ""},
+	} {
+		if got := ellipsizeMiddle(tt.in, tt.width); got != tt.want {
+			t.Errorf("ellipsizeMiddle(%q, %d) = %q, want %q", tt.in, tt.width, got, tt.want)
+		}
+	}
+}

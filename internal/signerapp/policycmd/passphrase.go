@@ -14,20 +14,10 @@ import (
 	"golang.org/x/term"
 )
 
-const (
-	passphraseEnv        = "APSIGNER_PASSPHRASE"
-	retiredPassphraseEnv = "APPOLICY_PASSPHRASE"
-)
+const passphraseEnv = "APSIGNER_PASSPHRASE"
 
 var OpenTTY = func() (*os.File, error) {
 	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
-}
-
-func RejectRetiredEnvironment() error {
-	if os.Getenv(retiredPassphraseEnv) != "" {
-		return fmt.Errorf("%s is retired; use %s for explicit local policy commands", retiredPassphraseEnv, passphraseEnv)
-	}
-	return nil
 }
 
 // ReadPassphrase reads the policy command's authentication secret. The

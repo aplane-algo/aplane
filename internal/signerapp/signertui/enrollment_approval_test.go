@@ -104,7 +104,7 @@ func TestNextEnrollmentRequestOpensOnRejectAndUnarmed(t *testing.T) {
 func TestEnrollmentPopupArmsWhenItBecomesVisible(t *testing.T) {
 	clock := stoppedClock(t)
 	m := approvalTestModel(ViewKeyList)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	m = updateModel(t, m, enrollmentRequest("one"))
 	if m.viewState != ViewSigningPopup {
 		t.Fatalf("view = %v, want the signing popup in front", m.viewState)

@@ -40,16 +40,13 @@ func (m Model) viewFooterText() string {
 	case ViewMnemonicExport:
 		return "Esc: close recovery phrase"
 	case ViewTEALFullDisplay:
-		if len(strings.Split(m.details.teal, "\n")) > m.tealFullDisplayVisibleLines() {
-			return pagerScrollFooter
-		}
-		return "Esc/q close"
+		return pagerFooter(len(m.tealLines()), m.tealFullDisplayVisibleLines())
 	case ViewSigningPopup:
 		if m.reviewAvailable() {
 			// The review fills the window and draws its own keys line.
 			return ""
 		}
-		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r/esc: Reject"
+		return "enter/n/r/esc: Reject"
 	case ViewClientEnrollmentPopup:
 		return "left/right/tab: Focus | enter/space: Submit | y/a: Approve | n/r: Reject | esc: Defer"
 	case ViewBackupConfirm:
@@ -208,9 +205,8 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 }
 
 func (m Model) libraryTemplateDetailsFooterText() string {
-	if m.library.detailsContent != "" &&
-		len(strings.Split(m.library.detailsContent, "\n")) > m.libraryTemplateDetailsVisibleLines() {
-		return pagerScrollFooter
+	if m.library.detailsContent == "" {
+		return "Esc/q close"
 	}
-	return "Esc/q close"
+	return pagerFooter(len(m.libraryTemplateDetailsLines()), m.libraryTemplateDetailsVisibleLines())
 }

@@ -427,7 +427,6 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Request: PendingSignRequest{
 				ID:          req.ID,
 				Address:     req.Address,
-				TxnSender:   req.TxnSender,
 				Description: req.Description,
 				Timestamp:   time.Unix(req.Timestamp, 0),
 				FirstValid:  req.FirstValid,

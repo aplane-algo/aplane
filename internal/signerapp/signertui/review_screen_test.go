@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -56,7 +57,7 @@ func groupReviewRequest() *PendingSignRequest {
 	groupRekey := rekey
 	groupRekey.Field = "Tx 2/3: RekeyTo"
 	return &PendingSignRequest{
-		ID: "apv-1", Address: reviewOwn, TxnSender: "GROUP(3 txns)",
+		ID: "apv-1", Address: reviewOwn,
 		Description: "[GROUP APPROVAL]\n=== TRANSACTION GROUP (3 transactions) ===\nraw text of the request",
 		FirstValid:  100, LastValid: 1100,
 		Violations: []protocol.PolicyViolation{groupRekey, lookalike},
@@ -81,7 +82,7 @@ func singleReviewRequest() *PendingSignRequest {
 	item.Findings = []protocol.PolicyViolation{closing}
 	item.Effects = append(item.Effects, protocol.ReviewEffect{Kind: "close", From: reviewOwn, To: reviewOther, Text: "CLOSE: all remaining ALGO", Severity: protocol.ReviewSeverityDanger})
 	return &PendingSignRequest{
-		ID: "apv-2", Address: reviewOwn, TxnSender: reviewOwn,
+		ID: "apv-2", Address: reviewOwn,
 		Description: "[TXN APPROVAL]\nPayment: 5000.000000 ALGO\n  raw text",
 		FirstValid:  100, LastValid: 1100,
 		Violations: []protocol.PolicyViolation{closing},
@@ -319,17 +320,43 @@ func TestReviewTextToggle(t *testing.T) {
 	}
 }
 
-// A request without a review is shown as its description, as before.
-func TestRequestWithoutAReviewShowsItsDescription(t *testing.T) {
+// The signer sends every request with its review. One that comes without
+// cannot be approved: the popup says so, offers only REJECT, and the
+// approval keys do nothing, while the reject keys answer it.
+func TestRequestWithoutAReviewCanOnlyBeRejected(t *testing.T) {
+	clock := time.Unix(1_000, 0)
+	saved := signingNow
+	signingNow = func() time.Time { return clock }
+	t.Cleanup(func() { signingNow = saved })
+
 	request := groupReviewRequest()
 	request.Review = nil
-	m := reviewModelForTest(t, request, true, MinWidth, MinHeight)
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "Transaction Details") || strings.Contains(view, "t: ") {
-		t.Fatalf("view:\n%s", view)
-	}
-	if m, handled := m.handleReviewKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}); handled || m.signing.review.text {
-		t.Fatal("t was handled with no review to draw")
+	for _, size := range []struct{ width, height int }{{MinWidth, MinHeight}, {133, 39}} {
+		m := reviewModelForTest(t, request, true, size.width, size.height)
+		clock = clock.Add(5 * time.Second)
+		view := stripANSI(m.View())
+		for _, want := range []string{"Signing Request", "Address: " + reviewOwn, "cannot be approved", "> REJECT", "enter/n/r/esc: Reject"} {
+			if !strings.Contains(strings.Join(strings.Fields(view), " "), strings.Join(strings.Fields(want), " ")) {
+				t.Fatalf("%dx%d: view missing %q:\n%s", size.width, size.height, want, view)
+			}
+		}
+		for _, banned := range []string{"APPROVE", "Transaction Details", "raw text of the request"} {
+			if strings.Contains(view, banned) {
+				t.Fatalf("%dx%d: view shows %q:\n%s", size.width, size.height, banned, view)
+			}
+		}
+		requireFits(t, m, size.width, size.height)
+		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("y")}, {Type: tea.KeyRunes, Runes: []rune("a")}, {Type: tea.KeyRunes, Runes: []rune("t")}, {Type: tea.KeyLeft}, {Type: tea.KeyRight}, {Type: tea.KeyTab}, {Type: tea.KeyDown}} {
+			if got, cmd := updateForTest(t, m, key); got.signing.request == nil || got.viewState != ViewSigningPopup || cmd != nil {
+				t.Fatalf("%q answered a request without a review", key.String())
+			}
+		}
+		for _, key := range []tea.KeyMsg{{Type: tea.KeyEnter}, {Type: tea.KeySpace, Runes: []rune(" ")}, {Type: tea.KeyRunes, Runes: []rune("n")}, {Type: tea.KeyRunes, Runes: []rune("r")}, {Type: tea.KeyEsc}} {
+			got, cmd := updateForTest(t, m, key)
+			if got.signing.request != nil || cmd == nil {
+				t.Fatalf("%q did not reject the request", key.String())
+			}
+		}
 	}
 }
 

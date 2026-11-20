@@ -1330,21 +1330,15 @@ EOF
 
 write_apconsole_profile() {
     local target="$1"
-    local mode="$2"
-    local client_data="$3"
-    local signer_data="${4:-}"
+    local client_data="$2"
+    local signer_data="$3"
 
     cat > "$target" <<EOF
 # apconsole profile
 # Paths are relative to this file.
-mode: $mode
 client_data: $client_data
-EOF
-    if [ "$mode" = "local" ]; then
-        cat >> "$target" <<EOF
 signer_data: $signer_data
 EOF
-    fi
 }
 
 install_template_library() {
@@ -2292,7 +2286,7 @@ ENVEOF
 
     APCONSOLE_CONFIG="$LOCAL_PATH/apconsole.yaml"
     echo "Writing $APCONSOLE_CONFIG..."
-    write_apconsole_profile "$APCONSOLE_CONFIG" local ./apclient ./apsigner
+    write_apconsole_profile "$APCONSOLE_CONFIG" ./apclient ./apsigner
 
     # Write start.sh unified console launcher.
     START_SH="$LOCAL_PATH/start.sh"
@@ -2678,7 +2672,7 @@ if [ -n "$SUDO_USER" ]; then
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
     echo "Writing $APCONSOLE_CONFIG..."
-    write_apconsole_profile "$APCONSOLE_CONFIG" local ./apclient "$DATA_DIR"
+    write_apconsole_profile "$APCONSOLE_CONFIG" ./apclient "$DATA_DIR"
 
     chown "$SUDO_USER" "$OPERATOR_ROOT" "$APCONSOLE_CONFIG"
     chown -R "$SUDO_USER" "$APCLIENT_DIR"

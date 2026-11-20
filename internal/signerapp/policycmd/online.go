@@ -24,18 +24,11 @@ type OnlineRunner struct {
 	Session OnlineSession
 }
 
+// Run runs a validated command that needs the node. apadmin validates the
+// command and answers the forms that need none (Command.NeedsNoNode) itself.
 func (r OnlineRunner) Run(ctx context.Context, command Command, streams Streams) error {
-	if err := command.Validate(); err != nil {
-		return err
-	}
-	if command.NeedsNoNode() {
-		return WriteOfflineTemplate(command, streams)
-	}
 	if r.Session == nil {
 		return fmt.Errorf("admin policy session is required")
-	}
-	if err := RejectRetiredEnvironment(); err != nil {
-		return err
 	}
 	streams = streams.normalized()
 	passphrase, err := ReadPassphrase(streams.Stdin, streams.Stderr, command.readsStdin())

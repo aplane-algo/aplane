@@ -141,7 +141,7 @@ func matchesFilter(value, filter string) bool {
 }
 
 func (m Model) filteredKeys() []KeyInfo {
-	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
+	tabKeys := m.roleKeys()
 	if m.keylist.filterInput == "" {
 		return tabKeys
 	}
@@ -157,58 +157,36 @@ func (m Model) filteredKeys() []KeyInfo {
 	return result
 }
 
-func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
-	result := make([]KeyInfo, 0, len(keys))
-	for _, key := range keys {
-		if keyBelongsToTab(key, tab) {
+// roleKeys is the keys the list shows: a cosigner node's cosigner keys, or
+// any other node's signing keys.
+func (m Model) roleKeys() []KeyInfo {
+	cosigner := m.isCosignerNode()
+	result := make([]KeyInfo, 0, len(m.keylist.keys))
+	for _, key := range m.keylist.keys {
+		if witness.IsKeyType(key.KeyType) == cosigner {
 			result = append(result, key)
 		}
 	}
 	return result
 }
 
-func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
-	isCosigner := witness.IsKeyType(key.KeyType)
-	if tab == keyListTabCosigner {
-		return isCosigner
-	}
-	return !isCosigner
-}
-
-func (m Model) keyListMode() string {
-	switch m.nodeRole() {
-	case "cosigner":
-		return "cosigner"
-	default:
-		return "signing"
-	}
-}
-
-func (m Model) effectiveKeyListTab() keyListTab {
-	switch m.keyListMode() {
-	case "cosigner":
-		return keyListTabCosigner
-	default:
-		return keyListTabSigning
-	}
-}
-
-// syncKeyListTabWithMode resets the key-list selection when the node-role
-// driven key view changes (e.g. admin settings arrive after startup).
-func (m *Model) syncKeyListTabWithMode() {
-	tab := m.effectiveKeyListTab()
-	if m.keylist.tab == tab {
+// syncKeyListWithRole resets the key-list selection when the node role the
+// list shows changes (e.g. admin settings arrive after startup).
+func (m *Model) syncKeyListWithRole() {
+	if m.keylist.cosignerKeys == m.isCosignerNode() {
 		return
 	}
-	m.keylist.tab = tab
+	m.keylist.cosignerKeys = m.isCosignerNode()
 	m.resetKeyListSelection()
 }
 
-func (m Model) activeKeyListTabLabel() string {
-	if m.effectiveKeyListTab() == keyListTabCosigner {
-		return "Cosigner"
+// keyListNoun names the keys the list shows. It differs from nodeRoleNoun:
+// a signer's keys are signing keys.
+func (m Model) keyListNoun() string {
+	if m.isCosignerNode() {
+		return "cosigner"
 	}
-	return "Signing"
+	return "signing"
 }
 
 func (m Model) keyListFooterText() string {
@@ -231,7 +209,7 @@ func (m Model) renderKeyListView() string {
 	sb.WriteString("\n")
 
 	// Get filtered key list
-	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
+	tabKeys := m.roleKeys()
 	displayKeys := m.filteredKeys()
 
 	if len(m.keylist.keys) == 0 {
@@ -243,14 +221,14 @@ func (m Model) renderKeyListView() string {
 			sb.WriteString("No keys found. Press 'g' to generate a new key.\n")
 		}
 	} else if len(tabKeys) == 0 {
-		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("No %s keys found", strings.ToLower(m.activeKeyListTabLabel()))))
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("No %s keys found", m.keyListNoun())))
 		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keylist.keys)))
 	} else if len(displayKeys) == 0 {
 		// Filter returned no matches
 		sb.WriteString(subtitleStyle.Render("No keys match filter"))
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("\n  Showing: 0 of %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
+		sb.WriteString(fmt.Sprintf("\n  Showing: 0 of %d %s keys\n", len(tabKeys), m.keyListNoun()))
 	} else {
 		m.writeKeyRows(&sb, displayKeys, tabKeys)
 	}
@@ -311,9 +289,9 @@ func (m Model) writeKeyRows(sb *strings.Builder, displayKeys, tabKeys []KeyInfo)
 
 	// Show filtered count vs total
 	if m.keylist.filterInput != "" {
-		sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
+		sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), m.keyListNoun()))
 	} else {
-		sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
+		sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), m.keyListNoun()))
 	}
 }
 
@@ -462,38 +440,13 @@ func displayPublicKeyHex(publicKeyHex string) string {
 func (m Model) renderTEALFullDisplay() string {
 	width := m.pagerWidth()
 
-	lines := strings.Split(m.details.teal, "\n")
-	visibleLines := m.tealFullDisplayVisibleLines()
-	offset := m.details.scrollOffset
-	if offset < 0 {
-		offset = 0
-	}
-	if offset >= len(lines) {
-		offset = 0
-	}
-	end := offset + visibleLines
-	if end > len(lines) {
-		end = len(lines)
-	}
-
 	var sb strings.Builder
 	sb.WriteString(m.tealFullDisplayHeader(width))
-
-	if offset > 0 {
-		sb.WriteString(scrollMoreAboveLine(offset))
-		sb.WriteString("\n")
-	}
-	for _, line := range lines[offset:end] {
+	writePagerLines(&sb, m.tealLines(), m.details.scrollOffset, m.tealFullDisplayVisibleLines(), func(line string) string {
 		// The program as its template wrote it, with every control and
 		// format character, bidirectional ones included, shown as an escape.
-		sb.WriteString(ellipsize(truncateLongHex(terminalSafeLines(strings.TrimSuffix(line, "\r")), 80), width))
-		sb.WriteString("\n")
-	}
-	if end < len(lines) {
-		sb.WriteString(scrollMoreBelowLine(len(lines) - end))
-		sb.WriteString("\n")
-	}
-
+		return ellipsize(truncateLongHex(terminalSafeLines(strings.TrimSuffix(line, "\r")), 80), width)
+	})
 	return sb.String()
 }
 
@@ -509,6 +462,8 @@ func (m Model) tealFullDisplayHeader(width int) string {
 	sb.WriteString("\n")
 	return sb.String()
 }
+
+func (m Model) tealLines() []string { return strings.Split(m.details.teal, "\n") }
 
 func (m Model) tealFullDisplayVisibleLines() int {
 	return m.pagerVisibleLines(m.tealFullDisplayHeader(m.pagerWidth()))

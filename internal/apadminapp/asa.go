@@ -14,13 +14,14 @@ import (
 
 const asaUsage = "usage: apadmin asa <list | add NETWORK ASSET-ID [--yes] | remove NETWORK ASSET-ID | remove --genesis HASH ASSET-ID>"
 
-// asaCommandAuth validates an asa command. Every asa command reads the
-// node's policy state, so each unlocks.
-func asaCommandAuth(args []string) (AuthMode, error) {
-	if _, err := parseASACommand(args); err != nil {
-		return AuthUnlock, err
+// parseASA parses an asa command. Every asa command reads the node's policy
+// state, so each unlocks.
+func parseASA(args []string) (catalogCommand, error) {
+	cmd, err := parseASACommand(args)
+	if err != nil {
+		return catalogCommand{}, err
 	}
-	return AuthUnlock, nil
+	return unlockedCommand(func(c Catalog) error { return c.runASA(cmd) }), nil
 }
 
 type asaCommand struct {
@@ -71,11 +72,7 @@ func parseASACommand(args []string) (asaCommand, error) {
 	return cmd, nil
 }
 
-func (c Catalog) runASA(args []string) error {
-	cmd, err := parseASACommand(args)
-	if err != nil {
-		return err
-	}
+func (c Catalog) runASA(cmd asaCommand) error {
 	switch cmd.verb {
 	case "list":
 		return c.listASASet()

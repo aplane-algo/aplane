@@ -9,11 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-const signingDetailsBoxHorizontalChrome = 4 // rounded border plus horizontal padding
 
 // approvalArmDelay is how long a newly shown signing or enrollment request
 // refuses approval.
@@ -29,19 +26,28 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.signing.request != nil {
 		requestID = m.signing.request.ID
 	}
+	respond := func(m Model, id string, approved bool) (Model, tea.Cmd) {
+		// A requester can withdraw a request and send another in its
+		// place; a key pressed for the first must not approve the
+		// second. Rejecting is always immediate.
+		if approved && signingNow().Sub(m.signing.shownAt) < approvalArmDelay {
+			return m, m.setTransientNotice("One moment...")
+		}
+		m.signing.request = nil
+		m.viewState = m.screenUnderApproval()
+		return m, m.sendSignResponseCmd(id, approved)
+	}
+	if !m.reviewAvailable() {
+		// A request without its review has nothing to approve against:
+		// the only answer is to reject it.
+		switch msg.String() {
+		case "enter", " ", "n", "r", "esc":
+			return respond(m, requestID, false)
+		}
+		return m, nil
+	}
 
-	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.signing.focus, requestID,
-		func(m Model, id string, approved bool) (Model, tea.Cmd) {
-			// A requester can withdraw a request and send another in its
-			// place; a key pressed for the first must not approve the
-			// second. Rejecting is always immediate.
-			if approved && signingNow().Sub(m.signing.shownAt) < approvalArmDelay {
-				return m, m.setTransientNotice("One moment...")
-			}
-			m.signing.request = nil
-			m.viewState = m.screenUnderApproval()
-			return m, m.sendSignResponseCmd(id, approved)
-		})
+	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.signing.focus, requestID, respond)
 	m.signing.focus = focus
 	if handled {
 		return m, cmd
@@ -50,7 +56,7 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Signing-specific: viewport scrolling
+	// The review's detail pane scrolls.
 	switch msg.String() {
 	case "up", "k":
 		m.signing.viewport.ScrollUp(1)
@@ -112,35 +118,6 @@ func (m Model) handleApprovalKeys(
 	return m, nil, focus, false
 }
 
-// signingViewportDimensions returns (height, width) for the signing popup viewport.
-func (m Model) signingViewportDimensions() (int, int) {
-	// Fixed chrome around viewport:
-	//   2  popup border (top + bottom)
-	//   2  popup padding (top + bottom)
-	//   3  title (bold + MarginBottom 1) + address
-	//   1  blank before details label
-	//   1  "Transaction Details" label
-	//   2  viewport border (top + bottom)
-	//   1  scroll indicator
-	//   2  validity window + blank
-	//   3  warning banner + blanks (when violations present)
-	//   5  buttons (3 tall with RoundedBorder) + 2 blanks
-	//   1  help text
-	//   2  status bar + newline
-	// = 25 lines of chrome
-	vpHeight := m.height - 25
-	if vpHeight < 3 {
-		vpHeight = 3
-	}
-
-	vpWidth := m.popupBodyWidth(60) - signingDetailsBoxHorizontalChrome
-	if vpWidth < 1 {
-		vpWidth = 1
-	}
-
-	return vpHeight, vpWidth
-}
-
 // buildSigningViewportContent builds the scrollable content for the signing viewport,
 // including the transaction description and any policy violations.
 func (m Model) buildSigningViewportContent() string {
@@ -173,31 +150,23 @@ func (m Model) buildSigningViewportContent() string {
 	return sb.String()
 }
 
-// initSigningViewport initializes the viewport for the signing popup description
+// initSigningViewport lays out a new request's review.
 func (m *Model) initSigningViewport() {
 	if m.reviewAvailable() {
 		m.refreshReview()
-		return
 	}
-	vpHeight, vpWidth := m.signingViewportDimensions()
-	m.signing.viewport = viewport.New(vpWidth, vpHeight)
-	m.signing.viewport.SetContent(wrapText(m.buildSigningViewportContent(), vpWidth))
 }
 
-// resizeSigningViewport updates the viewport dimensions and reflows content
-// after a terminal resize. A drawn review's detail pane keeps the operator's
-// place, as far down as the new height allows.
+// resizeSigningViewport lays the review out again after a terminal resize.
+// The detail pane keeps the operator's place, as far down as the new height
+// allows.
 func (m *Model) resizeSigningViewport() {
-	if m.reviewAvailable() {
-		offset := m.signing.viewport.YOffset
-		m.refreshReview()
-		m.signing.viewport.SetYOffset(offset)
+	if !m.reviewAvailable() {
 		return
 	}
-	vpHeight, vpWidth := m.signingViewportDimensions()
-	m.signing.viewport.Width = vpWidth
-	m.signing.viewport.Height = vpHeight
-	m.signing.viewport.SetContent(wrapText(m.buildSigningViewportContent(), vpWidth))
+	offset := m.signing.viewport.YOffset
+	m.refreshReview()
+	m.signing.viewport.SetYOffset(offset)
 }
 
 // wrapText wraps each line of text to fit within the given width.

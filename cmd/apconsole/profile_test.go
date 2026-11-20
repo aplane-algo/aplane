@@ -15,7 +15,6 @@ import (
 func TestLoadConsoleProfileLocalResolvesRelativePaths(t *testing.T) {
 	root := t.TempDir()
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 signer_data: ./apsigner
 `)
@@ -23,9 +22,6 @@ signer_data: ./apsigner
 	profile, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
 	if err != nil {
 		t.Fatalf("loadConsoleProfile failed: %v", err)
-	}
-	if profile.Mode != consoleModeLocal {
-		t.Fatalf("Mode = %q, want local", profile.Mode)
 	}
 	if profile.ClientData != filepath.Join(root, "apclient") {
 		t.Fatalf("ClientData = %q", profile.ClientData)
@@ -35,28 +31,32 @@ signer_data: ./apsigner
 	}
 }
 
-func TestLoadConsoleProfileRejectsRemote(t *testing.T) {
-	root := t.TempDir()
-	writeConsoleProfile(t, root, "mode: remote\nclient_data: ./apclient\n")
-	_, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
-	if err == nil || !strings.Contains(err.Error(), "IPC-only") {
-		t.Fatalf("err = %v", err)
+// The profile has no mode: a mode key, from a profile written before remote
+// mode was removed, is an unknown key and ignored.
+func TestLoadConsoleProfileIgnoresModeKey(t *testing.T) {
+	for _, mode := range []string{"local", "remote", "bogus"} {
+		root := t.TempDir()
+		writeConsoleProfile(t, root, "mode: "+mode+"\nclient_data: ./apclient\nsigner_data: ./apsigner\n")
+		profile, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
+		if err != nil {
+			t.Fatalf("mode %s: %v", mode, err)
+		}
+		if profile.SignerData != filepath.Join(root, "apsigner") {
+			t.Fatalf("mode %s: SignerData = %q", mode, profile.SignerData)
+		}
 	}
 }
 
 func TestLoadConsoleProfileRejectsLocalWithoutSignerData(t *testing.T) {
 	root := t.TempDir()
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 `)
 
-	_, err := loadConsoleProfile(filepath.Join(root, consoleProfileName))
-	if err == nil {
-		t.Fatal("err = nil, want signer_data error")
-	}
-	if !strings.Contains(err.Error(), "signer_data is required") {
-		t.Fatalf("err = %v", err)
+	path := filepath.Join(root, consoleProfileName)
+	_, err := loadConsoleProfile(path)
+	if want := "invalid apconsole profile " + path + ": signer_data is required"; err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }
 
@@ -68,7 +68,6 @@ func TestResolveConsoleStartupDiscoversProfileFromApclientDir(t *testing.T) {
 		t.Fatalf("mkdir apclient: %v", err)
 	}
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 signer_data: ./apsigner
 `)
@@ -79,39 +78,23 @@ signer_data: ./apsigner
 	if err != nil {
 		t.Fatalf("resolveConsoleStartup failed: %v", err)
 	}
-	if cfg.Mode != consoleModeLocal {
-		t.Fatalf("Mode = %q, want local", cfg.Mode)
-	}
 	if cfg.ClientData != apclient {
 		t.Fatalf("ClientData = %q, want %q", cfg.ClientData, apclient)
 	}
 	if cfg.SignerData != apsigner {
 		t.Fatalf("SignerData = %q, want %q", cfg.SignerData, apsigner)
 	}
-	if cfg.ProfilePath != filepath.Join(root, consoleProfileName) {
-		t.Fatalf("ProfilePath = %q", cfg.ProfilePath)
-	}
-}
-
-func TestResolveConsoleStartupRejectsRemoteFlag(t *testing.T) {
-	_, err := resolveConsoleStartup(consoleStartupFlags{RemoteSet: true, Remote: true})
-	if err == nil || !strings.Contains(err.Error(), "IPC-only") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func TestResolveConsoleStartupRejectsConflictingExplicitProfileAndFlags(t *testing.T) {
 	root := t.TempDir()
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 signer_data: ./apsigner
 `)
 
 	_, err := resolveConsoleStartup(consoleStartupFlags{
 		ConfigPath:    filepath.Join(root, consoleProfileName),
-		RemoteSet:     true,
-		Remote:        false,
 		ClientDataSet: true,
 		ClientData:    filepath.Join(root, "other-client"),
 		SignerDataSet: true,
@@ -133,9 +116,6 @@ func TestResolveConsoleStartupFallsBackToEnvWithoutProfile(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("resolveConsoleStartup failed: %v", err)
-	}
-	if cfg.Mode != consoleModeLocal {
-		t.Fatalf("Mode = %q, want local", cfg.Mode)
 	}
 	if cfg.ClientData == "" {
 		t.Fatal("ClientData empty, want env fallback")
@@ -160,7 +140,6 @@ func TestResolveConsoleIPCPathPreservesSourcePrecedence(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeConsoleProfile(t, root, `
-mode: local
 client_data: ./client
 signer_data: ./signer
 `)
@@ -202,7 +181,6 @@ signer_data: ./signer
 			t.Fatal(err)
 		}
 		writeConsoleProfile(t, root, `
-mode: local
 client_data: ./client
 signer_data: ./signer
 `)
@@ -227,7 +205,6 @@ func TestResolveConsoleStartupEnvOverridesAutoProfileWithNotice(t *testing.T) {
 		t.Fatalf("mkdir apclient: %v", err)
 	}
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 signer_data: ./apsigner
 `)
@@ -276,7 +253,6 @@ func TestResolveConsoleStartupRejectsConflictingFlagAndEnv(t *testing.T) {
 func TestResolveConsoleStartupRejectsConflictingExplicitProfileAndEnv(t *testing.T) {
 	root := t.TempDir()
 	writeConsoleProfile(t, root, `
-mode: local
 client_data: ./apclient
 signer_data: ./apsigner
 `)

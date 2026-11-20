@@ -315,7 +315,6 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	if apply.applying {
 		return m, nil
 	}
-	maxOffset := max(0, len(m.policyApplyReviewLines())-m.policyApplyVisibleLines())
 	switch msg.String() {
 	case "esc", "n", "q":
 		failed := apply.applyErr != ""
@@ -339,16 +338,8 @@ func (m Model) handlePolicyApplyReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		apply.applying = true
 		apply.pendingApplyID = newRequestID("policy-apply")
 		return m, m.sendApplyPolicyCmd(apply.doc, apply.reviewedSetSHA256, apply.reviewedSnapshot, apply.pendingApplyID)
-	case "up", "k":
-		apply.scrollOffset--
-	case "down", "j":
-		apply.scrollOffset++
-	case "pgup":
-		apply.scrollOffset -= m.policyApplyVisibleLines()
-	case "pgdown":
-		apply.scrollOffset += m.policyApplyVisibleLines()
 	}
-	apply.scrollOffset = max(0, min(apply.scrollOffset, maxOffset))
+	scrollPager(&apply.scrollOffset, msg.String(), len(m.policyApplyReviewLines()), m.policyApplyVisibleLines())
 	return m, nil
 }
 
@@ -529,25 +520,12 @@ func (m Model) renderPolicyApplyReview() string {
 	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+policyTargetLabel(m.policies.apply.doc.Key), width)))
 	sb.WriteString("\n\n")
 
-	lines := m.policyApplyReviewLines()
-	offset := max(0, min(apply.scrollOffset, len(lines)))
-	end := min(offset+m.policyApplyVisibleLines(), len(lines))
-	if offset > 0 {
-		sb.WriteString(scrollMoreAboveLine(offset))
-		sb.WriteString("\n")
-	}
-	for _, line := range lines[offset:end] {
+	writePagerLines(&sb, m.policyApplyReviewLines(), apply.scrollOffset, m.policyApplyVisibleLines(), func(line policyApplyReviewLine) string {
 		if line.attention {
-			sb.WriteString(warningStyle.Render(line.text))
-		} else {
-			sb.WriteString(line.text)
+			return warningStyle.Render(line.text)
 		}
-		sb.WriteString("\n")
-	}
-	if end < len(lines) {
-		sb.WriteString(scrollMoreBelowLine(len(lines) - end))
-		sb.WriteString("\n")
-	}
+		return line.text
+	})
 	sb.WriteString("\n")
 	switch {
 	case apply.applying:

@@ -299,28 +299,17 @@ func (m Model) policyDocumentVisibleLines() int {
 }
 
 func (m Model) handlePolicyDocumentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	maxOffset := len(m.policyDocumentLines()) - m.policyDocumentVisibleLines()
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
 	switch msg.String() {
 	case "esc", "q":
 		m.viewState = ViewPolicies
 		m.policies.scrollOffset = 0
 		m.policies.pendingDocumentID = ""
 		m.policies.docLoading = false
+		return m, nil
 	case "e":
 		return m.openPolicyEditForDocument()
-	case "up", "k":
-		m.policies.scrollOffset--
-	case "down", "j":
-		m.policies.scrollOffset++
-	case "pgup":
-		m.policies.scrollOffset -= m.policyDocumentVisibleLines()
-	case "pgdown":
-		m.policies.scrollOffset += m.policyDocumentVisibleLines()
 	}
-	m.policies.scrollOffset = max(0, min(m.policies.scrollOffset, maxOffset))
+	scrollPager(&m.policies.scrollOffset, msg.String(), len(m.policyDocumentLines()), m.policyDocumentVisibleLines())
 	return m, nil
 }
 
@@ -455,23 +444,11 @@ func (m Model) renderPolicyDocument() string {
 	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(doc.Key+"  sha256 "+doc.SHA256), width)))
 	sb.WriteString("\n\n")
 
-	lines := m.policyDocumentLines()
-	offset := max(0, min(m.policies.scrollOffset, len(lines)))
-	end := min(offset+m.policyDocumentVisibleLines(), len(lines))
-	if offset > 0 {
-		sb.WriteString(scrollMoreAboveLine(offset))
-		sb.WriteString("\n")
-	}
-	for _, line := range lines[offset:end] {
+	writePagerLines(&sb, m.policyDocumentLines(), m.policies.scrollOffset, m.policyDocumentVisibleLines(), func(line string) string {
 		// The stored bytes can hold control and bidirectional characters in
 		// a string, which show as escapes.
-		sb.WriteString(ellipsize(terminalSafeLines(line), width))
-		sb.WriteString("\n")
-	}
-	if end < len(lines) {
-		sb.WriteString(scrollMoreBelowLine(len(lines) - end))
-		sb.WriteString("\n")
-	}
+		return ellipsize(terminalSafeLines(line), width)
+	})
 	return sb.String()
 }
 

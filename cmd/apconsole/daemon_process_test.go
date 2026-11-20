@@ -51,8 +51,8 @@ func TestPrepareDaemonProcessDisabled(t *testing.T) {
 
 func TestPrepareDaemonProcessRefusesMismatchedClientAndDaemonPaths(t *testing.T) {
 	deps := daemonTestDeps()
-	deps.stat = func(string) (os.FileInfo, error) {
-		t.Fatal("mismatched path was inspected for attachment")
+	deps.dial = func(string) (io.Closer, error) {
+		t.Fatal("mismatched path was dialed for attachment")
 		return nil, nil
 	}
 	deps.start = func(string, string) (*daemonProcess, error) {
@@ -74,12 +74,6 @@ func TestPrepareDaemonProcessRefusesMismatchedClientAndDaemonPaths(t *testing.T)
 
 func TestPrepareDaemonProcessAttachesExistingIPC(t *testing.T) {
 	deps := daemonTestDeps()
-	deps.stat = func(path string) (os.FileInfo, error) {
-		if path == "/tmp/apsigner.sock" {
-			return fakeFileInfo{}, nil
-		}
-		return nil, os.ErrNotExist
-	}
 	deps.dial = func(path string) (io.Closer, error) {
 		if path != "/tmp/apsigner.sock" {
 			t.Fatalf("dial path = %q", path)
@@ -105,12 +99,6 @@ func TestPrepareDaemonProcessAttachesExistingIPC(t *testing.T) {
 func TestPrepareDaemonProcessStartsWhenIPCFileIsStale(t *testing.T) {
 	started := false
 	deps := daemonTestDeps()
-	deps.stat = func(path string) (os.FileInfo, error) {
-		if path == "/tmp/stale.sock" {
-			return fakeFileInfo{}, nil
-		}
-		return nil, os.ErrNotExist
-	}
 	deps.dial = func(path string) (io.Closer, error) {
 		if path != "/tmp/stale.sock" {
 			t.Fatalf("dial path = %q", path)
@@ -148,7 +136,6 @@ func TestPrepareDaemonProcessReportsMissingBinary(t *testing.T) {
 	deps := daemonTestDeps()
 	deps.lookPath = func(string) (string, error) { return "", errors.New("missing") }
 	deps.executable = func() (string, error) { return "/opt/aplane/apconsole", nil }
-	deps.stat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
 
 	proc, info := prepareDaemonProcessWithDeps("/signer", "/tmp/missing.sock", "/tmp/missing.sock", true, deps)
 	if proc != nil {
@@ -165,7 +152,6 @@ func TestPrepareDaemonProcessReportsMissingBinary(t *testing.T) {
 func TestPrepareDaemonProcessStartsOwnedDaemon(t *testing.T) {
 	started := false
 	deps := daemonTestDeps()
-	deps.stat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
 	deps.lookPath = func(string) (string, error) { return "/usr/local/bin/apsigner", nil }
 	deps.start = func(binary, dataDir string) (*daemonProcess, error) {
 		started = true
@@ -196,18 +182,13 @@ func TestPrepareDaemonProcessStartsOwnedDaemon(t *testing.T) {
 func TestPrepareDaemonProcessStartsReadinessWatch(t *testing.T) {
 	watched := false
 	deps := daemonTestDeps()
-	deps.stat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
 	deps.lookPath = func(string) (string, error) { return "/usr/local/bin/apsigner", nil }
-	deps.start = func(string, string) (*daemonProcess, error) {
-		return &daemonProcess{events: make(chan daemonEvent, 1), done: make(chan struct{})}, nil
-	}
-	deps.watchReady = func(events chan<- daemonEvent, done <-chan struct{}, ipcPath string) {
+	started := &daemonProcess{events: make(chan daemonEvent, 1), done: make(chan struct{})}
+	deps.start = func(string, string) (*daemonProcess, error) { return started, nil }
+	deps.watchReady = func(dp *daemonProcess, ipcPath string) {
 		watched = true
-		if events == nil {
-			t.Fatal("events = nil")
-		}
-		if done == nil {
-			t.Fatal("done = nil")
+		if dp != started {
+			t.Fatalf("watched process %p, want the started one %p", dp, started)
 		}
 		if ipcPath != "/tmp/missing.sock" {
 			t.Fatalf("ipcPath = %q", ipcPath)
@@ -223,9 +204,21 @@ func TestPrepareDaemonProcessStartsReadinessWatch(t *testing.T) {
 	}
 }
 
+func readinessTestProcess() *daemonProcess {
+	return &daemonProcess{events: make(chan daemonEvent, 1), done: make(chan struct{}), ready: make(chan struct{})}
+}
+
+func requireReadyClosed(t *testing.T, dp *daemonProcess) {
+	t.Helper()
+	select {
+	case <-dp.ready:
+	default:
+		t.Fatal("ready is still open after the watch ended")
+	}
+}
+
 func TestWatchDaemonReadinessReportsReady(t *testing.T) {
-	events := make(chan daemonEvent, 1)
-	done := make(chan struct{})
+	dp := readinessTestProcess()
 	calls := 0
 	dial := func(path string) (io.Closer, error) {
 		if path != "/tmp/apsigner.sock" {
@@ -238,8 +231,12 @@ func TestWatchDaemonReadinessReportsReady(t *testing.T) {
 		return fakeCloser{}, nil
 	}
 
-	watchDaemonReadiness(events, done, "/tmp/apsigner.sock", dial, time.Second, time.Millisecond)
-	event := <-events
+	dp.watchReadiness("/tmp/apsigner.sock", dial, time.Second, time.Millisecond)
+	requireReadyClosed(t, dp)
+	if calls != 2 {
+		t.Fatalf("dial calls = %d, want 2", calls)
+	}
+	event := <-dp.events
 	if event.Status != daemonStatusReady {
 		t.Fatalf("status = %s, want %s", event.Status, daemonStatusReady)
 	}
@@ -249,15 +246,15 @@ func TestWatchDaemonReadinessReportsReady(t *testing.T) {
 }
 
 func TestWatchDaemonReadinessReportsTimeout(t *testing.T) {
-	events := make(chan daemonEvent, 1)
-	done := make(chan struct{})
+	dp := readinessTestProcess()
 
-	watchDaemonReadiness(events, done, "/tmp/apsigner.sock",
+	dp.watchReadiness("/tmp/apsigner.sock",
 		func(string) (io.Closer, error) { return nil, os.ErrNotExist },
 		time.Millisecond,
 		time.Millisecond,
 	)
-	event := <-events
+	requireReadyClosed(t, dp)
+	event := <-dp.events
 	if event.Status != daemonStatusFailed {
 		t.Fatalf("status = %s, want %s", event.Status, daemonStatusFailed)
 	}
@@ -267,17 +264,17 @@ func TestWatchDaemonReadinessReportsTimeout(t *testing.T) {
 }
 
 func TestWatchDaemonReadinessStopsWhenProcessDone(t *testing.T) {
-	events := make(chan daemonEvent, 1)
-	done := make(chan struct{})
-	close(done)
+	dp := readinessTestProcess()
+	close(dp.done)
 
-	watchDaemonReadiness(events, done, "/tmp/apsigner.sock",
+	dp.watchReadiness("/tmp/apsigner.sock",
 		func(string) (io.Closer, error) { return nil, os.ErrNotExist },
-		time.Millisecond,
+		time.Second,
 		time.Millisecond,
 	)
+	requireReadyClosed(t, dp)
 	select {
-	case event := <-events:
+	case event := <-dp.events:
 		t.Fatalf("unexpected event: %#v", event)
 	default:
 	}
@@ -309,42 +306,37 @@ func daemonTestDeps() daemonDeps {
 		lookPath:   func(string) (string, error) { return "", errors.New("not found") },
 		executable: func() (string, error) { return "/tmp/apconsole", nil },
 		start:      func(string, string) (*daemonProcess, error) { return nil, errors.New("unexpected start") },
-		watchReady: func(chan<- daemonEvent, <-chan struct{}, string) {},
+		watchReady: func(*daemonProcess, string) {},
 	}
 }
-
-type fakeFileInfo struct{}
-
-func (fakeFileInfo) Name() string       { return "apsigner.sock" }
-func (fakeFileInfo) Size() int64        { return 0 }
-func (fakeFileInfo) Mode() os.FileMode  { return 0600 }
-func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (fakeFileInfo) IsDir() bool        { return false }
-func (fakeFileInfo) Sys() any           { return nil }
 
 type fakeCloser struct{}
 
 func (fakeCloser) Close() error { return nil }
 
-func TestWaitForDaemonReadyWaitsForADialableSocket(t *testing.T) {
-	calls := 0
-	dial := func(string) (io.Closer, error) {
-		calls++
-		if calls < 3 {
-			return nil, errors.New("connection refused")
-		}
-		return fakeCloser{}, nil
+// The console's startup waits on ready, and nobody reads events until the
+// console runs, so ready must close before the outcome is reported.
+func TestWatchDaemonReadinessReleasesStartupBeforeReporting(t *testing.T) {
+	dp := &daemonProcess{events: make(chan daemonEvent), done: make(chan struct{}), ready: make(chan struct{})}
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		dp.watchReadiness("/tmp/apsigner.sock", func(string) (io.Closer, error) { return fakeCloser{}, nil }, time.Second, time.Millisecond)
+	}()
+	select {
+	case <-dp.ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ready did not close while the ready event waited for a reader")
 	}
-
-	waitForDaemonReady("/tmp/apsigner.sock", nil, dial, 5*time.Second)
-	if calls != 3 {
-		t.Fatalf("dial calls = %d, want 3", calls)
+	if event := <-dp.events; event.Status != daemonStatusReady {
+		t.Fatalf("status = %s, want %s", event.Status, daemonStatusReady)
 	}
+	<-finished
 }
 
 // A killed daemon leaves its socket file behind. The file must not count as
 // a ready daemon.
-func TestWaitForDaemonReadyIgnoresStaleSocketFile(t *testing.T) {
+func TestWatchDaemonReadinessIgnoresStaleSocketFile(t *testing.T) {
 	// Unix socket paths are length-limited, so stay out of deep test dirs.
 	dir, err := os.MkdirTemp("", "apc")
 	if err != nil {
@@ -365,10 +357,14 @@ func TestWaitForDaemonReadyIgnoresStaleSocketFile(t *testing.T) {
 	}
 
 	const timeout = 300 * time.Millisecond
+	dp := readinessTestProcess()
 	start := time.Now()
-	waitForDaemonReady(path, nil, dialUnixSocketForDaemon, timeout)
+	dp.watchReadiness(path, dialUnixSocketForDaemon, timeout, daemonReadyInterval)
 	if elapsed := time.Since(start); elapsed < timeout {
 		t.Fatalf("returned after %v on a stale socket file, want the %v timeout", elapsed, timeout)
+	}
+	if event := <-dp.events; event.Status != daemonStatusFailed {
+		t.Fatalf("status = %s, want %s on a stale socket file", event.Status, daemonStatusFailed)
 	}
 }
 

@@ -200,9 +200,6 @@ func TestHandleKeyListKeysIgnoresTabOnCosignerNode(t *testing.T) {
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := nextModel.(Model)
-	if next.effectiveKeyListTab() != keyListTabCosigner {
-		t.Fatalf("effectiveKeyListTab after tab = %v, want cosigner", next.effectiveKeyListTab())
-	}
 	keys := next.filteredKeys()
 	if len(keys) != 1 || keys[0].Address != "COSIGNERKEY" {
 		t.Fatalf("cosigner filtered keys = %#v, want cosigner key", keys)
@@ -221,16 +218,13 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := nextModel.(Model)
-	if next.effectiveKeyListTab() != keyListTabSigning {
-		t.Fatalf("effectiveKeyListTab after tab = %v, want signing", next.effectiveKeyListTab())
-	}
 	keys := next.filteredKeys()
 	if len(keys) != 1 || keys[0].Address != "SIGNINGADDR" {
 		t.Fatalf("signing filtered keys = %#v, want signing key", keys)
 	}
 }
 
-func TestSelectKeyByAddressSwitchesToCosignerTab(t *testing.T) {
+func TestSelectKeyByAddressSelectsInTheCosignerList(t *testing.T) {
 	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "cosigner"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
@@ -239,11 +233,11 @@ func TestSelectKeyByAddressSwitchesToCosignerTab(t *testing.T) {
 	}
 
 	m.selectKeyByAddress("COSIGNERKEY")
-	if m.keylist.tab != keyListTabCosigner {
-		t.Fatalf("keyListTab = %v, want cosigner", m.keylist.tab)
+	if !m.keylist.cosignerKeys {
+		t.Fatal("the selection was not made in the cosigner list")
 	}
 	if m.keylist.selectedKey != 0 {
-		t.Fatalf("selectedKey = %d, want first cosigner tab row", m.keylist.selectedKey)
+		t.Fatalf("selectedKey = %d, want the first cosigner row", m.keylist.selectedKey)
 	}
 }
 
@@ -457,5 +451,62 @@ func TestBuildDetailsParameterLinesShowsTheCosigner(t *testing.T) {
 		if got := buildDetailsParameterLines(keyType, parameters); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: buildDetailsParameterLines() = %#v, want %#v", keyType, got, want)
 		}
+	}
+}
+
+// The key list keeps its selection until the node role it shows changes:
+// the first settings to name a cosigner role reset it, also when the
+// initial role was already cosigner, and settings naming the same role again
+// leave it. The list's noun follows the role.
+func TestKeyListSelectionResetsWhenTheShownRoleChanges(t *testing.T) {
+	keys := []KeyInfo{
+		{Address: "SIGNINGADDR1", KeyType: "ed25519"},
+		{Address: "SIGNINGADDR2", KeyType: "ed25519"},
+		{Address: "COSIGNERKEY1", KeyType: witness.Falcon1024V1},
+		{Address: "COSIGNERKEY2", KeyType: witness.Falcon1024V1},
+	}
+	settings := func(m Model, role string) Model {
+		t.Helper()
+		next, _ := m.handleAdminSettingsMsg(AdminSettingsMsg{Settings: AdminSettings{NodeRole: role, Theme: "dark"}})
+		return next.(Model)
+	}
+	scrolled := func(m Model) Model {
+		m.keylist.selectedKey, m.keylist.scrollOffset = 1, 1
+		return m
+	}
+	noun := func(m Model) string {
+		rendered := stripANSI(m.renderKeyListView())
+		for _, noun := range []string{"signing", "cosigner"} {
+			if strings.Contains(rendered, "Total: 2 "+noun+" keys") {
+				return noun
+			}
+		}
+		t.Fatalf("key list names no noun:\n%s", rendered)
+		return ""
+	}
+	for _, tt := range []struct {
+		name        string
+		initialRole string
+		roles       []string
+		resets      []bool
+		nouns       []string
+	}{
+		{"initial cosigner", "cosigner", []string{"cosigner", "cosigner"}, []bool{true, false}, []string{"cosigner", "cosigner"}},
+		{"signer then cosigner", "", []string{"signer", "signer", "cosigner", "signer"}, []bool{false, false, true, true}, []string{"signing", "signing", "cosigner", "signing"}},
+		{"unknown role shows signing keys", "", []string{"", "cosigner"}, []bool{false, true}, []string{"signing", "cosigner"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{viewState: ViewKeyList, width: 100, height: 40, initialNodeRole: tt.initialRole, keylist: keyListState{keys: keys}}
+			for i, role := range tt.roles {
+				m = settings(scrolled(m), role)
+				reset := m.keylist.selectedKey == 0 && m.keylist.scrollOffset == 0
+				if reset != tt.resets[i] {
+					t.Fatalf("settings %d (role %q): selection reset %v, want %v", i, role, reset, tt.resets[i])
+				}
+				if got := noun(m); got != tt.nouns[i] {
+					t.Fatalf("settings %d (role %q): list of %s keys, want %s", i, role, got, tt.nouns[i])
+				}
+			}
+		})
 	}
 }

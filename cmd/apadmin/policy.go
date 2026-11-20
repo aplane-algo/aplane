@@ -24,17 +24,13 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 		writePolicyError(streams.stderr, err)
 		return 2
 	}
-	if err := policycmd.RejectRetiredEnvironment(); err != nil {
-		writePolicyError(streams.stderr, err)
-		return 2
-	}
 	command.DataDir = globals.dataDir
 	ioStreams := policycmd.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr}
 
 	// template --embedded, --preset, and --list-presets print apadmin's own
 	// text: no store, socket, data directory, or passphrase takes part, so
 	// none is resolved. Every other template form prints the node's own
-	// default and needs the node.
+	// default and needs the node. The runners take only node commands.
 	if command.NeedsNoNode() {
 		if err := policycmd.WriteOfflineTemplate(command, ioStreams); err != nil {
 			writePolicyError(streams.stderr, err)
@@ -88,12 +84,6 @@ func parsePolicyCommand(args []string, stderr io.Writer) (policycmd.Command, boo
 		command.Verb = verb
 		args = args[1:]
 	}
-	for _, arg := range args {
-		switch arg {
-		case "--check", "--yaml", "--sha256", "--save", "--to-cosigner", "--online", "--target":
-			return command, rescue, fmt.Errorf("%s is retired; use an apadmin policy verb (status, export, check, diff, apply, remove, or template)", arg)
-		}
-	}
 	fs := flag.NewFlagSet("apadmin policy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	mode := ""
@@ -131,6 +121,8 @@ Verbs:
                     no node and no passphrase.
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
+Flags come before the files or keys; a file whose name starts with "-"
+follows --.
 
 Files from an export carry its context: check, diff and apply first compare
 the node with it and refuse when the node's policy, ASA set or network map
@@ -169,6 +161,14 @@ apply and remove, and reject --ipc-path.
 	if command.Verb == "" {
 		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, diff, apply, remove, or template")
 	}
+	operands, err := policyOperands(fs, args)
+	if err != nil {
+		// Refused as the flag package refuses a flag: the error, then the
+		// usage.
+		_, _ = fmt.Fprintln(stderr, err)
+		fs.Usage()
+		return command, rescue, err
+	}
 	command.Key = *key
 	command.Embedded = *embedded
 	command.Preset = *preset
@@ -178,11 +178,41 @@ apply and remove, and reject --ipc-path.
 	command.ExportDir = *all
 	command.NodeContext = *nodeContext
 	command.NoNodeContext = *noNodeContext
-	command.Args = fs.Args()
+	command.Args = operands
+	// The one validation of the command: the runners and
+	// WriteOfflineTemplate take it as given.
 	if err := command.Validate(); err != nil {
 		return command, rescue, err
 	}
 	return command, rescue, nil
+}
+
+// policyOperands is the files or keys that follow the flags parsed from
+// parsed. The flag package stops at the first of them, so a flag after one
+// would be read as a file or key name; it is refused instead, before any
+// passphrase prompt or connection. A lone "-" is stdin, and every argument
+// after "--" is a file or key as given, so a file whose name starts with "-"
+// follows "--".
+func policyOperands(fs *flag.FlagSet, parsed []string) ([]string, error) {
+	rest := fs.Args()
+	// Parsing ended at "--" when the argument before the rest is one.
+	literal := len(rest) < len(parsed) && parsed[len(parsed)-len(rest)-1] == "--"
+	operands := make([]string, 0, len(rest))
+	for _, arg := range rest {
+		switch {
+		case literal || arg == "-" || !strings.HasPrefix(arg, "-"):
+			operands = append(operands, arg)
+		case arg == "--":
+			literal = true
+		default:
+			name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+			if fs.Lookup(name) != nil {
+				return nil, fmt.Errorf("flag -%s must come before the policy files or keys", name)
+			}
+			return nil, fmt.Errorf("flag provided but not defined: -%s", name)
+		}
+	}
+	return operands, nil
 }
 
 func writePolicyError(stderr io.Writer, err error) {

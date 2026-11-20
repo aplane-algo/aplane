@@ -514,6 +514,60 @@ func (m Model) pagerVisibleLines(header string) int {
 	return 1
 }
 
+// pagerFooter is a full-screen text pager's footer: it names the scroll keys
+// only when the text does not fit.
+func pagerFooter(lines, visible int) string {
+	if lines > visible {
+		return pagerScrollFooter
+	}
+	return "Esc/q close"
+}
+
+// pagerOffset is the line a text pager of visible rows draws from: offset,
+// held where the window lies within the text and is full where the text
+// allows. A window resized or text replaced under an offset draws from here.
+func pagerOffset(offset, lines, visible int) int {
+	return max(0, min(offset, lines-visible))
+}
+
+// scrollPager applies a scroll key to a text pager's offset: up/down and
+// k/j move a line, pgup/pgdown a page. Any other key leaves it.
+func scrollPager(offset *int, key string, lines, visible int) {
+	step := 0
+	switch key {
+	case "up", "k":
+		step = -1
+	case "down", "j":
+		step = 1
+	case "pgup":
+		step = -visible
+	case "pgdown":
+		step = visible
+	default:
+		return
+	}
+	*offset = pagerOffset(pagerOffset(*offset, lines, visible)+step, lines, visible)
+}
+
+// writePagerLines writes the lines of a text pager in view from offset, with
+// a marker for the lines above and below them. render draws one line.
+func writePagerLines[T any](sb *strings.Builder, lines []T, offset, visible int, render func(T) string) {
+	offset = pagerOffset(offset, len(lines), visible)
+	end := min(offset+visible, len(lines))
+	if offset > 0 {
+		sb.WriteString(scrollMoreAboveLine(offset))
+		sb.WriteString("\n")
+	}
+	for _, line := range lines[offset:end] {
+		sb.WriteString(render(line))
+		sb.WriteString("\n")
+	}
+	if end < len(lines) {
+		sb.WriteString(scrollMoreBelowLine(len(lines) - end))
+		sb.WriteString("\n")
+	}
+}
+
 // wrappedRows is how many rows s takes in a popup body width columns wide:
 // each of its lines wraps on its own, and an empty line is a row.
 func wrappedRows(s string, width int) int {

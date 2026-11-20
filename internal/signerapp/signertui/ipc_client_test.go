@@ -712,7 +712,7 @@ func TestSignRequestDecoderEscapesText(t *testing.T) {
 		t.Fatalf("decoded = %#v, want SignRequestReceivedMsg", decoded)
 	}
 	req := got.Request
-	if req.Address != `ADDR\x1b[2J` || req.TxnSender != `SENDER\r` ||
+	if req.Address != `ADDR\x1b[2J` ||
 		req.Description != "Method: x\\x1b[2J\\r\n  To:   FRIEND" || req.Violations[0].Value != `V\x1b[1A` {
 		t.Fatalf("decoded sign request was not escaped: %#v", req)
 	}

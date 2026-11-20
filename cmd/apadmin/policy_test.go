@@ -51,8 +51,20 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "remove refuses the default", args: []string{"remove", "default"}, wantErr: "cannot be removed"},
 		{name: "key only for export and template", args: []string{"status", "--key", keyID}, wantErr: "--key applies only"},
 		{name: "status takes no files", args: []string{"status", "a.json"}, wantErr: "takes no arguments"},
-		{name: "retired flag", args: []string{"--check"}, wantErr: "is retired"},
-		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "is retired"},
+		{name: "retired flag", args: []string{"--check"}, wantErr: "flag provided but not defined: -check"},
+		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "flag provided but not defined: -target"},
+		// The flag package stops at the first file or key; a flag after one
+		// is refused as a flag, never read as a file or key name.
+		{name: "unknown flag after a file", args: []string{"apply", "a.json", "--online"}, wantErr: "flag provided but not defined: -online"},
+		{name: "unknown flag after files", args: []string{"check", "a.json", "b.json", "--yaml"}, wantErr: "flag provided but not defined: -yaml"},
+		{name: "unknown flag with a value after a file", args: []string{"diff", "a.json", "--save=x"}, wantErr: "flag provided but not defined: -save"},
+		{name: "unknown flag after a key", args: []string{"remove", keyID, "--target", "signer"}, wantErr: "flag provided but not defined: -target"},
+		{name: "single-dash flag after a file", args: []string{"apply", "a.json", "-x"}, wantErr: "flag provided but not defined: -x"},
+		{name: "known flag after a file", args: []string{"apply", "a.json", "--yes"}, wantErr: "flag -yes must come before the policy files or keys"},
+		{name: "known flag with a value after a file", args: []string{"check", "a.json", "-node-context=ctx.json"}, wantErr: "flag -node-context must come before the policy files or keys"},
+		{name: "stdin after a file is a file", args: []string{"check", "a.json", "-"}, wantErr: "sole file"},
+		{name: "dash file after --", args: []string{"check", "--", "-a.json"}, wantVerb: policycmd.VerbCheck, wantArgs: []string{"-a.json"}},
+		{name: "dash file after a file and --", args: []string{"check", "a.json", "--", "-b.json", "--yes"}, wantVerb: policycmd.VerbCheck, wantArgs: []string{"a.json", "-b.json", "--yes"}},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
 		{name: "template default", args: []string{"template"}, wantVerb: policycmd.VerbTemplate},
 		{name: "template key", args: []string{"template", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID},
@@ -135,7 +147,6 @@ func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
 }
 
 func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
-	t.Setenv("APPOLICY_PASSPHRASE", "")
 	var stderr bytes.Buffer
 	code := runPolicyCommand(context.Background(), []string{"rescue", "check", "policy.json"}, adminBatchGlobalOptions{
 		ipcPathPassed: true,
@@ -146,7 +157,6 @@ func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
 }
 
 func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
-	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_DATA", "")
 	var stderr bytes.Buffer
 	code := runPolicyCommand(context.Background(), []string{"rescue", "status"}, adminBatchGlobalOptions{}, adminBatchStreams{
@@ -160,7 +170,6 @@ func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
 // template --embedded needs no store: it prints with a data directory that
 // does not exist, through both the online and the rescue entry points.
 func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
-	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	missing := filepath.Join(t.TempDir(), "no-such-store")
 	want, err := policytext.EmbeddedTemplate(noderole.RoleSigner, policy.DefaultKey)
@@ -173,6 +182,29 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 		})
 		if code != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("%v: code=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
+		}
+	}
+	// The preset forms are answered by apadmin too, before either runner.
+	preset, err := policytext.PresetTemplate(noderole.RoleCosigner, "self-only", policy.DefaultKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"template", "--preset", "self-only"}, {"rescue", "template", "--preset", "self-only"}} {
+		var stdout, stderr bytes.Buffer
+		code := runPolicyCommand(context.Background(), args, adminBatchGlobalOptions{dataDir: missing}, adminBatchStreams{
+			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+		})
+		if code != 0 || stdout.String() != preset || stderr.Len() != 0 {
+			t.Fatalf("%v: code=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
+		}
+	}
+	for _, args := range [][]string{{"template", "--list-presets"}, {"rescue", "template", "--role", "signer", "--list-presets"}} {
+		var stdout, stderr bytes.Buffer
+		code := runPolicyCommand(context.Background(), args, adminBatchGlobalOptions{dataDir: missing}, adminBatchStreams{
+			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+		})
+		if code != 0 || !strings.Contains(stdout.String(), "self-only") || stderr.Len() != 0 {
 			t.Fatalf("%v: code=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
 		}
 	}
@@ -195,14 +227,28 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	}
 }
 
-func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
-	t.Setenv("APPOLICY_PASSPHRASE", "legacy")
-	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"status"}, adminBatchGlobalOptions{}, adminBatchStreams{
-		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
-	})
-	if code != 2 || !strings.Contains(stderr.String(), "APPOLICY_PASSPHRASE is retired") {
-		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
+// A retired flag is an unknown flag wherever it stands. Before the first file
+// or key the flag package refuses it; after one, the policy command does.
+// Either way the usage is printed and the command exits 2 before it asks for
+// a passphrase or connects.
+func TestPolicyCommandRefusesRetiredFlagAsUnknown(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		flag string
+	}{
+		{[]string{"check", "--yaml", "a.json"}, "-yaml"},
+		{[]string{"apply", "a.json", "--online"}, "-online"},
+		{[]string{"remove", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ", "--target", "signer"}, "-target"},
+	} {
+		var stderr bytes.Buffer
+		code := runPolicyCommand(context.Background(), tt.args, adminBatchGlobalOptions{ipcPath: "/nonexistent/aplane.sock", ipcPathPassed: true}, adminBatchStreams{
+			stdin: strings.NewReader("secret\n"), stdout: io.Discard, stderr: &stderr,
+		})
+		out := stderr.String()
+		if code != 2 || !strings.Contains(out, "apadmin: flag provided but not defined: "+tt.flag+"\n") ||
+			!strings.Contains(out, "Usage: apadmin [GLOBAL FLAGS] policy VERB") || strings.Contains(out, "connect") {
+			t.Fatalf("%v: runPolicyCommand() code=%d stderr=%q", tt.args, code, out)
+		}
 	}
 }
 

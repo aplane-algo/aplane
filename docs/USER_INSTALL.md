@@ -111,7 +111,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── plugins.yaml       # Enabled plugin names
 │   ├── plugins.available/  # Installed plugin catalog entries
 │   └── scripts/           # Saved JavaScript/MCP snippets
-├── apconsole.yaml         # Console profile (mode and relative data paths)
+├── apconsole.yaml         # Console profile (relative data paths)
 ├── apenv.sh               # Environment file (PATH, APLANE_INSTALL_ROOT, APSIGNER_DATA, APCLIENT_DATA)
 └── start.sh               # Unified console launcher (apconsole)
 ```

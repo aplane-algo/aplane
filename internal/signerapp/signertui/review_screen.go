@@ -6,8 +6,8 @@ package tui
 // The signing review drawn from a sign request's review: a list of the
 // request's transactions, and under it the selected one in full. When the
 // operator asks for the text, the lower pane holds the request's description
-// instead. A request without a review is shown as its description alone
-// (view_signing.go).
+// instead. A request without a review can only be rejected
+// (renderUnreviewableSigningRequest in view_signing.go).
 
 import (
 	"crypto/sha256"

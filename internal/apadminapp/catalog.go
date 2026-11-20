@@ -79,255 +79,253 @@ func (c Catalog) normalized() Catalog {
 	return c
 }
 
-// CatalogReadsStdin reports whether a catalog command reads its input from
-// stdin, which it does for an import whose path is "-". The caller must then
-// take the passphrase from somewhere else. It parses the arguments with the
-// parsers Run uses, so every spelling Run accepts is recognized; a malformed
-// command reads nothing.
-func CatalogReadsStdin(command string, args []string) bool {
-	if len(args) == 0 || args[0] != "import" {
-		return false
-	}
-	var (
-		path string
-		err  error
-	)
-	switch command {
-	case "clients":
-		path, _, err = parseClientsImportArgs(args[1:])
-	case "cosigner":
-		path, _, err = parseCosignerImportArgs(args[1:])
-	default:
-		return false
-	}
-	return err == nil && path == "-"
+// catalogCommand is one parsed catalog command line: the session it needs,
+// whether it reads its input from stdin, and the work Run does for it.
+type catalogCommand struct {
+	mode       AuthMode
+	readsStdin bool
+	run        func(Catalog) error
 }
 
-// CatalogAuthMode returns the lock-state behavior required by a catalog
-// command. It validates enough grammar to reject unknown verbs before a
-// connection or passphrase prompt.
-func CatalogAuthMode(command string, args []string) (AuthMode, error) {
-	// A command's check reports whether it recognized the verb; one it did
-	// not recognize is unknown or malformed.
-	var (
-		mode       AuthMode
-		recognized bool
-		err        error
-	)
-	switch command {
-	case "clients":
-		return clientsCommandAuth(args)
-	case "asa":
-		return asaCommandAuth(args)
-	case "template":
-		mode = AuthUnlock
-		recognized, err = templateCommandAuth(args)
-	case "keytype":
-		mode = AuthUnlock
-		recognized = keytypeCommandAuth(args)
-	case "cosigner":
-		mode, recognized, err = cosignerCommandAuth(args)
-	case "endpoint":
-		mode, recognized, err = endpointCommandAuth(args)
-	case "generations":
-		mode, recognized, err = generationsCommandAuth(args)
-	case "archive":
-		// The daemon serves the archive listing only to an unlocked or
-		// recovery-admin session, never to an auth_only observer.
-		mode = AuthUnlock
-		recognized, err = archiveCommandAuth(args)
-	}
-	if recognized {
-		return mode, err
-	}
-	return AuthUnlock, fmt.Errorf("unknown or malformed apadmin command: %s", strings.TrimSpace(command+" "+strings.Join(args, " ")))
+func readOnlyCommand(run func(Catalog) error) catalogCommand {
+	return catalogCommand{mode: AuthReadOnly, run: run}
 }
 
-// templateCommandAuth checks a template command; every one needs an unlocked
-// signer.
-func templateCommandAuth(args []string) (recognized bool, err error) {
-	if len(args) == 0 {
-		return true, fmt.Errorf("usage: apadmin template <list|show|import|remove>")
-	}
-	switch args[0] {
-	case "list":
-		if len(args) != 1 {
-			return true, fmt.Errorf("usage: apadmin template list")
-		}
-		return true, nil
-	case "show":
-		if len(args) != 3 || args[2] != "--show-sensitive-template" {
-			return true, fmt.Errorf("usage: apadmin template show <key-type> --show-sensitive-template")
-		}
-		return true, nil
-	case "import", "remove":
-		if len(args) != 2 {
-			return true, fmt.Errorf("usage: apadmin template %s <file-or-key-type>", args[0])
-		}
-		return true, nil
-	}
-	return false, nil
+func unlockedCommand(run func(Catalog) error) catalogCommand {
+	return catalogCommand{mode: AuthUnlock, run: run}
 }
 
-// keytypeCommandAuth recognizes enabling or disabling one key type.
-func keytypeCommandAuth(args []string) bool {
-	return len(args) == 2 && (args[0] == "enable" || args[0] == "disable")
-}
-
-func cosignerCommandAuth(args []string) (AuthMode, bool, error) {
-	if len(args) == 0 {
-		return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
-	}
-	switch args[0] {
-	case "export":
-		if len(args) < 2 || len(args) > 3 {
-			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
-		}
-		return AuthReadOnly, true, nil
-	case "list":
-		if len(args) != 1 {
-			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner list")
-		}
-		return AuthReadOnly, true, nil
-	case "show":
-		if len(args) != 2 {
-			return AuthReadOnly, true, fmt.Errorf("usage: apadmin cosigner show <name>")
-		}
-		return AuthReadOnly, true, nil
-	case "import":
-		if _, _, err := parseCosignerImportArgs(args[1:]); err != nil {
-			return AuthUnlock, true, err
-		}
-		return AuthUnlock, true, nil
-	case "remove":
-		if len(args) != 2 {
-			return AuthUnlock, true, fmt.Errorf("usage: apadmin cosigner remove <name>")
-		}
-		return AuthUnlock, true, nil
-	}
-	return AuthUnlock, false, nil
-}
-
-// parseCosignerImportArgs parses the arguments after "cosigner import": the
-// public key envelope's path, "-" for stdin, and the cosigner's name.
-func parseCosignerImportArgs(args []string) (path, name string, err error) {
-	if len(args) != 2 {
-		return "", "", fmt.Errorf("usage: apadmin cosigner import <public-json|-> <name>")
-	}
-	return args[0], args[1], nil
-}
-
-func endpointCommandAuth(args []string) (AuthMode, bool, error) {
-	if len(args) == 0 || args[0] != "export" {
-		return AuthUnlock, false, nil
-	}
-	fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	_ = fs.String("host", "", "")
-	_ = fs.String("url", "", "")
-	_ = fs.String("out", "", "")
-	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
-		return AuthReadOnly, true, errors.New(endpointExportUsage)
-	}
-	return AuthReadOnly, true, nil
-}
-
-func generationsCommandAuth(args []string) (AuthMode, bool, error) {
-	if len(args) == 1 && args[0] == "list" {
-		return AuthReadOnly, true, nil
-	}
-	if len(args) > 0 && (args[0] == "prune" || args[0] == "discard") {
-		return AuthUnlock, true, confirmedListAuth("generations "+args[0], "<generation-id> [generation-id...]", args[1:])
-	}
-	return AuthUnlock, false, nil
-}
-
-func archiveCommandAuth(args []string) (recognized bool, err error) {
-	if len(args) == 1 && args[0] == "list" {
-		return true, nil
-	}
-	if len(args) > 0 && args[0] == "prune" {
-		return true, confirmedListAuth("archive prune", "<deleted/path> [deleted/path...]", args[1:])
-	}
-	return false, nil
-}
-
-// confirmedListAuth checks a verb that takes --confirm and at least one
-// operand, such as "generations prune".
-func confirmedListAuth(verb, operands string, args []string) error {
-	fs := flag.NewFlagSet("apadmin "+verb, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	_ = fs.Bool("confirm", false, "")
-	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
-		return fmt.Errorf("usage: apadmin %s --confirm %s", verb, operands)
-	}
-	return nil
-}
-
-// Run executes one validated catalog command using an already authenticated
-// client.
-//
 // CatalogCommands names every command Run accepts. cmd/apadmin routes each of
 // them; a test keeps the two lists in step.
 var CatalogCommands = []string{
 	"template", "keytype", "cosigner", "asa", "clients", "endpoint", "generations", "archive",
 }
 
+// parseCatalogCommand is the one grammar of the catalog commands.
+// CatalogAuthMode and CatalogReadsStdin consult it before a connection or a
+// passphrase prompt, and Run dispatches on what it returns.
+func parseCatalogCommand(command string, args []string) (catalogCommand, error) {
+	switch command {
+	case "template":
+		return parseTemplate(args)
+	case "keytype":
+		return parseKeyType(args)
+	case "cosigner":
+		return parseCosigner(args)
+	case "asa":
+		return parseASA(args)
+	case "clients":
+		return parseClients(args)
+	case "endpoint":
+		return parseEndpoint(args)
+	case "generations":
+		return parseGenerations(args)
+	case "archive":
+		return parseArchive(args)
+	}
+	return catalogCommand{}, fmt.Errorf("unknown apadmin command %q", command)
+}
+
+// CatalogReadsStdin reports whether a catalog command reads its input from
+// stdin, which it does for an import whose path is "-". The caller must then
+// take the passphrase from somewhere else. A malformed command reads nothing.
+func CatalogReadsStdin(command string, args []string) bool {
+	cmd, err := parseCatalogCommand(command, args)
+	return err == nil && cmd.readsStdin
+}
+
+// CatalogAuthMode returns the lock-state behavior required by a catalog
+// command. It parses with Run's grammar, so a malformed command is refused
+// before a connection or passphrase prompt.
+func CatalogAuthMode(command string, args []string) (AuthMode, error) {
+	cmd, err := parseCatalogCommand(command, args)
+	if err != nil {
+		return AuthUnlock, err
+	}
+	return cmd.mode, nil
+}
+
+// Run executes one catalog command using an already authenticated client.
 func (c Catalog) Run(command string, args []string) error {
 	c = c.normalized()
 	if c.Client == nil {
 		return fmt.Errorf("admin requester is required")
 	}
-	switch command {
-	case "template":
-		return c.runTemplate(args)
-	case "keytype":
-		return c.runKeyType(args)
-	case "cosigner":
-		return c.runCosigner(args)
-	case "asa":
-		return c.runASA(args)
-	case "clients":
-		return c.runClients(args)
-	case "endpoint":
-		return c.runEndpoint(args)
-	case "generations":
-		return c.runGenerations(args)
-	case "archive":
-		return c.runArchive(args)
-	default:
-		return fmt.Errorf("unknown apadmin command %q", command)
+	cmd, err := parseCatalogCommand(command, args)
+	if err != nil {
+		return err
 	}
+	return cmd.run(c)
 }
 
-func (c Catalog) runTemplate(args []string) error {
+const templateUsage = "usage: apadmin template <list|show|import|remove>"
+
+// parseTemplate parses a template command; every one needs an unlocked
+// signer.
+func parseTemplate(args []string) (catalogCommand, error) {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin template <list|show|import|remove>")
+		return catalogCommand{}, errors.New(templateUsage)
 	}
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: apadmin template list")
+			return catalogCommand{}, errors.New("usage: apadmin template list")
 		}
-		return c.listTemplates()
+		return unlockedCommand(Catalog.listTemplates), nil
 	case "show":
 		if len(args) != 3 || args[2] != "--show-sensitive-template" {
-			return fmt.Errorf("usage: apadmin template show <key-type> --show-sensitive-template")
+			return catalogCommand{}, errors.New("usage: apadmin template show <key-type> --show-sensitive-template")
 		}
-		return c.showTemplate(args[1])
+		keyType := args[1]
+		return unlockedCommand(func(c Catalog) error { return c.showTemplate(keyType) }), nil
 	case "import":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin template import <yaml-file>")
+			return catalogCommand{}, errors.New("usage: apadmin template import <yaml-file>")
 		}
-		return c.importTemplate(args[1])
+		path := args[1]
+		return unlockedCommand(func(c Catalog) error { return c.importTemplate(path) }), nil
 	case "remove":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin template remove <key-type>")
+			return catalogCommand{}, errors.New("usage: apadmin template remove <key-type>")
 		}
-		return c.removeTemplate(args[1])
-	default:
-		return fmt.Errorf("usage: apadmin template <list|show|import|remove>")
+		keyType := args[1]
+		return unlockedCommand(func(c Catalog) error { return c.removeTemplate(keyType) }), nil
 	}
+	return catalogCommand{}, errors.New(templateUsage)
+}
+
+// parseKeyType parses enabling or disabling one key type.
+func parseKeyType(args []string) (catalogCommand, error) {
+	if len(args) != 2 || (args[0] != "enable" && args[0] != "disable") {
+		return catalogCommand{}, errors.New("usage: apadmin keytype <enable|disable> <key-type>")
+	}
+	keyType := canonicalKeyType(args[1])
+	if args[0] == "enable" {
+		return unlockedCommand(func(c Catalog) error { return c.enableKeyType(keyType) }), nil
+	}
+	return unlockedCommand(func(c Catalog) error { return c.disableKeyType(keyType) }), nil
+}
+
+const cosignerUsage = "usage: apadmin cosigner <export|import|list|show|remove>"
+
+// parseCosigner parses a cosigner command. Exporting, listing and showing
+// are public reads; importing and removing change the registry.
+func parseCosigner(args []string) (catalogCommand, error) {
+	if len(args) == 0 {
+		return catalogCommand{}, errors.New(cosignerUsage)
+	}
+	switch args[0] {
+	case "export":
+		if len(args) < 2 || len(args) > 3 {
+			return catalogCommand{}, errors.New("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
+		}
+		exportArgs := args[1:]
+		return readOnlyCommand(func(c Catalog) error { return c.exportCosigner(exportArgs) }), nil
+	case "list":
+		if len(args) != 1 {
+			return catalogCommand{}, errors.New("usage: apadmin cosigner list")
+		}
+		return readOnlyCommand(Catalog.listCosigners), nil
+	case "show":
+		if len(args) != 2 {
+			return catalogCommand{}, errors.New("usage: apadmin cosigner show <name>")
+		}
+		name := args[1]
+		return readOnlyCommand(func(c Catalog) error { return c.showCosigner(name) }), nil
+	case "import":
+		// The public key envelope's path, "-" for stdin, and the cosigner's
+		// name.
+		if len(args) != 3 {
+			return catalogCommand{}, errors.New("usage: apadmin cosigner import <public-json|-> <name>")
+		}
+		path, name := args[1], args[2]
+		cmd := unlockedCommand(func(c Catalog) error { return c.importCosigner(path, name) })
+		cmd.readsStdin = path == "-"
+		return cmd, nil
+	case "remove":
+		if len(args) != 2 {
+			return catalogCommand{}, errors.New("usage: apadmin cosigner remove <name>")
+		}
+		name := args[1]
+		return unlockedCommand(func(c Catalog) error { return c.removeCosigner(name) }), nil
+	}
+	return catalogCommand{}, errors.New(cosignerUsage)
+}
+
+const endpointExportUsage = "usage: apadmin endpoint export [--host <host> | --url <url>] [--out endpoint.json]"
+
+// parseEndpoint parses an endpoint export, a public read.
+func parseEndpoint(args []string) (catalogCommand, error) {
+	if len(args) == 0 || args[0] != "export" {
+		return catalogCommand{}, errors.New("usage: apadmin endpoint <export>")
+	}
+	fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	host := fs.String("host", "", "client-reachable SSH host or IP")
+	endpointURL := fs.String("url", "", "endpoint URL")
+	outPath := fs.String("out", "", "output JSON path")
+	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
+		return catalogCommand{}, errors.New(endpointExportUsage)
+	}
+	return readOnlyCommand(func(c Catalog) error { return c.exportEndpoint(*host, *endpointURL, *outPath) }), nil
+}
+
+const generationsUsage = "usage: apadmin generations <list|prune|discard>"
+
+// parseGenerations parses a generations command. Listing is a public read;
+// pruning and discarding delete store data.
+func parseGenerations(args []string) (catalogCommand, error) {
+	if len(args) == 0 {
+		return catalogCommand{}, errors.New(generationsUsage)
+	}
+	switch args[0] {
+	case "list":
+		if len(args) == 1 {
+			return readOnlyCommand(Catalog.listGenerations), nil
+		}
+	case "prune":
+		confirm, ids, err := parseConfirmedList("generations prune", "<generation-id> [generation-id...]", args[1:])
+		if err != nil {
+			return catalogCommand{}, err
+		}
+		return unlockedCommand(func(c Catalog) error { return c.pruneGenerationQuarantine(confirm, ids) }), nil
+	case "discard":
+		confirm, ids, err := parseConfirmedList("generations discard", "<generation-id> [generation-id...]", args[1:])
+		if err != nil {
+			return catalogCommand{}, err
+		}
+		return unlockedCommand(func(c Catalog) error { return c.discardAbandonedGenerations(confirm, ids) }), nil
+	}
+	return catalogCommand{}, errors.New(generationsUsage)
+}
+
+// parseArchive parses an archive command. The daemon serves the archive
+// listing only to an unlocked or recovery-admin session, never to an
+// auth_only observer, so listing unlocks too.
+func parseArchive(args []string) (catalogCommand, error) {
+	if len(args) == 1 && args[0] == "list" {
+		return unlockedCommand(Catalog.listArchive), nil
+	}
+	if len(args) > 0 && args[0] == "prune" {
+		confirm, entries, err := parseConfirmedList("archive prune", "<deleted/path> [deleted/path...]", args[1:])
+		if err != nil {
+			return catalogCommand{}, err
+		}
+		return unlockedCommand(func(c Catalog) error { return c.pruneArchive(confirm, entries) }), nil
+	}
+	return catalogCommand{}, errors.New("usage: apadmin archive <list|prune>")
+}
+
+// parseConfirmedList parses a verb that takes --confirm and at least one
+// operand, such as "generations prune".
+func parseConfirmedList(verb, operands string, args []string) (confirm bool, list []string, err error) {
+	fs := flag.NewFlagSet("apadmin "+verb, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	confirmFlag := fs.Bool("confirm", false, "confirm the irreversible deletion")
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
+		return false, nil, fmt.Errorf("usage: apadmin %s --confirm %s", verb, operands)
+	}
+	return *confirmFlag, append([]string(nil), fs.Args()...), nil
 }
 
 func (c Catalog) listTemplates() error {
@@ -422,29 +420,26 @@ func (c Catalog) removeTemplate(keyType string) error {
 	return nil
 }
 
-func (c Catalog) runKeyType(args []string) error {
-	if len(args) != 2 || (args[0] != "enable" && args[0] != "disable") {
-		return fmt.Errorf("usage: apadmin keytype <enable|disable> <key-type>")
+func (c Catalog) enableKeyType(keyType string) error {
+	var result protocol.ActivateKeyTypeResultMessage
+	if err := c.Client.Request(protocol.ActivateKeyTypeMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateKeyType, ID: c.requestID("keytype-enable")},
+		KeyType:     keyType,
+	}, &result); err != nil {
+		return err
 	}
-	keyType := canonicalKeyType(args[1])
-	if args[0] == "enable" {
-		var result protocol.ActivateKeyTypeResultMessage
-		if err := c.Client.Request(protocol.ActivateKeyTypeMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeActivateKeyType, ID: c.requestID("keytype-enable")},
-			KeyType:     keyType,
-		}, &result); err != nil {
-			return err
-		}
-		if !result.Success {
-			return resultError("key type enable failed", result.Code, result.Error)
-		}
-		if result.AlreadyExists {
-			c.info("key type %s was already enabled", result.KeyType)
-		} else {
-			c.info("key type %s enabled", result.KeyType)
-		}
-		return nil
+	if !result.Success {
+		return resultError("key type enable failed", result.Code, result.Error)
 	}
+	if result.AlreadyExists {
+		c.info("key type %s was already enabled", result.KeyType)
+	} else {
+		c.info("key type %s enabled", result.KeyType)
+	}
+	return nil
+}
+
+func (c Catalog) disableKeyType(keyType string) error {
 	if !c.Confirm(fmt.Sprintf("Disable key type %s? [y/N]: ", keyType)) {
 		return fmt.Errorf("key type disable cancelled")
 	}
@@ -464,42 +459,6 @@ func (c Catalog) runKeyType(args []string) error {
 		c.info("key type %s was already disabled", result.KeyType)
 	}
 	return nil
-}
-
-func (c Catalog) runCosigner(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
-	}
-	switch args[0] {
-	case "export":
-		if len(args) < 2 || len(args) > 3 {
-			return fmt.Errorf("usage: apadmin cosigner export <cosigner-key-id> [output-json]")
-		}
-		return c.exportCosigner(args[1:])
-	case "import":
-		path, name, err := parseCosignerImportArgs(args[1:])
-		if err != nil {
-			return err
-		}
-		return c.importCosigner(path, name)
-	case "list":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: apadmin cosigner list")
-		}
-		return c.listCosigners()
-	case "show":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin cosigner show <name>")
-		}
-		return c.showCosigner(args[1])
-	case "remove":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: apadmin cosigner remove <name>")
-		}
-		return c.removeCosigner(args[1])
-	default:
-		return fmt.Errorf("usage: apadmin cosigner <export|import|list|show|remove>")
-	}
 }
 
 func (c Catalog) exportCosigner(args []string) error {
@@ -632,25 +591,12 @@ type endpointExportSettings struct {
 	SSHPort      int
 }
 
-const endpointExportUsage = "usage: apadmin endpoint export [--host <host> | --url <url>] [--out endpoint.json]"
-
-func (c Catalog) runEndpoint(args []string) error {
-	if len(args) == 0 || args[0] != "export" {
-		return fmt.Errorf("usage: apadmin endpoint <export>")
-	}
-	fs := flag.NewFlagSet("apadmin endpoint export", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	host := fs.String("host", "", "client-reachable SSH host or IP")
-	endpointURL := fs.String("url", "", "endpoint URL")
-	outPath := fs.String("out", "", "output JSON path")
-	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
-		return errors.New(endpointExportUsage)
-	}
+func (c Catalog) exportEndpoint(host, endpointURL, outPath string) error {
 	settings, err := c.loadEndpointSettings()
 	if err != nil {
 		return err
 	}
-	envelope, err := buildEndpointExportEnvelope(*host, *endpointURL, settings)
+	envelope, err := buildEndpointExportEnvelope(host, endpointURL, settings)
 	if err != nil {
 		return err
 	}
@@ -658,14 +604,14 @@ func (c Catalog) runEndpoint(args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*outPath) == "" {
+	if strings.TrimSpace(outPath) == "" {
 		_, err := c.Streams.Stdout.Write(data)
 		return err
 	}
-	if err := fsutil.WriteFileDurable(*outPath, data); err != nil {
+	if err := fsutil.WriteFileDurable(outPath, data); err != nil {
 		return fmt.Errorf("failed to write endpoint envelope: %w", err)
 	}
-	c.info("endpoint envelope written: %s", *outPath)
+	c.info("endpoint envelope written: %s", outPath)
 	return nil
 }
 
@@ -687,19 +633,7 @@ func (c Catalog) loadEndpointSettings() (endpointExportSettings, error) {
 	return endpointExportSettings{AdvertiseURL: settings.EndpointAdvertiseURL, SSHPort: settings.SSHPort}, nil
 }
 
-func (c Catalog) runGenerations(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
-	}
-	if args[0] == "prune" {
-		return c.runGenerationQuarantinePrune(args[1:])
-	}
-	if args[0] == "discard" {
-		return c.runGenerationAbandonedDiscard(args[1:])
-	}
-	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: apadmin generations <list|prune|discard>")
-	}
+func (c Catalog) listGenerations() error {
 	result, err := requestInspectionWithRetry(c, func() any {
 		return protocol.ListGenerationsMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListGenerations, ID: c.requestID("generations-list")},
@@ -739,20 +673,14 @@ func (c Catalog) runGenerations(args []string) error {
 	return nil
 }
 
-func (c Catalog) runGenerationAbandonedDiscard(args []string) error {
-	fs := flag.NewFlagSet("apadmin generations discard", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	confirm := fs.Bool("confirm", false, "confirm irreversible abandoned-generation deletion")
-	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
-		return errors.New("usage: apadmin generations discard --confirm <generation-id> [generation-id...]")
-	}
+func (c Catalog) discardAbandonedGenerations(confirm bool, generationIDs []string) error {
 	var result protocol.DiscardAbandonedGenerationsResultMessage
 	if err := c.Client.Request(protocol.DiscardAbandonedGenerationsMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeDiscardAbandonedGenerations,
 			ID:   c.requestID("generation-abandoned-discard"),
 		},
-		GenerationIDs: append([]string(nil), fs.Args()...), Confirm: *confirm,
+		GenerationIDs: generationIDs, Confirm: confirm,
 	}, &result); err != nil {
 		return err
 	}
@@ -769,23 +697,15 @@ func (c Catalog) runGenerationAbandonedDiscard(args []string) error {
 	return nil
 }
 
-func (c Catalog) runGenerationQuarantinePrune(args []string) error {
-	fs := flag.NewFlagSet("apadmin generations prune", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	confirm := fs.Bool("confirm", false, "confirm irreversible quarantine deletion")
-	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
-		return errors.New(
-			"usage: apadmin generations prune --confirm <generation-id> [generation-id...]",
-		)
-	}
+func (c Catalog) pruneGenerationQuarantine(confirm bool, generationIDs []string) error {
 	var result protocol.PruneGenerationQuarantineResultMessage
 	if err := c.Client.Request(protocol.PruneGenerationQuarantineMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypePruneGenerationQuarantine,
 			ID:   c.requestID("generation-quarantine-prune"),
 		},
-		GenerationIDs: append([]string(nil), fs.Args()...),
-		Confirm:       *confirm,
+		GenerationIDs: generationIDs,
+		Confirm:       confirm,
 	}, &result); err != nil {
 		return err
 	}
@@ -802,41 +722,33 @@ func (c Catalog) runGenerationQuarantinePrune(args []string) error {
 	return nil
 }
 
-func (c Catalog) runArchive(args []string) error {
-	if len(args) == 1 && args[0] == "list" {
-		result, err := requestInspectionWithRetry(c, func() any {
-			return protocol.ListDeletedArchiveMessage{
-				BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListDeletedArchive, ID: c.requestID("archive-list")},
-			}
-		}, func(result *protocol.DeletedArchiveListMessage) string { return result.Code })
-		if err != nil {
-			return err
+func (c Catalog) listArchive() error {
+	result, err := requestInspectionWithRetry(c, func() any {
+		return protocol.ListDeletedArchiveMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeListDeletedArchive, ID: c.requestID("archive-list")},
 		}
-		if result.Error != "" {
-			return resultError("archive list failed", result.Code, result.Error)
-		}
-		for _, item := range result.Entries {
-			c.info("archived %s (%d bytes)", item.Path, item.EncodedBytes)
-		}
-		c.info("deleted archive: %d entries, %d encoded bytes", result.EntryCount, result.EncodedBytes)
-		if result.Warning {
-			c.warn("deleted archive emergency-deletion reserve is consumed; prune before the next incident-response deletion")
-		}
-		return nil
+	}, func(result *protocol.DeletedArchiveListMessage) string { return result.Code })
+	if err != nil {
+		return err
 	}
-	if len(args) == 0 || args[0] != "prune" {
-		return errors.New("usage: apadmin archive <list|prune>")
+	if result.Error != "" {
+		return resultError("archive list failed", result.Code, result.Error)
 	}
-	fs := flag.NewFlagSet("apadmin archive prune", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	confirm := fs.Bool("confirm", false, "confirm irreversible archive deletion")
-	if err := fs.Parse(args[1:]); err != nil || fs.NArg() == 0 {
-		return errors.New("usage: apadmin archive prune --confirm <deleted/path> [deleted/path...]")
+	for _, item := range result.Entries {
+		c.info("archived %s (%d bytes)", item.Path, item.EncodedBytes)
 	}
+	c.info("deleted archive: %d entries, %d encoded bytes", result.EntryCount, result.EncodedBytes)
+	if result.Warning {
+		c.warn("deleted archive emergency-deletion reserve is consumed; prune before the next incident-response deletion")
+	}
+	return nil
+}
+
+func (c Catalog) pruneArchive(confirm bool, entries []string) error {
 	var result protocol.PruneDeletedArchiveResultMessage
 	if err := c.Client.Request(protocol.PruneDeletedArchiveMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypePruneDeletedArchive, ID: c.requestID("archive-prune")},
-		Entries:     append([]string(nil), fs.Args()...), Confirm: *confirm,
+		Entries:     entries, Confirm: confirm,
 	}, &result); err != nil {
 		return err
 	}

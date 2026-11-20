@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,15 @@ func updateModel(t *testing.T, m Model, msg tea.Msg) Model {
 	return got
 }
 
+// signRequest is a signing request as the signer sends one: with its review.
+func signRequest(id string) PendingSignRequest {
+	return PendingSignRequest{ID: id, Address: reviewOwn, Review: &protocol.Review{
+		Version: protocol.ReviewVersion,
+		Items:   []protocol.ReviewItem{reviewPayment(reviewOther)},
+		Parties: []protocol.ReviewParty{{Address: reviewOwn, Held: true, Signs: true, KeyType: "falcon1024", Signable: true}, {Address: reviewOther}},
+	}}
+}
+
 func approvalTestModel(view ViewState) Model {
 	return Model{viewState: view, connectionState: ConnectionConnected, width: 100, height: 40}
 }
@@ -34,7 +44,7 @@ func approvalTestModel(view ViewState) Model {
 func TestSigningPopupStaysOnTopOfBackgroundResults(t *testing.T) {
 	m := approvalTestModel(ViewGenerateForm)
 	id := m.beginOperation(ViewGenerating)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	if m.viewState != ViewSigningPopup {
 		t.Fatalf("view after sign request = %v, want the signing popup", m.viewState)
 	}
@@ -50,7 +60,7 @@ func TestSigningPopupStaysOnTopOfBackgroundResults(t *testing.T) {
 
 func TestCanceledSigningRequestReturnsToScreenUnderneath(t *testing.T) {
 	m := approvalTestModel(ViewBackupConfirm)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	m = updateModel(t, m, SignRequestCanceledMsg{ID: "sign-1"})
 	if m.viewState != ViewBackupConfirm || m.signing.request != nil {
 		t.Fatalf("after cancel: view %v, want the backup form", m.viewState)
@@ -71,6 +81,7 @@ func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) 
 	}})
 	t.Cleanup(func() { setServerKeyTypes(nil) })
 	m := approvalTestModel(ViewImportParams)
+	m = m.initGenericLSigParamsForKeyType("import-params-test-v1")
 	id := m.beginOperation(ViewImporting)
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 	m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("authorization denied")})
@@ -83,9 +94,58 @@ func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) 
 	}
 }
 
+// A failed import returns to the import parameter form only when that form
+// was filled. An import sent from the plain import form, whose key type list
+// changed while it ran so that the selected type now takes parameters,
+// returns to the import form: the parameter form it would otherwise open has
+// no values, and the first key typed into it crashed apadmin.
+func TestFailedImportReturnsToAParameterFormOnlyWhenFilled(t *testing.T) {
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "import-params-test-v1", DisplayName: "Import Params Test", MnemonicImport: true, MnemonicWordCount: 25,
+		CreationParams: []protocol.TemplateParamInfo{{Name: "label", Type: "string"}},
+	}})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
+	for _, failure := range []struct {
+		name string
+		msg  func(id string) tea.Msg
+	}{
+		{"error", func(id string) tea.Msg { return ErrorMsg{ID: id, Error: errors.New("authorization denied")} }},
+		{"result", func(id string) tea.Msg { return ImportResultMsg{ID: id, Error: "authorization denied"} }},
+	} {
+		for _, filled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, form filled %v", failure.name, filled), func(t *testing.T) {
+				m := approvalTestModel(ViewImportForm)
+				want := ViewImportForm
+				if filled {
+					m.viewState = ViewImportParams
+					m = m.initGenericLSigParamsForKeyType("import-params-test-v1")
+					m.forms.genericLSigParams["label"] = "kept"
+					want = ViewImportParams
+				}
+				id := m.beginOperation(ViewImporting)
+				m = updateModel(t, m, failure.msg(id))
+				if m.viewState != want || m.forms.importError != "authorization denied" {
+					t.Fatalf("after the failure: view %v error %q, want view %v with the failure", m.viewState, m.forms.importError, want)
+				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Fatalf("typing into the form panicked: %v", r)
+						}
+					}()
+					m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+				}()
+				if filled && m.forms.genericLSigParams["label"] != "kepta" {
+					t.Fatalf("label = %q, want the kept value typed onto", m.forms.genericLSigParams["label"])
+				}
+			})
+		}
+	}
+}
+
 func TestSecondApprovalShowsAfterFirstIsAnswered(t *testing.T) {
 	m := approvalTestModel(ViewKeyDetails)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 	if m.viewState != ViewSigningPopup {
 		t.Fatalf("view %v, want the signing popup kept in front", m.viewState)
@@ -111,7 +171,7 @@ func TestSessionEndAndLockDropPendingApprovals(t *testing.T) {
 		"locked":        SignerStatusMsg{State: "locked"},
 	} {
 		m := approvalTestModel(ViewKeyList)
-		m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+		m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 		m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 		m = updateModel(t, m, msg)
 		if m.signing.request != nil || m.enrollmentApproval.request != nil || isApprovalView(m.viewState) {
@@ -327,7 +387,7 @@ func TestEscDefersEnrollmentRequest(t *testing.T) {
 
 	// Esc on the signing popup still rejects: a signing client is waiting.
 	m = approvalTestModel(ViewKeyList)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.viewState != ViewKeyList || m.signing.request != nil {
 		t.Fatalf("esc on the signing popup: view %v request %+v", m.viewState, m.signing.request)
@@ -344,7 +404,7 @@ func TestSigningPopupRefusesApprovalUntilArmed(t *testing.T) {
 	t.Cleanup(func() { signingNow = saved })
 
 	m := approvalTestModel(ViewGenerating)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "prompt-b"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("prompt-b")})
 	clock = clock.Add(200 * time.Millisecond)
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	if m.signing.request == nil || m.viewState != ViewSigningPopup {
@@ -365,7 +425,7 @@ func TestSigningPopupRefusesApprovalUntilArmed(t *testing.T) {
 		t.Fatal("approval after the arming delay was not accepted")
 	}
 
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "prompt-c"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("prompt-c")})
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if m.signing.request != nil {
 		t.Fatal("rejection was delayed")
@@ -382,7 +442,7 @@ func TestSigningPopupArmsWhenItBecomesVisible(t *testing.T) {
 
 	m := approvalTestModel(ViewGenerating)
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "enroll-1", SSHFingerprint: "SHA256:one"}})
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	if m.viewState != ViewClientEnrollmentPopup {
 		t.Fatalf("view = %v, want the enrollment popup in front", m.viewState)
 	}
@@ -414,7 +474,7 @@ func TestSigningPopupStaysArmedThroughBackgroundMessages(t *testing.T) {
 	t.Cleanup(func() { signingNow = saved })
 
 	m := approvalTestModel(ViewGenerating)
-	m = updateModel(t, m, SignRequestReceivedMsg{Request: PendingSignRequest{ID: "sign-1"}})
+	m = updateModel(t, m, SignRequestReceivedMsg{Request: signRequest("sign-1")})
 	for range 5 {
 		clock = clock.Add(400 * time.Millisecond)
 		m = updateModel(t, m, clearWarningMsg{})

@@ -391,33 +391,6 @@ func TestBubbleTeaProgramSmoke(t *testing.T) {
 	}
 }
 
-func TestPaneNavigationCyclesShellSignerAndDaemon(t *testing.T) {
-	if got := nextPane(paneSigner, true); got != paneShell {
-		t.Fatalf("nextPane(signer) = %v, want shell", got)
-	}
-	if got := nextPane(paneShell, true); got != paneDaemon {
-		t.Fatalf("nextPane(shell) = %v, want daemon", got)
-	}
-	if got := nextPane(paneDaemon, true); got != paneSigner {
-		t.Fatalf("nextPane(daemon) = %v, want signer", got)
-	}
-	if got := prevPane(paneDaemon, true); got != paneShell {
-		t.Fatalf("prevPane(daemon) = %v, want shell", got)
-	}
-	if got := prevPane(paneShell, true); got != paneSigner {
-		t.Fatalf("prevPane(shell) = %v, want signer", got)
-	}
-}
-
-func TestPaneNavigationSkipsDaemonWithoutLog(t *testing.T) {
-	if got := nextPane(paneShell, false); got != paneSigner {
-		t.Fatalf("nextPane(shell, false) = %v, want signer", got)
-	}
-	if got := prevPane(paneSigner, false); got != paneShell {
-		t.Fatalf("prevPane(signer, false) = %v, want shell", got)
-	}
-}
-
 func TestF3IgnoresDaemonWithoutLog(t *testing.T) {
 	m := model{
 		focus:  paneSigner,
@@ -1867,5 +1840,88 @@ func TestPendingShellRoleReadsSettingsTheSignerListenerDelivered(t *testing.T) {
 	m = updated.(model)
 	if m.shellRolePending || m.shellEnabled() {
 		t.Fatalf("settings from the listener: pending %v enabled %v, want the cosigner role settled with the shell off", m.shellRolePending, m.shellEnabled())
+	}
+}
+
+// Every combination of shell and daemon pane, with focus on each pane the
+// console has: where Shift+← → moves focus around the ring (signer, shell,
+// daemon), and the hint and help text, which name the panes in ring order.
+func TestPaneRingHintsAndHelpText(t *testing.T) {
+	withDaemon := newDaemonModel(daemonInfo{Status: daemonStatusStarting, Owned: true}, make(chan daemonEvent))
+	withoutDaemon := newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil)
+	tests := []struct {
+		name           string
+		shell, daemon  bool
+		next, prev     map[pane]pane
+		focusHint      string
+		focusKeys      string
+		focusText      string
+		cycleText      string
+		scrollText     string
+		navigationHint string
+		helpCycleKeys  string
+	}{
+		{
+			name: "signer only", shell: false, daemon: false,
+			next: map[pane]pane{paneSigner: paneSigner}, prev: map[pane]pane{paneSigner: paneSigner},
+			focusHint: "F1 signer", focusKeys: "F1", focusText: "focus signer",
+			cycleText: "signer pane only", scrollText: "no scrollable pane",
+			navigationHint: "Shift ↑ ↓", helpCycleKeys: "Shift+↑ ↓",
+		},
+		{
+			name: "signer and daemon", shell: false, daemon: true,
+			next:      map[pane]pane{paneSigner: paneDaemon, paneDaemon: paneSigner},
+			prev:      map[pane]pane{paneSigner: paneDaemon, paneDaemon: paneSigner},
+			focusHint: "F1 signer · F3 daemon", focusKeys: "F1 F3", focusText: "focus signer or daemon",
+			cycleText: "cycle signer and daemon panes", scrollText: "scroll daemon log when focused",
+			navigationHint: "Shift ↑ ↓", helpCycleKeys: "Shift+↑ ↓",
+		},
+		{
+			name: "signer and shell", shell: true, daemon: false,
+			next:      map[pane]pane{paneSigner: paneShell, paneShell: paneSigner},
+			prev:      map[pane]pane{paneSigner: paneShell, paneShell: paneSigner},
+			focusHint: "F1 signer · F2 shell", focusKeys: "F1 F2", focusText: "focus signer or shell",
+			cycleText: "cycle signer and shell panes", scrollText: "scroll shell transcript when focused",
+			navigationHint: "Shift ← →", helpCycleKeys: "Shift+← →",
+		},
+		{
+			name: "all three", shell: true, daemon: true,
+			next:      map[pane]pane{paneSigner: paneShell, paneShell: paneDaemon, paneDaemon: paneSigner},
+			prev:      map[pane]pane{paneSigner: paneDaemon, paneShell: paneSigner, paneDaemon: paneShell},
+			focusHint: "F1 signer · F2 shell · F3 daemon", focusKeys: "F1 F2 F3", focusText: "focus signer, shell, or daemon",
+			cycleText: "cycle signer, shell, and daemon panes", scrollText: "scroll shell transcript or daemon log when focused",
+			navigationHint: "Shift ← →", helpCycleKeys: "Shift+← →",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			daemon := withoutDaemon
+			if tt.daemon {
+				daemon = withDaemon
+			}
+			m := model{shellDisabled: !tt.shell, daemon: daemon}
+			for focus, want := range tt.next {
+				m.focus = focus
+				if got := m.nextPane(); got != want {
+					t.Errorf("next from %s = %s, want %s", focus, got, want)
+				}
+				if got := m.prevPane(); got != tt.prev[focus] {
+					t.Errorf("prev from %s = %s, want %s", focus, got, tt.prev[focus])
+				}
+			}
+			for _, check := range []struct{ what, got, want string }{
+				{"focusHint", m.focusHint(), tt.focusHint},
+				{"helpFocusKeys", m.helpFocusKeys(), tt.focusKeys},
+				{"helpFocusText", m.helpFocusText(), tt.focusText},
+				{"helpCycleText", m.helpCycleText(), tt.cycleText},
+				{"helpScrollText", m.helpScrollText(), tt.scrollText},
+				{"navigationHint", m.navigationHint(), tt.navigationHint},
+				{"helpCycleKeys", m.helpCycleKeys(), tt.helpCycleKeys},
+			} {
+				if check.got != check.want {
+					t.Errorf("%s = %q, want %q", check.what, check.got, check.want)
+				}
+			}
+		})
 	}
 }
