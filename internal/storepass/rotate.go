@@ -95,7 +95,7 @@ func Rotate(
 	if active.GenerationID() != selected.GenerationID() {
 		return result, fmt.Errorf("store root selection changed during changepass preflight")
 	}
-	preview, err := genstore.InspectStoreRoot(paths, oldKeyring, nil)
+	preview, err := genstore.InspectStoreRoot(paths, oldKeyring)
 	if err != nil {
 		return result, err
 	}

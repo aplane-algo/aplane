@@ -322,7 +322,7 @@ func TestRotatePreRootFailureLeavesOldAuthorityAndQuarantinableSuccessor(t *test
 	if _, _, err := genstore.ResolveStoreRoot(fixture.paths, newPassphrase); err == nil {
 		t.Fatal("new passphrase opened after precommit failure")
 	}
-	report, err := genstore.ReconcileStoreRoot(fixture.paths, kr, nil)
+	report, err := genstore.ReconcileStoreRoot(fixture.paths, kr)
 	if err != nil {
 		t.Fatalf("ReconcileStoreRoot() error = %v", err)
 	}

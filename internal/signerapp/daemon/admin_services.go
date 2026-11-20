@@ -173,7 +173,7 @@ func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, pa
 // store mutation lock. Callers either use reconcileGenerations or hold the
 // lock across a larger validate/reload/state-transition sequence.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
-	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
+	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 			}
 		}
 	}
-	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr, nil)
+	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr)
 	if s.signer != nil && s.signer.auditLog != nil {
 		for _, quarantined := range report.Quarantined {
 			s.signer.auditLog.LogGenerationQuarantined(quarantined)
@@ -574,11 +574,11 @@ func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 	err := s.withStoreInspection(func() error {
 		return ir.WithKeyring(func(kr *crypto.Keyring) error {
 			var err error
-			report, err = genstore.InspectStoreRoot(ir.KeyPaths(), kr, nil)
+			report, err = genstore.InspectStoreRoot(ir.KeyPaths(), kr)
 			if err != nil {
 				return err
 			}
-			quarantined, err = genstore.ListQuarantinedWithKeyring(ir.KeyPaths(), kr)
+			quarantined, err = genstore.ListQuarantined(ir.KeyPaths(), kr)
 			return err
 		})
 	})

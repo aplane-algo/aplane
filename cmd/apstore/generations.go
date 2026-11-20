@@ -59,7 +59,7 @@ func cmdGenerations(args []string) error {
 				return err
 			}
 		}
-		removed, err := genstore.CollectGarbageStoreRoot(paths, nil, retainRollbackParent, kr)
+		removed, err := genstore.CollectGarbageStoreRoot(paths, retainRollbackParent, kr)
 		if err != nil {
 			return err
 		}

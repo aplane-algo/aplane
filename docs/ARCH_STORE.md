@@ -636,8 +636,8 @@ generation. Until that succeeds, it deletes nothing.
 
 - Incomplete `.staging-*` directories and durable-write temporary files have
   never carried authority and are removed.
-- Sealed, referenced, and declared-parent generations are retained.
-- A complete, non-current, unsealed, unreferenced final directory is ambiguous:
+- Sealed and declared-parent generations are retained.
+- Any other complete, non-current, unsealed final directory is ambiguous:
   it may be crashed-mint residue or newer state orphaned by restoration of an
   older authentic root. It is classified and quarantined, never adopted or
   deleted.

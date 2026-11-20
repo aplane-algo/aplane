@@ -349,19 +349,15 @@ func verifySuccessorMint(paths storepaths.Paths, req MintRequest) error {
 	if req.Parent == "" {
 		return fmt.Errorf("atomic store-root successor mint requires a parent")
 	}
-	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
+	selected, err := AuthenticateStoreRootSelection(paths, req.Integrity)
 	if err != nil {
 		return fmt.Errorf("mint: %w", err)
 	}
-	selection, err := crypto.AuthenticateStoreRoot(exact, req.Integrity)
-	if err != nil {
-		return fmt.Errorf("mint: authenticate store root: %w", err)
-	}
-	if selection.CurrentGenerationID != req.Parent {
+	if selected.GenerationID() != req.Parent {
 		return fmt.Errorf(
 			"mint parent %q is not the store-root current generation %s",
 			req.Parent,
-			selection.CurrentGenerationID,
+			selected.GenerationID(),
 		)
 	}
 	if err := requireMintableGenerationStore(paths, req.Integrity); err != nil {
