@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
@@ -55,7 +56,7 @@ func TestBuildUnlockPlanLockedWithoutKeystore(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	opts := &Options{
+	opts := &bootstrap.Startup{
 		DataDir: root,
 		Config:  serverconfig.DefaultServerConfig(),
 		Paths:   storepaths.NewPaths(root),
@@ -84,7 +85,7 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 	paths := storepaths.NewPaths(root)
 	createAtomicStoreRootForOptionsTest(t, paths, passphrase)
 
-	opts := &Options{
+	opts := &bootstrap.Startup{
 		DataDir: root,
 		Config:  serverconfig.DefaultServerConfig(),
 		Paths:   paths,
@@ -119,7 +120,7 @@ func TestBuildUnlockPlanUsesPassphraseCommand(t *testing.T) {
 	if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
-	opts := &Options{
+	opts := &bootstrap.Startup{
 		DataDir: root,
 		Config:  cfg,
 		Paths:   paths,
@@ -151,7 +152,7 @@ func TestBuildUnlockPlanReportsADamagedStoreRootApartFromAWrongPassphrase(t *tes
 	t.Parallel()
 
 	passphrase := "startup-passphrase"
-	newStore := func(t *testing.T, helperReturns string) *Options {
+	newStore := func(t *testing.T, helperReturns string) *bootstrap.Startup {
 		t.Helper()
 		root := t.TempDir()
 		paths := storepaths.NewPaths(root)
@@ -160,21 +161,21 @@ func TestBuildUnlockPlanReportsADamagedStoreRootApartFromAWrongPassphrase(t *tes
 		if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
 			t.Fatalf("SaveUnlockConfig() error = %v", err)
 		}
-		return &Options{DataDir: root, Config: serverconfig.DefaultServerConfig(), Paths: paths}
+		return &bootstrap.Startup{DataDir: root, Config: serverconfig.DefaultServerConfig(), Paths: paths}
 	}
-	damage := func(t *testing.T, opts *Options) {
+	damage := func(t *testing.T, opts *bootstrap.Startup) {
 		t.Helper()
 		rootPath := filepath.Join(opts.Paths.ProductDir(), storepaths.StoreRootName)
 		if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sources := map[string]func(*Options, string) error{
-		"TEST_PASSPHRASE": func(opts *Options, p string) error {
+	sources := map[string]func(*bootstrap.Startup, string) error{
+		"TEST_PASSPHRASE": func(opts *bootstrap.Startup, p string) error {
 			_, err := BuildUnlockPlan(opts, true, p)
 			return err
 		},
-		"helper": func(opts *Options, _ string) error {
+		"helper": func(opts *bootstrap.Startup, _ string) error {
 			_, err := BuildUnlockPlan(opts, true, "")
 			return err
 		},
@@ -218,7 +219,7 @@ func TestValidateAndBuildUnlockPlanRejectsExtraIdentityBeforePassphraseCommand(t
 	if err := unlockconfig.SaveUnlockConfig(root, &unlockconfig.UnlockConfig{PassphraseCommandArgv: []string{helper, marker}}); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
-	opts := &Options{
+	opts := &bootstrap.Startup{
 		DataDir: root,
 		Config:  cfg,
 		Paths:   paths,
@@ -265,26 +266,5 @@ func createAtomicStoreRootForOptionsTest(t *testing.T, paths storepaths.Paths, p
 		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
 	}); err != nil {
 		t.Fatalf("Mint(atomic test store) error = %v", err)
-	}
-}
-
-func TestLoadOptionsResolvesBootstrapState(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("endpoint:\n  signer_port: 22334\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	opts, err := LoadOptions(root)
-	if err != nil {
-		t.Fatalf("LoadOptions() error = %v", err)
-	}
-	if opts.DataDir != root {
-		t.Fatalf("LoadOptions() data dir = %q, want %q", opts.DataDir, root)
-	}
-	if opts.Config.Endpoint.SignerPort != 22334 {
-		t.Fatalf("LoadOptions() endpoint.signer_port = %d, want %d", opts.Config.Endpoint.SignerPort, 22334)
 	}
 }

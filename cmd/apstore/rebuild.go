@@ -138,9 +138,9 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	}
 	defer kr.Zero()
 
-	roleBytes, err := initializeRebuildNodeRole(nodeRole)
+	roleBytes, err := noderole.SaveInitial(keystorePaths(), nodeRole, time.Now())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create node role: %w", err)
 	}
 	// Until the mint may have committed, the node role file belongs to this
 	// attempt alone: remove it on failure so a retry is not refused by it.
@@ -246,16 +246,8 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 	return nil
 }
 
-func initializeRebuildNodeRole(role noderole.Role) ([]byte, error) {
-	roleBytes, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create node role: %w", err)
-	}
-	return roleBytes, nil
-}
-
 func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, kr *crypto.Keyring, exportPassphrase []byte, staged storepaths.GenPaths) error {
-	keysDir := resolveBackupKeysDir(sourceRoot)
+	keysDir := backup.ResolveBackupKeysDir(sourceRoot)
 	if len(addresses) == 0 {
 		var err error
 		addresses, err = backup.ScanBackupFiles(keysDir)

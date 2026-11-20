@@ -19,11 +19,6 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 	return policyapply.View(s.Runtime.NodePolicy(), s.heldPolicyKeys(), "")
 }
 
-// GetPolicyDocument returns one active policy document's exact bytes.
-func (s Service) GetPolicyDocument(key string) adminproto.PolicyDocumentResult {
-	return s.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: key})
-}
-
 // GetPolicyDocumentAt returns one active policy document's exact bytes,
 // refusing when ExpectedSnapshotSHA256 is set and the node's policy or
 // context moved since that snapshot.

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	utilpaths "github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -59,13 +58,10 @@ func TestCmdInitializeInitializes(t *testing.T) {
 	stdinReader = nil
 	var gotPassphrase string
 	var gotRole noderole.Role
-	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
+	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (string, string, error) {
 		gotPassphrase = string(passphrase)
 		gotRole = role
-		return protocol.InitializeStoreResultMessage{
-			Success:     true,
-			MetadataDir: keystorePaths().ProductDir(),
-		}, nil
+		return keystorePaths().ProductDir(), "", nil
 	}
 
 	err := withTestStdin("init-passphrase\ninit-passphrase\n", func() error {
@@ -123,12 +119,8 @@ func TestCmdInitializeReturnsInitializeFailure(t *testing.T) {
 	}()
 
 	stdinReader = nil
-	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
-		return protocol.InitializeStoreResultMessage{
-			Success: false,
-			Code:    "initialize_store_failed",
-			Error:   "keystore already initialized",
-		}, nil
+	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (string, string, error) {
+		return "", "", resultError("keystore initialization failed", "initialize_store_failed", "keystore already initialized")
 	}
 
 	err := withTestStdin("new-passphrase\nnew-passphrase\n", func() error {
@@ -136,5 +128,38 @@ func TestCmdInitializeReturnsInitializeFailure(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "already initialized") {
 		t.Fatalf("cmdInitialize() error = %v, want initialize failure", err)
+	}
+}
+
+// A store initialization that fails reports the initializer's reason under a
+// fixed prefix and code, and exits 1.
+func TestCmdInitializeFailureText(t *testing.T) {
+	oldDataDirectory := dataDirectory
+	oldConfig := config
+	oldReader := stdinReader
+	t.Cleanup(func() {
+		dataDirectory = oldDataDirectory
+		config = oldConfig
+		stdinReader = oldReader
+	})
+	dataDirectory = t.TempDir()
+	config = serverconfig.ServerConfig{}
+	stdinReader = nil
+	identityDir := keystorePaths().ProductDir()
+	if err := os.MkdirAll(identityDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(identityDir, "orphan.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := withTestStdin("pass\npass\n", func() error { return cmdInitialize(nil) })
+	want := "keystore initialization failed: initialize_store_failed: keystore appears partially initialized in " +
+		identityDir + "; clean up the existing identity directory before re-running initialize"
+	if err == nil || err.Error() != want {
+		t.Fatalf("cmdInitialize() error:\n got %v\nwant %s", err, want)
+	}
+	if got := exitCodeForError(err); got != 1 {
+		t.Fatalf("exit = %d, want 1", got)
 	}
 }

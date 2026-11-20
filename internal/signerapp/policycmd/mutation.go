@@ -49,11 +49,12 @@ func AcquireOfflineMutation(dataDir string) (*OfflineMutation, error) {
 		return guard, nil
 	}
 	managed, err := IsManagedStore(dataDir)
-	if err != nil || !managed {
-		if err != nil {
-			guard.Close()
-		}
-		return guard, err
+	if err != nil {
+		guard.Close()
+		return nil, err
+	}
+	if !managed {
+		return guard, nil
 	}
 	guard.managed = true
 	uid, gid, err := ManagedStoreOwner(dataDir)

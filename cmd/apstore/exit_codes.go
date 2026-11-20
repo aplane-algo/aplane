@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -17,17 +16,12 @@ const (
 	apstoreExitFailure     = 1
 	apstoreExitUsage       = 2
 	apstoreExitUnavailable = 3
-	apstoreExitRateLimited = 4
-	apstoreExitConflict    = 5
 	apstoreExitArchive     = 6
 )
 
-// policyIntegrityFailedCode classifies policy document integrity failures.
-// It maps to the generic failure exit code rather than the archive code the
-// old substring fallback misrouted these errors to.
+// policyIntegrityFailedCode classifies policy document integrity failures,
+// which exit apstoreExitFailure.
 const policyIntegrityFailedCode = "policy_integrity_failed"
-
-const apstoreCodeIPCUnavailable = "ipc_unavailable"
 
 // usageError is a malformed command line: a missing, unknown, duplicate or
 // invalid argument. It exits apstoreExitUsage, whatever its wording.
@@ -83,46 +77,16 @@ func exitCodeForError(err error) int {
 	if errors.As(err, &coded) {
 		return exitCodeForResultCode(coded.code)
 	}
-	var protocolCoded *protocol.CodedError
-	if errors.As(err, &protocolCoded) {
-		return exitCodeForResultCode(protocolCoded.Code)
-	}
 	return apstoreExitFailure
 }
 
+// exitCodeForResultCode maps the codes apstore attaches to its errors.
 func exitCodeForResultCode(code string) int {
-	switch strings.ToLower(strings.TrimSpace(code)) {
-	case "":
-		return apstoreExitFailure
-	case apstoreCodeIPCUnavailable:
+	switch code {
+	case protocol.ErrCodeInvalidPassphrase:
 		return apstoreExitUnavailable
-	case protocol.ErrCodeAuthenticationFailed,
-		protocol.ErrCodeInvalidPassphrase,
-		protocol.ErrCodeUnlockFailed,
-		protocol.ErrCodeAuthorizationDenied,
-		protocol.ErrCodeSignerLocked,
-		protocol.ErrCodeNoRuntimeBound:
-		return apstoreExitUnavailable
-	case protocol.ResultCodeRestoreRateLimited:
-		return apstoreExitRateLimited
-	case protocol.ResultCodeKeyTypeInUse,
-		protocol.ResultCodeActivationFailed,
-		protocol.ResultCodeDeactivationFailed,
-		protocol.ResultCodeRemoveFailed,
-		protocol.ResultCodeRestoreConflict,
-		protocol.ResultCodeRestoreRollbackDiverged:
-		return apstoreExitConflict
-	case "verification_failed",
-		"invalid_backup",
-		"corrupt_archive",
-		"bad_export_passphrase",
-		"unsupported_backup_format":
+	case "verification_failed", "corrupt_archive":
 		return apstoreExitArchive
-	case protocol.ErrCodeInvalidMessageFormat,
-		protocol.ErrCodeInvalidAuthMessage,
-		protocol.ErrCodeInvalidRequest,
-		protocol.ErrCodeUnknownMessageType:
-		return apstoreExitUsage
 	default:
 		return apstoreExitFailure
 	}

@@ -325,13 +325,6 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
-	if s.productServices == nil {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeInternal,
-			Error: "identity service unavailable",
-		}))
-		return AuthOutcomeBootstrapHandled
-	}
 	msg, err := decodeInitializeStore(raw)
 	if err != nil {
 		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{

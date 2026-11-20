@@ -13,8 +13,8 @@ import (
 	"strconv"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
@@ -39,7 +39,7 @@ func cmdPermissions(args []string) error {
 		logInfof("shared-group store structural preflight passed: inspected %d object(s)", result.Inspected)
 		return nil
 	}
-	managed, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
+	managed, err := signerbootstrap.IsProductionManagedDataDir(dataDirectory)
 	if err != nil {
 		return err
 	}
@@ -147,9 +147,6 @@ func cmdPermissionsPrepareManagedRoot(args []string) error {
 	if err != nil {
 		return err
 	}
-	if currentEUID() != 0 {
-		return fmt.Errorf("permissions prepare-managed-root requires root")
-	}
 	result, err := storeperm.PrepareManagedRoot(dataDirectory, uid, gid)
 	if err != nil {
 		return err
@@ -162,9 +159,6 @@ func cmdPermissionsConvertManaged(args []string) error {
 	uid, gid, err := parseManagedPrincipalFlags("permissions convert-managed", args)
 	if err != nil {
 		return err
-	}
-	if currentEUID() != 0 {
-		return fmt.Errorf("permissions convert-managed requires root")
 	}
 	if _, err := storeperm.PreflightShared(dataDirectory); err != nil {
 		return err

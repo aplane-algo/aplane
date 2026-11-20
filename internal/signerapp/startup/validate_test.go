@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/storeperm"
@@ -80,7 +81,7 @@ func TestBlockManualProdStart(t *testing.T) {
 	t.Run("allows managed marker under systemd", func(t *testing.T) {
 		dataDir := t.TempDir()
 		writeProdMarker(t, dataDir)
-		t.Setenv(systemdManagedInstanceEnv, "1")
+		t.Setenv(signerbootstrap.SystemdManagedInstanceEnv, "1")
 
 		if err := BlockManualProdStart(dataDir); err != nil {
 			t.Fatalf("BlockManualProdStart() error = %v, want nil", err)
@@ -191,7 +192,7 @@ func TestValidateProductionStorePermissionsReturnsManualAncestorRepairHint(t *te
 
 func writeProdMarker(t *testing.T, dataDir string) {
 	t.Helper()
-	path := filepath.Join(dataDir, prodMarkerFile)
+	path := filepath.Join(dataDir, signerbootstrap.ProdMarkerFile)
 	if err := os.WriteFile(path, []byte("systemd-managed\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile(%s) error = %v", path, err)
 	}
@@ -199,5 +200,5 @@ func writeProdMarker(t *testing.T, dataDir string) {
 
 func setNoSystemdEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv(systemdManagedInstanceEnv, "")
+	t.Setenv(signerbootstrap.SystemdManagedInstanceEnv, "")
 }

@@ -75,9 +75,6 @@ func (fs *Signer) signingAuditLogger(attr auditAttribution) signingAudit {
 // LogRequest records one slot of a request as it arrived: a SIGN_REQUEST,
 // or a PLAN_REQUEST for /plan.
 func (l *signingAuditLogger) LogRequest(kind signersigning.RequestKind, authAddress, txnSender, txnType, details string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	if kind == signersigning.RequestToPlan {
 		l.log.LogPlanRequestAttributed(l.attribution, authAddress, txnSender, txnType, details)
 		return
@@ -86,9 +83,6 @@ func (l *signingAuditLogger) LogRequest(kind signersigning.RequestKind, authAddr
 }
 
 func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignApprovedAttributed(l.attribution, txnRecordOf(record))
 }
 
@@ -96,9 +90,6 @@ func (l *signingAuditLogger) LogSignApproved(record signersigning.SignedRecord) 
 // request, which the signer did not sign, identified as planned the way a
 // SIGN_APPROVED identifies a signed one.
 func (l *signingAuditLogger) LogSignRejectedRecord(record signersigning.SignedRecord, reason string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignRejectedTxnAttributed(l.attribution, txnRecordOf(record), reason)
 }
 
@@ -118,61 +109,40 @@ func txnRecordOf(record signersigning.SignedRecord) signeraudit.TxnRecord {
 }
 
 func (l *signingAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason, "")
 }
 
 func (l *signingAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignRejectedAttributed(l.attribution, authAddress, txnSender, reason, policyRuleID)
 }
 
 func (l *signingAuditLogger) LogCosignerComponentRejected(witnessKeyID, txnSender, reason, policyRuleID string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogCosignerComponentRejectedAttributed(l.attribution, witnessKeyID, txnSender, reason, policyRuleID)
 }
 
 func (l *signingAuditLogger) LogSignFailed(authAddress, txnSender, reason string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignFailedAttributed(l.attribution, authAddress, txnSender, reason)
 }
 
 // LogSignWithheld records a signature already recorded as signed that never
 // left the signer, under its SIGN_APPROVED's txid and group_id.
 func (l *signingAuditLogger) LogSignWithheld(record signersigning.SignedRecord, reason string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogSignWithheldAttributed(l.attribution, record.AuthAddress, record.TxnSender, record.TxID, record.GroupID, reason)
 }
 
 // LogRotatingRelease records a rotating release durably before the
 // signature leaves the signer.
 func (l *signingAuditLogger) LogRotatingRelease(account, txid string, stage, lastValid, tree uint64, index uint32) error {
-	if l == nil || l.log == nil {
-		return nil
-	}
 	return l.log.LogRotatingReleaseAttributed(l.attribution, account, txid, stage, lastValid, tree, index)
 }
 
 // LogRotatingRecovery records an operator's recovery request.
 func (l *signingAuditLogger) LogRotatingRecovery(_ context.Context, account, action string, grantID uint64, detail string) {
-	if l == nil || l.log == nil {
-		return
-	}
 	l.log.LogRotatingRecoveryAttributed(l.attribution, account, action, grantID, detail)
 }
 
 func (l *signingAuditLogger) RecordApprovalResponse(response signerapproval.SignResponse) {
-	if l == nil || response.ApproverPrincipal == "" {
+	if response.ApproverPrincipal == "" {
 		return
 	}
 	l.attribution.ApproverPrincipal = response.ApproverPrincipal

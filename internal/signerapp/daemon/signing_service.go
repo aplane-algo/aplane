@@ -47,7 +47,6 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 		Approval:                      fs.newApprovalServiceWithAudit(ir, auditLog),
 		Executor:                      fs.newExecutionServiceWithAudit(auditLog),
 		AuditLog:                      auditLog,
-		Console:                       signerConsole{},
 		GenerateTxnDescriptionFromTxn: describe,
 		IsUnlocked:                    inSession,
 		BeforeExecute: func() (func(), *signersigning.ServiceError) {

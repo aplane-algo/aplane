@@ -15,11 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
-const (
-	prodMarkerFile            = signerbootstrap.ProdMarkerFile
-	systemdManagedInstanceEnv = signerbootstrap.SystemdManagedInstanceEnv
-)
-
 // RuntimeState holds the results of process runtime capability checks.
 type RuntimeState struct {
 	CoreDumpsDisabled bool
@@ -37,7 +32,7 @@ var managedServiceOwner = storeperm.ManagedServiceOwner
 // BlockManualProdStart rejects manual startup for a systemd-managed data
 // directory unless the process is running under systemd.
 func BlockManualProdStart(dataDir string) error {
-	prodManaged, err := IsProductionManagedDataDir(dataDir)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
 	}
@@ -45,7 +40,7 @@ func BlockManualProdStart(dataDir string) error {
 		return nil
 	}
 
-	if RunningUnderSystemd() {
+	if signerbootstrap.RunningUnderSystemd() {
 		return nil
 	}
 
@@ -55,22 +50,10 @@ func BlockManualProdStart(dataDir string) error {
 	)
 }
 
-// IsProductionManagedDataDir reports whether dataDir has the systemd-managed
-// marker written by the systemd installer.
-func IsProductionManagedDataDir(dataDir string) (bool, error) {
-	return signerbootstrap.IsProductionManagedDataDir(dataDir)
-}
-
-// RunningUnderSystemd reports whether the process appears to be launched by
-// systemd or an equivalent service manager PID 1 context.
-func RunningUnderSystemd() bool {
-	return signerbootstrap.RunningUnderSystemd()
-}
-
 // ValidateProductionStorePermissions fails before configuration or lock files
 // are opened when a systemd-managed store is not private to the daemon's uid.
 func ValidateProductionStorePermissions(dataDir string) error {
-	prodManaged, err := IsProductionManagedDataDir(dataDir)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
 	}

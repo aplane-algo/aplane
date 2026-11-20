@@ -23,7 +23,8 @@ import (
 // carry document contents. Intents are written before the request is
 // validated, so every string from a request, and every error text that may
 // echo one, is bounded: an entry stays small whatever was sent. Selector
-// lists are bounded too, with the number left out.
+// lists are bounded too, with the number left out. normalizeEntry applies
+// every bound but the error text's, which is shorter here than elsewhere.
 
 const (
 	// maxAuditSelectors bounds the members of one list in an entry:
@@ -80,10 +81,10 @@ func (a *AuditLogger) LogPolicyApplyIntentDurableContext(ctx adminserver.Session
 	for _, doc := range req.Documents {
 		keys = append(keys, doc.Key)
 	}
-	entry.PolicyUpdates, entry.PolicyUpdatesOmitted = boundList(keys)
-	entry.PolicyRemovals, entry.PolicyRemovalsOmitted = boundList(req.Remove)
-	entry.ExpectedPolicySetSHA256 = boundText(req.ExpectedPolicySetSHA256, maxAuditField)
-	entry.ExpectedSnapshotSHA256 = boundText(req.ExpectedSnapshotSHA256, maxAuditField)
+	entry.PolicyUpdates = keys
+	entry.PolicyRemovals = req.Remove
+	entry.ExpectedPolicySetSHA256 = req.ExpectedPolicySetSHA256
+	entry.ExpectedSnapshotSHA256 = req.ExpectedSnapshotSHA256
 	return a.logDurable(entry)
 }
 
@@ -104,7 +105,7 @@ func (a *AuditLogger) LogPolicyApplyResultContext(ctx adminserver.SessionContext
 		entry.Event, entry.Outcome = AuditPolicyApplyFailed, "failed"
 	}
 	if !result.Success {
-		entry.ResultCode, entry.Reason = boundText(result.Code, maxAuditField), boundText(result.Error, maxAuditReason)
+		entry.ResultCode, entry.Reason = result.Code, boundText(result.Error, maxAuditReason)
 	}
 	a.Log(entry)
 }
@@ -118,7 +119,7 @@ func (a *AuditLogger) LogASASetUpdateIntentDurableContext(ctx adminserver.Sessio
 	entry.Outcome = "requested"
 	entry.OperationID = operationID
 	entry.ASAAction = action
-	entry.Network, entry.GenesisHash, entry.AssetID = boundText(network, maxAuditField), boundText(genesisHash, maxAuditField), assetID
+	entry.Network, entry.GenesisHash, entry.AssetID = network, genesisHash, assetID
 	return a.logDurable(entry)
 }
 
@@ -145,7 +146,7 @@ func (a *AuditLogger) logASAResult(ctx adminserver.SessionContext, operationID, 
 	entry := sessionAuditFields(ctx)
 	entry.OperationID = operationID
 	entry.ASAAction = action
-	entry.Network, entry.GenesisHash, entry.AssetID = boundText(network, maxAuditField), boundText(genesis, maxAuditField), assetID
+	entry.Network, entry.GenesisHash, entry.AssetID = network, genesis, assetID
 	entry.GenerationID = generationID
 	switch {
 	case success:
@@ -157,7 +158,7 @@ func (a *AuditLogger) logASAResult(ctx adminserver.SessionContext, operationID, 
 		entry.Event, entry.Outcome = AuditASASetUpdateFailed, "failed"
 	}
 	if !success {
-		entry.ResultCode, entry.Reason = boundText(code, maxAuditField), boundText(reason, maxAuditReason)
+		entry.ResultCode, entry.Reason = code, boundText(reason, maxAuditReason)
 	}
 	a.Log(entry)
 }

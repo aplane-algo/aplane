@@ -6,38 +6,12 @@ package startup
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
-	"github.com/aplane-algo/aplane/internal/storepaths"
 )
-
-// Options captures resolved signer startup inputs after bootstrap.
-type Options struct {
-	DataDir           string
-	Config            serverconfig.ServerConfig
-	PassphraseTimeout time.Duration
-	Paths             storepaths.Paths
-}
-
-// LoadOptions resolves the signer bootstrap state into a normalized startup
-// model that can be passed through validation and runtime assembly.
-func LoadOptions(dataDirFlag string) (*Options, error) {
-	startup, err := bootstrap.Load(dataDirFlag)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Options{
-		DataDir:           startup.DataDir,
-		Config:            startup.Config,
-		PassphraseTimeout: startup.PassphraseTimeout,
-		Paths:             startup.Paths,
-	}, nil
-}
 
 // UnlockSource describes how the signer obtained its startup unlock state.
 type UnlockSource string
@@ -62,7 +36,7 @@ type UnlockPlan struct {
 // the single-product-store layout, before resolving a passphrase source.
 // Keeping that order in one operation prevents an invalid store layout from
 // invoking an operator-configured passphrase helper.
-func ValidateAndBuildUnlockPlan(opts *Options, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
+func ValidateAndBuildUnlockPlan(opts *bootstrap.Startup, runtime *RuntimeState, testPassphrase string) (*ValidationInfo, *UnlockPlan, error) {
 	info, err := Validate(&opts.Config, runtime, opts.Paths)
 	if err != nil {
 		return nil, nil, fmt.Errorf("startup validation failed: %w", err)
@@ -92,7 +66,7 @@ func ResolveUnlockConfig(dataDir string) (*unlockconfig.UnlockConfig, error) {
 // BuildUnlockPlan resolves whether startup begins locked or unlocked and, for
 // headless/test startup, loads and verifies the passphrase before runtime
 // construction begins.
-func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) (*UnlockPlan, error) {
+func BuildUnlockPlan(opts *bootstrap.Startup, keystoreExists bool, testPassphrase string) (*UnlockPlan, error) {
 	if !keystoreExists {
 		return &UnlockPlan{
 			StartLocked: true,

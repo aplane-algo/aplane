@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -641,7 +641,7 @@ func TestRequestSingleTxnApprovalPassesWarningViolationsAndCanApprove(t *testing
 		Type: types.PaymentTx,
 		Header: types.Header{
 			Sender: types.Address{1},
-			Fee:    types.MicroAlgos(approvalpolicy.DefaultMaxFeeMicroAlgos + 1),
+			Fee:    types.MicroAlgos(txnreview.DefaultMaxFeeMicroAlgos + 1),
 		},
 	}
 

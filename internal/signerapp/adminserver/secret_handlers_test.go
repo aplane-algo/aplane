@@ -7,9 +7,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // secretRequest is one admin request that carries secrets, and the secret
@@ -71,29 +69,6 @@ func TestRefusedSecretRequestsZeroTheirSecrets(t *testing.T) {
 			request.handle(session)
 			if len(conn.writes) != 1 || !bytes.Contains(conn.writes[0], []byte(protocol.ErrCodeNoRuntimeBound)) {
 				t.Fatalf("%s: replies = %q, want one refusal", request.name, conn.writes)
-			}
-			assertSecretsZeroed(t, request)
-		})
-	}
-}
-
-// The backup and restore requests refused because the backup service is
-// unavailable, past the runtime and authorization gates, zero their secrets.
-func TestSecretRequestsRefusedWithoutBackupServiceZeroTheirSecrets(t *testing.T) {
-	want := map[string]bool{"backup": true, "commit backup import": true, "preview restore": true, "restore backup": true}
-	for _, request := range secretRequests() {
-		if !want[request.name] {
-			continue
-		}
-		t.Run(request.name, func(t *testing.T) {
-			ir := productruntime.New(productruntime.Config{})
-			ir.SetUnlocked()
-			conn := &queueConn{}
-			session := NewSession(conn, SessionDeps{Product: &stubServices{}}, OriginLocal)
-			session.Bind(auth.NewProductIdentity("test"), ir)
-			request.handle(session)
-			if len(conn.writes) != 1 || !bytes.Contains(conn.writes[0], []byte("backup service unavailable")) {
-				t.Fatalf("%s: replies = %q, want the unavailable refusal", request.name, conn.writes)
 			}
 			assertSecretsZeroed(t, request)
 		})

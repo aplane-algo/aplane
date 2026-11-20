@@ -489,7 +489,7 @@ func TestCosignerReferenceFilesRoundTrip(t *testing.T) {
 }
 
 func TestReadCosignerEnvelopeFromStdinRejectsOversize(t *testing.T) {
-	_, err := ReadCosignerPublicEnvelope("-", strings.NewReader(strings.Repeat("x", maxCosignerPublicEnvelopeBytes+1)))
+	_, err := ReadCosignerPublicEnvelope("-", strings.NewReader(strings.Repeat("x", MaxCosignerPublicEnvelopeBytes+1)))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("ReadCosignerPublicEnvelope() error = %v, want size rejection", err)
 	}

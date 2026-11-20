@@ -33,9 +33,6 @@ type GenericLSigGenerator struct {
 }
 
 func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productruntime.Runtime, keyType string, parameters map[string]string) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	template, err := genericlsig.GetOrError(keyType)
 	if err != nil {
 		return "", fmt.Errorf("%w: unknown generic lsig type: %s", errBadRequest, keyType)

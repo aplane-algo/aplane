@@ -88,7 +88,7 @@ func TestCheckDecodedTxnWarnings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			violations := CheckDecodedTxnWarnings(tc.txn, nil)
+			violations := CheckDecodedTxnWarningsIn(tc.txn, Context{})
 			if len(violations) != tc.wantCount {
 				t.Errorf("expected %d violations, got %d: %+v", tc.wantCount, len(violations), violations)
 			}
@@ -99,77 +99,12 @@ func TestCheckDecodedTxnWarnings(t *testing.T) {
 	}
 }
 
-func TestCheckGroupWarnings(t *testing.T) {
-	nonZeroAddr := types.Address{1}
-
-	t.Run("sparse group with warnings on different txns", func(t *testing.T) {
-		txns := []types.Transaction{
-			{},
-			{Header: types.Header{RekeyTo: nonZeroAddr}},
-			{},
-			{PaymentTxnFields: types.PaymentTxnFields{CloseRemainderTo: nonZeroAddr}},
-		}
-
-		violations := CheckGroupWarnings(txns, nil)
-		if len(violations) != 2 {
-			t.Fatalf("expected 2 violations, got %d: %+v", len(violations), violations)
-		}
-		if !strings.HasPrefix(violations[0].Field, "Tx 2/4:") {
-			t.Errorf("expected 'Tx 2/4:' prefix, got %q", violations[0].Field)
-		}
-		if !strings.HasPrefix(violations[1].Field, "Tx 4/4:") {
-			t.Errorf("expected 'Tx 4/4:' prefix, got %q", violations[1].Field)
-		}
-	})
-
-	t.Run("2-txn group with RekeyTo and CloseRemainderTo", func(t *testing.T) {
-		rekeyTarget := types.Address{0xAA}
-		closeTarget := types.Address{0xBB}
-
-		txns := []types.Transaction{
-			{Header: types.Header{RekeyTo: rekeyTarget}},
-			{PaymentTxnFields: types.PaymentTxnFields{CloseRemainderTo: closeTarget}},
-		}
-
-		violations := CheckGroupWarnings(txns, nil)
-		if len(violations) != 2 {
-			t.Fatalf("expected 2 violations, got %d: %+v", len(violations), violations)
-		}
-		if violations[0].Field != "Tx 1/2: RekeyTo" {
-			t.Errorf("expected 'Tx 1/2: RekeyTo', got %q", violations[0].Field)
-		}
-		if violations[0].Severity != "critical" {
-			t.Errorf("expected severity 'critical', got %q", violations[0].Severity)
-		}
-		if violations[0].Value != rekeyTarget.String() {
-			t.Errorf("expected value %q, got %q", rekeyTarget.String(), violations[0].Value)
-		}
-		if violations[1].Field != "Tx 2/2: CloseRemainderTo" {
-			t.Errorf("expected 'Tx 2/2: CloseRemainderTo', got %q", violations[1].Field)
-		}
-		if violations[1].Severity != "critical" {
-			t.Errorf("expected severity 'critical', got %q", violations[1].Severity)
-		}
-		if violations[1].Value != closeTarget.String() {
-			t.Errorf("expected value %q, got %q", closeTarget.String(), violations[1].Value)
-		}
-	})
-
-	t.Run("clean group produces no warnings", func(t *testing.T) {
-		txns := []types.Transaction{{}, {}, {}}
-		violations := CheckGroupWarnings(txns, nil)
-		if len(violations) != 0 {
-			t.Errorf("expected 0 violations, got %d: %+v", len(violations), violations)
-		}
-	})
-}
-
 func TestRekeyToKnownAddress(t *testing.T) {
 	rekeyTarget := types.Address{0xAA}
 	txn := types.Transaction{Header: types.Header{RekeyTo: rekeyTarget}}
 
 	t.Run("unknown target warns about losing control", func(t *testing.T) {
-		violations := CheckDecodedTxnWarnings(txn, nil)
+		violations := CheckDecodedTxnWarningsIn(txn, Context{})
 		if len(violations) != 1 {
 			t.Fatalf("expected 1 violation, got %d", len(violations))
 		}
@@ -180,7 +115,7 @@ func TestRekeyToKnownAddress(t *testing.T) {
 
 	t.Run("known target omits lose control warning", func(t *testing.T) {
 		known := map[string]bool{rekeyTarget.String(): true}
-		violations := CheckDecodedTxnWarnings(txn, known)
+		violations := CheckDecodedTxnWarningsIn(txn, Context{KnownAddresses: known})
 		if len(violations) != 1 {
 			t.Fatalf("expected 1 violation, got %d", len(violations))
 		}
@@ -197,7 +132,7 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 	txn := types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{
 		ConfigAsset: 42, AssetParams: types.AssetParams{Manager: manager},
 	}}
-	violations := CheckDecodedTxnWarnings(txn, nil)
+	violations := CheckDecodedTxnWarningsIn(txn, Context{})
 	if len(violations) != 1 || violations[0].Severity != signerapproval.ViolationSeverityWarning {
 		t.Fatalf("violations = %+v, want one warning", violations)
 	}
@@ -207,11 +142,11 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 			t.Fatalf("message missing %q:\n%s", want, msg)
 		}
 	}
-	destroy := CheckDecodedTxnWarnings(types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 42}}, nil)
+	destroy := CheckDecodedTxnWarningsIn(types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 42}}, Context{})
 	if len(destroy) != 1 || destroy[0].Severity != signerapproval.ViolationSeverityCritical || !strings.Contains(destroy[0].Message, "DESTROY asset #42") {
 		t.Fatalf("destroy violations = %+v, want one critical destroy warning", destroy)
 	}
-	unfreeze := CheckDecodedTxnWarnings(types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: manager, FreezeAsset: 42}}, nil)
+	unfreeze := CheckDecodedTxnWarningsIn(types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: manager, FreezeAsset: 42}}, Context{})
 	if len(unfreeze) != 1 || !strings.Contains(unfreeze[0].Message, "UNFREEZE") || unfreeze[0].Value != manager.String() {
 		t.Fatalf("unfreeze violations = %+v", unfreeze)
 	}
@@ -233,9 +168,6 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
 		if v := CheckDecodedTxnWarningsIn(txn, ctx); len(v) != 0 {
 			t.Fatalf("expected no findings, got %+v", v)
-		}
-		if v := CheckGroupWarningsIn([]types.Transaction{txn}, ctx, nil); len(v) != 0 {
-			t.Fatalf("expected no group findings, got %+v", v)
 		}
 	})
 
@@ -261,28 +193,10 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 		}
 	})
 
-	t.Run("the two-argument form never exempts a rekey", func(t *testing.T) {
+	t.Run("known addresses alone never exempt a rekey", func(t *testing.T) {
 		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
-		if v := CheckDecodedTxnWarnings(txn, ctx.KnownAddresses); len(v) != 1 {
+		if v := CheckDecodedTxnWarningsIn(txn, Context{KnownAddresses: ctx.KnownAddresses}); len(v) != 1 {
 			t.Fatalf("expected the held-address rekey finding, got %+v", v)
 		}
 	})
-}
-
-// A rekey-to list is one account's: in a group, a rekey on another position to
-// an address on it still warns that control is lost.
-func TestGroupWarningsScopeEachListToItsPosition(t *testing.T) {
-	target := types.Address{0xC1}
-	rekey := types.Transaction{Header: types.Header{RekeyTo: target}}
-	listed := map[int]map[string]bool{0: {target.String(): true}}
-	violations := CheckGroupWarningsIn([]types.Transaction{rekey, rekey}, Context{}, listed)
-	if len(violations) != 2 {
-		t.Fatalf("violations = %+v", violations)
-	}
-	if !strings.Contains(violations[0].Message, "rekey-to list") || !strings.Contains(violations[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
-		t.Fatalf("the listed position's warning = %q", violations[0].Message)
-	}
-	if strings.Contains(violations[1].Message, "rekey-to list") || !strings.Contains(violations[1].Message, "YOU WILL LOSE CONTROL") {
-		t.Fatalf("another position's warning = %q", violations[1].Message)
-	}
 }

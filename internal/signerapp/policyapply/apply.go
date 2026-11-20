@@ -9,6 +9,7 @@ package policyapply
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -101,7 +102,7 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 		if err := storepaths.ValidatePolicySelector(key); err != nil {
 			return nil, nil, Error{"invalid_policy_request", err.Error()}
 		}
-		if _, ok := byKey[key]; !ok || seen[key] {
+		if _, ok := byKey[key]; !ok {
 			return nil, nil, Error{"invalid_policy_request", fmt.Sprintf("cannot remove the policy for %s: it has none of its own", key)}
 		}
 		seen[key] = true
@@ -127,13 +128,15 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 			"the change leaves %d key policy documents; a node holds at most %d", len(byKey)-1, MaxPolicies)}
 	}
 	var resulting []policy.StoredDocument
-	for _, key := range sortedKeys(byKey) {
+	for _, key := range slices.Sorted(maps.Keys(byKey)) {
 		resulting = append(resulting, byKey[key])
 	}
 
 	var problems []adminproto.PolicyProblem
-	for _, doc := range docs {
-		if _, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role); err != nil {
+	decoded := make([]*policy.PolicyV1, len(docs))
+	for i, doc := range docs {
+		var err error
+		if decoded[i], err = policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role); err != nil {
 			problems = append(problems, documentProblem(doc.Key, err))
 		}
 	}
@@ -148,8 +151,8 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	if err != nil {
 		return nil, nil, Error{"policy_context_unavailable", fmt.Sprintf("the node's policy context is unavailable: %v", err)}
 	}
-	for _, doc := range docs {
-		problems = append(problems, admissionProblems(ctx, env.Role, doc)...)
+	for i, doc := range docs {
+		problems = append(problems, admissionProblems(ctx, doc.Key, decoded[i])...)
 	}
 	if len(problems) > 0 {
 		return nil, problems, nil
@@ -238,15 +241,11 @@ func TruncateText(s string, limit int) string {
 // outside its ASA set, a direct asa:<id> route term over several networks,
 // and a route with no asset on one of its networks. A submitted document is
 // refused for any of them.
-func admissionProblems(ctx *policycontext.Context, role noderole.Role, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
-	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, role)
-	if err != nil {
-		return nil
-	}
+func admissionProblems(ctx *policycontext.Context, key string, decoded *policy.PolicyV1) []adminproto.PolicyProblem {
 	found := policyadmission.Check(decoded, ctx)
 	out := make([]adminproto.PolicyProblem, 0, len(found))
 	for _, p := range found {
-		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: p.Pointer, Message: p.Message})
+		out = append(out, adminproto.PolicyProblem{Key: key, Pointer: p.Pointer, Message: p.Message})
 	}
 	return out
 }
@@ -255,7 +254,7 @@ func admissionProblems(ctx *policycontext.Context, role noderole.Role, doc admin
 // (the built-in networks plus the configured custom ones), and its ASA set.
 func NodeContext(env Env) (*policycontext.Context, error) {
 	networks := env.Networks
-	if networks.Map() == nil || len(networks.Map()) == 0 {
+	if len(networks.Map()) == 0 {
 		var custom map[string]string
 		if env.Config != nil {
 			custom = env.Config.GenesisHashNetworks
@@ -547,7 +546,7 @@ func KeyStatus(held map[string]bool, np *policyruntime.NodePolicy) []adminproto.
 		}
 	}
 	out := make([]adminproto.PolicyKeyStatus, 0, len(status))
-	for _, key := range sortedKeys(status) {
+	for _, key := range slices.Sorted(maps.Keys(status)) {
 		out = append(out, adminproto.PolicyKeyStatus{Key: key, Status: status[key]})
 	}
 	return out
@@ -571,13 +570,4 @@ func documentProblem(key string, err error) adminproto.PolicyProblem {
 		return adminproto.PolicyProblem{Key: key, Pointer: docErr.Pointer, Message: docErr.Msg}
 	}
 	return adminproto.PolicyProblem{Key: key, Message: err.Error()}
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for key := range m {
-		out = append(out, key)
-	}
-	slices.Sort(out)
-	return out
 }

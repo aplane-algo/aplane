@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,17 +64,15 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 	if err != nil {
 		return "", fmt.Errorf("load local signer SSH host key: %w", err)
 	}
-	if localSignerHostKeyProbe != nil {
-		if err := probeLocalSignerHostKey(host, sshPort, hostKey, refusedWait); err != nil {
-			return "", err
-		}
+	if err := probeLocalSignerHostKey(host, sshPort, hostKey, refusedWait); err != nil {
+		return "", err
 	}
 
-	address := knownHostAddress(host, sshPort)
+	address := knownhosts.Normalize(net.JoinHostPort(host, strconv.Itoa(sshPort)))
 	line := knownhosts.Line([]string{address}, hostKey)
 
 	if existing, err := os.ReadFile(knownHostsPath); err == nil {
-		for _, existingLine := range splitKnownHostLines(string(existing)) {
+		for _, existingLine := range strings.Split(string(existing), "\n") {
 			if existingLine == line {
 				return "", nil
 			}
@@ -181,28 +180,4 @@ func isLoopbackSSHHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func knownHostAddress(host string, port int) string {
-	if port == 22 {
-		return host
-	}
-	return "[" + host + "]:" + fmt.Sprint(port)
-}
-
-func splitKnownHostLines(data string) []string {
-	var lines []string
-	start := 0
-	for i, r := range data {
-		if r == '\n' {
-			if line := data[start:i]; line != "" {
-				lines = append(lines, line)
-			}
-			start = i + 1
-		}
-	}
-	if start < len(data) {
-		lines = append(lines, data[start:])
-	}
-	return lines
 }

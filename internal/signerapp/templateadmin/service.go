@@ -503,10 +503,8 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime
 	}
 	reloadReport, reloadErr := ir.Reload()
 	if reloadErr != nil {
-		if !installResult.AlreadyExists {
-			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
-				reloadErr = fmt.Errorf("%w (rollback failed: %v)", reloadErr, rollbackErr)
-			}
+		if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
+			reloadErr = fmt.Errorf("%w (rollback failed: %v)", reloadErr, rollbackErr)
 		}
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
@@ -517,10 +515,8 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime
 	}
 	if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, templateType) {
 		err := fmt.Errorf("template %s was enabled but did not activate on reload", installResult.KeyType)
-		if !installResult.AlreadyExists {
-			if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
-				err = fmt.Errorf("%w (rollback failed: %v)", err, rollbackErr)
-			}
+		if rollbackErr := templatelibrary.RollbackTemplateStateChange(s.Deps.KeyPaths(), installResult); rollbackErr != nil {
+			err = fmt.Errorf("%w (rollback failed: %v)", err, rollbackErr)
 		}
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
@@ -576,9 +572,9 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 				return stateErr
 			} else if ok {
 				disabledTemplate = true
-				removeResult, removeErr = s.disableInstalledTemplateKeyTypeLocked(keyType, templateType, masterKey)
+				removeResult, removeErr = templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
 			} else {
-				removeResult, removeErr = s.deactivateCompiledProviderKeyTypeLocked(keyType, masterKey)
+				removeResult, removeErr = templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), keyType, masterKey)
 			}
 			return removeErr
 		}); err != nil {
@@ -623,14 +619,6 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 		KeyType: removeResult.KeyType,
 		Removed: removeResult.Removed,
 	}
-}
-
-func (s Service) disableInstalledTemplateKeyTypeLocked(keyType string, templateType templatestore.TemplateType, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
-	return templatelibrary.DisableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, masterKey)
-}
-
-func (s Service) deactivateCompiledProviderKeyTypeLocked(keyType string, masterKey *crypto.Keyring) (templatelibrary.RemoveResult, error) {
-	return templatelibrary.DeactivateCompiledProvider(s.Deps.KeyPaths(), keyType, masterKey)
 }
 
 func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyType string, templateType templatestore.TemplateType) bool {

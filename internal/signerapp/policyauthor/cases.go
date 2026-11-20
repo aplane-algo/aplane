@@ -159,7 +159,7 @@ func (cf *CaseFile) validate() error {
 			return fmt.Errorf("two cases are named %q", c.Name)
 		case c.Document == "":
 			return fmt.Errorf("case %q names no document", c.Name)
-		case filepath.IsAbs(c.Document) || !filepath.IsLocal(c.Document):
+		case !filepath.IsLocal(c.Document):
 			return fmt.Errorf("case %q: document %q must be a path inside the workspace directory", c.Name, c.Document)
 		}
 		if _, ok := policyeval.ParseOutcome(c.Expect.Outcome); !ok {

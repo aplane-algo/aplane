@@ -14,13 +14,11 @@ import (
 // is decoded.
 const MaxCosignerPublicEnvelopeBytes = 64 * 1024
 
-const maxCosignerPublicEnvelopeBytes = MaxCosignerPublicEnvelopeBytes
-
 // ReadCosignerPublicEnvelope reads a bounded public witness envelope from a
 // regular file, or from stdin when path is "-".
 func ReadCosignerPublicEnvelope(path string, stdin io.Reader) ([]byte, error) {
 	if path != "-" {
-		data, _, err := fsutil.ReadRegularFileLimited(path, maxCosignerPublicEnvelopeBytes)
+		data, _, err := fsutil.ReadRegularFileLimited(path, MaxCosignerPublicEnvelopeBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read cosigner public key export: %w", err)
 		}
@@ -29,13 +27,13 @@ func ReadCosignerPublicEnvelope(path string, stdin io.Reader) ([]byte, error) {
 	if stdin == nil {
 		return nil, fmt.Errorf("cannot read cosigner public key export from stdin: stdin is unavailable")
 	}
-	limited := io.LimitReader(stdin, maxCosignerPublicEnvelopeBytes+1)
+	limited := io.LimitReader(stdin, MaxCosignerPublicEnvelopeBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read cosigner public key export from stdin: %w", err)
 	}
-	if len(data) > maxCosignerPublicEnvelopeBytes {
-		return nil, fmt.Errorf("cosigner public key export from stdin exceeds %d bytes", maxCosignerPublicEnvelopeBytes)
+	if len(data) > MaxCosignerPublicEnvelopeBytes {
+		return nil, fmt.Errorf("cosigner public key export from stdin exceeds %d bytes", MaxCosignerPublicEnvelopeBytes)
 	}
 	return data, nil
 }

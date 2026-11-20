@@ -121,7 +121,7 @@ func TestProductionAndTestmodeCommandCatalogsAreDisjoint(t *testing.T) {
 
 func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
 	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"--help"}, policyGlobalOptions{}, policyStreams{
+	code := runPolicyCommand(context.Background(), []string{"--help"}, adminBatchGlobalOptions{}, adminBatchStreams{
 		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
 	})
 	if code != 0 {
@@ -137,9 +137,9 @@ func TestPolicyHelpDocumentsSecurityBoundaries(t *testing.T) {
 func TestPolicyRescueRejectsOnlineTransportFlagsBeforeWork(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"rescue", "check", "policy.json"}, policyGlobalOptions{
+	code := runPolicyCommand(context.Background(), []string{"rescue", "check", "policy.json"}, adminBatchGlobalOptions{
 		ipcPathPassed: true,
-	}, policyStreams{stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr})
+	}, adminBatchStreams{stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr})
 	if code != 2 || !strings.Contains(stderr.String(), "rescue cannot use") {
 		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, stderr.String())
 	}
@@ -149,7 +149,7 @@ func TestPolicyRescueDataDirectoryFailureIsRuntimeError(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_DATA", "")
 	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"rescue", "status"}, policyGlobalOptions{}, policyStreams{
+	code := runPolicyCommand(context.Background(), []string{"rescue", "status"}, adminBatchGlobalOptions{}, adminBatchStreams{
 		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
 	})
 	if code != 1 {
@@ -169,7 +169,7 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	}
 	for _, args := range [][]string{{"template", "--embedded", "signer"}, {"rescue", "template", "--embedded", "signer"}} {
 		var stdout, stderr bytes.Buffer
-		code := runPolicyCommand(context.Background(), args, policyGlobalOptions{dataDir: missing}, policyStreams{
+		code := runPolicyCommand(context.Background(), args, adminBatchGlobalOptions{dataDir: missing}, adminBatchStreams{
 			stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 		})
 		if code != 0 || stdout.String() != want || stderr.Len() != 0 {
@@ -177,7 +177,7 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"template", "--embedded", "operator"}, policyGlobalOptions{dataDir: missing}, policyStreams{
+	code := runPolicyCommand(context.Background(), []string{"template", "--embedded", "operator"}, adminBatchGlobalOptions{dataDir: missing}, adminBatchStreams{
 		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 	})
 	if code != 2 || !strings.Contains(stderr.String(), "signer or cosigner") {
@@ -187,7 +187,7 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	// the node: a missing store is a runtime failure, never the shipped text.
 	stdout.Reset()
 	stderr.Reset()
-	code = runPolicyCommand(context.Background(), []string{"rescue", "template"}, policyGlobalOptions{dataDir: missing}, policyStreams{
+	code = runPolicyCommand(context.Background(), []string{"rescue", "template"}, adminBatchGlobalOptions{dataDir: missing}, adminBatchStreams{
 		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
 	})
 	if code != 1 || stdout.Len() != 0 {
@@ -198,7 +198,7 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 func TestPolicyCommandRejectsRetiredPassphraseEnvironment(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "legacy")
 	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"status"}, policyGlobalOptions{}, policyStreams{
+	code := runPolicyCommand(context.Background(), []string{"status"}, adminBatchGlobalOptions{}, adminBatchStreams{
 		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
 	})
 	if code != 2 || !strings.Contains(stderr.String(), "APPOLICY_PASSPHRASE is retired") {

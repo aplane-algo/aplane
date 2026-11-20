@@ -7,10 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"syscall"
 
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
@@ -36,10 +35,10 @@ func runStoreMutatingCommand(command string, fn func() error) error {
 }
 
 func normalizeProductionStoreAfterRootMutation(command string) error {
-	if currentEUID() != 0 || !isOfflineMutatingCommand(command) {
+	if currentEUID() != 0 {
 		return nil
 	}
-	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDirectory)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDirectory)
 	if err != nil || !prodManaged {
 		return err
 	}
@@ -87,28 +86,17 @@ func enforceApstoreExecutionMode(dataDir string, args []string) error {
 	if isExternalFileOnlyCommand(args) {
 		return nil
 	}
-	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
+	prodManaged, err := signerbootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		return err
 	}
-	switch {
-	case prodManaged && currentEUID() != 0:
-		return fmt.Errorf(
-			"systemd-managed data directory %s requires root for apstore; run:\n  %s",
-			dataDir,
-			apstoreInvocation(true, dataDir, args),
-		)
-	case !prodManaged && currentEUID() == 0:
-		return fmt.Errorf(
-			"local signer data directory %s must not be managed as root; rerun without sudo:\n  %s",
-			dataDir,
-			apstoreInvocation(false, dataDir, args),
-		)
-	case !prodManaged && currentEUID() != 0:
-		return requireLocalDataDirOwnedByCurrentUser(dataDir, args)
-	default:
-		return nil
+	if err := signerbootstrap.EnforceExecutionMode("apstore", dataDir, prodManaged, currentEUID(), args); err != nil {
+		return err
 	}
+	if !prodManaged {
+		return requireLocalDataDirOwnedByCurrentUser(dataDir, args)
+	}
+	return nil
 }
 
 func isExternalFileOnlyCommand(args []string) bool {
@@ -133,45 +121,8 @@ func requireLocalDataDirOwnedByCurrentUser(dataDir string, args []string) error 
 		dataDir,
 		uid,
 		currentEUID(),
-		apstoreInvocation(true, dataDir, args),
+		signerbootstrap.Invocation("apstore", true, dataDir, args),
 	)
-}
-
-func apstoreInvocation(useSudo bool, dataDir string, args []string) string {
-	parts := []string{"apstore", "-d", dataDir}
-	if useSudo {
-		parts = append([]string{"sudo"}, parts...)
-	}
-	parts = append(parts, args...)
-	for i := range parts {
-		parts[i] = shellQuoteArg(parts[i])
-	}
-	return strings.Join(parts, " ")
-}
-
-func isShellSafeRune(r rune) bool {
-	switch {
-	case r >= 'a' && r <= 'z':
-		return true
-	case r >= 'A' && r <= 'Z':
-		return true
-	case r >= '0' && r <= '9':
-		return true
-	}
-	return strings.ContainsRune("@%_+=:,./-", r)
-}
-
-func shellQuoteArg(s string) string {
-	if s == "" {
-		return "''"
-	}
-	for _, r := range s {
-		if isShellSafeRune(r) {
-			continue
-		}
-		return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-	}
-	return s
 }
 
 func isOfflineMutatingCommand(command string) bool {
@@ -184,9 +135,6 @@ func isOfflineMutatingCommand(command string) bool {
 }
 
 func acquireOfflineMutationLockForArgs(args []string, dataDir string) (func(), error) {
-	if len(args) == 0 {
-		return func() {}, nil
-	}
 	if isStorePermissionCommand(args) && len(args) >= 2 &&
 		(args[1] == "audit" || args[1] == "preflight" || args[1] == "prepare-managed-root") {
 		return func() {}, nil

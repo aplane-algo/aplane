@@ -230,12 +230,11 @@ func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeI
 }
 
 // storeEnabledKeyTypes returns the key types the store's activation records
-// enable, or none while the store is locked. A list it returns is never nil,
-// which buildKeyTypes would read as every generic template enabled.
+// enable, or none while the store is locked.
 func storeEnabledKeyTypes(ir *productruntime.Runtime) ([]string, error) {
 	activePaths, err := ir.ActiveKeyPaths()
 	if errors.Is(err, keystore.ErrStoreLocked) {
-		return []string{}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -314,7 +313,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	for _, tmpl := range genericlsig.GetAll() {
 		// Generic template providers are process-global once registered, but
 		// identity inventory is gated by the product-store installed/enabled set.
-		if enabledGeneric != nil && !enabledGenericSet[strings.ToLower(strings.TrimSpace(tmpl.KeyType()))] {
+		if !enabledGenericSet[strings.ToLower(strings.TrimSpace(tmpl.KeyType()))] {
 			continue
 		}
 		info := signerapi.KeyTypeInfo{
