@@ -73,8 +73,8 @@ Note: endpoint SSH paths are relative to the data directory (installer default:
 needed. The client's enrolled SSH key is its only credential: the node
 authenticates the key at the SSH handshake and hands the tunneled API
 connection to its REST handler with that identity attached. There is no API
-token and no HTTP authentication header. Older `token_file`, `signer_port`,
-and `local_port` keys are ignored on load and dropped by the next write.
+token and no HTTP authentication header. A `token_file`, `signer_port` or
+`local_port` key in an endpoint record is an unknown field and is refused.
 Default client keys and host trust live under `$APCLIENT_DATA/.ssh/`.
 Explicit endpoint paths may select other operator-controlled files. A missing
 identity file is created on first use; when it cannot be created, `connect`
