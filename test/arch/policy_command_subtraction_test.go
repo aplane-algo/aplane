@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -174,6 +175,73 @@ func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
 		t.Fatalf("%s has %d Linux and %d macOS archive binary copies, want one of each", path, linuxCopies, darwinCopies)
 	}
 	return linux, darwin
+}
+
+// TestInstallerShowsTheInstallReadmeFirst runs install.sh from a scratch
+// archive root. The install_readme.txt beside it is the first thing it
+// prints, verbatim, before the usage and before an argument error; an empty
+// or absent note prints nothing, and one in the working directory is not
+// the archive's.
+func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+	installer := readTextFile(t, filepath.Join(repositoryRoot(t), "install.sh"))
+	note := "This release is new-install only: run the old uninstall.sh first.\n" +
+		"100% of %s keys move by recovery phrase; C:\\new\\table \\n \\e[31m \x1b[1mbold\x1b[0m\n" +
+		"$(touch pwned) ${HOME} `touch pwned`\n\n"
+	shown := "==> Release notes for this installer (install_readme.txt)\n" +
+		strings.TrimRight(note, "\n") + "\n" + strings.Repeat("=", 80) + "\n\n"
+	cases := []struct {
+		name    string
+		written bool
+		note    string
+		arg     string
+		code    int
+		want    string
+	}{
+		{name: "before the usage", written: true, note: note, arg: "--help", want: shown + "Usage:\n"},
+		{name: "before an argument error", written: true, note: note, arg: "--bogus", code: 2,
+			want: shown + "Error: unknown option: --bogus\n"},
+		{name: "empty", written: true, note: " \n\t\n", arg: "--help", want: "Usage:\n"},
+		{name: "absent", arg: "--help", want: "Usage:\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			archive, work := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(archive, "install.sh"), []byte(installer), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if tc.written {
+				if err := os.WriteFile(filepath.Join(archive, "install_readme.txt"), []byte(tc.note), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(work, "install_readme.txt"), []byte("not the archive's note\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(bash, filepath.Join(archive, "install.sh"), tc.arg)
+			cmd.Dir = work
+			cmd.Env = []string{"HOME=" + work, "PATH=/usr/bin:/bin"}
+			out, err := cmd.CombinedOutput()
+			if cmd.ProcessState == nil {
+				t.Fatalf("run install.sh: %v", err)
+			}
+			if code := cmd.ProcessState.ExitCode(); code != tc.code {
+				t.Fatalf("install.sh %s exited %d (%v), want %d:\n%s", tc.arg, code, err, tc.code, out)
+			}
+			if !strings.HasPrefix(string(out), tc.want) {
+				t.Errorf("install.sh %s output does not start with\n%q\ngot\n%q", tc.arg, tc.want, out)
+			}
+			if got := strings.Count(string(out), "==> Release notes"); got > 1 || strings.Contains(string(out), "not the archive's") {
+				t.Errorf("install.sh %s printed a note %d times or the working directory's note:\n%s", tc.arg, got, out)
+			}
+			if _, err := os.Stat(filepath.Join(work, "pwned")); !os.IsNotExist(err) {
+				t.Errorf("install.sh ran the note's text as shell (pwned: %v)", err)
+			}
+		})
+	}
 }
 
 func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {

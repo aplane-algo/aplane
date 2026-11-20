@@ -38,6 +38,25 @@ fi
 
 set -euo pipefail
 
+# The directory install.sh sits in: the release archive root or the checkout.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# A release can carry install_readme.txt beside install.sh: a note from the
+# maintainer that every operator sees before anything else, --help and
+# argument errors included. It is printed verbatim and nothing waits on it,
+# so unattended installs carry on. A note that exists but cannot be read
+# stops the install, since what it says may matter to it.
+show_install_readme() {
+    local note="$SCRIPT_DIR/install_readme.txt"
+    [ -f "$note" ] || return 0
+    local text
+    text="$(cat -- "$note")"
+    [[ "$text" == *[![:space:]]* ]] || return 0
+    printf '==> Release notes for this installer (install_readme.txt)\n%s\n%s\n\n' \
+        "$text" "================================================================================"
+}
+show_install_readme
+
 # Track how the user invoked us so the Ctrl+C trap can tell them how to
 # re-run. Starts as the literal invocation, but prompt_install_mode may
 # update it after the user picks systemd mode. If we were launched
@@ -971,8 +990,6 @@ check_local_config_consistency() {
     return 0
 }
 
-# Resolve script directory (works from repo checkout and extracted tarball)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC="$SCRIPT_DIR/bin"
 RELEASE_METADATA_SRC="$SCRIPT_DIR/release.json"
 # The binaries a release ships, as scripts/package-bootstrap-release.sh lists
