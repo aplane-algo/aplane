@@ -360,18 +360,37 @@ func TestImportIsCheckedAgainstThisNodesRole(t *testing.T) {
 	}
 }
 
+// withUnknownFieldForTest returns keyJSON with one more top-level field,
+// which this release refuses to parse.
+func withUnknownFieldForTest(t *testing.T, keyJSON []byte) []byte {
+	t.Helper()
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(keyJSON, &object); err != nil {
+		t.Fatal(err)
+	}
+	object["extra"] = json.RawMessage("1")
+	data, err := json.Marshal(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 // A recovery restore whose damaged destination credential is in the backup
-// but skipped there is refused, and says so with the skip reason: a skipped
-// copy repairs nothing.
+// but skipped there is refused, and names that credential with its skip
+// reason and the damage found: a skipped copy repairs nothing. A healthy
+// credential whose copy is skipped too is not named.
 func TestRecoveryRestoreNamesASkippedRepair(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	service := directRestoreTestService(paths, ir)
+	healthy, healthyJSON := keystest.Ed25519KeyJSON(t)
 	damaged, damagedJSON := keystest.Ed25519KeyJSON(t)
 	first := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID: "restore-initial", ExportPassphrase: []byte("export-passphrase"),
-		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, map[string][]byte{damaged: damagedJSON}, backup.BuildManagedArchivePath(paths, "initial")),
+		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, map[string][]byte{healthy: healthyJSON, damaged: damagedJSON},
+			backup.BuildManagedArchivePath(paths, "initial")),
 	})
 	if !first.Success {
 		t.Fatalf("initial restore = %+v", first)
@@ -382,24 +401,17 @@ func TestRecoveryRestoreNamesASkippedRepair(t *testing.T) {
 	}
 	ir.SetRecovery()
 
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(damagedJSON, &object); err != nil {
-		t.Fatal(err)
-	}
-	object["extra"] = json.RawMessage("1")
-	unknownField, err := json.Marshal(object)
-	if err != nil {
-		t.Fatal(err)
-	}
 	fresh, freshJSON := keystest.Ed25519KeyJSON(t)
 	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID: "restore-skipped-repair", ExportPassphrase: []byte("export-passphrase"),
-		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, map[string][]byte{damaged: unknownField, fresh: freshJSON}, backup.BuildManagedArchivePath(paths, "repair")),
+		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, map[string][]byte{
+			healthy: withUnknownFieldForTest(t, healthyJSON), damaged: withUnknownFieldForTest(t, damagedJSON), fresh: freshJSON,
+		}, backup.BuildManagedArchivePath(paths, "repair")),
 	})
-	want := "recovery restore refused: damaged destination credential " + damaged + " is in the backup, but its copy there is skipped: " + badMemberReason
+	want := "recovery restore refused: damaged destination credential " + damaged + " is in the backup, but its copy there is skipped (" + badMemberReason
 	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.HasPrefix(result.Error, want) ||
-		len(result.Skipped) != 1 || result.Skipped[0].Selector != damaged {
-		t.Fatalf("RestoreBackup(skipped repair) = %+v, want prefix %q", result, want)
+		!strings.Contains(result.Error, damaged+".key") || strings.Contains(result.Error, healthy) || len(result.Skipped) != 2 {
+		t.Fatalf("RestoreBackup(skipped repair) = %+v, want prefix %q naming only %s", result, want, damaged)
 	}
 	if after := selectedAtomicTestGenerationID(t, paths); after != before.GenerationID() {
 		t.Fatalf("store root after a refused recovery restore = %q, want %q", after, before.GenerationID())

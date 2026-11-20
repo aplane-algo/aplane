@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"time"
 	"unicode/utf8"
@@ -234,7 +233,7 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 			ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
 		}
 		if validateErr := storevalidate.RecoveryDestination(opts, repaired); validateErr != nil {
-			return recoveryRefusal(opts, current, repaired, set.Skipped, validateErr)
+			return recoveryRefusal(opts, repaired, set.Skipped, validateErr)
 		}
 	}
 	return r.commit(current, set, classification, masterKey)
@@ -242,38 +241,26 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 
 // recoveryRefusal explains a recovery restore refused for destination damage
 // outside what it repairs. When the damage lies only in credentials the
-// backup holds but skips, it names them with the skip reason: a skipped copy
-// repairs nothing. It only words the refusal, which is already decided, so
-// the wider validation it runs never lets a restore through.
+// backup holds but skips, it names the damaged ones with the skip reason: a
+// skipped copy repairs nothing. It keeps the validation's own error. It only
+// words the refusal, which is already decided, so the checks it runs never
+// let a restore through.
 func recoveryRefusal(
 	opts storevalidate.Options,
-	current storepaths.GenPaths,
 	repaired map[string]bool,
 	skipped []backup.SkippedEntry,
 	validateErr error,
 ) error {
-	var held []backup.SkippedEntry
-	for _, entry := range skipped {
-		if destinationHolds(current, entry.Selector) {
-			held = append(held, entry)
+	if damaged := damagedSkippedRepairs(opts, repaired, skipped); len(damaged) > 0 {
+		more := ""
+		if len(damaged) > 1 {
+			more = fmt.Sprintf(" (and %d more)", len(damaged)-1)
 		}
-	}
-	if len(held) > 0 {
-		widened := maps.Clone(repaired)
-		for _, entry := range held {
-			widened[entry.Selector] = true
-		}
-		if storevalidate.RecoveryDestination(opts, widened) == nil {
-			more := ""
-			if len(held) > 1 {
-				more = fmt.Sprintf(" (and %d more)", len(held)-1)
-			}
-			return restoreFailure(
-				protocol.ResultCodeRecoveryBlocked,
-				"recovery restore refused: damaged destination credential %s%s is in the backup, but its copy there is skipped: %s",
-				held[0].Selector, more, held[0].Reason,
-			)
-		}
+		return restoreFailure(
+			protocol.ResultCodeRecoveryBlocked,
+			"recovery restore refused: damaged destination credential %s%s is in the backup, but its copy there is skipped (%s): %v",
+			damaged[0].Selector, more, damaged[0].Reason, validateErr,
+		)
 	}
 	return restoreFailure(
 		protocol.ResultCodeRecoveryBlocked,
@@ -282,15 +269,35 @@ func recoveryRefusal(
 	)
 }
 
-// destinationHolds reports whether the generation has a managed credential
-// file for selector, of either class.
-func destinationHolds(current storepaths.GenPaths, selector string) bool {
-	for _, ext := range []string{keys.AccountKeyExtension, keys.CosignerCredentialExtension} {
-		if _, err := os.Lstat(filepath.Join(current.KeysDir(), selector+ext)); err == nil {
-			return true
+// damagedSkippedRepairs returns the skipped credentials whose destination
+// file is damaged, when the destination's damage lies in them alone, and
+// nothing otherwise.
+func damagedSkippedRepairs(opts storevalidate.Options, repaired map[string]bool, skipped []backup.SkippedEntry) []backup.SkippedEntry {
+	bySelector := make(map[string]backup.SkippedEntry, len(skipped))
+	for _, entry := range skipped {
+		bySelector[entry.Selector] = entry
+	}
+	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, repaired)
+	if err != nil {
+		return nil
+	}
+	widened := maps.Clone(repaired)
+	var damaged []backup.SkippedEntry
+	for _, warning := range scan.Warnings {
+		selector, _, ok := keys.ParseManagedCredentialFilename(filepath.Base(warning.KeyFile))
+		entry, held := bySelector[selector]
+		if !ok || !held {
+			return nil
+		}
+		if !widened[selector] {
+			widened[selector] = true
+			damaged = append(damaged, entry)
 		}
 	}
-	return false
+	if len(damaged) == 0 || storevalidate.RecoveryDestination(opts, widened) != nil {
+		return nil
+	}
+	return damaged
 }
 
 // commit mints the generation that holds the restored entries. A mint that
