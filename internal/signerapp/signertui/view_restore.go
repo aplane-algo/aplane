@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) renderRestorePassphrase() string {
@@ -262,9 +264,14 @@ func (m Model) renderRestoreDisplay() string {
 }
 
 // restoreErrorLines wraps an error to width and keeps at most budget lines,
-// marking a cut.
+// marking a cut. It wraps as the popup renders, so a word wider than the
+// popup, such as a store path, is broken and counted as the lines it takes.
 func restoreErrorLines(text string, width, budget int) []string {
-	lines := strings.Split(wrapPlainText(terminalSafeLines(text), width), "\n")
+	wrapped := lipgloss.NewStyle().Width(width).Render(wrapPlainText(terminalSafeLines(text), width))
+	lines := strings.Split(wrapped, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
 	if len(lines) <= budget {
 		return lines
 	}

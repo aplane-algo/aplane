@@ -238,3 +238,31 @@ func TestRestoreResultWithAWrappedErrorFitsAtMinSize(t *testing.T) {
 		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	}
 }
+
+// A recovery refusal naming a store path, a word wider than the popup, is
+// counted as the lines it takes: with two restored keys and twelve skipped
+// ones the border, the total and the cursor's row stay on screen at the
+// minimum size, wherever the cursor is.
+func TestRestoreResultWithAWideWordInTheErrorFitsAtMinSize(t *testing.T) {
+	path := "/var/lib/aplane-with-a-longer-data-directory/identities/default/generations/gen-1795194116-395d2716/keys/" +
+		"Q7FNSKXZ3B5O6XWIWNSXJ7AE3PJ4UIBMOJGRULNRNNDX4UDDC6RMCVXEXY.key"
+	result := RestoreDisplayResult{
+		ArchivePath: "aplane-backup.tar.gz",
+		Error: "recovery restore refused because destination authority outside the authenticated credential selection is damaged: " +
+			"unselected credentials: Failed to read key file " + path + ": key file must be encrypted",
+		Activated: []RestoreKeyInfo{{Address: "GOODADDR1", KeyType: "ed25519"}, {Address: "GOODADDR2", KeyType: "ed25519"}},
+	}
+	for i := range 12 {
+		result.Skipped = append(result.Skipped, RestoreSkipped{Selector: fmt.Sprintf("SKIPPED%051d", i), Reason: longSkipReason})
+	}
+	m := sizedForTest(t, Model{viewState: ViewRestoreDisplay, restore: restoreState{result: result}}, MinWidth, MinHeight)
+	for step := range result.rowCount() {
+		view := fitsMinSizeForTest(t, m)
+		for _, want := range []string{"╚", "Total: 2 activated keys, 12 skipped", "> "} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("cursor at row %d: %q missing from:\n%s", step, want, view)
+			}
+		}
+		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+}
