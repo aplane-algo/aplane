@@ -19,11 +19,14 @@ type VerifiedCredential struct {
 }
 
 // VerifyReport classifies every credential of an archive as a whole-archive
-// restore into its source role would: admitted, or skipped with the reason.
+// restore into a node of one role would: admitted, or skipped with the
+// reason.
 type VerifyReport struct {
 	BackupDir string
-	Verified  []VerifiedCredential
-	Skipped   []SkippedEntry
+	// SourceNodeRole is the role the archive was backed up from.
+	SourceNodeRole string
+	Verified       []VerifiedCredential
+	Skipped        []SkippedEntry
 }
 
 // DeepVerifyBackupBytes authenticates the exact archive inventory and admits
@@ -40,8 +43,38 @@ func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid backup source node role: %w", err)
 	}
-	report := &VerifyReport{BackupDir: backupDir, Verified: make([]VerifiedCredential, 0, len(archive.selectors))}
-	report.Skipped, err = archive.admitEach(archive.selectors, passphrase, role, func(entry CredentialEntry) error {
+	return archive.verify(backupDir, passphrase, role)
+}
+
+// VerifyImportedBackup admits every credential of an extracted archive for
+// role, the role of the node importing it, by the loader restore uses. It
+// refuses an archive in which nothing would restore on that node with a
+// SkipRefusalError, as restore does. An archive of another role is admitted
+// key by key all the same: the report names its source role, and a restore
+// on this node refuses it.
+func VerifyImportedBackup(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
+	archive, err := openArchive(backupDir, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	report, err := archive.verify(backupDir, passphrase, role)
+	if err != nil {
+		return nil, err
+	}
+	if len(report.Verified) == 0 {
+		return nil, &SkipRefusalError{Skipped: report.Skipped}
+	}
+	return report, nil
+}
+
+// verify admits every credential of the archive for role.
+func (a openedArchive) verify(backupDir string, passphrase []byte, role noderole.Role) (*VerifyReport, error) {
+	report := &VerifyReport{
+		BackupDir: backupDir, SourceNodeRole: a.manifest.SourceNodeRole,
+		Verified: make([]VerifiedCredential, 0, len(a.selectors)),
+	}
+	var err error
+	report.Skipped, err = a.admitEach(a.selectors, passphrase, role, func(entry CredentialEntry) error {
 		entry.ZeroSecrets()
 		report.Verified = append(report.Verified, VerifiedCredential{
 			Address: entry.Selector(), KeyType: entry.KeyType(), HasPolicy: entry.Policy != nil,

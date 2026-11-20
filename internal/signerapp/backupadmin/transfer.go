@@ -4,6 +4,7 @@
 package backupadmin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +25,7 @@ const (
 )
 
 var (
-	deepVerifyImportedBackup  = backup.DeepVerifyBackupBytes
+	deepVerifyImportedBackup  = backup.VerifyImportedBackup
 	syncBackupImportDirectory = fsutil.SyncDir
 )
 
@@ -168,14 +169,24 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err := backup.ExtractTarGzArchive(claimPath, sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("invalid backup archive: %w", err), s.Deps.KeyPaths().Root())
 	}
-	report, err := deepVerifyImportedBackup(sourceRoot, req.ExportPassphrase)
+	role := s.Runtime.NodeRole()
+	report, err := deepVerifyImportedBackup(sourceRoot, req.ExportPassphrase, role)
 	if err != nil {
-		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
+		refused := commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
+		var refusal *backup.SkipRefusalError
+		if errors.As(err, &refusal) {
+			refused.Skipped, refused.SkippedOmitted = projectSkippedEntries(refusal.Skipped)
+		}
+		return refused
 	}
 	// A credential a restore would skip does not block the import: restore
 	// skips it as well, so the rest of the archive stays restorable. The
-	// result names each one.
+	// result names each one, admitted for this node's role.
 	skipped, omitted := projectSkippedEntries(report.Skipped)
+	sourceRole := ""
+	if report.SourceNodeRole != string(role) {
+		sourceRole = report.SourceNodeRole
+	}
 	if err := removeBackupValidationDirectory(sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("remove backup validation directory: %w", err), s.Deps.KeyPaths().Root())
 	}
@@ -215,7 +226,10 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
-	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning, Skipped: skipped, SkippedOmitted: omitted}
+	return adminproto.CommitBackupImportResult{
+		Success: true, Backup: info, Warning: warning,
+		Skipped: skipped, SkippedOmitted: omitted, SourceNodeRole: sourceRole,
+	}
 }
 
 func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize int64) (string, error) {

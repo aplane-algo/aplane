@@ -281,3 +281,74 @@ func TestBoundSkipText(t *testing.T) {
 		t.Fatalf("boundSkipText(long) = %q (%d bytes)", got, len(got))
 	}
 }
+
+// writeImportArchiveForTest seals members, each a selector and its
+// plaintext, into an archive of role outside the managed directory.
+func writeImportArchiveForTest(t *testing.T, role noderole.Role, members map[string][]byte) string {
+	t.Helper()
+	root := t.TempDir()
+	apbDir := filepath.Join(root, "apb")
+	if err := os.MkdirAll(apbDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for selector, plaintext := range members {
+		encrypted, err := crypto.EncryptStandalone(plaintext, []byte("export-passphrase"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(apbDir, selector+".apb"), encrypted, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := backup.WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), []byte("export-passphrase"), nil); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "import.tar.gz")
+	if err := backup.CreateTarGzArchive(root, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	return archivePath
+}
+
+// An import is checked against the importing node's role. One in which
+// nothing would restore on this node is refused in the words a restore
+// uses, naming what it would skip; that covers a cosigner's backup on a
+// signer. An archive of another role with keys this node could hold
+// imports, saying where it came from: a restore here refuses it whole.
+func TestImportIsCheckedAgainstThisNodesRole(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	service := directRestoreTestService(paths, ir)
+	witness, witnessJSON := keystest.CosignerComponentFalcon1024KeyJSON(t, 0xcd)
+	account, accountJSON := keystest.Ed25519KeyJSON(t)
+
+	for _, tc := range []struct {
+		name    string
+		role    noderole.Role
+		members map[string][]byte
+		want    string
+	}{
+		{"nothing restorable", noderole.RoleSigner, map[string][]byte{"BAD": []byte(`{"format_version":3}`)},
+			"invalid backup contents: nothing to restore: the backup's only credential is skipped: BAD: " + badMemberReason},
+		{"a cosigner's backup", noderole.RoleCosigner, map[string][]byte{witness: witnessJSON},
+			"invalid backup contents: nothing to restore: the backup's only credential is skipped: " + witness + ": role-forbidden: "},
+	} {
+		name := strings.ReplaceAll(tc.name, " ", "-") + ".tar.gz"
+		result := importArchiveForTest(t, service, writeImportArchiveForTest(t, tc.role, tc.members), name)
+		if result.Success || !strings.HasPrefix(result.Error, tc.want) || len(result.Skipped) != 1 {
+			t.Fatalf("%s: CommitBackupImport() = %+v, want prefix %q", tc.name, result, tc.want)
+		}
+		if _, err := os.Lstat(filepath.Join(paths.ProductBackupsDir(), name)); !os.IsNotExist(err) {
+			t.Fatalf("%s: refused import was published: %v", tc.name, err)
+		}
+	}
+
+	crossRole := importArchiveForTest(t, service, writeImportArchiveForTest(t, noderole.RoleCosigner, map[string][]byte{account: accountJSON}), "cross-role.tar.gz")
+	if !crossRole.Success || len(crossRole.Skipped) != 0 || crossRole.SourceNodeRole != string(noderole.RoleCosigner) {
+		t.Fatalf("CommitBackupImport(cross role) = %+v", crossRole)
+	}
+	if same := importArchiveForTest(t, service, writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{account: accountJSON}), "same-role.tar.gz"); !same.Success || same.SourceNodeRole != "" {
+		t.Fatalf("CommitBackupImport(same role) = %+v", same)
+	}
+}

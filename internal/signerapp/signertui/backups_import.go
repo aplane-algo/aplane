@@ -354,11 +354,11 @@ func importedStatus(name string, result protocol.CommitBackupImportResultMessage
 	if result.Warning != "" {
 		status += "\nWarning: " + result.Warning
 	}
-	if len(result.Skipped) > 0 {
-		status += fmt.Sprintf("\n%d key(s) in it cannot be restored on this node; a restore will skip them:", len(result.Skipped)+result.SkippedOmitted)
-		for _, skipped := range result.Skipped {
-			status += "\n  " + skipped.Selector + ": " + skipped.Reason
-		}
+	if heading := apadminapp.ImportSkipHeading(result); heading != "" {
+		status += "\n" + heading
+	}
+	for _, skipped := range result.Skipped {
+		status += "\n  " + skipped.Selector + ": " + skipped.Reason
 	}
 	return status
 }
