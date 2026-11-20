@@ -448,9 +448,10 @@ func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
 func (s signerAdminServices) ListCosignerReferences() adminproto.ListCosignerReferencesResult {
 	ir := s.ProductRuntime()
 	var records []cosignerrefs.Record
+	var invalid []cosignerrefs.InvalidRecord
 	err := s.withStoreInspection(func() error {
 		var err error
-		records, err = cosignerrefs.List(ir.KeyPaths())
+		records, invalid, err = cosignerrefs.List(ir.KeyPaths())
 		return err
 	})
 	if err != nil {
@@ -460,6 +461,11 @@ func (s signerAdminServices) ListCosignerReferences() adminproto.ListCosignerRef
 	result := adminproto.ListCosignerReferencesResult{References: make([]adminproto.CosignerReferenceInfo, len(records))}
 	for i := range records {
 		result.References[i] = adminCosignerReference(records[i])
+	}
+	for _, bad := range invalid {
+		result.Invalid = append(result.Invalid, adminproto.InvalidCosignerReference{
+			Path: bad.Path, Name: bad.Stem, Reason: bad.Reason, Removable: bad.Removable(),
+		})
 	}
 	return result
 }
@@ -503,8 +509,8 @@ func (s signerAdminServices) RemoveCosignerReference(req adminproto.RemoveCosign
 	var componentKey string
 	err := s.withStoreMutation(func() error {
 		existing, found, err := cosignerrefs.Get(ir.KeyPaths(), req.Name)
-		// A record that does not parse fails the reference list; removing it
-		// is how the operator clears it.
+		// The reference list reports a record that does not parse; removing
+		// it is how the operator clears it.
 		if err != nil && !errors.Is(err, cosignerrefs.ErrInvalidRecord) {
 			return err
 		}

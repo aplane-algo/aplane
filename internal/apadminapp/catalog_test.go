@@ -441,6 +441,40 @@ func TestCatalogCosignerImportListShowAndRemoveRequests(t *testing.T) {
 	}
 }
 
+// The cosigner list names each reference file that is not a valid reference
+// and how to clear it, beside the valid references.
+func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		if _, ok := message.(protocol.ListCosignerReferencesMessage); !ok {
+			return fmt.Errorf("request = %T", message)
+		}
+		*result.(*protocol.CosignerReferencesListMessage) = protocol.CosignerReferencesListMessage{
+			References: []protocol.CosignerReferenceInfo{{Name: "lab", ComponentKey: "KEY", KeyType: "TYPE"}},
+			Invalid: []protocol.InvalidCosignerReferenceInfo{
+				{Path: "/store/cosigners/bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
+				{Path: "/store/cosigners/Lab.json", Name: "Lab", Reason: `"Lab" is not a reference name`},
+			},
+		}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	catalog := Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}
+	if err := catalog.Run("cosigner", []string{"list"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "lab  KEY  (TYPE)") {
+		t.Fatalf("list stdout = %q", stdout.String())
+	}
+	for _, want := range []string{
+		`warning: /store/cosigners/bad.json is not a valid cosigner reference: unsupported schema "wrong"; clear it with: apadmin cosigner remove bad` + "\n",
+		`warning: /store/cosigners/Lab.json is not a valid cosigner reference: "Lab" is not a reference name; delete the file to clear it` + "\n",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("list stderr = %q, want %q", stderr.String(), want)
+		}
+	}
+}
+
 func TestCatalogImportsCosignerEnvelopeFromStdin(t *testing.T) {
 	data, err := witness.MarshalPublicReference(testCosignerReference(t))
 	if err != nil {

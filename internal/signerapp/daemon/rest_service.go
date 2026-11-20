@@ -31,6 +31,7 @@ func (fs *Signer) restServiceWithSigningAudit(signingAudit signingAudit) signerr
 			},
 			StoreHealth:          &fs.storeHealth,
 			NetworkGenesisHashes: fs.networkGenesisHashes,
+			Warnf:                logWarnf,
 		},
 	}
 }

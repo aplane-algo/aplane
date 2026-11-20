@@ -531,7 +531,7 @@ func (c Catalog) listCosigners() error {
 	if result.Error != "" {
 		return resultError("cosigner list failed", result.Code, result.Error)
 	}
-	if len(result.References) == 0 {
+	if len(result.References) == 0 && len(result.Invalid) == 0 {
 		c.info("no cosigner references found")
 		return nil
 	}
@@ -542,6 +542,13 @@ func (c Catalog) listCosigners() error {
 			label = record.Name
 		}
 		_, _ = fmt.Fprintf(c.Streams.Stdout, "  %s  %s  (%s)\n", label, CompactWitnessKeyID(record.ComponentKey), record.KeyType)
+	}
+	for _, bad := range result.Invalid {
+		if bad.Removable {
+			c.warn("%s is not a valid cosigner reference: %s; clear it with: apadmin cosigner remove %s", bad.Path, bad.Reason, bad.Name)
+		} else {
+			c.warn("%s is not a valid cosigner reference: %s; delete the file to clear it", bad.Path, bad.Reason)
+		}
 	}
 	return nil
 }

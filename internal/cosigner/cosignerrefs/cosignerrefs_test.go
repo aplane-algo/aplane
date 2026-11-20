@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -45,9 +47,9 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatalf("PublicKeyHex = %q, want %q", got.PublicKeyHex, rec.PublicKeyHex)
 	}
 
-	list, err := List(paths)
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
+	list, invalid, err := List(paths)
+	if err != nil || len(invalid) != 0 {
+		t.Fatalf("List() invalid = %+v, error = %v", invalid, err)
 	}
 	if len(list) != 1 || list[0].Name != "lab-cosigner" {
 		t.Fatalf("List() = %#v, want one lab-cosigner record", list)
@@ -158,37 +160,94 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	}
 }
 
-// A record that does not parse fails the list, naming it, and so does a
-// generation choice by Witness Key ID, which reads the list. Delete clears it.
-func TestListRefusesAnInvalidRecordUntilItIsDeleted(t *testing.T) {
+// List reports every file that is not a valid reference beside the valid
+// ones: one bad file never hides the rest. A file named for a reference name
+// is cleared with Delete; any other one has to be deleted by hand.
+func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
 		t.Fatal(err)
 	}
-	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
-
-	if records, err := List(paths); !errors.Is(err, ErrInvalidRecord) || !strings.HasPrefix(err.Error(), "invalid cosigner reference bad: ") || records != nil {
-		t.Fatalf("List() = %#v, %v; want the invalid record refused", records, err)
-	}
-	if _, _, err := Get(paths, "bad"); !errors.Is(err, ErrInvalidRecord) || !strings.HasPrefix(err.Error(), "invalid cosigner reference bad: ") {
-		t.Fatalf("Get(bad) error = %v, want the invalid record refused", err)
-	}
-	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
+	valid, err := os.ReadFile(paths.CosignerRefPath("valid"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := map[string]string{ParamCosignerName: componentKey}
-	if _, err := ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, params); !errors.Is(err, ErrInvalidRecord) {
-		t.Fatalf("ResolveCreationParamsForComponents(by ID) error = %v, want the invalid record refused", err)
+	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
+	unreachable := []string{"._lab.json", "Foo.json", "a..b.json", "my ref.json"}
+	for _, file := range unreachable {
+		if err := os.WriteFile(filepath.Join(paths.CosignerRefsDir(), file), valid, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	records, invalid, err := List(paths)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(records) != 1 || records[0].Name != "valid" {
+		t.Fatalf("List() records = %#v, want the valid one", records)
+	}
+	want := []InvalidRecord{
+		{Path: filepath.Join(paths.CosignerRefsDir(), "._lab.json"), Stem: "._lab", Reason: `"._lab" is not a reference name`},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "Foo.json"), Stem: "Foo", Reason: `"Foo" is not a reference name`},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "a..b.json"), Stem: "a..b", Reason: `"a..b" is not a reference name`},
+		{Path: paths.CosignerRefPath("bad"), Stem: "bad", Reason: `unsupported schema "wrong"`},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "my ref.json"), Stem: "my ref", Reason: `"my ref" is not a reference name`},
+	}
+	if !reflect.DeepEqual(invalid, want) {
+		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
+	}
+	for _, bad := range invalid {
+		if bad.Removable() != (bad.Stem == "bad") {
+			t.Errorf("%s Removable() = %v", bad.Path, bad.Removable())
+		}
+	}
+	if got, want := invalid[1].String(), invalid[1].Path+`: "Foo" is not a reference name (not a reference name; delete the file to clear it)`; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got, want := invalid[3].String(), invalid[3].Path+`: unsupported schema "wrong" (remove reference bad to clear it)`; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 
 	if removed, err := Delete(paths, "bad"); err != nil || !removed {
 		t.Fatalf("Delete(bad) = %v, %v", removed, err)
 	}
-	records, err := List(paths)
-	if err != nil || len(records) != 1 || records[0].Name != "valid" {
-		t.Fatalf("List() after Delete = %#v, %v", records, err)
+	if _, invalid, err = List(paths); err != nil || len(invalid) != len(unreachable) {
+		t.Fatalf("List() after Delete invalid = %+v, %v; want the unreachable files only", invalid, err)
+	}
+}
+
+// Choosing a cosigner by Witness Key ID takes a valid match even beside
+// invalid files. With no valid match it fails naming them, since the one
+// sought may be among them; with none, the ID is simply not found.
+func TestResolveByWitnessKeyIDNamesInvalidFilesOnlyWithoutAMatch(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+		t.Fatal(err)
+	}
+	matching, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := witness.ID(witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(id string) (map[string]string, error) {
+		return ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: id})
+	}
+
+	if _, err := resolve(other); err == nil || errors.Is(err, ErrInvalidRecord) || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("resolve(no match, no invalid files) error = %v, want not found", err)
+	}
+	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
+	if resolved, err := resolve(matching); err != nil || resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(pub) {
+		t.Fatalf("resolve(match) = %v, %v; want the valid reference", resolved, err)
+	}
+	_, err = resolve(other)
+	if !errors.Is(err, ErrInvalidRecord) || !strings.Contains(err.Error(), paths.CosignerRefPath("bad")) {
+		t.Fatalf("resolve(no match) error = %v, want the invalid file named", err)
 	}
 }
 

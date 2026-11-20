@@ -547,10 +547,15 @@ The catalog is populated only by explicit operator import. Only the version 3
 record schema is read; a record in any other schema is reported as an
 unsupported schema, and one carrying fields outside it is rejected. Every read checks that `component_key` is the Witness Key ID
 `key_type` and `public_key_hex` derive, and that `imported_at` is the RFC 3339
-time the import stamped. A record that fails these checks is refused, never
-skipped: listing the references fails and names it, and `/keytypes` and a
-generation that picks a cosigner by Witness Key ID fail too, until the
-operator removes it with `apadmin cosigner remove <name>`. The admin protocol's cosigner
+time the import stamped. A `.json` file in `cosigners/` that is not a valid
+reference, a file whose name is not a reference name included, never breaks a
+listing and is never hidden: the reference list reports it beside the valid
+references, with its path and why, and `/keytypes` leaves it out of the
+cosigner choices and logs a warning naming the file. A cosigner picked by
+Witness Key ID fails, naming such files, only when no valid reference
+matches. `apadmin cosigner remove <name>` clears a file named for a reference
+name, whether or not it parses; any other file has to be deleted by hand. A
+directory or file that cannot be read fails the list. The admin protocol's cosigner
 references carry the same fields, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.
 Local operation obtains the store passphrase from `APSIGNER_PASSPHRASE` or a

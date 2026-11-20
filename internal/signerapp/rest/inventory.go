@@ -190,7 +190,7 @@ func (s Service) BuildKeyTypes(ir *productruntime.Runtime) ([]signerapi.KeyTypeI
 	}
 	validTypes := filterKeyTypesForNodeRole(keymgmt.GetValidKeyTypesWithActivated(enabled), ir.NodeRole())
 	infos := s.buildKeyTypes(validTypes, enabled)
-	if err := applyCosignerReferenceParams(ir, infos); err != nil {
+	if err := s.applyCosignerReferenceParams(ir, infos); err != nil {
 		return nil, err
 	}
 	return infos, nil
@@ -396,13 +396,22 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	return info
 }
 
-func applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) error {
+// applyCosignerReferenceParams offers the imported cosigner references as the
+// cosigner choice. A reference file that is not valid is left out and logged:
+// it can only remove a choice, never change one.
+func (s Service) applyCosignerReferenceParams(ir *productruntime.Runtime, infos []signerapi.KeyTypeInfo) error {
 	if ir == nil {
 		return nil
 	}
-	refs, err := cosignerrefs.List(ir.KeyPaths())
-	if err != nil || len(refs) == 0 {
+	refs, invalid, err := cosignerrefs.List(ir.KeyPaths())
+	if err != nil {
 		return err
+	}
+	for _, bad := range invalid {
+		s.warnf("cosigner reference file left out of the key type list: %s", bad)
+	}
+	if len(refs) == 0 {
+		return nil
 	}
 
 	componentIDsByComponentType := make(map[string]map[string]struct{})
@@ -481,6 +490,7 @@ func (s Service) KeyTypes(ir *productruntime.Runtime) (*signerapi.KeyTypesRespon
 	}
 	keyTypes, err := s.BuildKeyTypes(ir)
 	if err != nil {
+		s.warnf("key type list failed: %v", err)
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "failed to read key type activations or cosigner references"}
 	}
 	return &signerapi.KeyTypesResponse{KeyTypes: keyTypes}, nil

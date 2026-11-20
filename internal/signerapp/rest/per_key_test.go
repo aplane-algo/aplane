@@ -52,7 +52,7 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 	}
 
 	infos := Service{}.buildKeyTypes([]string{"aplane.falcon1024.v1"}, nil)
-	if err := applyCosignerReferenceParams(ir, infos); err != nil {
+	if err := (Service{}).applyCosignerReferenceParams(ir, infos); err != nil {
 		t.Fatal(err)
 	}
 	if len(infos) != 1 {

@@ -1405,11 +1405,23 @@ type CosignerReferenceInfo struct {
 
 type ListCosignerReferencesMessage struct{ BaseMessage }
 
+// InvalidCosignerReferenceInfo is a file in the reference directory that is
+// not a valid reference. Name is the file name without ".json"; when
+// Removable, removing that reference clears it, and otherwise the file has to
+// be deleted by hand.
+type InvalidCosignerReferenceInfo struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Reason    string `json:"reason"`
+	Removable bool   `json:"removable"`
+}
+
 type CosignerReferencesListMessage struct {
 	BaseMessage
-	References []CosignerReferenceInfo `json:"references"`
-	Code       string                  `json:"code,omitempty"`
-	Error      string                  `json:"error,omitempty"`
+	References []CosignerReferenceInfo        `json:"references"`
+	Invalid    []InvalidCosignerReferenceInfo `json:"invalid,omitempty"`
+	Code       string                         `json:"code,omitempty"`
+	Error      string                         `json:"error,omitempty"`
 }
 
 type GetCosignerReferenceMessage struct {

@@ -543,9 +543,15 @@ func ProtocolCosignerReferencesListMessage(id string, result adminproto.ListCosi
 	for i := range result.References {
 		refs[i] = protocolCosignerReference(result.References[i])
 	}
+	var invalid []protocol.InvalidCosignerReferenceInfo
+	for _, bad := range result.Invalid {
+		invalid = append(invalid, protocol.InvalidCosignerReferenceInfo{
+			Path: bad.Path, Name: bad.Name, Reason: bad.Reason, Removable: bad.Removable,
+		})
+	}
 	return protocol.CosignerReferencesListMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCosignerReferencesList, ID: id},
-		References:  refs, Code: result.Code, Error: result.Error,
+		References:  refs, Invalid: invalid, Code: result.Code, Error: result.Error,
 	}
 }
 

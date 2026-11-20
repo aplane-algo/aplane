@@ -340,8 +340,19 @@ type CosignerReferenceInfo struct {
 	ImportedAt   string
 }
 
+// InvalidCosignerReference is a file in the reference directory that is not a
+// valid reference. Removable says whether removing the reference named Name
+// clears it; any other one has to be deleted by hand.
+type InvalidCosignerReference struct {
+	Path      string
+	Name      string
+	Reason    string
+	Removable bool
+}
+
 type ListCosignerReferencesResult struct {
 	References []CosignerReferenceInfo
+	Invalid    []InvalidCosignerReference
 	Code       string
 	Error      string
 }

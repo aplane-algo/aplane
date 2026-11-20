@@ -164,41 +164,75 @@ func Get(paths storepaths.Paths, name string) (Record, bool, error) {
 	return rec, true, nil
 }
 
-// List returns every cosigner reference. A record that does not parse fails
-// the list, naming it, as Get of it does, so a broken record is never read as
-// one the operator did not import.
-func List(paths storepaths.Paths) ([]Record, error) {
+// InvalidRecord is a ".json" file in the reference directory that is not a
+// valid cosigner reference.
+type InvalidRecord struct {
+	Path   string // the file, as it is named in the directory
+	Stem   string // its name without ".json"
+	Reason string
+}
+
+// Removable reports whether Delete reaches the file: only a file named for a
+// reference name is. Any other one has to be deleted by hand.
+func (r InvalidRecord) Removable() bool {
+	name, err := NormalizeName(r.Stem)
+	return err == nil && name == r.Stem
+}
+
+func (r InvalidRecord) String() string {
+	if r.Removable() {
+		return fmt.Sprintf("%s: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
+	}
+	return fmt.Sprintf("%s: %s (not a reference name; delete the file to clear it)", r.Path, r.Reason)
+}
+
+// List returns the valid cosigner references and, beside them, every other
+// ".json" file in the reference directory with why it is not one. One bad
+// file never hides the rest. A directory or a file that cannot be read fails
+// the list.
+func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 	dir := paths.CosignerRefsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("failed to read cosigner reference directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to read cosigner reference directory: %w", err)
 	}
 	records := make([]Record, 0, len(entries))
+	var invalid []InvalidRecord
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		name := strings.TrimSuffix(entry.Name(), ".json")
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		bad := InvalidRecord{Path: filepath.Join(dir, entry.Name()), Stem: strings.TrimSuffix(entry.Name(), ".json")}
+		if !bad.Removable() {
+			bad.Reason = fmt.Sprintf("%q is not a reference name", bad.Stem)
+			invalid = append(invalid, bad)
+			continue
+		}
+		data, err := os.ReadFile(bad.Path)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("failed to read cosigner reference %s: %w", name, err)
+			return nil, nil, fmt.Errorf("failed to read cosigner reference %s: %w", bad.Stem, err)
 		}
-		rec, err := parseRecord(data, name)
+		rec, err := parseRecord(data, bad.Stem)
 		if err != nil {
-			return nil, fmt.Errorf("%w %s: %w", ErrInvalidRecord, name, err)
+			bad.Reason = err.Error()
+			invalid = append(invalid, bad)
+			continue
 		}
 		records = append(records, rec)
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Name < records[j].Name
 	})
-	return records, nil
+	sort.Slice(invalid, func(i, j int) bool {
+		return invalid[i].Path < invalid[j].Path
+	})
+	return records, invalid, nil
 }
 
 func Delete(paths storepaths.Paths, name string) (bool, error) {
@@ -261,7 +295,7 @@ func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, 
 func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, bool, error) {
 	value = strings.TrimSpace(value)
 	if componentKey, err := witness.NormalizeID(value); err == nil {
-		records, err := List(paths)
+		records, invalid, err := List(paths)
 		if err != nil {
 			return Record{}, false, err
 		}
@@ -269,6 +303,15 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, value string) (Record, 
 			if rec.ComponentKey == componentKey {
 				return rec, true, nil
 			}
+		}
+		// The reference sought may be one that cannot be read.
+		if len(invalid) > 0 {
+			described := make([]string, len(invalid))
+			for i, bad := range invalid {
+				described[i] = bad.String()
+			}
+			return Record{}, false, fmt.Errorf("%w: no valid cosigner reference has Witness Key ID %s, and these reference files are not valid: %s",
+				ErrInvalidRecord, componentKey, strings.Join(described, "; "))
 		}
 		return Record{}, false, nil
 	}

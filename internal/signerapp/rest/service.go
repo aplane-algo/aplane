@@ -30,8 +30,16 @@ type Dependencies struct {
 	// NetworkGenesisHashes lists the networks the signer knows; rotating key
 	// generation offers their names. Optional.
 	NetworkGenesisHashes func() map[string]string
+	// Warnf logs what a listing leaves out. Optional.
+	Warnf func(format string, args ...any)
 }
 
 type Service struct {
 	Deps Dependencies
+}
+
+func (s Service) warnf(format string, args ...any) {
+	if s.Deps.Warnf != nil {
+		s.Deps.Warnf(format, args...)
+	}
 }

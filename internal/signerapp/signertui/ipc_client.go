@@ -630,6 +630,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	MsgTypeCosignerReferencesList: decodeAs(func(references CosignerReferencesListMessage) tea.Msg {
 		return CosignerReferencesMsg{
 			References: references.References,
+			Invalid:    references.Invalid,
 			Error:      references.Error,
 		}
 	}),

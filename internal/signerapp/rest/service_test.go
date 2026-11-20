@@ -662,6 +662,14 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if _, err := cosignerrefs.Import(ir.KeyPaths(), "lab-cosigner", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
+	// A reference file that is not valid is left out, and the log names it.
+	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(corrupt cosigner reference) error = %v", err)
+	}
+	var warnings []string
+	svc := Service{Deps: Dependencies{Warnf: func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	}}}
 	// A fixed-contract cosigned template: its cosigner key becomes a selector.
 	const keyType = "test.rest-reference-options.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
@@ -680,7 +688,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 		t.Fatalf("Put() error = %v", err)
 	}
 
-	resp, svcErr := Service{}.KeyTypes(ir)
+	resp, svcErr := svc.KeyTypes(ir)
 	if svcErr != nil {
 		t.Fatalf("KeyTypes() error = %v", svcErr)
 	}
@@ -703,22 +711,10 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
 		t.Fatalf("cosigner options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
-}
-
-// The cosigner references are generation choices /keytypes lists, so one
-// that does not parse fails the listing, as a corrupt activation record does.
-func TestServiceKeyTypesRefusesAnInvalidCosignerReference(t *testing.T) {
-	ir := setupProductRuntime(t, false)
-	if err := os.MkdirAll(ir.KeyPaths().CosignerRefsDir(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(ir.KeyPaths().CosignerRefPath("corrupt"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	resp, svcErr := Service{}.KeyTypes(ir)
-	if resp != nil || svcErr == nil || svcErr.Kind != signersigning.ErrorInternal ||
-		svcErr.Message != "failed to read key type activations or cosigner references" {
-		t.Fatalf("KeyTypes() = %#v, %#v; want the invalid reference refused", resp, svcErr)
+	want := "cosigner reference file left out of the key type list: " + ir.KeyPaths().CosignerRefPath("corrupt") +
+		`: unsupported schema "wrong" (remove reference corrupt to clear it)`
+	if len(warnings) != 1 || warnings[0] != want {
+		t.Fatalf("warnings = %q, want %q", warnings, want)
 	}
 }
 

@@ -4,11 +4,13 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const testWitnessKeyID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST"
@@ -282,5 +284,44 @@ func TestCosignerDetailsHaveNoClientRouteActions(t *testing.T) {
 	next, cmd := m.handleCosignerReferenceDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	if cmd != nil || next.(Model).viewState != ViewCosignerReferenceDetails {
 		t.Fatal("v still starts route verification")
+	}
+}
+
+// The manager reports the reference files that are not valid references
+// below the list, at the minimum window size too, and points to where each
+// is cleared, since it acts only on listed references.
+func TestCosignerManagerReportsInvalidReferenceFiles(t *testing.T) {
+	var references []CosignerReferenceInfo
+	for i := 0; i < 12; i++ {
+		references = append(references, CosignerReferenceInfo{Name: fmt.Sprintf("ref-%02d", i), ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"})
+	}
+	var invalid []InvalidCosignerReferenceInfo
+	for _, name := range []string{"bad", "Lab", "my ref", "._lab", "x"} {
+		invalid = append(invalid, InvalidCosignerReferenceInfo{
+			Path: "/var/lib/apsigner/identities/default/cosigners/" + name + ".json", Name: name, Reason: "unsupported schema \"wrong\"",
+		})
+	}
+	m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
+	view := stripANSI(m.View())
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) > MinHeight {
+		t.Fatalf("view is %d lines, more than the %d-line window:\n%s", len(lines), MinHeight, view)
+	}
+	for _, want := range []string{
+		"5 reference file(s) are not valid references:",
+		`  bad.json: unsupported schema "wrong"`,
+		`  my ref.json: unsupported schema "wrong"`,
+		"  and 2 more",
+		"apadmin cosigner list says how to clear each.",
+		"ref-00",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q missing from:\n%s", want, view)
+		}
+	}
+	for _, line := range lines {
+		if lipgloss.Width(line) > MinWidth {
+			t.Errorf("line wider than the window: %q", line)
+		}
 	}
 }
