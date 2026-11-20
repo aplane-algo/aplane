@@ -1288,7 +1288,6 @@ install_template_library() {
     local library_root="$data_dir/library"
     local dest="$library_root/templates"
     local copied=0
-    local dir
 
     if [ ! -d "$src" ]; then
         echo "Template library not found at $src; skipping template copy."
@@ -1308,18 +1307,12 @@ install_template_library() {
 
     if [ -n "$owner" ] && [ -n "$group" ]; then
         chown "$owner:$group" "$library_root"
+        chown -R "$owner:$group" "$dest"
     fi
-    chmod 700 "$library_root"
-    for dir in "$dest"; do
-        [ -d "$dir" ] || continue
-        if [ -n "$owner" ] && [ -n "$group" ]; then
-            chown -R "$owner:$group" "$dir"
-        fi
-        chmod 700 "$dir"
-        for file in "$dir"/*; do
-            [ -f "$file" ] || continue
-            chmod 600 "$file"
-        done
+    chmod 700 "$library_root" "$dest"
+    for file in "$dest"/*; do
+        [ -f "$file" ] || continue
+        chmod 600 "$file"
     done
 
     echo "Installed template library to $dest ($copied file(s))."
