@@ -6,10 +6,13 @@ package backup
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -166,4 +169,25 @@ func TestSkipRefusalErrorText(t *testing.T) {
 			t.Fatalf("Error() = %q, want %q", got, tc.want)
 		}
 	}
+}
+
+// rebuildForTest rebuilds selector from the extracted archive at root into
+// active for role, as apstore rebuild does, sealing a manifest for role
+// first when the archive has none. It returns the rebuilt key type.
+func rebuildForTest(t *testing.T, active storepaths.GenPaths, role noderole.Role, root, selector string, kr *crypto.Keyring, passphrase []byte) (string, error) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(root, ManifestFileName)); os.IsNotExist(err) {
+		if err := WriteSealedManifest(root, role, time.Unix(1_700_000_000, 0), passphrase, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set, err := LoadRebuildSet(root, []string{selector}, passphrase, role)
+	if err != nil {
+		return "", err
+	}
+	defer set.ZeroSecrets()
+	if err := ApplyRebuildSet(active, role, set, kr); err != nil {
+		return "", err
+	}
+	return set.Entries[0].KeyType(), nil
 }

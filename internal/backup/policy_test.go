@@ -160,8 +160,8 @@ func TestRestorerInstallsArchivedPolicyForRebuild(t *testing.T) {
 
 	dest := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
 	destActive := activePathsForBackupTest(t, dest)
-	if _, err := RestoreForRebuild(destActive, noderole.RoleCosigner, ResolveBackupKeysDir(extractDir), selector, kr, []byte("export-passphrase"), nil); err != nil {
-		t.Fatalf("RestoreForRebuild() error = %v", err)
+	if _, err := rebuildForTest(t, destActive, noderole.RoleCosigner, extractDir, selector, kr, []byte("export-passphrase")); err != nil {
+		t.Fatalf("rebuild error = %v", err)
 	}
 	if stored, ok, err := policy.LoadVerifiedKeyPolicy(destActive, noderole.RoleCosigner, selector, kr); err != nil || !ok || !bytes.Equal(stored.Bytes, doc) {
 		t.Fatalf("rebuilt policy = %q, %v, %v", stored.Bytes, ok, err)

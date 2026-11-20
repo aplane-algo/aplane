@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -106,9 +107,11 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return err
 	}
 
-	if err := verifyRebuildSource(sourceRoot, exportPassphrase); err != nil {
+	set, err := loadRebuildSet(sourceRoot, addresses, exportPassphrase, nodeRole)
+	if err != nil {
 		return err
 	}
+	defer set.ZeroSecrets()
 
 	fmt.Print("Enter new store passphrase: ")
 	storePassphrase, err := readPassword()
@@ -185,7 +188,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 			if err := policy.WriteEmbeddedDefault(staged, nodeRole, kr, time.Now()); err != nil {
 				return fmt.Errorf("failed to create default policy: %w", err)
 			}
-			return rebuildRestoreKeys(sourceRoot, addresses, nodeRole, kr, exportPassphrase, staged)
+			return backup.ApplyRebuildSet(staged, nodeRole, set, kr)
 		},
 	}); err != nil {
 		if genstore.RootCommitUncertain(err) {
@@ -197,12 +200,15 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		return fmt.Errorf("rebuild failed; nothing was committed: %w", err)
 	}
 	keepNodeRole = true
-	if hints, err := backup.LoadRebuildHints(sourceRoot, addresses, exportPassphrase); err != nil {
-		logWarnf("optional rotation hints were not restored: %v", err)
-	} else {
-		backup.PublishRotatingHints(stagetable.NewStore(keystorePaths()), hints, logWarnf)
+	backup.PublishRotatingHints(stagetable.NewStore(keystorePaths()), set.StageHints(), logWarnf)
+	for _, entry := range set.Entries {
+		label := fmt.Sprintf("rebuilt: %s (%s)", entry.Selector(), entry.KeyType())
+		if entry.Policy != nil {
+			label += " with its policy"
+		}
+		logInfof("%s", label)
 	}
-	logInfof("rebuild complete: %s", identityDir)
+	logInfof("rebuild complete: %s; %d key(s) rebuilt, %d skipped", identityDir, len(set.Entries), len(set.Skipped))
 	return nil
 }
 
@@ -235,43 +241,26 @@ func selectRebuildNodeRole(
 	return manifestRole, nil
 }
 
-func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
-	report, err := backup.DeepVerifyBackupBytes(sourceRoot, exportPassphrase)
-	if err != nil {
-		return fmt.Errorf("failed to verify rebuild backup: %w", err)
+// loadRebuildSet admits the selected credentials for role before any store
+// passphrase is asked for, and reports each one the rebuild skips. A rebuild
+// that names a skipped credential, or has nothing left to rebuild, is
+// refused.
+func loadRebuildSet(sourceRoot string, addresses []string, exportPassphrase []byte, role noderole.Role) (*backup.RestoreSet, error) {
+	set, err := backup.LoadRebuildSet(sourceRoot, addresses, exportPassphrase, role)
+	var refusal *backup.SkipRefusalError
+	switch {
+	case errors.As(err, &refusal):
+		reportRebuildSkips(refusal.Skipped)
+		return nil, fmt.Errorf("rebuild refused: %w", err)
+	case err != nil:
+		return nil, fmt.Errorf("failed to verify rebuild backup: %w", err)
 	}
-	if len(report.Skipped) > 0 {
-		return fmt.Errorf("failed to verify rebuild backup: %d file(s) failed deep verification", len(report.Skipped))
-	}
-	return nil
+	reportRebuildSkips(set.Skipped)
+	return set, nil
 }
 
-func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, kr *crypto.Keyring, exportPassphrase []byte, staged storepaths.GenPaths) error {
-	keysDir := backup.ResolveBackupKeysDir(sourceRoot)
-	if len(addresses) == 0 {
-		var err error
-		addresses, err = backup.ScanBackupFiles(keysDir)
-		if err != nil {
-			return err
-		}
+func reportRebuildSkips(skipped []backup.SkippedEntry) {
+	for _, entry := range skipped {
+		logWarnf("skipping %s: %s", entry.Selector, entry.Reason)
 	}
-	if len(addresses) == 0 {
-		return fmt.Errorf("no .apb files found in backup: %s", sourceRoot)
-	}
-
-	restored := 0
-	for _, address := range addresses {
-		keyType, err := backup.RestoreForRebuild(staged, role, keysDir, address, kr, exportPassphrase, logInfof)
-		if err != nil {
-			return fmt.Errorf("failed to rebuild %s: %w", address, err)
-		}
-		label := address
-		if keyType != "" {
-			label += fmt.Sprintf(" (%s)", keyType)
-		}
-		logInfof("rebuilt: %s", label)
-		restored++
-	}
-	logInfof("successfully rebuilt %d key(s)", restored)
-	return nil
 }

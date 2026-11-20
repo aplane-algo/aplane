@@ -53,7 +53,7 @@ func (s Service) RestoreBackup(
 
 	run := &restoreRun{
 		s: s, req: req, result: &result, passphrase: passphrase, archivePath: archivePath,
-		wasRecovery: ir.IsRecovery(), hints: make(map[string]backup.RotatingStageHint),
+		wasRecovery: ir.IsRecovery(),
 	}
 	err = s.Deps.WithStoreMutation(run.mutate)
 	if err != nil {
@@ -189,11 +189,7 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	r.archiveAuthenticated = true
 	defer set.ZeroSecrets()
 	result.Skipped = projectSkippedEntries(set.Skipped)
-	for _, entry := range set.Entries {
-		if entry.StageHint != nil {
-			r.hints[entry.Selector()] = *entry.StageHint
-		}
-	}
+	r.hints = set.StageHints()
 	result.ArchiveSHA256 = set.ArchiveSHA256
 
 	current, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)

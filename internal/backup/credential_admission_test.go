@@ -434,8 +434,8 @@ func TestRestoredCredentialFilesAndWitnessMetadata(t *testing.T) {
 			if err := ApplyCredentialEntry(restoredActive, classification.Pending[0], kr, false); err != nil {
 				t.Fatalf("ApplyCredentialEntry() error = %v", err)
 			}
-			if _, err := RestoreForRebuild(rebuilt, tc.role, keysDir, tc.selector, kr, admissionPassphrase, nil); err != nil {
-				t.Fatalf("RestoreForRebuild() error = %v", err)
+			if _, err := rebuildForTest(t, rebuilt, tc.role, root, tc.selector, kr, admissionPassphrase); err != nil {
+				t.Fatalf("rebuild error = %v", err)
 			}
 
 			for name, active := range map[string]storepaths.GenPaths{"restore": restoredActive, "rebuild": rebuilt} {

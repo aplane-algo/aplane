@@ -4,7 +4,6 @@
 package backup
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,8 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
-
-type RestoreLogger func(format string, args ...any)
 
 type ManagedBackupInfo struct {
 	Path     string
@@ -238,38 +235,21 @@ func PreviewRestoreWithNodeRole(
 	return preview, nil
 }
 
-// RestoreForRebuild restores one credential-only backup entry, and the
-// policy the archive carries for it, into active. It is the offline rebuild
-// adapter; live restores use LoadManagedRestoreSet and a generation mint.
-func RestoreForRebuild(
-	active storepaths.GenPaths,
-	role noderole.Role,
-	keysDir, selector string,
-	kr *crypto.Keyring,
-	exportPassphrase []byte,
-	logf RestoreLogger,
-) (string, error) {
-	entry, skip, err := openedArchive{keysDir: keysDir}.loadCredentialEntry(selector, exportPassphrase, role)
-	if err != nil {
-		return "", err
-	}
-	if skip != nil {
-		return "", errors.New(skip.Reason)
-	}
-	defer entry.ZeroSecrets()
-	if err := ApplyCredentialEntry(active, entry, kr, false); err != nil {
-		return "", err
-	}
-	if entry.Policy != nil {
-		if err := ApplyPolicyEntry(active, role, entry, kr); err != nil {
-			return "", fmt.Errorf("restore policy for %s: %w", selector, err)
+// ApplyRebuildSet installs every entry of set, with its archived policy, into
+// the staged first generation of a fresh store of role. It is the offline
+// rebuild's apply step; a live restore classifies its set against the
+// destination and applies it inside a generation mint.
+func ApplyRebuildSet(staged storepaths.GenPaths, role noderole.Role, set *RestoreSet, kr *crypto.Keyring) error {
+	for i := range set.Entries {
+		entry := set.Entries[i]
+		if err := ApplyCredentialEntry(staged, entry, kr, false); err != nil {
+			return fmt.Errorf("rebuild %s: %w", entry.Selector(), err)
 		}
-		if logf != nil {
-			logf("restored policy: %s", selector)
+		if entry.Policy != nil {
+			if err := ApplyPolicyEntry(staged, role, entry, kr); err != nil {
+				return fmt.Errorf("restore policy for %s: %w", entry.Selector(), err)
+			}
 		}
 	}
-	if logf != nil {
-		logf("restored credential: %s (%s)", entry.Selector(), entry.KeyType())
-	}
-	return entry.KeyType(), nil
+	return nil
 }

@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
@@ -61,37 +63,88 @@ func captureApstoreLog(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// Verify lists the key this release cannot admit with its reason and fails.
+// Verify lists every key a restore would skip, with the reason, and fails.
 func TestCmdVerifyReportsAnInadmissibleKey(t *testing.T) {
 	RegisterProviders()
 	archivePath, good, bad := writeMixedArchiveForApstore(t)
 	log := captureApstoreLog(t)
 	err := withTestStdin("export-passphrase\n", func() error { return cmdVerify(archivePath) })
 	var coded codedError
-	if !errors.As(err, &coded) || coded.code != "verification_failed" || coded.message != "1 credential file(s) failed validation" {
-		t.Fatalf("cmdVerify() error = %v, want verification_failed", err)
+	wantMessage := "1 of 2 credentials would be skipped by restore; first " + bad + ": " + unknownFieldReasonForApstore
+	if !errors.As(err, &coded) || coded.code != "verification_failed" || coded.message != wantMessage {
+		t.Fatalf("cmdVerify() error = %v, want verification_failed: %s", err, wantMessage)
 	}
-	for _, want := range []string{good + ".apb (ed25519, decrypts OK)", bad + ".apb - " + unknownFieldReasonForApstore} {
+	for _, want := range []string{good + ".apb (ed25519, decrypts OK)", bad + ".apb - restore would skip it: " + unknownFieldReasonForApstore} {
 		if !strings.Contains(log.String(), want) {
 			t.Fatalf("%q missing from:\n%s", want, log.String())
 		}
 	}
 }
 
-// A rebuild from an archive holding a key this release cannot admit is
-// refused before it asks for a store passphrase.
-func TestCmdRebuildOfAnArchiveWithAnInadmissibleKey(t *testing.T) {
-	RegisterProviders()
+// rebuildForApstoreTest runs a rebuild in a fresh data directory with input
+// on stdin.
+func rebuildForApstoreTest(t *testing.T, input string, args ...string) error {
+	t.Helper()
 	oldDataDirectory := dataDirectory
 	dataDirectory = t.TempDir()
 	t.Cleanup(func() { dataDirectory = oldDataDirectory })
 	t.Setenv("APSIGNER_PASSPHRASE", "")
-	archivePath, _, _ := writeMixedArchiveForApstore(t)
-	err := withTestStdin("export-passphrase\n", func() error { return cmdRebuild([]string{archivePath}) })
-	if err == nil || err.Error() != "failed to verify rebuild backup: 1 file(s) failed deep verification" {
+	return withTestStdin(input, func() error { return cmdRebuild(args) })
+}
+
+// A rebuild skips the key this release cannot admit, says so, and rebuilds
+// the rest.
+func TestCmdRebuildSkipsAnInadmissibleKey(t *testing.T) {
+	RegisterProviders()
+	archivePath, good, bad := writeMixedArchiveForApstore(t)
+	log := captureApstoreLog(t)
+	if err := rebuildForApstoreTest(t, "export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", archivePath); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if _, statErr := os.Stat(keystorePaths().ProductDir()); !os.IsNotExist(statErr) {
-		t.Fatalf("refused rebuild left an identity directory: %v", statErr)
+	for _, want := range []string{"skipping " + bad + ": " + unknownFieldReasonForApstore, "rebuilt: " + good + " (ed25519)", "1 key(s) rebuilt, 1 skipped"} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("%q missing from:\n%s", want, log.String())
+		}
+	}
+	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))
+	if err != nil {
+		t.Fatalf("ResolveStoreRoot() error = %v", err)
+	}
+	defer kr.Zero()
+	if _, err := os.Stat(keystest.AccountKeyFilePath(active, good)); err != nil {
+		t.Fatalf("rebuilt key file missing: %v", err)
+	}
+	if _, err := os.Stat(keystest.AccountKeyFilePath(active, bad)); !os.IsNotExist(err) {
+		t.Fatalf("skipped key file was written: %v", err)
+	}
+}
+
+// A rebuild that names the key this release cannot admit, or leaves nothing
+// to rebuild, is refused before it asks for a store passphrase, and lists
+// what it would skip.
+func TestCmdRebuildRefusesWhatItWouldSkip(t *testing.T) {
+	RegisterProviders()
+	archivePath, good, bad := writeMixedArchiveForApstore(t)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"naming it", []string{archivePath, "--address", good, "--address", bad}, "rebuild refused: selected credential cannot be restored: " + bad + ": "},
+		{"nothing left", []string{archivePath, "--role", "cosigner"}, "rebuild refused: nothing to restore: all 2 credentials in the backup are skipped; first "},
+	} {
+		log := captureApstoreLog(t)
+		err := rebuildForApstoreTest(t, "export-passphrase\n", tc.args...)
+		if err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+			t.Fatalf("%s: cmdRebuild() error = %v, want prefix %q", tc.name, err, tc.want)
+		}
+		if !strings.Contains(log.String(), "skipping "+bad+": ") {
+			t.Fatalf("%s: the skipped key is not reported:\n%s", tc.name, log.String())
+		}
+		for _, path := range []string{keystorePaths().ProductDir(), keystorePaths().NodeRolePath()} {
+			if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("%s: refused rebuild left %s: %v", tc.name, path, statErr)
+			}
+		}
 	}
 }
