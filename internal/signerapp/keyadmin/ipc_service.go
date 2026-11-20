@@ -35,22 +35,16 @@ func (s IPCService) GenerateKey(ctx context.Context, req adminproto.GenerateKeyR
 		BoundaryDigest: req.ExpectedBoundaryDigest,
 	})
 	ipcResult := ProjectGenerateIPC(genResult, err)
-	if !ipcResult.Success {
-		return ipcResult
+	if ipcResult.Success {
+		s.logGenerateKey(genResult)
 	}
-
-	s.logGenerateKey(genResult)
 	return ipcResult
 }
 
 func (s IPCService) DeleteKey(ctx context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult {
 	delResult, err := s.Service.DeleteKey(ctx, req.Address)
 	ipcResult := ProjectDeleteIPC(err)
-	if !ipcResult.Success {
-		return ipcResult
-	}
-
-	if delResult != nil {
+	if ipcResult.Success {
 		s.logf("deleted key via IPC: %s (moved to %s)", req.Address, delResult.DeletedPath)
 	}
 	return ipcResult
@@ -59,20 +53,13 @@ func (s IPCService) DeleteKey(ctx context.Context, req adminproto.DeleteKeyReque
 func (s IPCService) ImportKey(ctx context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	importResult, err := s.Service.ImportKey(ctx, req.KeyType, req.Mnemonic, req.Parameters)
 	ipcResult := ProjectImportIPC(importResult, err)
-	if !ipcResult.Success {
-		return ipcResult
-	}
-
-	if importResult != nil {
+	if ipcResult.Success {
 		s.logf("imported %s key via IPC: %s", importResult.KeyType, importResult.Address)
 	}
 	return ipcResult
 }
 
 func (s IPCService) logGenerateKey(genResult *GenerateResult) {
-	if genResult == nil {
-		return
-	}
 	if genResult.IsWitnessKey {
 		s.logf(
 			"generated cosigner witness credential via IPC: %s (stored as %s%s)",

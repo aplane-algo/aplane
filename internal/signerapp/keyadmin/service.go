@@ -66,25 +66,6 @@ type DeleteResult struct {
 	DeletedPath string
 }
 
-type ListKeyInfo struct {
-	Address                  string
-	KeyType                  string
-	TemplateProvenanceStatus string
-	TemplateProvenanceNote   string
-}
-
-type KeyDetailsResult struct {
-	Address                  string
-	KeyType                  string
-	PublicKeyHex             string
-	Parameters               map[string]string
-	DisplayTEAL              string
-	TemplateProvenanceStatus string
-	TemplateProvenanceNote   string
-	PolicyLabel              string
-	MnemonicExportable       bool
-}
-
 type AuditLogger interface {
 	LogKeyExported(ctx context.Context, address, keyType, outcome string)
 	LogKeyGenerated(ctx context.Context, address, keyType string)
@@ -192,9 +173,6 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 // or the resolved request changed after the operator reviewed it.
 func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, reviewed ReviewedValues) (*GenerateResult, *Error) {
 	ir := s.Runtime
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	creation, resolveErr := s.resolveCreation(keyType, params)
 	if resolveErr != nil {
 		return nil, resolveErr
@@ -316,13 +294,10 @@ func checkReviewedValues(keyType string, params map[string]string, reviewed Revi
 // it is neither contained nor cosigned. Expert templates, whose program the
 // operator installed, and every other type pass through.
 func (s Service) checkGenerationRequirements(creation *resolvedCreation) *Error {
-	if creation == nil || !creation.perKey {
+	if !creation.perKey {
 		return nil
 	}
-	var metadata *boundedmeta.Metadata
-	if creation.instance != nil {
-		metadata = creation.instance.Bounded
-	}
+	metadata := creation.instance.Bounded
 	requireContained, requireCosigner := s.Runtime.Config().GenerationRequirements()
 	if requireContained && (metadata == nil || !metadata.Contained()) {
 		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (require_contained)"}
@@ -379,9 +354,6 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 // It returns the warnings to show with the account, the provider's first, and
 // leaves the creation as it found it, so running it again gives the same answer.
 func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Error) {
-	if creation == nil {
-		return nil, nil
-	}
 	warnings := slices.Clone(creation.warnings)
 	if creation.instance == nil || creation.instance.Bounded == nil {
 		return warnings, nil
