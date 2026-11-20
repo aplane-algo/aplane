@@ -78,7 +78,7 @@ func PrepareRestoreSource(source string) (string, func(), error) {
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	if err := ExtractTarGzArchive(source, tmpDir); err != nil {
 		cleanup()
-		return "", nil, withArchivePaths(tmpDir, err)
+		return "", nil, err
 	}
 	return tmpDir, cleanup, nil
 }

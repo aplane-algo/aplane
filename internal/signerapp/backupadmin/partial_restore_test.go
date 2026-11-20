@@ -521,3 +521,50 @@ func TestReplacingRestoreAtTheEntryCapFitsTheFrame(t *testing.T) {
 		t.Fatalf("restore frame is %d bytes", n)
 	}
 }
+
+// An import that fails to extract names the entry by its path in the
+// archive, never the daemon's validation directory, as restore does.
+func TestImportExtractionErrorsNameArchivePaths(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	selector, payload := keystest.Ed25519KeyJSON(t)
+	whole := writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{selector: payload})
+	data, err := os.ReadFile(whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncated := filepath.Join(t.TempDir(), "truncated.tar.gz")
+	if err := os.WriteFile(truncated, data[:len(data)*2/3], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fileThenChild := filepath.Join(t.TempDir(), "file-then-child.tar.gz")
+	file, err := os.Create(fileThenChild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(file)
+	tw := tar.NewWriter(gz)
+	for _, name := range []string{"a", "a/b"} {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o600, Size: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, closer := range []interface{ Close() error }{tw, gz, file} {
+		if err := closer.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for archive, want := range map[string]string{
+		truncated:     "invalid backup archive: failed to extract manifest.sealed: ",
+		fileThenChild: "invalid backup archive: failed to create parent directory for a/b: ",
+	} {
+		result := importArchiveForTest(t, directRestoreTestService(paths, ir), archive, filepath.Base(archive))
+		if result.Success || !strings.HasPrefix(result.Error, want) || strings.Contains(result.Error, "import-validation") || strings.Contains(result.Error, "<signer-store>") {
+			t.Fatalf("CommitBackupImport(%s) error = %q, want prefix %q and no validation directory", filepath.Base(archive), result.Error, want)
+		}
+	}
+}

@@ -160,8 +160,13 @@ func requireExtractableArchive(stageDir string) error {
 // validation residue is safe inside a private signer store. The archive is
 // opened with the same no-follow regular-file enforcement as the recover path,
 // and extraction is bounded (entry count and total decompressed size) so a
-// crafted archive cannot exhaust the disk.
+// crafted archive cannot exhaust the disk. Its errors name each entry by its
+// path in the archive, never by destDir, which is the daemon's.
 func ExtractTarGzArchive(archivePath, destDir string) error {
+	return withArchivePaths(destDir, extractTarGzArchive(archivePath, destDir))
+}
+
+func extractTarGzArchive(archivePath, destDir string) error {
 	file, err := openManagedBackupArchive(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
