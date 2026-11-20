@@ -377,7 +377,7 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 					Commands: []manifest.Command{{Name: "echo", Description: "echo"}},
 				},
 			}}
-			m.startPluginInstanceHook = func(*discovery.Plugin, runtimeConfig) (*Instance, error) {
+			m.startPluginInstanceHook = func(*discovery.Plugin) (*Instance, error) {
 				return startCrashingPlugin(t), nil
 			}
 			tt.setup(m)

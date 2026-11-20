@@ -80,7 +80,7 @@ type Manager struct {
 	// dataDir/plugin-state/<name>. Empty disables persistent plugin state.
 	dataDir string
 
-	startPluginInstanceHook func(*discovery.Plugin, runtimeConfig) (*Instance, error)
+	startPluginInstanceHook func(*discovery.Plugin) (*Instance, error)
 	initializePluginHook    func(*Instance, runtimeConfig) error
 }
 
@@ -149,13 +149,7 @@ func (m *Manager) SetCachedPluginsForTest(plugins []*discovery.Plugin) {
 func (m *Manager) SetTestHooks(hooks TestHooks) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if hooks.StartPluginInstance != nil {
-		m.startPluginInstanceHook = func(plugin *discovery.Plugin, _ runtimeConfig) (*Instance, error) {
-			return hooks.StartPluginInstance(plugin)
-		}
-	} else {
-		m.startPluginInstanceHook = nil
-	}
+	m.startPluginInstanceHook = hooks.StartPluginInstance
 	if hooks.InitializePlugin != nil {
 		m.initializePluginHook = func(instance *Instance, _ runtimeConfig) error {
 			return hooks.InitializePlugin(instance)
@@ -307,7 +301,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	}
 	m.mu.Unlock()
 
-	instance, err := startFn(plugin, cfg)
+	instance, err := startFn(plugin)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +324,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 }
 
 // startPluginInstance starts a plugin subprocess
-func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, error) {
 	execPath := plugin.Manifest.GetExecutablePath(plugin.Dir)
 
 	stateDir, err := m.pluginStateDir(plugin.Manifest.Name)
@@ -347,20 +341,6 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		}
 	}
 
-	// Build environment
-	env := append(os.Environ(),
-		fmt.Sprintf("APSHELL_NETWORK=%s", cfg.network),
-		fmt.Sprintf("APSHELL_ALGOD_URL=%s", cfg.algodURL),
-		fmt.Sprintf("APSHELL_ALGOD_TOKEN=%s", cfg.algodToken),
-		// apshell has no indexer to give; set empty, as initialize's
-		// indexerUrl is, so a plugin reads "" rather than nothing.
-		"APSHELL_INDEXER_URL=",
-		"APSHELL_PLUGIN=1",
-	)
-	if stateDir != "" {
-		env = append(env, fmt.Sprintf("APSHELL_PLUGIN_STATE_DIR=%s", stateDir))
-	}
-
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
 		PluginName: plugin.Manifest.Name,
@@ -368,7 +348,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		StateDir:   stateDir,
 		ExecPath:   execPath,
 		Args:       plugin.Manifest.Args,
-		Env:        env,
+		Env:        pluginEnv(os.Environ(), stateDir),
 	}
 
 	cmd, sandboxName, err := sandbox.BuildCommand(sandboxCfg)
@@ -431,6 +411,17 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	go instance.monitorStderr()
 
 	return instance, nil
+}
+
+// pluginEnv is the environment a plugin starts with, before the sandbox filters
+// it: the host's, plus the plugin's state directory when it has one. Coming
+// last, the state directory overrides an operator's copy of the name. The
+// network and algod settings reach the plugin in initialize instead.
+func pluginEnv(host []string, stateDir string) []string {
+	if stateDir == "" {
+		return host
+	}
+	return append(host, "APSHELL_PLUGIN_STATE_DIR="+stateDir)
 }
 
 // initializePlugin sends the initialize request to the plugin

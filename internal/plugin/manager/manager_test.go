@@ -52,7 +52,7 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 			},
 		},
 	}
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		m.configSnapshot() // Takes the manager lock, so holding it here would hang.
 		return newTestPluginInstance(t), nil
 	}
@@ -127,7 +127,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	}
 
 	var started []*Instance
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		inst := newTestPluginInstance(t)
 		started = append(started, inst)
 		return inst, nil
@@ -189,7 +189,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 
 	var started []*Instance
 	attempt := 0
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		attempt++
 		var inst *Instance
 		if attempt == 1 {
@@ -297,8 +297,7 @@ func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 	}
 }
 
-// initialize carries the network and its algod, and an indexerUrl that is
-// always present and empty.
+// initialize carries the network and its algod, and nothing else.
 func TestInitializePluginSendsTheRuntimeConfig(t *testing.T) {
 	params := make(chan string, 1)
 	inst := newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
@@ -316,7 +315,7 @@ func TestInitializePluginSendsTheRuntimeConfig(t *testing.T) {
 	if err := NewManagerWithDataDir("").initializePlugin(inst, cfg); err != nil {
 		t.Fatalf("initializePlugin() error = %v", err)
 	}
-	const want = `{"algodToken":"tok","algodUrl":"http://localhost:4001","indexerUrl":"","network":"localnet"}`
+	const want = `{"algodToken":"tok","algodUrl":"http://localhost:4001","network":"localnet"}`
 	if got := <-params; got != want {
 		t.Fatalf("initialize params = %s, want %s", got, want)
 	}

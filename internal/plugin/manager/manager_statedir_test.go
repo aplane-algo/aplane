@@ -90,7 +90,7 @@ func TestPluginStateLockRejectsConcurrentManagerStart(t *testing.T) {
 			Executable: "missing-plugin-binary",
 		},
 	}
-	_, err = m2.startPluginInstance(plugin, runtimeConfig{})
+	_, err = m2.startPluginInstance(plugin)
 	if !errors.Is(err, ErrPluginStateInUse) {
 		t.Fatalf("startPluginInstance(second) error = %v, want ErrPluginStateInUse", err)
 	}

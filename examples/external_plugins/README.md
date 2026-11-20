@@ -175,15 +175,13 @@ Your plugin must handle these methods:
 
 - **initialize** - Called when plugin starts
 - **execute** - Called to run a command
-- **getInfo** - Returns plugin information
 - **shutdown** - Clean shutdown request
 
 JSON-RPC frames use `jsonrpc: "2.0"`. `manifest_format` is the manifest schema
 version. The host does not send the APlane plugin protocol identifier. Return
 the plugin-owned constant `"aplane-plugin/2"` in
 `initialize.result.protocol`; startup rejects a missing or different
-declaration. Your plugin's semantic package version stays in `manifest.json`
-and `getInfo`.
+declaration. Your plugin's semantic package version stays in `manifest.json`.
 
 ### 3. Communication Protocol
 
@@ -253,7 +251,7 @@ See `/internal/plugin/jsonrpc/methods.go` for the complete protocol definition i
 ## Debugging Tips
 
 - Use stderr for debug output: `fmt.Fprintf(os.Stderr, "Debug: %v\n", data)`
-- Test manually: `echo '{"jsonrpc":"2.0","method":"getInfo","id":1}' | ./my-plugin`
+- Test manually: `echo '{"jsonrpc":"2.0","method":"initialize","params":{"network":"testnet","algodUrl":"","algodToken":""},"id":1}' | ./my-plugin`
 - Check manifest validity: `cat manifest.json | jq .`
 - Inspect discovered plugin metadata with `plugins`
 

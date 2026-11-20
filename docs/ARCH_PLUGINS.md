@@ -295,8 +295,8 @@ separate contracts. The host does not send the accepted plugin protocol token.
 Each plugin must independently return the hard-coded declaration
 `"aplane-plugin/2"` in `initialize.result.protocol`, or startup fails closed.
 This one-way declaration cannot be satisfied by echoing host input. A plugin's
-semantic package version lives in its manifest `version` field and in
-`getInfo`, not in the initialize handshake.
+semantic package version lives in its manifest `version` field, not in the
+initialize handshake.
 
 A response is a line with a `result` member or an `error` member. A
 `"result": null` is a response and completes the call at once. Every method
@@ -317,14 +317,12 @@ Called once after the plugin starts.
   "params": {
     "network": "testnet",
     "algodUrl": "https://testnet-api.4160.nodely.dev",
-    "algodToken": "",
-    "indexerUrl": ""
+    "algodToken": ""
   }
 }
 ```
 
-`indexerUrl` is reserved and currently always empty; apshell does not supply
-an indexer URL. A plugin that needs an indexer uses its own.
+apshell gives a plugin no indexer; a plugin that needs one uses its own.
 
 **Response:**
 ```json
@@ -456,38 +454,6 @@ why the plugin failed.
 - If `presentation` is absent, apshell falls back to `message` and transaction status output.
 - Raw `data` is not part of the default human CLI rendering contract.
 
-#### getInfo
-
-Returns metadata about the plugin. This method is reserved: apshell does not
-currently call it, but plugins should still answer it.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "getInfo",
-  "params": {}
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "result": {
-    "name": "plugin-name",
-    "version": "1.0.0",
-    "description": "Plugin description",
-    "author": "Author",
-    "commands": ["command1", "command2"],
-    "networks": ["testnet", "mainnet"],
-    "status": "ready"
-  }
-}
-```
-
 #### shutdown
 
 Notifies the plugin to exit gracefully.
@@ -583,7 +549,6 @@ The core JSON-RPC surface every plugin handles (host→plugin) is:
 
 - `initialize`
 - `execute`
-- `getInfo` (reserved; not currently called by apshell)
 - `shutdown`
 
 Plugins that use the `presign-plan` group flow also handle one additional host→plugin
@@ -1084,7 +1049,7 @@ group flow instead — see [Plugin Transaction Flows](#plugin-transaction-flows-
 
 2. **Implement the JSON-RPC Server:** Listen for JSON-RPC requests on stdin and send responses to stdout.
 
-3. **Implement Required Methods:** `initialize`, `execute`, `getInfo`, `shutdown` (and `signTransactions` if the plugin uses the `presign-plan` group flow)
+3. **Implement Required Methods:** `initialize`, `execute`, `shutdown` (and `signTransactions` if the plugin uses the `presign-plan` group flow)
 
 4. **Create a Manifest:** Write a `manifest.json` file.
 
@@ -1156,14 +1121,6 @@ func main() {
                     },
                 },
             }
-        case "getInfo":
-            result = map[string]interface{}{
-                "name":        "echo-plugin",
-                "version":     "1.0.0",
-                "description": "Simple echo plugin",
-                "commands":    []string{"echo"},
-                "status":      "ready",
-            }
         case "shutdown":
             result = map[string]interface{}{
                 "success": true,
@@ -1180,18 +1137,15 @@ func main() {
 
 ### Environment Variables
 
-Plugins receive these environment variables when started:
+A plugin starts with the host environment, filtered as "Environment
+filtering" below describes, plus one variable APlane sets:
 
 | Variable | Description |
 |----------|-------------|
-| `APSHELL_NETWORK` | Current network context token |
-| `APSHELL_ALGOD_URL` | Algod node URL from `config.yaml` (empty if not configured) |
-| `APSHELL_ALGOD_TOKEN` | Algod API token from `config.yaml` (empty for public nodes) |
-| `APSHELL_INDEXER_URL` | Reserved; currently always empty |
-| `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
 | `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>`, where `<name>` is the manifest `name` |
 
-Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
+The network and algod settings arrive in `initialize`, not in the environment.
+Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, `algodUrl` and `algodToken` are empty strings and the plugin must handle this gracefully.
 
 `APSHELL_PLUGIN_STATE_DIR` is writable by the plugin and is preserved by
 default. APlane takes a non-blocking advisory lock on a lockfile in that
@@ -1365,8 +1319,8 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 
 **Environment filtering:**
 
-Plugins start from the host environment (`os.Environ()`) plus the `APSHELL_*`
-variables above. The sandbox then removes:
+Plugins start from the host environment (`os.Environ()`) plus
+`APSHELL_PLUGIN_STATE_DIR`. The sandbox then removes:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
 - `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
@@ -1374,13 +1328,13 @@ variables above. The sandbox then removes:
   `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, or
   `_SEED` — so `APSIGNER_PASSPHRASE` and test mnemonics never reach a plugin
 
-The host-set `APSHELL_ALGOD_TOKEN` is exempt; other `APSHELL_*` names follow
-the same rules as any variable. The two LocalNet overrides
-`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only
-for the plugin whose manifest name is `algokit-localnet`; every other plugin
-has them stripped, since all plugins run with network access. `PATH` is
-rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and
-`/sbin/`. All other host environment variables are inherited unchanged.
+`APSHELL_*` names follow the same rules as any variable. The two LocalNet
+overrides `APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are
+exempt only for the plugin whose manifest name is `algokit-localnet`; every
+other plugin has them stripped, since all plugins run with network access.
+`PATH` is rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`,
+`/lib64/`, and `/sbin/`. All other host environment variables are inherited
+unchanged.
 
 **Linux Sandbox Details (bubblewrap):**
 
