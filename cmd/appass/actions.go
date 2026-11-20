@@ -109,7 +109,7 @@ func executeSetPassfile(dataDir string, passphrase []byte, svc *serviceInfo, isL
 		if err := fsutil.WriteServiceOwnedFileDurable(passphrasePath, passphrase, serviceUID, serviceGID); err != nil {
 			return "", fmt.Errorf("writing service-owned passphrase file: %w", err)
 		}
-	} else if err := fsutil.WriteFileDurableWithProfile(passphrasePath, passphrase, fsutil.PrivateStoreFileProfile); err != nil {
+	} else if err := fsutil.WriteFileDurable(passphrasePath, passphrase); err != nil {
 		return "", fmt.Errorf("writing passphrase file: %w", err)
 	}
 

@@ -17,8 +17,8 @@ func TestWriteFileReplacesContentsAndKeepsRestrictiveMode(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if err := WriteFile(path, []byte("new")); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	if err := WriteFileDurable(path, []byte("new")); err != nil {
+		t.Fatalf("WriteFileDurable: %v", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -42,8 +42,8 @@ func TestWriteFileReplacesNewFileAtomically(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fresh.txt")
 
-	if err := WriteFile(path, []byte("hello")); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	if err := WriteFileDurable(path, []byte("hello")); err != nil {
+		t.Fatalf("WriteFileDurable: %v", err)
 	}
 
 	data, err := os.ReadFile(path)

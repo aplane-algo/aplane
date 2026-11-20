@@ -156,7 +156,7 @@ func populateRollbackGeneration(
 			zeroOutput = true
 		}
 		target := filepath.Join(staged.Dir(), filepath.FromSlash(entry.Path))
-		if err := fsutil.WriteFile(target, output); err != nil {
+		if err := fsutil.WriteFileDurable(target, output); err != nil {
 			if zeroOutput {
 				crypto.ZeroBytes(output)
 			}

@@ -33,7 +33,7 @@ func saveTEALToFile(dataDir, address, teal string) (string, error) {
 	}
 
 	filePath := filepath.Join(filesDir, address+".teal")
-	if err := fsutil.WriteFileDurableWithProfile(filePath, []byte(teal), fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(filePath, []byte(teal)); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 

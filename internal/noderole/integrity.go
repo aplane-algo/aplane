@@ -70,7 +70,7 @@ func SaveInitial(paths storepaths.Paths, role Role, createdAt time.Time) ([]byte
 	if err != nil {
 		return nil, Document{}, err
 	}
-	if err := fsutil.WriteFile(path, data); err != nil {
+	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return nil, Document{}, fmt.Errorf("failed to write node role %s: %w", path, err)
 	}
 	return data, doc, nil
@@ -97,7 +97,7 @@ func saveSidecarAtPath(sidecarPath string, roleBytes []byte, kr *apcrypto.Keyrin
 	if err := fsutil.MkdirAllPrivate(filepath.Dir(sidecarPath)); err != nil {
 		return fmt.Errorf("failed to create node role sidecar directory: %w", err)
 	}
-	if err := fsutil.WriteFile(sidecarPath, sidecarBytes); err != nil {
+	if err := fsutil.WriteFileDurable(sidecarPath, sidecarBytes); err != nil {
 		return fmt.Errorf("failed to write node role integrity sidecar %s: %w", sidecarPath, err)
 	}
 	return nil

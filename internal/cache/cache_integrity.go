@@ -186,7 +186,7 @@ func saveSignedCache(filePath string, data interface{}, key []byte) error {
 	if err := fsutil.MkdirAll(filepath.Dir(filePath)); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
-	return fsutil.WriteFile(filePath, output)
+	return fsutil.WriteFileDurable(filePath, output)
 }
 
 func saveSignedCacheWithoutClientLock(store *Store, filePath string, data interface{}) error {

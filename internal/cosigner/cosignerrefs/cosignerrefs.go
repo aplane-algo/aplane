@@ -148,7 +148,7 @@ func putRecord(paths storepaths.Paths, rec Record) error {
 		return fmt.Errorf("failed to encode cosigner reference: %w", err)
 	}
 	data = append(data, '\n')
-	if err := fsutil.WriteFile(path, data); err != nil {
+	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return fmt.Errorf("failed to write cosigner reference: %w", err)
 	}
 	return nil

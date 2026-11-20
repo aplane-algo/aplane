@@ -104,7 +104,7 @@ func WriteSealedManifest(
 			len(sealed), maxSealedManifestBytes,
 		)
 	}
-	if err := fsutil.WriteFile(filepath.Join(destDir, ManifestFileName), sealed); err != nil {
+	if err := fsutil.WriteFileDurable(filepath.Join(destDir, ManifestFileName), sealed); err != nil {
 		return fmt.Errorf("write backup manifest: %w", err)
 	}
 	return nil

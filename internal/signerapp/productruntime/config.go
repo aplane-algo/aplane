@@ -273,7 +273,7 @@ func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 		return fmt.Errorf("failed to marshal runtime config: %w", err)
 	}
 
-	if err := fsutil.WriteFileDurableWithProfile(path, out, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(path, out); err != nil {
 		return fmt.Errorf("failed to write runtime config: %w", err)
 	}
 	return nil

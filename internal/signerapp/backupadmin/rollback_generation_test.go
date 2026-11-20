@@ -48,10 +48,10 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 			if err := genstoretest.ApplyAuthorityPlaceholders(staged); err != nil {
 				return err
 			}
-			if err := fsutil.WriteFile(filepath.Join(staged.KeysDir(), "ACCOUNT.key"), originalEnvelope); err != nil {
+			if err := fsutil.WriteFileDurable(filepath.Join(staged.KeysDir(), "ACCOUNT.key"), originalEnvelope); err != nil {
 				return err
 			}
-			return fsutil.WriteFile(filepath.Join(staged.KeyTypeRecordsDir(), "state.json"), []byte(`{"enabled":true}`))
+			return fsutil.WriteFileDurable(filepath.Join(staged.KeyTypeRecordsDir(), "state.json"), []byte(`{"enabled":true}`))
 		},
 	})
 	if err != nil {
@@ -68,10 +68,10 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		Operation: genstore.OperationCredentialRestore, OperationID: "restore-b",
 		CreatedAt: time.Unix(1_785_300_001, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
-			if err := fsutil.WriteFile(filepath.Join(staged.KeysDir(), "ACCOUNT.key"), newerEnvelope); err != nil {
+			if err := fsutil.WriteFileDurable(filepath.Join(staged.KeysDir(), "ACCOUNT.key"), newerEnvelope); err != nil {
 				return err
 			}
-			return fsutil.WriteFile(filepath.Join(staged.DeletedKeyTypeRecordsDir(), "keep.json"), []byte("monotonic-delete"))
+			return fsutil.WriteFileDurable(filepath.Join(staged.DeletedKeyTypeRecordsDir(), "keep.json"), []byte("monotonic-delete"))
 		},
 	})
 	if err != nil {
