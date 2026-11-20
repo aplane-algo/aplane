@@ -605,10 +605,11 @@ future plugin→host signing mechanism must be designed around mandatory decoded
 review and fail-closed non-interactive behavior before it is added to the wire
 protocol.
 
-Plugin-initiated requests back into apshell are reserved but not installed in
-production. The JSON-RPC client keeps typed request plumbing for future
-reviewed callbacks such as account/balance/app metadata lookup, but absent a
-production handler inbound plugin requests fail closed with `method not found`.
+apshell serves no plugin-initiated methods. It answers a request from the
+plugin that has an `id` with a JSON-RPC error: `-32600` for a `jsonrpc` other
+than `"2.0"` or an `id` that is neither a number nor a string, and otherwise
+`-32601` with the message `method not found: <method>`. A notification, with
+no `id`, gets no reply.
 
 ### Execution Context
 

@@ -192,52 +192,6 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCallbackPayloadJSONShapes(t *testing.T) {
-	tests := []struct {
-		name string
-		in   interface{}
-		want string
-	}{
-		{
-			name: "list accounts result",
-			in:   ListAccountsResult{Accounts: []string{"ADDR1", "ADDR2"}},
-			want: `{"accounts":["ADDR1","ADDR2"]}`,
-		},
-		{
-			name: "get asset info params",
-			in:   GetAssetInfoParams{AssetID: 10458941},
-			want: `{"assetId":10458941}`,
-		},
-		{
-			name: "get asset info result",
-			in:   GetAssetInfoResult{AssetID: 10458941, Name: "USD Coin", UnitName: "USDC", Decimals: 6},
-			want: `{"assetId":10458941,"name":"USD Coin","unitName":"USDC","decimals":6}`,
-		},
-		{
-			name: "get app info params",
-			in:   GetAppInfoParams{AppID: 1234},
-			want: `{"appId":1234}`,
-		},
-		{
-			name: "get app info result",
-			in:   GetAppInfoResult{AppID: 1234, Creator: "ADDR"},
-			want: `{"appId":1234,"creator":"ADDR"}`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := json.Marshal(tt.in)
-			if err != nil {
-				t.Fatalf("Marshal() error = %v", err)
-			}
-			if string(got) != tt.want {
-				t.Fatalf("Marshal() = %s, want %s", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestPluginExecutionContextOmitsReservedZeroFields(t *testing.T) {
 	data, err := json.Marshal(Context{
 		Accounts: []string{"ADDR1"},

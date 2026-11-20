@@ -6,7 +6,6 @@ package jsonrpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -134,21 +133,15 @@ func TestShutdownDoesNotWaitForAStalledWrite(t *testing.T) {
 	}
 }
 
-// A reply to a plugin's callback, waiting to write behind a stalled request,
+// A reply to a plugin's request, waiting to write behind a stalled request,
 // ends when that request fails the client.
 func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 	c, entered, toClient := unreadClient(t)
-	handled := make(chan struct{})
-	c.SetRequestHandler(RequestHandlerFunc(func(string, json.RawMessage) (interface{}, *Error) {
-		close(handled)
-		return "pong", nil
-	}))
 	go func() { _ = c.CallWithTimeout(MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
 	<-entered
 	if _, err := toClient.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\n")); err != nil {
 		t.Fatal(err)
 	}
-	<-handled
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if err := c.GetLastError(); err != nil && strings.Contains(err.Error(), "callback response") {
@@ -166,7 +159,7 @@ func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 func TestWriteFreesTheWriterBeforeItReturns(t *testing.T) {
 	c := NewClient(&bytes.Buffer{}, io.Discard)
 	for i := 0; i < 50000; i++ {
-		if err := c.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0); err != nil {
+		if err := c.writeFrame(context.Background(), NewRequest(MethodExecute, ExecuteParams{}, nil), 0); err != nil {
 			t.Fatalf("writeFrame() error = %v", err)
 		}
 		select {
@@ -202,7 +195,7 @@ func TestShutdownWaitsForAWriteAboutToFinish(t *testing.T) {
 	w := &slowWriter{delay: 30 * time.Millisecond, entered: make(chan struct{})}
 	c := NewClient(&bytes.Buffer{}, w)
 	go func() {
-		_ = c.writeFrame(context.Background(), NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0)
+		_ = c.writeFrame(context.Background(), NewRequest(MethodExecute, ExecuteParams{}, nil), 0)
 	}()
 	<-w.entered
 	if err := c.Shutdown(200 * time.Millisecond); errors.Is(err, errWriterBusy) {
@@ -233,7 +226,7 @@ func TestEndedContextSendsNothingAndKeepsTheClient(t *testing.T) {
 		send func(*Client) error
 	}{
 		{name: "frame with an ended ctx", send: func(c *Client) error {
-			return c.writeFrame(ended, NewRequest(CallbackLog, LogParams{Message: "x"}, nil), 0)
+			return c.writeFrame(ended, NewRequest(MethodExecute, ExecuteParams{}, nil), 0)
 		}},
 		{name: "call with no time left", send: func(c *Client) error {
 			return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 0)

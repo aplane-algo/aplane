@@ -50,23 +50,9 @@ type Client struct {
 	// done closes when the client fails (terminalErr is set).
 	done chan struct{}
 
-	requestHandler RequestHandler
-
 	// Error handling
 	lastError   error
 	terminalErr error
-}
-
-// RequestHandler handles plugin-initiated JSON-RPC requests back into apshell.
-type RequestHandler interface {
-	HandleRequest(method string, params json.RawMessage) (interface{}, *Error)
-}
-
-// RequestHandlerFunc adapts a function into a RequestHandler.
-type RequestHandlerFunc func(method string, params json.RawMessage) (interface{}, *Error)
-
-func (fn RequestHandlerFunc) HandleRequest(method string, params json.RawMessage) (interface{}, *Error) {
-	return fn(method, params)
 }
 
 // NewClient creates a new JSON-RPC client
@@ -178,13 +164,6 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 	}
 }
 
-// SetRequestHandler installs the handler used for plugin-initiated requests.
-func (c *Client) SetRequestHandler(handler RequestHandler) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.requestHandler = handler
-}
-
 // Start begins reading responses from the plugin
 func (c *Client) Start() {
 	go c.readLoop()
@@ -205,6 +184,8 @@ func (c *Client) readLoop() {
 		}
 
 		if frame.Method != "" {
+			// Off the read goroutine: a reply the plugin does not read must
+			// not stop its answers to apshell's calls being read.
 			go c.handleInboundRequest(frame)
 			continue
 		}
@@ -247,52 +228,30 @@ type rpcFrame struct {
 	ID      interface{}     `json:"id,omitempty"`
 }
 
+// handleInboundRequest answers a plugin-initiated request. apshell serves no
+// plugin-to-host methods, so a well-formed request is answered
+// method-not-found.
 func (c *Client) handleInboundRequest(frame rpcFrame) {
-	if frame.Jsonrpc != Version {
-		c.respondToInbound(frame.ID, nil, &Error{Code: InvalidRequest, Message: "invalid JSON-RPC version"})
-		return
+	switch {
+	case frame.Jsonrpc != Version:
+		c.respondToInbound(frame.ID, &Error{Code: InvalidRequest, Message: "invalid JSON-RPC version"})
+	case !validIDType(frame.ID):
+		c.respondToInbound(frame.ID, &Error{Code: InvalidRequest, Message: fmt.Sprintf("invalid request id type %T", frame.ID)})
+	default:
+		c.respondToInbound(frame.ID, &Error{Code: MethodNotFound, Message: fmt.Sprintf("method not found: %s", frame.Method)})
 	}
-	if !validIDType(frame.ID) {
-		c.respondToInbound(frame.ID, nil, &Error{Code: InvalidRequest, Message: fmt.Sprintf("invalid request id type %T", frame.ID)})
-		return
-	}
-
-	handler := c.getRequestHandler()
-	if handler == nil {
-		c.respondToInbound(frame.ID, nil, &Error{Code: MethodNotFound, Message: fmt.Sprintf("method not found: %s", frame.Method)})
-		return
-	}
-	result, rpcErr := handler.HandleRequest(frame.Method, frame.Params)
-	c.respondToInbound(frame.ID, result, rpcErr)
 }
 
-func (c *Client) getRequestHandler() RequestHandler {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.requestHandler
-}
-
-func (c *Client) respondToInbound(id interface{}, result interface{}, rpcErr *Error) {
+// respondToInbound sends rpcErr as the reply to request id. A notification,
+// with no id, gets no reply.
+func (c *Client) respondToInbound(id interface{}, rpcErr *Error) {
 	if id == nil {
 		return
-	}
-	response := Response{
-		Jsonrpc: Version,
-		Error:   rpcErr,
-		ID:      id,
-	}
-	if rpcErr == nil {
-		raw, err := json.Marshal(result)
-		if err != nil {
-			response.Error = &Error{Code: InternalError, Message: fmt.Sprintf("failed to marshal callback result: %v", err)}
-		} else {
-			response.Result = json.RawMessage(raw)
-		}
 	}
 	// No call bounds a reply, so it waits for as long as the client lasts. A
 	// plugin that stops reading also stops answering the call in progress, and
 	// that call's end tears the plugin down.
-	if err := c.writeFrame(context.Background(), &response, 0); err != nil {
+	if err := c.writeFrame(context.Background(), &Response{Jsonrpc: Version, Error: rpcErr, ID: id}, 0); err != nil {
 		c.setLastError(fmt.Errorf("failed to write callback response: %w", err))
 	}
 }
