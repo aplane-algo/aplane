@@ -95,6 +95,12 @@ func SealStoreRoot(
 	if err != nil {
 		return nil, err
 	}
+	// Deliberately the readers' own header check: sealStoreRootKeyring does
+	// not bound its output, and this is what refuses a keyring too large for
+	// any reader to reopen before a root carrying it is written.
+	if err := validateStoreRootKeyringHeader(wrapped); err != nil {
+		return nil, err
+	}
 	return encodeStoreRoot(kr, wrapped, generationID)
 }
 
@@ -175,8 +181,9 @@ func ReselectStoreRoot(
 
 // encodeStoreRoot binds wrappedKeyring to generationID under the current
 // term. It trusts its two callers, SealStoreRoot and ReselectStoreRoot, to
-// pass a validated generation ID and a wrapped keyring header that
-// sealStoreRootKeyring just produced or parseStoreRoot just validated.
+// pass a validated generation ID and a wrapped keyring header that they have
+// validated, SealStoreRoot after sealing it and ReselectStoreRoot through
+// parseStoreRoot.
 func encodeStoreRoot(
 	kr *Keyring,
 	wrappedKeyring []byte,

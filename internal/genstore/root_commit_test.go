@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -239,4 +240,52 @@ func TestInitialStoreRootRefusesARetiredLayout(t *testing.T) {
 	if _, err := os.Lstat(paths.StoreRootPath()); !os.IsNotExist(err) {
 		t.Fatalf("store root written over a retired layout: %v", err)
 	}
+}
+
+// A passphrase change whose successor keyring is too large for any reader to
+// reopen is refused before the root changes, so the old passphrase still
+// opens the store.
+func TestReplacementRootRefusesAKeyringTooLargeToReopen(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	parent := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
+	kr := testKeyring(t)
+	if err := WriteSeal(parent, 1_753_500_100, kr); err != nil {
+		t.Fatal(err)
+	}
+	before, err := crypto.ReadStoreRootExact(paths.ProductDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// About 11,700 terms is the most a wrapped keyring holds within the
+	// readers' limit.
+	const terms = 13_000
+	keys := make(map[int64][]byte, terms)
+	for term := int64(1); term <= terms; term++ {
+		keys[term] = bytes.Repeat([]byte{byte(term)}, 32)
+	}
+	successor, err := crypto.NewKeyringFromTermKeys(terms, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer successor.Zero()
+
+	_, err = Mint(paths, MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            testGenB, Parent: parent.GenerationID(), Integrity: kr,
+		OutgoingSealAlreadyWritten: true,
+		ReplacementKeyring:         successor, ReplacementPassphrase: []byte("next passphrase"),
+		Operation: "test-changepass", OperationID: "op-changepass", CreatedAt: time.Unix(1_753_500_100, 0),
+	})
+	if want := "build replacement store root: store root keyring exceeds size limit"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Mint() error = %v, want one containing %q", err, want)
+	}
+	after, err := crypto.ReadStoreRootExact(paths.ProductDir())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("store root changed: %v", err)
+	}
+	gen, opened, err := ResolveStoreRoot(paths, testStoreRootPassphrase)
+	if err != nil || gen.GenerationID() != parent.GenerationID() {
+		t.Fatalf("ResolveStoreRoot(old passphrase) = %v, %v; want %s", gen.GenerationID(), err, parent.GenerationID())
+	}
+	opened.Zero()
 }
