@@ -265,7 +265,7 @@ func (m Model) renderGenerateReview() string {
 	sb.WriteString(reviewRow("Rekey", rekey))
 	cosigner := "None"
 	if profile.CosignerRequired {
-		cosigner = "Required, " + middleEllipsize(review.CosignerKeyID, reviewIDWidth-10)
+		cosigner = "Required, " + ellipsizeMiddle(review.CosignerKeyID, reviewIDWidth-10)
 	}
 	sb.WriteString(reviewRow("Cosigner", cosigner))
 	// A warning takes the two blank rows, here and above the buttons, so the
@@ -307,7 +307,7 @@ func (m Model) renderGenerateReview() string {
 // details for the rest.
 func reviewWarningLine(warning string) string {
 	const suffix = " See details."
-	return "Warning: " + middleEllipsize(terminalSafe(firstSentence(warning)), reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
+	return "Warning: " + ellipsizeMiddle(terminalSafe(firstSentence(warning)), reviewBodyWidth-len("Warning: ")-len(suffix)) + suffix
 }
 
 // firstSentence is a warning's first sentence, which the signer writes to stand

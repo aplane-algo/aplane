@@ -51,36 +51,12 @@ func (m Model) renderLibraryTemplateDetails() string {
 		return sb.String()
 	}
 
-	lines := strings.Split(m.library.detailsContent, "\n")
-	visibleLines := m.libraryTemplateDetailsVisibleLines()
-	offset := m.library.detailsScrollOffset
-	if offset < 0 {
-		offset = 0
-	}
-	if offset >= len(lines) {
-		offset = 0
-	}
-	end := offset + visibleLines
-	if end > len(lines) {
-		end = len(lines)
-	}
-
-	if offset > 0 {
-		sb.WriteString(scrollMoreAboveLine(offset))
-		sb.WriteString("\n")
-	}
-	for _, line := range lines[offset:end] {
+	writePagerLines(&sb, m.libraryTemplateDetailsLines(), m.library.detailsScrollOffset, m.libraryTemplateDetailsVisibleLines(), func(line string) string {
 		// The file is shown as written, but every control and format
 		// character in it, bidirectional ones included, shows as an escape.
 		// A CRLF file's line ends are line ends.
-		sb.WriteString(ellipsize(terminalSafeLines(strings.TrimSuffix(line, "\r")), width))
-		sb.WriteString("\n")
-	}
-	if end < len(lines) {
-		sb.WriteString(scrollMoreBelowLine(len(lines) - end))
-		sb.WriteString("\n")
-	}
-
+		return ellipsize(terminalSafeLines(strings.TrimSuffix(line, "\r")), width)
+	})
 	return sb.String()
 }
 
@@ -92,6 +68,10 @@ func libraryDetailsTitle(templateType, keyType string, installed bool) string {
 		return fmt.Sprintf("Installed YAML: %s", displayKeyType(keyType))
 	}
 	return fmt.Sprintf("Library YAML: %s", displayKeyType(keyType))
+}
+
+func (m Model) libraryTemplateDetailsLines() []string {
+	return strings.Split(m.library.detailsContent, "\n")
 }
 
 func (m Model) libraryTemplateDetailsVisibleLines() int {
@@ -114,38 +94,7 @@ func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.
 		m.library.detailsRequestID = ""
 		m.library.detailsReturnView = 0
 		return m, nil
-	case "up", "k":
-		if m.library.detailsScrollOffset > 0 {
-			m.library.detailsScrollOffset--
-		}
-		return m, nil
-	case "down", "j":
-		maxOffset := len(strings.Split(m.library.detailsContent, "\n")) - m.libraryTemplateDetailsVisibleLines()
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
-		if m.library.detailsScrollOffset < maxOffset {
-			m.library.detailsScrollOffset++
-		}
-		return m, nil
-	case "pgup":
-		visible := m.libraryTemplateDetailsVisibleLines()
-		m.library.detailsScrollOffset -= visible
-		if m.library.detailsScrollOffset < 0 {
-			m.library.detailsScrollOffset = 0
-		}
-		return m, nil
-	case "pgdown":
-		visible := m.libraryTemplateDetailsVisibleLines()
-		maxOffset := len(strings.Split(m.library.detailsContent, "\n")) - visible
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
-		m.library.detailsScrollOffset += visible
-		if m.library.detailsScrollOffset > maxOffset {
-			m.library.detailsScrollOffset = maxOffset
-		}
-		return m, nil
 	}
+	scrollPager(&m.library.detailsScrollOffset, msg.String(), len(m.libraryTemplateDetailsLines()), m.libraryTemplateDetailsVisibleLines())
 	return m, nil
 }

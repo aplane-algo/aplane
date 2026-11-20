@@ -467,7 +467,7 @@ func (m Model) handleAdminSettingsMsg(msg AdminSettingsMsg) (tea.Model, tea.Cmd)
 		// Saved since, perhaps by another admin client.
 		m.admin.settingWarning = settingResultWarning{}
 	}
-	m.syncKeyListTabWithMode()
+	m.syncKeyListWithRole()
 	timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
 	return m, timeoutCmd
 }

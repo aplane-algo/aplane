@@ -255,38 +255,7 @@ func (m Model) handleTEALFullDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewKeyDetails
 		m.details.scrollOffset = 0
 		return m, nil
-	case "up", "k":
-		if m.details.scrollOffset > 0 {
-			m.details.scrollOffset--
-		}
-		return m, nil
-	case "down", "j":
-		maxOffset := len(strings.Split(m.details.teal, "\n")) - m.tealFullDisplayVisibleLines()
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
-		if m.details.scrollOffset < maxOffset {
-			m.details.scrollOffset++
-		}
-		return m, nil
-	case "pgup":
-		visible := m.tealFullDisplayVisibleLines()
-		m.details.scrollOffset -= visible
-		if m.details.scrollOffset < 0 {
-			m.details.scrollOffset = 0
-		}
-		return m, nil
-	case "pgdown":
-		visible := m.tealFullDisplayVisibleLines()
-		maxOffset := len(strings.Split(m.details.teal, "\n")) - visible
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
-		m.details.scrollOffset += visible
-		if m.details.scrollOffset > maxOffset {
-			m.details.scrollOffset = maxOffset
-		}
-		return m, nil
 	}
+	scrollPager(&m.details.scrollOffset, msg.String(), len(m.tealLines()), m.tealFullDisplayVisibleLines())
 	return m, nil
 }

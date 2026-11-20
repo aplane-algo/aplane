@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 )
 
@@ -259,14 +257,7 @@ func (m Model) renderTemplateInstallConfirm() string {
 	}
 
 	sb.WriteString("\n")
-	cancel := buttonInactiveStyle.Render("CANCEL")
-	confirm := buttonInactiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
-	if m.library.installFocus == 0 {
-		cancel = buttonActiveStyle.Render("CANCEL")
-	} else {
-		confirm = buttonActiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
-	}
-	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, cancel, "  ", confirm))
+	sb.WriteString(buttonPair(m.library.installFocus, "CANCEL", strings.ToUpper(libraryActionVerb(*tmpl)), nil))
 
 	return m.renderPopup(72, sb.String())
 }

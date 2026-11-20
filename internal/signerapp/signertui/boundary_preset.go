@@ -166,7 +166,7 @@ func (m Model) renderBoundaryPreset() string {
 	}
 	file := "Rules from a boundary file, with or without bounds."
 	if m.forms.boundaryFile != "" {
-		file = middleEllipsize(terminalSafe(m.forms.boundaryFile), 60)
+		file = ellipsizeMiddle(terminalSafe(m.forms.boundaryFile), 60)
 	}
 	row("Load boundary file", file)
 	sb.WriteString("\n")

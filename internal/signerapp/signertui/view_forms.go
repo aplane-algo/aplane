@@ -454,23 +454,6 @@ func (m Model) scrollParamFieldLines(name string, lines []string, fieldHeight in
 	return append([]string(nil), lines[offset:end]...), offset, len(lines) - end
 }
 
-func middleEllipsize(value string, width int) string {
-	if width < 1 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= width {
-		return value
-	}
-	if width <= 3 {
-		return string(runes[:width])
-	}
-	remaining := width - 3
-	prefixLen := (remaining + 1) / 2
-	suffixLen := remaining - prefixLen
-	return string(runes[:prefixLen]) + "..." + string(runes[len(runes)-suffixLen:])
-}
-
 func optionFieldWidth(options []string) int {
 	width := 0
 	for _, option := range options {
@@ -621,7 +604,7 @@ func (m Model) renderGenerateDisplay() string {
 	case len(warnings) == 0:
 	case len(warnings) <= generatedWarningRows:
 		for _, warning := range warnings {
-			sb.WriteString(warningStyle.Render("Warning: " + middleEllipsize(firstSentence(warning), 68-len("Warning: "))))
+			sb.WriteString(warningStyle.Render("Warning: " + ellipsizeMiddle(firstSentence(warning), 68-len("Warning: "))))
 			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")

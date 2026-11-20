@@ -262,7 +262,7 @@ func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
 		return m.sendImportKeyCmd(keyType, mnemonic, params, id)
 	}
-	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
+	m, cmd, errStr := m.handleParamModalKeys(msg, getImportKeyTypeByIndex(m.forms.importKeyType), ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
 		m.forms.importError = errStr
 	}
@@ -401,26 +401,23 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.forms.boundaryPreset != nil {
 		escView = ViewBoundaryPreset
 	}
-	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, escView, ViewGenerating, submitFn)
+	m, cmd, errStr := m.handleParamModalKeys(msg, getKeyTypeByIndex(m.forms.generateKeyType), escView, ViewGenerating, submitFn)
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == escView {
 		m.forms.generateError = errStr
 	}
 	return m, cmd
 }
 
-// handleParamModalKeys is the shared handler for parameter input modals (generate and import).
+// handleParamModalKeys is the shared handler for parameter input modals
+// (generate and import) for keyType, the type the form was opened for.
 // Returns the updated model, a tea.Cmd, and an error string for the caller to assign.
 // Focus 0..len(params)-1 are the fields; len(params) is the submit button.
 func (m Model) handleParamModalKeys(
 	msg tea.KeyMsg,
-	keyTypeIndex int,
+	keyType string,
 	escView, submitView ViewState,
 	submitFn func(keyType string, params map[string]string, id string) tea.Cmd,
 ) (Model, tea.Cmd, string) {
-	keyType := getKeyTypeByIndex(keyTypeIndex)
-	if escView == ViewImportForm {
-		keyType = getImportKeyTypeByIndex(keyTypeIndex)
-	}
 	spec := m.paramSpecFor(keyType)
 	if spec == nil {
 		m.viewState = escView
@@ -761,19 +758,9 @@ func (m Model) getMaxVisibleParams() int {
 
 // appendToCurrentParam appends input to the currently focused parameter field.
 // It strips bracketed paste sequences and other non-printable characters.
-// In ViewGenerateParams, focus 0..N-1 are the parameters.
+// In ViewGenerateParams, focus 0..N-1 are the parameters. Every way into a
+// parameter form fills genericLSigParams first.
 func (m Model) appendToCurrentParam(input string, params []lsigprovider.ParameterDef) Model {
-	if m.forms.genericLSigParams == nil {
-		// Safety fallback: determine key type index based on view state
-		keyTypeIndex := m.forms.generateKeyType
-		keyType := getKeyTypeByIndex(keyTypeIndex)
-		if m.viewState == ViewImportParams {
-			keyTypeIndex = m.forms.importKeyType
-			keyType = getImportKeyTypeByIndex(keyTypeIndex)
-		}
-		m = m.initGenericLSigParamsForKeyType(keyType)
-	}
-
 	paramIdx := m.forms.generateFocus
 	if paramIdx < 0 || paramIdx >= len(params) {
 		return m
@@ -1135,7 +1122,7 @@ func transformInput(param string, mode lsigprovider.InputMode, value string) (st
 func (m *Model) selectKeyByAddress(address string) {
 	for _, k := range m.keylist.keys {
 		if k.Address == address {
-			m.keylist.tab = m.effectiveKeyListTab()
+			m.keylist.cosignerKeys = m.isCosignerNode()
 			m.keylist.selectedKey = 0
 			for i, displayKey := range m.filteredKeys() {
 				if displayKey.Address == address {

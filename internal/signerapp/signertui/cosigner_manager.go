@@ -413,14 +413,7 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	body.WriteString("Witness Key ID:\n")
 	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
 	body.WriteString("\n\n")
-	cancel := buttonInactiveStyle.Render("CANCEL")
-	remove := buttonInactiveStyle.Render("REMOVE")
-	if m.cosigner.removeFocus == 0 {
-		cancel = buttonActiveStyle.Render("CANCEL")
-	} else {
-		remove = buttonActiveStyle.Render("REMOVE")
-	}
-	body.WriteString(cancel + "  " + remove)
+	body.WriteString(buttonPair(m.cosigner.removeFocus, "CANCEL", "REMOVE", buttonDanger))
 	body.WriteString("\n")
 	if m.cosigner.importError != "" {
 		body.WriteString("\n" + errorStyle.Render(terminalSafeLines(m.cosigner.importError)) + "\n")

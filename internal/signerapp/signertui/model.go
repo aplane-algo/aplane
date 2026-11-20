@@ -126,13 +126,6 @@ type KeyInfo struct {
 	TemplateProvenanceNote   string
 }
 
-type keyListTab int
-
-const (
-	keyListTabSigning keyListTab = iota
-	keyListTabCosigner
-)
-
 // PendingSignRequest holds a signing request waiting for approval
 type PendingSignRequest struct {
 	ID          string
@@ -177,12 +170,14 @@ type authState struct {
 	endedReason string
 }
 
-// keyListState is the main key list with filter and tabs.
+// keyListState is the main key list and its filter.
 type keyListState struct {
 	keys         []KeyInfo
 	selectedKey  int
 	scrollOffset int
-	tab          keyListTab
+	// cosignerKeys is the role the selection was made in: true once the
+	// list shows a cosigner node's keys. A change resets the selection.
+	cosignerKeys bool
 	filterInput  string // current filter text
 	filterActive bool   // true when filter input is focused
 }
