@@ -17,7 +17,7 @@ const (
 // during initialization. The host does not send this value to the plugin: the
 // declaration must come from plugin-owned code rather than echoing host input.
 // It is distinct from the JSON-RPC envelope version and the plugin package's
-// semantic version in its manifest/getInfo response.
+// semantic version in its manifest.
 const PluginProtocol = "aplane-plugin/2"
 
 // Optional methods a plugin may implement.

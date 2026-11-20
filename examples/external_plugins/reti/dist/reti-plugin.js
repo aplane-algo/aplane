@@ -1098,16 +1098,6 @@ async function handleExecute(params) {
             return { success: false, message: `Unknown subcommand: ${args[0]}` };
     }
 }
-function handleGetInfo() {
-    return {
-        name: 'reti-plugin',
-        version: '1.0.0',
-        description: 'Reti staking protocol integration',
-        commands: ['reti'],
-        networks: ['testnet', 'mainnet', 'betanet', 'localnet', 'sandbox'],
-        status: pluginState.initialized ? 'ready' : 'starting',
-    };
-}
 function handleShutdown() {
     return { success: true, message: 'Reti plugin shutdown' };
 }
@@ -1123,9 +1113,6 @@ rl.on('line', async (line) => {
                 break;
             case 'execute':
                 result = await handleExecute(params);
-                break;
-            case 'getInfo':
-                result = handleGetInfo();
                 break;
             case 'shutdown':
                 result = handleShutdown();

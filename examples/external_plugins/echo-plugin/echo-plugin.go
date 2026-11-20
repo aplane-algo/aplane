@@ -72,15 +72,6 @@ type PresentationSection struct {
 	Text string `json:"text,omitempty"`
 }
 
-type GetInfoResult struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description"`
-	Commands    []string `json:"commands"`
-	Networks    []string `json:"networks"`
-	Status      string   `json:"status"`
-}
-
 type ShutdownResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
@@ -134,8 +125,6 @@ func handleRequest(req *Request) *Response {
 		return handleInitialize(req)
 	case "execute":
 		return handleExecute(req)
-	case "getInfo":
-		return handleGetInfo(req)
 	case "shutdown":
 		return handleShutdown(req)
 	default:
@@ -185,18 +174,6 @@ func handleExecute(req *Request) *Response {
 				Text: fmt.Sprintf("Echo: %s", message),
 			}},
 		},
-	}
-	return successResponse(req.ID, result)
-}
-
-func handleGetInfo(req *Request) *Response {
-	result := GetInfoResult{
-		Name:        "echo-plugin",
-		Version:     "1.0.0",
-		Description: "Simple echo plugin for testing",
-		Commands:    []string{"echo"},
-		Networks:    []string{"testnet", "mainnet", "betanet"},
-		Status:      "ready",
 	}
 	return successResponse(req.ID, result)
 }

@@ -295,8 +295,8 @@ separate contracts. The host does not send the accepted plugin protocol token.
 Each plugin must independently return the hard-coded declaration
 `"aplane-plugin/2"` in `initialize.result.protocol`, or startup fails closed.
 This one-way declaration cannot be satisfied by echoing host input. A plugin's
-semantic package version lives in its manifest `version` field and in
-`getInfo`, not in the initialize handshake.
+semantic package version lives in its manifest `version` field, not in the
+initialize handshake.
 
 A response is a line with a `result` member or an `error` member. A
 `"result": null` is a response and completes the call at once. Every method
@@ -456,38 +456,6 @@ why the plugin failed.
 - If `presentation` is absent, apshell falls back to `message` and transaction status output.
 - Raw `data` is not part of the default human CLI rendering contract.
 
-#### getInfo
-
-Returns metadata about the plugin. This method is reserved: apshell does not
-currently call it, but plugins should still answer it.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "getInfo",
-  "params": {}
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "result": {
-    "name": "plugin-name",
-    "version": "1.0.0",
-    "description": "Plugin description",
-    "author": "Author",
-    "commands": ["command1", "command2"],
-    "networks": ["testnet", "mainnet"],
-    "status": "ready"
-  }
-}
-```
-
 #### shutdown
 
 Notifies the plugin to exit gracefully.
@@ -583,7 +551,6 @@ The core JSON-RPC surface every plugin handles (host→plugin) is:
 
 - `initialize`
 - `execute`
-- `getInfo` (reserved; not currently called by apshell)
 - `shutdown`
 
 Plugins that use the `presign-plan` group flow also handle one additional host→plugin
@@ -1084,7 +1051,7 @@ group flow instead — see [Plugin Transaction Flows](#plugin-transaction-flows-
 
 2. **Implement the JSON-RPC Server:** Listen for JSON-RPC requests on stdin and send responses to stdout.
 
-3. **Implement Required Methods:** `initialize`, `execute`, `getInfo`, `shutdown` (and `signTransactions` if the plugin uses the `presign-plan` group flow)
+3. **Implement Required Methods:** `initialize`, `execute`, `shutdown` (and `signTransactions` if the plugin uses the `presign-plan` group flow)
 
 4. **Create a Manifest:** Write a `manifest.json` file.
 
@@ -1155,14 +1122,6 @@ func main() {
                         },
                     },
                 },
-            }
-        case "getInfo":
-            result = map[string]interface{}{
-                "name":        "echo-plugin",
-                "version":     "1.0.0",
-                "description": "Simple echo plugin",
-                "commands":    []string{"echo"},
-                "status":      "ready",
             }
         case "shutdown":
             result = map[string]interface{}{
