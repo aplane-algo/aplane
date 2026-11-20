@@ -123,7 +123,9 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
 	}
 	targets := map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)}
-	requests, err := s.buildBoundedComponentRequests(txns, targets, clientsign.SubmitOptions{})
+	requests, err := s.buildBoundedComponentRequests(txns, targets, clientsign.SubmitOptions{
+		AppCallInfo: []*signerapi.AppCallInfo{nil, {Mode: "raw"}},
+	})
 	if err != nil {
 		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
 	}
@@ -138,7 +140,7 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 	// /sign/component names the same account for that position, with no hint,
 	// so the signer sizes it as /plan did.
 	group := frozenGroup{BytesHex: []string{"a", "b", "dummy"}, OriginalCount: 2}
-	component := boundedBaseComponentRequest(group, requests, targets, []*signerapi.AppCallInfo{nil, {Mode: "raw"}})
+	component := boundedBaseComponentRequest(group, requests, targets)
 	if len(component.Targets) != 1 || component.Targets[0].TargetIndex != 0 || component.Targets[0].AuthAddress != cosigned {
 		t.Fatalf("component targets = %#v", component.Targets)
 	}
@@ -194,7 +196,6 @@ func TestRequestNonCosignedSignaturesUsesCosignedAuthorizerResources(t *testing.
 			Account:                  cosignedAuthorizer,
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			CosignerPublicKey:        cosignerHex,
-			Route:                    flowRouteBoundedCosigner,
 			BoundedPath:              signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
@@ -243,7 +244,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		len(txns),
 		map[int]cosignedTarget{0: {
 			Index: 0, Sender: cosigned, Account: cosigned,
-			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpend,
+			CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -261,7 +262,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	requests, _, err = s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
 		map[int]cosignedTarget{0: {
 			Index: 0, Sender: cosigned, Account: cosigned,
-			Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpendingRekey,
+			CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpendingRekey,
 		}}, clientsign.SubmitOptions{})
 	if err != nil {
 		t.Fatalf("buildGroupSignRequests(rekey) error = %v", err)
@@ -271,7 +272,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	}
 	// Before its component arrives, a cosigned target has no path to budget.
 	if _, _, err := s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
-		map[int]cosignedTarget{0: {Index: 0, Sender: cosigned, Account: cosigned, Route: flowRouteBoundedCosigner, CosignerPublicKey: cosignerHex}},
+		map[int]cosignedTarget{0: {Index: 0, Sender: cosigned, Account: cosigned, CosignerPublicKey: cosignerHex}},
 		clientsign.SubmitOptions{}); err == nil || !strings.Contains(err.Error(), "no base component path") {
 		t.Fatalf("buildGroupSignRequests(no path) error = %v", err)
 	}

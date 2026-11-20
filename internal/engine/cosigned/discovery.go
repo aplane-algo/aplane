@@ -87,6 +87,9 @@ type cosignerEndpointProbeResult struct {
 }
 
 type cosignerEndpointSnapshot struct {
+	// keys are the required keys, distinct and sorted: the order the caller
+	// asks the cosigners in.
+	keys      []cosignerRequestKey
 	routes    map[cosignerRequestKey]*resolvedCosignerEndpoint
 	endpoints []*resolvedCosignerEndpoint
 }
@@ -142,7 +145,7 @@ func (s *Signer) resolveCosignerEndpoints(ctx context.Context, required []cosign
 	}
 
 	keep := map[*resolvedCosignerEndpoint]bool{}
-	snapshot := &cosignerEndpointSnapshot{routes: make(map[cosignerRequestKey]*resolvedCosignerEndpoint, len(selected))}
+	snapshot := &cosignerEndpointSnapshot{keys: required, routes: make(map[cosignerRequestKey]*resolvedCosignerEndpoint, len(selected))}
 	for key, index := range selected {
 		endpoint := states[index].endpoint
 		snapshot.routes[key] = endpoint

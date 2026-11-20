@@ -731,3 +731,95 @@ func TestSignAndSubmitGroupRejectsNilAlgodBeforeComponentSigning(t *testing.T) {
 		t.Fatalf("signer calls base/cosigner/assemble = %d/%d/%d, want 0/0/0", capture.baseCalls.Load(), capture.cosignerRoleCalls.Load(), capture.assembleCalls.Load())
 	}
 }
+
+// TestSignAndSubmitGroupRecordsWhatItSends pins when a cosigned send hands
+// its transactions to the TxnWriter: after a simulation, whether it passed or
+// not, and after a submission only once the node accepted it.
+func TestSignAndSubmitGroupRecordsWhatItSends(t *testing.T) {
+	publicKey, _ := testFalconCosignerKeypair(t, 0x74)
+	cosignerHex := hex.EncodeToString(publicKey)
+	tests := []struct {
+		name      string
+		simulate  bool
+		fail      bool
+		wantWrite bool
+	}{
+		{"simulation passes", true, false, true},
+		{"simulation fails", true, true, true},
+		{"submission accepted", false, false, true},
+		{"submission refused", false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			txn := testPaymentTxn(t, testAddress(7), testAddress(8), "cosigned")
+			capture := &cosignedSimulationCapture{}
+			handler := newCosignedExecutableTestHandler(t, cosignerHex, capture)
+			signerServer := httptest.NewServer(handler)
+			defer signerServer.Close()
+
+			var simulateReq models.SimulateRequest
+			algodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/v2/transactions/simulate":
+					body, _ := io.ReadAll(r.Body)
+					if err := msgpack.Decode(body, &simulateReq); err != nil {
+						t.Errorf("decode simulate request: %v", err)
+					}
+					result := models.SimulateTransactionGroupResult{
+						TxnResults: make([]models.SimulateTransactionResult, len(simulateReq.TxnGroups[0].Txns)),
+					}
+					if tt.fail {
+						result.FailureMessage, result.FailedAt = "logic eval error", []uint64{0}
+					}
+					_ = json.NewEncoder(w).Encode(models.SimulateResponse{LastRound: 9, TxnGroups: []models.SimulateTransactionGroupResult{result}})
+				case "/v2/transactions":
+					if tt.fail {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"message":"rejected"}`))
+						return
+					}
+					_, _ = w.Write([]byte(`{"txId":"accepted"}`))
+				default:
+					t.Errorf("unexpected algod path %s", r.URL.Path)
+				}
+			}))
+			defer algodServer.Close()
+			algodClient, err := algod.MakeClient(algodServer.URL, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			s, _ := newCosignedTestSigner(t, txn.Sender.String(), 1500, cosignerHex)
+			s.conn.SignerClient = signerclient.NewSignerClient(signerServer.URL)
+			s.endpointRegistry = cosignerEndpointRegistry("local-cosigner", cosignedCosignerNode(t, handler))
+			s.algod = algodClient
+
+			type written struct {
+				txn  types.Transaction
+				txID string
+			}
+			var writes []written
+			txIDs, submitted, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
+				Ctx: context.Background(), Simulate: tt.simulate, Out: io.Discard,
+				TxnWriter: func(txn types.Transaction, txID string) { writes = append(writes, written{txn, txID}) },
+			})
+			if tt.fail != (err != nil) {
+				t.Fatalf("SignAndSubmitGroup() error = %v, want failure %v", err, tt.fail)
+			}
+			if !tt.wantWrite {
+				if len(writes) != 0 {
+					t.Fatalf("TxnWriter got %d transaction(s), want none", len(writes))
+				}
+				return
+			}
+			if len(submitted) != 1 || len(txIDs) != 1 {
+				t.Fatalf("returned %d txIDs / %d txns, want 1/1", len(txIDs), len(submitted))
+			}
+			if len(writes) != 1 || writes[0].txID != txIDs[0] || writes[0].txn.Note == nil ||
+				string(writes[0].txn.Note) != string(submitted[0].Note) {
+				t.Fatalf("TxnWriter got %+v, want the sent transaction with ID %s", writes, txIDs[0])
+			}
+		})
+	}
+}

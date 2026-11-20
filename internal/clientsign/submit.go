@@ -159,24 +159,29 @@ func SignAndSubmitViaGroup(
 	if m := resp.Mutations; m != nil && m.TotalFeesDelta > 0 {
 		_, _ = fmt.Fprintf(w, "  Fee adjustment: +%d µAlgos across group\n", m.TotalFeesDelta)
 	}
+	return SimulateOrSubmit(opts, algodClient, signedTxns, signedObjects, submittedTxns, len(txns), w)
+}
+
+// SimulateOrSubmit simulates a signed group through the client's algod, or
+// submits it when opts.Simulate is off, and hands each of the first
+// originalCount transactions to opts.TxnWriter: after a simulation, whether
+// or not it passed, and after a submission only once the node accepted it.
+// signedBytes are submitted as they are; signedObjects are their decoding,
+// for the simulation, and submitted their transactions. Dummies come after
+// the original transactions, so txIDs and submitted line up with them by
+// position.
+func SimulateOrSubmit(opts SubmitOptions, algodClient *algod.Client, signedBytes [][]byte, signedObjects []types.SignedTxn, submitted []types.Transaction, originalCount int, w io.Writer) ([]string, []types.Transaction, error) {
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, algodClient, w)
-		writeSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
-		return txIDs, submittedTxns, simErr
+		writeSubmittedTransactions(opts.TxnWriter, submitted, txIDs, originalCount)
+		return txIDs, submitted, simErr
 	}
-
-	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedTxns, algodClient, opts.WaitForConfirmation, w)
+	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedBytes, algodClient, opts.WaitForConfirmation, w)
 	if err != nil {
-		return txIDs, submittedTxns, err
+		return txIDs, submitted, err
 	}
-
-	// Invoke TxnWriter callback for each original transaction slot (not dummies).
-	// This relies on the server contract that dummies are always appended
-	// after the original transactions, so txIDs[0..len(txns)] correspond
-	// to submittedTxns[0..len(txns)] positionally.
-	writeSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
-
-	return txIDs, submittedTxns, nil
+	writeSubmittedTransactions(opts.TxnWriter, submitted, txIDs, originalCount)
+	return txIDs, submitted, nil
 }
 
 // validateSignedGroupShape rejects a truncated or partially empty /sign reply
