@@ -13,6 +13,7 @@ import (
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
 	asaregistry "github.com/aplane-algo/aplane/internal/asa/registry"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/cache"
 )
 
@@ -108,15 +109,6 @@ func (r Resolver) MetadataByID(assetID uint64) (Metadata, error) {
 		}
 		return metadataFromInfo(r.Network, assetID, info, SourceLive), nil
 	}
-	if r.AlgodClient != nil {
-		var tmp cache.ASACache
-		tmp.Assets = make(map[uint64]cache.ASAInfo)
-		info, err := tmp.GetASAInfo(r.AlgodClient, assetID, r.Network)
-		if err != nil {
-			return Metadata{}, err
-		}
-		return metadataFromInfo(r.Network, assetID, info, SourceLive), nil
-	}
 	return Metadata{
 		Network: r.Network,
 		AssetID: assetID,
@@ -150,7 +142,7 @@ func ParseDisplayAmount(amount string, meta Metadata) (uint64, error) {
 }
 
 func FormatDisplayAmount(raw uint64, meta Metadata) string {
-	return trimDisplayAmount(FormatAmountWithDecimals(raw, meta.Decimals))
+	return asaset.FormatUnits(raw, meta.Decimals)
 }
 
 func DisplayRef(meta Metadata) string {
@@ -173,16 +165,4 @@ func metadataFromInfo(network string, assetID uint64, info cache.ASAInfo, source
 		Decimals: info.Decimals,
 		Source:   source,
 	}
-}
-
-func trimDisplayAmount(s string) string {
-	if !strings.Contains(s, ".") {
-		return s
-	}
-	s = strings.TrimRight(s, "0")
-	s = strings.TrimRight(s, ".")
-	if s == "" {
-		return "0"
-	}
-	return s
 }

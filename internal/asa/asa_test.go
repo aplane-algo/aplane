@@ -122,3 +122,29 @@ func TestDisplayAmountThroughLoadedCache(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatDisplayAmountDropsTrailingZeros(t *testing.T) {
+	for _, tc := range []struct {
+		raw, decimals uint64
+		want          string
+	}{
+		{0, 0, "0"},
+		{100, 0, "100"},
+		{0, 6, "0"},
+		{1, 6, "0.000001"},
+		{10, 6, "0.00001"},
+		{1_000_000, 6, "1"},
+		{1_500_000, 6, "1.5"},
+		{1_234_567, 6, "1.234567"},
+		{100_000_000, 8, "1"},
+		{150, 2, "1.5"},
+		{1, 30, "0.000000000000000000000000000001"},
+		{18446744073709551615, 0, "18446744073709551615"},
+		{18446744073709551615, 19, "1.8446744073709551615"},
+		{18446744073709551610, 20, "0.1844674407370955161"},
+	} {
+		if got := FormatDisplayAmount(tc.raw, Metadata{Decimals: tc.decimals}); got != tc.want {
+			t.Errorf("FormatDisplayAmount(%d, %d decimals) = %q, want %q", tc.raw, tc.decimals, got, tc.want)
+		}
+	}
+}

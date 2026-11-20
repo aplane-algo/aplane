@@ -185,7 +185,7 @@ func (m Method) EncodeArgs(rawArgs []string) ([][]byte, error) {
 			return nil, fmt.Errorf("invalid ABI type %q for arg %q: %w", arg.Type, arg.Name, err)
 		}
 
-		value, err := parseArgValue(arg.Type, rawArgs[i])
+		value, err := parseArgValue(abiType, arg.Type, rawArgs[i])
 		if err != nil {
 			return nil, fmt.Errorf("invalid arg %q (%s): %w", arg.Name, arg.Type, err)
 		}
@@ -213,12 +213,10 @@ func validateABIType(typeName string) error {
 	return nil
 }
 
-func parseArgValue(typeName, raw string) (interface{}, error) {
-	if err := validateABIType(typeName); err != nil {
-		return nil, err
-	}
+// parseArgValue reads raw as a value of abiType, which is typeName parsed.
+func parseArgValue(abiType abi.Type, typeName, raw string) (interface{}, error) {
 	if IsByteArrayType(typeName) {
-		return parseByteValue(raw)
+		return appinput.ParseByteValue(raw)
 	}
 
 	if typeName == "string" {
@@ -227,7 +225,6 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			if err := rejectJSONNull(payload, typeName); err != nil {
 				return nil, err
 			}
-			abiType, _ := abi.TypeOf(typeName)
 			return abiType.UnmarshalFromJSON([]byte(payload))
 		}
 		return raw, nil
@@ -264,11 +261,6 @@ func parseArgValue(typeName, raw string) (interface{}, error) {
 			return nil, err
 		}
 		payload = normalized
-	}
-
-	abiType, err := abi.TypeOf(typeName)
-	if err != nil {
-		return nil, err
 	}
 
 	value, err := abiType.UnmarshalFromJSON([]byte(payload))
@@ -462,8 +454,4 @@ func IsByteArrayType(typeName string) bool {
 		return true
 	}
 	return staticByteArrayRE.MatchString(typeName)
-}
-
-func parseByteValue(raw string) ([]byte, error) {
-	return appinput.ParseByteValue(raw)
 }

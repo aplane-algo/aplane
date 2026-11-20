@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -83,7 +82,7 @@ type RotateRecoverResult struct {
 // derives stage addresses into its own cache, and the next transaction
 // from the account is prepared without discovery once the stage is cached.
 func (a *App) RotateRecover(ctx context.Context, req RotateRecoverRequest) (*RotateRecoverResult, error) {
-	address, err := cmdspec.ResolveSingleAddress(req.Account, a.eng.NewAddressResolver())
+	address, err := a.eng.NewAddressResolver().ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve account %q: %w", req.Account, err)
 	}
@@ -108,7 +107,7 @@ func (a *App) RotateRecover(ctx context.Context, req RotateRecoverRequest) (*Rot
 // were revealed by a transaction that will never confirm, and the way to
 // move an account on without spending anything.
 func (a *App) Rotate(ctx context.Context, req RotateRequest) (*RotateCommandResult, error) {
-	address, err := cmdspec.ResolveSingleAddress(req.Account, a.eng.NewAddressResolver())
+	address, err := a.eng.NewAddressResolver().ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve account %q: %w", req.Account, err)
 	}
@@ -152,7 +151,7 @@ func (a *App) RotateStatus(ctx context.Context, account string) (*RotateStatusRe
 	if account == "" {
 		accounts = a.eng.RotatingAccounts()
 	} else {
-		address, err := cmdspec.ResolveSingleAddress(account, a.eng.NewAddressResolver())
+		address, err := a.eng.NewAddressResolver().ResolveSingle(account)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve account %q: %w", account, err)
 		}
