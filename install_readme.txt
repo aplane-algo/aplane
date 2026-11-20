@@ -1,0 +1,1 @@
+This v0.52.0 release is NOT compatible with previous versions and must be installed as a new release, rather than as an upgrade.  Importantly, BACKUPS OF OLD KEYS MAY NOT BE RESTORABLE on this release.
