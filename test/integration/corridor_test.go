@@ -335,7 +335,7 @@ func signCosignerMessage(t *testing.T, keyType string, role message.Role, txid t
 	}
 	signature, err := signerops.New().Sign(privateKey, msg[:])
 	if err != nil {
-		t.Fatalf("failed to sign %s component message: %v", role, err)
+		t.Fatalf("failed to sign the role 0x%02x component message: %v", byte(role), err)
 	}
 	return signature
 }
