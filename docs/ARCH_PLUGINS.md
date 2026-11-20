@@ -174,11 +174,7 @@ JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
 runtime request and response frames, and from the APlane plugin protocol
 version exchanged in the `initialize` method.
 
-Manifest schema `2.0` removed the unused `functions` metadata field. Plugins
-upgrading from `1.0` delete that field and set `manifest_format` to `2.0`;
-their command declarations and executable JSON-RPC protocol do not change.
-The retired `functions` and `protocol_version` fields are rejected; other
-unknown manifest fields are ignored. Commands are the sole executable and
+Unknown manifest fields are ignored. Commands are the sole executable and
 discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
