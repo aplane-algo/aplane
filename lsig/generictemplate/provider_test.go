@@ -1041,6 +1041,36 @@ return`,
 	}
 }
 
+// Creating an account refuses a compiled program whose address is on the curve,
+// whether the template is unsalted or auto-salted, even when the compiler
+// reports that address.
+func TestYAMLTemplateCompileWithSaltRefusesOnCurveCompileReply(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		base    templatestore.BaseTemplateSpec
+		version byte
+	}{
+		{name: "unsalted", base: testBaseWithoutDerivationVersion(), version: 10},
+		{name: "auto-salt", base: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt), version: 13},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tmpl := NewYAMLTemplate(&TemplateSpec{
+				BaseTemplateSpec: test.base,
+				TemplateMode:     "generated",
+				TEAL:             fmt.Sprintf("#pragma version %d\nint 1\nreturn", test.version),
+			})
+			program, address := lsigsalttest.OnCurve(t, []byte{test.version, 0x81, 0}, 2)
+			client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: program, hash: address.String()})
+			if err != nil {
+				t.Fatalf("MakeClientWithTransport() error = %v", err)
+			}
+			if _, err := tmpl.CompileWithSalt(context.Background(), nil, client); !errors.Is(err, lsigsalt.ErrUnsaltedAddressOnCurve) {
+				t.Fatalf("CompileWithSalt() error = %v, want %v", err, lsigsalt.ErrUnsaltedAddressOnCurve)
+			}
+		})
+	}
+}
+
 func TestYAMLTemplateCompileWithAlgodV13AutoSalt(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
 		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt),

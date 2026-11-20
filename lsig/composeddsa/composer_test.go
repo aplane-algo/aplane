@@ -233,6 +233,35 @@ func TestComposedDSAExplicitNoSaltStyleUsesUnmodifiedBytecode(t *testing.T) {
 	}
 }
 
+// Creating an account refuses a compiled program whose address is on the curve,
+// in either salt style: an unsalted program as compiled, and an auto-salted one
+// even when the compiler reports that address.
+func TestComposedDSARefusesOnCurveCompileReply(t *testing.T) {
+	for _, test := range []struct {
+		style lsigsalt.Style
+		ops   DSAOps
+	}{
+		{style: lsigsalt.StyleNone, ops: testOps{}},
+		{style: lsigsalt.StyleAlgodAutoSalt, ops: autoSaltTestOps{}},
+	} {
+		t.Run(string(test.style), func(t *testing.T) {
+			dsa := NewComposedDSA(Config{KeyType: "test-on-curve-v1", FamilyName: "test", Version: 1, Ops: test.ops, SaltStyle: test.style})
+			program, address := lsigsalttest.OnCurve(t, []byte{byte(test.ops.TEALVersion()), 0x81, 0}, 2)
+			client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, compileMockTransport{bytecode: program, hash: address.String()})
+			if err != nil {
+				t.Fatalf("MakeClientWithTransport() error = %v", err)
+			}
+			dsa.SetAlgodClient(client)
+			if _, err := dsa.DeriveLsigWithSalt(context.Background(), []byte{1}, nil); !errors.Is(err, lsigsalt.ErrUnsaltedAddressOnCurve) {
+				t.Fatalf("DeriveLsigWithSalt() error = %v, want %v", err, lsigsalt.ErrUnsaltedAddressOnCurve)
+			}
+			if _, _, err := dsa.DeriveLsig(context.Background(), []byte{1}, nil); !errors.Is(err, lsigsalt.ErrUnsaltedAddressOnCurve) {
+				t.Fatalf("DeriveLsig() error = %v, want %v", err, lsigsalt.ErrUnsaltedAddressOnCurve)
+			}
+		})
+	}
+}
+
 // A composer derives with algod's TEAL v13 auto-salt or with no salt. Any other
 // style, an absent one included, is refused before anything is compiled.
 func TestComposedDSARefusesOtherSaltStyles(t *testing.T) {
