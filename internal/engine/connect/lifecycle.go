@@ -120,7 +120,6 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.SignerClient = signerClient
 	s.ConnectionTarget = target
 	s.SSHTunnelClient = client
-	s.TunnelConnected = true
 	s.TunnelCancel = cancelSSH
 	s.connectingTarget = ""
 	s.Mu.Unlock()
@@ -185,7 +184,6 @@ func (s *ConnectionState) clearLocked() {
 		s.SignerClient.Client.CloseIdleConnections()
 	}
 	s.SSHTunnelClient = nil
-	s.TunnelConnected = false
 	s.SignerClient = nil
 	s.ConnectionTarget = ""
 	s.TunnelCancel = nil

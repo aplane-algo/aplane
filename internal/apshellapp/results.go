@@ -843,11 +843,10 @@ type StartupConnectDecision struct {
 
 // CommandExecutionState exposes the shell-relevant runtime state needed by command dispatch.
 type CommandExecutionState struct {
-	Network       string
-	IsConnected   bool
-	IsTunnelBound bool
-	WriteMode     bool
-	Simulate      bool
+	Network     string
+	IsConnected bool
+	WriteMode   bool
+	Simulate    bool
 }
 
 // SigningContextResult describes the semantic outcome of signing-context resolution.

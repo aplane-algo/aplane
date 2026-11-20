@@ -37,17 +37,14 @@ func (r *REPLState) cmdDisconnect(args []string, _ *command.Context) (command.Re
 	if len(args) != 0 {
 		return nil, fmt.Errorf("usage: disconnect")
 	}
-	wasConnected := r.app().IsTunnelConnected()
 	result, err := r.app().Disconnect(r.commandContext())
 	if err != nil {
 		return nil, err
 	}
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
-			if wasConnected {
-				r.println("Closing SSH tunnel...")
-			}
 			if result.WasConnected {
+				r.println("Closing SSH tunnel...")
 				r.println("✓ Tunnel disconnected")
 			}
 		})
@@ -56,7 +53,7 @@ func (r *REPLState) cmdDisconnect(args []string, _ *command.Context) (command.Re
 
 // disconnectTunnel closes the SSH tunnel connection and reports the shell-visible result.
 func disconnectTunnel(r *REPLState) error {
-	if r.app().IsTunnelConnected() {
+	if r.app().IsConnected() {
 		r.println("Closing SSH tunnel...")
 	}
 	res, err := r.app().Disconnect(r.commandContext())
@@ -94,7 +91,7 @@ func requestEnrollment(r *REPLState, alias, label string) error {
 		// The key is enrolled now, so the session is replaced with one that
 		// uses it. A pending request leaves the current session untouched:
 		// nothing could follow it until the operator approves.
-		if r.app().IsTunnelConnected() {
+		if r.app().IsConnected() {
 			r.println("Disconnecting current session...")
 			_ = disconnectTunnel(r)
 		}

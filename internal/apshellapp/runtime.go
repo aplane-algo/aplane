@@ -58,19 +58,13 @@ func (a *App) HasAlias(name string) bool {
 	return a.eng.HasAlias(name)
 }
 
-// IsTunnelConnected reports whether the current signer connection is bound to an SSH tunnel.
-func (a *App) IsTunnelConnected() bool {
-	return a.eng.IsTunnelConnected()
-}
-
 // ExecutionState returns the current shell-relevant runtime state.
 func (a *App) ExecutionState() CommandExecutionState {
 	return CommandExecutionState{
-		Network:       a.Network(),
-		IsConnected:   a.IsConnected(),
-		IsTunnelBound: a.IsTunnelConnected(),
-		WriteMode:     a.eng.GetWriteMode(),
-		Simulate:      a.eng.GetSimulate(),
+		Network:     a.Network(),
+		IsConnected: a.IsConnected(),
+		WriteMode:   a.eng.GetWriteMode(),
+		Simulate:    a.eng.GetSimulate(),
 	}
 }
 

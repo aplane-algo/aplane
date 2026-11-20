@@ -21,7 +21,6 @@ type SigningContext struct {
 	SigningAddr       string // Auth address (may differ if rekeyed)
 	KeyType           string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
 	SigSize           int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
-	IsLSig            bool   // true for LSig-based accounts (DSA or generic)
 	AuthorizationKind algorithm.AuthorizationKind
 }
 
@@ -118,14 +117,11 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	if meta, err := algorithm.GetMetadata(keyType); err == nil {
 		authorizationKind = meta.AuthorizationKind()
 	}
-	isLSig := authorizationKind == algorithm.AuthorizationLogicSig
-
 	return &SigningContext{
 		Address:           address,
 		SigningAddr:       signingAddr,
 		KeyType:           keyType,
 		SigSize:           logicsigdsa.GetCryptoSignatureSize(keyType), // 0 for ed25519 and generic lsigs
-		IsLSig:            isLSig,
 		AuthorizationKind: authorizationKind,
 	}, nil
 }

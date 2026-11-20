@@ -202,7 +202,7 @@ func (r *REPLState) cmdDelete(args []string, _ *command.Context) (command.Result
 		}
 	}
 
-	if err := r.app().DeleteKey(r.commandContext(), apshellapp.DeleteKeyRequest{Address: args[0]}); err != nil {
+	if err := r.app().DeleteKey(r.commandContext(), *target); err != nil {
 		return nil, err
 	}
 	return newShellCommandResult(func(w io.Writer) error {

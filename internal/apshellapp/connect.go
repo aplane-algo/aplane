@@ -135,7 +135,7 @@ func (a *App) connectEndpoint(ctx context.Context, endpoint config.ClientEndpoin
 
 // Disconnect closes an active tunnel connection.
 func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
-	wasConnected := a.eng.IsTunnelConnected()
+	wasConnected := a.eng.IsConnected()
 	if !wasConnected {
 		return &DisconnectResult{WasConnected: false}, nil
 	}

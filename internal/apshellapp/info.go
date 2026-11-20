@@ -69,7 +69,7 @@ func (a *App) Status(_ context.Context) (*StatusCommandResult, error) {
 		Status:          statusDetailsFromEngine(a.eng.GetStatus()),
 		LogicSigTypes:   logicsigdsa.GetKeyTypes(),
 		Algorithms:      algorithm.GetRegisteredFamilies(),
-		TunnelConnected: a.IsTunnelConnected(),
+		TunnelConnected: a.IsConnected(),
 	}, nil
 }
 

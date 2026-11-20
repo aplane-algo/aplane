@@ -76,10 +76,10 @@ func TestGetStatusConnectionSnapshotIsConsistent(t *testing.T) {
 			default:
 			}
 			state.Mu.Lock()
-			state.SignerClient, state.ConnectionTarget, state.TunnelConnected = client, "signer (ssh:1127)", true
+			state.SignerClient, state.ConnectionTarget = client, "signer (ssh:1127)"
 			state.Mu.Unlock()
 			state.Mu.Lock()
-			state.SignerClient, state.ConnectionTarget, state.TunnelConnected = nil, "", false
+			state.SignerClient, state.ConnectionTarget = nil, ""
 			state.Mu.Unlock()
 		}
 	}()
@@ -144,9 +144,6 @@ func TestDisconnectClearsSignerCacheAndConnectedStatus(t *testing.T) {
 	eng.Disconnect()
 	if eng.IsConnected() {
 		t.Fatal("engine should report disconnected after Disconnect()")
-	}
-	if eng.IsTunnelConnected() {
-		t.Fatal("engine should report tunnel disconnected after Disconnect()")
 	}
 	if got := eng.GetConnectionTarget(); got != "" {
 		t.Fatalf("GetConnectionTarget() = %q, want empty", got)

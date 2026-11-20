@@ -76,7 +76,6 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
-	eng.Connection.TunnelConnected = true
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
@@ -85,7 +84,7 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected enrollment request error, got nil")
 	}
-	if !eng.Connection.IsConnected() || !eng.IsTunnelConnected() || eng.GetConnectionTarget() != "remote-a" {
+	if !eng.Connection.IsConnected() || eng.GetConnectionTarget() != "remote-a" {
 		t.Fatal("an enrollment request must not disconnect the live tunnel")
 	}
 	if eng.SignerCache.Count() != 1 {
