@@ -844,125 +844,127 @@ find_available_port() {
     done
 }
 
-read_signer_endpoint_ssh_port() {
+# yaml_scalars, yaml_value and the endpoint URL helpers below are the ones in
+# installer/scripts/aplane-env-audit.sh, which explains them; an arch test
+# keeps the two copies the same. They read endpoints.yaml in any indentation,
+# as the installer writes it or as apshell rewrites it.
+yaml_scalars() {
     local path="$1"
     [ -f "$path" ] || return 0
-    awk -F: '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+    awk '
+        /^[[:space:]]*(#|$)/ {
             next
         }
         {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 1
+            match($0, /^[[:space:]]*/)
+            indent = RLENGTH
+            line = substr($0, indent + 1)
+            if (index(line, ":") == 0) {
                 next
             }
-            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*ssh[[:space:]]*:/) {
-                in_endpoint_ssh = 1
-                next
+            key = line
+            sub(/[[:space:]]*:.*/, "", key)
+            gsub(/^"|"$/, "", key)
+            value = line
+            sub(/^[^:]*:/, "", value)
+            sub(/[[:space:]]+#.*/, "", value)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            gsub(/^"|"$/, "", value)
+            while (depth > 0 && indents[depth] >= indent) {
+                depth--
             }
-            if (in_endpoint_ssh && indent <= 2 && $0 !~ /^[[:space:]]*ssh[[:space:]]*:/) {
-                in_endpoint_ssh = 0
+            depth++
+            indents[depth] = indent
+            keys[depth] = key
+            key_path = keys[1]
+            for (i = 2; i <= depth; i++) {
+                key_path = key_path "\036" keys[i]
             }
-            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 0
-                in_endpoint_ssh = 0
-            }
-            if (in_endpoint_ssh && indent == 4 && $0 ~ /^[[:space:]]*port[[:space:]]*:/) {
-                value = $2
-                sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                print value
-                exit
-            }
+            print key_path "\037" value
         }
     ' "$path"
 }
 
-read_primary_endpoint_ssh_port() {
+yaml_value() {
     local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function trim_endpoint_url(value, quote) {
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            quote = sprintf("%c", 39)
-            if (substr(value, 1, 1) == "\"" || substr(value, 1, 1) == quote) {
-                value = substr(value, 2)
-            }
-            if (substr(value, length(value), 1) == "\"" || substr(value, length(value), 1) == quote) {
-                value = substr(value, 1, length(value) - 1)
-            }
-            return value
-        }
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoints[[:space:]]*:/) {
-                in_endpoints = 1
-                next
-            }
-            if (in_endpoints && indent == 2 && $0 ~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 1
-                next
-            }
-            if (in_primary && indent <= 2 && $0 !~ /^[[:space:]]*primary[[:space:]]*:/) {
-                in_primary = 0
-            }
-            if (in_primary && $0 ~ /^[[:space:]]*url[[:space:]]*:/) {
-                value = $0
-                sub(/^[[:space:]]*url[[:space:]]*:[[:space:]]*/, "", value)
-                sub(/[[:space:]]*#.*/, "", value)
-                value = trim_endpoint_url(value)
-                n = split(value, parts, ":")
-                if (n >= 3) {
-                    print parts[n]
-                }
-                exit
-            }
-        }
-    ' "$path"
+    shift
+    local want line
+    want="$(IFS=$'\036'; printf '%s' "$*")"
+    while IFS= read -r line; do
+        if [ "${line%%$'\037'*}" = "$want" ]; then
+            printf '%s\n' "${line#*$'\037'}"
+            return 0
+        fi
+    done < <(yaml_scalars "$path")
+}
+
+endpoint_authority() {
+    local authority="${1#ssh://}"
+    authority="${authority%%/*}"
+    printf '%s\n' "${authority##*@}"
+}
+
+endpoint_host() {
+    local authority
+    authority="$(endpoint_authority "$1")"
+    case "$authority" in
+        \[*) authority="${authority#[}"; printf '%s\n' "${authority%%]*}" ;;
+        *) printf '%s\n' "${authority%%:*}" ;;
+    esac
+}
+
+endpoint_port() {
+    local authority
+    authority="$(endpoint_authority "$1")"
+    authority="${authority##*]}"
+    case "$authority" in
+        *:*) printf '%s\n' "${authority##*:}" ;;
+        *) printf '%s\n' "1127" ;;
+    esac
 }
 
 check_local_config_consistency() {
     local signer_config="$1"
-    local client_config="$2"
+    local client_endpoints="$2"
     [ -f "$signer_config" ] || return 0
-    [ -f "$client_config" ] || return 0
 
-    # Only the SSH port must agree: the signer's SSH server forwards every
+    # Only the SSH port must agree: the node's SSH server forwards every
     # client channel to its own REST listener, so the client never names it.
-    local signer_ssh_port client_ssh_port client_endpoints
-    client_endpoints="$(dirname "$client_config")/endpoints.yaml"
-    signer_ssh_port="$(read_signer_endpoint_ssh_port "$signer_config")"
-    client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
+    # Endpoints for other nodes on this machine use their own ports, so one
+    # loopback endpoint at this node's port is enough.
+    local signer_ssh_port line url port loopback_ports="" matched=0
+    signer_ssh_port="$(yaml_value "$signer_config" endpoint ssh port)"
+    while IFS= read -r line; do
+        case "${line%%$'\037'*}" in
+            endpoints$'\036'*$'\036'url) ;;
+            *) continue ;;
+        esac
+        url="${line#*$'\037'}"
+        is_loopback_host "$(endpoint_host "$url")" || continue
+        port="$(endpoint_port "$url")"
+        loopback_ports="$loopback_ports $port"
+        if [ "$port" = "$signer_ssh_port" ]; then
+            matched=1
+        fi
+    done < <(yaml_scalars "$client_endpoints")
 
-    if [ -z "$signer_ssh_port" ] || [ -z "$client_ssh_port" ]; then
+    if [ -z "$signer_ssh_port" ] || [ -z "$loopback_ports" ]; then
         echo "Warning: could not verify local signer/client SSH port consistency."
         echo "  Signer config:    $signer_config"
         echo "  Client endpoints: $client_endpoints"
         return 0
     fi
 
-    if [ "$signer_ssh_port" = "$client_ssh_port" ]; then
+    if [ "$matched" = "1" ]; then
         return 0
     fi
 
     echo ""
     echo "WARNING: local signer/client SSH ports do not match."
     echo "  Signer config:    $signer_config"
-    echo "    endpoint.ssh.port:         $signer_ssh_port"
+    echo "    endpoint.ssh.port: $signer_ssh_port"
     echo "  Client endpoints: $client_endpoints"
-    echo "    endpoints.primary.url port: $client_ssh_port"
+    echo "    ports of endpoints on this machine:$loopback_ports"
     echo ""
     echo "'apshell enroll' and 'connect' use $client_endpoints."
     echo "Edit $client_endpoints manually before connecting."
@@ -2253,9 +2255,7 @@ STARTEOF
         write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 "$SSH_PORT"
     fi
 
-    if [ "$NODE_ROLE" = "signer" ]; then
-        check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
-    fi
+    check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_ENDPOINTS"
     write_mcp_config "$APCLIENT_DIR" "$CLIENT_BINDIR/apshell"
 
     offer_localnet_setup "$CLIENT_BINDIR/aplocalnet" "$APCLIENT_DIR" "$DATA_DIR"

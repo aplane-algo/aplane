@@ -219,9 +219,9 @@ endpoint_port() {
 
 is_loopback_host() {
   case "$1" in
-    localhost|::1|127.*) return 0 ;;
-    *) return 1 ;;
+    localhost|127.*|::1) return 0 ;;
   esac
+  return 1
 }
 
 # Endpoints usually share one SSH key and one known_hosts file; check each

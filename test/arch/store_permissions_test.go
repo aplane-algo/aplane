@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -335,6 +336,24 @@ fi
 				t.Errorf("audit still looks for a pre-generations key directory:\n%s", out)
 			}
 		})
+	}
+}
+
+// TestInstallerAndAuditReadEndpointsAlike keeps install.sh's copy of the
+// audit's endpoints.yaml and URL helpers the same as the audit's, apart from
+// indentation, so the installer's port check and the audit agree.
+func TestInstallerAndAuditReadEndpointsAlike(t *testing.T) {
+	root := repositoryRoot(t)
+	installer := readTextFile(t, filepath.Join(root, "install.sh"))
+	audit := readTextFile(t, filepath.Join(root, "installer", "scripts", "aplane-env-audit.sh"))
+	for _, name := range []string{
+		"yaml_scalars", "yaml_value", "endpoint_authority", "endpoint_host", "endpoint_port", "is_loopback_host",
+	} {
+		installed := strings.Fields(shellFunction(t, installer, name))
+		audited := strings.Fields(shellFunction(t, audit, name))
+		if !slices.Equal(installed, audited) {
+			t.Errorf("install.sh and aplane-env-audit.sh define %s differently", name)
+		}
 	}
 }
 
