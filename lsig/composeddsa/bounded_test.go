@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -146,9 +148,6 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 	)
 	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, boundedCosignerLabel+":") {
 		t.Fatalf("rekey path is not dispatched before the cosigner check:\n%s", teal)
-	}
-	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err == nil || !strings.Contains(err.Error(), boundedmeta.CosignerSignatureSlot) {
-		t.Fatalf("BuildArgs() error = %v, want required cosigner-slot rejection", err)
 	}
 	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.DefaultCosignerPublicKeySize)
 	cosignerPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize)
@@ -460,20 +459,41 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	}
 }
 
-func TestBoundedBuildArgsEnforcesStaticLayout(t *testing.T) {
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
-		Rekey: boundedmeta.RekeyRefused,
-	})
-	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4}, nil); err != nil {
-		t.Fatalf("BuildArgs(valid) error = %v", err)
-	}
-	if _, err := provider.BuildArgs([]byte{1, 2, 3, 4, 5}, nil); err == nil || !strings.Contains(err.Error(), "length 5 invalid") {
-		t.Fatalf("BuildArgs(oversized) error = %v, want static-layout rejection", err)
+// A bounded account's arguments come from its stored layout, which the signer
+// fills, so a bounded composer assembles none, cosigned or not.
+func TestBoundedBuildArgsRefuses(t *testing.T) {
+	for name, profile := range map[string]*BoundedAuthorizationProfile{
+		"refused rekey": {
+			Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
+			Rekey: boundedmeta.RekeyRefused,
+		},
+		"cosigned": {
+			Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
+			Rekey: boundedmeta.RekeyRefused,
+			Cosigner: &boundedmeta.CosignerAuthorization{
+				Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+				SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := newBoundedTestProvider(profile)
+			for _, signature := range [][]byte{{1, 2, 3, 4}, nil} {
+				args, err := provider.BuildArgs(signature, nil)
+				if !errors.Is(err, errBoundedBuildArgs) || args != nil {
+					t.Fatalf("BuildArgs(%x) = %v, %v, want %v", signature, args, err, errBoundedBuildArgs)
+				}
+			}
+			if got, want := errBoundedBuildArgs.Error(), "bounded accounts are assembled from their stored metadata"; got != want {
+				t.Fatalf("refusal = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
-func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
+// The stored layout keeps a derived slot ahead of a runtime argument, so the
+// runtime argument's index does not depend on whether a proof is supplied.
+func TestBoundedLayoutPutsDerivedSlotBeforeRuntimeArg(t *testing.T) {
 	provider := NewComposedDSA(Config{
 		KeyType:      "aplane.test-bounded-args.v1",
 		BaseKeyType:  "aplane.falcon1024.v1",
@@ -499,12 +519,20 @@ func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
 		},
 	})
 
-	args, err := provider.BuildArgs([]byte{1, 2, 3, 4}, map[string][]byte{"preimage": {0xaa}})
-	if err != nil {
-		t.Fatalf("BuildArgs() error = %v", err)
+	metadata := provider.BoundedAuthorizationMetadata()
+	if metadata == nil {
+		t.Fatal("BoundedAuthorizationMetadata() = nil")
 	}
-	if len(args) != 3 || !bytes.Equal(args[0], []byte{1, 2, 3, 4}) || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
-		t.Fatalf("BuildArgs() = %#v, want [signature, empty derived slot, runtime arg]", args)
+	var got []string
+	for i, slot := range metadata.ArgumentLayout {
+		if slot.Index != i {
+			t.Fatalf("slot %q has index %d at position %d", slot.Name, slot.Index, i)
+		}
+		got = append(got, slot.Name+":"+slot.Source)
+	}
+	want := []string{"base_signature_0:" + boundedmeta.ArgSourceBaseSignature, "merkle_proof:" + boundedmeta.ArgSourceDerived, "preimage:" + boundedmeta.ArgSourceRuntime}
+	if !slices.Equal(got, want) {
+		t.Fatalf("argument layout = %v, want %v", got, want)
 	}
 }
 

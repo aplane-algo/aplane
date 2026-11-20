@@ -551,14 +551,6 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 			t.Fatalf("bounded Merkle allowlist retained close-out path %q:\n%s", forbidden, teal)
 		}
 	}
-
-	args, err := provider.BuildArgs([]byte{0xaa}, nil)
-	if err != nil {
-		t.Fatalf("BuildArgs(no runtime args) error = %v", err)
-	}
-	if len(args) != 1 || !bytes.Equal(args[0], []byte{0xaa}) {
-		t.Fatalf("BuildArgs(no runtime args) = %#v, want [signature]", args)
-	}
 }
 
 func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *testing.T) {

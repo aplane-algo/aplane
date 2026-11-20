@@ -38,7 +38,7 @@ import (
 // a set of refused templates: admission, registration, fingerprints, parameter
 // definitions, metadata, programs, derived bytecode and addresses, and the
 // error text of each refusal.
-const composedOutputDigest = "75d1bc66016e8dce2638ee256474c8727d37b7af92c2428a2988085673c17dcf"
+const composedOutputDigest = "24e1ef1ac64567d1d6cbd9bbdebb43835989ba9756fd5aea9726d94d6347f763"
 
 const composedCharacterizationDumpEnv = "APLANE_COMPOSED_CHARACTERIZATION_DUMP"
 

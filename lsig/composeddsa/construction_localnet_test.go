@@ -139,43 +139,22 @@ func groupPlan(t *testing.T, programBytes, argumentBytes int) (groupSize, fee ui
 }
 
 // argsFor builds arguments for a transaction ID. Each signer's position matches the
-// slot it fills, so a test can substitute one component.
+// slot it fills, so a test can substitute one component. Placement follows the
+// stored layout, as the signer's assembly does.
 func (a *compositeAccount) argsFor(t *testing.T, txid []byte, signers []compositeKey, cosigned bool) [][]byte {
 	t.Helper()
 	parts := make([][]byte, len(signers))
 	for i, signer := range signers {
 		parts[i] = signer.sign(t, txid)
 	}
-	if a.cosigner == nil {
-		args, err := a.provider.BuildArgs(encodeCompositeSignature(parts...), nil)
-		if err != nil {
-			t.Fatalf("BuildArgs() error = %v", err)
-		}
-		return args
+	var cosignature []byte
+	if cosigned && a.cosigner != nil {
+		var digest types.Digest
+		copy(digest[:], txid)
+		componentMessage := message.ComponentMessage(message.RoleCosigner, digest)
+		cosignature = a.cosigner.sign(t, componentMessage[:])
 	}
-	// BuildArgs has no transaction context, so it refuses a required cosigner slot.
-	// Placement follows the stored layout, as the signer's assembly does.
-	args := make([][]byte, len(a.metadata.ArgumentLayout))
-	base := 0
-	for _, slot := range a.metadata.ArgumentLayout {
-		args[slot.Index] = []byte{}
-		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
-			args[slot.Index] = parts[base]
-			base++
-		case boundedmeta.ArgSourceCosigner:
-			if cosigned {
-				var digest types.Digest
-				copy(digest[:], txid)
-				componentMessage := message.ComponentMessage(message.RoleCosigner, digest)
-				args[slot.Index] = a.cosigner.sign(t, componentMessage[:])
-			}
-		}
-	}
-	for len(args) > 0 && len(args[len(args)-1]) == 0 {
-		args = args[:len(args)-1]
-	}
-	return args
+	return layoutArgs(a.metadata, parts, cosignature)
 }
 
 // signedGroup returns a group whose first transaction pays from the account. The

@@ -1174,6 +1174,7 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 | DSA (single-signature-arg form, e.g. `aplane.falcon1024.v1`) | `[signature]` |
 | DSA (multi-signature-arg form, when declared by a custom provider) | `[r, s]` |
 | DSA with runtime args | `[signature args..., runtime args...]` |
+| Bounded composed DSA | refused: the signer assembles the account's arguments from its stored layout |
 
 **Limits**: the network refuses a LogicSig with more than 255 arguments or with any
 argument over 4,096 bytes (node constants, restated as `lsigresource.MaxLogicSigArgs`
@@ -1364,9 +1365,11 @@ a time condition belongs in author TEAL, alone or beside a plain allowlist. See 
 contract in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract).
 
-Bounded-capable bases expose a static signature-argument layout. The bounded composer keeps
-`LSigProvider.BuildArgs` unchanged, then assembles declared signer-derived and
-caller runtime Layer-3 arguments into frozen slots selected by the plan. Durable
+Bounded-capable bases expose a static signature-argument layout. The signer packs a
+bounded account's spending signature through its base key type's `LSigProvider.BuildArgs`,
+then assembles it with declared signer-derived and caller runtime Layer-3 arguments into
+the frozen slots the stored layout declares for the planned path; a bounded composer's
+own `BuildArgs` refuses. Durable
 key metadata, rather than the installed YAML template, records path routing,
 base argument count/sizes, all argument declarations and slots, profile,
 optional cosigner authorization, and reviewed per-path opcode ceilings.
