@@ -683,8 +683,9 @@ local, rebuildable state:
 JSON cache files use an HMAC envelope version plus a payload-level
 `schema_version`, which every write records. The signed envelope has
 `version: 1`; alias, set, ASA, and auth-address payloads carry
-`schema_version: 1`, while `signer_cache.json` carries `schema_version: 2` for
-structured LogicSig resources. A missing or unsupported payload
+`schema_version: 1`, while `signer_cache.json` carries `schema_version: 4`
+(structured LogicSig resources, `bounded_contracts`, and
+`authorization_kinds`). A missing or unsupported payload
 version is rejected and the cache is rebuilt from empty or seed data; the
 signer cache then rebuilds from authenticated signer inventory without
 invalidating unrelated client caches. Cache
@@ -703,7 +704,8 @@ have precedence over convenience aliases, while ambiguous symbolic references
 are rejected.
 
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
-  inventory. It may persist address key types, generic-LogicSig flags,
+  inventory. It may persist address key types, the `authorization_kinds`
+  the signer reports (`authorization_kind` per address), generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
   `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
   `bounded_max_fees` (the bounded authorization `max_fee` per address).
@@ -722,6 +724,10 @@ are rejected.
   account's fee ceiling from `bounded_max_fees` only when its cached
   `bounded_contracts` entry is `bounded2`; a `plain1` account has none, and
   a missing or unknown contract fails closed until `/keys` is refreshed.
+  The client takes an address's authorization kind from `authorization_kinds`
+  and never derives it from the key type: an address the signer lists with no
+  kind, a witness key, or with one outside the closed set signs nothing on the
+  client.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
   aliases reserve `list`, `delete`, and `remove`; sets reserve `list`, `add`,

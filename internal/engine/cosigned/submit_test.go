@@ -168,14 +168,14 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	plain := testAddress(2).String()
 	cosignerHex := testCosignerPublicKeyHex(0xd6)
 	s, sc := newTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(bounded, "test.bounded-cosigner.v1")
+		c.AddAddress(bounded, "test.bounded-cosigner.v1", "logic_sig")
 		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, cosignerHex)
 		c.SetBoundedContractForAddress(bounded, signerapi.BoundedContractBounded2)
 		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
 		setTestLogicSigResources(c, bounded, 4000)
-		c.AddAddress(plain, "aplane.falcon1024.v1")
+		c.AddAddress(plain, "aplane.falcon1024.v1", "logic_sig")
 		setTestLogicSigResources(c, plain, 1700)
 	})
 	txns := []types.Transaction{
@@ -589,7 +589,7 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 func newCosignedTestSigner(t *testing.T, sender string, programBytes int, cosignerPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
 	return newTestSigner(t, func(signerCache *cache.SignerCache) {
-		signerCache.AddAddress(sender, "aplane.falcon1024.v1")
+		signerCache.AddAddress(sender, "aplane.falcon1024.v1", "logic_sig")
 		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigned1)
 		signerCache.SetCosignerComponentKeyTypeForAddress(sender, witness.Falcon1024V1)
 		signerCache.SetBoundedContractForAddress(sender, signerapi.BoundedContractPlain1)
@@ -971,7 +971,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	account := testAddress(1).String()
 	setup := func(contract string, maxFee *uint64) *Signer {
 		s, _ := newTestSigner(t, func(c *cache.SignerCache) {
-			c.AddAddress(account, "aplane.falcon1024.v1")
+			c.AddAddress(account, "aplane.falcon1024.v1", "logic_sig")
 			c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 			c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 			c.SetCosignerPublicKeyForAddress(account, testCosignerPublicKeyHex(0xd6))

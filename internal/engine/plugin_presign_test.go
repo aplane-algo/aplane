@@ -58,7 +58,7 @@ func presignManagedCaches(managed string) []EngineOption {
 	authCache := cache.NewAuthAddressCacheForStore(nil)
 	authCache.AuthAddresses[managed] = ""
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(managed, "ed25519")
+	signerCache.AddAddress(managed, "ed25519", "ed25519")
 	return []EngineOption{WithAuthCache(authCache), WithSignerCache(signerCache)}
 }
 

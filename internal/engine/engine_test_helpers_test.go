@@ -115,7 +115,7 @@ func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport) *En
 
 	signerCache := cache.NewSignerCache()
 	for addr := range transport.accounts {
-		signerCache.AddAddress(addr, "ed25519")
+		signerCache.AddAddress(addr, "ed25519", "ed25519")
 	}
 
 	aliasCache := cache.AliasCache{Aliases: make(map[string]string)}

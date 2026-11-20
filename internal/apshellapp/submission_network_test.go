@@ -125,7 +125,7 @@ func TestSubmitPluginTransactionsRefusesARekeyingGroupForAnotherNetwork(t *testi
 	testnet := decode(config.AlgorandTestnetGenesisHash)
 	mainnet := decode(config.AlgorandMainnetGenesisHash)
 	target := crypto.GenerateAccount().Address
-	keys := []signerapi.KeyInfo{{Address: target.String(), KeyType: "ed25519", ValidRekeyTarget: true}}
+	keys := []signerapi.KeyInfo{{Address: target.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true}}
 
 	mainnetTxn := func(sender types.Address, note string, rekey bool) types.Transaction {
 		txn, err := transaction.MakePaymentTxn(sender.String(), sender.String(), 0, []byte(note), "", types.SuggestedParams{

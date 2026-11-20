@@ -260,7 +260,7 @@ func TestReviewPregroupedSignedSaysWhoAuthorizesEachSlot(t *testing.T) {
 	eng := newIsolatedTestEngine(t, "testnet")
 	var keys []signerapi.KeyInfo
 	for _, address := range []types.Address{held, heldToo, heldBoth, heldAuthorizer, heldAuthorizerToo, heldKey.Address, heldLsigKey.Address} {
-		keys = append(keys, signerapi.KeyInfo{Address: address.String(), KeyType: "ed25519"})
+		keys = append(keys, signerapi.KeyInfo{Address: address.String(), KeyType: "ed25519", AuthorizationKind: "ed25519"})
 	}
 	if err := eng.PopulateSignerCache(keys); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -305,7 +305,7 @@ func TestReviewPresignPlanMarksAPluginSignedSlotFromAHeldAccount(t *testing.T) {
 	managed := approvalTestPayment(1, 34, 2)
 	eng := newIsolatedTestEngine(t, "testnet")
 	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
-		{Address: plugin.Sender.String(), KeyType: "ed25519"}, {Address: managed.Sender.String(), KeyType: "ed25519"},
+		{Address: plugin.Sender.String(), KeyType: "ed25519", AuthorizationKind: "ed25519"}, {Address: managed.Sender.String(), KeyType: "ed25519", AuthorizationKind: "ed25519"},
 	}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}

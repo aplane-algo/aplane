@@ -16,6 +16,7 @@ func NewSignerCache() SignerCache {
 	cache := SignerCache{
 		SchemaVersion:             signerCachePayloadSchemaVersion,
 		Keys:                      make(map[string]string),
+		AuthorizationKinds:        make(map[string]string),
 		GenericLsigs:              make(map[string]bool),
 		LogicSigResources:         make(map[string]lsigresource.Profile),
 		SigningArgs:               make(map[string][]SigningArgInfo),
@@ -61,9 +62,25 @@ func (cache *SignerCache) GetKeyType(address string) string {
 	return cache.Keys[address]
 }
 
-// AddAddress adds an address to the signer cache with its key type
-func (cache *SignerCache) AddAddress(address string, keyType string) {
+// AddAddress adds an address to the signer cache with its key type and the
+// authorization kind the signer reports for it, which may be empty: a witness
+// key authorizes no transaction.
+func (cache *SignerCache) AddAddress(address, keyType, authorizationKind string) {
 	cache.Keys[address] = keyType
+	if cache.AuthorizationKinds == nil {
+		cache.AuthorizationKinds = make(map[string]string)
+	}
+	if authorizationKind == "" {
+		delete(cache.AuthorizationKinds, address)
+		return
+	}
+	cache.AuthorizationKinds[address] = authorizationKind
+}
+
+// AuthorizationKind returns the authorization kind the signer reported for
+// an address, or "" when it reported none.
+func (cache *SignerCache) AuthorizationKind(address string) string {
+	return cache.AuthorizationKinds[address]
 }
 
 // Count returns the number of addresses in the cache

@@ -328,7 +328,7 @@ func TestAccountAliasSetAndSignerHelpers(t *testing.T) {
 		t.Fatal("missing alias should return null")
 	}
 
-	eng.SignerCache.Keys = map[string]string{addr1: "ed25519"}
+	eng.SignerCache.AddAddress(addr1, "ed25519", "ed25519")
 	accounts := api.jsAccounts(goja.FunctionCall{}).Export().([]interface{})
 	if len(accounts) != 1 {
 		t.Fatalf("accounts() len = %d, want 1", len(accounts))
@@ -343,7 +343,7 @@ func TestJSAliasAndAccountHelpersMatchMCPProjectionSemantics(t *testing.T) {
 		api.runtime.ToValue("alice"),
 		api.runtime.ToValue(addr),
 	}})
-	eng.SignerCache.Keys = map[string]string{addr: "ed25519"}
+	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	jsAliases := api.jsAliases(goja.FunctionCall{}).Export().(map[string]interface{})
 	if jsAliases["alice"] != addr {
@@ -1079,7 +1079,7 @@ func TestAdditionalErrorPaths(t *testing.T) {
 			eng.AliasCache.Aliases = make(map[string]string)
 		}
 		eng.AliasCache.Aliases["alice"] = addr1
-		eng.SignerCache.Keys = map[string]string{addr1: "ed25519"}
+		eng.SignerCache.AddAddress(addr1, "ed25519", "ed25519")
 
 		got := api.jsCanSignFor(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue("alice")}}).Export().(map[string]interface{})
 		if got["canSign"] != true || fmt.Sprint(got["authorizationKind"]) != "ed25519" {

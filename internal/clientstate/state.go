@@ -150,7 +150,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 	s.SignerCache = cache.NewSignerCache()
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
-		s.SignerCache.Keys[keyInfo.Address] = keyInfo.KeyType
+		s.SignerCache.AddAddress(keyInfo.Address, keyInfo.KeyType, keyInfo.AuthorizationKind)
 
 		if profile, ok := logicSigProfiles[keyInfo.Address]; ok {
 			s.SignerCache.SetLogicSigResourceProfile(keyInfo.Address, profile)

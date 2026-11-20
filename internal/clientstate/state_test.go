@@ -200,7 +200,7 @@ func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) 
 	state.CacheStore = store
 	state.SignerCache = cache.NewSignerCache()
 	state.SignerCache.BindStore(store)
-	state.SignerCache.AddAddress(address, "ed25519")
+	state.SignerCache.AddAddress(address, "ed25519", "ed25519")
 	if err := state.SignerCache.SaveCache(); err != nil {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
@@ -564,6 +564,7 @@ func TestSignerCacheAcceptsTheKeysContractFixtures(t *testing.T) {
 func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 	state := newTestState(t)
 	state.SignerCache.Keys = map[string]string{"OLD": "ed25519"}
+	state.SignerCache.AuthorizationKinds = map[string]string{"OLD": "ed25519"}
 	state.SignerCache.GenericLsigs = map[string]bool{"OLD": true}
 	state.SignerCache.LogicSigResources = map[string]lsigresource.Profile{"OLD": {ProgramBytes: 1}}
 	state.SignerCache.SigningArgs = map[string][]cache.SigningArgInfo{"OLD": {{Name: "x"}}}
@@ -576,11 +577,12 @@ func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 
 	maxFee := uint64(5000)
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
-		Address:       "NEW",
-		KeyType:       "aplane.falcon1024.v1",
-		IsGenericLsig: true,
-		SigningFlow:   "cosigned1",
-		SigningArgs:   []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true}},
+		Address:           "NEW",
+		KeyType:           "aplane.falcon1024.v1",
+		AuthorizationKind: "logic_sig",
+		IsGenericLsig:     true,
+		SigningFlow:       "cosigned1",
+		SigningArgs:       []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true}},
 		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
 			Contract: "bounded2",
 			MaxFee:   &maxFee,
@@ -595,7 +597,7 @@ func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":3,"keys":{"NEW":"aplane.falcon1024.v1"},"generic_lsigs":{"NEW":true},"signing_args":{"NEW":[{"name":"secret","type":"bytes","required":true}]},"signing_flows":{"NEW":"cosigned1"},"bounded_max_fees":{"NEW":5000},"bounded_contracts":{"NEW":"bounded2"}}`
+	want := `{"schema_version":4,"keys":{"NEW":"aplane.falcon1024.v1"},"authorization_kinds":{"NEW":"logic_sig"},"generic_lsigs":{"NEW":true},"signing_args":{"NEW":[{"name":"secret","type":"bytes","required":true}]},"signing_flows":{"NEW":"cosigned1"},"bounded_max_fees":{"NEW":5000},"bounded_contracts":{"NEW":"bounded2"}}`
 	if string(got) != want {
 		t.Fatalf("signer cache after populate\n got: %s\nwant: %s", got, want)
 	}

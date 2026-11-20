@@ -375,7 +375,7 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 	}))
 	defer server.Close()
 	eng := setupTestEngine(t)
-	eng.SignerCache.AddAddress("CACHED", "ed25519")
+	eng.SignerCache.AddAddress("CACHED", "ed25519", "ed25519")
 
 	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("CurrentKeys() with no signer client error = %v, want ErrNotConnected", err)

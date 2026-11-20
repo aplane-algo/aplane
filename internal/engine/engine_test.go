@@ -234,7 +234,7 @@ func (n *authRebuildNode) serve(t *testing.T) *algod.Client {
 func authRebuildEngine(t *testing.T, dataDir, address string, client *algod.Client) *Engine {
 	t.Helper()
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519")
+	signerCache.AddAddress(address, "ed25519", "ed25519")
 	eng := NewEngine("testnet",
 		WithDataDir(dataDir),
 		WithCacheStore(cache.NewStore(dataDir)),

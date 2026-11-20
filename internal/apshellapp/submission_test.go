@@ -218,9 +218,9 @@ var (
 
 func rekeyTestKeys() []signerapi.KeyInfo {
 	return []signerapi.KeyInfo{
-		{Address: rekeyTestNative.String(), KeyType: "ed25519", ValidRekeyTarget: true},
-		{Address: rekeyTestRotating.String(), KeyType: "aplane.rotating-triple-wotsc.v1", SigningFlow: signerapi.SigningFlowRotating1},
-		{Address: rekeyTestHTLC.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: rekeyTestNative.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true},
+		{Address: rekeyTestRotating.String(), KeyType: "aplane.rotating-triple-wotsc.v1", AuthorizationKind: "logic_sig", SigningFlow: signerapi.SigningFlowRotating1},
+		{Address: rekeyTestHTLC.String(), KeyType: "aplane.htlc.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true},
 	}
 }
 
@@ -359,8 +359,8 @@ func TestCheckPluginGroupJudgesFromTheFetchedKeys(t *testing.T) {
 	// The cache says the HTLC is a valid rekey target and that a foreign
 	// address holds an HTLC; the signer says neither.
 	contradicting := []signerapi.KeyInfo{
-		{Address: rekeyTestHTLC.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true, ValidRekeyTarget: true},
-		{Address: rekeyTestForeign.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: rekeyTestHTLC.String(), KeyType: "aplane.htlc.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true, ValidRekeyTarget: true},
+		{Address: rekeyTestForeign.String(), KeyType: "aplane.htlc.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true},
 	}
 	if err := f.eng.PopulateSignerCache(contradicting); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -544,7 +544,7 @@ func TestCheckPluginGroupNamesThePregroupedModeOnce(t *testing.T) {
 func TestPluginGroupHeldAddressesComeFromTheCheck(t *testing.T) {
 	f := newPluginRekeyFixture(t, rekeyTestKeys())
 	cached := types.Address{40}
-	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: cached.String(), KeyType: "ed25519"}}); err != nil {
+	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: cached.String(), KeyType: "ed25519", AuthorizationKind: "ed25519"}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	fetched := map[string]bool{}

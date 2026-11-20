@@ -95,7 +95,7 @@ func newSubmitFixture(t *testing.T, mode string) *submitFixture {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
 			var infos []signerapi.KeyInfo
 			for _, account := range []crypto.Account{f.a, f.b, f.c} {
-				infos = append(infos, signerapi.KeyInfo{Address: account.Address.String(), KeyType: "ed25519", ValidRekeyTarget: true})
+				infos = append(infos, signerapi.KeyInfo{Address: account.Address.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true})
 			}
 			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(infos), Keys: infos})
 		case r.Method == http.MethodGet && r.URL.Path == "/status":

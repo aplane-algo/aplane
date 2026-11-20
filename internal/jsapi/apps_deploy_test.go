@@ -65,7 +65,7 @@ func TestAppDeployReturnsAConfirmedDeployWithoutItsApp(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: deployer, KeyType: "ed25519"}}})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: deployer, KeyType: "ed25519", AuthorizationKind: "ed25519"}}})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
 			var req signerapi.GroupSignRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -93,7 +93,7 @@ func TestAppDeployReturnsAConfirmedDeployWithoutItsApp(t *testing.T) {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	eng.SignerCache.Keys = map[string]string{deployer: "ed25519"}
+	eng.SignerCache.AddAddress(deployer, "ed25519", "ed25519")
 	if eng.AuthCache.AuthAddresses == nil {
 		eng.AuthCache.AuthAddresses = map[string]string{}
 	}

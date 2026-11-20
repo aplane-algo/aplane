@@ -26,14 +26,14 @@ func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	nativefalcon.RegisterClient()
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "aplane.falcon1024.v1")
+	signerCache.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowCosigned1)
 	signerCache.SetBoundedContractForAddress(addr, signerapi.BoundedContractBounded2)
 	signerCache.SetBoundedMaxFeeForAddress(addr, 10_000)
 	signerCache.SetCosignerComponentKeyTypeForAddress(addr, witness.Falcon1024V1)
 	signerCache.SetCosignerPublicKeyForAddress(addr, cosignerHex)
 	signerCache.SetLogicSigResourceProfile(addr, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
-	signerCache.AddAddress(nativeFalconAddr, nativefalcon.KeyType)
+	signerCache.AddAddress(nativeFalconAddr, nativefalcon.KeyType, "native_pq")
 
 	eng := NewEngine("testnet", WithSignerCache(signerCache))
 	view := cosignedSignerCacheView{eng.Core}

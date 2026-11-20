@@ -58,18 +58,18 @@ var (
 
 func argsTestKeys() []signerapi.KeyInfo {
 	htlc := func(address string) signerapi.KeyInfo {
-		return signerapi.KeyInfo{Address: address, KeyType: "aplane.htlc.v1", IsGenericLsig: true,
+		return signerapi.KeyInfo{Address: address, KeyType: "aplane.htlc.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true,
 			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "preimage", Type: "bytes", MaxSize: 64}}}
 	}
 	return []signerapi.KeyInfo{
-		{Address: argsNative, KeyType: "ed25519"},
-		{Address: argsFalcon, KeyType: "falcon1024"},
-		{Address: argsRekeyed, KeyType: "ed25519"},
-		{Address: argsRotating, KeyType: rotatingkey.RotatingTripleXmssV1, SigningFlow: signerapi.SigningFlowRotating1,
+		{Address: argsNative, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: argsFalcon, KeyType: "falcon1024", AuthorizationKind: "native_pq"},
+		{Address: argsRekeyed, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: argsRotating, KeyType: rotatingkey.RotatingTripleXmssV1, AuthorizationKind: "logic_sig", SigningFlow: signerapi.SigningFlowRotating1,
 			LogicSigResources: &signerapi.LogicSigResourceProfile{Default: &signerapi.LogicSigResourceUsage{
 				ProgramBytes: 4_500, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000}}},
 		htlc(argsHTLC), htlc(argsHTLC2),
-		{Address: argsSecret, KeyType: "example.secret.v1", IsGenericLsig: true,
+		{Address: argsSecret, KeyType: "example.secret.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true,
 			SigningArgs: []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", MaxSize: 32}}},
 	}
 }

@@ -77,30 +77,23 @@ func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.
 	return e.SignerCache.LogicSigResourceProfile(address)
 }
 
-// signerCacheAuthorizationKind classifies an address from one consistent
-// signer-cache snapshot. The boolean reports whether the address is present;
-// a present address with an empty kind has invalid or unknown key metadata.
+// signerCacheAuthorizationKind returns the authorization kind the signer
+// reported for an address on /keys. The boolean reports whether the address
+// is present. A present address with an empty kind authorizes nothing this
+// client knows: the signer reported no kind (a witness key) or one outside
+// the closed set, and callers treat it as not signable.
 func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	if !e.SignerCache.HasAddress(address) {
 		return "", false
 	}
-	if e.SignerCache.IsGenericLsig(address) {
-		return algorithm.AuthorizationLogicSig, true
-	}
-	if _, ok := e.SignerCache.LogicSigResourceProfile(address); ok {
-		return algorithm.AuthorizationLogicSig, true
-	}
-	keyType := e.SignerCache.GetKeyType(address)
-	if keyType == "ed25519" {
-		return algorithm.AuthorizationEd25519, true
-	}
-	metadata, err := algorithm.GetMetadata(keyType)
-	if err != nil {
+	switch kind := algorithm.AuthorizationKind(e.SignerCache.AuthorizationKind(address)); kind {
+	case algorithm.AuthorizationEd25519, algorithm.AuthorizationNativePQ, algorithm.AuthorizationLogicSig:
+		return kind, true
+	default:
 		return "", true
 	}
-	return metadata.AuthorizationKind(), true
 }
 
 // AuthorizationFeeReserve returns the additional microAlgo fee a standalone

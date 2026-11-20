@@ -234,7 +234,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 	if _, err := eng.AddAliasWithContext(context.Background(), "alice", addr); err != nil {
 		t.Fatalf("AddAlias() error = %v", err)
 	}
-	eng.SignerCache.Keys[addr] = "ed25519"
+	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	type outcome struct {
 		cmd  string

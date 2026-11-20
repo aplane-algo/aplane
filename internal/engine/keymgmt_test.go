@@ -119,7 +119,7 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 	addr := testAddr(12)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		switch {
@@ -200,7 +200,7 @@ func TestEngineGenerateKeyIgnoresRefreshFailure(t *testing.T) {
 func TestEngineDeleteKeyIgnoresRefreshFailure(t *testing.T) {
 	addr := testAddr(22)
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, "ed25519")
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
 
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
 		switch {

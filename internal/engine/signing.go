@@ -101,21 +101,12 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 		return nil, fmt.Errorf("%w: account is rekeyed to %s but that address is not signable", ErrNoSigningKey, authAddr)
 	}
 
-	// Get key type from signer cache (source of truth, populated from server's /keys response)
+	// The key type and authorization kind are the signer's, from its /keys
+	// answer. A key it reports no kind this client knows for signs nothing.
 	keyType := e.signerCacheKeyType(signingAddr)
-	if keyType == "" {
-		keyType = "ed25519" // Default to ed25519 if not specified
-	}
-
-	// Unknown non-Ed25519 types preserve the compatibility assumption that
-	// they are LogicSigs. Registered metadata is authoritative for known types,
-	// including native Falcon, which is neither Ed25519 nor a LogicSig.
-	authorizationKind := algorithm.AuthorizationLogicSig
-	if keyType == "ed25519" {
-		authorizationKind = algorithm.AuthorizationEd25519
-	}
-	if meta, err := algorithm.GetMetadata(keyType); err == nil {
-		authorizationKind = meta.AuthorizationKind()
+	authorizationKind, _ := e.signerCacheAuthorizationKind(signingAddr)
+	if authorizationKind == "" {
+		return nil, fmt.Errorf("%w: the signer reports no transaction authorization this client knows for %s", ErrNoSigningKey, signingAddr)
 	}
 	return &SigningContext{
 		Address:           address,

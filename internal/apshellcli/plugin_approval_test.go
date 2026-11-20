@@ -387,9 +387,9 @@ func newRekeyReviewFixture(t *testing.T) rekeyReviewFixture {
 		keyFetches: new(atomic.Int32),
 	}
 	keys := []signerapi.KeyInfo{
-		{Address: f.native.String(), KeyType: "ed25519", ValidRekeyTarget: true},
-		{Address: f.rotating.String(), KeyType: "aplane.rotating-triple-wotsc.v1", SigningFlow: signerapi.SigningFlowRotating1},
-		{Address: f.htlc.String(), KeyType: "aplane.htlc.v1", IsGenericLsig: true},
+		{Address: f.native.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true},
+		{Address: f.rotating.String(), KeyType: "aplane.rotating-triple-wotsc.v1", AuthorizationKind: "logic_sig", SigningFlow: signerapi.SigningFlowRotating1},
+		{Address: f.htlc.String(), KeyType: "aplane.htlc.v1", AuthorizationKind: "logic_sig", IsGenericLsig: true},
 		{Address: f.vault.String(), KeyType: "example.vault.v1", IsGenericLsig: true, ValidRekeyTarget: true},
 	}
 	signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -619,7 +619,7 @@ func TestReviewOfARekeyTargetReadsTheSignersKeyList(t *testing.T) {
 func TestReviewRefusesARekeyWithoutTheSignersKeyList(t *testing.T) {
 	f := newRekeyReviewFixture(t)
 	f.eng.Connection.SignerClient = nil
-	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: f.native.String(), KeyType: "ed25519", ValidRekeyTarget: true}}); err != nil {
+	if err := f.eng.PopulateSignerCache([]signerapi.KeyInfo{{Address: f.native.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	app := apshellapp.New(f.eng, config.DefaultConfig(), t.TempDir())
