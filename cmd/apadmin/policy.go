@@ -11,26 +11,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policycmd"
-	"github.com/aplane-algo/aplane/internal/transport"
 )
 
-type policyGlobalOptions struct {
-	dataDir       string
-	ipcPath       string
-	ipcPathPassed bool
-}
-
-type policyStreams struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-}
-
-func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOptions, streams policyStreams) int {
+func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
 	command, rescue, err := parsePolicyCommand(args, streams.stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -76,15 +61,11 @@ func runPolicyCommand(ctx context.Context, args []string, globals policyGlobalOp
 		return 0
 	}
 
-	dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
-	})
+	session, err := selectAdminTransport(globals)
 	if err != nil {
 		writePolicyError(streams.stderr, err)
 		return 1
 	}
-	session := transport.NewIPC(ipcPath)
 	if err := (policycmd.OnlineRunner{Session: session}).Run(ctx, command, ioStreams); err != nil {
 		writePolicyError(streams.stderr, err)
 		return 1

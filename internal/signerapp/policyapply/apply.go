@@ -9,6 +9,7 @@ package policyapply
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,7 +128,7 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 			"the change leaves %d key policy documents; a node holds at most %d", len(byKey)-1, MaxPolicies)}
 	}
 	var resulting []policy.StoredDocument
-	for _, key := range sortedKeys(byKey) {
+	for _, key := range slices.Sorted(maps.Keys(byKey)) {
 		resulting = append(resulting, byKey[key])
 	}
 
@@ -547,7 +548,7 @@ func KeyStatus(held map[string]bool, np *policyruntime.NodePolicy) []adminproto.
 		}
 	}
 	out := make([]adminproto.PolicyKeyStatus, 0, len(status))
-	for _, key := range sortedKeys(status) {
+	for _, key := range slices.Sorted(maps.Keys(status)) {
 		out = append(out, adminproto.PolicyKeyStatus{Key: key, Status: status[key]})
 	}
 	return out
@@ -571,13 +572,4 @@ func documentProblem(key string, err error) adminproto.PolicyProblem {
 		return adminproto.PolicyProblem{Key: key, Pointer: docErr.Pointer, Message: docErr.Msg}
 	}
 	return adminproto.PolicyProblem{Key: key, Message: err.Error()}
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for key := range m {
-		out = append(out, key)
-	}
-	slices.Sort(out)
-	return out
 }

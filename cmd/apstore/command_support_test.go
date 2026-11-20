@@ -7,55 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/protocol"
 )
-
-func TestExitCodeForStructuredResultCodes(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want int
-	}{
-		{
-			name: "rate limited",
-			err:  resultError("restore failed", protocol.ResultCodeRestoreRateLimited, "too many restores"),
-			want: apstoreExitRateLimited,
-		},
-		{
-			name: "key type in use",
-			err:  resultError("template import failed", protocol.ResultCodeKeyTypeInUse, "key(s) still use it"),
-			want: apstoreExitConflict,
-		},
-		{
-			name: "archive verification",
-			err:  resultError("backup failed", "verification_failed", "checksum mismatch"),
-			want: apstoreExitArchive,
-		},
-		{
-			name: "auth failure",
-			err:  codedError{code: protocol.ErrCodeAuthenticationFailed, message: "authentication failed"},
-			want: apstoreExitUnavailable,
-		},
-		{
-			name: "transport coded auth failure",
-			err:  protocol.WithCode(protocol.ErrCodeAuthenticationFailed, fmt.Errorf("authentication failed: invalid passphrase")),
-			want: apstoreExitUnavailable,
-		},
-		{
-			name: "local ipc unavailable",
-			err:  codedError{code: apstoreCodeIPCUnavailable, message: "failed to connect to IPC socket: missing"},
-			want: apstoreExitUnavailable,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := exitCodeForError(tt.err); got != tt.want {
-				t.Fatalf("exitCodeForError(%v) = %d, want %d", tt.err, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestExitCodeDoesNotClassifyResultCodesFromProse(t *testing.T) {
 	err := fmt.Errorf("remote result included restore_rate_limited in message text but no code")

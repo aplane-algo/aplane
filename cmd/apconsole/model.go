@@ -126,7 +126,6 @@ func newModelWithShell(connector tui.AdminConnector, shell shellExecutor, shellS
 
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		tea.EnterAltScreen,
 		m.signer.Init(),
 		m.daemon.Init(),
 	}
@@ -1127,13 +1126,6 @@ func (p pane) String() string {
 	default:
 		return "unknown"
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // shutdownSignerPane releases what the signer pane's unfinished backup

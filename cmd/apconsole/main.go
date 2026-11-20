@@ -16,19 +16,14 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/addressdisplay"
-	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/bootstrap/signeradmin"
 	"github.com/aplane-algo/aplane/internal/clientlog"
-	"github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
-	"github.com/aplane-algo/aplane/internal/mnemonic"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
@@ -67,7 +62,7 @@ func main() {
 	dataDirSet := flagWasSet("d")
 	clientDataDirSet := flagWasSet("client-data")
 
-	if err := ensureProviders(); err != nil {
+	if err := signeradmin.EnsureProviders(); err != nil {
 		logErrorf("%v", err)
 		exitConsole(1)
 	}
@@ -148,7 +143,7 @@ func main() {
 	// Detect the terminal's background until the signer pane reports the
 	// theme saved in the signer's settings.
 	theme.Init("auto")
-	configureAlgodOnDSAs(startup.Config)
+	signeradmin.ConfigureAlgodOnDSAs(startup.Config, logWarnf)
 	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
 	watchConsoleSignals(daemonProcess)
@@ -384,34 +379,4 @@ func daemonProcessEventChan(p *daemonProcess) <-chan daemonEvent {
 		return nil
 	}
 	return p.events
-}
-
-func ensureProviders() error {
-	if len(keygen.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no key generators registered - check providers.go imports")
-	}
-	if len(mnemonic.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no mnemonic handlers registered - check providers.go imports")
-	}
-	if len(algorithm.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no algorithm metadata registered - check providers.go imports")
-	}
-	return nil
-}
-
-func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
-	cfg, err := config.GetTEALCompileAlgod()
-	if err != nil || cfg.Server == "" {
-		logWarnf("no algod.%s.server configured - composed Falcon templates unavailable", config.TEALCompileNetwork)
-		return
-	}
-
-	client, err := algod.MakeClient(cfg.Server, cfg.Token)
-	if err != nil {
-		logWarnf("failed to create algod client: %v", err)
-		logWarnf("composed Falcon templates will be unavailable")
-		return
-	}
-
-	logicsigdsa.ConfigureAlgodClient(client)
 }

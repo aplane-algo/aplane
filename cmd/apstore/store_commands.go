@@ -12,7 +12,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -70,18 +69,15 @@ func cmdInitialize(args []string) error {
 	// Create keystore metadata
 	defer crypto.ZeroBytes(passphrase)
 
-	result, err := initializeStoreForCommand(passphrase, role)
+	metadataDir, helperWarning, err := initializeStoreForCommand(passphrase, role)
 	if err != nil {
 		return err
 	}
-	if !result.Success {
-		return resultError("keystore initialization failed", result.Code, result.Error)
-	}
 
 	logInfof("keystore initialized successfully")
-	logInfof("  keystore metadata: %s/.keystore", result.MetadataDir)
-	if result.HelperWarning != "" {
-		logWarnf("%s", result.HelperWarning)
+	logInfof("  keystore metadata: %s/.keystore", metadataDir)
+	if helperWarning != "" {
+		logWarnf("%s", helperWarning)
 		logWarnf("store the passphrase manually in your secrets backend")
 	}
 	logInfof("start apsigner to unlock and use this keystore")
@@ -110,11 +106,14 @@ func parseInitializeRole(args []string) (noderole.Role, error) {
 	return role, nil
 }
 
-func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
-	var result protocol.InitializeStoreResultMessage
+// initializeStoreLocal creates the store and, when a passphrase helper is
+// configured, stores the passphrase through it. It returns the keystore
+// metadata directory and why the helper could not store the passphrase, if
+// it could not.
+func initializeStoreLocal(passphrase []byte, role noderole.Role) (metadataDir, helperWarning string, err error) {
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory)
 	if err != nil {
-		return result, fmt.Errorf("failed to resolve passphrase helper config: %w", err)
+		return "", "", fmt.Errorf("failed to resolve passphrase helper config: %w", err)
 	}
 
 	initResult, err := storeinit.Initialize(passphrase, storeinit.Options{
@@ -128,14 +127,9 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 		// keystore metadata version gate.
 	})
 	if err != nil {
-		return protocol.InitializeStoreResultMessage{
-			Success: false,
-			Code:    "initialize_store_failed",
-			Error:   err.Error(),
-		}, nil
+		return "", "", resultError("keystore initialization failed", "initialize_store_failed", err.Error())
 	}
 
-	var helperWarning string
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		passphraseCmdCfg := &serverconfig.PassphraseCommandConfig{
 			Argv: unlockCfg.PassphraseCommandArgv,
@@ -146,9 +140,5 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 		}
 	}
 
-	return protocol.InitializeStoreResultMessage{
-		Success:       true,
-		MetadataDir:   initResult.MetadataDir,
-		HelperWarning: helperWarning,
-	}, nil
+	return initResult.MetadataDir, helperWarning, nil
 }

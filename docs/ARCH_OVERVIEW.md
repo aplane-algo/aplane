@@ -677,7 +677,7 @@ behavior should live in `internal/apshellapp`, not in `cmd/apshell`.
 
 | Layer | Packages |
 |-------|----------|
-| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
+| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `internal/bootstrap/signeradmin`, `cmd/apadmin`, `cmd/appass`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/engine/cosigned`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/productruntime`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/chainread`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/enrollment`, `internal/signerapp/enrollqueue`, `internal/signerapp/clientregistry`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policycmd`, `internal/signerapp/policyreview`, `internal/signerapp/policytext`, `internal/signerapp/policyapply`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/integritysidecar`, `internal/signerapp/approvalpolicy`, `internal/signerapp/storevalidate` |
 | Provider | `internal/signing`, `internal/signing/falcon1024`, `internal/falconparams`, `internal/sigconstruction`, `internal/boundary`, `internal/lsigresource`, `lsig/`, `lsig/plainhost`, `lsig/rotatingfamily`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingtriplewotsc`, `internal/cosigner`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
@@ -699,6 +699,9 @@ The UI layer is split between thin binary adapters and reusable shell/admin UI p
   enrollment, and store workflows over admin transport
 - `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local cosigner nodes using admin plus daemon panes only
 - `internal/signerapp/signertui`: Bubble Tea signer admin UI
+- `internal/bootstrap/signeradmin`: startup steps shared by the binaries that host
+  the signer admin UI (`apadmin`, `apconsole`): the provider check and the
+  algod client for runtime TEAL compilation
 - `cmd/appass`: Bubble Tea passphrase setup UI
 - `cmd/aplocalnet`: Bubble Tea/CLI LocalNet setup adapter; `internal/aplocalnet` owns reachability checks and config/plugin/env mutations
 - `cmd/apapprover`: approval-only CLI
@@ -1312,7 +1315,7 @@ registry.
 | Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
 | Product runtime aggregate, config, enrolled-client registry and pending queue, lifecycle | `internal/signerapp/productruntime` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` |
-| Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
+| Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/signeradmin`, `internal/bootstrap/shell` |
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
 | Cache paths | `cache.Store` value types |
 

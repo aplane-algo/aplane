@@ -5,6 +5,8 @@ package policyauthor
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -229,7 +231,7 @@ func (e *explainer) rekeys() {
 
 func (e *explainer) sets() {
 	d := e.doc
-	for _, name := range sortedKeys(d.AddressSets) {
+	for _, name := range slices.Sorted(maps.Keys(d.AddressSets)) {
 		set := d.AddressSets[name]
 		if len(set.ByNetwork) == 0 {
 			e.line("Address set @%s (every network):", name)
@@ -237,14 +239,14 @@ func (e *explainer) sets() {
 			continue
 		}
 		e.line("Address set @%s:", name)
-		for _, network := range sortedKeys(set.ByNetwork) {
+		for _, network := range slices.Sorted(maps.Keys(set.ByNetwork)) {
 			e.line("  %s:", network)
 			e.addresses("    ", set.ByNetwork[network])
 		}
 	}
-	for _, name := range sortedKeys(d.AssetSets) {
+	for _, name := range slices.Sorted(maps.Keys(d.AssetSets)) {
 		e.line("Asset set @%s:", name)
-		for _, network := range sortedKeys(d.AssetSets[name]) {
+		for _, network := range slices.Sorted(maps.Keys(d.AssetSets[name])) {
 			var refs []string
 			for _, ref := range d.AssetSets[name][network] {
 				refs = append(refs, e.assetName(network, ref))
@@ -266,7 +268,7 @@ func (e *explainer) addresses(indent string, list []types.Address) {
 
 // limits writes one line per network and asset, in a fixed order.
 func (e *explainer) limits(indent string, limits policy.LimitsV1) {
-	for _, network := range sortedKeys(limits) {
+	for _, network := range slices.Sorted(maps.Keys(limits)) {
 		assets := limits[network]
 		refs := make([]policy.TransferAssetRef, 0, len(assets))
 		for ref := range assets {
@@ -362,13 +364,4 @@ func terms(list []string) string {
 		}
 	}
 	return strings.Join(out, ", ")
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
