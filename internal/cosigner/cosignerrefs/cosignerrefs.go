@@ -312,12 +312,16 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	// Import stamps every record before it is written.
+	if _, err := time.Parse(time.RFC3339, rec.ImportedAt); err != nil {
+		return Record{}, fmt.Errorf("imported_at %q is not an RFC 3339 time", rec.ImportedAt)
+	}
 	return Record{
 		Schema:       RecordSchema,
 		Name:         name,
 		ComponentKey: env.WitnessKeyID,
 		KeyType:      env.KeyType,
 		PublicKeyHex: env.PublicKeyHex,
-		ImportedAt:   strings.TrimSpace(rec.ImportedAt),
+		ImportedAt:   rec.ImportedAt,
 	}, nil
 }

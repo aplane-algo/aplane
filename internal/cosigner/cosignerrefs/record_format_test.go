@@ -99,3 +99,34 @@ func TestGetRefusesARecordThatDoesNotHoldTogether(t *testing.T) {
 		})
 	}
 }
+
+// Import stamps every record with the time it was imported, so a record
+// without that time, or with anything else in its place, is malformed.
+func TestGetRefusesARecordWithoutItsImportTime(t *testing.T) {
+	for name, mutate := range map[string]func(map[string]any){
+		"absent":     func(raw map[string]any) { delete(raw, "imported_at") },
+		"empty":      func(raw map[string]any) { raw["imported_at"] = "" },
+		"padded":     func(raw map[string]any) { raw["imported_at"] = " 2026-08-17T00:00:00Z" },
+		"not a time": func(raw map[string]any) { raw["imported_at"] = "yesterday" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			if _, err := Import(paths, "lab", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(paths.CosignerRefPath("lab"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			mutate(raw)
+			writeRawRecord(t, paths, "lab", raw)
+			if _, _, err := Get(paths, "lab"); err == nil || !strings.Contains(err.Error(), "is not an RFC 3339 time") {
+				t.Fatalf("Get() error = %v, want the import time refused", err)
+			}
+		})
+	}
+}
