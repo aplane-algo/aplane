@@ -144,7 +144,9 @@ func main() {
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, ipcPath, daemonIPCPath, !*noStartDaemon)
 	watchConsoleSignals(daemonProcess)
 	if daemonStartup.Status == daemonStatusStarting {
-		waitForDaemonReady(ipcPath, daemonProcess, dialUnixSocketForDaemon, daemonReadyTimeout)
+		// Hold the shell and admin connections back until the daemon's
+		// readiness watch ends, so their first attempts find it listening.
+		<-daemonProcess.ready
 	}
 	if roleWarning != "" {
 		logWarnf("%s", roleWarning)

@@ -85,6 +85,9 @@ type daemonProcess struct {
 	// the output readers drop lines instead of waiting to deliver them.
 	stopping chan struct{}
 	stopOnce sync.Once
+	// ready closes when the readiness watch ends: the IPC socket answered,
+	// the watch timed out, or the process exited.
+	ready chan struct{}
 }
 
 type daemonDeps struct {
@@ -93,7 +96,7 @@ type daemonDeps struct {
 	lookPath   func(string) (string, error)
 	executable func() (string, error)
 	start      func(binary, dataDir string) (*daemonProcess, error)
-	watchReady func(events chan<- daemonEvent, done <-chan struct{}, ipcPath string)
+	watchReady func(dp *daemonProcess, ipcPath string)
 }
 
 func defaultDaemonDeps() daemonDeps {
@@ -103,8 +106,8 @@ func defaultDaemonDeps() daemonDeps {
 		lookPath:   exec.LookPath,
 		executable: os.Executable,
 		start:      startDaemonProcess,
-		watchReady: func(events chan<- daemonEvent, done <-chan struct{}, ipcPath string) {
-			go watchDaemonReadiness(events, done, ipcPath, dialUnixSocketForDaemon, daemonReadyTimeout, daemonReadyInterval)
+		watchReady: func(dp *daemonProcess, ipcPath string) {
+			go dp.watchReadiness(ipcPath, dialUnixSocketForDaemon, daemonReadyTimeout, daemonReadyInterval)
 		},
 	}
 }
@@ -141,17 +144,13 @@ func prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath string, start 
 			),
 		}
 	}
-	if ipcPath != "" {
-		if _, err := deps.stat(ipcPath); err == nil {
-			if conn, dialErr := deps.dial(ipcPath); dialErr == nil {
-				_ = conn.Close()
-				return nil, daemonInfo{
-					Status:  daemonStatusAttached,
-					DataDir: dataDir,
-					IPCPath: ipcPath,
-					Detail:  "attached to existing apsigner",
-				}
-			}
+	if conn, err := deps.dial(ipcPath); err == nil {
+		_ = conn.Close()
+		return nil, daemonInfo{
+			Status:  daemonStatusAttached,
+			DataDir: dataDir,
+			IPCPath: ipcPath,
+			Detail:  "attached to existing apsigner",
 		}
 	}
 
@@ -177,12 +176,10 @@ func prepareDaemonProcessWithDeps(dataDir, ipcPath, daemonIPCPath string, start 
 	}
 
 	pid := 0
-	if dp != nil && dp.cmd != nil && dp.cmd.Process != nil {
+	if dp.cmd != nil && dp.cmd.Process != nil {
 		pid = dp.cmd.Process.Pid
 	}
-	if dp != nil && dp.events != nil && ipcPath != "" && deps.watchReady != nil {
-		deps.watchReady(dp.events, dp.done, ipcPath)
-	}
+	deps.watchReady(dp, ipcPath)
 	return dp, daemonInfo{
 		Status:  daemonStatusStarting,
 		Owned:   true,
@@ -214,6 +211,7 @@ func startDaemonProcess(bin, dataDir string) (*daemonProcess, error) {
 		events:   events,
 		done:     make(chan struct{}),
 		stopping: make(chan struct{}),
+		ready:    make(chan struct{}),
 	}
 	var output sync.WaitGroup
 	output.Add(2)
@@ -275,20 +273,24 @@ func scanDaemonOutput(events chan<- daemonEvent, stopping <-chan struct{}, r io.
 	}
 }
 
-func watchDaemonReadiness(events chan<- daemonEvent, done <-chan struct{}, ipcPath string, dial func(string) (io.Closer, error), timeout, interval time.Duration) {
-	if events == nil || ipcPath == "" {
-		return
+// watchReadiness dials the daemon's IPC socket until it accepts a
+// connection, the process exits, or timeout passes, then closes p.ready and
+// reports the outcome on p.events. It dials rather than checking that the
+// socket file exists: a daemon that was killed leaves its socket file behind,
+// and that file says nothing about the new daemon.
+func (p *daemonProcess) watchReadiness(ipcPath string, dial func(string) (io.Closer, error), timeout, interval time.Duration) {
+	event, exited := awaitDaemonIPC(p.done, ipcPath, dial, timeout, interval)
+	// Release the console's startup first: nobody reads events until the
+	// console runs, so the report below may wait.
+	close(p.ready)
+	if !exited {
+		sendDaemonEvent(p.events, p.done, event)
 	}
-	if dial == nil {
-		dial = dialUnixSocketForDaemon
-	}
-	if timeout <= 0 {
-		timeout = daemonReadyTimeout
-	}
-	if interval <= 0 {
-		interval = daemonReadyInterval
-	}
+}
 
+// awaitDaemonIPC polls ipcPath for watchReadiness. It returns the ready or
+// timeout event to report, or exited when done closed first.
+func awaitDaemonIPC(done <-chan struct{}, ipcPath string, dial func(string) (io.Closer, error), timeout, interval time.Duration) (event daemonEvent, exited bool) {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(interval)
@@ -297,62 +299,23 @@ func watchDaemonReadiness(events chan<- daemonEvent, done <-chan struct{}, ipcPa
 	for {
 		if conn, err := dial(ipcPath); err == nil {
 			_ = conn.Close()
-			sendDaemonEvent(events, done, daemonEvent{
+			return daemonEvent{
 				Status: daemonStatusReady,
 				Detail: "apsigner IPC ready",
 				Line:   "apsigner IPC ready: " + ipcPath,
-			})
-			return
+			}, false
 		}
 
 		select {
 		case <-done:
-			return
+			return daemonEvent{}, true
 		case <-ticker.C:
 		case <-deadline.C:
-			sendDaemonEvent(events, done, daemonEvent{
+			return daemonEvent{
 				Status: daemonStatusFailed,
 				Detail: "timed out waiting for apsigner IPC",
 				Line:   "apsigner readiness timeout: " + ipcPath,
-			})
-			return
-		}
-	}
-}
-
-// waitForDaemonReady blocks until the daemon accepts a connection on its IPC
-// socket, the daemon process exits, or the timeout elapses. It dials rather
-// than checking that the socket file exists: a daemon that was killed leaves
-// its socket file behind, and that file says nothing about the new daemon.
-// The independent goroutine in watchDaemonReadiness still owns event emission;
-// this just delays callers (shell/signer connect) past the daemon startup
-// window so first-attempt connections succeed.
-func waitForDaemonReady(ipcPath string, dp *daemonProcess, dial func(string) (io.Closer, error), timeout time.Duration) {
-	if ipcPath == "" || timeout <= 0 {
-		return
-	}
-	if dial == nil {
-		dial = dialUnixSocketForDaemon
-	}
-	var done <-chan struct{}
-	if dp != nil {
-		done = dp.done
-	}
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-	ticker := time.NewTicker(daemonReadyInterval)
-	defer ticker.Stop()
-	for {
-		if conn, err := dial(ipcPath); err == nil {
-			_ = conn.Close()
-			return
-		}
-		select {
-		case <-deadline.C:
-			return
-		case <-done:
-			return
-		case <-ticker.C:
+			}, false
 		}
 	}
 }
