@@ -646,7 +646,6 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring
 		switch {
 		case inspectErr != nil:
 			validation.Failed++
-			term = 0
 		case termBearing && !present:
 			validation.Failed++
 		case !termBearing && present:
@@ -662,9 +661,6 @@ func buildBoundedQuarantineInventory(gen storepaths.GenPaths, kr *crypto.Keyring
 			} else {
 				validation.Verified++
 			}
-		}
-		if !present || inspectErr != nil {
-			term = 0
 		}
 		inventory = append(inventory, InventoryEntry{
 			Path:   relative,

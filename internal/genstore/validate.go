@@ -128,12 +128,9 @@ func VerifyBytesAgainstSeal(seal *Seal, relativePath string, data []byte) error 
 	if int64(len(data)) != entry.Size || hex.EncodeToString(sum[:]) != entry.SHA256 {
 		return fmt.Errorf("size or digest mismatch")
 	}
-	term, present, err := crypto.InspectTermEnvelope(data)
+	term, _, err := crypto.InspectTermEnvelope(data)
 	if err != nil {
 		return fmt.Errorf("inspect term envelope: %w", err)
-	}
-	if !present {
-		term = 0
 	}
 	if term != entry.Term {
 		return fmt.Errorf("term %d does not match seal term %d", term, entry.Term)

@@ -40,8 +40,15 @@ func (u DeletedArchiveUsage) Warning() bool {
 // envelope. It rejects links, directories, oversize members, and hard-limit
 // overflow before reading member bytes.
 func InspectDeletedArchive(gen storepaths.GenPaths) (DeletedArchiveUsage, error) {
+	return walkDeletedArchive(gen, nil)
+}
+
+// walkDeletedArchive is InspectDeletedArchive that also hands each admitted
+// member's generation-relative slash path and size to visit, when it is set.
+func walkDeletedArchive(gen storepaths.GenPaths, visit func(relative string, size int64)) (DeletedArchiveUsage, error) {
 	var usage DeletedArchiveUsage
-	for _, dir := range []string{gen.DeletedKeysDir(), gen.DeletedKeyTypeRecordsDir(), gen.DeletedPoliciesDir()} {
+	for _, namespace := range deletedArchiveNamespaces {
+		dir := filepath.Join(gen.DeletedDir(), namespace)
 		info, err := os.Lstat(dir)
 		if err != nil {
 			return usage, fmt.Errorf("inspect deleted archive: %w", err)
@@ -72,6 +79,9 @@ func InspectDeletedArchive(gen storepaths.GenPaths) (DeletedArchiveUsage, error)
 			usage.EncodedBytes += member.Size()
 			if err := validateDeletedArchiveUsage(usage); err != nil {
 				return usage, err
+			}
+			if visit != nil {
+				visit("deleted/"+namespace+"/"+entry.Name(), member.Size())
 			}
 		}
 	}

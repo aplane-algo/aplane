@@ -73,3 +73,49 @@ func TestPruneDeletedArchiveKeepsPolicyPairsTogether(t *testing.T) {
 		t.Fatalf("PruneDeletedArchive(orphan sidecar) error = %v", err)
 	}
 }
+
+func TestListDeletedArchiveReportsEveryNamespaceSorted(t *testing.T) {
+	const policy = "deleted/policies/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json"
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
+		"deleted/keys/B.cos":             "bb",
+		"deleted/keys/A.key":             "a",
+		"deleted/keytypes/x.template":    "template",
+		policy:                           "{}",
+		policy + ".hmac":                 "hmac!",
+		"deleted/keytypes/a.v1.template": "t",
+		"deleted/keys/C.key":             "ccc",
+	})
+	items, usage, err := ListDeletedArchive(gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []DeletedArchiveEntry{
+		{"deleted/keys/A.key", 1},
+		{"deleted/keys/B.cos", 2},
+		{"deleted/keys/C.key", 3},
+		{"deleted/keytypes/a.v1.template", 1},
+		{"deleted/keytypes/x.template", 8},
+		{policy, 2},
+		{policy + ".hmac", 5},
+	}
+	if len(items) != len(want) {
+		t.Fatalf("items = %+v", items)
+	}
+	for i := range want {
+		if items[i] != want[i] {
+			t.Fatalf("items[%d] = %+v, want %+v", i, items[i], want[i])
+		}
+	}
+	if usage != (DeletedArchiveUsage{Entries: 7, EncodedBytes: 22}) {
+		t.Fatalf("usage = %+v", usage)
+	}
+
+	if err := os.Symlink("A.key", filepath.Join(gen.DeletedKeyTypeRecordsDir(), "link.template")); err != nil {
+		t.Fatal(err)
+	}
+	items, usage, err = ListDeletedArchive(gen)
+	if err == nil || items != nil || usage != (DeletedArchiveUsage{Entries: 4, EncodedBytes: 7}) {
+		t.Fatalf("ListDeletedArchive() with a link = (%+v, %+v, %v)", items, usage, err)
+	}
+}

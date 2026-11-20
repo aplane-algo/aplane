@@ -121,14 +121,14 @@ func Rotate(
 	if err != nil {
 		return result, fmt.Errorf("read outgoing generation manifest: %w", err)
 	}
-	rollbackCapability, cleanRollback, err := genstore.CarryRollbackCapability(
+	rollbackCapability, err := genstore.CarryRollbackCapability(
 		outgoingManifest,
 		outgoingSeal.Inventory,
 	)
 	if err != nil {
 		return result, fmt.Errorf("evaluate restore rollback capability: %w", err)
 	}
-	if outgoingManifest.RollbackCapability != nil && !cleanRollback {
+	if outgoingManifest.RollbackCapability != nil && rollbackCapability == nil {
 		logf(opts.Logf, "dropping diverged restore rollback capability")
 	}
 	anchors, err := collectHistoricalAnchors(paths, active, oldKeyring)

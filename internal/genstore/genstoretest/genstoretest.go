@@ -20,29 +20,8 @@ var defaultPassphrase = []byte("genstoretest-atomic-root-passphrase")
 // paths bound to its authenticated selection. It is idempotent.
 func MintFirst(t testing.TB, paths storepaths.Paths) storepaths.Paths {
 	t.Helper()
-	if active, kr, err := genstore.ResolveStoreRoot(paths, defaultPassphrase); err == nil {
-		defer kr.Zero()
-		return BindActive(t, paths, active)
-	}
-	kr, err := crypto.NewKeyring()
-	if err != nil {
-		t.Fatalf("NewKeyring: %v", err)
-	}
-	defer kr.Zero()
-	generationID, err := genstore.NewGenerationID(time.Unix(1_785_200_000, 0))
-	if err != nil {
-		t.Fatalf("NewGenerationID: %v", err)
-	}
-	active, err := genstore.Mint(paths, genstore.MintRequest{
-		SkipCandidateValidation: true,
-		GenerationID:            generationID, FirstGeneration: true,
-		InitialPassphrase: defaultPassphrase, Integrity: kr,
-		Operation: "store-initialize", OperationID: "init-" + generationID,
-		CreatedAt: time.Unix(1_785_200_000, 0), Apply: ApplyAuthorityPlaceholders,
-	})
-	if err != nil {
-		t.Fatalf("Mint(first generation): %v", err)
-	}
+	kr, active := MintFirstAtomic(t, paths, defaultPassphrase)
+	kr.Zero()
 	return BindActive(t, paths, active)
 }
 
