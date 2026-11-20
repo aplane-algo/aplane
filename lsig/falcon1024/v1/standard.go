@@ -80,8 +80,8 @@ func (f *Falcon1024V1) DeriveLsig(ctx context.Context, publicKey []byte, params 
 	return comp.DeriveLsig(ctx, publicKey, nil)
 }
 
-// DeriveLsigWithSalt derives the LogicSig bytecode, address, and salt counter
-// used to keep the resulting LogicSig address off-curve.
+// DeriveLsigWithSalt derives the LogicSig bytecode and its off-curve address,
+// which algod's TEAL v13 auto-salting assembler chose.
 func (f *Falcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
 	_ = params // Pure Falcon ignores params
 	if len(publicKey) != family.PublicKeySize {

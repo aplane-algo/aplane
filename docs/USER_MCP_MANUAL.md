@@ -223,7 +223,8 @@ and signing metadata; rotating credentials instead retain the seed and bound
 genesis hash used to derive stage programs. Disabling a key type stops new
 creation without disabling existing valid credentials. Signing still requires
 a supported provider. Compiler-auto-salted records omit `salt_counter`, while
-compatible manual-salt records retain it.
+unsalted records have no `lsig_derivation` and carry `salt_counter`, which is
+always written as 0.
 
 ### Creation params vs runtime args
 

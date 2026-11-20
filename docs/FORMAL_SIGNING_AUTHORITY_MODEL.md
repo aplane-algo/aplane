@@ -206,9 +206,9 @@ address from its stored bytecode.
 
 Rules:
 
-1. The derivation record must be internally consistent. Current
-   `algod_v13_auto_salt` keys omit `salt_counter`; compatible manual-counter
-   records require it.
+1. The derivation record must be internally consistent. `algod_v13_auto_salt`
+   keys forbid `salt_counter`; an unsalted key has no `lsig_derivation` and
+   requires `salt_counter`, which every writer sets to 0.
 2. The stored bytecode, not derivation metadata alone, determines the LogicSig
    address.
 3. Changing derivation metadata without changing stored bytecode does not
@@ -331,7 +331,7 @@ derived from bytecode.
 ```text
 AcceptedLogicSigKey(key) =>
   (key.lsig_derivation = algod_v13_auto_salt => not HasSaltCounter(key)) and
-  (ManualCounterDerivation(key) => HasSaltCounter(key))
+  (key.lsig_derivation = absent => HasSaltCounter(key))
 AddressIdentity(key) = AddressOf(key.stored_bytecode)
 ```
 
@@ -489,7 +489,7 @@ High-value test anchors:
 
 - LogicSig keys without `signing_metadata_version` reject for signing/restore,
 - LogicSig keys with unknown or inconsistent derivation records reject,
-- compiler-auto-salted keys omit `salt_counter`, while compatible manual-counter keys require it,
+- compiler-auto-salted keys forbid `salt_counter`, while unsalted keys (no `lsig_derivation`) require it,
 - on-curve LogicSig bytecode rejects,
 - conflicting key payload aliases reject,
 - generic LogicSig signing uses stored `signing_args`,

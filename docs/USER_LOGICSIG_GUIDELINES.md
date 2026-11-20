@@ -46,8 +46,9 @@ policy, whether it is:
 
 **Signing authority lives in the key file, not in the template.** Every
 provider-backed LogicSig key file stores its final compiled bytecode,
-derivation metadata, and signing metadata at creation time. Current TEAL v13 auto-salted records omit
-`salt_counter`; compatible manual-counter records retain it. Sign-time code
+derivation metadata, and signing metadata at creation time. TEAL v13 auto-salted records omit
+`salt_counter`; unsalted records have no `lsig_derivation` and carry
+`salt_counter`, which is always written as 0. Sign-time code
 uses the stored metadata;
 DSA-backed keys invoke the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and

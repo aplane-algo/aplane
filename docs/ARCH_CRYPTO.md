@@ -32,7 +32,7 @@ The cryptographic subsystem is split across these packages:
 | Area | Primary packages |
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
-| LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
+| LogicSig provider interfaces, registry, and off-curve validation | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
 | Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/plainhost`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewotsc`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
@@ -503,8 +503,9 @@ extension. Compatibility is split across:
 LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
 metadata, and parameters rather than reconstructing authorization from a live
 template at sign time. Every entry also records `valid_rekey_target`, its key
-type's declaration when the key was created, as a plain payload field. Current compiler-auto-salted entries omit
-`salt_counter`; compatible manual-counter entries retain it. DSA-backed entries
+type's declaration when the key was created, as a plain payload field. A compiler-auto-salted entry forbids
+`salt_counter`; an unsalted entry has no `lsig_derivation` and carries
+`salt_counter`, which every writer sets to 0. DSA-backed entries
 also carry the base signing metadata needed to produce provider-specific
 signatures.
 

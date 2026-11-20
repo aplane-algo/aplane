@@ -96,8 +96,9 @@ func (w *payloadWire) zeroSecrets() {
 }
 
 // LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
-// authoritative final output of algod's TEAL v13 auto-salting assembler. An
-// empty lsig_derivation is the manual salt counter, which salt_counter records.
+// authoritative final output of algod's TEAL v13 auto-salting assembler, and
+// forbids salt_counter. An empty lsig_derivation marks unsalted bytecode, which
+// carries salt_counter; every writer sets it to 0.
 const LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
