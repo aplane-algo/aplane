@@ -114,7 +114,7 @@ func (d *Details) account(label string, addr types.Address) {
 // authority adds an asset role: an account, or the note that the role is off.
 func (d *Details) authority(label string, addr types.Address) {
 	if addr.IsZero() {
-		d.add(label, formatAuthorityAddress(addr))
+		d.add(label, "(zero address / disabled)")
 		return
 	}
 	d.account(label, addr)
@@ -286,7 +286,7 @@ func describeApplicationCallTx(txn types.Transaction, view View) Details {
 	if len(txn.ApplicationArgs) > 0 {
 		d.addf("Args", "%d argument(s)", len(txn.ApplicationArgs))
 		for i, arg := range txn.ApplicationArgs {
-			d.entry(i, formatAppArg(i, arg))
+			d.entry(i, formatOpaqueBytes(arg))
 		}
 	}
 
@@ -315,7 +315,7 @@ func describeApplicationCallTx(txn types.Transaction, view View) Details {
 	if len(txn.BoxReferences) > 0 {
 		d.addf("Boxes", "%d", len(txn.BoxReferences))
 		for i, ref := range txn.BoxReferences {
-			d.entry(i, fmt.Sprintf("app %s / %s", resolveBoxAppRef(txn, ref), formatBoxName(ref.Name)))
+			d.entry(i, fmt.Sprintf("app %s / %s", resolveBoxAppRef(txn, ref), formatOpaqueBytes(ref.Name)))
 		}
 	}
 
@@ -366,7 +366,7 @@ func describeAccessRef(txn types.Transaction, ref types.ResourceRef) string {
 	}
 	if ref.Box.ForeignAppIdx != 0 || len(ref.Box.Name) > 0 {
 		parts = append(parts, fmt.Sprintf("box %s / %s",
-			accessAppAt(txn, ref.Box.ForeignAppIdx), formatBoxName(ref.Box.Name)))
+			accessAppAt(txn, ref.Box.ForeignAppIdx), formatOpaqueBytes(ref.Box.Name)))
 	}
 	switch len(parts) {
 	case 0:
@@ -454,15 +454,6 @@ func OnCompletionLabel(onComp types.OnCompletion) string {
 	default:
 		return fmt.Sprintf("OnCompletion(%d)", onComp)
 	}
-}
-
-func formatAppArg(index int, arg []byte) string {
-	_ = index
-	return formatOpaqueBytes(arg)
-}
-
-func formatBoxName(name []byte) string {
-	return formatOpaqueBytes(name)
 }
 
 func resolveBoxAppRef(txn types.Transaction, ref types.BoxReference) string {
@@ -642,13 +633,6 @@ func appendAppProgramDetails(d *Details, txn types.Transaction) {
 	if txn.ExtraProgramPages > 0 {
 		d.addf("Extra Program Pages", "%d", txn.ExtraProgramPages)
 	}
-}
-
-func formatAuthorityAddress(addr types.Address) string {
-	if addr.IsZero() {
-		return "(zero address / disabled)"
-	}
-	return addr.String()
 }
 
 func isZeroMetadataHash(hash [32]byte) bool {

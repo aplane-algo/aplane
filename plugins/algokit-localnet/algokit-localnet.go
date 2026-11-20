@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -190,7 +190,7 @@ func main() {
 		_ = writer.Flush()
 	}
 
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	if err := scanner.Err(); err != nil {
 		logError("scanner error: %v", err)
 	}
 }
@@ -335,9 +335,9 @@ func statusResult() (ExecuteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	algodClient, err := algod.MakeClient(cfg.algodURL, cfg.token)
+	algodClient, err := newAlgod()
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("failed to create algod client: %w", err)
+		return ExecuteResult{}, err
 	}
 	status, err := algodClient.Status().Do(ctx)
 	if err != nil {
@@ -399,9 +399,9 @@ func genesisResult() (ExecuteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	algodClient, err := algod.MakeClient(cfg.algodURL, cfg.token)
+	algodClient, err := newAlgod()
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("failed to create algod client: %w", err)
+		return ExecuteResult{}, err
 	}
 	version, err := algodClient.Versions().Do(ctx)
 	if err != nil {
@@ -433,9 +433,9 @@ func accountsResult() (ExecuteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	algodClient, err := algod.MakeClient(cfg.algodURL, cfg.token)
+	algodClient, err := newAlgod()
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("failed to create algod client: %w", err)
+		return ExecuteResult{}, err
 	}
 	session, err := openWallet()
 	if err != nil {
@@ -445,16 +445,11 @@ func accountsResult() (ExecuteResult, error) {
 
 	rows := make([]accountRow, 0, len(session.addresses))
 	for _, address := range session.addresses {
-		account, err := algodClient.AccountInformation(address).Do(ctx)
+		row, err := readAccountRow(ctx, algodClient, address)
 		if err != nil {
 			return ExecuteResult{}, fmt.Errorf("failed to read account %s: %w", address, err)
 		}
-		rows = append(rows, accountRow{
-			address:    address,
-			balance:    account.Amount,
-			minBalance: account.MinBalance,
-			spendable:  spendable(account.Amount, account.MinBalance),
-		})
+		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].balance == rows[j].balance {
@@ -509,9 +504,9 @@ func fundResult(args []string, execCtx Context) (ExecuteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	algodClient, err := algod.MakeClient(cfg.algodURL, cfg.token)
+	algodClient, err := newAlgod()
 	if err != nil {
-		return ExecuteResult{}, fmt.Errorf("failed to create algod client: %w", err)
+		return ExecuteResult{}, err
 	}
 	params, err := algodClient.SuggestedParams().Do(ctx)
 	if err != nil {
@@ -530,7 +525,7 @@ func fundResult(args []string, execCtx Context) (ExecuteResult, error) {
 		if err != nil {
 			return ExecuteResult{}, err
 		}
-	} else if !contains(session.addresses, from) {
+	} else if !slices.Contains(session.addresses, from) {
 		return ExecuteResult{}, fmt.Errorf("funding account %s is not in KMD wallet %s", from, cfg.walletName)
 	}
 
@@ -761,15 +756,9 @@ func selectFundingAddress(
 
 	var best accountRow
 	for _, address := range addresses {
-		account, err := algodClient.AccountInformation(address).Do(ctx)
+		row, err := readAccountRow(ctx, algodClient, address)
 		if err != nil {
 			continue
-		}
-		row := accountRow{
-			address:    address,
-			balance:    account.Amount,
-			minBalance: account.MinBalance,
-			spendable:  spendable(account.Amount, account.MinBalance),
 		}
 		if row.spendable >= requiredSpendable && row.balance > best.balance {
 			best = row
@@ -854,13 +843,27 @@ func addUint64(a, b uint64) (uint64, bool) {
 	return a + b, true
 }
 
-func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
+// newAlgod returns a client for the configured algod.
+func newAlgod() (*algod.Client, error) {
+	client, err := algod.MakeClient(cfg.algodURL, cfg.token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create algod client: %w", err)
 	}
-	return false
+	return client, nil
+}
+
+// readAccountRow reads an account's balances.
+func readAccountRow(ctx context.Context, algodClient *algod.Client, address string) (accountRow, error) {
+	account, err := algodClient.AccountInformation(address).Do(ctx)
+	if err != nil {
+		return accountRow{}, err
+	}
+	return accountRow{
+		address:    address,
+		balance:    account.Amount,
+		minBalance: account.MinBalance,
+		spendable:  spendable(account.Amount, account.MinBalance),
+	}, nil
 }
 
 func cleanURL(value string) string {

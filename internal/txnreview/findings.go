@@ -191,7 +191,7 @@ func Findings(txn types.Transaction, ctx FindingContext) []Finding {
 		})
 	}
 
-	if facts.Has(txeffects.EffectClawback) && isClawback(txn) {
+	if isClawback(txn) {
 		violations = append(violations, Finding{
 			Field:   "AssetSender",
 			Value:   txn.AssetSender.String(),
