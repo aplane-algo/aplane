@@ -15,27 +15,54 @@ import (
 	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// mixedArchive is an archive holding one credential this release admits and
-// one whose payload carries a field it does not know, each with a policy of
-// its own.
-type mixedArchive struct {
-	root, managed, good, bad string
+// inadmissibleCredential is a credential this release cannot admit, and why
+// a restore skips it.
+type inadmissibleCredential struct {
+	name, selector string
+	keyJSON        []byte
+	reason         string
 }
 
-func writeMixedArchiveForTest(t *testing.T, paths storepaths.Paths) mixedArchive {
+// unknownFieldReason is why this release refuses a payload with a field it
+// does not know.
+const unknownFieldReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`
+
+// retiredSaltCounterReason is why this release refuses a key file written
+// before salt_counter was retired.
+const retiredSaltCounterReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`
+
+func unknownFieldCredentialForTest(t *testing.T) inadmissibleCredential {
+	t.Helper()
+	selector, keyJSON := testEd25519BackupKeyJSON(t)
+	return inadmissibleCredential{name: "unknown field", selector: selector, keyJSON: withTopLevelFieldForTest(t, keyJSON, "extra", "1"), reason: unknownFieldReason}
+}
+
+func retiredSaltCounterCredentialForTest(t *testing.T) inadmissibleCredential {
+	t.Helper()
+	selector, keyJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
+	return inadmissibleCredential{name: "retired salt_counter", selector: selector, keyJSON: keyJSON, reason: retiredSaltCounterReason}
+}
+
+// mixedArchive is an archive holding one credential this release admits and
+// one it cannot, each with a policy of its own.
+type mixedArchive struct {
+	root, managed, good, bad, reason string
+}
+
+func writeMixedArchiveForTest(t *testing.T, paths storepaths.Paths, bad inadmissibleCredential) mixedArchive {
 	t.Helper()
 	root, keysDir := newAdmissionArchive(t)
 	good, goodJSON := testEd25519BackupKeyJSON(t)
-	bad, badJSON := testEd25519BackupKeyJSON(t)
 	sealAdmissionMember(t, keysDir, good, goodJSON, admissionPassphrase)
-	sealAdmissionMember(t, keysDir, bad, withTopLevelFieldForTest(t, badJSON, "extra", "1"), admissionPassphrase)
-	for _, selector := range []string{good, bad} {
+	sealAdmissionMember(t, keysDir, bad.selector, bad.keyJSON, admissionPassphrase)
+	for _, selector := range []string{good, bad.selector} {
 		sealAdmissionPolicy(t, root, selector, []byte(policytest.MustDocument(noderole.RoleSigner, selector, "")))
 	}
 	if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), admissionPassphrase, nil); err != nil {
@@ -45,16 +72,12 @@ func writeMixedArchiveForTest(t *testing.T, paths storepaths.Paths) mixedArchive
 	if err := CreateTarGzArchive(root, managed); err != nil {
 		t.Fatal(err)
 	}
-	return mixedArchive{root: root, managed: managed, good: good, bad: bad}
+	return mixedArchive{root: root, managed: managed, good: good, bad: bad.selector, reason: bad.reason}
 }
-
-// unknownFieldReason is why this release refuses a payload with a field it
-// does not know.
-const unknownFieldReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`
 
 // skippedForTest is the one entry a mixed archive skips.
 func (a mixedArchive) skippedForTest() []SkippedEntry {
-	return []SkippedEntry{{Selector: a.bad, Reason: unknownFieldReason}}
+	return []SkippedEntry{{Selector: a.bad, Reason: a.reason}}
 }
 
 // A credential this release cannot admit is skipped with its policy: deep
@@ -63,8 +86,16 @@ func (a mixedArchive) skippedForTest() []SkippedEntry {
 // one without a credential. Verify still fails the archive.
 func TestMixedArchiveSkipsTheInadmissibleCredential(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
-	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
-	archive := writeMixedArchiveForTest(t, paths)
+	for _, bad := range []inadmissibleCredential{unknownFieldCredentialForTest(t), retiredSaltCounterCredentialForTest(t)} {
+		t.Run(bad.name, func(t *testing.T) {
+			paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+			checkMixedArchiveSkipsTheInadmissibleCredential(t, paths, writeMixedArchiveForTest(t, paths, bad))
+		})
+	}
+}
+
+func checkMixedArchiveSkipsTheInadmissibleCredential(t *testing.T, paths storepaths.Paths, archive mixedArchive) {
+	t.Helper()
 	wantSkipped := archive.skippedForTest()
 
 	report, err := DeepVerifyBackupBytes(archive.root, admissionPassphrase)
@@ -75,7 +106,7 @@ func TestMixedArchiveSkipsTheInadmissibleCredential(t *testing.T) {
 	if !slices.Equal(report.Verified, wantVerified) || !slices.Equal(report.Skipped, wantSkipped) {
 		t.Fatalf("verify = %+v skipped %+v, want %+v skipped %+v", report.Verified, report.Skipped, wantVerified, wantSkipped)
 	}
-	wantIncomplete := "1 of 2 credentials would be skipped by restore; first " + archive.bad + ": " + unknownFieldReason
+	wantIncomplete := "1 of 2 credentials would be skipped by restore; first " + archive.bad + ": " + archive.reason
 	if err := report.Incomplete(); err == nil || err.Error() != wantIncomplete {
 		t.Fatalf("Incomplete() = %v, want %q", err, wantIncomplete)
 	}
@@ -114,7 +145,7 @@ func TestMixedArchiveSkipsTheInadmissibleCredential(t *testing.T) {
 func TestMixedArchiveSelections(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
-	archive := writeMixedArchiveForTest(t, paths)
+	archive := writeMixedArchiveForTest(t, paths, unknownFieldCredentialForTest(t))
 	named := "selected credential cannot be restored: " + archive.bad + ": " + unknownFieldReason
 
 	for _, tc := range []struct {
@@ -199,7 +230,7 @@ func rebuildForTest(t *testing.T, active storepaths.GenPaths, role noderole.Role
 func TestBackupCreationRefusesAnArchiveRestoreWouldSkip(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
-	archive := writeMixedArchiveForTest(t, paths)
+	archive := writeMixedArchiveForTest(t, paths, unknownFieldCredentialForTest(t))
 	archivePath := BuildManagedArchivePath(paths, "20260428-010204")
 	_, err := publishVerifiedArchive(archive.root, archivePath, admissionPassphrase)
 	want := "failed to verify backup archive: 1 of 2 credentials would be skipped by restore; first " + archive.bad + ": " + unknownFieldReason

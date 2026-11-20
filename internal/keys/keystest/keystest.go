@@ -8,6 +8,7 @@
 package keystest
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -39,6 +41,24 @@ func GenericLSigKeyJSON(t testing.TB, keyType string, bytecode []byte, params ma
 	t.Helper()
 	payload := keys.NewGenericLSigPayload(keyType, params, bytecode, tealSource, nil, "")
 	return marshal(t, payload, "generic_lsig")
+}
+
+// RetiredSaltCounterLSigKeyJSON returns an unsalted generic_lsig key payload
+// as releases before salt_counter was retired wrote it, carrying
+// "salt_counter": 0, and its address. The current parser refuses it.
+func RetiredSaltCounterLSigKeyJSON(t testing.TB) (address string, keyJSON []byte) {
+	t.Helper()
+	program := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(GenericLSigKeyJSON(t, "test.generic.v1", program.Bytecode, nil, ""), &object); err != nil {
+		t.Fatal(err)
+	}
+	object["salt_counter"] = json.RawMessage("0")
+	keyJSON, err := json.MarshalIndent(object, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return program.Address.String(), keyJSON
 }
 
 // DSALSigKeyJSON returns a canonical dsa_lsig key payload for the given key

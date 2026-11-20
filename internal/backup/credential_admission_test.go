@@ -220,12 +220,11 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 		{
 			name: "LogicSig with a retired salt_counter",
 			build: func(t *testing.T, _, keysDir string) (string, string) {
-				keyJSON := keystest.GenericLSigKeyJSON(t, "test.generic.v1", logicSigBytecodeForTest(), nil, "")
-				selector := selectorForTest(t, keyJSON)
-				sealAdmissionMember(t, keysDir, selector, withTopLevelFieldForTest(t, keyJSON, "salt_counter", "0"), admissionPassphrase)
+				selector, keyJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
+				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector
 			},
-			refusal: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`,
+			skip: retiredSaltCounterReason,
 		},
 		{
 			name: "selector mismatch",
