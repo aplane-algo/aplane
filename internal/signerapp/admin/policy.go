@@ -119,6 +119,12 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 		if outcome.Uncertain {
 			ir.SetRecovery()
 			_, _ = ir.Reload()
+			// Again after the reload. SetRecovery does nothing on a locked
+			// signer, and an unlock in flight on another connection opens
+			// the keyring this commit used before it publishes unlocked,
+			// outside the store mutation lock, so it can publish while the
+			// reload runs.
+			ir.SetRecovery()
 		}
 		return err
 	}

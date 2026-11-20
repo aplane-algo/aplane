@@ -53,6 +53,10 @@ The transitions transcribe the post-commit reload and the recovery paths:
   `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
+  On an uncertain commit `commitAndReload` calls `SetRecovery` again after
+  its best-effort reload: `SetRecovery` does nothing on a locked signer, and
+  an unlock in flight on another connection, which the model does not have,
+  can publish unlocked during that reload.
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
   is deleted-archive list or prune through `authenticatedSelection`, which

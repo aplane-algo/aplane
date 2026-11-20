@@ -40,6 +40,19 @@ const (
 // store whose runtime reload reloads policy from the selected generation.
 func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntime.Runtime) {
 	t.Helper()
+	svc, ir, _ := setupUnpublishedPolicyAdmin(t, role)
+	ir.SetUnlocked()
+	return svc, ir
+}
+
+// policyReload is the runtime reload setupUnpublishedPolicyAdmin installs.
+type policyReload = func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error)
+
+// setupUnpublishedPolicyAdmin is setupPolicyAdmin with the keyring open and
+// policy loaded but the runtime not yet published unlocked, as an unlock in
+// flight leaves it. It also returns the reload it installed.
+func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntime.Runtime, policyReload) {
+	t.Helper()
 	clientreg.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
@@ -56,7 +69,6 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetUnlocked()
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, ir.KeyStore().WithKeyring(func(kr *crypto.Keyring) error {
 			active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
@@ -79,7 +91,7 @@ func setupPolicyAdmin(t *testing.T, role noderole.Role) (Service, *productruntim
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir
+	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir, reload
 }
 
 func signerPolicyDoc(maxFee string) string {
@@ -419,5 +431,47 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 	}
 	if got := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}).Document; got != signerPolicyDoc("2000") {
 		t.Fatalf("runtime policy after uncertain commit = %q, want the committed document", got)
+	}
+}
+
+// An unlock on another connection opens the keyring before it publishes the
+// runtime unlocked, and runs outside the store mutation lock, so a policy
+// apply can commit in between. An uncertain commit then meets a locked
+// signer, on which SetRecovery does nothing, and the unlock publishes while
+// the apply's best-effort reload runs. The apply must still leave the signer
+// in recovery, as its answer says.
+func TestUncertainPolicyCommitDuringAnUnlockInFlightEntersRecovery(t *testing.T) {
+	svc, ir, reload := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
+	view := svc.GetPolicy()
+	snapshot := svc.GetPolicyContext().SnapshotSHA256
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
+	}
+	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		report, err := reload(passphrase, session)
+		ir.SetUnlocked() // the unlock in flight publishes meanwhile
+		return report, err
+	})
+
+	identityDir := svc.Deps.KeyPaths().ProductDir()
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == identityDir {
+			return errors.New("simulated identity-directory sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
+		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  snapshot,
+	})
+	fsutil.TestHook = nil
+
+	if result.Success || !result.CommitUncertain || result.Code != "policy_commit_uncertain" {
+		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
+	}
+	if !ir.IsRecovery() || ir.IsUnlocked() {
+		t.Fatalf("state after an uncertain commit during an unlock = %s, want recovery", ir.GetState())
 	}
 }
