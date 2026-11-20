@@ -30,9 +30,10 @@ type nativeFalconCorpus struct {
 }
 
 // Each corpus key was written by mnemonic import before key files stopped
-// storing pq_address_salt; the fixture records the salt and address they
-// stored. Importing the same phrase now must give the same account, sign
-// with the same salt, and export the same phrase.
+// storing pq_scheme and pq_address_salt; the fixture records the salt and
+// address they stored, and every one stored scheme f1. Importing the same
+// phrase now must give the same account, sign with scheme f1 and the same
+// salt, and export the same phrase.
 func TestNativeFalconCorpusKeepsItsSaltAndAddressAndExports(t *testing.T) {
 	nativereg.RegisterSigner()
 	data, err := os.ReadFile("testdata/native_falcon_salt_corpus.json")
@@ -87,6 +88,11 @@ func TestNativeFalconCorpusKeepsItsSaltAndAddressAndExports(t *testing.T) {
 		signing.GetProvider(nativefalcon.KeyType).ZeroKey(material)
 		if err != nil {
 			t.Fatal(err)
+		}
+		// The literal, not keys.NativePQScheme: the envelope's scheme is
+		// frozen for falcon1024, whatever produces it.
+		if stxn.PQsig.Scheme != (types.PQScheme{'f', '1'}) {
+			t.Fatalf("%s signed with scheme %q, falcon1024 signs with f1", entry.Address, stxn.PQsig.Scheme[:])
 		}
 		if byte(stxn.PQsig.Salt) != entry.Salt {
 			t.Fatalf("%s signed with salt %d, the stored salt was %d", entry.Address, stxn.PQsig.Salt, entry.Salt)
