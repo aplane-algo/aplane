@@ -92,8 +92,8 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 	if mode, _ := req.Requests[1].Mode(); mode != signerapi.RequestModeSign {
 		t.Fatalf("non-cosigned request[1] mode = %q, want sign", mode)
 	}
-	if req.Requests[1].AuthAddress != nonCosigned || req.Requests[1].TxnSender != nonCosigned {
-		t.Fatalf("non-cosigned request[1] auth/sender = %q/%q, want %q", req.Requests[1].AuthAddress, req.Requests[1].TxnSender, nonCosigned)
+	if req.Requests[1].AuthAddress != nonCosigned {
+		t.Fatalf("non-cosigned request[1] auth = %q, want %q", req.Requests[1].AuthAddress, nonCosigned)
 	}
 	if mode, _ := req.Requests[2].Mode(); mode != signerapi.RequestModeForeign {
 		t.Fatalf("dummy request[2] mode = %q, want foreign", mode)

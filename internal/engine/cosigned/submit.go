@@ -351,8 +351,8 @@ func (s *Signer) assembleAndSubmit(group frozenGroup, targets []signerapi.Assemb
 
 // signModeRequest builds the sign-mode request for original position i,
 // carrying the caller's LogicSig arguments and app-call context for it.
-func signModeRequest(i int, authAddress, sender, txnHex string, opts clientsign.SubmitOptions) signerapi.SignRequest {
-	request := signerapi.SignRequest{AuthAddress: authAddress, TxnSender: sender, TxnBytesHex: txnHex}
+func signModeRequest(i int, authAddress, txnHex string, opts clientsign.SubmitOptions) signerapi.SignRequest {
+	request := signerapi.SignRequest{AuthAddress: authAddress, TxnBytesHex: txnHex}
 	if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {
 		request.LsigArgs = make(map[string]string, len(opts.LsigArgsMap[i]))
 		for name, value := range opts.LsigArgsMap[i] {
@@ -370,7 +370,7 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 	for i, txn := range txns {
 		txnHex := txnutil.EncodeWithPrefixHex(txn)
 		if target, ok := targetsByIndex[i]; ok {
-			requests[i] = signModeRequest(i, target.Account, target.Sender, txnHex, opts)
+			requests[i] = signModeRequest(i, target.Account, txnHex, opts)
 			continue
 		}
 		// Every other position is signed through /sign over the frozen group,
@@ -383,7 +383,7 @@ func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targets
 		if _, held := s.cache.AuthorizationKind(effectiveSigner); !held {
 			return nil, fmt.Errorf("transaction at index %d: the signer holds no key for %s; every position of a cosigned group must be signed by this signer (run keys refresh if the key is new)", i, effectiveSigner)
 		}
-		requests[i] = signModeRequest(i, effectiveSigner, txn.Sender.String(), txnHex, opts)
+		requests[i] = signModeRequest(i, effectiveSigner, txnHex, opts)
 	}
 	return requests, nil
 }
@@ -467,7 +467,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 			// the effective signer so a rekeyed account is signed by — and
 			// budgeted against — its auth address, matching the plan request.
 			effectiveSigner := s.authCache.ResolveEffectiveSigner(sender)
-			signRequests[i] = signModeRequest(i, effectiveSigner, sender, groupBytesHex[i], opts)
+			signRequests[i] = signModeRequest(i, effectiveSigner, groupBytesHex[i], opts)
 			nonCosigned = append(nonCosigned, i)
 		}
 	}

@@ -618,12 +618,9 @@ func (a *API) jsPlan(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("plan() request %d: expected object", i+1)))
 		}
 		a.refuseUnknownKeys(m, fmt.Sprintf("plan() request %d key", i+1),
-			"authAddress", "txnSender", "txnBytesHex", "signedTxnHex", "pqScheme", "lsigResources", "lsigArgs")
+			"authAddress", "txnBytesHex", "signedTxnHex", "pqScheme", "lsigResources", "lsigArgs")
 		if v, ok := a.optionString(m, "authAddress", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].AuthAddress = v
-		}
-		if v, ok := a.optionString(m, "txnSender", fmt.Sprintf("plan() request %d", i+1)); ok {
-			requests[i].TxnSender = v
 		}
 		if v, ok := a.optionString(m, "txnBytesHex", fmt.Sprintf("plan() request %d", i+1)); ok {
 			requests[i].TxnBytesHex = v

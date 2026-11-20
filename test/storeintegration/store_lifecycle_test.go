@@ -281,7 +281,6 @@ func mustOfflineSignRequest(t *testing.T, address string) signerapi.SignRequest 
 	encoded := hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...))
 	return signerapi.SignRequest{
 		AuthAddress: address,
-		TxnSender:   address,
 		TxnBytesHex: encoded,
 	}
 }

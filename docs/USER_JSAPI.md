@@ -615,7 +615,6 @@ fields:
 ```javascript
 {
   authAddress,
-  txnSender,
   txnBytesHex,
   signedTxnHex,
   lsigArgs: { name: "hex-string" }

@@ -566,7 +566,6 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		value := api.jsPlan(goja.FunctionCall{Arguments: []goja.Value{api.runtime.ToValue([]interface{}{
 			map[string]interface{}{
 				"authAddress": "AUTHADDR",
-				"txnSender":   "SENDERADDR",
 				"txnBytesHex": signHex,
 				"lsigArgs": map[string]interface{}{
 					"alpha": "00ff",
@@ -591,7 +590,6 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		if !reflect.DeepEqual(gotReq.Requests, []signerapi.SignRequest{
 			{
 				AuthAddress: "AUTHADDR",
-				TxnSender:   "SENDERADDR",
 				TxnBytesHex: signHex,
 				LsigArgs: map[string]string{
 					"alpha": "00ff",

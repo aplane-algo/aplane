@@ -217,7 +217,6 @@ type SignBatch struct {
 type SignRequest struct {
     // Sign mode fields
     AuthAddress  string            `json:"auth_address,omitempty"`  // Which key to use for signing
-    TxnSender    string            `json:"txn_sender,omitempty"`    // Client-stated sender; the signer does not read it
     TxnBytesHex  string            `json:"txn_bytes_hex,omitempty"` // TX + msgpack(txn)
     LsigArgs      map[string]string       `json:"lsig_args,omitempty"`      // Runtime args for generic LSigs
     LsigResources *LogicSigResourceUsage `json:"lsig_resources,omitempty"` // Foreign/passthrough selected-path resources
@@ -1269,7 +1268,6 @@ txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(
 requests := []signerapi.SignRequest{
     {
         AuthAddress: "ABC123...",
-        TxnSender:   "ABC123...",
         TxnBytesHex: hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...)),
     },
 }
@@ -1516,7 +1514,7 @@ from `pkg/signerapi/types.go`:
 
 - top-level fields: optional `request_id`, `requests[]`, optional `batch`
 - each entry is one of:
-  - sign: `auth_address`, optional `txn_sender`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
+  - sign: `auth_address`, `txn_bytes_hex`, optional `lsig_args`, optional `app_call_info`
   - passthrough: `signed_txn_hex`; if the signed envelope uses LogicSig,
     `lsig_resources` is required
   - foreign: `txn_bytes_hex` without `auth_address`, with at most one
@@ -1546,9 +1544,8 @@ never meet its threshold. A LogicSig with a program and no delegation is an
 escrow (contract account) LogicSig and counts. `/sign`, `/plan`, and
 `/sign/assemble` apply the same check.
 
-`txn_sender` is the transaction sender as the client states it. The signer
-does not read it: approval display, authority, policy, and audit use the
-sender decoded from `txn_bytes_hex`.
+A request names no sender: approval display, authority, policy, and audit use
+the sender decoded from `txn_bytes_hex`.
 
 `app_call_info` is approval-rendering metadata on the shared request DTO:
 
@@ -1566,7 +1563,7 @@ is refused with 400 on every request that takes it (`/sign`, `/plan`, the
 component and rotating sign requests). The signer cannot check it: it shows
 it as the client's (`Request 2 of 3 from the client, each approved on its
 own` in the text, `batch` in the review) and it decides nothing. It is not
-part of the approval binding, as `app_call_info` and `txn_sender` are not.
+part of the approval binding, as `app_call_info` is not.
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
 The label is the client's claim: the signer shows it only when the call's
