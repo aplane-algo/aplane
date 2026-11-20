@@ -181,9 +181,6 @@ func ValidateCanonicalGroupAndDummies(firstOriginal types.Transaction, group []t
 	if err != nil {
 		return err
 	}
-	if len(group) == originalCount {
-		return nil
-	}
 	_, err = ValidateCanonicalDummyTxns(firstOriginal, groupID, group, originalCount)
 	return err
 }

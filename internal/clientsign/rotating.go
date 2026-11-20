@@ -81,11 +81,10 @@ func SignAndSubmitRotating(
 	}
 	capRotatingWindow(&txn, w)
 
-	var lastErr error
 	// The fee notice last shown: a retry that prepares the same raise again
 	// does not repeat it.
 	var feeNotice string
-	for attempt := 1; attempt <= rotatingRetryAttempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		fresh, note, err := freshenRotatingValidity(opts.Ctx, txn, algodClient)
 		if err != nil {
 			return nil, nil, err
@@ -98,10 +97,9 @@ func SignAndSubmitRotating(
 		if err == nil {
 			return txIDs, prepared, nil
 		}
-		if txIDs != nil || !isRotatingRetryable(err) || attempt == rotatingRetryAttempts {
+		if txIDs != nil || !isRotatingRetryable(err) || attempt >= rotatingRetryAttempts {
 			return txIDs, prepared, err
 		}
-		lastErr = err
 		if !hasRotatingRefusalCode(err, signerapi.ErrCodeRotatingWindowNotCurrent) {
 			_, _ = fmt.Fprintf(w, "  Signer refused and released no signature (%s); preparing the transaction again (attempt %d of %d)\n", rotatingRefusalSummary(err), attempt+1, rotatingRetryAttempts)
 			continue
@@ -118,7 +116,6 @@ func SignAndSubmitRotating(
 			txn.FirstValid, txn.LastValid, rebuilt, rotatingkey.RotatingMaxValidityWindow, widened.FirstValid, widened.LastValid, attempt+1, rotatingRetryAttempts)
 		txn = widened
 	}
-	return nil, nil, lastErr
 }
 
 func signAndSubmitRotatingOnce(
