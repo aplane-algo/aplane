@@ -957,8 +957,10 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `scripts/docker-local-four-node-smoke.sh`,
 `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`,
 `uninstall.sh`, `installer/`, and `library/templates/`. Full release archives
-include installer helpers, template libraries, and staged plugin runtime
-payloads at `plugins.available/algokit-localnet`;
+include installer helpers, template libraries, staged plugin runtime
+payloads at `plugins.available/algokit-localnet`, and, when the repository
+root has one at packaging time, the `install_readme.txt` that `install.sh`
+prints first;
 client-only archives include `apshell`/`apshell.exe`, client config templates,
 README/setup metadata, and MCP setup helpers where supported by the platform.
 Checksums are generated for release archives, and CI release checksums are

@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -145,14 +146,9 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 // the Linux and the macOS archive's dist/staging/aplane/bin/.
 func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.ReplaceAll(string(data), "\\\n", " ")
 	name := regexp.MustCompile(`[A-Za-z0-9-]+$`)
 	var linuxCopies, darwinCopies int
-	for _, command := range strings.FieldsFunc(joined, func(r rune) bool { return r == '\n' || r == ';' }) {
+	for _, command := range shellCommands(readTextFile(t, path)) {
 		fields := strings.Fields(command)
 		if len(fields) < 3 || fields[0] != "cp" || fields[len(fields)-1] != "dist/staging/aplane/bin/" {
 			continue
@@ -174,6 +170,136 @@ func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
 		t.Fatalf("%s has %d Linux and %d macOS archive binary copies, want one of each", path, linuxCopies, darwinCopies)
 	}
 	return linux, darwin
+}
+
+// shellCommands splits a build file into its shell commands, continuation
+// lines joined, at newlines and semicolons.
+func shellCommands(text string) []string {
+	joined := strings.ReplaceAll(text, "\\\n", " ")
+	var commands []string
+	for _, command := range strings.FieldsFunc(joined, func(r rune) bool { return r == '\n' || r == ';' }) {
+		if command = strings.Join(strings.Fields(command), " "); command != "" {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+// TestReleaseArchivesShipTheInstallReadme pins that every archive copy of
+// install.sh is followed by a copy of the repository root's
+// install_readme.txt to the same place, when there is one, so a note made for
+// a release reaches every operator: the bootstrap package, and the Linux and
+// macOS archives release.yml and make release-local build.
+func TestReleaseArchivesShipTheInstallReadme(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for name, want := range map[string]int{
+		filepath.Join("scripts", "package-bootstrap-release.sh"): 1,
+		filepath.Join(".github", "workflows", "release.yml"):     2,
+		"Makefile": 2,
+	} {
+		commands := shellCommands(readTextFile(t, filepath.Join(root, name)))
+		copies := 0
+		for i, command := range commands {
+			fields := strings.Fields(command)
+			if len(fields) < 3 || fields[0] != "cp" {
+				continue
+			}
+			sources := fields[1 : len(fields)-1]
+			at := slices.IndexFunc(sources, func(source string) bool {
+				return filepath.Base(strings.Trim(source, `"`)) == "install.sh"
+			})
+			if at < 0 {
+				continue
+			}
+			copies++
+			note := strings.Replace(sources[at], "install.sh", "install_readme.txt", 1)
+			wantNext := []string{"if [ -f " + note + " ]", "then cp " + note + " " + fields[len(fields)-1], "fi"}
+			if next := commands[i+1 : min(i+4, len(commands))]; !slices.Equal(next, wantNext) {
+				t.Errorf("%s: %q is followed by %q, want %q", name, command, next, wantNext)
+			}
+		}
+		if copies != want {
+			t.Errorf("%s copies install.sh into %d archives, want %d", name, copies, want)
+		}
+	}
+}
+
+// TestInstallerShowsTheInstallReadmeFirst runs install.sh from a scratch
+// archive root. The install_readme.txt beside it is the first thing it
+// prints, verbatim, before the usage and before an argument error; an empty
+// or absent note prints nothing, one that cannot be read stops it with only
+// an error, and one in the working directory is not the archive's.
+func TestInstallerShowsTheInstallReadmeFirst(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+	installer := readTextFile(t, filepath.Join(repositoryRoot(t), "install.sh"))
+	note := "This release is new-install only: run the old uninstall.sh first.\n" +
+		"100% of %s keys move by recovery phrase; C:\\new\\table \\n \\e[31m \x1b[1mbold\x1b[0m\n" +
+		"$(touch pwned) ${HOME} `touch pwned`\n\n"
+	shown := "==> Release notes for this installer (install_readme.txt)\n" +
+		strings.TrimRight(note, "\n") + "\n" + strings.Repeat("=", 80) + "\n\n"
+	cases := []struct {
+		name       string
+		written    bool
+		unreadable bool // want is then exactly the error naming the note
+		note       string
+		arg        string
+		code       int
+		want       string
+	}{
+		{name: "before the usage", written: true, note: note, arg: "--help", want: shown + "Usage:\n"},
+		{name: "before an argument error", written: true, note: note, arg: "--bogus", code: 2,
+			want: shown + "Error: unknown option: --bogus\n"},
+		{name: "empty", written: true, note: " \n\t\n", arg: "--help", want: "Usage:\n"},
+		{name: "absent", arg: "--help", want: "Usage:\n"},
+		{name: "unreadable", written: true, unreadable: true, note: note, arg: "--help", code: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.unreadable && os.Geteuid() == 0 {
+				t.Skip("root reads a mode 000 file")
+			}
+			archive, work := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(archive, "install.sh"), []byte(installer), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			want := tc.want
+			if tc.written {
+				mode := os.FileMode(0o644)
+				if tc.unreadable {
+					mode = 0
+					want = "Error: cannot read install_readme.txt at " + filepath.Join(archive, "install_readme.txt") + "\n"
+				}
+				if err := os.WriteFile(filepath.Join(archive, "install_readme.txt"), []byte(tc.note), mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(work, "install_readme.txt"), []byte("not the archive's note\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(bash, filepath.Join(archive, "install.sh"), tc.arg)
+			cmd.Dir = work
+			cmd.Env = []string{"HOME=" + work, "PATH=/usr/bin:/bin"}
+			out, err := cmd.CombinedOutput()
+			if cmd.ProcessState == nil {
+				t.Fatalf("run install.sh: %v", err)
+			}
+			if code := cmd.ProcessState.ExitCode(); code != tc.code {
+				t.Fatalf("install.sh %s exited %d (%v), want %d:\n%s", tc.arg, code, err, tc.code, out)
+			}
+			if !strings.HasPrefix(string(out), want) || tc.unreadable && string(out) != want {
+				t.Errorf("install.sh %s output does not start with\n%q\ngot\n%q", tc.arg, want, out)
+			}
+			if got := strings.Count(string(out), "==> Release notes"); got > 1 || strings.Contains(string(out), "not the archive's") {
+				t.Errorf("install.sh %s printed a note %d times or the working directory's note:\n%s", tc.arg, got, out)
+			}
+			if _, err := os.Stat(filepath.Join(work, "pwned")); !os.IsNotExist(err) {
+				t.Errorf("install.sh ran the note's text as shell (pwned: %v)", err)
+			}
+		})
+	}
 }
 
 func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {

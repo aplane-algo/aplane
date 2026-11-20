@@ -186,6 +186,18 @@ embedded `release.json` version copied into installs for diagnostics and
 upgrade gating. When `--release-version` is omitted, it defaults to
 `--version` or `git describe`.
 
+A release can carry a note for every operator who installs it, such as that
+it is new-install only or that native Falcon keys move by recovery phrase.
+Commit it as `install_readme.txt` at the repository root in the commit you
+tag. `release.yml`, `make release-local` and
+`scripts/package-bootstrap-release.sh` copy it beside `install.sh` in every
+archive that ships `install.sh`, and ship none when there is none; the
+client-only archives have no installer and do not carry it. `install.sh`
+prints it before anything else, `--help` and argument errors included, as
+plain text: nothing in it is expanded. Remove or replace it once the release
+is cut, or the next release carries it too. A checkout install from a commit
+that has one shows it the same way.
+
 ### Option 2: Manual build commands
 
 ```bash

@@ -29,7 +29,8 @@ Output:
   dist/checksums.txt
 
 The tarball extracts to ./aplane/ and includes bin/, installer/, library/,
-plugins.available/ as the bundled plugin catalog, install.sh, and uninstall.sh.
+plugins.available/ as the bundled plugin catalog, install.sh, uninstall.sh,
+and install_readme.txt when the repository root has one.
 EOF
 }
 
@@ -210,6 +211,7 @@ main() {
     cp "$ROOT_DIR/install.sh" \
         "$ROOT_DIR/uninstall.sh" \
         "$staging/aplane/"
+    if [ -f "$ROOT_DIR/install_readme.txt" ]; then cp "$ROOT_DIR/install_readme.txt" "$staging/aplane/"; fi
     write_release_metadata "$staging/aplane" "$release_version" "$git_commit" "$built_at"
 
     chmod 755 "$staging/aplane/install.sh" \
