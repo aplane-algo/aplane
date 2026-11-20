@@ -6,6 +6,9 @@ package backupadmin
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"time"
 	"unicode/utf8"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -225,18 +229,68 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 		for i := range classification.Pending {
 			repaired[classification.Pending[i].Selector()] = true
 		}
-		if validateErr := storevalidate.RecoveryDestination(storevalidate.Options{
+		opts := storevalidate.Options{
 			Paths: s.Deps.KeyPaths(), Candidate: current, Keyring: masterKey,
 			ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-		}, repaired); validateErr != nil {
-			return restoreFailure(
-				protocol.ResultCodeRecoveryBlocked,
-				"recovery restore refused because destination authority outside the authenticated credential selection is damaged: %v",
-				validateErr,
-			)
+		}
+		if validateErr := storevalidate.RecoveryDestination(opts, repaired); validateErr != nil {
+			return recoveryRefusal(opts, current, repaired, set.Skipped, validateErr)
 		}
 	}
 	return r.commit(current, set, classification, masterKey)
+}
+
+// recoveryRefusal explains a recovery restore refused for destination damage
+// outside what it repairs. When the damage lies only in credentials the
+// backup holds but skips, it names them with the skip reason: a skipped copy
+// repairs nothing. It only words the refusal, which is already decided, so
+// the wider validation it runs never lets a restore through.
+func recoveryRefusal(
+	opts storevalidate.Options,
+	current storepaths.GenPaths,
+	repaired map[string]bool,
+	skipped []backup.SkippedEntry,
+	validateErr error,
+) error {
+	var held []backup.SkippedEntry
+	for _, entry := range skipped {
+		if destinationHolds(current, entry.Selector) {
+			held = append(held, entry)
+		}
+	}
+	if len(held) > 0 {
+		widened := maps.Clone(repaired)
+		for _, entry := range held {
+			widened[entry.Selector] = true
+		}
+		if storevalidate.RecoveryDestination(opts, widened) == nil {
+			more := ""
+			if len(held) > 1 {
+				more = fmt.Sprintf(" (and %d more)", len(held)-1)
+			}
+			return restoreFailure(
+				protocol.ResultCodeRecoveryBlocked,
+				"recovery restore refused: damaged destination credential %s%s is in the backup, but its copy there is skipped: %s",
+				held[0].Selector, more, held[0].Reason,
+			)
+		}
+	}
+	return restoreFailure(
+		protocol.ResultCodeRecoveryBlocked,
+		"recovery restore refused because destination authority outside the authenticated credential selection is damaged: %v",
+		validateErr,
+	)
+}
+
+// destinationHolds reports whether the generation has a managed credential
+// file for selector, of either class.
+func destinationHolds(current storepaths.GenPaths, selector string) bool {
+	for _, ext := range []string{keys.AccountKeyExtension, keys.CosignerCredentialExtension} {
+		if _, err := os.Lstat(filepath.Join(current.KeysDir(), selector+ext)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // commit mints the generation that holds the restored entries. A mint that
