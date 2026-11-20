@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -172,7 +173,7 @@ func (s *Service) rotatingAccounts() []string {
 			accounts = append(accounts, account)
 		}
 	}
-	sortStrings(accounts)
+	slices.Sort(accounts)
 	return accounts
 }
 

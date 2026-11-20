@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -40,12 +39,8 @@ func (s *Service) RecoverRotatingWithContext(ctx context.Context, req signerapi.
 	// A cancel does not need the key: a locked signer holds no key files
 	// and has already ended every grant, so the cancel finds nothing.
 	if req.Action == signerapi.RotatingRecoverActionStart {
-		snapshot := s.Planner.Snapshot()
-		if _, ok := snapshot.KeyFiles[req.Account]; !ok {
-			return nil, badRequest(fmt.Sprintf("no key found for account: %s", req.Account))
-		}
-		if !rotatingkey.IsRotatingKeyType(snapshot.KeyTypes[req.Account]) {
-			return nil, badRequest(fmt.Sprintf("account %s is not a rotating account", req.Account))
+		if _, err := s.indexedRotatingKey(req.Account); err != nil {
+			return nil, err
 		}
 	}
 	resp := &signerapi.RotatingRecoverResponse{Account: req.Account, Action: req.Action}
@@ -83,7 +78,7 @@ func describeGrant(g *RecoveryGrant) string {
 }
 
 func (s *Service) auditRotatingRecovery(ctx context.Context, account, action string, grantID uint64, detail string) {
-	if logger, ok := s.AuditLog.(AuditRotatingRecoveryLogger); ok && logger != nil {
+	if logger, ok := s.AuditLog.(AuditRotatingRecoveryLogger); ok {
 		logger.LogRotatingRecovery(ctx, account, action, grantID, detail)
 	}
 }
