@@ -161,8 +161,8 @@ LogicSig key type `aplane.falcon1024.v1`. Every native Falcon credential keeps
 the original entropy inside its encrypted payload, so local apadmin can
 explicitly export it. The payload stores no scheme or address salt:
 `keys.NativePQAddress` derives the salt and address from the public key, and
-the key type fixes the scheme (`keys.NativePQScheme`, which the envelope and
-the fee planner read too).
+the key type fixes the scheme (`keys.NativePQScheme`, which the fee planner
+reads too; the Falcon envelope uses the same `nativefalcon.Scheme` constant).
 
 ### DSA-backed LogicSig providers
 

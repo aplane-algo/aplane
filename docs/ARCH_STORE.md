@@ -1353,8 +1353,9 @@ Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`
 and `format_version: 1`, the one format every category uses. The public key
 is exactly 1793 bytes and the private key exactly 2305 bytes. The key file
 stores neither the protocol scheme nor the address salt. The key type fixes
-the scheme: `keys.NativePQScheme` maps it, and the payload validator, the
-signed envelope (`signerops`) and the fee planner all read it there. The salt
+the scheme: `keys.NativePQScheme` maps it, and the payload validator and the
+fee planner read it there. The Falcon-only signed envelope (`signerops`) uses
+`nativefalcon.Scheme`, the constant that mapping returns for `falcon1024`. The salt
 and address follow from the public key: `keys.NativePQAddress` derives them
 for validation, `Selector`, generation and signing. For `falcon1024` the
 scheme is `f1` and the salt is the lowest byte whose `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an

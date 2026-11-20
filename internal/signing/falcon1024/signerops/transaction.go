@@ -14,29 +14,18 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-// envelopeScheme is the scheme the falcon1024 key type signs with. keys owns
-// the mapping from a native key type to its scheme.
-func envelopeScheme() (types.PQScheme, error) {
-	scheme, ok := keys.NativePQScheme(nativefalcon.KeyType)
-	if !ok {
-		return types.PQScheme{}, fmt.Errorf("key type %q has no native PQ scheme", nativefalcon.KeyType)
-	}
-	return scheme, nil
-}
+// scheme is the envelope scheme of the falcon1024 key type: nativefalcon's
+// Scheme, the constant keys.NativePQScheme maps falcon1024 to.
+var scheme = types.PQScheme{nativefalcon.Scheme[0], nativefalcon.Scheme[1]}
 
 // AuthorizeTransaction constructs a native Falcon authorization envelope.
 func AuthorizeTransaction(privateKey *falcon.PrivateKey, publicKey []byte, salt byte, txn types.Transaction, authorizer types.Address) (types.SignedTxn, error) {
 	if privateKey == nil {
 		return types.SignedTxn{}, fmt.Errorf("native Falcon private key is nil")
-	}
-	scheme, err := envelopeScheme()
-	if err != nil {
-		return types.SignedTxn{}, err
 	}
 	if len(publicKey) != nativefalcon.PublicKeySize {
 		return types.SignedTxn{}, fmt.Errorf("native Falcon public key length %d, want %d", len(publicKey), nativefalcon.PublicKeySize)
@@ -81,10 +70,6 @@ func ValidateTransaction(stxn types.SignedTxn, expectedTxn types.Transaction, au
 	proof := stxn.PQsig
 	if proof.Blank() {
 		return fmt.Errorf("native Falcon transaction is missing PQ authorization")
-	}
-	scheme, err := envelopeScheme()
-	if err != nil {
-		return err
 	}
 	if proof.Scheme != scheme {
 		return fmt.Errorf("native Falcon transaction scheme is %q, want %q", proof.Scheme, scheme)
