@@ -63,8 +63,7 @@ func TestFalcon1024V1GenerateTEALUsesV13AutoSalt(t *testing.T) {
 	if !strings.Contains(teal, "#pragma version 13") {
 		t.Fatalf("GenerateTEAL() missing TEAL v13:\n%s", teal)
 	}
-	preamble, _ := lsigsalt.StylePushbytes.SourcePreamble()
-	if strings.Contains(teal, "bytecblock 0x00") || strings.Contains(teal, strings.TrimSpace(preamble)) || strings.Contains(teal, "Counter byte") {
+	if strings.Contains(teal, "bytecblock 0x00") || strings.Contains(teal, "APLANE_LSIG_SALT") || strings.Contains(teal, "Counter byte") {
 		t.Fatalf("GenerateTEAL() contains an APlane manual salt anchor:\n%s", teal)
 	}
 }

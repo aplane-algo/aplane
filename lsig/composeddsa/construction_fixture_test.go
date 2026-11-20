@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -252,22 +253,55 @@ func TestAdmissionStaysOutOfLoadAndFingerprint(t *testing.T) {
 	}
 }
 
+// layoutArgs places a bounded account's arguments by its stored layout, as the
+// signer's assembly does: each base signature argument in its slot, the
+// cosigner's signature when one is given, every other slot empty, and the empty
+// slots at the end dropped.
+func layoutArgs(metadata *boundedmeta.Metadata, signatureArgs [][]byte, cosignature []byte) [][]byte {
+	args := make([][]byte, len(metadata.ArgumentLayout))
+	base := 0
+	for _, slot := range metadata.ArgumentLayout {
+		args[slot.Index] = []byte{}
+		switch slot.Source {
+		case boundedmeta.ArgSourceBaseSignature:
+			args[slot.Index] = signatureArgs[base]
+			base++
+		case boundedmeta.ArgSourceCosigner:
+			if cosignature != nil {
+				args[slot.Index] = cosignature
+			}
+		}
+	}
+	for len(args) > 0 && len(args[len(args)-1]) == 0 {
+		args = args[:len(args)-1]
+	}
+	return args
+}
+
+// A bounded account's stored layout gives each component of its construction a
+// slot of its own, sized for that component; its composer assembles nothing.
 func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
 	provider := compositeProvider(t, construction, spendingKeyRekeyYAML, composeddsa.FixtureSupport{})
-	first, second := bytes.Repeat([]byte{1}, 64), bytes.Repeat([]byte{2}, 1000)
-	args, err := provider.BuildArgs(encodeCompositeSignature(first, second), nil)
+	key, _ := syntheticKey(construction)
+	metadata, err := provider.BuildBoundedAuthorizationMetadata(key, map[string]string{}, []byte("program"))
 	if err != nil {
-		t.Fatalf("BuildArgs() error = %v", err)
+		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
 	}
+	if layout := metadata.BaseSignatureArgLayout; layout.Count != 2 || !slices.Equal(layout.MaxSizes, construction.Layout().MaxSizes()) {
+		t.Fatalf("base signature layout = %+v, want one slot per component sized %v", layout, construction.Layout().MaxSizes())
+	}
+	first, second := bytes.Repeat([]byte{1}, 64), bytes.Repeat([]byte{2}, 1000)
+	signatureArgs, err := compositeOps{construction: construction}.BuildSignatureArgs(encodeCompositeSignature(first, second))
+	if err != nil {
+		t.Fatalf("BuildSignatureArgs() error = %v", err)
+	}
+	args := layoutArgs(metadata, signatureArgs, nil)
 	if len(args) != 2 || !bytes.Equal(args[0], first) || !bytes.Equal(args[1], second) {
-		t.Fatalf("BuildArgs() returned %d args", len(args))
+		t.Fatalf("layout placed %d args", len(args))
 	}
-	if _, err := provider.BuildArgs(encodeCompositeSignature(first), nil); err == nil {
-		t.Fatal("BuildArgs() accepted a missing component")
-	}
-	if _, err := provider.BuildArgs(encodeCompositeSignature(second, first), nil); err == nil {
-		t.Fatal("BuildArgs() accepted oversized component arguments")
+	if _, err := provider.BuildArgs(encodeCompositeSignature(first, second), nil); err == nil {
+		t.Fatal("BuildArgs() assembled a bounded account's arguments")
 	}
 }
 

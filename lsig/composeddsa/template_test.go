@@ -107,8 +107,8 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleAlgodAutoSalt) {
-		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleAlgodAutoSalt)
+	if provider.saltStyle != lsigsalt.StyleAlgodAutoSalt {
+		t.Fatalf("salt style = %q, want %q", provider.saltStyle, lsigsalt.StyleAlgodAutoSalt)
 	}
 }
 
@@ -137,8 +137,8 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if got := provider.fingerprintSaltStyle(); got != string(lsigsalt.StyleNone) {
-		t.Fatalf("fingerprintSaltStyle() = %q, want %q", got, lsigsalt.StyleNone)
+	if provider.saltStyle != lsigsalt.StyleNone {
+		t.Fatalf("salt style = %q, want %q", provider.saltStyle, lsigsalt.StyleNone)
 	}
 }
 

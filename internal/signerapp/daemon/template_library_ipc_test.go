@@ -428,7 +428,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	}
 	if err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-		payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+		payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "")
 		defer payload.ZeroSecrets()
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr

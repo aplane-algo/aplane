@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -134,17 +134,13 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	defer cleanup()
 
 	svc := New(paths)
-	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
-	if err != nil {
-		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
-	}
+	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
 	// Creation needs the template's valid_rekey_target declaration.
 	keyType := registerRekeyTargetTemplate(t, "timed-policy", false)
-	err = svc.SaveGenericLSig(
+	err := svc.SaveGenericLSig(
 		keyType,
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,
-		salted.Counter,
 		false,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
@@ -178,6 +174,10 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	}
 	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "test.timed-policy.v1" {
 		t.Fatalf("payload = (%q, %q), want canonical generic LogicSig", payload.Category, payload.KeyType)
+	}
+	// A program the compiler did not auto-salt is unsalted and records 0.
+	if payload.LogicSigDerivation != "" || payload.SaltCounter == nil || *payload.SaltCounter != 0 {
+		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", payload.LogicSigDerivation, payload.SaltCounter)
 	}
 }
 

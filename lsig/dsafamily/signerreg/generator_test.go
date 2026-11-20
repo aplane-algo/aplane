@@ -4,7 +4,9 @@
 package signerreg
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -129,25 +132,7 @@ func (f *testFalcon1024V1) DeriveLsigWithSalt(ctx context.Context, publicKey []b
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
-	counter, err := lsigsalt.CounterFromBytecode(bytecode, lsigsalt.BytecblockLocator)
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	var pub falcongo.PublicKey
-	copy(pub[:], publicKey)
-	lsigAcct, err := fakeDeriveLogicSig(pub)
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	addr, err := lsigAcct.Address()
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	return lsigsalt.FindResult{
-		Bytecode: bytecode,
-		Address:  addr,
-		Counter:  counter,
-	}, nil
+	return lsigsalt.UseUnmodifiedOffCurve(bytecode)
 }
 
 func (f *testFalcon1024V1) Sign(privateKey []byte, message []byte) ([]byte, error) {
@@ -385,6 +370,64 @@ func TestGenerateRecordsTheAccountsOwnFingerprint(t *testing.T) {
 	defer stored.ZeroSecrets()
 	if stored.TemplateFingerprint != perKeyGeneratorFingerprint {
 		t.Fatalf("TemplateFingerprint = %q, want the shape fingerprint", stored.TemplateFingerprint)
+	}
+}
+
+// A DSA LogicSig the compiler did not auto-salt is unsalted: its key file has
+// no lsig_derivation and records salt_counter 0.
+func TestGenerateRecordsAnUnsaltedProgramWithCounterZero(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	logicsigdsa.Register(&perKeyGeneratorDSA{})
+	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
+
+	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
+	result, err := generator.GenerateFromSeed(context.Background(), paths, make([]byte, 64), cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	if !bytes.Contains(keyJSON, []byte(`"salt_counter": 0,`)) {
+		t.Fatal(`key file does not record "salt_counter": 0`)
+	}
+	stored, err := apkeys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer stored.ZeroSecrets()
+	if stored.LogicSigDerivation != "" || stored.SaltCounter == nil || *stored.SaltCounter != 0 {
+		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", stored.LogicSigDerivation, stored.SaltCounter)
+	}
+}
+
+// The generator writes the same key file bytes, apart from created_at. The
+// digest was taken before the payload constructors lost their salt counter
+// parameter.
+func TestGenerateKeyFileIsUnchanged(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	logicsigdsa.Register(&perKeyGeneratorDSA{})
+	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
+
+	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
+	result, err := generator.GenerateFromSeed(context.Background(), paths, bytes.Repeat([]byte{0x42}, 64), cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	sum := sha256.Sum256(regexp.MustCompile(`"created_at": "[^"]*"`).ReplaceAll(keyJSON, []byte(`"created_at": ""`)))
+	if got, want := hex.EncodeToString(sum[:]), "0ebf051902ccb5b96e5c50b3c60458e99aae6263f3b9e3446d7c095078089ef4"; got != want {
+		t.Fatalf("key file digest = %s, want %s", got, want)
 	}
 }
 
@@ -825,7 +868,7 @@ func TestGenerateFromSeedFailsWhenTEALGenerationFails(t *testing.T) {
 }
 
 // fakeDeriveLogicSig is a deterministic, offline stand-in for Falcon address
-// derivation: a manual-salt program that only has to be stable and off-curve.
+// derivation: a program that only has to be stable and off-curve.
 // It is not the production derivation (see lsig/falcon1024/v1 for that).
 func fakeDeriveLogicSig(publicKey falcongo.PublicKey) (algocrypto.LogicSigAccount, error) {
 	for counter := range 256 {

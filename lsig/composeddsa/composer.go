@@ -8,6 +8,7 @@ package composeddsa
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -108,7 +109,7 @@ type Config struct {
 }
 
 // ComposedDSA composes:
-//  1. Standard LogicSig structure (preamble + optional suffix + verify footer)
+//  1. Standard LogicSig structure (pragma + verify footer + optional suffix)
 //  2. Runtime TEAL compilation via algod
 //  3. Algorithm-specific verify operations via DSAOps
 type ComposedDSA struct {
@@ -325,8 +326,17 @@ func (c *ComposedDSA) SignatureArgLayout() (SignatureArgLayout, bool) {
 	return cloneSignatureArgLayout(ops.SignatureArgLayout()), true
 }
 
-// BuildArgs assembles LogicSig Args in the provider's declared order.
+// errBoundedBuildArgs refuses BuildArgs on a bounded composer. The signer
+// packs a bounded account's spending signature through its base key type's
+// provider and places every argument by the account's stored layout.
+var errBoundedBuildArgs = errors.New("bounded accounts are assembled from their stored metadata")
+
+// BuildArgs assembles LogicSig Args in the provider's declared order. A bounded
+// composer refuses (errBoundedBuildArgs).
 func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
+	if c.bounded != nil {
+		return nil, errBoundedBuildArgs
+	}
 	if signature == nil {
 		return nil, fmt.Errorf("signature is required for DSA LogicSig")
 	}
@@ -338,92 +348,16 @@ func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte)
 	if len(sigArgs) == 0 {
 		return nil, fmt.Errorf("algorithm returned no signature arguments")
 	}
-	if c.bounded != nil {
-		layout, err := c.validatedSignatureArgLayout()
-		if err != nil {
-			return nil, err
-		}
-		if err := validateBuiltSignatureArgs(sigArgs, layout); err != nil {
-			return nil, err
-		}
-	}
 
 	runtimeArgBytes, err := lsigprovider.ValidateAndOrderArgs(c.runtimeArgs, runtimeArgs)
 	if err != nil {
 		return nil, err
-	}
-	if c.bounded != nil {
-		return c.buildBoundedSpendArgs(sigArgs, runtimeArgBytes)
 	}
 
 	ordered := make([][]byte, 0, len(sigArgs)+len(runtimeArgBytes))
 	ordered = append(ordered, sigArgs...)
 	ordered = append(ordered, runtimeArgBytes...)
 	return ordered, nil
-}
-
-func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte) ([][]byte, error) {
-	metadata, err := c.boundedAuthorizationMetadataBase()
-	if err != nil {
-		return nil, err
-	}
-	if metadata == nil {
-		return nil, fmt.Errorf("bounded argument assembly requires bounded metadata")
-	}
-
-	args := make([][]byte, len(metadata.ArgumentLayout))
-	baseIndex, runtimeIndex := 0, 0
-	for _, slot := range metadata.ArgumentLayout {
-		if slot.Index < 0 || slot.Index >= len(args) {
-			return nil, fmt.Errorf("bounded argument slot %q has invalid index %d", slot.Name, slot.Index)
-		}
-		value := []byte{}
-		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
-			if baseIndex >= len(signatureArgs) {
-				return nil, fmt.Errorf("bounded base signature slot %q has no value", slot.Name)
-			}
-			value = signatureArgs[baseIndex]
-			baseIndex++
-		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceCosigner:
-			// BuildArgs has no transaction context or cosigner authority.
-			// Keep interior slots explicit so later runtime values retain their
-			// frozen indexes; unused trailing slots are trimmed below.
-		case boundedmeta.ArgSourceRuntime:
-			if runtimeIndex >= len(runtimeArgs) {
-				return nil, fmt.Errorf("bounded runtime slot %q has no value", slot.Name)
-			}
-			value = runtimeArgs[runtimeIndex]
-			runtimeIndex++
-		default:
-			return nil, fmt.Errorf("bounded argument slot %q has unsupported source %q", slot.Name, slot.Source)
-		}
-
-		switch slot.Paths.Spend {
-		case boundedmeta.ArgRequired:
-			if len(value) == 0 {
-				return nil, fmt.Errorf("required bounded spend argument slot %q is empty", slot.Name)
-			}
-		case boundedmeta.ArgOptional:
-		case boundedmeta.ArgForbidden:
-			if len(value) != 0 {
-				return nil, fmt.Errorf("forbidden bounded spend argument slot %q is populated", slot.Name)
-			}
-		default:
-			return nil, fmt.Errorf("bounded argument slot %q has invalid spend rule %q", slot.Name, slot.Paths.Spend)
-		}
-		if len(value) > slot.MaxSize {
-			return nil, fmt.Errorf("bounded argument slot %q exceeds maximum size %d", slot.Name, slot.MaxSize)
-		}
-		args[slot.Index] = value
-	}
-	if baseIndex != len(signatureArgs) || runtimeIndex != len(runtimeArgs) {
-		return nil, fmt.Errorf("bounded argument layout did not consume all provider arguments")
-	}
-	for len(args) > 0 && len(args[len(args)-1]) == 0 {
-		args = args[:len(args)-1]
-	}
-	return args, nil
 }
 
 // CompatibilityFingerprint returns a stable compatibility fingerprint for this
@@ -471,7 +405,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		BasePrimitive:    lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
 		OpcodeProfile:    c.opcodeProfile,
 		TEALSuffix:       strings.TrimSpace(c.tealSuffix),
-		SaltStyle:        c.fingerprintSaltStyle(),
+		SaltStyle:        string(c.saltStyle),
 		TemplateMode:     c.templateMode,
 		TemplateVars:     c.templateVars,
 		Parameters:       params,
@@ -485,10 +419,10 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 // GenerateTEAL generates the complete TEAL source for this composed LogicSig.
 //
 // Empty-suffix programs preserve the canonical bare-DSA layout:
-// preamble + algorithm-specific verify footer.
+// pragma + algorithm-specific verify footer.
 //
 // Non-empty suffixes use verifier-first composition:
-// preamble + verify footer + assert + substituted suffix + final return.
+// pragma + verify footer + assert + substituted suffix + final return.
 // The suffix is a predicate fragment, not a standalone TEAL program, and must
 // not contain its own return instructions.
 func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
@@ -535,8 +469,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 
 	mode := c.templateMode
 	hasSuffix := c.hasSuffix()
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
+	if err := c.checkSaltStyle(); err != nil {
 		return "", err
 	}
 	var strictSuffix tealtemplate.RenderedTemplate
@@ -563,14 +496,6 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 	}
 
-	if style != lsigsalt.StyleNone && style != lsigsalt.StyleAlgodAutoSalt && style != lsigsalt.StyleTrailingBytecblock {
-		preamble, err := c.saltPreamble(style)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(preamble)
-	}
-
 	verifyFooter, err := c.ops.BuildVerifyTEAL(publicKey)
 	if err != nil {
 		return "", err
@@ -581,7 +506,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	}
 
 	if boundedProfile == nil && !hasSuffix {
-		return c.finishSaltedTEAL(b.String(), style)
+		return b.String(), nil
 	}
 
 	b.WriteString("assert\n\n")
@@ -648,39 +573,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		b.WriteString("int 1\nreturn\n")
 	}
 
-	return c.finishSaltedTEAL(b.String(), style)
-}
-
-func (c *ComposedDSA) saltPreamble(style lsigsalt.Style) (string, error) {
-	preamble, err := style.SourcePreamble()
-	if err != nil {
-		return "", err
-	}
-	return "// Counter byte (varied 0-255 to avoid ed25519 curve addresses)\n" + preamble + "\n", nil
-}
-
-func (c *ComposedDSA) finishSaltedTEAL(teal string, style lsigsalt.Style) (string, error) {
-	trailer, err := style.SourceTrailer()
-	if err != nil {
-		return "", err
-	}
-	if trailer == "" {
-		return teal, nil
-	}
-	return strings.TrimRight(teal, "\n") +
-		"\n\n// Counter byte (varied 0-255 to avoid ed25519 curve addresses)\n" +
-		strings.TrimSuffix(trailer, "\n") + "\n", nil
-}
-
-func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return nil, err
-	}
-	if style == lsigsalt.StyleNone || style == lsigsalt.StyleAlgodAutoSalt {
-		return nil, fmt.Errorf("LogicSig salt style %q has no salt locator", style)
-	}
-	return style.Locator()
+	return b.String(), nil
 }
 
 func (c *ComposedDSA) hasSuffix() bool {
@@ -693,40 +586,21 @@ func (c *ComposedDSA) hasAuthorTEAL() bool {
 	return strings.TrimSpace(c.tealSuffix) != ""
 }
 
-func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {
-	if c.saltStyle != "" {
-		if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
-			if c.ops.TEALVersion() < 13 {
-				return "", fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
-			}
-			return c.saltStyle, nil
+// checkSaltStyle refuses a salt style the composer cannot derive with. Algod's
+// TEAL v13 assembler salts an auto-salt program; an unsalted one is used as
+// compiled, so its address must already be off the curve.
+func (c *ComposedDSA) checkSaltStyle() error {
+	switch c.saltStyle {
+	case lsigsalt.StyleNone:
+		return nil
+	case lsigsalt.StyleAlgodAutoSalt:
+		if c.ops.TEALVersion() < 13 {
+			return fmt.Errorf("composed DSA salt style %q requires TEAL v13+, got v%d", c.saltStyle, c.ops.TEALVersion())
 		}
-		if c.saltStyle == lsigsalt.StyleNone {
-			return c.saltStyle, nil
-		}
-		if c.saltStyle == lsigsalt.StyleBytecblock && c.hasSuffix() {
-			return "", fmt.Errorf("composed DSA salt style %q cannot be used with a TEAL suffix; use %q", c.saltStyle, lsigsalt.StylePushbytes)
-		}
-		if c.saltStyle == lsigsalt.StyleTrailingBytecblock && !c.hasSuffix() {
-			return "", fmt.Errorf("composed DSA salt style %q requires a TEAL suffix with a composer-owned final return", c.saltStyle)
-		}
-		if _, err := c.saltStyle.Locator(); err != nil {
-			return "", err
-		}
-		return c.saltStyle, nil
+		return nil
+	default:
+		return fmt.Errorf("composed DSA salt style %q is not %q or %q", c.saltStyle, lsigsalt.StyleNone, lsigsalt.StyleAlgodAutoSalt)
 	}
-	if c.hasSuffix() {
-		return lsigsalt.StylePushbytes, nil
-	}
-	return lsigsalt.StyleBytecblock, nil
-}
-
-func (c *ComposedDSA) fingerprintSaltStyle() string {
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return string(c.saltStyle)
-	}
-	return string(style)
 }
 
 func validateSuffixControlFlow(teal string) error {
@@ -794,33 +668,19 @@ func (c *ComposedDSA) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, 
 		return lsigsalt.FindResult{}, fmt.Errorf("failed to decode compiled bytecode: %w", err)
 	}
 
-	style, err := c.resolvedSaltStyle()
-	if err != nil {
-		return lsigsalt.FindResult{}, err
-	}
-	if style == lsigsalt.StyleAlgodAutoSalt {
+	// GenerateTEAL has refused any other salt style.
+	if c.saltStyle == lsigsalt.StyleAlgodAutoSalt {
 		autoSalted, err := lsigsalt.UseCompilerAutoSalted(bytecode, result.Hash)
 		if err != nil {
 			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate compiler-auto-salted LogicSig: %w", err)
 		}
 		return autoSalted, nil
 	}
-	if style == lsigsalt.StyleNone {
-		unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-		if err != nil {
-			return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
-		}
-		return unsalted, nil
-	}
-	locate, err := c.saltLocator()
+	unsalted, err := lsigsalt.UseUnmodifiedOffCurve(bytecode)
 	if err != nil {
-		return lsigsalt.FindResult{}, err
+		return lsigsalt.FindResult{}, fmt.Errorf("failed to validate unsalted off-curve LogicSig address: %w", err)
 	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, locate)
-	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
-	}
-	return salted, nil
+	return unsalted, nil
 }
 
 // Compile-time interface checks.

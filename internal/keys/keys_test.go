@@ -22,7 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -653,15 +653,15 @@ func TestScanKeysDirectoryWithKeyringReportRecordsSaltWarnings(t *testing.T) {
 func TestKeyPayloadScanWarningClassification(t *testing.T) {
 	offCurve := canonicalOffCurveBytecode(t)
 
-	missingSalt := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
+	missingSalt := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, "", nil, "")
 	missingSalt.SaltCounter = nil
 
-	onCurvePayload := NewGenericLSigPayload("test.generic-policy.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
+	onCurvePayload := NewGenericLSigPayload("test.generic-policy.v1", nil, canonicalOnCurveBytecode(t), "", nil, "")
 
-	missingBytecode := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
+	missingBytecode := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, "", nil, "")
 	missingBytecode.LogicSigBytecode = nil
 
-	wrongVersion := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
+	wrongVersion := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, "", nil, "")
 	wrongVersion.SigningMetadataVersion = CurrentSigningMetadataVersion + 1
 
 	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"test.generic-policy.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
@@ -699,14 +699,14 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	address, bytecode, counter := saltedLogicSigForScanTest(t)
+	address, bytecode := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
+		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -729,14 +729,14 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	_, bytecode, counter := saltedLogicSigForScanTest(t)
+	_, bytecode := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
+		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -833,14 +833,12 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 	}
 }
 
-func saltedLogicSigForScanTest(t *testing.T) (string, []byte, byte) {
+// unsaltedLogicSigForScanTest returns an off-curve program as an unsalted
+// template stores it: no lsig_derivation, and salt_counter 0.
+func unsaltedLogicSigForScanTest(t *testing.T) (string, []byte) {
 	t.Helper()
-	base := []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}
-	result, err := lsigsalt.FindOffCurve(base, lsigsalt.BytecblockLocator)
-	if err != nil {
-		t.Fatalf("FindOffCurve() error = %v", err)
-	}
-	return result.Address.String(), result.Bytecode, result.Counter
+	result := lsigsalttest.OffCurve(t, []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}, 4)
+	return result.Address.String(), result.Bytecode
 }
 
 func TestScanKeysDirectoryWithKeyringReportRecordsIncompatibleFormatWarnings(t *testing.T) {

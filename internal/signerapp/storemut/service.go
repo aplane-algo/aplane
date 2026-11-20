@@ -74,8 +74,9 @@ func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context,
 	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, keyType, mnemonic, kr, params, activated)
 }
 
-// SaveGenericLSig persists a generated generic LogicSig key file.
-func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, compilerAutoSalted bool, tealSource string, signingArgs []keys.StoredSigningArg, opcodeProfile lsigresource.OpcodeProfile, kr *crypto.Keyring) error {
+// SaveGenericLSig persists a generated generic LogicSig key file. A program
+// the compiler did not auto-salt is unsalted, and records salt_counter 0.
+func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, compilerAutoSalted bool, tealSource string, signingArgs []keys.StoredSigningArg, opcodeProfile lsigresource.OpcodeProfile, kr *crypto.Keyring) error {
 	var payload *keys.Payload
 	if compilerAutoSalted {
 		payload = keys.NewAutoSaltedGenericLSigPayload(
@@ -84,7 +85,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 		)
 	} else {
 		payload = keys.NewGenericLSigPayload(
-			keyType, parameters, bytecode, saltCounter, tealSource, signingArgs,
+			keyType, parameters, bytecode, tealSource, signingArgs,
 			lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -53,11 +53,8 @@ func TestGenericLogicSigKeyRecordsValidRekeyTarget(t *testing.T) {
 			defer cleanup()
 			family := fmt.Sprintf("rekey-target-%d", i)
 			keyType := registerRekeyTargetTemplate(t, family, declared)
-			salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00, byte(i)}, 3)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := New(paths).SaveGenericLSig(keyType, nil, salted.Bytecode, salted.Counter, false, "int 1", nil,
+			salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00, byte(i)}, 3)
+			if err := New(paths).SaveGenericLSig(keyType, nil, salted.Bytecode, false, "int 1", nil,
 				lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), kr); err != nil {
 				t.Fatalf("SaveGenericLSig() error = %v", err)
 			}
@@ -112,11 +109,8 @@ teal: |
 		t.Run(keyType, func(t *testing.T) {
 			paths, kr, cleanup := setupKeystore(t)
 			defer cleanup()
-			salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00, byte(0x40 + i)}, 3)
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = New(paths).SaveGenericLSig(keyType, nil, salted.Bytecode, salted.Counter, false, "int 1", nil,
+			salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00, byte(0x40 + i)}, 3)
+			err := New(paths).SaveGenericLSig(keyType, nil, salted.Bytecode, false, "int 1", nil,
 				lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), kr)
 			if err == nil || !strings.Contains(err.Error(), "valid_rekey_target declaration does not resolve") {
 				t.Fatalf("SaveGenericLSig() error = %v, want an unresolved declaration", err)

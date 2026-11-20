@@ -32,8 +32,9 @@ account is the exception: its key file stores a seed, a genesis hash and
 stage 0's public record, and every stage program is assembled locally from a
 frozen template at signing time; see category E.) Current
 compiler-auto-salted keys record
-`lsig_derivation: algod_v13_auto_salt` and omit `salt_counter`; compatible
-manual-counter records retain the counter. Sign-time code uses that stored metadata;
+`lsig_derivation: algod_v13_auto_salt` and omit `salt_counter`; keys from an
+unsalted template record no `lsig_derivation` and keep `salt_counter: 0`.
+Sign-time code uses that stored metadata;
 DSA-backed keys still use the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and
 provenance, not to reconstruct missing signing metadata. Template provenance
@@ -100,9 +101,11 @@ referenced above is `signing_metadata_version`, `lsig_derivation`,
 `lsig_opcode_profile`, `base_key_type` for DSA LogicSig keys, and optional
 `signing_args`.
 `lsig_derivation: algod_v13_auto_salt` records that the final TEAL v13 bytecode
-was salted by the configured algod compiler; compatible manual-counter records
-may instead carry `salt_counter`, but pre-profile development records must be
-regenerated. `lsig_opcode_profile` stores only reviewed per-path opcode
+was salted by the configured algod compiler; a key from an unsalted template has
+no `lsig_derivation` and carries `salt_counter: 0` instead. A record without a
+valid `lsig_opcode_profile` must be regenerated: an auto-salted one fails to
+parse, and an unsalted one parses but key scan skips it with an
+`incompatible_key_format` warning, so it never signs. `lsig_opcode_profile` stores only reviewed per-path opcode
 ceilings; program length and argument maxima are derived from the final
 bytecode and the frozen argument layout. Non-bounded LogicSig keys
 use signing-metadata version 1. Bounded keys use version 2 and persist the full

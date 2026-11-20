@@ -56,11 +56,11 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 		{
 			name:       "rekey-disabled-pay",
 			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}, boundedmeta.RekeyRefused),
-			bytecode:   1906,
+			bytecode:   1878,
 			spendArgs:  1423,
 			spendGroup: 2,
 			spendFee:   2000,
-			address:    "NDW4G7KSXADVZSLN4XKRYFEOQ5SVVZK2T3BQGLZIHFMRVDPDXSGPA4Z74E",
+			address:    "S3FSCF5MEIEBHMPR54F2XAP25PUTOULF7OJ2DXCR64MGJ53RMMISW5VB2Q",
 		},
 		{
 			name: "spending-key-rekey-pay-axfer",
@@ -68,8 +68,8 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
 				boundedmeta.RekeySpendingKey,
 			),
-			bytecode: 1950, spendArgs: 1423, spendGroup: 2, spendFee: 2000,
-			address: "UNXBYLJQS3WTPIR63PKNDHZHXLMGAHPBCWIRRZXXQ3SGEEYEMG7NH2BB74",
+			bytecode: 1919, spendArgs: 1423, spendGroup: 2, spendFee: 2000,
+			address: "KPFJDQQIX32RFQTA23NYCFQU6HDIYYQEKKALOZJS2DZGAW3SPD47YQHRRU",
 		},
 	}
 	consensus, err := lsigresource.ResolveConsensus(network.ConsensusVersion)
@@ -483,7 +483,7 @@ func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, t
 func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 		TemplateMode: "generated",
 		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
 	})
@@ -492,7 +492,7 @@ func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProf
 func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StylePushbytes, TemplateMode: "generated", Bounded: profile,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", Bounded: profile,
 		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
 		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})

@@ -32,7 +32,7 @@ The cryptographic subsystem is split across these packages:
 | Area | Primary packages |
 |---|---|
 | Native signing | `internal/signing`, `internal/signing/ed25519`, `internal/signing/falcon1024` |
-| LogicSig provider interfaces, registry, and salting | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
+| LogicSig provider interfaces, registry, and off-curve validation | `internal/lsigprovider`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt` |
 | Built-in LogicSig families | `lsig/`, especially `lsig/falcon1024`, `lsig/ed25519lsig`, `lsig/plainhost`, `lsig/composeddsa`, `lsig/generictemplate`, `lsig/rotatingtriplewotsc`, `lsig/rotatingtriplexmss`, `lsig/rotatingtripleslhdsa`, `lsig/rotatingfamily` |
 | Algorithm metadata, keygen, mnemonics | `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Key-type visibility and state | `internal/keytypecatalog`, `internal/keytypestate` |
@@ -213,10 +213,11 @@ reject an on-curve result. The key file records
 must not also contain `salt_counter`.
 
 Templates that omit `derivation_version` remain unsalted and succeed only when
-their unmodified compiled bytecode already derives an off-curve address. The
-retired marker and bytecblock counter styles remain in `internal/lsigsalt` only
-for compatibility with already-created manual-counter key files and focused
-validation tests. New template definitions reject derivation versions 1 and 2
+their unmodified compiled bytecode already derives an off-curve address; their
+key files record no `lsig_derivation` and `salt_counter: 0`. APlane has no
+counter-byte salt of its own: `internal/lsigsalt` only validates a final
+program's address, and no load, scan, restore or rebuild re-derives or patches a
+stored program. New template definitions reject derivation versions 1 and 2
 and must not author a salt marker, salt preamble, or salt-style selector.
 Signing always uses the stored final bytecode and never recomputes salting from
 a live template.
@@ -502,8 +503,9 @@ extension. Compatibility is split across:
 LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
 metadata, and parameters rather than reconstructing authorization from a live
 template at sign time. Every entry also records `valid_rekey_target`, its key
-type's declaration when the key was created, as a plain payload field. Current compiler-auto-salted entries omit
-`salt_counter`; compatible manual-counter entries retain it. DSA-backed entries
+type's declaration when the key was created, as a plain payload field. A compiler-auto-salted entry forbids
+`salt_counter`; an unsalted entry has no `lsig_derivation` and carries
+`salt_counter`, which every writer sets to 0. DSA-backed entries
 also carry the base signing metadata needed to produce provider-specific
 signatures.
 

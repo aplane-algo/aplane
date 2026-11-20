@@ -525,18 +525,6 @@ func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizat
 	return slots
 }
 
-func validateBuiltSignatureArgs(args [][]byte, layout SignatureArgLayout) error {
-	if len(args) != layout.Count {
-		return fmt.Errorf("base emitted %d signature args, bounded layout requires %d", len(args), layout.Count)
-	}
-	for i, arg := range args {
-		if len(arg) == 0 || len(arg) > layout.MaxSizes[i] {
-			return fmt.Errorf("base signature arg %d length %d invalid (expected 1..%d bytes)", i, len(arg), layout.MaxSizes[i])
-		}
-	}
-	return nil
-}
-
 func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, SignatureArgLayout, error) {
 	profile, err := canonicalBoundedProfile(c.bounded)
 	if err != nil {

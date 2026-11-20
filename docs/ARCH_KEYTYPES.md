@@ -954,8 +954,8 @@ template provider for their `key_type`.
 Filtered views into the registry are provided by `internal/genericlsig`
 (Template interface) and `internal/logicsigdsa` (LogicSigDSA interface).
 Compiler-owned TEAL v13 auto-salting produces final bytecode;
-`internal/lsigsalt` verifies the off-curve postcondition and retains legacy
-derivation helpers. `internal/lsigresource` owns consensus resource profiles
+`internal/lsigsalt` verifies the off-curve postcondition of a final program,
+auto-salted or unsalted. `internal/lsigresource` owns consensus resource profiles
 and the pure group-size solver. Shared resource-dummy construction lives in
 `internal/signing/`; final group and fee planning lives in
 `internal/signerapp/signing/`.
@@ -967,15 +967,15 @@ registration enters through `lsig/signerreg.RegisterSigner`.
 The Package Map above shows the registration topology — which packages plug
 into the unified registry and how DSA versus generic-template providers are
 organized. The table below names every package involved in the LogicSig
-provider stack (including filtered views, template storage, salting, and
-signing helpers that the diagram omits) and gives a one-line role for each.
+provider stack (including filtered views, template storage, off-curve
+validation, and signing helpers that the diagram omits) and gives a one-line role for each.
 
 | Package | Role |
 |---------|------|
 | `internal/lsigprovider` | **Unified registry** for all providers |
 | `internal/genericlsig` | Template interface, type-filtered lookups |
 | `internal/logicsigdsa` | DSA interface, type-filtered lookups |
-| `internal/lsigsalt` | Off-curve verification and legacy derivation compatibility |
+| `internal/lsigsalt` | Off-curve address verification of a final program |
 | `internal/lsigresource` | Structured program/argument/opcode profiles and consensus group solver |
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
 | `internal/tealtemplate/substitute.go` | Generated-mode restricted list expansion and scalar substitution utilities |
@@ -1174,6 +1174,7 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 | DSA (single-signature-arg form, e.g. `aplane.falcon1024.v1`) | `[signature]` |
 | DSA (multi-signature-arg form, when declared by a custom provider) | `[r, s]` |
 | DSA with runtime args | `[signature args..., runtime args...]` |
+| Bounded composed DSA | refused: the signer assembles the account's arguments from its stored layout |
 
 **Limits**: the network refuses a LogicSig with more than 255 arguments or with any
 argument over 4,096 bytes (node constants, restated as `lsigresource.MaxLogicSigArgs`
@@ -1313,17 +1314,18 @@ does not author or patch a salt marker.
 The example above is renderer output, not user-authored YAML source. Template
 authors write symbolic `$hash` references; validation rejects raw
 `bytecblock`/`intcblock` declarations and numeric constant references in
-user-authored TEAL so the renderer can own generated constants and any
-derivation-version salt anchor layout.
+user-authored TEAL so the renderer and the compiler can own generated
+constants and any constant block auto-salting appends.
 
 Current bundled address derivation delegates auto-salting to the TEAL v13
 compiler. APlane accepts the compiler's final bytecode as authoritative,
 checks its reported address and off-curve postcondition, derives resources from
 that artifact, and persists it with
 `lsig_derivation: algod_v13_auto_salt`. It does not reproduce or patch the
-compiler's salt choice. Legacy derivation versions retain their marker,
-trailing-block, and counter validation only for compatible stored records;
-salt style is not exposed through public wire DTOs.
+compiler's salt choice. A template without `derivation_version` is unsalted:
+its compiled bytecode is used unchanged and must already derive an off-curve
+address. No stored record is re-salted or checked against a salt marker or
+counter; salt style is not exposed through public wire DTOs.
 
 #### Bounded composer extension
 
@@ -1364,9 +1366,11 @@ a time condition belongs in author TEAL, alone or beside a plain allowlist. See 
 contract in
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md#yaml-contract).
 
-Bounded-capable bases expose a static signature-argument layout. The bounded composer keeps
-`LSigProvider.BuildArgs` unchanged, then assembles declared signer-derived and
-caller runtime Layer-3 arguments into frozen slots selected by the plan. Durable
+Bounded-capable bases expose a static signature-argument layout. The signer packs a
+bounded account's spending signature through its base key type's `LSigProvider.BuildArgs`,
+then assembles it with declared signer-derived and caller runtime Layer-3 arguments into
+the frozen slots the stored layout declares for the planned path; a bounded composer's
+own `BuildArgs` refuses. Durable
 key metadata, rather than the installed YAML template, records path routing,
 base argument count/sizes, all argument declarations and slots, profile,
 optional cosigner authorization, and reviewed per-path opcode ceilings.
@@ -1399,10 +1403,10 @@ Source-to-address golden vectors are pinned to APlane's compiler toolchain,
 not promised across arbitrary assembler implementations. Runtime signing is
 reproducible from the persisted final bytecode.
 
-Legacy derivation versions remain parseable where required by the on-disk
-schema, but all bundled pre-release templates use `derivation_version: 3`.
-Previously generated development LogicSig keys must be regenerated; APlane
-does not silently reinterpret old bytecode.
+A template's `derivation_version` is omitted (unsalted) or 3; template
+validation refuses any other value. All bundled templates use
+`derivation_version: 3`. Previously generated development LogicSig keys must
+be regenerated; APlane does not silently reinterpret old bytecode.
 
 **Note**: Falcon-1024 verification uses the native `falcon_verify` opcode (TEAL v12+), which takes:
 1. Message (32 bytes) - the transaction ID

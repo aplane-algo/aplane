@@ -78,7 +78,6 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 	}
 	bytecode := salted.Bytecode
 	address := salted.Address.String()
-	saltCounter := salted.Counter
 
 	activeKeyPaths, err := ir.ActiveKeyPaths()
 	if err != nil {
@@ -91,7 +90,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 		return "", fmt.Errorf("%w: invalid LogicSig opcode profile: %v", errBadRequest, err)
 	}
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		return mut.SaveGenericLSig(keyType, parameters, bytecode, saltCounter, salted.CompilerAutoSalted, tealSource, signingArgs, opcodeProfile, mk)
+		return mut.SaveGenericLSig(keyType, parameters, bytecode, salted.CompilerAutoSalted, tealSource, signingArgs, opcodeProfile, mk)
 	}); err != nil {
 		if errors.Is(err, keystore.ErrStoreLocked) {
 			return "", err

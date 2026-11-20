@@ -78,9 +78,9 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Golden moved when derivation_version 2 was retired: under the v13
-	// auto-salt contract finishSaltedTEAL appends no counter-byte trailer, so
-	// the emitted TEAL loses exactly the trailing comment and `bytecblock 0x00`.
+	// Golden moved when derivation_version 2 was retired: the v13 auto-salt
+	// contract appends no counter-byte trailer, so the emitted TEAL lost exactly
+	// the trailing comment and `bytecblock 0x00`.
 	// It moved again when the contract-admin key was removed: this profile now
 	// refuses rekeys instead of carrying an admin-key rekey path. It moved once
 	// more when bounded2 replaced bounded1, which renamed the envelope comment,

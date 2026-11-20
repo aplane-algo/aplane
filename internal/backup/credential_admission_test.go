@@ -232,7 +232,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			name: "base key type this runtime lacks",
 			build: func(t *testing.T, _, keysDir string) (string, string) {
 				keyJSON := keystest.DSALSigKeyJSON(t, "example.missing-provider-lsig.v1", "example.missing-provider.v1",
-					[]byte{0x01}, []byte{0x02}, saltedLogicSigBytecodeForTest(), saltCounterForTest)
+					[]byte{0x01}, []byte{0x02}, logicSigBytecodeForTest())
 				selector := selectorForTest(t, keyJSON)
 				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector

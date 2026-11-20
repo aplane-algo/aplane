@@ -369,8 +369,9 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 	return teal, nil
 }
 
-// CompileWithSalt compiles the TEAL, applies the off-curve salt counter, and
-// returns bytecode, address, and salt metadata.
+// CompileWithSalt compiles the TEAL and returns the final bytecode with its
+// off-curve address: auto-salted by algod for derivation_version 3, or as
+// compiled for an unsalted template, whose address must already be off-curve.
 func (t *YAMLTemplate) CompileWithSalt(ctx context.Context, params map[string]string, algodClient *algod.Client) (lsigsalt.FindResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -416,7 +417,7 @@ func (t *YAMLTemplate) saltStyle() (lsigsalt.Style, error) {
 }
 
 // SaltStyleForDerivationVersion maps template derivation contracts to their
-// concrete salt anchor. It is shared by generic and composed YAML templates;
+// salt style. It is shared by generic and composed YAML templates;
 // Go-defined providers still choose their style directly in code. Only the
 // TEAL v13 auto-salt contract survives; templatestore.ValidateBase rejects the
 // retired versions before a template reaches this point.

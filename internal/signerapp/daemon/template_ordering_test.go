@@ -65,7 +65,7 @@ teal: |
 			Required:   true,
 			ByteLength: 32,
 		}}
-		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
+		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, "#pragma version 6\nint 1", signingArgs, "")
 		if profileErr := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); profileErr != nil {
 			return profileErr
 		}

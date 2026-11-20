@@ -621,7 +621,7 @@ aplane/
 │   ├── signing/, signingargs/, keygen/  # Native signing, signing-arg metadata, and keygen registries
 │   ├── lsigprovider/              # Unified LogicSig provider registry
 │   ├── logicsigdsa/               # LogicSig DSA interface and registry
-│   ├── lsigsalt/                  # Shared off-curve LogicSig salting
+│   ├── lsigsalt/                  # Off-curve LogicSig address validation
 │   ├── cosigner/                    # Cosigner/cosigned component protocol (keytypes, messages, canonical hashing, verification)
 │   ├── mnemonic/                  # Mnemonic handlers
 │   ├── jsapi/, scripting/         # JavaScript bindings and Goja runtime
@@ -789,8 +789,7 @@ The provider layer supports multiple signing and LogicSig families:
 - key generation in `internal/keygen`
 - mnemonic support in `internal/mnemonic`
 - unified LogicSig provider registry in `internal/lsigprovider`
-- shared off-curve LogicSig validation and derivation helpers, including legacy
-  manual-counter support, in `internal/lsigsalt`
+- shared off-curve LogicSig address validation in `internal/lsigsalt`
 
 Registration is explicit and happens from binary entrypoints via `RegisterProviders()`, not via package-global magic hidden from `main`.
 
@@ -1402,9 +1401,10 @@ genesis hash, and versioned key-type implementation.
 The complete key file and key type state machines are documented in
 [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
-rejected during key scan. Key files with no `lsig_derivation` (the manual
-salt counter) require `salt_counter`; `algod_v13_auto_salt` derivations forbid
-it and require final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
+rejected during key scan. Key files with no `lsig_derivation` (unsalted
+bytecode) require `salt_counter`, which every writer sets to 0;
+`algod_v13_auto_salt` derivations forbid it and require final TEAL v13+
+bytecode plus a valid `lsig_opcode_profile`.
 LogicSig key files without `signing_metadata_version` are refused by the key
 parser, which runs at key scan, on every key load and at restore, so none
 reaches signing. Key files with
@@ -2381,9 +2381,9 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 16. Every persisted LogicSig key file has an off-curve address. For DSA-backed
     and generic LogicSig keys, stored bytecode
     that derives an on-curve LogicSig address is rejected on load. Key files
-    with no `lsig_derivation` (the manual salt counter) require `salt_counter`;
-    `algod_v13_auto_salt` derivations must omit it and carry final TEAL v13+
-    bytecode plus a valid `lsig_opcode_profile`.
+    with no `lsig_derivation` (unsalted bytecode) require `salt_counter`, which
+    every writer sets to 0; `algod_v13_auto_salt` derivations must omit it and
+    carry final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
 
 ## Architectural Seams
 

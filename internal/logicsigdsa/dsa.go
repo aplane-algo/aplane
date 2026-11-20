@@ -66,10 +66,10 @@ type TEALGenerator interface {
 	GenerateTEAL(publicKey []byte, params map[string]string) (string, error)
 }
 
-// SaltedDeriver is implemented by LogicSigDSA types that can return the
-// off-curve salt metadata used while deriving the LogicSig address. New DSA
-// LogicSig key generation requires this interface so key files can persist the
-// selected salt_counter without assuming a specific salt anchor style.
+// SaltedDeriver is implemented by LogicSigDSA types that report how their
+// LogicSig address was made off-curve. New DSA LogicSig key generation requires
+// this interface so a key file records the matching derivation: auto-salted, or
+// unsalted with salt_counter 0.
 type SaltedDeriver interface {
 	DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error)
 }

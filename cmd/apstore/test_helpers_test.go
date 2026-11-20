@@ -101,12 +101,12 @@ func withCapturedStdout(fn func() error) (string, error) {
 
 func canonicalGenericKeyJSONForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
 	t.Helper()
-	return keystest.GenericLSigKeyJSON(t, keyType, bytecode, saltCounterForTest, nil, "")
+	return keystest.GenericLSigKeyJSON(t, keyType, bytecode, nil, "")
 }
 
 func canonicalDSALSigKeyJSONForApstore(t *testing.T, keyType, baseKeyType string, bytecode []byte) []byte {
 	t.Helper()
-	return keystest.DSALSigKeyJSON(t, keyType, baseKeyType, []byte{0x01}, []byte{0x02}, bytecode, saltCounterForTest)
+	return keystest.DSALSigKeyJSON(t, keyType, baseKeyType, []byte{0x01}, []byte{0x02}, bytecode)
 }
 
 func canonicalGenericKeyWithoutSigningMetadataForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
@@ -116,7 +116,7 @@ func canonicalGenericKeyWithoutSigningMetadataForApstore(t *testing.T, keyType s
 		"category":       apkeys.CategoryGenericLsig,
 		"key_type":       keyType,
 		"lsig_bytecode":  hex.EncodeToString(bytecode),
-		"salt_counter":   saltCounterForTest,
+		"salt_counter":   0,
 		"created_at":     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	})
 }

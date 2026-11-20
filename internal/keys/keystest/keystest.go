@@ -34,18 +34,18 @@ func Ed25519KeyJSON(t testing.TB) (address string, keyJSON []byte) {
 }
 
 // GenericLSigKeyJSON returns a canonical generic_lsig key payload for the
-// given key type and salted bytecode.
-func GenericLSigKeyJSON(t testing.TB, keyType string, bytecode []byte, saltCounter byte, params map[string]string, tealSource string) []byte {
+// given key type and unsalted bytecode.
+func GenericLSigKeyJSON(t testing.TB, keyType string, bytecode []byte, params map[string]string, tealSource string) []byte {
 	t.Helper()
-	payload := keys.NewGenericLSigPayload(keyType, params, bytecode, saltCounter, tealSource, nil, "")
+	payload := keys.NewGenericLSigPayload(keyType, params, bytecode, tealSource, nil, "")
 	return marshal(t, payload, "generic_lsig")
 }
 
 // DSALSigKeyJSON returns a canonical dsa_lsig key payload for the given key
-// material and salted bytecode.
-func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privateKey, bytecode []byte, saltCounter byte) []byte {
+// material and unsalted bytecode.
+func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privateKey, bytecode []byte) []byte {
 	t.Helper()
-	payload := keys.NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, nil, bytecode, saltCounter, "", nil, "")
+	payload := keys.NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, nil, bytecode, "", nil, "")
 	defer payload.ZeroSecrets()
 	return marshal(t, payload, "dsa_lsig")
 }

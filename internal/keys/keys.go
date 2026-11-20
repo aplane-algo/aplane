@@ -25,8 +25,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// ErrMissingLogicSigSaltCounter indicates a manual-counter LogicSig key file
-// without the salt_counter that records how its address was made off-curve.
+// ErrMissingLogicSigSaltCounter indicates an unsalted LogicSig key file (no
+// lsig_derivation) without the salt_counter such a file must carry.
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
 
 // ErrLogicSigAddressOnCurve indicates a stored LogicSig key file whose bytecode

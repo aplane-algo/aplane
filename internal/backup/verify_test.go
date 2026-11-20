@@ -16,10 +16,8 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 )
 
-const saltCounterForTest byte = 5
-
-func saltedLogicSigBytecodeForTest() []byte {
-	return []byte{0x26, 0x01, 0x01, saltCounterForTest, 0x81, 0x01}
+func logicSigBytecodeForTest() []byte {
+	return []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 }
 
 func TestDeepVerifyBackupValidStandaloneCredential(t *testing.T) {

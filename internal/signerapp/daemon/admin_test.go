@@ -32,7 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -228,43 +228,16 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 		if err != nil {
 			return nil, err
 		}
-		bytecode := compiledPushbytesSaltBytecode(0)
-		hash := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-		if bytes.Contains(source, []byte("#pragma version 13")) &&
-			!bytes.Contains(source, []byte("APLANE_LSIG_SALT")) &&
-			!bytes.Contains(source, []byte("bytecblock 0x00")) {
-			bytecode = append([]byte{13, 0x81, 0}, make([]byte, 32)...)
-			for counter := 0; counter < lsigsalt.MaxIterations; counter++ {
-				bytecode[2] = byte(counter)
-				candidate, candidateErr := lsigsalt.UseUnmodifiedOffCurve(bytecode)
-				if candidateErr == nil {
-					hash = candidate.Address.String()
-					break
-				}
-			}
-			if hash == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ" {
-				t.Fatal("failed to construct compiler-auto-salted mock bytecode")
-			}
-		} else {
-			isTrailingBytecblockSalt := strings.HasSuffix(strings.TrimSpace(string(source)), "bytecblock 0x00")
-			if isTrailingBytecblockSalt {
-				bytecode = []byte{0x0c, 0x81, 0x01, 0x43, 0x26, 0x01, 0x01, 0x00}
-			} else if bytes.Contains(source, []byte("bytecblock 0x00")) {
-				bytecode = []byte{
-					0x0c,
-					0x26, 0x01, 0x01, 0x00,
-					0x31, 0x17,
-					0x2d,
-					0x81, 0x01,
-				}
-			}
-			if !isTrailingBytecblockSalt {
-				bytecode = append(bytecode, make([]byte, 32)...)
-			}
+		// Algod salts a TEAL v13 program and reports its address; an unsalted
+		// one must compile to an off-curve address as it is.
+		version := byte(12)
+		if bytes.Contains(source, []byte("#pragma version 13")) {
+			version = 13
 		}
+		program := lsigsalttest.OffCurve(t, append([]byte{version, 0x81, 0}, make([]byte, 32)...), 2)
 		body, err := json.Marshal(map[string]interface{}{
-			"hash":   hash,
-			"result": base64.StdEncoding.EncodeToString(bytecode),
+			"hash":   program.Address.String(),
+			"result": base64.StdEncoding.EncodeToString(program.Bytecode),
 		})
 		if err != nil {
 			t.Fatalf("json.Marshal() error = %v", err)
@@ -287,14 +260,6 @@ func configureMockAlgod(t *testing.T, server *Signer) (cleanup func()) {
 	}
 
 	return func() {}
-}
-
-func compiledPushbytesSaltBytecode(counter byte) []byte {
-	marker := lsigsalt.PushbytesSaltMarker(counter)
-	bytecode := []byte{0x0c, 0x80, byte(len(marker))}
-	bytecode = append(bytecode, marker...)
-	bytecode = append(bytecode, 0x48, 0x81, 0x01)
-	return bytecode
 }
 
 func registerLibraryGenericTemplateForTest(t *testing.T, filename string) {

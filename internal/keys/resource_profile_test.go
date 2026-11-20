@@ -89,9 +89,9 @@ func TestLogicSigPayloadConstructorsRequireExplicitOpcodeProfile(t *testing.T) {
 
 	zero := lsigresource.OpcodeProfile{}
 	payloads := map[string]*Payload{
-		"dsa":              NewDSALSigPayload("kt", "base", []byte{1}, []byte{2}, nil, []byte{6, 129, 1, 0}, 0, "", nil, ""),
+		"dsa":              NewDSALSigPayload("kt", "base", []byte{1}, []byte{2}, nil, []byte{6, 129, 1, 0}, "", nil, ""),
 		"dsa-autosalted":   NewAutoSaltedDSALSigPayload("kt", "base", []byte{1}, []byte{2}, nil, []byte{6, 129, 1, 0}, "", nil, ""),
-		"generic":          NewGenericLSigPayload("kt", nil, []byte{6, 129, 1, 0}, 0, "", nil, ""),
+		"generic":          NewGenericLSigPayload("kt", nil, []byte{6, 129, 1, 0}, "", nil, ""),
 		"generic-autosalt": NewAutoSaltedGenericLSigPayload("kt", nil, []byte{6, 129, 1, 0}, "", nil, ""),
 	}
 	for name, payload := range payloads {

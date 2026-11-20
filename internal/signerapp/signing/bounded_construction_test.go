@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -101,7 +102,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				}
 				config := composeddsa.Config{
 					KeyType: "test.admission-cross-check.v1", BaseKeyType: base.keyType, FamilyName: base.family,
-					Version: 1, Ops: base.ops, TemplateMode: "generated", TEALSuffix: "int 1\nassert",
+					Version: 1, Ops: base.ops, SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", TEALSuffix: "int 1\nassert",
 					Bounded: &composeddsa.BoundedAuthorizationProfile{
 						Contract:     profile.contract,
 						SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
