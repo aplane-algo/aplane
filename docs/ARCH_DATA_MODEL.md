@@ -639,7 +639,7 @@ component signature remain authoritative.
 
 ### apconsole Startup
 
-- `apconsole.yaml` supports `mode: local`, `client_data`, and `signer_data`; relative paths resolve against the profile file
+- `apconsole.yaml` holds `client_data` and `signer_data`, both required; relative paths resolve against the profile file
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
 - an explicit `-d` or explicitly selected profile `signer_data` is also an
   explicit signer-store selection for IPC discovery and cannot be retargeted

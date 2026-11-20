@@ -49,16 +49,14 @@ func main() {
 		}
 	}
 
-	dataDir := flag.String("d", "", "Signer data directory (required for local mode, or set APSIGNER_DATA)")
+	dataDir := flag.String("d", "", "Signer data directory (or set APSIGNER_DATA)")
 	clientDataDir := flag.String("client-data", "", "Client data directory for the shell pane (or set APCLIENT_DATA)")
 	consoleConfig := flag.String("config", "", "apconsole profile path (default: auto-discover apconsole.yaml)")
 	networkLong := flag.String("network", "", "Network context token for the shell pane")
 	networkShort := flag.String("n", "", "Network context token for the shell pane")
-	remoteMode := flag.Bool("remote", false, "Removed: administration is IPC-only; SSH into the signer host instead")
 	noStartDaemon := flag.Bool("no-start-daemon", false, "Do not start apsigner when no local IPC socket exists")
 	ipcPathFlag := flag.String("ipc-path", "", "Admin IPC socket path (or set APSIGNER_IPC_PATH)")
 	flag.Parse()
-	remoteModeSet := flagWasSet("remote")
 	dataDirSet := flagWasSet("d")
 	clientDataDirSet := flagWasSet("client-data")
 
@@ -76,8 +74,6 @@ func main() {
 	exe, _ := os.Executable()
 	startupCfg, err := resolveConsoleStartup(consoleStartupFlags{
 		ConfigPath:       *consoleConfig,
-		RemoteSet:        remoteModeSet,
-		Remote:           *remoteMode,
 		SignerDataSet:    dataDirSet,
 		SignerData:       *dataDir,
 		ClientDataSet:    clientDataDirSet,

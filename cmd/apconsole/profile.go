@@ -15,35 +15,22 @@ import (
 
 const consoleProfileName = "apconsole.yaml"
 
-type consoleMode string
-
-const (
-	consoleModeLocal  consoleMode = "local"
-	consoleModeRemote consoleMode = "remote"
-)
-
 type consoleProfile struct {
-	Mode       consoleMode `yaml:"mode"`
-	ClientData string      `yaml:"client_data"`
-	SignerData string      `yaml:"signer_data"`
+	ClientData string `yaml:"client_data"`
+	SignerData string `yaml:"signer_data"`
 }
 
 type consoleStartupConfig struct {
-	Mode        consoleMode
-	ClientData  string
-	SignerData  string
-	ProfilePath string
-	Notices     []string
+	ClientData string
+	SignerData string
+	Notices    []string
 
-	modeSource       consoleValueSource
 	clientDataSource consoleValueSource
 	signerDataSource consoleValueSource
 }
 
 type consoleStartupFlags struct {
 	ConfigPath       string
-	RemoteSet        bool
-	Remote           bool
 	SignerDataSet    bool
 	SignerData       string
 	ClientDataSet    bool
@@ -62,25 +49,13 @@ type consoleValueSource struct {
 }
 
 func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, error) {
-	if flags.RemoteSet && flags.Remote {
-		return consoleStartupConfig{}, fmt.Errorf("apconsole administration is IPC-only; SSH into the signer machine and run apconsole there")
-	}
-	profile, profilePath, profileSource, err := loadDiscoveredConsoleProfile(flags)
+	profile, profileSource, err := loadDiscoveredConsoleProfile(flags)
 	if err != nil {
 		return consoleStartupConfig{}, err
 	}
 
-	cfg := consoleStartupConfig{
-		Mode:             consoleModeLocal,
-		ProfilePath:      profilePath,
-		modeSource:       consoleValueSource{label: "default mode"},
-		clientDataSource: consoleValueSource{},
-		signerDataSource: consoleValueSource{},
-	}
+	var cfg consoleStartupConfig
 	if profile != nil {
-		if err := applyConsoleMode(&cfg, profile.Mode, profileSource); err != nil {
-			return consoleStartupConfig{}, err
-		}
 		if err := applyConsoleValue(&cfg.ClientData, &cfg.clientDataSource, profile.ClientData, profileSource, "client_data", &cfg.Notices); err != nil {
 			return consoleStartupConfig{}, err
 		}
@@ -106,18 +81,6 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 		}
 	}
 
-	if flags.RemoteSet {
-		mode := consoleModeLocal
-		if flags.Remote {
-			mode = consoleModeRemote
-		}
-		if err := applyConsoleMode(&cfg, mode, consoleValueSource{
-			label:    "flag -remote",
-			explicit: true,
-		}); err != nil {
-			return consoleStartupConfig{}, err
-		}
-	}
 	if flags.ClientDataSet {
 		if err := applyConsoleValue(&cfg.ClientData, &cfg.clientDataSource, flags.ClientData, consoleValueSource{
 			label:    "flag -client-data",
@@ -139,16 +102,6 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 	return cfg, nil
 }
 
-func applyConsoleMode(cfg *consoleStartupConfig, mode consoleMode, source consoleValueSource) error {
-	if mode == "" {
-		return nil
-	}
-	if err := applyConsoleValue((*string)(&cfg.Mode), &cfg.modeSource, string(mode), source, "mode", &cfg.Notices); err != nil {
-		return err
-	}
-	return nil
-}
-
 func applyConsoleValue(current *string, currentSource *consoleValueSource, incoming string, incomingSource consoleValueSource, field string, notices *[]string) error {
 	if incoming == "" {
 		return nil
@@ -164,13 +117,13 @@ func applyConsoleValue(current *string, currentSource *consoleValueSource, incom
 	return nil
 }
 
-func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, string, consoleValueSource, error) {
+func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, consoleValueSource, error) {
 	if flags.ConfigPath != "" {
 		profile, err := loadConsoleProfile(flags.ConfigPath)
 		if err != nil {
-			return nil, "", consoleValueSource{}, err
+			return nil, consoleValueSource{}, err
 		}
-		return profile, flags.ConfigPath, consoleValueSource{
+		return profile, consoleValueSource{
 			label:                   fmt.Sprintf("profile %s selected by -config", flags.ConfigPath),
 			explicit:                true,
 			overridesIPCEnvironment: true,
@@ -179,9 +132,9 @@ func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, s
 	if flags.ConsoleConfigEnv != "" {
 		profile, err := loadConsoleProfile(flags.ConsoleConfigEnv)
 		if err != nil {
-			return nil, "", consoleValueSource{}, err
+			return nil, consoleValueSource{}, err
 		}
-		return profile, flags.ConsoleConfigEnv, consoleValueSource{
+		return profile, consoleValueSource{
 			label:                   fmt.Sprintf("profile %s selected by APCONSOLE_CONFIG", flags.ConsoleConfigEnv),
 			explicit:                true,
 			overridesIPCEnvironment: true,
@@ -192,17 +145,17 @@ func loadDiscoveredConsoleProfile(flags consoleStartupFlags) (*consoleProfile, s
 		if _, err := os.Stat(path); err == nil {
 			profile, err := loadConsoleProfile(path)
 			if err != nil {
-				return nil, "", consoleValueSource{}, err
+				return nil, consoleValueSource{}, err
 			}
-			return profile, path, consoleValueSource{
+			return profile, consoleValueSource{
 				label:    fmt.Sprintf("auto-discovered profile %s", path),
 				explicit: false,
 			}, nil
 		} else if !os.IsNotExist(err) {
-			return nil, "", consoleValueSource{}, fmt.Errorf("failed to inspect apconsole profile %s: %w", path, err)
+			return nil, consoleValueSource{}, fmt.Errorf("failed to inspect apconsole profile %s: %w", path, err)
 		}
 	}
-	return nil, "", consoleValueSource{}, nil
+	return nil, consoleValueSource{}, nil
 }
 
 func resolveConsoleIPCPath(dataDir, ipcPath string, source consoleValueSource) (string, error) {
@@ -221,18 +174,8 @@ func loadConsoleProfile(path string) (*consoleProfile, error) {
 	if err := yaml.Unmarshal(data, &profile); err != nil {
 		return nil, fmt.Errorf("failed to parse apconsole profile %s: %w", path, err)
 	}
-	if profile.Mode == "" {
-		profile.Mode = consoleModeLocal
-	}
-	switch profile.Mode {
-	case consoleModeLocal:
-		if profile.SignerData == "" {
-			return nil, fmt.Errorf("invalid apconsole profile %s: signer_data is required for local mode", path)
-		}
-	case consoleModeRemote:
-		return nil, fmt.Errorf("apconsole administration is IPC-only; change profile %s to local mode and run it on the signer machine", path)
-	default:
-		return nil, fmt.Errorf("invalid apconsole profile %s: mode must be local", path)
+	if profile.SignerData == "" {
+		return nil, fmt.Errorf("invalid apconsole profile %s: signer_data is required", path)
 	}
 	if profile.ClientData == "" {
 		return nil, fmt.Errorf("invalid apconsole profile %s: client_data is required", path)
