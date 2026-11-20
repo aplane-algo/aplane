@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -210,5 +211,30 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 				t.Fatalf("JSON shape mismatch\n got: %#v\nwant: %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+// The answers to a cancel and to a key deletion carry only what they report:
+// a cancel its state, a deletion nothing, as an empty object.
+func TestSignCancelAndAdminDeleteAnswerBodies(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	server.handleSignCancel(w, requestWithIdentity(http.MethodPost, "/sign/cancel", []byte(`{"request_id":"cli-unknown"}`)))
+	if got := strings.TrimSpace(w.Body.String()); w.Code != http.StatusOK || got != `{"state":"not_found"}` {
+		t.Errorf("cancel = %d %s, want 200 {\"state\":\"not_found\"}", w.Code, got)
+	}
+
+	algodCleanup := configureMockAlgod(t, server)
+	defer algodCleanup()
+	address := existingFalconCredentialForTest(t, server)
+	if err := reloadKeysForTest(server); err != nil {
+		t.Fatalf("reload keys: %v", err)
+	}
+	w = httptest.NewRecorder()
+	server.handleAdminDelete(w, requestWithIdentity(http.MethodDelete, "/admin/keys?address="+address, nil))
+	if got := strings.TrimSpace(w.Body.String()); w.Code != http.StatusOK || got != `{}` {
+		t.Errorf("delete = %d %s, want 200 {}", w.Code, got)
 	}
 }

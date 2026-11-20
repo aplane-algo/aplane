@@ -265,7 +265,6 @@ Aligning the grammar across `/plan` and `/sign` lets clients send one canonical 
 type GroupSignResponse struct {
     Signed    []string        `json:"signed,omitempty"`    // Signed transactions (msgpack, hex)
     Mutations *MutationReport `json:"mutations,omitempty"` // Server modifications (nil if none)
-    Error     string          `json:"error,omitempty"`     // Legacy; never set (failures use ErrorResponse)
 }
 
 type MutationReport struct {
@@ -406,7 +405,6 @@ the shape if no extra dummies are needed.
 type GroupPlanResponse struct {
     Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns
     Mutations    *MutationReport `json:"mutations,omitempty"`
-    Error        string          `json:"error,omitempty"` // Legacy; never set (failures use ErrorResponse)
 }
 ```
 
@@ -1633,8 +1631,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `signed`
 - optional `mutations`
-- optional `error`: legacy DTO field the current server never populates;
-  errors arrive as a non-2xx `ErrorResponse`
+
+Errors arrive as a non-2xx `ErrorResponse`.
 
 `/sign` response semantics:
 
@@ -1750,8 +1748,8 @@ See [Mode Selection](#mode-selection) for the foreign/passthrough/sign distincti
 
 - `transactions`
 - optional `mutations`
-- optional `error`: legacy DTO field the current server never populates;
-  errors arrive as a non-2xx `ErrorResponse`
+
+Errors arrive as a non-2xx `ErrorResponse`.
 
 `MutationReport` fields:
 
@@ -2460,7 +2458,8 @@ stored metadata resolve the provider and any composed template's base primitive.
 `/admin/keys`:
 
 - `DELETE` with query param `address`
-- success response is `success: true`; non-2xx failures use `ErrorResponse`
+- success response is the empty object `{}`; non-2xx failures use
+  `ErrorResponse`
 
 `/health`:
 
@@ -2496,15 +2495,13 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 `/sign/cancel` response (`signerapi.CancelSignResponse`):
 
-- `success`
 - `state`
-- optional `error`
 
 `/sign/cancel` withdraws a live `/sign`, `/sign/rotating/sign`, or
 approval-bearing user or bounded-base
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
-`success:true`; cancellation miss is represented in `state`, not as an HTTP
+its `state`; cancellation miss is represented in `state`, not as an HTTP
 error. Cosigner-only `/sign/component` and `/sign/assemble` request IDs are
 correlation fields rather than live cancel handles and return `not_found` if
 supplied to `/sign/cancel`.

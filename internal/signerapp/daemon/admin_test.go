@@ -376,9 +376,6 @@ func TestAdminGenerateEd25519(t *testing.T) {
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	if resp.Error != "" {
-		t.Fatalf("Unexpected error: %s", resp.Error)
-	}
 	if resp.Address == "" {
 		t.Fatal("Expected non-empty address")
 	}
@@ -458,8 +455,8 @@ func TestAdminGenerateReturnsTheFeeLimitWarning(t *testing.T) {
 			}
 			var resp AdminGenerateResponse
 			decodeResponse(t, w, &resp)
-			if resp.Error != "" || len(resp.Address) != 58 {
-				t.Fatalf("response error = %q, address = %q", resp.Error, resp.Address)
+			if len(resp.Address) != 58 {
+				t.Fatalf("response address = %q", resp.Address)
 			}
 			if !test.warns {
 				if _, present := fields["warnings"]; present || len(resp.Warnings) != 0 {
@@ -513,7 +510,7 @@ func TestAdminGenerateDoesNotInferPublisher(t *testing.T) {
 		t.Fatalf("Expected failure for unqualified key type, got 200: %s", w.Body.String())
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if resp.Error == "" {
 		t.Fatal("Expected error for unqualified key type")
@@ -614,9 +611,6 @@ func TestAdminGenerateHTLCV1(t *testing.T) {
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
 
-	if resp.Error != "" {
-		t.Fatalf("Unexpected error: %s", resp.Error)
-	}
 	if resp.Address == "" {
 		t.Fatal("Expected non-empty address")
 	}
@@ -666,9 +660,6 @@ func TestAdminDeleteEd25519(t *testing.T) {
 	var resp AdminDeleteResponse
 	decodeResponse(t, w, &resp)
 
-	if !resp.Success {
-		t.Fatalf("Expected success=true, got error: %s", resp.Error)
-	}
 }
 
 func TestAdminDeleteFalcon1024(t *testing.T) {
@@ -697,9 +688,6 @@ func TestAdminDeleteFalcon1024(t *testing.T) {
 	var resp AdminDeleteResponse
 	decodeResponse(t, w, &resp)
 
-	if !resp.Success {
-		t.Fatalf("Expected success=true, got error: %s", resp.Error)
-	}
 }
 
 func TestAdminDeleteHTLCV1(t *testing.T) {
@@ -751,9 +739,6 @@ func TestAdminDeleteHTLCV1(t *testing.T) {
 	var resp AdminDeleteResponse
 	decodeResponse(t, w, &resp)
 
-	if !resp.Success {
-		t.Fatalf("Expected success=true, got error: %s", resp.Error)
-	}
 }
 
 // --- Error case tests ---
@@ -787,7 +772,7 @@ func TestAdminGenerateLockedSigner(t *testing.T) {
 		t.Errorf("Expected 403, got %d", w.Code)
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "locked") {
 		t.Errorf("Expected 'locked' in error, got %q", resp.Error)
@@ -836,7 +821,7 @@ func TestAdminGenerateInvalidKeyType(t *testing.T) {
 		t.Errorf("Expected 400, got %d", w.Code)
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "invalid key type") {
 		t.Errorf("Expected 'invalid key type' in error, got %q", resp.Error)
@@ -860,7 +845,7 @@ func TestAdminGenerateRejectsGloballyRegisteredGenericTemplateNotInstalledForRun
 		t.Fatalf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "invalid key type") {
 		t.Fatalf("Expected invalid key type error, got %q", resp.Error)
@@ -882,7 +867,7 @@ func TestAdminGenerateDoesNotUsePrincipalAsRuntimeSelector(t *testing.T) {
 
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
-	if resp.Address == "" || resp.Error != "" {
+	if resp.Address == "" {
 		t.Fatalf("product runtime generation response = %#v", resp)
 	}
 }
@@ -927,7 +912,7 @@ func TestAdminGenerateHTLCMissingAlgod(t *testing.T) {
 		t.Errorf("Expected 500, got %d", w.Code)
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if resp.Error != "key generation failed" {
 		t.Errorf("Expected generic key generation error, got %q", resp.Error)
@@ -957,7 +942,7 @@ func TestAdminGenerateHTLCInvalidParams(t *testing.T) {
 		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "parameter validation failed") {
 		t.Errorf("Expected param validation error, got %q", resp.Error)
@@ -987,7 +972,7 @@ func TestAdminGenerateFalconAllowlistInvalidParams(t *testing.T) {
 		t.Fatalf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp AdminGenerateResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "parameter validation failed") {
 		t.Fatalf("expected parameter validation error, got %q", resp.Error)
@@ -1034,7 +1019,7 @@ func TestAdminDeleteNoAddress(t *testing.T) {
 		t.Errorf("Expected 400, got %d", w.Code)
 	}
 
-	var resp AdminDeleteResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "address") {
 		t.Errorf("Expected 'address' in error, got %q", resp.Error)
@@ -1053,7 +1038,7 @@ func TestAdminDeleteNotFound(t *testing.T) {
 		t.Errorf("Expected 404, got %d", w.Code)
 	}
 
-	var resp AdminDeleteResponse
+	var resp ErrorResponse
 	decodeResponse(t, w, &resp)
 	if !strings.Contains(resp.Error, "not found") {
 		t.Errorf("Expected 'not found' in error, got %q", resp.Error)
@@ -1105,9 +1090,6 @@ func TestAdminGenerateThenDeleteEd25519(t *testing.T) {
 	}
 	var delResp AdminDeleteResponse
 	decodeResponse(t, delW, &delResp)
-	if !delResp.Success {
-		t.Fatalf("Delete not successful: %s", delResp.Error)
-	}
 
 	// Reload keys again to reflect deletion
 	if err := reloadKeysForTest(server); err != nil {

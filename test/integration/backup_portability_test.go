@@ -461,9 +461,6 @@ teal: |
 			if err := json.Unmarshal(body, &resp); err != nil {
 				t.Fatalf("failed to decode destination sign response: %v", err)
 			}
-			if resp.Error != "" {
-				t.Fatalf("unexpected destination sign error for %s: %s", keyType, resp.Error)
-			}
 			if len(resp.Signed) < 1 {
 				t.Fatalf("expected at least one signed transaction for %s, got %d", keyType, len(resp.Signed))
 			}

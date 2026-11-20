@@ -297,8 +297,8 @@ func TestLockOnDisconnectControlsPostDisconnectSigningState(t *testing.T) {
 			if err := json.Unmarshal(body, &resp); err != nil {
 				t.Fatalf("failed to decode sign response: %v", err)
 			}
-			if tc.wantErrSubstring != "" && !strings.Contains(resp.Error, tc.wantErrSubstring) {
-				t.Fatalf("expected error containing %q, got %q", tc.wantErrSubstring, resp.Error)
+			if tc.wantErrSubstring != "" && !strings.Contains(string(body), tc.wantErrSubstring) {
+				t.Fatalf("expected error containing %q, got %s", tc.wantErrSubstring, body)
 			}
 			if len(resp.Signed) != tc.wantSignedCount {
 				t.Fatalf("expected %d signed transaction(s), got %d", tc.wantSignedCount, len(resp.Signed))
@@ -449,15 +449,12 @@ func TestOperatorApprovalRejectionReturnsForbiddenWithNoSignedOutput(t *testing.
 		t.Fatalf("expected 403 when operator rejects request, got %d: %s", status, string(body))
 	}
 
-	var signResp signerapi.GroupSignResponse
+	var signResp signerapi.ErrorResponse
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("failed to decode rejection response: %v", err)
 	}
 	if !strings.Contains(signResp.Error, "rejected by operator") {
 		t.Fatalf("expected operator rejection message, got %q", signResp.Error)
-	}
-	if len(signResp.Signed) != 0 {
-		t.Fatalf("expected no signed transactions after operator rejection, got %d", len(signResp.Signed))
 	}
 }
 
@@ -524,15 +521,12 @@ func TestPolicyHardRejectSkipsApprovalAndReturnsForbidden(t *testing.T) {
 		t.Fatalf("expected 403 for policy hard reject, got %d: %s", status, string(body))
 	}
 
-	var resp signerapi.GroupSignResponse
+	var resp signerapi.ErrorResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to decode policy reject response: %v", err)
 	}
 	if !strings.Contains(resp.Error, "policy engine rejected request") || !strings.Contains(resp.Error, "reject_foreign_rekey") {
 		t.Fatalf("expected policy reject response to mention reject_foreign_rekey, got %q", resp.Error)
-	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("expected no signed transactions on policy reject, got %d", len(resp.Signed))
 	}
 
 	mustNotReceiveIPCSignRequest(t, approvalClient, 750*time.Millisecond)
@@ -601,16 +595,13 @@ func TestPolicyHardRejectCloseRemainderSkipsApprovalAndReturnsForbidden(t *testi
 		t.Fatalf("expected 403 for close remainder policy hard reject, got %d: %s", status, string(body))
 	}
 
-	var resp signerapi.GroupSignResponse
+	var resp signerapi.ErrorResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to decode policy reject response: %v", err)
 	}
 	if !strings.Contains(resp.Error, "policy engine rejected request") ||
 		!strings.Contains(resp.Error, "reject_close_remainder") {
 		t.Fatalf("expected policy reject response to mention reject_close_remainder, got %q", resp.Error)
-	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("expected no signed transactions on close remainder policy reject, got %d", len(resp.Signed))
 	}
 
 	mustNotReceiveIPCSignRequest(t, approvalClient, 750*time.Millisecond)
@@ -746,9 +737,6 @@ func TestHiddenRekeyPaymentEmitsCriticalAlertAndChangesAuthAddr(t *testing.T) {
 	var signResp signerapi.GroupSignResponse
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("failed to decode sign response: %v", err)
-	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected sign error: %s", signResp.Error)
 	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed transaction, got %d", len(signResp.Signed))
@@ -900,9 +888,6 @@ func TestHiddenCloseRemainderPaymentEmitsCriticalAlertAndClosesAccount(t *testin
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("failed to decode sign response: %v", err)
 	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected sign error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed transaction, got %d", len(signResp.Signed))
 	}
@@ -1032,9 +1017,6 @@ func TestAssetCloseTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("failed to decode asset close sign response: %v", err)
 	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected asset close sign error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed asset close transaction, got %d", len(signResp.Signed))
 	}
@@ -1146,9 +1128,6 @@ func TestClawbackTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("failed to decode clawback sign response: %v", err)
 	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected clawback sign error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed clawback transaction, got %d", len(signResp.Signed))
 	}
@@ -1218,15 +1197,12 @@ func TestPolicyHardRejectAssetCloseSkipsApprovalAndReturnsForbidden(t *testing.T
 		t.Fatalf("expected 403 for asset close policy hard reject, got %d: %s", status, string(body))
 	}
 
-	var resp signerapi.GroupSignResponse
+	var resp signerapi.ErrorResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to decode asset close reject response: %v", err)
 	}
 	if !strings.Contains(resp.Error, "policy engine rejected request") || !strings.Contains(resp.Error, "reject_asset_close") {
 		t.Fatalf("expected policy reject response to mention reject_asset_close, got %q", resp.Error)
-	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("expected no signed transactions on asset close policy reject, got %d", len(resp.Signed))
 	}
 
 	mustNotReceiveIPCSignRequest(t, approvalClient, 750*time.Millisecond)
@@ -1296,15 +1272,12 @@ func TestPolicyHardRejectClawbackSkipsApprovalAndReturnsForbidden(t *testing.T) 
 		t.Fatalf("expected 403 for clawback policy hard reject, got %d: %s", status, string(body))
 	}
 
-	var resp signerapi.GroupSignResponse
+	var resp signerapi.ErrorResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to decode clawback reject response: %v", err)
 	}
 	if !strings.Contains(resp.Error, "policy engine rejected request") || !strings.Contains(resp.Error, "reject_clawback") {
 		t.Fatalf("expected policy reject response to mention reject_clawback, got %q", resp.Error)
-	}
-	if len(resp.Signed) != 0 {
-		t.Fatalf("expected no signed transactions on clawback policy reject, got %d", len(resp.Signed))
 	}
 
 	mustNotReceiveIPCSignRequest(t, approvalClient, 750*time.Millisecond)
@@ -2103,9 +2076,6 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		if err := json.Unmarshal(body, &resp); err != nil {
 			t.Fatalf("failed to parse valid arg response: %v", err)
 		}
-		if resp.Error != "" {
-			t.Fatalf("unexpected sign error for valid arg set: %s", resp.Error)
-		}
 		if len(resp.Signed) != 1 {
 			t.Fatalf("expected one signed transaction, got %d", len(resp.Signed))
 		}
@@ -2212,9 +2182,6 @@ func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {
 	var signResp signerapi.GroupSignResponse
 	if err := json.Unmarshal(secondBody, &signResp); err != nil {
 		t.Fatalf("failed to decode follow-up sign response: %v", err)
-	}
-	if signResp.Error != "" {
-		t.Fatalf("unexpected follow-up sign error: %s", signResp.Error)
 	}
 	if len(signResp.Signed) != 1 {
 		t.Fatalf("expected one signed txn after reconnect, got %d", len(signResp.Signed))
@@ -2495,7 +2462,7 @@ func mustAdminGenerateKey(t *testing.T, signerClient *signerclient.Client, signe
 
 	address := mustAdminGenerateKeyNoCleanup(t, signerClient, signerd, keyType, params)
 	t.Cleanup(func() {
-		if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), address); err != nil {
+		if err := signerClient.AdminDeleteKeyWithContext(context.Background(), address); err != nil {
 			t.Fatalf("failed to delete generated key %s: %v", address, err)
 		}
 	})

@@ -39,22 +39,21 @@ func (s Service) AdminGenerate(ctx context.Context, ir *productruntime.Runtime, 
 	return response, nil
 }
 
-func (s Service) AdminDelete(ctx context.Context, ir *productruntime.Runtime, address string) (signerapi.AdminDeleteResponse, *svcerr.Error) {
+func (s Service) AdminDelete(ctx context.Context, ir *productruntime.Runtime, address string) *svcerr.Error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ensureRuntimeUnlocked(ir); err != nil {
-		return signerapi.AdminDeleteResponse{}, err
+		return err
 	}
 
 	if _, err := s.Deps.KeyAdmin.DeleteKey(ctx, address); err != nil {
 		if err.Kind == svcerr.KindBadRequest && err.Message == "address is required" {
-			return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindBadRequest, Message: "address query parameter is required"}
+			return &svcerr.Error{Kind: svcerr.KindBadRequest, Message: "address query parameter is required"}
 		}
-		return signerapi.AdminDeleteResponse{}, sanitizeKeyAdminError(err, "key deletion failed")
+		return sanitizeKeyAdminError(err, "key deletion failed")
 	}
-
-	return signerapi.AdminDeleteResponse{Success: true}, nil
+	return nil
 }
 
 // sanitizeKeyAdminError passes kinded errors through to the wire and hides

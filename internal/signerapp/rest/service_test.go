@@ -363,12 +363,8 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 		t.Fatalf("Keys authorization kind = %q, want %q", keysResp.Keys[0].AuthorizationKind, algorithm.AuthorizationEd25519)
 	}
 
-	delResp, delErr := svc.AdminDelete(context.Background(), ir, genResp.Address)
-	if delErr != nil {
+	if delErr := svc.AdminDelete(context.Background(), ir, genResp.Address); delErr != nil {
 		t.Fatalf("AdminDelete error = %v, want nil", delErr)
-	}
-	if !delResp.Success {
-		t.Fatalf("AdminDelete response = %#v, want success", delResp)
 	}
 }
 

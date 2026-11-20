@@ -140,7 +140,7 @@ func TestKeyDerivationRegression(t *testing.T) {
 				got = resp.Address
 			}
 			t.Cleanup(func() {
-				if _, cErr := signerClient.AdminDeleteKeyWithContext(context.Background(), got); cErr != nil {
+				if cErr := signerClient.AdminDeleteKeyWithContext(context.Background(), got); cErr != nil {
 					t.Logf("cleanup: AdminDeleteKey(%s) failed: %v", got, cErr)
 				}
 			})

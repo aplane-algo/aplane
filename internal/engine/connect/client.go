@@ -56,10 +56,10 @@ func (s *ConnectionState) AdminGenerateWithContext(ctx context.Context, keyType 
 	return client.AdminGenerateWithContext(ctx, keyType, params)
 }
 
-func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
+func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address string) error {
 	client, err := s.signerClient()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	return client.AdminDeleteKeyWithContext(ctx, address)
 }

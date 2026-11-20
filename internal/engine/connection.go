@@ -82,7 +82,7 @@ func (e *Core) AdminGenerateWithContext(ctx context.Context, keyType string, par
 	return e.Connection.AdminGenerateWithContext(ctx, keyType, params)
 }
 
-func (e *Core) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
+func (e *Core) AdminDeleteKeyWithContext(ctx context.Context, address string) error {
 	return e.Connection.AdminDeleteKeyWithContext(ctx, address)
 }
 

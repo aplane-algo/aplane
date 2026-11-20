@@ -137,9 +137,7 @@ type CancelSignRequest struct {
 
 // CancelSignResponse is the response payload for /sign/cancel.
 type CancelSignResponse struct {
-	Success bool            `json:"success"`
-	State   SignCancelState `json:"state,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	State SignCancelState `json:"state,omitempty"`
 }
 
 // RequestMode describes the mutually exclusive mode selected by a SignRequest.
@@ -303,7 +301,6 @@ type MutationReport struct {
 type GroupSignResponse struct {
 	Signed    []string        `json:"signed,omitempty"`    // Array of signed transactions (hex-encoded msgpack)
 	Mutations *MutationReport `json:"mutations,omitempty"` // Modifications made by server (nil if none)
-	Error     string          `json:"error,omitempty"`
 }
 
 // GroupPlanResponse is the response from the /plan endpoint.
@@ -312,7 +309,6 @@ type GroupSignResponse struct {
 type GroupPlanResponse struct {
 	Transactions []string        `json:"transactions,omitempty"` // TX-prefixed hex-encoded unsigned txns (final group)
 	Mutations    *MutationReport `json:"mutations,omitempty"`    // Modifications that would be made by server
-	Error        string          `json:"error,omitempty"`
 }
 
 // ErrorResponse is the standard HTTP error body for non-2xx signer responses.
@@ -614,11 +610,8 @@ type AdminGenerateResponse struct {
 	// fee limit below what the account's own transactions cost. They refused
 	// nothing.
 	Warnings []string `json:"warnings,omitempty"`
-	Error    string   `json:"error,omitempty"`
 }
 
-// AdminDeleteResponse is the response from DELETE /admin/keys.
-type AdminDeleteResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
-}
+// AdminDeleteResponse is the response from DELETE /admin/keys: an empty
+// object. A failure is a non-2xx ErrorResponse.
+type AdminDeleteResponse struct{}

@@ -258,9 +258,6 @@ func TestFalconGroupTransaction(t *testing.T) {
 	if err := json.Unmarshal(body, &signResp); err != nil {
 		t.Fatalf("Failed to parse group sign response: %v", err)
 	}
-	if signResp.Error != "" {
-		t.Fatalf("Signer returned error: %s", signResp.Error)
-	}
 	if len(signResp.Signed) < 2 {
 		t.Fatalf("Expected at least 2 signed transactions, got %d", len(signResp.Signed))
 	}
