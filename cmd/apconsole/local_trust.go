@@ -44,7 +44,7 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 		return "", fmt.Errorf("load client config: %w", err)
 	}
 	registry := clientCfg.ClientEndpointsOrDefault()
-	_, endpoint, ok := registry.DefaultEndpoint()
+	_, endpoint, ok := registry.SignerEndpoint()
 	if !ok {
 		return "", nil
 	}

@@ -8,10 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
+
 	"gopkg.in/yaml.v3"
 )
 
-// LoadStoredClientEndpointRegistry loads only endpoints.yaml.
+// LoadStoredClientEndpointRegistry loads endpoints.yaml as it is stored, for
+// editing: SSH paths keep what the file says.
 func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) {
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
@@ -54,14 +57,15 @@ func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointReg
 // StoredClientEndpointUpsertPlan describes the endpoint registry change that
 // would be applied for one endpoint alias.
 type StoredClientEndpointUpsertPlan struct {
-	Registry       ClientEndpointRegistry
-	Alias          string
-	Endpoint       ClientEndpointConfig
-	Created        bool
-	Updated        bool
-	DefaultChanged bool
+	Registry ClientEndpointRegistry
+	Alias    string
+	Endpoint ClientEndpointConfig
+	Created  bool
+	Updated  bool
 	// DestinationChanged reports that Alias already existed and now names a
-	// different node.
+	// different node. A destination is the URL: the node's SSH server
+	// forwards to its own REST listener, so no other field selects the
+	// service.
 	DestinationChanged bool
 }
 
@@ -88,9 +92,13 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
+	// The signer endpoint keeps its role. Rewriting it as a cosigner would
+	// leave the client without a signer endpoint and let delete remove it.
+	if exists && existing.Role == ClientEndpointRoleSigner && normalized.Role != ClientEndpointRoleSigner {
+		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q is the signer endpoint; it cannot become a %s endpoint", alias, normalized.Role)
+	}
 	plan := StoredClientEndpointUpsertPlan{Alias: alias}
-	plan.DestinationChanged = exists && ClientEndpointDestinationChanged(existing, normalized)
-	oldDefault := registry.Default
+	plan.DestinationChanged = exists && existing.URL != normalized.URL
 	registry.Endpoints[alias] = normalized
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return StoredClientEndpointUpsertPlan{}, err
@@ -99,36 +107,7 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	plan.Endpoint = registry.Endpoints[alias]
 	plan.Created = !exists
 	plan.Updated = exists && !storedClientEndpointsEqual(existing, normalized)
-	plan.DefaultChanged = oldDefault != registry.Default
 	return plan, nil
-}
-
-// ClientEndpointDestinationChanged reports whether next names a different
-// node than previous. A destination is the URL: the node's SSH server
-// forwards to its own REST listener, so no other field selects the service.
-func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool {
-	previousURL := strings.TrimRight(strings.TrimSpace(previous.URL), "/")
-	nextURL := strings.TrimRight(strings.TrimSpace(next.URL), "/")
-	return previousURL != nextURL
-}
-
-func SetStoredClientEndpointDefault(dataDir, alias string) error {
-	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return err
-	}
-	registry, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		return err
-	}
-	endpoint, ok := registry.Endpoints[alias]
-	if !ok {
-		return fmt.Errorf("endpoint alias %q is not defined", alias)
-	}
-	if endpoint.Role != ClientEndpointRoleSigner {
-		return fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
-	}
-	registry.Default = alias
-	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
@@ -142,8 +121,8 @@ func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	if err != nil {
 		return err
 	}
-	if registry.Default == alias {
-		return fmt.Errorf("endpoint alias %q is the default endpoint", alias)
+	if signerAlias, _, _ := registry.SignerEndpoint(); signerAlias == alias {
+		return fmt.Errorf("endpoint alias %q is the signer endpoint", alias)
 	}
 	if _, ok := registry.Endpoints[alias]; !ok {
 		return fmt.Errorf("endpoint alias %q is not defined", alias)
@@ -152,18 +131,17 @@ func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
+// normalizeStoredClientEndpointRegistry checks and canonicalizes a registry
+// that was loaded or is about to be saved: every endpoint, then at most one
+// signer endpoint and MaxClientCosignerEndpoints cosigner endpoints.
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
+	// A loaded registry already passed the decode's schema check; this one
+	// is for a registry built in memory and handed to the save.
 	if registry.SchemaVersion == 0 {
 		registry.SchemaVersion = ClientEndpointSchemaVersion
 	}
 	if registry.SchemaVersion != ClientEndpointSchemaVersion {
 		return fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
-	}
-	registry.Default = strings.TrimSpace(registry.Default)
-	if registry.Default != "" {
-		if err := ValidateClientEndpointAlias(registry.Default); err != nil {
-			return fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
-		}
 	}
 	if registry.Endpoints == nil {
 		registry.Endpoints = map[string]ClientEndpointConfig{}
@@ -175,8 +153,22 @@ func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) err
 		}
 		registry.Endpoints[alias] = normalized
 	}
-	if err := normalizeClientEndpointRegistryRoleState(registry); err != nil {
-		return err
+
+	signerAlias := ""
+	cosignerCount := 0
+	for alias, endpoint := range registry.Endpoints {
+		switch endpoint.Role {
+		case ClientEndpointRoleCosigner:
+			cosignerCount++
+		case ClientEndpointRoleSigner:
+			if signerAlias != "" {
+				return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
+			}
+			signerAlias = alias
+		}
+	}
+	if cosignerCount > MaxClientCosignerEndpoints {
+		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
 	}
 	return nil
 }
@@ -190,7 +182,7 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 		return ClientEndpointConfig{}, err
 	}
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
-	if err := validateClientEndpointURL(endpoint.URL); err != nil {
+	if _, _, err := endpointrefs.ParseURL(endpoint.URL); err != nil {
 		return ClientEndpointConfig{}, err
 	}
 	return endpoint, nil

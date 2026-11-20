@@ -59,7 +59,6 @@ signer_status_poll_interval: "10s"
 
 ```yaml
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -173,7 +172,6 @@ EOF
 # Create endpoints.yaml (or start from examples/config/apclient/endpoints.yaml)
 cat > "$APCLIENT_DATA/endpoints.yaml" << 'EOF'
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -253,11 +251,11 @@ available when generating cosigned accounts, export it on the cosigner node with
 `apadmin cosigner import`. Signing operations resolve the matching endpoint from
 live authenticated `/keys` responses.
 
-If the signer operator sets a client-reachable advertised URL in
-`$APSIGNER_DATA/config.yaml`, `apadmin endpoint export` can omit `--host`, and
-the cosigner key export screen shows it as the address clients add with
-`endpoints add`. Cosigner installs prompt for this address when they write a
-new config:
+If the signer operator sets a client-reachable advertised URL, which must be
+`ssh://host[:port]`, in `$APSIGNER_DATA/config.yaml`, `apadmin endpoint export`
+can omit `--host`, and the cosigner key export screen shows it as the address
+clients add with `endpoints add`. Cosigner installs prompt for this address
+when they write a new config:
 
 ```yaml
 endpoint:
@@ -286,7 +284,6 @@ The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
 ```yaml
 schema_version: 2
-default: main
 endpoints:
   main:
     role: signer
@@ -308,7 +305,6 @@ endpoints list
 endpoints show main
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
-endpoints default main
 endpoints delete old-signer
 ```
 

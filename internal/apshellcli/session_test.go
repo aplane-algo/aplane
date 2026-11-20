@@ -280,7 +280,7 @@ func TestSessionShutdownStopsTheStartupConnect(t *testing.T) {
 	}()
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
-	cfg.Endpoints = config.ClientEndpointRegistry{Default: "node", Endpoints: map[string]config.ClientEndpointConfig{
+	cfg.Endpoints = config.ClientEndpointRegistry{Endpoints: map[string]config.ClientEndpointConfig{
 		"node": {Role: config.ClientEndpointRoleSigner, URL: "ssh://" + listener.Addr().String(),
 			IdentityFile: filepath.Join(dir, "id_ed25519"), KnownHostsPath: filepath.Join(dir, "known_hosts")},
 	}}

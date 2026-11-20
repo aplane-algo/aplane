@@ -499,7 +499,7 @@ bytes even though apshell does not submit them.
   to start without a trusted host, and the signer refuses the tunnel until the
   key is enrolled.
 - **`endpoints`** manages signer/cosigner routing profiles (`list`, `show`,
-  `create`, `import`, `discover-cosigners`, `default`, `delete`, plus interactive
+  `create`, `import`, `discover-cosigners`, `delete`, plus interactive
   `add`). Routing lives in
   `endpoints.yaml`, not `config.yaml`. There is exactly one `role: signer`
   endpoint; the rest are `role: cosigner`.

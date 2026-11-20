@@ -93,7 +93,6 @@ func TestDecorateConnectResultOmitsLockedTranscriptLine(t *testing.T) {
 func TestResolveEnrollmentTarget(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Endpoints = config.ClientEndpointRegistry{
-		Default: "primary",
 		Endpoints: map[string]config.ClientEndpointConfig{
 			"primary":  {Role: config.ClientEndpointRoleSigner},
 			"cosigner": {Role: config.ClientEndpointRoleCosigner},

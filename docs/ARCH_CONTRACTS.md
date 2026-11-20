@@ -229,7 +229,9 @@ Validation:
 - `endpoint.ssh.port` is the SSH listener port. It defaults to `1127`.
 - `endpoint.advertise_url` is optional operator-declared endpoint handoff
   routing metadata. It is deployment-owned `config.yaml` state, not a writable
-  admin setting, and is not inferred from the SSH bind address.
+  admin setting, and is not inferred from the SSH bind address. It must be
+  `ssh://host[:port]`, the one URL form client endpoint records accept; a
+  config naming another scheme fails to load.
 - Admin IPC `endpoint_display_url` is display-only metadata derived by
   apsigner. It equals `endpoint.advertise_url` when configured; otherwise it is
   derived from the SSH listener. For a wildcard IPv4 bind (`0.0.0.0`), apsigner

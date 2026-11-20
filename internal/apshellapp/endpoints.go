@@ -52,10 +52,10 @@ func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
 	}
 	sort.Strings(aliases)
 
-	defaultAlias, _, _ := registry.DefaultEndpoint()
+	signerAlias, _, _ := registry.SignerEndpoint()
 	entries := make([]EndpointEntry, 0, len(aliases))
 	for _, alias := range aliases {
-		entries = append(entries, a.endpointEntry(alias, registry.Endpoints[alias], alias == defaultAlias))
+		entries = append(entries, a.endpointEntry(alias, registry.Endpoints[alias], alias == signerAlias))
 	}
 	return &EndpointsListResult{Endpoints: entries}, nil
 }
@@ -74,14 +74,14 @@ func (a *App) EndpointShow(_ context.Context, alias string) (*EndpointShowResult
 	if !ok {
 		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
 	}
-	defaultAlias, _, _ := registry.DefaultEndpoint()
+	signerAlias, _, _ := registry.SignerEndpoint()
 	return &EndpointShowResult{
-		Endpoint: a.endpointEntry(alias, endpoint, alias == defaultAlias),
+		Endpoint: a.endpointEntry(alias, endpoint, alias == signerAlias),
 	}, nil
 }
 
 // EndpointPublicKey returns the public key of an endpoint's SSH identity, for an
-// operator to import, or of the default endpoint's if alias is empty. It reads the
+// operator to import, or of the signer endpoint's if alias is empty. It reads the
 // existing key and never creates one, so it works at any time and repeatedly.
 func (a *App) EndpointPublicKey(_ context.Context, alias string) (*EndpointPublicKeyResult, error) {
 	registry, err := a.loadEndpointView()
@@ -91,7 +91,7 @@ func (a *App) EndpointPublicKey(_ context.Context, alias string) (*EndpointPubli
 	var endpoint config.ClientEndpointConfig
 	if alias == "" {
 		var ok bool
-		alias, endpoint, ok = registry.DefaultEndpoint()
+		alias, endpoint, ok = registry.SignerEndpoint()
 		if !ok {
 			return nil, fmt.Errorf("no default endpoint; name one with: endpoints public-key <alias>")
 		}
@@ -149,22 +149,18 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	result := &EndpointImportResult{
-		Alias:          req.Alias,
-		Role:           endpointPlan.Endpoint.Role,
-		URL:            endpointPlan.Endpoint.URL,
-		DryRun:         req.DryRun,
-		Created:        endpointPlan.Created,
-		Updated:        endpointPlan.Updated,
-		DefaultChanged: endpointPlan.DefaultChanged,
+		Alias:   req.Alias,
+		Role:    endpointPlan.Endpoint.Role,
+		URL:     endpointPlan.Endpoint.URL,
+		DryRun:  req.DryRun,
+		Created: endpointPlan.Created,
+		Updated: endpointPlan.Updated,
 	}
 	action := "Imported"
 	if result.DryRun {
 		action = "Would import"
 	}
 	result.RenderLines = endpointUpsertLines(action, endpointPlan)
-	if result.DefaultChanged {
-		result.RenderLines = append(result.RenderLines, "  default: yes")
-	}
 	return result, nil
 }
 
@@ -285,35 +281,8 @@ func (a *App) discoverEndpointCosigners(ctx context.Context) (*EndpointDiscoverC
 	return result, nil
 }
 
-// EndpointDefault sets the default signing endpoint alias.
-func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefaultResult, error) {
-	if err := config.ValidateClientEndpointAlias(alias); err != nil {
-		return nil, err
-	}
-	cfg, err := config.LoadConfig(a.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	if _, ok := cfg.Endpoints.Endpoint(alias); !ok {
-		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
-	}
-	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
-	if err := clientdata.WithExclusiveLock(a.DataDir, func() error {
-		return config.SetStoredClientEndpointDefault(a.DataDir, alias)
-	}); err != nil {
-		return nil, err
-	}
-	if err := a.reloadConfigAfterEndpointChange(); err != nil {
-		return nil, err
-	}
-	return &EndpointDefaultResult{
-		Alias:         alias,
-		PreviousAlias: previousAlias,
-		RenderLines:   []string{fmt.Sprintf("Default endpoint set to %s", alias)},
-	}, nil
-}
-
-// EndpointDelete deletes a stored endpoint alias when it is not the default.
+// EndpointDelete deletes a stored endpoint alias when it is not the signer
+// endpoint.
 // The node keeps its own enrollment of this client's key; deleting the
 // endpoint here does not revoke it there.
 func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteResult, error) {

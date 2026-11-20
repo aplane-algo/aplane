@@ -111,7 +111,7 @@ func TestPrepareCosignerSetupRejectsMissingRouteSelfAndSignerAlias(t *testing.T)
 			prepare: func(t *testing.T) (*App, CosignerSetupRequest) {
 				return newEndpointTestApp(t, t.TempDir()), CosignerSetupRequest{Alias: "field", URL: "self"}
 			},
-			want: `url "self" is not supported`,
+			want: `unsupported url scheme ""; endpoints are ssh://host[:port]`,
 		},
 		{
 			name: "signer alias",
