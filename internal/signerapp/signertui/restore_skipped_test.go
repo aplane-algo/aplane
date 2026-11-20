@@ -266,3 +266,27 @@ func TestRestoreResultWithAWideWordInTheErrorFitsAtMinSize(t *testing.T) {
 		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	}
 }
+
+// A restore that lists only some of the keys it restored, or of the
+// conflicts it refused for, counts them all.
+func TestRestoreScreensCountWhatTheyDoNotList(t *testing.T) {
+	m := Model{viewState: ViewRestoring, restore: restoreState{archivePath: "aplane-backup.tar.gz"}}
+	refused := updateModel(t, m, RestoreBackupResultMsg{Result: protocol.RestoreBackupResultMessage{
+		Code: protocol.ResultCodeRestoreConflict, Conflicts: []protocol.RestoreConflict{{Selector: "CONFLICTADDR", KeyType: "ed25519"}}, ConflictsOmitted: 9,
+	}})
+	if !strings.Contains(refused.restore.passphraseError, "10 credential conflict(s)") {
+		t.Fatalf("conflict prompt = %q", refused.restore.passphraseError)
+	}
+	if view := squeezeForTest(stripANSI(refused.renderRestorePassphrase())); !strings.Contains(view, "CONFLICTADDR [ed25519] and 9 more") {
+		t.Fatalf("the replacement confirmation does not count every conflict:\n%s", view)
+	}
+	done := updateModel(t, m, RestoreBackupResultMsg{Result: protocol.RestoreBackupResultMessage{
+		Success: true, Restored: []protocol.RestoreCredential{{Selector: "GOODADDR", KeyType: "ed25519"}}, RestoredOmitted: 70,
+	}})
+	view := squeezeForTest(fitsMinSizeForTest(t, done))
+	for _, want := range []string{"Activated: 71 (1 listed)", "Total: 71 activated keys"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("%q missing from:\n%s", want, view)
+		}
+	}
+}

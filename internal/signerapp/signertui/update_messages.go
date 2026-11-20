@@ -290,9 +290,10 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 		m.clearRestorePassphrase()
 		m.restore.replaceExisting = true
 		m.restore.replaceConflicts = append([]RestoreConflict(nil), msg.Result.Conflicts...)
+		m.restore.replaceConflictsOmitted = msg.Result.ConflictsOmitted
 		m.restore.passphraseError = fmt.Sprintf(
 			"%d credential conflict(s). Re-enter the export passphrase and press Enter to confirm replacement.",
-			len(msg.Result.Conflicts),
+			len(msg.Result.Conflicts)+msg.Result.ConflictsOmitted,
 		)
 		m.viewState = ViewRestorePassphrase
 		return m, nil
@@ -300,6 +301,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 	m.clearRestorePassphrase()
 	m.restore.replaceExisting = false
 	m.restore.replaceConflicts = nil
+	m.restore.replaceConflictsOmitted = 0
 	withPolicy := make(map[string]bool, len(msg.Result.PoliciesRestored))
 	for _, key := range msg.Result.PoliciesRestored {
 		withPolicy[key] = true
@@ -318,7 +320,9 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 		ArchivePath: m.restore.archivePath,
 		Success:     msg.Result.Success,
 		Activated:   restored,
-		Skipped:     restoreSkippedUnion(m.restore.previewSkipped, msg.Result.Skipped),
+		// Restored is bounded, so some restored keys may not be listed.
+		ActivatedOmitted: msg.Result.RestoredOmitted,
+		Skipped:          restoreSkippedUnion(m.restore.previewSkipped, msg.Result.Skipped),
 		// Each list is bounded on its own; their omitted counts add.
 		SkippedOmitted: m.restore.previewSkipOmitted + msg.Result.SkippedOmitted,
 		KeyCount:       msg.Result.KeyCount,

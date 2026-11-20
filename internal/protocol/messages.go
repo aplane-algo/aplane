@@ -522,13 +522,18 @@ type RestoreBackupMessage struct {
 
 type RestoreBackupResultMessage struct {
 	BaseMessage
-	Success       bool                `json:"success"`
-	OperationID   string              `json:"operation_id,omitempty"`
-	ArchiveSHA256 string              `json:"archive_sha256,omitempty"`
-	GenerationID  string              `json:"generation_id,omitempty"`
-	Restored      []RestoreCredential `json:"restored,omitempty"`
-	Identical     []RestoreCredential `json:"identical,omitempty"`
-	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
+	Success       bool   `json:"success"`
+	OperationID   string `json:"operation_id,omitempty"`
+	ArchiveSHA256 string `json:"archive_sha256,omitempty"`
+	GenerationID  string `json:"generation_id,omitempty"`
+	// Restored, Identical and Conflicts each list at most 64, and the
+	// matching omitted count says how many more there are.
+	Restored         []RestoreCredential `json:"restored,omitempty"`
+	RestoredOmitted  int                 `json:"restored_omitted,omitempty"`
+	Identical        []RestoreCredential `json:"identical,omitempty"`
+	IdenticalOmitted int                 `json:"identical_omitted,omitempty"`
+	Conflicts        []RestoreConflict   `json:"conflicts,omitempty"`
+	ConflictsOmitted int                 `json:"conflicts_omitted,omitempty"`
 	// Skipped lists the archived credentials the restore left out, or, on a
 	// refusal for what it would skip, the ones it would have.
 	Skipped        []RestoreSkipped `json:"skipped,omitempty"`

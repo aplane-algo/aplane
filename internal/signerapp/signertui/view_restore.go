@@ -37,6 +37,9 @@ func (m Model) renderRestorePassphrase() string {
 			}
 			sb.WriteString("\n")
 		}
+		if more := m.restore.replaceConflictsOmitted; more > 0 {
+			sb.WriteString(fmt.Sprintf("  and %d more\n", more))
+		}
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Re-enter the export passphrase and press Enter to authorize replacement."))
 		sb.WriteString("\n\n")
@@ -143,10 +146,16 @@ func (m Model) restorePreviewHeader() string {
 
 // skippedCountText counts skipped keys, saying when only some are listed.
 func skippedCountText(listed, omitted int) string {
+	return listedCountText("Skipped", listed, omitted)
+}
+
+// listedCountText counts a list under label, saying when only some of it is
+// listed.
+func listedCountText(label string, listed, omitted int) string {
 	if omitted == 0 {
-		return fmt.Sprintf("Skipped: %d", listed)
+		return fmt.Sprintf("%s: %d", label, listed)
 	}
-	return fmt.Sprintf("Skipped: %d (%d listed)", listed+omitted, listed)
+	return fmt.Sprintf("%s: %d (%d listed)", label, listed+omitted, listed)
 }
 
 // restoreSkippedReasonRunes bounds the reason the preview footer shows for
@@ -233,7 +242,7 @@ func (m Model) renderRestoreDisplay() string {
 		lines = append(lines, label+ellipsizeMiddle(restoreArchiveLabel(result.ArchivePath), max(width-len(label), 1)))
 	}
 	lines = append(lines,
-		fmt.Sprintf("Activated: %d", len(result.Activated)),
+		listedCountText("Activated", len(result.Activated), result.ActivatedOmitted),
 	)
 	if len(result.Skipped) > 0 {
 		lines = append(lines, errorStyle.Render(ellipsize(skippedCountText(len(result.Skipped), result.SkippedOmitted)+" (cannot be restored on this node)", width)))
@@ -303,7 +312,7 @@ func (m Model) restoreDisplayList(rowWidth, visibleRows int) []string {
 	if below := scrollMoreBelowLine(rows - endIdx); below != "" {
 		lines = append(lines, below)
 	}
-	total := fmt.Sprintf("  Total: %d activated keys", len(result.Activated))
+	total := fmt.Sprintf("  Total: %d activated keys", len(result.Activated)+result.ActivatedOmitted)
 	if len(result.Skipped) > 0 {
 		total += fmt.Sprintf(", %d skipped", len(result.Skipped)+result.SkippedOmitted)
 	}

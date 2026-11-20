@@ -23,7 +23,7 @@ func restoreRecordForTest(t *testing.T, result adminproto.RestoreBackupResult) m
 }
 
 // A restore record names the operation, the archive, how many credentials it
-// restored and the ones it skipped; a failed one carries the error as its
+// restored, listed or not, and the ones it skipped; a failed one carries the error as its
 // reason, and still names what it skipped.
 func TestCredentialRestoreRecordShape(t *testing.T) {
 	restored := []adminproto.RestoreCredential{{Selector: "ADDR1"}, {Selector: "ADDR2"}}
@@ -36,13 +36,13 @@ func TestCredentialRestoreRecordShape(t *testing.T) {
 			name: "succeeded",
 			result: adminproto.RestoreBackupResult{
 				Success: true, OperationID: "restore-1", ArchiveSHA256: "abc", GenerationID: "gen-2",
-				Restored: restored, Identical: []adminproto.RestoreCredential{{Selector: "ADDR3"}}, PoliciesRestored: []string{"ADDR1"},
+				Restored: restored, RestoredOmitted: 3, Identical: []adminproto.RestoreCredential{{Selector: "ADDR3"}}, PoliciesRestored: []string{"ADDR1"},
 				Skipped:        []adminproto.RestoreSkipped{{Selector: "BAD1", Reason: "refused"}, {Selector: "BAD2", Reason: "refused"}},
 				SkippedOmitted: 5,
 			},
 			want: map[string]any{
 				"event": string(AuditCredentialRestoreSuccess), "outcome": "restored",
-				"operation_id": "restore-1", "archive_sha256": "abc", "key_count": float64(2),
+				"operation_id": "restore-1", "archive_sha256": "abc", "key_count": float64(5),
 				"skipped_keys": []any{"BAD1", "BAD2"}, "skipped_keys_omitted": float64(5),
 			},
 		},

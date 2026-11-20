@@ -4,6 +4,8 @@
 package backupadmin
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -220,7 +221,7 @@ func TestSkipReasonsAreBoundedOnTheWire(t *testing.T) {
 			t.Fatalf("%s: %d skipped, %d omitted, want 8 and 0", what, len(skipped), omitted)
 		}
 		for _, entry := range skipped {
-			if len(entry.Reason) > maxSkipReasonBytes || !strings.HasSuffix(entry.Reason, "bytes)") {
+			if len(entry.Reason) > 1024 || !strings.HasSuffix(entry.Reason, "bytes)") {
 				t.Fatalf("%s: reason of %d bytes is not bounded: %.80q", what, len(entry.Reason), entry.Reason)
 			}
 		}
@@ -257,7 +258,7 @@ func TestSkipListIsBoundedOnTheWire(t *testing.T) {
 		skipped[i] = backup.SkippedEntry{Selector: fmt.Sprintf("%058d", i), Reason: reason}
 	}
 	listed, omitted := projectSkippedEntries(skipped)
-	if len(listed) != maxReportedSkips || omitted != len(skipped)-maxReportedSkips || listed[0].Reason != reason {
+	if len(listed) != maxReportedEntries || omitted != len(skipped)-maxReportedEntries || listed[0].Reason != reason {
 		t.Fatalf("projected %d, omitted %d", len(listed), omitted)
 	}
 	for what, msg := range map[string]any{
@@ -268,18 +269,6 @@ func TestSkipListIsBoundedOnTheWire(t *testing.T) {
 		if n := wireBytesForTest(t, msg); n > 64*1024 {
 			t.Fatalf("%s frame is %d bytes", what, n)
 		}
-	}
-}
-
-// A cut keeps whole characters and says how long the text was.
-func TestBoundSkipText(t *testing.T) {
-	if got := boundSkipText("short", 10); got != "short" {
-		t.Fatalf("boundSkipText(short) = %q", got)
-	}
-	long := strings.Repeat("é", 600)
-	got := boundSkipText(long, 100)
-	if len(got) > 100 || !utf8.ValidString(got) || !strings.HasSuffix(got, "…(1200 bytes)") {
-		t.Fatalf("boundSkipText(long) = %q (%d bytes)", got, len(got))
 	}
 }
 
@@ -415,5 +404,120 @@ func TestRecoveryRestoreNamesASkippedRepair(t *testing.T) {
 	}
 	if after := selectedAtomicTestGenerationID(t, paths); after != before.GenerationID() {
 		t.Fatalf("store root after a refused recovery restore = %q, want %q", after, before.GenerationID())
+	}
+}
+
+// A tar entry whose name is near the PAX limit is quoted bounded, so the
+// preview, restore and import refusals each fit one admin frame. It needs
+// no passphrase, so nothing about it is authenticated.
+func TestLongEntryNameIsBoundedInRefusals(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	service := directRestoreTestService(paths, ir)
+	archivePath := backup.BuildManagedArchivePath(paths, "long-name")
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(file)
+	tw := tar.NewWriter(gz)
+	name := strings.Repeat("\x01", 900_000)
+	if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o600, Size: 1, Format: tar.FormatPAX}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	for _, closer := range []interface{ Close() error }{tw, gz, file} {
+		if err := closer.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Each refusal counts against the restore rate limit, so each request
+	// gets a service of its own.
+	preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase")})
+	restored := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{OperationID: "restore-long-name", ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase")})
+	imported := importArchiveForTest(t, directRestoreTestService(paths, ir), archivePath, "long-name-import.tar.gz")
+	for what, reply := range map[string]struct {
+		text string
+		msg  any
+	}{
+		"preview": {preview.Error, adminserver.ProtocolRestorePreviewMessage("p", preview)},
+		"restore": {restored.Error, adminserver.ProtocolRestoreBackupResultMessage("r", restored)},
+		"import":  {imported.Error, adminserver.ProtocolCommitBackupImportResultMessage("i", imported)},
+	} {
+		if !strings.Contains(reply.text, "…(900000 bytes)") || len(reply.text) > 4096 {
+			t.Fatalf("%s refusal of %d bytes does not bound the name: %.200q", what, len(reply.text), reply.text)
+		}
+		if n := wireBytesForTest(t, reply.msg); n > 64*1024 {
+			t.Fatalf("%s frame is %d bytes", what, n)
+		}
+	}
+}
+
+// A replace_existing restore of more keys than a result lists reports the
+// first 64 restored and conflicting keys and counts the rest.
+func TestReplacingRestoreBoundsItsLists(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	service := directRestoreTestService(paths, ir)
+	original := map[string][]byte{}
+	for range maxReportedEntries + 2 {
+		selector, payload := keystest.Ed25519KeyJSON(t)
+		original[selector] = payload
+	}
+	first := service.RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID: "restore-originals", ExportPassphrase: []byte("export-passphrase"),
+		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, original, backup.BuildManagedArchivePath(paths, "originals")),
+	})
+	if !first.Success || len(first.Restored) != maxReportedEntries || first.RestoredOmitted != 2 {
+		t.Fatalf("first restore: success %t, %d restored, %d omitted", first.Success, len(first.Restored), first.RestoredOmitted)
+	}
+	current := resolveAtomicTestGeneration(t, paths)
+	for selector := range original {
+		if err := os.WriteFile(filepath.Join(current.KeysDir(), selector+".key"), []byte("damaged"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	replaced := service.RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID: "restore-replace", ExportPassphrase: []byte("export-passphrase"), ReplaceExisting: true,
+		ArchivePath: writeArchiveForTest(t, noderole.RoleSigner, original, backup.BuildManagedArchivePath(paths, "replace")),
+	})
+	if !replaced.Success || len(replaced.Restored) != maxReportedEntries || replaced.RestoredOmitted != 2 ||
+		len(replaced.Conflicts) != maxReportedEntries || replaced.ConflictsOmitted != 2 {
+		t.Fatalf("replacing restore: success %t error %q, %d+%d restored, %d+%d conflicts", replaced.Success, replaced.Error,
+			len(replaced.Restored), replaced.RestoredOmitted, len(replaced.Conflicts), replaced.ConflictsOmitted)
+	}
+}
+
+// A replacing restore at the archive's entry cap still fits one frame: the
+// restored and conflict lists hold 64 each, and the rest are counted.
+func TestReplacingRestoreAtTheEntryCapFitsTheFrame(t *testing.T) {
+	const keys = 16_398
+	conflicts := make([]backup.RestoreConflict, keys)
+	restored := make([]adminproto.RestoreCredential, keys)
+	for i := range keys {
+		selector := fmt.Sprintf("%058d", i)
+		conflicts[i] = backup.RestoreConflict{
+			Selector: selector, Category: "ed25519", KeyType: "ed25519",
+			ExistingSHA256: strings.Repeat("ab", 32), Reason: "existing credential is unreadable: " + strings.Repeat("x", 4096),
+		}
+		restored[i] = adminproto.RestoreCredential{Selector: selector, Category: "ed25519", KeyType: "ed25519"}
+	}
+	result := adminproto.RestoreBackupResult{Success: true}
+	result.Conflicts, result.ConflictsOmitted = projectRestoreConflicts(conflicts)
+	result.Restored, result.RestoredOmitted = reported(restored)
+	result.Identical, result.IdenticalOmitted = reported(restored)
+	if len(result.Conflicts) != maxReportedEntries || result.ConflictsOmitted != keys-maxReportedEntries || len(result.Conflicts[0].Reason) > 1024 {
+		t.Fatalf("conflicts: %d listed, %d omitted, reason %d bytes", len(result.Conflicts), result.ConflictsOmitted, len(result.Conflicts[0].Reason))
+	}
+	if n := wireBytesForTest(t, adminserver.ProtocolRestoreBackupResultMessage("r", result)); n > 128*1024 {
+		t.Fatalf("restore frame is %d bytes", n)
 	}
 }

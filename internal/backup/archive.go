@@ -6,12 +6,14 @@ package backup
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // IsArchivePath reports whether the path looks like a supported backup archive.
@@ -196,21 +198,21 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(targetPath, 0o700); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", targetPath, err)
+				return entryError("failed to create directory", header.Name, err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
-				return fmt.Errorf("failed to create parent directory for %s: %w", targetPath, err)
+				return entryError("failed to create parent directory for", header.Name, err)
 			}
 			out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
-				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
+				return entryError("failed to create file", header.Name, err)
 			}
 			remaining := maxArchiveExtractedBytes - extracted
 			written, err := io.Copy(out, io.LimitReader(tr, remaining+1))
 			if err != nil {
 				_ = out.Close()
-				return fmt.Errorf("failed to extract %s: %w", targetPath, err)
+				return entryError("failed to extract", header.Name, err)
 			}
 			extracted += written
 			if extracted > maxArchiveExtractedBytes {
@@ -218,10 +220,10 @@ func ExtractTarGzArchive(archivePath, destDir string) error {
 				return fmt.Errorf("archive decompresses past %d bytes; refusing to extract", int64(maxArchiveExtractedBytes))
 			}
 			if err := out.Close(); err != nil {
-				return fmt.Errorf("failed to close %s: %w", targetPath, err)
+				return entryError("failed to close", header.Name, err)
 			}
 		default:
-			return fmt.Errorf("unsupported archive entry type %q for %s", string(header.Typeflag), header.Name)
+			return fmt.Errorf("unsupported archive entry type %q for %s", string(header.Typeflag), quotedEntryName(header.Name))
 		}
 	}
 }
@@ -231,10 +233,45 @@ func safeArchivePath(root, name string) (string, error) {
 	targetPath := filepath.Join(root, cleanName)
 	rel, err := filepath.Rel(root, targetPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to validate archive path %s: %w", name, err)
+		return "", fmt.Errorf("failed to validate archive path %s", quotedEntryName(name))
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("archive entry escapes destination: %s", name)
+		return "", fmt.Errorf("archive entry escapes destination: %s", quotedEntryName(name))
 	}
 	return targetPath, nil
+}
+
+// maxQuotedEntryName bounds an archive entry name an error quotes: a tar
+// name can be close to 1 MiB, and an error reaches the operator in one admin
+// frame.
+const maxQuotedEntryName = 512
+
+// quotedEntryName is an archive entry's name as an error quotes it.
+func quotedEntryName(name string) string {
+	return BoundText(name, maxQuotedEntryName)
+}
+
+// entryError reports err about the archive entry named name, as the archive
+// names it: the name bounded, and without the extraction path an os error
+// repeats.
+func entryError(action, name string, err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	return fmt.Errorf("%s %s: %w", action, quotedEntryName(name), err)
+}
+
+// BoundText cuts s to at most limit bytes at a character boundary, saying
+// how long it was.
+func BoundText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	note := fmt.Sprintf("…(%d bytes)", len(s))
+	cut := max(0, limit-len(note))
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + note
 }

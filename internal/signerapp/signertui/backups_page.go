@@ -159,6 +159,7 @@ func (m Model) openBackupView(info BackupInfo) Model {
 	m.restore.previewScrollOffset = 0
 	m.restore.replaceExisting = false
 	m.restore.replaceConflicts = nil
+	m.restore.replaceConflictsOmitted = 0
 	m.viewState = ViewRestorePassphrase
 	return m
 }

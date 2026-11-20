@@ -1225,7 +1225,7 @@ func (a *AuditLogger) LogCredentialRestoreContext(
 	entry.Outcome = "restored"
 	entry.OperationID = result.OperationID
 	entry.ArchiveSHA256 = result.ArchiveSHA256
-	entry.KeyCount = len(result.Restored)
+	entry.KeyCount = len(result.Restored) + result.RestoredOmitted
 	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	if !result.Success {
 		if result.CommitUncertain {

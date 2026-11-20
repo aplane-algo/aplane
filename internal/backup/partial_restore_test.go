@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -284,5 +286,17 @@ func TestUnreadableMemberIsNamedByItsArchivePath(t *testing.T) {
 	}
 	if !ArchiveAuthenticated(previewErr) || !ArchiveAuthenticated(restoreErr) {
 		t.Fatalf("preview %v and restore %v must record the authenticated archive", previewErr, restoreErr)
+	}
+}
+
+// A cut keeps whole characters and says how long the text was.
+func TestBoundText(t *testing.T) {
+	if got := BoundText("short", 10); got != "short" {
+		t.Fatalf("BoundText(short) = %q", got)
+	}
+	long := strings.Repeat("é", 600)
+	got := BoundText(long, 100)
+	if len(got) > 100 || !utf8.ValidString(got) || !strings.HasSuffix(got, "…(1200 bytes)") {
+		t.Fatalf("BoundText(long) = %q (%d bytes)", got, len(got))
 	}
 }

@@ -243,13 +243,14 @@ type restoreState struct {
 	previewError        string
 	// previewFocus selects the key list (restoreFocusList) or the Restore
 	// button (restoreFocusAction) on the preview screen.
-	previewFocus        int
-	replaceExisting     bool
-	replaceConflicts    []RestoreConflict
-	returnToRecovery    bool
-	displaySelectedKey  int
-	displayScrollOffset int
-	result              RestoreDisplayResult
+	previewFocus            int
+	replaceExisting         bool
+	replaceConflicts        []RestoreConflict
+	replaceConflictsOmitted int // the conflicts the refusal counted but did not list
+	returnToRecovery        bool
+	displaySelectedKey      int
+	displayScrollOffset     int
+	result                  RestoreDisplayResult
 
 	recoveryError string
 	// progressLabel names the operation ViewRestoring is waiting on.
@@ -827,6 +828,8 @@ type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
 	Activated   []RestoreKeyInfo
+	// ActivatedOmitted counts the restored keys the result did not list.
+	ActivatedOmitted int
 	// Skipped lists the archived keys the node cannot admit, which were
 	// never restorable; SkippedOmitted counts those not listed.
 	Skipped        []RestoreSkipped

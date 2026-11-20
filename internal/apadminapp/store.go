@@ -503,9 +503,13 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 		for _, conflict := range result.Conflicts {
 			s.warn("credential conflict: %s (%s, %s): %s", conflict.Selector, conflict.Category, conflict.KeyType, conflict.Reason)
 		}
+		if result.ConflictsOmitted > 0 {
+			s.warn("and %d more credential conflict(s) not listed", result.ConflictsOmitted)
+		}
 		return resultError("credential restore failed", result.Code, result.Error)
 	}
-	s.info("restored %d credential(s); %d already identical; %d skipped", len(result.Restored), len(result.Identical), len(result.Skipped)+result.SkippedOmitted)
+	s.info("restored %d credential(s); %d already identical; %d skipped",
+		len(result.Restored)+result.RestoredOmitted, len(result.Identical)+result.IdenticalOmitted, len(result.Skipped)+result.SkippedOmitted)
 	if len(result.PoliciesRestored) > 0 {
 		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
 	}

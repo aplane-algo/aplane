@@ -111,13 +111,27 @@ type SkippedEntry struct {
 	Reason   string
 }
 
+// A reply or an error that quotes a skipped credential bounds its selector
+// and reason, which an archive can make as long as a member allows, so the
+// reply fits one admin frame.
+const (
+	maxQuotedSelector = 128
+	maxQuotedReason   = 1024
+)
+
+// Quoted is the entry as a reply or an error quotes it: its selector and
+// reason cut at a character boundary and marked with their length.
+func (e SkippedEntry) Quoted() SkippedEntry {
+	return SkippedEntry{Selector: BoundText(e.Selector, maxQuotedSelector), Reason: BoundText(e.Reason, maxQuotedReason)}
+}
+
 // SkipRefusalError refuses a restore or rebuild for what admission would
 // skip: a credential the request named, or every credential the archive
 // holds. An explicit selection is never narrowed, and a restore with nothing
 // to restore is no restore.
 type SkipRefusalError struct {
-	// Skipped is never empty: only loadRestoreSet refuses, and only for
-	// what it skipped.
+	// Skipped is never empty: loadRestoreSet and VerifyImportedBackup
+	// refuse only for what they skipped.
 	Skipped []SkippedEntry
 	// Named reports that the request named its credentials, so each skipped
 	// one is a credential it asked for.
@@ -125,7 +139,8 @@ type SkipRefusalError struct {
 }
 
 func (e *SkipRefusalError) Error() string {
-	first := e.Skipped[0].Selector + ": " + e.Skipped[0].Reason
+	quoted := e.Skipped[0].Quoted()
+	first := quoted.Selector + ": " + quoted.Reason
 	switch {
 	case e.Named && len(e.Skipped) == 1:
 		return "selected credential cannot be restored: " + first

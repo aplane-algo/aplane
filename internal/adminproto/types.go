@@ -305,9 +305,14 @@ type RestoreBackupResult struct {
 	// (genstore.RootCommitUncertain), and is deliberately not projected onto
 	// the admin protocol.
 	CommitUncertain bool
-	Restored        []RestoreCredential
-	Identical       []RestoreCredential
-	Conflicts       []RestoreConflict
+	// Restored, Identical and Conflicts each list at most 64, and the
+	// matching omitted count says how many more there are.
+	Restored         []RestoreCredential
+	RestoredOmitted  int
+	Identical        []RestoreCredential
+	IdenticalOmitted int
+	Conflicts        []RestoreConflict
+	ConflictsOmitted int
 	// Skipped lists the archived credentials the restore left out, or, on
 	// a refusal for what it would skip, the ones it would have; it lists at
 	// most 64, and SkippedOmitted counts the rest.

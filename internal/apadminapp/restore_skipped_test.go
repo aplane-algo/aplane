@@ -74,8 +74,8 @@ func TestStoreRestoreApplyReportsSkippedKeys(t *testing.T) {
 	requester := &fakeRequester{handle: func(message, result any) error {
 		*result.(*protocol.RestoreBackupResultMessage) = protocol.RestoreBackupResultMessage{
 			Success: true, GenerationID: "gen-2",
-			Restored: []protocol.RestoreCredential{{Selector: "GOODADDR"}},
-			Skipped:  []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+			Restored: []protocol.RestoreCredential{{Selector: "GOODADDR"}}, RestoredOmitted: 2, IdenticalOmitted: 3,
+			Skipped: []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
 		}
 		return nil
 	}}
@@ -87,7 +87,7 @@ func TestStoreRestoreApplyReportsSkippedKeys(t *testing.T) {
 	if err := store.RunRestore([]string{"apply", "backup.tar.gz"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"skipped BADADDR: failed to parse backup credential", "restored 1 credential(s); 0 already identical; 1 skipped"} {
+	for _, want := range []string{"skipped BADADDR: failed to parse backup credential", "restored 3 credential(s); 3 already identical; 1 skipped"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("%q missing from stderr %q", want, stderr.String())
 		}
