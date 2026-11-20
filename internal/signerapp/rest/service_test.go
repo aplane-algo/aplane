@@ -410,9 +410,6 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if !genResp.IsWitnessKey {
 		t.Fatal("AdminGenerate is_witness_key = false, want true")
 	}
-	if genResp.IsSpendingAccount == nil || *genResp.IsSpendingAccount {
-		t.Fatalf("AdminGenerate is_spending_account = %#v, want false pointer", genResp.IsSpendingAccount)
-	}
 
 	keysResp, err := svc.Keys(ir)
 	if err != nil {
@@ -430,9 +427,6 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	}
 	if !row.IsWitnessKey {
 		t.Fatal("component row is_witness_key = false, want true")
-	}
-	if row.IsSpendingAccount == nil || *row.IsSpendingAccount {
-		t.Fatalf("component row is_spending_account = %#v, want false pointer", row.IsSpendingAccount)
 	}
 }
 

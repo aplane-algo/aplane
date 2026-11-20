@@ -51,25 +51,19 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 		keyType := keyTypesCopy[address]
 		summary := signingSummary[address]
 		category := summary.Category
-		isGeneric := keys.IsGenericKey(category)
-		isComponent := keys.IsWitnessKey(category)
 
 		keyInfo := signerapi.KeyInfo{
 			Address:           address,
 			PublicKeyHex:      publicKeyHexMap[address],
 			KeyType:           keyType,
 			AuthorizationKind: authorizationKindForCategory(category),
-			IsGenericLsig:     isGeneric,
+			IsGenericLsig:     keys.IsGenericKey(category),
+			IsWitnessKey:      keys.IsWitnessKey(category),
 			// The value the aplane key recorded at creation, not the key
 			// type's current declaration (that is /keytypes').
 			ValidRekeyTarget: summary.ValidRekeyTarget,
 		}
 		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
-		if isComponent {
-			spending := false
-			keyInfo.IsWitnessKey = true
-			keyInfo.IsSpendingAccount = &spending
-		}
 		if rotatingkey.IsRotatingKeyType(keyType) {
 			// Stage keys never leave the signer; only the account address does.
 			keyInfo.PublicKeyHex = ""

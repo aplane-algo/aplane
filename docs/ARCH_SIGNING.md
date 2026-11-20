@@ -2294,8 +2294,8 @@ warning does not establish that no leaf was reused.
   from its key type's declaration then (always present). When it is false, the
   signer refuses a rekey of any account to this address, the account's own
   included, under every `rekeys` setting (`rekey_target_not_valid`)
-- optional `is_witness_key` and `is_spending_account`: cosigner-key rows use
-  `address` as the Witness Key ID, not as an Algorand spending address.
+- optional `is_witness_key`: cosigner-key rows set it and use `address` as
+  the Witness Key ID, not as an Algorand spending address.
   Witness Key IDs are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   `public_key_hex` carries the full component public key.
@@ -2448,7 +2448,7 @@ stored metadata resolve the provider and any composed template's base primitive.
 - request has `key_type`, optional `parameters`
 - no `name` field
 - response has `address`, optional `public_key_hex`, `key_type`, optional
-  `is_witness_key`, optional `is_spending_account`, optional `parameters`, and
+  `is_witness_key`, optional `parameters`, and
   optional `warnings`: a list of strings, the signer's advice about the account it
   created, such as a fee limit below what the account's own transactions cost,
   or a cosigner key this signer also holds as an account's key.

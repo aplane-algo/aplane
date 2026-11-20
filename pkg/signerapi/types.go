@@ -572,7 +572,6 @@ type KeyInfo struct {
 	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
 	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
-	IsSpendingAccount        *bool                     `json:"is_spending_account,omitempty"`
 	SigningArgs              []RuntimeArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
@@ -600,12 +599,11 @@ type AdminGenerateRequest struct {
 
 // AdminGenerateResponse is the response from POST /admin/generate.
 type AdminGenerateResponse struct {
-	Address           string            `json:"address,omitempty"`
-	PublicKeyHex      string            `json:"public_key_hex,omitempty"`
-	KeyType           string            `json:"key_type,omitempty"`
-	IsWitnessKey      bool              `json:"is_witness_key,omitempty"`
-	IsSpendingAccount *bool             `json:"is_spending_account,omitempty"`
-	Parameters        map[string]string `json:"parameters,omitempty"`
+	Address      string            `json:"address,omitempty"`
+	PublicKeyHex string            `json:"public_key_hex,omitempty"`
+	KeyType      string            `json:"key_type,omitempty"`
+	IsWitnessKey bool              `json:"is_witness_key,omitempty"`
+	Parameters   map[string]string `json:"parameters,omitempty"`
 	// Warnings are the signer's advice about the account it created, such as a
 	// fee limit below what the account's own transactions cost. They refused
 	// nothing.
