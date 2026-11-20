@@ -844,73 +844,6 @@ find_available_port() {
     done
 }
 
-read_top_level_int() {
-    local path="$1"
-    local key="$2"
-    [ -f "$path" ] || return 0
-    awk -F: -v key="$key" '
-        $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
-            value = $2
-            sub(/[[:space:]]*#.*/, "", value)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$path"
-}
-
-read_ssh_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        /^[[:space:]]*ssh[[:space:]]*:[[:space:]]*($|#)/ {
-            in_ssh = 1
-            next
-        }
-        /^[^[:space:]#][^:]*:/ {
-            in_ssh = 0
-        }
-        in_ssh && /^[[:space:]]*port[[:space:]]*:/ {
-            value = $2
-            sub(/[[:space:]]*#.*/, "", value)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$path"
-}
-
-read_signer_endpoint_signer_port() {
-    local path="$1"
-    [ -f "$path" ] || return 0
-    awk -F: '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 1
-                next
-            }
-            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
-                in_endpoint = 0
-            }
-            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
-                value = $2
-                sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                print value
-                exit
-            }
-        }
-    ' "$path"
-}
-
 read_signer_endpoint_ssh_port() {
     local path="$1"
     [ -f "$path" ] || return 0
@@ -1008,21 +941,15 @@ check_local_config_consistency() {
 
     # Only the SSH port must agree: the signer's SSH server forwards every
     # client channel to its own REST listener, so the client never names it.
-    local signer_ssh_port client_ssh_port client_ports_source
-    client_ports_source="config"
+    local signer_ssh_port client_ssh_port client_endpoints
+    client_endpoints="$(dirname "$client_config")/endpoints.yaml"
     signer_ssh_port="$(read_signer_endpoint_ssh_port "$signer_config")"
-    client_ssh_port="$(read_ssh_port "$client_config")"
-    if [ -z "$client_ssh_port" ]; then
-        local client_endpoints
-        client_endpoints="$(dirname "$client_config")/endpoints.yaml"
-        client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
-        client_ports_source="endpoints"
-    fi
+    client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
 
     if [ -z "$signer_ssh_port" ] || [ -z "$client_ssh_port" ]; then
         echo "Warning: could not verify local signer/client SSH port consistency."
-        echo "  Signer config: $signer_config"
-        echo "  Client config: $client_config"
+        echo "  Signer config:    $signer_config"
+        echo "  Client endpoints: $client_endpoints"
         return 0
     fi
 
@@ -1032,19 +959,13 @@ check_local_config_consistency() {
 
     echo ""
     echo "WARNING: local signer/client SSH ports do not match."
-    echo "  Signer config: $signer_config"
-    echo "    endpoint.ssh.port: $signer_ssh_port"
-    echo "  Client config: $client_config"
-    echo "    ssh.port:    $client_ssh_port"
+    echo "  Signer config:    $signer_config"
+    echo "    endpoint.ssh.port:         $signer_ssh_port"
+    echo "  Client endpoints: $client_endpoints"
+    echo "    endpoints.primary.url port: $client_ssh_port"
     echo ""
-    if [ "$client_ports_source" = "endpoints" ]; then
-        echo "'apshell enroll' and 'connect' use $client_endpoints."
-        echo "Edit $client_endpoints manually before connecting."
-        return 0
-    fi
-    echo "Client config still uses legacy signer settings in $client_config."
-    echo "apshell now requires $client_endpoints for default signer routing."
-    echo "Write $client_endpoints manually (the legacy migrate-config-v1 utility is obsolete and no longer shipped)."
+    echo "'apshell enroll' and 'connect' use $client_endpoints."
+    echo "Edit $client_endpoints manually before connecting."
     return 0
 }
 
@@ -1719,17 +1640,6 @@ install_builtin_plugins() {
     return 0
 }
 
-run_as_service_user() {
-    if command -v runuser >/dev/null 2>&1; then
-        runuser -u "$SVC_USER" -- "$@"
-    elif command -v sudo >/dev/null 2>&1; then
-        sudo -u "$SVC_USER" -- "$@"
-    else
-        echo "Error: need runuser or sudo to initialize the keystore as $SVC_USER." >&2
-        return 1
-    fi
-}
-
 ensure_prod_data_dir_permissions() {
     local data_dir="$1"
     local service_uid
@@ -2340,7 +2250,7 @@ STARTEOF
         echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
     else
         echo "Writing $APCLIENT_CONFIG..."
-        write_apshell_local_config "$APCLIENT_CONFIG" "$SIGNER_PORT" "$SSH_PORT"
+        write_apshell_local_config "$APCLIENT_CONFIG"
         WROTE_APCLIENT_CONFIG=1
     fi
     if [ -f "$APCLIENT_ENDPOINTS" ]; then
@@ -2534,13 +2444,9 @@ for name in "${RELEASE_BINARIES[@]}"; do
     bin="$BIN_SRC/$name"
     [ -f "$bin" ] || continue
     cp "$bin" "$BINDIR/"
-    # Passphrase helpers must be executable by the unprivileged service user.
-    # The appass-file secret itself stays protected by product-store 0600 files.
-    case "$name" in
-        appass-file)          chmod 755 "$BINDIR/$name" ;;
-        appass-systemd-creds) chmod 755 "$BINDIR/$name" ;;
-        *)                  chmod 755 "$BINDIR/$name" ;;
-    esac
+    # The service user runs these, passphrase helpers included. The appass-file
+    # secret itself stays protected by product-store 0600 files.
+    chmod 755 "$BINDIR/$name"
     echo "  $name"
 done
 
