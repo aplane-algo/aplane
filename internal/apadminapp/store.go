@@ -327,8 +327,11 @@ func (s Store) backupImport(sourcePath string) error {
 		s.warn("a restore will skip %s: %s", skipped.Selector, skipped.Reason)
 	}
 	s.info("backup imported: %s", name)
+	if commit.SkippedOmitted > 0 {
+		s.warn("and %d more key(s) a restore will skip, not listed", commit.SkippedOmitted)
+	}
 	if len(commit.Skipped) > 0 {
-		s.warn("%d key(s) in the backup cannot be restored on this node; a restore will skip them", len(commit.Skipped))
+		s.warn("%d key(s) in the backup cannot be restored on this node; a restore will skip them", len(commit.Skipped)+commit.SkippedOmitted)
 	}
 	s.info("size: %s", backup.FormatFileSize(size))
 	s.info("checksum: %s", checksum)
@@ -493,13 +496,16 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 	for _, skipped := range result.Skipped {
 		s.warn("skipped %s: %s", skipped.Selector, skipped.Reason)
 	}
+	if result.SkippedOmitted > 0 {
+		s.warn("and %d more skipped key(s) not listed", result.SkippedOmitted)
+	}
 	if !result.Success {
 		for _, conflict := range result.Conflicts {
 			s.warn("credential conflict: %s (%s, %s): %s", conflict.Selector, conflict.Category, conflict.KeyType, conflict.Reason)
 		}
 		return resultError("credential restore failed", result.Code, result.Error)
 	}
-	s.info("restored %d credential(s); %d already identical; %d skipped", len(result.Restored), len(result.Identical), len(result.Skipped))
+	s.info("restored %d credential(s); %d already identical; %d skipped", len(result.Restored), len(result.Identical), len(result.Skipped)+result.SkippedOmitted)
 	if len(result.PoliciesRestored) > 0 {
 		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
 	}
@@ -554,8 +560,11 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 	for _, skipped := range result.Skipped {
 		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", skipped.Selector, skipped.Reason)
 	}
+	if result.SkippedOmitted > 0 {
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  and %d more skipped key(s) not listed\n", result.SkippedOmitted)
+	}
 	if len(result.Skipped) > 0 {
-		s.warn("%d key(s) cannot be restored on this node and would be skipped", len(result.Skipped))
+		s.warn("%d key(s) cannot be restored on this node and would be skipped", len(result.Skipped)+result.SkippedOmitted)
 	}
 }
 

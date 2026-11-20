@@ -421,9 +421,10 @@ type CommitBackupImportResultMessage struct {
 	Warning string     `json:"warning,omitempty"`
 	// Skipped lists the archived credentials a restore of the imported
 	// archive would skip, with the reason; they do not block the import.
-	Skipped []RestoreSkipped `json:"skipped,omitempty"`
-	Code    string           `json:"code,omitempty"`
-	Error   string           `json:"error,omitempty"`
+	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
+	Code           string           `json:"code,omitempty"`
+	Error          string           `json:"error,omitempty"`
 }
 
 type AbortBackupImportMessage struct {
@@ -473,7 +474,8 @@ type RestoreKeyInfo struct {
 
 // RestoreSkipped is an archived credential the restore skips because the
 // node cannot admit it, with the reason; its archived policy is skipped
-// with it.
+// with it. A message lists at most 64, with selector and reason bounded,
+// and counts the rest in skipped_omitted.
 type RestoreSkipped struct {
 	Selector string `json:"selector"`
 	Reason   string `json:"reason"`
@@ -486,6 +488,7 @@ type RestorePreviewMessage struct {
 	ArchiveCreatedAt int64            `json:"archive_created_at,omitempty"`
 	Keys             []RestoreKeyInfo `json:"keys,omitempty"`
 	Skipped          []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted   int              `json:"skipped_omitted,omitempty"`
 	Code             string           `json:"code,omitempty"`
 	Error            string           `json:"error,omitempty"`
 }
@@ -525,7 +528,8 @@ type RestoreBackupResultMessage struct {
 	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
 	// Skipped lists the archived credentials the restore left out, or, on a
 	// refusal for what it would skip, the ones it would have.
-	Skipped []RestoreSkipped `json:"skipped,omitempty"`
+	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
+	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string `json:"policies_restored,omitempty"`

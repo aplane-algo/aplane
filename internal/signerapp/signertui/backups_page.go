@@ -153,6 +153,7 @@ func (m Model) openBackupView(info BackupInfo) Model {
 	m.restore.previewError = ""
 	m.restore.previewKeys = nil
 	m.restore.previewSkipped = nil
+	m.restore.previewSkipOmitted = 0
 	m.restore.selected = nil
 	m.restore.selectedKey = 0
 	m.restore.previewScrollOffset = 0

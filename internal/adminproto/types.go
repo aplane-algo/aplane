@@ -167,8 +167,10 @@ type CommitBackupImportResult struct {
 	// Skipped lists the archived credentials a restore of the imported
 	// archive would skip, with the reason; they do not block the import.
 	Skipped []RestoreSkipped
-	Code    string
-	Error   string
+	// SkippedOmitted counts the skipped credentials left out of Skipped.
+	SkippedOmitted int
+	Code           string
+	Error          string
 }
 
 type AbortBackupImportRequest struct {
@@ -245,6 +247,7 @@ type RestorePreviewResult struct {
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
 	Skipped          []RestoreSkipped
+	SkippedOmitted   int
 	Code             string
 	Error            string
 }
@@ -269,7 +272,9 @@ type RestoreConflict struct {
 
 // RestoreSkipped is an archived credential a restore leaves out because the
 // node cannot admit it, with the reason. Its archived policy is left out
-// with it.
+// with it. A result lists at most 64, each with its selector and reason
+// bounded, so it fits one admin frame whatever the archive holds; the
+// result counts the ones it leaves out.
 type RestoreSkipped struct {
 	Selector string
 	Reason   string
@@ -301,8 +306,10 @@ type RestoreBackupResult struct {
 	Identical       []RestoreCredential
 	Conflicts       []RestoreConflict
 	// Skipped lists the archived credentials the restore left out, or, on
-	// a refusal for what it would skip, the ones it would have.
-	Skipped []RestoreSkipped
+	// a refusal for what it would skip, the ones it would have; it lists at
+	// most 64, and SkippedOmitted counts the rest.
+	Skipped        []RestoreSkipped
+	SkippedOmitted int
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string

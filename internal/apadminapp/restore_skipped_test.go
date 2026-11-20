@@ -35,19 +35,20 @@ func previewStoreForTest(preview protocol.RestorePreviewMessage) (Store, *bytes.
 // skip, with the reason, and succeeds while anything is left to restore.
 func TestStoreRestorePreviewListsSkippedKeys(t *testing.T) {
 	store, stdout, stderr := previewStoreForTest(protocol.RestorePreviewMessage{
-		ArchivePath: "backup.tar.gz",
-		Keys:        []protocol.RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519"}},
-		Skipped:     []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+		ArchivePath:    "backup.tar.gz",
+		Keys:           []protocol.RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519"}},
+		Skipped:        []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+		SkippedOmitted: 3,
 	})
 	if err := store.RunRestore([]string{"preview", "backup.tar.gz"}); err != nil {
 		t.Fatalf("RunRestore(preview) error = %v", err)
 	}
-	for _, want := range []string{"GOODADDR  ed25519  new", "BADADDR  skipped: failed to parse backup credential"} {
+	for _, want := range []string{"GOODADDR  ed25519  new", "BADADDR  skipped: failed to parse backup credential", "and 3 more skipped key(s) not listed"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("%q missing from stdout %q", want, stdout.String())
 		}
 	}
-	if !strings.Contains(stderr.String(), "1 key(s) cannot be restored on this node and would be skipped") {
+	if !strings.Contains(stderr.String(), "4 key(s) cannot be restored on this node and would be skipped") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

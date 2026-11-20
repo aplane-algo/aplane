@@ -312,8 +312,10 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 	if entry.ArchiveEntries, omitted = boundList(entry.ArchiveEntries); omitted > 0 {
 		entry.ArchiveEntriesOmitted = omitted
 	}
+	// A result already lists at most 64 skipped keys and counts the rest,
+	// so what the bound leaves out adds to that count.
 	if entry.SkippedKeys, omitted = boundList(entry.SkippedKeys); omitted > 0 {
-		entry.SkippedKeysOmitted = omitted
+		entry.SkippedKeysOmitted += omitted
 	}
 	if entry.PolicyUpdates, omitted = boundList(entry.PolicyUpdates); omitted > 0 {
 		entry.PolicyUpdatesOmitted = omitted
@@ -1148,7 +1150,7 @@ func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, r
 	entry.Event = AuditBackupImported
 	entry.Outcome = "imported"
 	entry.Reason = fmt.Sprintf("file=%s size=%d", result.Backup.FileName, result.Backup.Size)
-	entry.SkippedKeys = skippedSelectors(result.Skipped)
+	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	a.Log(entry)
 }
 
@@ -1176,7 +1178,7 @@ func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionCo
 	entry.Outcome = "previewed"
 	entry.Reason = result.ArchivePath
 	entry.KeyCount = len(result.Keys)
-	entry.SkippedKeys = skippedSelectors(result.Skipped)
+	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	a.Log(entry)
 }
 
@@ -1224,7 +1226,7 @@ func (a *AuditLogger) LogCredentialRestoreContext(
 	entry.OperationID = result.OperationID
 	entry.ArchiveSHA256 = result.ArchiveSHA256
 	entry.KeyCount = len(result.Restored)
-	entry.SkippedKeys = skippedSelectors(result.Skipped)
+	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	if !result.Success {
 		if result.CommitUncertain {
 			entry.Event = AuditCredentialRestoreUncertain

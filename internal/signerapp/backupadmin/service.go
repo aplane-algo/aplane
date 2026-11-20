@@ -172,11 +172,13 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 	// Skipped credentials are admitted or not after manifest authentication;
 	// they are not failed export-passphrase guesses.
 	limiter.RecordSuccess(archivePath)
+	skipped, omitted := projectSkippedEntries(preview.Skipped)
 	return adminproto.RestorePreviewResult{
 		ArchivePath:      preview.ArchivePath,
 		ArchiveCreatedAt: preview.CreatedAtUnix,
 		Keys:             projectRestoreKeyInfos(preview.Keys),
-		Skipped:          projectSkippedEntries(preview.Skipped),
+		Skipped:          skipped,
+		SkippedOmitted:   omitted,
 	}
 }
 

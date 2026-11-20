@@ -274,6 +274,7 @@ func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cm
 	m.restore.archiveCreatedAt = msg.ArchiveCreatedAt
 	m.restore.previewKeys = msg.Keys
 	m.restore.previewSkipped = msg.Skipped
+	m.restore.previewSkipOmitted = msg.SkippedOmitted
 	m.restore.passphraseError = ""
 	m.restore.previewError = ""
 	m.restore.selectedKey = 0
@@ -318,8 +319,10 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 		Success:     msg.Result.Success,
 		Activated:   restored,
 		Skipped:     restoreSkippedUnion(m.restore.previewSkipped, msg.Result.Skipped),
-		KeyCount:    msg.Result.KeyCount,
-		Error:       msg.Result.Error,
+		// Each list is bounded on its own; their omitted counts add.
+		SkippedOmitted: m.restore.previewSkipOmitted + msg.Result.SkippedOmitted,
+		KeyCount:       msg.Result.KeyCount,
+		Error:          msg.Result.Error,
 	}
 	m.restore.displaySelectedKey = 0
 	m.restore.displayScrollOffset = 0

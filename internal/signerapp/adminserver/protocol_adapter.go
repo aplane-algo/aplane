@@ -256,7 +256,7 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Skipped: protocolRestoreSkipped(result.Skipped), Code: result.Code, Error: result.Error}
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Skipped: protocolRestoreSkipped(result.Skipped), SkippedOmitted: result.SkippedOmitted, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
@@ -309,6 +309,7 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 		ArchiveCreatedAt: result.ArchiveCreatedAt,
 		Keys:             protocolRestoreKeyInfos(result.Keys),
 		Skipped:          protocolRestoreSkipped(result.Skipped),
+		SkippedOmitted:   result.SkippedOmitted,
 		Code:             result.Code,
 		Error:            result.Error,
 	}
@@ -325,6 +326,7 @@ func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBack
 		Identical:        protocolRestoreCredentials(result.Identical),
 		Conflicts:        protocolRestoreConflicts(result.Conflicts),
 		Skipped:          protocolRestoreSkipped(result.Skipped),
+		SkippedOmitted:   result.SkippedOmitted,
 		PoliciesRestored: result.PoliciesRestored,
 		KeyCount:         result.KeyCount,
 		Code:             result.Code,

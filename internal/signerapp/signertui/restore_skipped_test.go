@@ -183,3 +183,30 @@ func TestBackupImportListsTheKeysARestoreWouldSkip(t *testing.T) {
 		t.Fatalf("the Backups page does not show the skipped keys:\n%s", view)
 	}
 }
+
+// A preview that lists only some of its skipped keys counts them all.
+func TestRestorePreviewCountsSkippedKeysItDoesNotList(t *testing.T) {
+	m := Model{
+		viewState: ViewRestorePassphrase,
+		restore:   restoreState{archivePath: "aplane-backup.tar.gz", passphrase: []byte("export-passphrase"), previewing: true, pendingID: "preview-1"},
+	}
+	m = updateModel(t, m, RestorePreviewMsg{
+		ID: "preview-1", ArchivePath: "aplane-backup.tar.gz",
+		Keys:           []RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519"}},
+		Skipped:        []RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+		SkippedOmitted: 69,
+	})
+	if view := squeezeForTest(fitsMinSizeForTest(t, m)); !strings.Contains(view, "Selected: 1 of 1 Skipped: 70 (1 listed)") {
+		t.Fatalf("the preview does not count every skipped key:\n%s", view)
+	}
+	m.viewState = ViewRestoring
+	m = updateModel(t, m, RestoreBackupResultMsg{Result: protocol.RestoreBackupResultMessage{
+		Success: true, Restored: []protocol.RestoreCredential{{Selector: "GOODADDR", KeyType: "ed25519"}},
+	}})
+	view := squeezeForTest(fitsMinSizeForTest(t, m))
+	for _, want := range []string{"Skipped: 70 (1 listed) (cannot be restored on this node)", "Total: 1 activated keys, 70 skipped"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("%q missing from:\n%s", want, view)
+		}
+	}
+}

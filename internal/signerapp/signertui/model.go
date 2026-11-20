@@ -236,6 +236,7 @@ type restoreState struct {
 	previewing          bool
 	previewKeys         []RestoreKeyInfo // the keys the restore would admit
 	previewSkipped      []RestoreSkipped // the keys it skips, listed after them; selectedKey indexes both
+	previewSkipOmitted  int              // the skipped keys the preview counted but did not list
 	selected            map[string]bool
 	selectedKey         int
 	previewScrollOffset int
@@ -817,6 +818,7 @@ type RestorePreviewMsg struct {
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
 	Skipped          []RestoreSkipped
+	SkippedOmitted   int
 	Error            string
 }
 
@@ -826,10 +828,11 @@ type RestoreDisplayResult struct {
 	Success     bool
 	Activated   []RestoreKeyInfo
 	// Skipped lists the archived keys the node cannot admit, which were
-	// never restorable.
-	Skipped  []RestoreSkipped
-	KeyCount int
-	Error    string
+	// never restorable; SkippedOmitted counts those not listed.
+	Skipped        []RestoreSkipped
+	SkippedOmitted int
+	KeyCount       int
+	Error          string
 }
 
 type RestoreBackupResultMsg struct {

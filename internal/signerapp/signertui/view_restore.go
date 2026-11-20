@@ -133,10 +133,18 @@ func (m Model) restorePreviewHeader() string {
 	sb.WriteString(m.renderBackupViewHeader(popupWidth))
 	sb.WriteString(fmt.Sprintf("Selected: %d of %d", len(m.selectedRestoreAddresses()), len(m.restore.previewKeys)))
 	if skipped := len(m.restore.previewSkipped); skipped > 0 {
-		sb.WriteString(fmt.Sprintf("  Skipped: %d", skipped))
+		sb.WriteString("  " + skippedCountText(skipped, m.restore.previewSkipOmitted))
 	}
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+// skippedCountText counts skipped keys, saying when only some are listed.
+func skippedCountText(listed, omitted int) string {
+	if omitted == 0 {
+		return fmt.Sprintf("Skipped: %d", listed)
+	}
+	return fmt.Sprintf("Skipped: %d (%d listed)", listed+omitted, listed)
 }
 
 // restoreSkippedReasonRunes bounds the reason the preview footer shows for
@@ -215,7 +223,7 @@ func (m Model) renderRestoreDisplay() string {
 		fmt.Sprintf("Activated: %d", len(result.Activated)),
 	)
 	if len(result.Skipped) > 0 {
-		lines = append(lines, errorStyle.Render(fmt.Sprintf("Skipped: %d (cannot be restored on this node)", len(result.Skipped))))
+		lines = append(lines, errorStyle.Render(skippedCountText(len(result.Skipped), result.SkippedOmitted)+" (cannot be restored on this node)"))
 	}
 
 	if result.Error != "" {
@@ -259,7 +267,7 @@ func (m Model) restoreDisplayList(rowWidth, visibleRows int) []string {
 	}
 	total := fmt.Sprintf("  Total: %d activated keys", len(result.Activated))
 	if len(result.Skipped) > 0 {
-		total += fmt.Sprintf(", %d skipped", len(result.Skipped))
+		total += fmt.Sprintf(", %d skipped", len(result.Skipped)+result.SkippedOmitted)
 	}
 	return append(lines, total, "")
 }

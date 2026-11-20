@@ -651,6 +651,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				Identical:        []RestoreCredential{{Selector: "ADDR2", Category: "ed25519", KeyType: "ed25519"}},
 				Conflicts:        []RestoreConflict{{Selector: "ADDR3", Category: "ed25519", KeyType: "ed25519", Reason: "existing credential differs from backup"}},
 				Skipped:          []RestoreSkipped{{Selector: "ADDR4", Reason: "failed to parse backup credential"}},
+				SkippedOmitted:   2,
 				PoliciesRestored: []string{"ADDR1"},
 				KeyCount:         3,
 			},
@@ -673,6 +674,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"skipped": []any{
 					map[string]any{"selector": "ADDR4", "reason": "failed to parse backup credential"},
 				},
+				"skipped_omitted":   float64(2),
 				"policies_restored": []any{"ADDR1"},
 				"key_count":         float64(3),
 			},

@@ -37,12 +37,13 @@ func TestCredentialRestoreRecordShape(t *testing.T) {
 			result: adminproto.RestoreBackupResult{
 				Success: true, OperationID: "restore-1", ArchiveSHA256: "abc", GenerationID: "gen-2",
 				Restored: restored, Identical: []adminproto.RestoreCredential{{Selector: "ADDR3"}}, PoliciesRestored: []string{"ADDR1"},
-				Skipped: []adminproto.RestoreSkipped{{Selector: "BAD1", Reason: "refused"}, {Selector: "BAD2", Reason: "refused"}},
+				Skipped:        []adminproto.RestoreSkipped{{Selector: "BAD1", Reason: "refused"}, {Selector: "BAD2", Reason: "refused"}},
+				SkippedOmitted: 5,
 			},
 			want: map[string]any{
 				"event": string(AuditCredentialRestoreSuccess), "outcome": "restored",
 				"operation_id": "restore-1", "archive_sha256": "abc", "key_count": float64(2),
-				"skipped_keys": []any{"BAD1", "BAD2"},
+				"skipped_keys": []any{"BAD1", "BAD2"}, "skipped_keys_omitted": float64(5),
 			},
 		},
 		{
@@ -103,6 +104,17 @@ func TestBackupImportedRecordShape(t *testing.T) {
 			name:   "no skips",
 			result: adminproto.CommitBackupImportResult{Success: true, Backup: adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42}},
 			want:   map[string]any{"event": string(AuditBackupImported), "outcome": "imported", "reason": "file=import.tar.gz size=42"},
+		},
+		{
+			name: "a list the result already bounded",
+			result: adminproto.CommitBackupImportResult{
+				Success: true, Backup: adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42},
+				Skipped: skipped[:maxAuditSelectors], SkippedOmitted: 6,
+			},
+			want: map[string]any{
+				"event": string(AuditBackupImported), "outcome": "imported", "reason": "file=import.tar.gz size=42",
+				"skipped_keys": selectors, "skipped_keys_omitted": float64(6),
+			},
 		},
 		{
 			name: "skips",
