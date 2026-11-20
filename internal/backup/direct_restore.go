@@ -116,6 +116,8 @@ type SkippedEntry struct {
 // holds. An explicit selection is never narrowed, and a restore with nothing
 // to restore is no restore.
 type SkipRefusalError struct {
+	// Skipped is never empty: only loadRestoreSet refuses, and only for
+	// what it skipped.
 	Skipped []SkippedEntry
 	// Named reports that the request named its credentials, so each skipped
 	// one is a credential it asked for.
@@ -319,7 +321,7 @@ func (a openedArchive) loadRestoreSet(requested []string, exportPassphrase []byt
 		set.Entries = append(set.Entries, entry)
 		return nil
 	})
-	if err == nil && (len(requested) > 0 && len(set.Skipped) > 0 || len(set.Entries) == 0) {
+	if err == nil && ((len(requested) > 0 && len(set.Skipped) > 0) || len(set.Entries) == 0) {
 		err = &SkipRefusalError{Skipped: set.Skipped, Named: len(requested) > 0}
 	}
 	if err != nil {
