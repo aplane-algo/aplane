@@ -130,13 +130,13 @@ type KeyInfo struct {
 type PendingSignRequest struct {
 	ID          string
 	Address     string
-	TxnSender   string
 	Description string
 	Timestamp   time.Time
 	FirstValid  uint64
 	LastValid   uint64
 	Violations  []protocol.PolicyViolation
-	// Review is the request as data, or nil when the signer sent only text.
+	// Review is the request as data. The signer sends one with every
+	// request; a request without one can only be rejected.
 	Review *protocol.Review
 }
 

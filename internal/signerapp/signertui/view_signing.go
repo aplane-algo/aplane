@@ -6,16 +6,8 @@ package tui
 // Signing popup view rendering.
 
 import (
-	"fmt"
 	"strings"
-
-	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/charmbracelet/lipgloss"
 )
-
-func isGroupApprovalDescription(desc string) bool {
-	return strings.HasPrefix(desc, "[GROUP APPROVAL]\n")
-}
 
 // renderSigningPopup renders the signing approval popup
 func (m Model) renderSigningPopup() string {
@@ -25,61 +17,22 @@ func (m Model) renderSigningPopup() string {
 	if m.reviewAvailable() {
 		return m.renderReviewScreen(m.signing.request.Review)
 	}
+	return m.renderUnreviewableSigningRequest()
+}
 
+// renderUnreviewableSigningRequest is the signing popup for a request that
+// came without its review. The signer sends every request with one, so a
+// request without one can only be rejected.
+func (m Model) renderUnreviewableSigningRequest() string {
 	var sb strings.Builder
-
 	sb.WriteString(titleStyle.Render("Signing Request"))
 	sb.WriteString("\n\n")
-
-	if isGroupApprovalDescription(m.signing.request.Description) {
-		sb.WriteString(fmt.Sprintf("Group:   %s\n", m.signing.request.TxnSender))
-		if m.signing.request.Address != "" {
-			sb.WriteString(fmt.Sprintf("Auth:    %s\n", m.signing.request.Address))
-		}
-	} else {
-		sb.WriteString(fmt.Sprintf("Address: %s\n", m.signing.request.Address))
-		if m.signing.request.TxnSender != "" && m.signing.request.TxnSender != m.signing.request.Address {
-			sb.WriteString(fmt.Sprintf("Sender:  %s (auth claimed)\n", m.signing.request.TxnSender))
-		}
-	}
-	sb.WriteString("\n")
-
-	// Transaction description in scrollable viewport
-	sb.WriteString("Transaction Details (↑/↓ to scroll):\n")
-
-	// Render the viewport with a border style
-	viewportStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1)
-	sb.WriteString(viewportStyle.Render(m.signing.viewport.View()))
-
-	// Show scroll indicator
-	scrollPct := m.signing.viewport.ScrollPercent() * 100
-	if m.signing.viewport.TotalLineCount() > m.signing.viewport.Height {
-		sb.WriteString(fmt.Sprintf("\n[%.0f%% - %d lines]", scrollPct, m.signing.viewport.TotalLineCount()))
-	}
+	// The decoder already made the request's text terminal-safe.
+	sb.WriteString("Address: " + m.signing.request.Address + "\n\n")
+	sb.WriteString(warningStyle.Render(wrapPlainText(unreviewableSigningRequestText, m.popupBodyWidth(60))))
 	sb.WriteString("\n\n")
-
-	// Validity window (if available), worded as apapprover words it
-	if line := protocol.ValidityWindowLine(m.signing.request.FirstValid, m.signing.request.LastValid); line != "" {
-		sb.WriteString(line + "\n\n")
-	}
-
-	// Display policy violations prominently (outside viewport so they're
-	// always visible). Notices are in the details but are not warnings.
-	warnings := 0
-	for _, v := range m.signing.request.Violations {
-		if v.Severity != protocol.ViolationSeverityNotice {
-			warnings++
-		}
-	}
-	if warnings > 0 {
-		sb.WriteString(warningStyle.Render(fmt.Sprintf("⚠ %d WARNING(S) - scroll down in details to review", warnings)))
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString(buttonPair(m.signing.focus, "APPROVE", "REJECT", nil))
-
+	sb.WriteString(buttonActiveStyle.BorderForeground(buttonDanger).Foreground(buttonDanger).Render("> REJECT"))
 	return m.renderPopup(60, sb.String())
 }
+
+const unreviewableSigningRequestText = "This request came without a transaction review, so it cannot be approved here."
