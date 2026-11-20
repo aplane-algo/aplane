@@ -536,8 +536,8 @@ func TestDispatcherFailAllIsIdempotent(t *testing.T) {
 	dispatcher := newDispatcher(&stubAdminProtocolConn{})
 	lifecycle := dispatcher.lifecycleChan()
 
-	dispatcher.failAll(dispatcherLifecycleConnectionLost, errors.New("first failure"))
-	dispatcher.failAll(dispatcherLifecycleProtocolError, errors.New("second failure"))
+	dispatcher.failAll(LifecycleConnectionLost, errors.New("first failure"))
+	dispatcher.failAll(LifecycleProtocolError, errors.New("second failure"))
 
 	var events []LifecycleType
 	for i := 0; i < 2; i++ {
@@ -595,7 +595,7 @@ func TestDispatcherFailAllDoesNotBlockWhenLifecycleFull(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		dispatcher.failAll(dispatcherLifecycleProtocolError, errors.New("protocol stopped"))
+		dispatcher.failAll(LifecycleProtocolError, errors.New("protocol stopped"))
 		close(done)
 	}()
 

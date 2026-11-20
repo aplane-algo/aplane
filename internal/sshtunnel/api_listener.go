@@ -89,8 +89,7 @@ func (apiListenerAddr) Network() string { return "ssh-channel" }
 func (apiListenerAddr) String() string  { return "api-channels" }
 
 // NewAPIConn builds the connection the SSH server hands to the API listener
-// for a channel opened by the enrolled key with the given fingerprint. Tests
-// and in-process fronts use it; the server builds its own.
+// for a channel opened by the enrolled key with the given fingerprint.
 func NewAPIConn(conn net.Conn, fingerprint string, remote, local net.Addr) *APIConn {
 	return &APIConn{Conn: conn, fingerprint: fingerprint, remote: remote, local: local}
 }

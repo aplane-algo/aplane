@@ -13,14 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-type dispatcherLifecycleType string
-
-const (
-	dispatcherLifecycleConnectionLost dispatcherLifecycleType = "connection_lost"
-	dispatcherLifecycleProtocolError  dispatcherLifecycleType = "fatal_protocol_error"
-	dispatcherLifecycleReaderStopped  dispatcherLifecycleType = "reader_stopped"
-)
-
 type Notification struct {
 	Base protocol.BaseMessage
 	Raw  []byte
@@ -29,9 +21,9 @@ type Notification struct {
 type LifecycleType string
 
 const (
-	LifecycleConnectionLost LifecycleType = LifecycleType(dispatcherLifecycleConnectionLost)
-	LifecycleProtocolError  LifecycleType = LifecycleType(dispatcherLifecycleProtocolError)
-	LifecycleReaderStopped  LifecycleType = LifecycleType(dispatcherLifecycleReaderStopped)
+	LifecycleConnectionLost LifecycleType = "connection_lost"
+	LifecycleProtocolError  LifecycleType = "fatal_protocol_error"
+	LifecycleReaderStopped  LifecycleType = "reader_stopped"
 )
 
 type LifecycleEvent struct {
@@ -312,14 +304,14 @@ func (d *dispatcher) readLoop() {
 	for {
 		response, err := d.conn.ReadMessage()
 		if err != nil {
-			d.failAll(dispatcherLifecycleConnectionLost, err)
+			d.failAll(LifecycleConnectionLost, err)
 			return
 		}
 
 		base, err := protocol.ParseAdminBaseMessage(response)
 		if err != nil {
 			protocol.SensitiveBytes(response).Zero()
-			d.failAll(dispatcherLifecycleProtocolError, err)
+			d.failAll(LifecycleProtocolError, err)
 			return
 		}
 
@@ -370,12 +362,12 @@ func (d *dispatcher) readLoop() {
 
 		d.mu.Unlock()
 		protocol.SensitiveBytes(response).Zero()
-		d.failAll(dispatcherLifecycleProtocolError, fmt.Errorf("unexpected %s message without pending waiter: type=%s id=%s", base.Kind, base.Type, base.ID))
+		d.failAll(LifecycleProtocolError, fmt.Errorf("unexpected %s message without pending waiter: type=%s id=%s", base.Kind, base.Type, base.ID))
 		return
 	}
 }
 
-func (d *dispatcher) failAll(kind dispatcherLifecycleType, err error) {
+func (d *dispatcher) failAll(kind LifecycleType, err error) {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
@@ -387,7 +379,7 @@ func (d *dispatcher) failAll(kind dispatcherLifecycleType, err error) {
 	lifecycleCh := d.lifecycle
 	d.mu.Unlock()
 
-	sendLifecycleEvent(lifecycleCh, LifecycleEvent{Type: LifecycleType(kind), Err: err})
+	sendLifecycleEvent(lifecycleCh, LifecycleEvent{Type: kind, Err: err})
 	sendLifecycleEvent(lifecycleCh, LifecycleEvent{Type: LifecycleReaderStopped})
 
 	for _, waiter := range pending {

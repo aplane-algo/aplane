@@ -32,7 +32,7 @@ func (k typedKey) Type() string                        { return string(k) }
 func (k typedKey) Marshal() []byte                     { return nil }
 func (k typedKey) Verify([]byte, *ssh.Signature) error { return nil }
 
-func TestCheckEnrollmentKey(t *testing.T) {
+func TestCheckClientKey(t *testing.T) {
 	edPub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -64,9 +64,9 @@ func TestCheckEnrollmentKey(t *testing.T) {
 			if !ok {
 				pub = mustSSHPublicKey(t, tc.key)
 			}
-			err := checkEnrollmentKey(pub)
+			err := CheckClientKey(pub)
 			if (err == nil) != tc.accept {
-				t.Fatalf("checkEnrollmentKey() error = %v, want accept=%v", err, tc.accept)
+				t.Fatalf("CheckClientKey() error = %v, want accept=%v", err, tc.accept)
 			}
 		})
 	}

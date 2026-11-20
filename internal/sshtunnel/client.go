@@ -102,7 +102,6 @@ type Client struct {
 	sshPort int    // SSH port on remote host
 
 	sshClient *ssh.Client
-	agentConn net.Conn
 
 	identityFile      string
 	knownHostsPath    string
@@ -200,12 +199,14 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if agentConn != nil {
+		// The agent's keys only authenticate, and the handshake is over
+		// when ConnectWithKey returns.
+		defer func() { _ = agentConn.Close() }()
+	}
 
 	hostKeyCallback, err := c.hostKeyCallback()
 	if err != nil {
-		if agentConn != nil {
-			_ = agentConn.Close()
-		}
 		return err
 	}
 
@@ -221,16 +222,12 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 
 	sshClient, interceptDone, err := c.dialAndIntercept(ctx, "tcp", addr, config)
 	if err != nil {
-		if agentConn != nil {
-			_ = agentConn.Close()
-		}
 		return fmt.Errorf("SSH connection failed: %w", classifyHandshakeError(err))
 	}
 
 	c.mu.Lock()
 	c.sshClient = sshClient
 	c.interceptDone = interceptDone
-	c.agentConn = agentConn
 	c.connected = true
 	c.disconnectReason = ""
 	// Recreate keepaliveStop in case this is a reconnection.
@@ -516,12 +513,6 @@ func (c *Client) Close() error {
 			errs = append(errs, fmt.Errorf("failed to close SSH client: %w", err))
 		}
 		c.sshClient = nil
-	}
-	if c.agentConn != nil {
-		if err := c.agentConn.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close SSH agent connection: %w", err))
-		}
-		c.agentConn = nil
 	}
 
 	c.connected = false
