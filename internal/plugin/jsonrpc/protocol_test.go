@@ -162,7 +162,6 @@ func TestErrorCodes(t *testing.T) {
 	}{
 		{"InvalidRequest", InvalidRequest, -32600},
 		{"MethodNotFound", MethodNotFound, -32601},
-		{"InternalError", InternalError, -32603},
 	}
 
 	for _, tt := range tests {

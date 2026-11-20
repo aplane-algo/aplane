@@ -222,7 +222,6 @@ func (c *Client) readLoop() {
 type rpcFrame struct {
 	Jsonrpc string          `json:"jsonrpc"`
 	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *Error          `json:"error,omitempty"`
 	ID      interface{}     `json:"id,omitempty"`

@@ -44,8 +44,9 @@ func TestSubmitPluginTransactionsUnsupportedGroupMode(t *testing.T) {
 // the secret key of the account whose transaction it returns, decodes without
 // it, so it is no third path past the gates (PS7). The transaction takes the
 // default flow: it goes to the signer, which holds no aplane key for the
-// account and refuses it. The secret is sent nowhere, nothing is signed, and
-// nothing reaches the node's submit endpoint.
+// account and refuses it. The decoded result holds no trace of the secret, the
+// secret is sent nowhere, nothing is signed, and nothing reaches the node's
+// submit endpoint.
 func TestSubmitPluginTransactionsIgnoresRetiredLocalSigners(t *testing.T) {
 	account := crypto.GenerateAccount()
 	sender := account.Address.String()
@@ -62,9 +63,19 @@ func TestSubmitPluginTransactionsIgnoresRetiredLocalSigners(t *testing.T) {
 	}
 	wire := fmt.Sprintf(`{"success":true,"transactions":[{"type":"raw","encoded":%q}],"localSigners":[{"address":%q,"secretKey":%q}]}`,
 		base64.StdEncoding.EncodeToString(msgpack.Encode(txn)), sender, secret)
+	// Decoded as the plugin manager decodes an execute answer.
 	var result jsonrpc.ExecuteResult
-	if err := json.Unmarshal([]byte(wire), &result); err != nil {
+	if err := (&jsonrpc.Response{Result: json.RawMessage(wire)}).ParseResult(&result); err != nil {
 		t.Fatalf("decode the plugin result: %v", err)
+	}
+	reencoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("encode the decoded result: %v", err)
+	}
+	for _, form := range []string{string(reencoded), fmt.Sprintf("%+v", result)} {
+		if strings.Contains(form, secret) || strings.Contains(form, "localSigners") {
+			t.Fatalf("the decoded result keeps the localSigners entry: %s", form)
+		}
 	}
 
 	var mu sync.Mutex
