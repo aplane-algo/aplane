@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,9 +56,9 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatalf("List() = %#v, want one lab-cosigner record", list)
 	}
 
-	removed, err := Delete(paths, "lab-cosigner")
-	if err != nil || !removed {
-		t.Fatalf("Delete() = (%v, %v), want removed", removed, err)
+	removal, err := Remove(paths, "lab-cosigner")
+	if err != nil || !removal.Removed || removal.Path != paths.CosignerRefPath("lab-cosigner") || removal.ComponentKey != rec.ComponentKey {
+		t.Fatalf("Remove() = (%+v, %v), want removed", removal, err)
 	}
 	_, ok, err = Get(paths, "lab-cosigner")
 	if err != nil || ok {
@@ -162,7 +163,7 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 
 // List reports every file that is not a valid reference beside the valid
 // ones: one bad file never hides the rest. A file named for a reference name
-// is cleared with Delete; any other one has to be deleted by hand.
+// is cleared with Remove; any other one has to be deleted by hand.
 func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
@@ -202,18 +203,18 @@ func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 			t.Errorf("%s Removable() = %v", bad.Path, bad.Removable())
 		}
 	}
-	if got, want := invalid[1].String(), invalid[1].Path+`: "Foo" is not a reference name (not a reference name; delete the file to clear it)`; got != want {
+	if got, want := invalid[1].String(), invalid[1].Path+`: "Foo" is not a reference name (remove does not reach it; delete the file to clear it)`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 	if got, want := invalid[3].String(), invalid[3].Path+`: unsupported schema "wrong" (remove reference bad to clear it)`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 
-	if removed, err := Delete(paths, "bad"); err != nil || !removed {
-		t.Fatalf("Delete(bad) = %v, %v", removed, err)
+	if removal, err := Remove(paths, "bad"); err != nil || !removal.Removed || removal.ComponentKey != "" {
+		t.Fatalf("Remove(bad) = %+v, %v", removal, err)
 	}
 	if _, invalid, err = List(paths); err != nil || len(invalid) != len(unreachable) {
-		t.Fatalf("List() after Delete invalid = %+v, %v; want the unreachable files only", invalid, err)
+		t.Fatalf("List() after Remove invalid = %+v, %v; want the unreachable files only", invalid, err)
 	}
 }
 
@@ -450,4 +451,42 @@ func bytesOfLen(n int, fill byte) []byte {
 		b[i] = fill
 	}
 	return b
+}
+
+// Remove takes a reference name exactly as listed. Removing "Foo" beside a
+// valid "foo" would otherwise delete foo.json and leave Foo.json, so it is
+// refused, naming both files.
+func TestRemoveRefusesANameNotAsListed(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "foo", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(paths.CosignerRefPath("foo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper := filepath.Join(paths.CosignerRefsDir(), "Foo.json")
+	if err := os.WriteFile(upper, valid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"Foo", " foo"} {
+		removal, err := Remove(paths, name)
+		want := fmt.Sprintf(`remove takes a reference name exactly as listed: %q would be the reference "foo", stored as "foo.json", not %q`, name, name+".json")
+		if err == nil || err.Error() != want || removal.Removed {
+			t.Fatalf("Remove(%q) = %+v, %v; want %q", name, removal, err, want)
+		}
+	}
+	for _, path := range []string{paths.CosignerRefPath("foo"), upper} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("a refused remove deleted %s: %v", path, err)
+		}
+	}
+	if removal, err := Remove(paths, "foo"); err != nil || removal.Path != paths.CosignerRefPath("foo") {
+		t.Fatalf("Remove(foo) = %+v, %v", removal, err)
+	}
+	records, invalid, err := List(paths)
+	if err != nil || len(records) != 0 || len(invalid) != 1 || invalid[0].Path != upper {
+		t.Fatalf("List() after Remove(foo) = %+v, %+v, %v; want only Foo.json reported", records, invalid, err)
+	}
 }

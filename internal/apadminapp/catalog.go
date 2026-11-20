@@ -547,7 +547,7 @@ func (c Catalog) listCosigners() error {
 		if bad.Removable {
 			c.warn("%s is not a valid cosigner reference: %s; clear it with: apadmin cosigner remove %s", bad.Path, bad.Reason, bad.Name)
 		} else {
-			c.warn("%s is not a valid cosigner reference: %s; delete the file to clear it", bad.Path, bad.Reason)
+			c.warn("%s is not a valid cosigner reference: %s; apadmin cosigner remove does not reach it, so delete the file to clear it", bad.Path, bad.Reason)
 		}
 	}
 	return nil
@@ -586,7 +586,7 @@ func (c Catalog) removeCosigner(name string) error {
 		return resultError("cosigner remove failed", result.Code, result.Error)
 	}
 	if result.Removed {
-		c.info("cosigner reference %s removed", name)
+		c.info("cosigner reference %s removed: deleted %q", name, result.Path)
 	} else {
 		c.info("cosigner reference %s was already absent", name)
 	}

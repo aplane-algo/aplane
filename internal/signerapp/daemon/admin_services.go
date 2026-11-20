@@ -505,26 +505,17 @@ func (s signerAdminServices) ImportCosignerReference(req adminproto.ImportCosign
 
 func (s signerAdminServices) RemoveCosignerReference(req adminproto.RemoveCosignerReferenceRequest) adminproto.RemoveCosignerReferenceResult {
 	ir := s.ProductRuntime()
-	var removed bool
-	var componentKey string
+	var removal cosignerrefs.Removal
 	err := s.withStoreMutation(func() error {
-		existing, found, err := cosignerrefs.Get(ir.KeyPaths(), req.Name)
-		// The reference list reports a record that does not parse; removing
-		// it is how the operator clears it.
-		if err != nil && !errors.Is(err, cosignerrefs.ErrInvalidRecord) {
-			return err
-		}
-		if found {
-			componentKey = existing.ComponentKey
-		}
-		removed, err = cosignerrefs.Delete(ir.KeyPaths(), req.Name)
+		var err error
+		removal, err = cosignerrefs.Remove(ir.KeyPaths(), req.Name)
 		return err
 	})
 	if err != nil {
 		return adminproto.RemoveCosignerReferenceResult{Name: req.Name, Code: "remove_failed", Error: err.Error()}
 	}
 	return adminproto.RemoveCosignerReferenceResult{
-		Success: true, Name: req.Name, ComponentKey: componentKey, Removed: removed,
+		Success: true, Name: req.Name, ComponentKey: removal.ComponentKey, Removed: removal.Removed, Path: removal.Path,
 	}
 }
 

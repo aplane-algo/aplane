@@ -389,6 +389,7 @@ type RemoveCosignerReferenceResult struct {
 	Name         string
 	ComponentKey string
 	Removed      bool
+	Path         string // the file removed, when Removed
 	Code         string
 	Error        string
 }

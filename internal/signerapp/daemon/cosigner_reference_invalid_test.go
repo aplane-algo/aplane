@@ -69,8 +69,20 @@ func TestInvalidCosignerReferencesAreReportedAndLeftOut(t *testing.T) {
 		t.Fatalf("ListKeyTypes() = %q %q with %d key types, want an answer", keyTypes.Code, keyTypes.Error, len(keyTypes.KeyTypes))
 	}
 
+	// Remove takes the name exactly as listed: "Lab" would reach lab.json, the
+	// valid reference, so it is refused and both files stay.
+	refused := svc.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: "Lab"})
+	if refused.Success || refused.Code != "remove_failed" || !strings.HasPrefix(refused.Error, "remove takes a reference name exactly as listed") {
+		t.Fatalf("RemoveCosignerReference(Lab) = %#v, want it refused", refused)
+	}
+	for _, path := range []string{unreachable, paths.CosignerRefPath("lab")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("a refused remove deleted %s: %v", path, err)
+		}
+	}
+
 	removed := svc.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: "bad"})
-	if !removed.Success || !removed.Removed || removed.ComponentKey != "" {
+	if !removed.Success || !removed.Removed || removed.ComponentKey != "" || removed.Path != paths.CosignerRefPath("bad") {
 		t.Fatalf("RemoveCosignerReference(bad) = %#v, want it removed", removed)
 	}
 	listed = svc.ListCosignerReferences()

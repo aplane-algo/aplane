@@ -1455,6 +1455,7 @@ type RemoveCosignerReferenceResultMessage struct {
 	Success bool   `json:"success"`
 	Name    string `json:"name,omitempty"`
 	Removed bool   `json:"removed,omitempty"`
+	Path    string `json:"path,omitempty"` // the file removed
 	Code    string `json:"code,omitempty"`
 	Error   string `json:"error,omitempty"`
 }

@@ -554,7 +554,8 @@ references, with its path and why, and `/keytypes` leaves it out of the
 cosigner choices and logs a warning naming the file. A cosigner picked by
 Witness Key ID fails, naming such files, only when no valid reference
 matches. `apadmin cosigner remove <name>` clears a file named for a reference
-name, whether or not it parses; any other file has to be deleted by hand. A
+name, whether or not it parses, and takes the name exactly as listed; any
+other file has to be deleted by hand. A
 directory or file that cannot be read fails the list. The admin protocol's cosigner
 references carry the same fields, and `apadmin cosigner show` prints them.
 When the source is `-`, stdin is reserved for the bounded public JSON document.

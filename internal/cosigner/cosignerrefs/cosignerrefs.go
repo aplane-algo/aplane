@@ -37,7 +37,7 @@ const (
 var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 
 // ErrInvalidRecord marks a stored reference that does not parse or does not
-// hold together. Delete removes one all the same.
+// hold together. Remove removes one all the same.
 var ErrInvalidRecord = errors.New("invalid cosigner reference")
 
 type ExportEnvelope = witness.PublicReference
@@ -183,7 +183,7 @@ func (r InvalidRecord) String() string {
 	if r.Removable() {
 		return fmt.Sprintf("%s: %s (remove reference %s to clear it)", r.Path, r.Reason, r.Stem)
 	}
-	return fmt.Sprintf("%s: %s (not a reference name; delete the file to clear it)", r.Path, r.Reason)
+	return fmt.Sprintf("%s: %s (remove does not reach it; delete the file to clear it)", r.Path, r.Reason)
 }
 
 // List returns the valid cosigner references and, beside them, every other
@@ -235,18 +235,42 @@ func List(paths storepaths.Paths) ([]Record, []InvalidRecord, error) {
 	return records, invalid, nil
 }
 
-func Delete(paths storepaths.Paths, name string) (bool, error) {
-	name, err := NormalizeName(name)
+// Removal is what Remove did.
+type Removal struct {
+	Removed      bool
+	ComponentKey string // the removed reference's Witness Key ID, when its record parsed
+	Path         string // the file deleted
+}
+
+// Remove deletes the reference named name. The name must be a reference name
+// exactly as listed: a near miss such as "Foo" would name the file of another
+// reference, "foo", so it is refused. A record that does not parse is removed
+// all the same, which is how the operator clears one the list reports.
+func Remove(paths storepaths.Paths, name string) (Removal, error) {
+	canonical, err := NormalizeName(name)
 	if err != nil {
-		return false, err
+		return Removal{}, err
 	}
-	if err := os.Remove(paths.CosignerRefPath(name)); err != nil {
+	if canonical != name {
+		return Removal{}, fmt.Errorf("remove takes a reference name exactly as listed: %q would be the reference %q, stored as %q, not %q",
+			name, canonical, canonical+".json", name+".json")
+	}
+	existing, found, err := Get(paths, name)
+	if err != nil && !errors.Is(err, ErrInvalidRecord) {
+		return Removal{}, err
+	}
+	path := paths.CosignerRefPath(name)
+	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return Removal{}, nil
 		}
-		return false, fmt.Errorf("failed to remove cosigner reference %s: %w", name, err)
+		return Removal{}, fmt.Errorf("failed to remove cosigner reference %s: %w", name, err)
 	}
-	return true, nil
+	removal := Removal{Removed: true, Path: path}
+	if found {
+		removal.ComponentKey = existing.ComponentKey
+	}
+	return removal, nil
 }
 
 // ResolveCreationParamsForComponents resolves the signer-facing cosigner

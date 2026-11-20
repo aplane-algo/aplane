@@ -565,7 +565,7 @@ func ProtocolCosignerReferenceMessage(id, messageType string, result adminproto.
 func ProtocolRemoveCosignerReferenceResultMessage(id string, result adminproto.RemoveCosignerReferenceResult) protocol.RemoveCosignerReferenceResultMessage {
 	return protocol.RemoveCosignerReferenceResultMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReferenceResult, ID: id},
-		Success:     result.Success, Name: result.Name, Removed: result.Removed, Code: result.Code, Error: result.Error,
+		Success:     result.Success, Name: result.Name, Removed: result.Removed, Path: result.Path, Code: result.Code, Error: result.Error,
 	}
 }
 
