@@ -226,3 +226,67 @@ func TestEnforceApstoreExecutionModeRefusalText(t *testing.T) {
 		t.Fatalf("managed as root: %v", err)
 	}
 }
+
+// exitCalled stops dispatchApstoreCommand at its first exit, as os.Exit would.
+type exitCalled struct{ code int }
+
+// dispatchUntilExit runs dispatchApstoreCommand with osExit stubbed, and
+// returns the code of the first exit and what was logged before it.
+func dispatchUntilExit(t *testing.T, args []string) (code int, logged string) {
+	t.Helper()
+	var log strings.Builder
+	appLogger.SetOutput(&log)
+	oldExit := osExit
+	osExit = func(code int) { panic(exitCalled{code}) }
+	t.Cleanup(func() {
+		osExit = oldExit
+		appLogger.SetOutput(os.Stderr)
+	})
+	defer func() {
+		r := recover()
+		exit, ok := r.(exitCalled)
+		if !ok {
+			panic(r)
+		}
+		code, logged = exit.code, log.String()
+	}()
+	dispatchApstoreCommand(args)
+	t.Fatalf("dispatch %q returned without exiting", args)
+	return 0, ""
+}
+
+// The managed-store conversions need root, and only the execution-mode gate
+// says so: run without root, each is refused at dispatch before it takes the
+// store lock or touches the store.
+func TestManagedStorePermissionCommandsRequireRootBeforeTouchingTheStore(t *testing.T) {
+	for _, verb := range []string{"prepare-managed-root", "convert-managed"} {
+		t.Run(verb, func(t *testing.T) {
+			oldDataDirectory, oldEUID, oldMigrate := dataDirectory, currentEUID, migrateManagedStore
+			t.Cleanup(func() { dataDirectory, currentEUID, migrateManagedStore = oldDataDirectory, oldEUID, oldMigrate })
+			dataDirectory = t.TempDir()
+			currentEUID = func() int { return 1000 }
+			migrateManagedStore = func(string, int, int, string) error {
+				t.Error("the store was migrated")
+				return nil
+			}
+
+			code, logged := dispatchUntilExit(t, []string{"permissions", verb, "--uid", "1", "--gid", "1"})
+			if code != apstoreExitFailure {
+				t.Fatalf("exit = %d, want %d", code, apstoreExitFailure)
+			}
+			want := "[ERROR] permissions " + verb + " requires root\n"
+			if !strings.HasPrefix(logged, "apstore ") || !strings.HasSuffix(logged, want) || strings.Count(logged, "\n") != 1 {
+				t.Fatalf("logged %q, want one line ending %q", logged, want)
+			}
+			// The store lock file, the .prod marker, the service principal and
+			// any migrated file would all appear in the data directory.
+			entries, err := os.ReadDir(dataDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("the data directory was touched: %v", entries)
+			}
+		})
+	}
+}
