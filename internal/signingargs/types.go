@@ -10,6 +10,8 @@ import "github.com/aplane-algo/aplane/internal/lsigprovider"
 
 // Info describes one signing-time LogicSig argument.
 // Position is implicit: the index in a []Info corresponds to the TEAL arg index.
+// Its fields match lsigprovider.RuntimeArgDef one for one, so the two convert
+// directly and a field added to only one of them fails to compile.
 type Info struct {
 	Name        string `json:"name"`
 	Label       string `json:"label,omitempty"`
@@ -28,15 +30,7 @@ func FromRuntimeDefs(defs []lsigprovider.RuntimeArgDef) []Info {
 	}
 	out := make([]Info, len(defs))
 	for i, def := range defs {
-		out[i] = Info{
-			Name:        def.Name,
-			Label:       def.Label,
-			Description: def.Description,
-			Type:        def.Type,
-			Required:    def.Required,
-			ByteLength:  def.ByteLength,
-			MaxSize:     def.MaxSize,
-		}
+		out[i] = Info(def)
 	}
 	return out
 }
@@ -49,15 +43,7 @@ func ToRuntimeDefs(args []Info) []lsigprovider.RuntimeArgDef {
 	}
 	out := make([]lsigprovider.RuntimeArgDef, len(args))
 	for i, arg := range args {
-		out[i] = lsigprovider.RuntimeArgDef{
-			Name:        arg.Name,
-			Label:       arg.Label,
-			Description: arg.Description,
-			Type:        arg.Type,
-			Required:    arg.Required,
-			ByteLength:  arg.ByteLength,
-			MaxSize:     arg.MaxSize,
-		}
+		out[i] = lsigprovider.RuntimeArgDef(arg)
 	}
 	return out
 }

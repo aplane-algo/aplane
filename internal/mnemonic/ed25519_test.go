@@ -20,7 +20,7 @@ func init() {
 
 // TestEd25519HandlerKeyType verifies the handler identifier
 func TestEd25519HandlerKeyType(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	if handler.RoutingFamily() != "ed25519" {
 		t.Errorf("Expected key type 'ed25519', got '%s'", handler.RoutingFamily())
@@ -29,7 +29,7 @@ func TestEd25519HandlerKeyType(t *testing.T) {
 
 // TestEd25519HandlerWordCount verifies 25-word Algorand format
 func TestEd25519HandlerWordCount(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	if handler.WordCount() != 25 {
 		t.Errorf("Expected 25 words, got %d", handler.WordCount())
@@ -38,7 +38,7 @@ func TestEd25519HandlerWordCount(t *testing.T) {
 
 // TestEd25519HandlerGenerateMnemonic verifies mnemonic generation
 func TestEd25519HandlerGenerateMnemonic(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	words, seed, entropy, err := handler.GenerateMnemonic()
 	if err != nil {
@@ -87,7 +87,7 @@ func TestEd25519HandlerGenerateMnemonic(t *testing.T) {
 
 // TestEd25519HandlerGenerateMnemonicUniqueness verifies each generation is unique
 func TestEd25519HandlerGenerateMnemonicUniqueness(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	// Generate multiple mnemonics
 	mnemonics := make(map[string]bool)
@@ -121,7 +121,7 @@ func TestEd25519HandlerGenerateMnemonicUniqueness(t *testing.T) {
 
 // TestEd25519HandlerSeedFromMnemonic verifies mnemonic-to-seed conversion
 func TestEd25519HandlerSeedFromMnemonic(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	// Use a known Algorand test mnemonic (25 words)
 	// This is a well-known test mnemonic from Algorand documentation
@@ -164,7 +164,7 @@ func TestEd25519HandlerSeedFromMnemonic(t *testing.T) {
 
 // TestEd25519HandlerSeedFromMnemonicWithPassphrase verifies passphrase rejection
 func TestEd25519HandlerSeedFromMnemonicWithPassphrase(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	testMnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon invest"
 	words := strings.Fields(testMnemonic)
@@ -182,7 +182,7 @@ func TestEd25519HandlerSeedFromMnemonicWithPassphrase(t *testing.T) {
 
 // TestEd25519HandlerSeedFromMnemonicInvalid verifies error handling for invalid mnemonics
 func TestEd25519HandlerSeedFromMnemonicInvalid(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	tests := []struct {
 		name     string
@@ -228,7 +228,7 @@ func TestEd25519HandlerSeedFromMnemonicInvalid(t *testing.T) {
 
 // TestEd25519HandlerEntropyToMnemonic verifies it's not supported
 func TestEd25519HandlerEntropyToMnemonic(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	entropy := make([]byte, 32)
 	_, err := handler.EntropyToMnemonic(entropy)
@@ -262,7 +262,7 @@ func TestEd25519HandlerRegistration(t *testing.T) {
 
 // TestMnemonicFormatConsistency verifies Algorand SDK compatibility
 func TestMnemonicFormatConsistency(t *testing.T) {
-	handler := &Ed25519Handler{}
+	handler := NewEd25519Handler("ed25519")
 
 	// Generate mnemonic
 	mnemonic, seed, _, err := handler.GenerateMnemonic()

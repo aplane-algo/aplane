@@ -18,18 +18,14 @@ type Ed25519Handler struct {
 	family string
 }
 
+// NewEd25519Handler returns a handler registered under the given routing
+// family.
 func NewEd25519Handler(family string) *Ed25519Handler {
-	if family == "" {
-		family = "ed25519"
-	}
 	return &Ed25519Handler{family: family}
 }
 
 // RoutingFamily returns the algorithm family this handler supports
 func (h *Ed25519Handler) RoutingFamily() string {
-	if h.family == "" {
-		return "ed25519"
-	}
 	return h.family
 }
 

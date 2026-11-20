@@ -19,23 +19,23 @@ type ServerNetworkConfig struct {
 // ServerNetworkConfigs is a map of network context token → grouped apsigner settings.
 type ServerNetworkConfigs map[string]*ServerNetworkConfig
 
-func mergeServerNetworkAlgodConfig(networks ServerNetworkConfigs) (apconfig.AlgodConfig, error) {
+// The merges below index networks whose keys normalizeServerConfig has
+// already validated as network context tokens.
+
+func mergeServerNetworkAlgodConfig(networks ServerNetworkConfigs) apconfig.AlgodConfig {
 	var out apconfig.AlgodConfig
 	if len(networks) > 0 {
 		out = make(apconfig.AlgodConfig, len(networks))
 	}
 
 	for network, cfg := range networks {
-		if err := apconfig.ValidateNetworkID(network); err != nil {
-			return nil, err
-		}
 		if cfg == nil || cfg.Algod == nil {
 			continue
 		}
 		out[network] = cfg.Algod
 	}
 
-	return out, nil
+	return out
 }
 
 // mergeServerNetworkIndexerConfig indexes the networks that name an Indexer
@@ -45,9 +45,6 @@ func mergeServerNetworkAlgodConfig(networks ServerNetworkConfigs) (apconfig.Algo
 func mergeServerNetworkIndexerConfig(networks ServerNetworkConfigs) (map[string]*apconfig.IndexerNetworkConfig, error) {
 	var out map[string]*apconfig.IndexerNetworkConfig
 	for network, cfg := range networks {
-		if err := apconfig.ValidateNetworkID(network); err != nil {
-			return nil, err
-		}
 		if cfg == nil || cfg.Indexer == nil || cfg.Indexer.Server == "" {
 			continue
 		}
@@ -69,16 +66,10 @@ func mergeServerNetworkGenesisHashConfig(networks ServerNetworkConfigs) (map[str
 	}
 
 	for network, cfg := range networks {
-		if err := apconfig.ValidateNetworkID(network); err != nil {
-			return nil, err
-		}
 		if cfg == nil || cfg.GenesisHash == "" {
 			continue
 		}
-		if out == nil {
-			out = make(map[string]string)
-		}
-		if existing, ok := out[cfg.GenesisHash]; ok && existing != network {
+		if existing, ok := out[cfg.GenesisHash]; ok {
 			return nil, fmt.Errorf("genesis hash %q maps to both %q and %q", cfg.GenesisHash, existing, network)
 		}
 		out[cfg.GenesisHash] = network

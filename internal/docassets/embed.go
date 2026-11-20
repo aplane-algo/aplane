@@ -27,13 +27,18 @@ var UserMCPManual string
 //go:embed generated/docs
 var docsFS embed.FS
 
-// CuratedDocs returns the embedded curated reference documentation as a
-// filesystem rooted at the docs directory (so entries are plain "NAME.md").
-// Returns nil if the embedded tree cannot be opened.
-func CuratedDocs() fs.FS {
+// curatedDocs roots docsFS at the docs directory. fs.Sub fails only for an
+// invalid path, and this one is constant, so a failure is a build defect.
+var curatedDocs = func() fs.FS {
 	sub, err := fs.Sub(docsFS, "generated/docs")
 	if err != nil {
-		return nil
+		panic(err)
 	}
 	return sub
+}()
+
+// CuratedDocs returns the embedded curated reference documentation as a
+// filesystem rooted at the docs directory (so entries are plain "NAME.md").
+func CuratedDocs() fs.FS {
+	return curatedDocs
 }

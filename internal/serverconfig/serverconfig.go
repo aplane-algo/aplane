@@ -306,10 +306,13 @@ func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) 
 	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-	var err error
-	if config.Algod, err = mergeServerNetworkAlgodConfig(config.Networks); err != nil {
-		return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
+	for network := range config.Networks {
+		if err := apconfig.ValidateNetworkID(network); err != nil {
+			return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)
+		}
 	}
+	config.Algod = mergeServerNetworkAlgodConfig(config.Networks)
+	var err error
 	if config.Indexer, err = mergeServerNetworkIndexerConfig(config.Networks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid indexer in networks config: %w", err)
 	}
@@ -349,12 +352,6 @@ func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) 
 		return ServerConfig{}, fmt.Errorf("invalid teal_compile_network in config: %w", err)
 	}
 
-	// Validate algod map keys are valid context tokens.
-	for network := range config.Algod {
-		if err := apconfig.ValidateNetworkID(network); err != nil {
-			return ServerConfig{}, fmt.Errorf("invalid network in algod config: %w", err)
-		}
-	}
 	if _, err := apconfig.NewGenesisHashNetworkResolver(config.GenesisHashNetworks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network genesis_hash: %w", err)
 	}

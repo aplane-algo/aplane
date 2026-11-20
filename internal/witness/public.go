@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -15,10 +14,9 @@ import (
 
 const (
 	PublicReferenceSchema = "aplane.witness-key-public.v1"
-	maxPublicReference    = 16 * 1024
+	// maxPublicReference bounds a public reference read from a file.
+	maxPublicReference = 16 * 1024
 )
-
-var ErrUnsupportedPublicReferenceSchema = errors.New("unsupported witness public-reference schema")
 
 // PublicReference is the canonical non-secret witness identity projection.
 type PublicReference struct {
@@ -88,7 +86,7 @@ func ParsePublicReference(data []byte) (PublicReference, error) {
 		return PublicReference{}, fmt.Errorf("decode public witness reference: %w", err)
 	}
 	if reference.Schema != PublicReferenceSchema {
-		return PublicReference{}, fmt.Errorf("%w %q", ErrUnsupportedPublicReferenceSchema, reference.Schema)
+		return PublicReference{}, fmt.Errorf("unsupported witness public-reference schema %q", reference.Schema)
 	}
 	return NewPublicReference(reference.KeyType, reference.WitnessKeyID, reference.PublicKeyHex)
 }
