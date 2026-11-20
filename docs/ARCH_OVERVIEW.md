@@ -1248,10 +1248,11 @@ Important secret-handling contracts:
 - the file keystore caches the keyring only while unlocked,
 - normal signing decrypts individual keys on demand rather than retaining a
   fully decrypted key inventory,
-- backup validation, direct restore, and offline rebuild may transiently
-  decrypt the complete selected credential set so it can be admitted before
-  mutation; those plaintext buffers, a skipped credential's included, are
-  explicitly zeroed after use,
+- backup validation and direct restore may transiently decrypt the complete
+  selected credential set so it can be admitted before mutation; offline
+  rebuild holds the admitted set from its load, before the store passphrase
+  prompts, until the mint ends. Those plaintext buffers, a skipped
+  credential's included, are explicitly zeroed after use,
 - key/session destruction zeros or invalidates in-memory sensitive state,
 - passphrases typed into apadmin and appass are byte buffers grown through
   `internal/secretbuf`, which zeroes every allocation they outgrow; the copies

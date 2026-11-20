@@ -44,9 +44,9 @@ Each line is a JSON object with the following fields:
 | `policy_rule_id` | string | Matching policy rule for a rejection, forced review, or explicit auto-approval |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
 | `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
-| `key_count` | int | Number of keys (for reload/start events) |
+| `key_count` | int | Number of keys: loaded, on start and reload events; restored, on a restore outcome; that a restore would admit, on a restore preview |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
-| `skipped_keys` | string[] | On a restore outcome, a restore preview or a backup import: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), at most 64 |
+| `skipped_keys` | string[] | On a restore outcome, a restore preview or a backup import: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), selectors only, at most 64 |
 | `skipped_keys_omitted` | int | Keys left out of `skipped_keys` |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
 | `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |

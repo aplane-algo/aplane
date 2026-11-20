@@ -574,11 +574,14 @@ transaction type is one more entry in `fields` and needs no client change.
   cumulative uploaded bytes are capped at 1 GiB;
   `commit_backup_import` carries the sensitive `export_passphrase`, verifies
   the declared size and SHA-256, authenticates the sealed manifest, admits
-  every credential payload as a restore would, and only then atomically
+  every credential payload for this node's role, and only then atomically
   publishes the archive. Archive-level damage refuses the import, as it
-  refuses a restore; a credential a restore would skip does not, and
-  `commit_backup_import_result` lists each one in `skipped[]` (`selector`,
-  `reason`). Commit first renames the writable upload into a reserved immutable
+  refuses a restore, and so does an archive in which nothing would restore
+  on this node (`nothing to restore`, with `skipped[]`). A credential a
+  restore would skip does not, and `commit_backup_import_result` lists it in
+  `skipped[]` (`selector`, `reason`), with `skipped_omitted`; when the
+  archive was backed up from a node of another role, which a restore here
+  refuses, `source_node_role` names that role. Commit first renames the writable upload into a reserved immutable
   claim while holding the store mutation lock. Hashing, extraction, and
   memory-hard credential verification run outside that lock; the lock is
   reacquired only to publish the validated claim. Validation extraction uses a
@@ -603,7 +606,7 @@ transaction type is one more entry in `fields` and needs no client change.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
   `restore_preview`: resolved archive path, optional `archive_created_at`
   (the creation time sealed in the authenticated manifest), `keys[]`,
-  `skipped[]`, optional `code`, `error`. It classifies the whole archive as a
+  `skipped[]`, `skipped_omitted`, optional `code`, `error`. It classifies the whole archive as a
   whole-archive restore would. Each key in `keys[]` is one the restore would
   admit and reports address, key type, destination presence and
   `has_policy`; each entry of `skipped[]` is one it would skip, with
@@ -615,7 +618,8 @@ transaction type is one more entry in `fields` and needs no client change.
   `export_passphrase`, optional `replace_existing` ->
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
   generation ID, `restored[]`, `identical[]`, `conflicts[]`, `skipped[]`,
-  `key_count`, optional `policies_restored[]`, `code`, `error`. The server
+  `skipped_omitted`, `key_count`, optional `policies_restored[]`, `code`,
+  `error`. The server
   admits each selected credential, skips one it cannot admit (with its
   archived policy) and lists it in `skipped[]` with `selector` and
   `reason`, then publishes the admitted ones as one `credential-restore`
@@ -626,6 +630,12 @@ transaction type is one more entry in `fields` and needs no client change.
   structure, size limits, a member that does not read or decrypt, a
   duplicate selector, an address the archive lacks) refuse the whole
   restore, as in [ARCH_STORE.md](ARCH_STORE.md#live-direct-restore).
+- `skipped[]` in a preview, restore or import result lists at most 64
+  credentials, with each `selector` cut at 128 bytes and each `reason` at
+  1 KiB (a cut ends `…(N bytes)`), and `skipped_omitted` counts the ones it
+  leaves out, so a reply fits one admin frame whatever the archive holds. A
+  failure's text names an archive member by its path in the archive, never
+  by where the daemon extracted it.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
   ID, generation ID, key count, `code`, `error`. It applies only to the
   current clean rollback-eligible `credential-restore` generation; a rollback
@@ -1384,8 +1394,9 @@ identifies the current screen. The enum has families for:
   - `x` export (`ViewBackupExport`) and `i` import (`ViewBackupImport`),
     driving the same file-side helpers as `apadmin backup export|import`
     (`internal/apadminapp/backup_transfer.go`) from response-driven state
-    machines, one request outstanding, matched by ID; an import names on the
-    page each key in the archive a restore would skip, with the reason;
+    machines, one request outstanding, matched by ID; an import gives on the
+    page the count of keys in the archive a restore would skip and the first
+    three, each on one line, and says how many more there are;
   - `d` delete (`ViewBackupDeleteConfirm`), focus on CANCEL, with a warning
     for the newest or the only backup;
   - `u` undo the latest restore (`ViewBackupUndoConfirm`), always offered:

@@ -1997,11 +1997,15 @@ backup contract and no migration from earlier internal tags is provided.
 `apadmin backup import` asks the daemon to validate an external tar archive
 deeply before publishing it under `backups/default/`. The commit request
 carries the sensitive export passphrase; the daemon authenticates the archive
-inventory and deep-verifies it as below, then zeros the passphrase without
-persisting it. Archive-level damage refuses the import, as it refuses a
-restore. A credential a restore would skip does not: restore skips it as
-well, so the rest of the archive stays restorable, and the import result
-names each one with the reason. Client-side archive inspection is not an authorization
+inventory and admits each credential for this node's role with the loader
+restore uses, then zeros the passphrase without persisting it.
+Archive-level damage refuses the import, as it refuses a restore, and so
+does an archive in which nothing would restore on this node. A credential a
+restore would skip does not: restore skips it as well, so the rest of the
+archive stays restorable, and the import result names it with the reason.
+An archive backed up from a node of another role imports when some of its
+keys could be held here, and the result names its role, since a restore on
+this node refuses it whole. Client-side archive inspection is not an authorization
 or integrity boundary. Commit is synchronous and can perform one memory-hard
 credential verification per archive member, so first-party clients allow up to
 30 minutes for that bounded request instead of applying the ordinary 30-second
@@ -2094,7 +2098,8 @@ admission:
 - its archived policy decoding as that key's document for the destination role
 
 A skipped credential repairs nothing: in recovery mode, destination damage
-that only its archived copy would have replaced still refuses the restore.
+that only its archived copy would have replaced still refuses the restore,
+and the refusal names that credential and why its copy was skipped.
 
 Deep verify (at create, at import, and in `apstore verify`), restore preview
 and offline rebuild admit each credential through the loader restore uses, so
@@ -2102,8 +2107,9 @@ they admit and skip exactly the credentials restore does and report the same
 reason. Backup creation and `apstore verify` still fail an archive with any
 credential a restore would skip, so a backup created on this release
 verifies completely and `apstore verify` answers whether every key would
-restore. Import accepts such an archive and lists what a restore would skip.
-Restore adds the selection and collision checks.
+restore. Import, checked against the importing node's role, accepts such an
+archive and lists what a restore would skip. Restore adds the selection and
+collision checks.
 
 Destination collision classification compares canonical decrypted plaintext,
 not ciphertext. An identical credential is an idempotent no-op. A different
