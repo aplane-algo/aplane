@@ -69,7 +69,7 @@ type TEALGenerator interface {
 // SaltedDeriver is implemented by LogicSigDSA types that report how their
 // LogicSig address was made off-curve. New DSA LogicSig key generation requires
 // this interface so a key file records the matching derivation: auto-salted, or
-// unsalted with salt_counter 0.
+// unsalted.
 type SaltedDeriver interface {
 	DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error)
 }

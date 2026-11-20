@@ -28,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -374,8 +375,8 @@ func TestGenerateRecordsTheAccountsOwnFingerprint(t *testing.T) {
 }
 
 // A DSA LogicSig the compiler did not auto-salt is unsalted: its key file has
-// no lsig_derivation and records salt_counter 0.
-func TestGenerateRecordsAnUnsaltedProgramWithCounterZero(t *testing.T) {
+// no lsig_derivation.
+func TestGenerateRecordsAnUnsaltedProgram(t *testing.T) {
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 	logicsigdsa.Register(&perKeyGeneratorDSA{})
@@ -392,42 +393,68 @@ func TestGenerateRecordsAnUnsaltedProgramWithCounterZero(t *testing.T) {
 		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
 	}
 	defer crypto.ZeroBytes(keyJSON)
-	if !bytes.Contains(keyJSON, []byte(`"salt_counter": 0,`)) {
-		t.Fatal(`key file does not record "salt_counter": 0`)
-	}
 	stored, err := apkeys.ParsePayload(keyJSON)
 	if err != nil {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
 	defer stored.ZeroSecrets()
-	if stored.LogicSigDerivation != "" || stored.SaltCounter == nil || *stored.SaltCounter != 0 {
-		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", stored.LogicSigDerivation, stored.SaltCounter)
+	if stored.LogicSigDerivation != "" {
+		t.Fatalf("derivation = %q, want unsalted", stored.LogicSigDerivation)
 	}
 }
 
-// The generator writes the same key file bytes, apart from created_at. The
-// digest was taken before the payload constructors lost their salt counter
-// parameter.
-func TestGenerateKeyFileIsUnchanged(t *testing.T) {
-	paths, cleanup := setupTestKeystore(t)
-	defer cleanup()
-	logicsigdsa.Register(&perKeyGeneratorDSA{})
-	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
-	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
+// autoSaltedGeneratorDSA reports its program as the compiler's auto-salted
+// output.
+type autoSaltedGeneratorDSA struct {
+	perKeyGeneratorDSA
+	program lsigsalt.FindResult
+}
 
-	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
-	result, err := generator.GenerateFromSeed(context.Background(), paths, bytes.Repeat([]byte{0x42}, 64), cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
-	if err != nil {
-		t.Fatalf("GenerateFromSeed() error = %v", err)
-	}
-	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
-	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
-	}
-	defer crypto.ZeroBytes(keyJSON)
-	sum := sha256.Sum256(regexp.MustCompile(`"created_at": "[^"]*"`).ReplaceAll(keyJSON, []byte(`"created_at": ""`)))
-	if got, want := hex.EncodeToString(sum[:]), "0ebf051902ccb5b96e5c50b3c60458e99aae6263f3b9e3446d7c095078089ef4"; got != want {
-		t.Fatalf("key file digest = %s, want %s", got, want)
+const autoSaltedGeneratorKeyType = "test.auto-salted-generator.v1"
+
+func (d *autoSaltedGeneratorDSA) KeyType() string { return autoSaltedGeneratorKeyType }
+func (d *autoSaltedGeneratorDSA) DeriveLsigWithSalt(context.Context, []byte, map[string]string) (lsigsalt.FindResult, error) {
+	return d.program, nil
+}
+
+// The generator writes the same key file bytes, apart from created_at, for an
+// unsalted and an auto-salted program. The digests were taken before
+// salt_counter was retired; the unsalted one was retaken then, and differs
+// only by that line.
+func TestGenerateKeyFileIsUnchanged(t *testing.T) {
+	autoSalted := lsigsalttest.OffCurve(t, []byte{13, 0x81, 0}, 2)
+	autoSalted.CompilerAutoSalted = true
+	for _, test := range []struct {
+		name string
+		dsa  logicsigdsa.LogicSigDSA
+		want string
+	}{
+		{"unsalted", &perKeyGeneratorDSA{}, "09620bc71a4ec0164d93ad1b5b868f88815fc17963e8a845b12576563c6992c9"},
+		{"auto-salted", &autoSaltedGeneratorDSA{program: autoSalted}, "1ae8ba18a651814a31ec024d7261f8f5663137707cd51279863c00a7ae9b7c0a"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths, cleanup := setupTestKeystore(t)
+			defer cleanup()
+			keyType := test.dsa.KeyType()
+			logicsigdsa.Register(test.dsa)
+			t.Cleanup(func() { lsigprovider.Unregister(keyType) })
+			registerTestCatalogEntry(keyType, "generator-per-key")
+
+			generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{keyType: &testFalcon1024V1{}})
+			result, err := generator.GenerateFromSeed(context.Background(), paths, bytes.Repeat([]byte{0x42}, 64), cryptotest.Keyring(t, testMasterKey), keyType, nil)
+			if err != nil {
+				t.Fatalf("GenerateFromSeed() error = %v", err)
+			}
+			keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+			if err != nil {
+				t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+			}
+			defer crypto.ZeroBytes(keyJSON)
+			sum := sha256.Sum256(regexp.MustCompile(`"created_at": "[^"]*"`).ReplaceAll(keyJSON, []byte(`"created_at": ""`)))
+			if got := hex.EncodeToString(sum[:]); got != test.want {
+				t.Fatalf("key file digest = %s, want %s", got, test.want)
+			}
+		})
 	}
 }
 

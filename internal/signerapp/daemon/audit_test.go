@@ -53,7 +53,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogSignRejectedAttributed(auditAttribution{}, "ADDR", "SENDER", "operator rejected", "")
 	logger.LogSignFailedAttributed(auditAttribution{}, "ADDR", "SENDER", "key load error")
 	logger.LogKeyReload(5)
-	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
+	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_address_invalid: logic sig key file address is on-curve")
 	logger.LogClientEnrolledContext(adminserver.SessionContext{}, "SHA256:abc", "laptop", "10.0.0.1")
 	logger.LogAuthFailedAttributed("alice", "10.0.0.1", "invalid_credentials")
 	logger.LogSSHSessionConnected("10.0.0.1", "SHA256:abc", true)
@@ -103,7 +103,7 @@ func TestAuditKeyRejected(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_salt_invalid: missing salt_counter")
+	logger.LogKeyRejected("/tmp/BAD.key", "logic_sig_address_invalid: logic sig key file address is on-curve")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 1 {
@@ -113,7 +113,7 @@ func TestAuditKeyRejected(t *testing.T) {
 	if entry.Event != signeraudit.AuditKeyRejected || entry.Outcome != "rejected" {
 		t.Fatalf("entry event/outcome = %s/%s, want %s/rejected", entry.Event, entry.Outcome, signeraudit.AuditKeyRejected)
 	}
-	if !strings.Contains(entry.Reason, "file=BAD.key") || !strings.Contains(entry.Reason, "logic_sig_salt_invalid") {
+	if !strings.Contains(entry.Reason, "file=BAD.key") || !strings.Contains(entry.Reason, "logic_sig_address_invalid") {
 		t.Fatalf("entry reason = %q", entry.Reason)
 	}
 }

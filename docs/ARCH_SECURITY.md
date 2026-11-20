@@ -1461,8 +1461,8 @@ Signing-audit semantics:
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection) and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled; they are attributed to `system:product-admin`
 - key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
-  violates a load-time key-file invariant; for LogicSig salt failures,
-  `reason` includes the key filename and rejection reason
+  violates a load-time LogicSig invariant (an on-curve address, or missing or
+  undecodable bytecode); `reason` includes the key filename and rejection reason
 
 Backup-audit semantics:
 

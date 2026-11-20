@@ -54,7 +54,8 @@ func goldenNativeFalconPayload(t *testing.T, withEntropy bool) *Payload {
 // every key category, above all those that carry private_key or
 // recovery_entropy. A key file's encrypted payload is these bytes, so they
 // must not change. The digests were taken from the encoder that held both
-// fields as hex strings.
+// fields as hex strings; the unsalted LogicSig ones were retaken when
+// salt_counter was retired, and differ only by that line.
 func TestMarshalPayloadGoldenBytes(t *testing.T) {
 	registerGoldenTestCodecs()
 	edPublic, edPrivate := canonicalEd25519Pair(t, 0x11)
@@ -75,7 +76,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 			"test.dsa.v1", "test.base.v1", []byte{0x01, 0x02}, []byte{0x03, 0x04},
 			map[string]string{"network": "testnet"}, bytecode, "#pragma version 8\nint 1",
 			[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}}, "1:test",
-		), false), "fddba8e4d2e43803060d8bbb32aeaf289bd3be0cc065c26f0af4d4b37e1b39c5"},
+		), false), "ec76dc72225d6b93c027c42443dacf65a4c249060457b6abefdcbd55a786489a"},
 		{"rotating_lsig", NewRotatingLSigPayload(
 			rotatingkey.RotatingTripleXmssV1,
 			bytes.Repeat([]byte{0x31}, rotatingkey.RotatingSeedSize),
@@ -85,7 +86,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 		{"generic_lsig", payloadWithOpcodeProfile(t, NewGenericLSigPayload(
 			"test.generic.v1", map[string]string{"recipient": "ALICE"}, bytecode,
 			"#pragma version 8\nint 1", nil, "1:test",
-		), false), "19addbe5b44e24b9d37a430f92f7e2be6c7d347ea2bb5371fddfc1dc4f4e7e41"},
+		), false), "84466423aeaa8a91576ea96da7eae114c015cb8a2481686930a6786e6f963d9d"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

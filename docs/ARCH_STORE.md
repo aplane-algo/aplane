@@ -832,8 +832,8 @@ Templates and key type state records are generation/catalog data. They are not
 signing authority for an already-created key. A current-format LogicSig key file
 stores its final bytecode, derivation contract, signing metadata, creation
 parameters, and base signing provider reference where needed. A
-compiler-auto-salted key forbids `salt_counter`; an unsalted key has no
-`lsig_derivation` and carries `salt_counter`, which every writer sets to 0. The
+compiler-auto-salted key records `lsig_derivation: algod_v13_auto_salt`; an
+unsalted key has no `lsig_derivation`. The
 signer must never reconstruct missing signing authority from a
 current template or library entry.
 
@@ -1222,7 +1222,7 @@ key is rejected during reload rather than published as a signable key.
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
 | Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
 | Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: bounded-base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
-| LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an unsalted key (no `lsig_derivation`) omits `salt_counter`, or an `algod_v13_auto_salt` key includes one or stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
+| LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an `algod_v13_auto_salt` key stores pre-v13 bytecode. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
 | DSA key missing supported base provider | DSA LogicSig names a `base_key_type` not registered in the current binary. | No. | Restore fails for that key unless the base provider is supported. |
@@ -1281,8 +1281,8 @@ Categories:
 
 Generic LogicSig entries contain final compiler bytecode, derivation metadata,
 and parameters rather than a private signing key. A compiler-auto-salted entry
-forbids `salt_counter`; an unsalted entry has no `lsig_derivation` and carries
-`salt_counter`, which every writer sets to 0.
+records `lsig_derivation: algod_v13_auto_salt`; an unsalted entry has no
+`lsig_derivation`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
 bytecode, creation parameters, and signing metadata version 2. A bounded
@@ -1319,7 +1319,7 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   public seed (32), and the Ed25519 public key (32), 1921 in all. SLH-DSA
   triple and WOTS+C triple: public seed (16), root (16), Falcon public key
   (1793), Ed25519 public key (32), 1857 in all, in that order.
-- No program is stored: `lsig_bytecode`, `lsig_derivation`, `salt_counter`,
+- No program is stored: `lsig_bytecode`, `lsig_derivation`,
   `lsig_opcode_profile`, `teal_source`, signing metadata, `base_key_type`,
   `parameters` and `signing_args` are all rejected.
 - The selector and account address is stage 0's program address, built from
@@ -1402,9 +1402,7 @@ bounded keys require version 2. LogicSig key payloads include:
 - `signing_metadata_version` — required; key files lacking it are rejected for
   signing and restore
 - `lsig_derivation` — the derivation contract for final stored bytecode;
-  current bundled keys use `algod_v13_auto_salt`
-- `salt_counter` — required when `lsig_derivation` is absent (unsalted
-  bytecode), and every writer sets it to 0; forbidden for compiler-auto-salted
+  current bundled keys use `algod_v13_auto_salt`, and it is absent for unsalted
   bytecode
 - `signing_args` — optional; the signing-time arg schema in TEAL argument
   order, represented internally by `internal/signingargs.Info`; absent and
@@ -1476,9 +1474,8 @@ Key address identity is derived from key material, not from signing metadata:
 
 Fields such as `signing_args`, `signing_metadata_version`, `base_key_type`,
 and `template_fingerprint` are signing/provenance metadata, not address
-derivation inputs. An unsalted key's `salt_counter` is part of its derivation
-record, not of its address; changing metadata alone never rederives or changes
-the key address. For every LogicSig key, the final stored bytecode itself is the
+derivation inputs. `lsig_derivation` is the derivation record, not part of the
+address; changing metadata alone never rederives or changes the key address. For every LogicSig key, the final stored bytecode itself is the
 complete address authority.
 
 Signer scanning binds accepted authority to the category-sensitive canonical
@@ -1538,8 +1535,7 @@ consulted to reconstruct missing signing metadata.
 - A v1 signing-metadata LogicSig key file persists the TEAL bytecode and the
   signing-time argument contract captured at generation.
 - Generic LogicSig keys store final bytecode, derivation metadata, and runtime
-  argument schema. Only unsalted keys (no `lsig_derivation`) carry
-  `salt_counter`, which every writer sets to 0.
+  argument schema. Unsalted keys carry no `lsig_derivation`.
 - DSA-backed LogicSig keys additionally store `base_key_type`; that signature
   construction's provider must be available because the signer must produce and pack
   the DSA signature. The field is not a claim that the base provider owns the

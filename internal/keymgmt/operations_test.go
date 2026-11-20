@@ -277,8 +277,8 @@ func TestGenerateKeyPlainHostPersistsSigningMetadata(t *testing.T) {
 			if len(payload.LogicSigBytecode) == 0 {
 				t.Fatal("LogicSigBytecode is empty")
 			}
-			if payload.SaltCounter != nil || payload.LogicSigDerivation != keys.LogicSigDerivationAlgodV13AutoSalt {
-				t.Fatalf("derivation = %q salt counter = %v, want compiler auto-salt without counter", payload.LogicSigDerivation, payload.SaltCounter)
+			if payload.LogicSigDerivation != keys.LogicSigDerivationAlgodV13AutoSalt {
+				t.Fatalf("derivation = %q, want compiler auto-salt", payload.LogicSigDerivation)
 			}
 			if payload.SigningMetadataVersion != keys.BoundedSigningMetadataVersion {
 				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.BoundedSigningMetadataVersion)

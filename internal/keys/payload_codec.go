@@ -43,7 +43,6 @@ type Payload struct {
 	LogicSigBytecode       []byte
 	LogicSigDerivation     string
 	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
-	SaltCounter            *byte
 	TEALSource             string
 	SigningMetadataVersion int
 	BaseKeyType            string
@@ -77,7 +76,6 @@ type payloadWire struct {
 	LogicSigBytecodeHex    string                          `json:"lsig_bytecode,omitempty"`
 	LogicSigDerivation     string                          `json:"lsig_derivation,omitempty"`
 	LogicSigOpcodeProfile  *lsigresource.OpcodeProfile     `json:"lsig_opcode_profile,omitempty"`
-	SaltCounter            *byte                           `json:"salt_counter,omitempty"`
 	TEALSource             string                          `json:"teal_source,omitempty"`
 	SigningMetadataVersion int                             `json:"signing_metadata_version,omitempty"`
 	BaseKeyType            string                          `json:"base_key_type,omitempty"`
@@ -96,9 +94,8 @@ func (w *payloadWire) zeroSecrets() {
 }
 
 // LogicSigDerivationAlgodV13AutoSalt records that the stored bytecode is the
-// authoritative final output of algod's TEAL v13 auto-salting assembler, and
-// forbids salt_counter. An empty lsig_derivation marks unsalted bytecode, which
-// carries salt_counter; every writer sets it to 0.
+// authoritative final output of algod's TEAL v13 auto-salting assembler. An
+// empty lsig_derivation marks unsalted bytecode.
 const LogicSigDerivationAlgodV13AutoSalt = "algod_v13_auto_salt"
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
@@ -155,7 +152,7 @@ func NewRotatingLSigPayload(keyType string, seed, genesisHash, stageZeroPublicKe
 }
 
 // NewDSALSigPayload constructs a canonical DSA-backed LogicSig key payload for
-// unsalted bytecode, which records salt_counter 0.
+// unsalted bytecode.
 func NewDSALSigPayload(
 	keyType string,
 	baseKeyType string,
@@ -175,7 +172,6 @@ func NewDSALSigPayload(
 		PrivateKey:             bytes.Clone(privateKey),
 		Parameters:             maps.Clone(parameters),
 		LogicSigBytecode:       bytes.Clone(bytecode),
-		SaltCounter:            SaltCounterPtr(0),
 		TEALSource:             tealSource,
 		SigningMetadataVersion: CurrentSigningMetadataVersion,
 		BaseKeyType:            baseKeyType,
@@ -199,13 +195,12 @@ func NewAutoSaltedDSALSigPayload(
 	templateFingerprint string,
 ) *Payload {
 	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, tealSource, signingArgs, templateFingerprint)
-	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
 	return p
 }
 
 // NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload for
-// unsalted bytecode, which records salt_counter 0.
+// unsalted bytecode.
 func NewGenericLSigPayload(
 	keyType string,
 	parameters map[string]string,
@@ -220,7 +215,6 @@ func NewGenericLSigPayload(
 		KeyType:                keyType,
 		Parameters:             maps.Clone(parameters),
 		LogicSigBytecode:       bytes.Clone(bytecode),
-		SaltCounter:            SaltCounterPtr(0),
 		TEALSource:             tealSource,
 		SigningMetadataVersion: CurrentSigningMetadataVersion,
 		SigningArgs:            cloneStoredSigningArgs(signingArgs),
@@ -240,7 +234,6 @@ func NewAutoSaltedGenericLSigPayload(
 	templateFingerprint string,
 ) *Payload {
 	p := NewGenericLSigPayload(keyType, parameters, bytecode, tealSource, signingArgs, templateFingerprint)
-	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
 	return p
 }
@@ -353,7 +346,6 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
 		LogicSigDerivation:     payload.LogicSigDerivation,
 		LogicSigOpcodeProfile:  opcodeProfilePtr(payload.LogicSigOpcodeProfile),
-		SaltCounter:            cloneBytePtr(payload.SaltCounter),
 		TEALSource:             payload.TEALSource,
 		SigningMetadataVersion: payload.SigningMetadataVersion,
 		BaseKeyType:            payload.BaseKeyType,
@@ -601,7 +593,6 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 		LogicSigBytecode:       bytecode,
 		LogicSigDerivation:     wire.LogicSigDerivation,
 		LogicSigOpcodeProfile:  opcodeProfileValue(wire.LogicSigOpcodeProfile),
-		SaltCounter:            cloneBytePtr(wire.SaltCounter),
 		TEALSource:             wire.TEALSource,
 		SigningMetadataVersion: wire.SigningMetadataVersion,
 		BaseKeyType:            wire.BaseKeyType,
@@ -761,7 +752,7 @@ func validateWitnessPayload(p *Payload) error {
 }
 
 func validateNoLogicSigFields(p *Payload) error {
-	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.LogicSigOpcodeProfile != (lsigresource.OpcodeProfile{}) || p.SaltCounter != nil ||
+	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.LogicSigOpcodeProfile != (lsigresource.OpcodeProfile{}) ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
 		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
@@ -775,13 +766,8 @@ func validateLogicSigFields(p *Payload) error {
 	}
 	switch p.LogicSigDerivation {
 	case "":
-		if p.SaltCounter == nil {
-			return ErrMissingLogicSigSaltCounter
-		}
+		// Unsalted bytecode needs only the checks every LogicSig gets below.
 	case LogicSigDerivationAlgodV13AutoSalt:
-		if p.SaltCounter != nil {
-			return incompatibleKeyFormat("%s derivation forbids salt_counter", LogicSigDerivationAlgodV13AutoSalt)
-		}
 		version, n := binary.Uvarint(p.LogicSigBytecode)
 		if n <= 0 || version < 13 {
 			return incompatibleKeyFormat("%s derivation requires final TEAL v13+ bytecode", LogicSigDerivationAlgodV13AutoSalt)

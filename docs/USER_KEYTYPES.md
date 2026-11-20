@@ -991,10 +991,8 @@ template is `aplane.htlc.v1`.
 
 Generated provider-backed LogicSig keys store the final compiler-auto-salted
 off-curve bytecode and its derivation marker in the `.key` file (rotating
-accounts store none; see [Rotating Accounts](#rotating-accounts)); current
-auto-salted records omit
-`salt_counter`. Unsalted records have no derivation marker and carry
-`salt_counter`, which is always written as 0. Keys also
+accounts store none; see [Rotating Accounts](#rotating-accounts)). Unsalted
+records have no derivation marker. Keys also
 store the signing-argument schema
 as `signing_args`. That schema is captured from the template/provider
 `runtime_args` when the key is created. The installed template is required for
@@ -1199,8 +1197,7 @@ Use the full canonical key type in command input. On disk, in backups, in
 policy files, in IPC/HTTP JSON, in SDK-facing fields, and in UI display, the key
 type remains canonical.
 
-Existing key files keep their own stored LogicSig bytecode, derivation metadata
-(including `salt_counter`, written as 0, on an unsalted record),
+Existing key files keep their own stored LogicSig bytecode, derivation metadata,
 and signing metadata. Enabling, disabling, importing, or removing a
 key type controls subsequent discovery and generation; it does not rewrite
 existing key files.

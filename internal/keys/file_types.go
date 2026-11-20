@@ -37,9 +37,3 @@ const BoundedSigningMetadataVersion = 2
 // into a key file. Keys use this at signing time so installed template metadata
 // cannot change the behavior or usability of an existing key.
 type StoredSigningArg = signingargs.Info
-
-// SaltCounterPtr returns a pointer to counter for an unsalted LogicSig key
-// file, whose salt_counter must be written even though it is 0.
-func SaltCounterPtr(counter byte) *byte {
-	return &counter
-}
