@@ -258,13 +258,8 @@ func (kr *Keyring) VerifyKnownTermEnvelope(sealed []byte, ctx ObjectContext) (te
 		return term, false, nil
 	}
 	plaintext, err := openUnderTerm(sealed, key, term, ctx)
-	if plaintext != nil {
-		ZeroBytes(plaintext)
-	}
-	if err != nil {
-		return term, true, err
-	}
-	return term, true, nil
+	ZeroBytes(plaintext)
+	return term, true, err
 }
 
 func (kr *Keyring) sortedTerms() []int64 {

@@ -40,11 +40,6 @@ const (
 	Height = 16
 	Leaves = 1 << Height
 
-	// OID is the RFC 8391 identifier of XMSS-SHA2_16_256. It is not part of
-	// the public key or signature this package handles; the versioned
-	// stage program implies it.
-	OID uint32 = 0x00000002
-
 	// IndexSize, WotsSignatureSize, AuthPathSize and SignatureSize describe
 	// a signature: idx || r || WOTS+ signature || authentication path.
 	IndexSize         = 4
@@ -692,19 +687,13 @@ const MaxVerifySteps = Len1*Steps + 12 + 3 + 15
 
 // VerifySteps returns the number of chain steps Verify performs for sig
 // over msg under pk: the sum over the 67 chains of (15 - digit) of the
-// hashed message. It does not verify the signature.
+// hashed message. The 64 message chains contribute the checksum itself;
+// the three checksum chains add 15 minus each of its digits. It does not
+// verify the signature.
 func VerifySteps(pk *PublicKey, msg, sig []byte) (int, error) {
-	if len(sig) < IndexSize+N {
-		return 0, fmt.Errorf("xmss signature is %d bytes", len(sig))
+	sum, err := MessageChecksum(pk, msg, sig)
+	if err != nil {
+		return 0, err
 	}
-	index := binary.BigEndian.Uint32(sig[:IndexSize])
-	var r [N]byte
-	copy(r[:], sig[IndexSize:IndexSize+N])
-	mhash := HashMessage(&r, &pk.Root, index, msg)
-	d := digits(&mhash)
-	steps := 0
-	for _, v := range d {
-		steps += Steps - int(v)
-	}
-	return steps, nil
+	return sum + Len2*Steps - ((sum >> 8) & 15) - ((sum >> 4) & 15) - (sum & 15), nil
 }

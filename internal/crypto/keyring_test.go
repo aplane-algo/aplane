@@ -113,3 +113,37 @@ func TestHistoricalAnchorPinsExactSeal(t *testing.T) {
 		t.Fatal("anchor accepted non-canonical digest")
 	}
 }
+
+// Generation inventories record InspectTermEnvelope's term as is, relying on
+// it to be 0 for plaintext members and rejected envelopes.
+func TestInspectTermEnvelopeTermIsZeroUnlessPresentAndValid(t *testing.T) {
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	sealed, err := kr.Seal([]byte("secret"), AccountKeyContext("ACCOUNT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	term, present, err := InspectTermEnvelope(sealed)
+	if err != nil || !present || term <= 0 {
+		t.Fatalf("sealed envelope = (%d, %v, %v)", term, present, err)
+	}
+	for _, data := range [][]byte{
+		[]byte("not json"),
+		[]byte(`{"plaintext":true}`),
+		[]byte(`{"envelope_version":"x"}`),
+		[]byte(`{"envelope_version":2}`),
+		[]byte(`{"envelope_version":99,"term":5}`),
+		bytes.Replace(sealed, []byte(`"term":`), []byte(`"term":-`), 1),
+	} {
+		term, present, err := InspectTermEnvelope(data)
+		if (!present || err != nil) && term != 0 {
+			t.Fatalf("InspectTermEnvelope(%s) = (%d, %v, %v), want term 0", data, term, present, err)
+		}
+		if present && err == nil {
+			t.Fatalf("InspectTermEnvelope(%s) accepted a malformed envelope", data)
+		}
+	}
+}
