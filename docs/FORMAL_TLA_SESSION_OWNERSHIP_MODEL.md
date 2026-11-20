@@ -24,7 +24,7 @@ session becomes the active owner. Ownership is only established afterwards
 (`BindPreAuthPending` for IPC, optional displacement offer,
 `PromoteToActive`).
 Any failure in that window — pending-slot contention, displacement rejection,
-promotion failure, connection drop — must not strand the product runtime unlocked
+connection drop — must not strand the product runtime unlocked
 with no session left whose exit re-locks it. That is exactly the hole the
 second-review audit found in the pre-fix code: `lock_on_disconnect` cleanup
 was gated on `authenticated && wasActiveClient`, so an unlock whose session
@@ -81,7 +81,7 @@ The restored spec passes.
   unlock/lock IPC commands, passphrase retries, and keystore state machine are
   outside this model. Here `unlocked` exists solely to express SO2.
 - **One uniform `Exit` action.** Failed auth, pending-slot loss, displacement
-  rejection, promotion failure, displaced close, and plain disconnect all
+  rejection, displaced close, and plain disconnect all
   leave through the same code path (the `handleRegisteredClient` defer), so
   the model has a single `Exit` action evaluating the defer's condition at
   exit time. Auth failure is `Exit` from `PreAuth` with
