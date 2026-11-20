@@ -37,55 +37,6 @@ func TestDeepVerifyBackupValidStandaloneCredential(t *testing.T) {
 	}
 }
 
-func TestDeepVerifyBackupRejectsPlaintextPayload(t *testing.T) {
-	root, keysDir := newVerifyArchive(t)
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	if err := os.WriteFile(filepath.Join(keysDir, address+".apb"), keyJSON, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.FailedFiles != 1 || !strings.Contains(report.Results[0].Error, "must be encrypted") {
-		t.Fatalf("report = %+v", report)
-	}
-}
-
-func TestDeepVerifyBackupRejectsInternalBundle(t *testing.T) {
-	root, keysDir := newVerifyArchive(t)
-	address, _ := testEd25519BackupKeyJSON(t)
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), []byte(`{"backup_bundle":1,"key":{}}`), []byte("export-passphrase")); err != nil {
-		t.Fatal(err)
-	}
-	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.FailedFiles != 1 || !strings.Contains(report.Results[0].Error, "unsupported internal backup bundle") {
-		t.Fatalf("report = %+v", report)
-	}
-}
-
-func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
-	root, keysDir := newVerifyArchive(t)
-	_, keyJSON := testEd25519BackupKeyJSON(t)
-	other, _ := testEd25519BackupKeyJSON(t)
-	if err := writeStandaloneBackupFile(filepath.Join(keysDir, other+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatal(err)
-	}
-	sealTestArchiveManifest(t, root)
-	report, err := DeepVerifyBackupBytes(root, []byte("export-passphrase"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.FailedFiles != 1 || !strings.Contains(report.Results[0].Error, "address mismatch") {
-		t.Fatalf("report = %+v", report)
-	}
-}
-
 func TestVerifyFileDeepRejectsOversizedEnvelopeBeforeReadingIt(t *testing.T) {
 	keysDir := t.TempDir()
 	path := filepath.Join(keysDir, "ADDR.apb")

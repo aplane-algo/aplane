@@ -67,39 +67,16 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}
-	activeKeysDir := activeStore.KeysDir()
 
-	keysDestDir := filepath.Join(stageDir, "apb")
-	var exported []string
-	if len(selected) == 0 {
-		if err := ExportAllKeys(
-			activeKeysDir,
-			stageDir,
-			req.Keyring,
-			req.ExportPassphrase,
-		); err != nil {
-			return nil, err
-		}
-		exported, err = ScanBackupFiles(keysDestDir)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if err := os.MkdirAll(keysDestDir, 0750); err != nil {
-			return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
-		}
-		for _, address := range selected {
-			if err := ExportKey(
-				activeKeysDir,
-				keysDestDir,
-				address,
-				req.Keyring,
-				req.ExportPassphrase,
-			); err != nil {
-				return nil, fmt.Errorf("failed to export %s: %w", address, err)
-			}
-			exported = append(exported, address)
-		}
+	exported, err := exportCredentials(
+		activeStore.KeysDir(),
+		filepath.Join(stageDir, "apb"),
+		selected,
+		req.Keyring,
+		req.ExportPassphrase,
+	)
+	if err != nil {
+		return nil, err
 	}
 	nodeRole, _, err := noderole.Load(req.Paths)
 	if err != nil {

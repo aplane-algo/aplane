@@ -4,49 +4,15 @@
 package backup
 
 import (
-	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 )
-
-// ParseBackup returns the complete canonical managed credential payload.
-// Backup bundles were an internal pre-release format and are deliberately not
-// accepted by the first supported credential-backup contract.
-func ParseBackup(decryptedJSON []byte) ([]byte, error) {
-	var probe struct {
-		BackupBundle int `json:"backup_bundle"`
-	}
-	if err := json.Unmarshal(decryptedJSON, &probe); err != nil {
-		return nil, fmt.Errorf("failed to parse backup data: %w", err)
-	}
-
-	if probe.BackupBundle != 0 {
-		return nil, fmt.Errorf(
-			"unsupported internal backup bundle format; create a new credential backup with this release",
-		)
-	}
-	parsed, err := keys.ParsePayload(decryptedJSON)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse backup credential: %w", err)
-	}
-	parsed.ZeroSecrets()
-	return decryptedJSON, nil
-}
-
-// ExportKey exports a single key file from the keystore to a standalone backup.
-// It decrypts the key with the store's keyring, then re-encrypts it with the
-// export passphrase using standalone encryption (envelope_version 2).
-func ExportKey(srcDir, destDir, address string, kr *crypto.Keyring, exportPassphrase []byte) error {
-	source, err := resolveManagedCredentialFile(srcDir, address)
-	if err != nil {
-		return err
-	}
-	return exportManagedCredential(destDir, source, kr, exportPassphrase)
-}
 
 func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) error {
 	destFile := filepath.Join(destDir, source.Selector+".apb")
@@ -91,27 +57,6 @@ func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, 
 	return nil
 }
 
-func resolveManagedCredentialFile(srcDir, selector string) (keys.ManagedCredentialFile, error) {
-	files, err := keys.ScanManagedCredentialFiles(srcDir)
-	if err != nil {
-		return keys.ManagedCredentialFile{}, err
-	}
-	var matches []keys.ManagedCredentialFile
-	for _, file := range files {
-		if file.Selector == selector {
-			matches = append(matches, file)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return keys.ManagedCredentialFile{}, fmt.Errorf("managed credential not found: %s", selector)
-	case 1:
-		return matches[0], nil
-	default:
-		return keys.ManagedCredentialFile{}, fmt.Errorf("ambiguous managed credential %s: both filename classes are present", selector)
-	}
-}
-
 // buildExportPayload checks the decrypted credential against its source
 // filename and returns a canonical credential-only plaintext for export.
 func buildExportPayload(source keys.ManagedCredentialFile, plaintext []byte) ([]byte, error) {
@@ -134,43 +79,49 @@ func buildExportPayload(source keys.ManagedCredentialFile, plaintext []byte) ([]
 	return canonical, nil
 }
 
-// ExportAllKeys exports all managed credential files from the keystore to a standalone backup directory.
-// Each file is decrypted with the store's keyring and re-encrypted with the export
-// passphrase using standalone encryption (envelope_version 2).
-// No .keystore file is written — each backup file is self-contained.
+// exportCredentials writes the standalone backup of each selected managed
+// credential in srcDir to destDir, or of every one when selected is empty,
+// from one scan of srcDir. It returns the exported selectors: in address
+// order for a complete backup, in request order for a selection. A selector
+// held in both filename classes is refused only when it would be exported.
 //
-// The backup is complete or fails: silently omitting damaged authority would
-// make the sealed archive inventory look complete when it is not.
-func ExportAllKeys(srcDir, destDir string, kr *crypto.Keyring, exportPassphrase []byte) error {
-	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
+// The backup is complete or fails: silently omitting one damaged authority
+// would make the archive's sealed inventory look complete even though the
+// source store was not fully represented.
+func exportCredentials(srcDir, destDir string, selected []string, kr *crypto.Keyring, exportPassphrase []byte) ([]string, error) {
+	files, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	if len(managedFiles) == 0 {
-		return fmt.Errorf("no managed credential files found in %s", srcDir)
+	bySelector := make(map[string][]keys.ManagedCredentialFile, len(files))
+	for _, file := range files {
+		bySelector[file.Selector] = append(bySelector[file.Selector], file)
 	}
-	seenSelectors := make(map[string]string, len(managedFiles))
-	for _, file := range managedFiles {
-		if previous, ok := seenSelectors[file.Selector]; ok {
-			return fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
+	if len(selected) == 0 {
+		if len(files) == 0 {
+			return nil, fmt.Errorf("no managed credential files found in %s", srcDir)
 		}
-		seenSelectors[file.Selector] = file.Name
+		selected = slices.Sorted(maps.Keys(bySelector))
 	}
-
-	// Create apb subdirectory in backup
-	keysDestDir := filepath.Join(destDir, "apb")
-	if err := os.MkdirAll(keysDestDir, 0750); err != nil {
-		return fmt.Errorf("failed to create backup keys directory: %w", err)
-	}
-
-	// Export each credential. A complete backup is fail-closed: silently
-	// omitting one damaged authority would make the archive's sealed inventory
-	// look complete even though the source store was not fully represented.
-	for _, managedFile := range managedFiles {
-		if err := exportManagedCredential(keysDestDir, managedFile, kr, exportPassphrase); err != nil {
-			return fmt.Errorf("failed to export %s: %w", managedFile.Selector, err)
+	sources := make([]keys.ManagedCredentialFile, 0, len(selected))
+	for _, selector := range selected {
+		switch matches := bySelector[selector]; len(matches) {
+		case 0:
+			return nil, fmt.Errorf("managed credential not found: %s", selector)
+		case 1:
+			sources = append(sources, matches[0])
+		default:
+			return nil, fmt.Errorf("ambiguous managed credential %s: %s and %s", selector, matches[0].Name, matches[1].Name)
 		}
 	}
-	return nil
+
+	if err := os.MkdirAll(destDir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
+	}
+	for _, source := range sources {
+		if err := exportManagedCredential(destDir, source, kr, exportPassphrase); err != nil {
+			return nil, fmt.Errorf("failed to export %s: %w", source.Selector, err)
+		}
+	}
+	return selected, nil
 }

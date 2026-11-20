@@ -398,7 +398,7 @@ func TestRestoreKeyRejectsUnsupportedEnvelopeVersion(t *testing.T) {
 	if keyType != "" {
 		t.Fatalf("restoreKey() keyType = %q, want empty on failure", keyType)
 	}
-	if !strings.Contains(err.Error(), "unsupported envelope_version: 3") {
+	if err.Error() != "decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)" {
 		t.Fatalf("restoreKey() error = %v, want unsupported envelope rejection", err)
 	}
 }

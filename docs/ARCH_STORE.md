@@ -2063,6 +2063,12 @@ Restore validates the complete selected set before any write:
 - required destination runtime/provider support
 - duplicates and contradictory managed credential classes
 
+Deep verify (at create, at import, and in `apstore verify`), restore preview
+and offline rebuild admit each credential through the loader restore uses, so
+a credential that verifies passes restore's per-credential checks and reports
+the same reason when it fails. Restore adds the selection, destination node
+role, and collision checks.
+
 Destination collision classification compares canonical decrypted plaintext,
 not ciphertext. An identical credential is an idempotent no-op. A different
 credential is a conflict requiring `replace_existing`. An existing

@@ -325,7 +325,7 @@ func TestCreateAllKeysArchiveFailsForInvalidOnlyCredential(t *testing.T) {
 }
 
 // Infrastructure failures also abort the complete archive.
-func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
+func TestCompleteExportStillAbortsOnDecryptFailure(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = mintFirstGenerationForBackupTest(t, paths)
 	active, err := genstore.Resolve(paths)
@@ -338,9 +338,9 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}
 
-	err = ExportAllKeys(srcDir, t.TempDir(), cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
+	_, err = exportCredentials(srcDir, t.TempDir(), nil, cryptotest.Keyring(t, testExportMasterKey), []byte("export-passphrase"))
 	if err == nil || !strings.Contains(err.Error(), "failed to export") {
-		t.Fatalf("ExportAllKeys() error = %v, want decrypt-failure abort", err)
+		t.Fatalf("exportCredentials() error = %v, want decrypt-failure abort", err)
 	}
 }
 

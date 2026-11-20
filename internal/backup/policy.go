@@ -113,9 +113,9 @@ func scanBackupPolicies(keysDir string) ([]string, error) {
 // with a sidecar signed by the destination keyring.
 func ApplyPolicyEntry(active storepaths.GenPaths, role noderole.Role, entry CredentialEntry, kr *crypto.Keyring) error {
 	if entry.Policy == nil {
-		return fmt.Errorf("restore entry %s carries no policy", entry.Selector)
+		return fmt.Errorf("restore entry %s carries no policy", entry.Selector())
 	}
-	return policy.WriteKeyPolicy(active, role, entry.Selector, entry.Policy, kr, time.Now())
+	return policy.WriteKeyPolicy(active, role, entry.Selector(), entry.Policy, kr, time.Now())
 }
 
 // destinationPolicy returns the destination's verified policy bytes for key,
