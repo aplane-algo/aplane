@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 
@@ -21,14 +22,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
+func (s Service) ListKeys() ([]adminproto.KeyInfo, *Error) {
 	ir := s.Runtime
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
 	}
 
 	keysSnapshot, _ := ir.KeySnapshot()
-	keysList := make([]ListKeyInfo, 0, len(keysSnapshot))
+	keysList := make([]adminproto.KeyInfo, 0, len(keysSnapshot))
 
 	// Every listed key was validated when the generation loaded, so a key that
 	// no longer reads is an integrity failure to report, not an unknown type.
@@ -39,7 +40,7 @@ func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
 				return fmt.Errorf("read key %s: %w", addr, err)
 			}
 			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
-			keysList = append(keysList, ListKeyInfo{
+			keysList = append(keysList, adminproto.KeyInfo{
 				Address:                  addr,
 				KeyType:                  info.Type,
 				TemplateProvenanceStatus: templateProvenanceStatus,
@@ -55,7 +56,7 @@ func (s Service) ListKeys() ([]ListKeyInfo, *Error) {
 	return keysList, nil
 }
 
-func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
+func (s Service) GetKeyDetails(address string) (*adminproto.GetKeyDetailsResult, *Error) {
 	ir := s.Runtime
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
@@ -66,7 +67,7 @@ func (s Service) GetKeyDetails(address string) (*KeyDetailsResult, *Error) {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found"}
 	}
 
-	result := &KeyDetailsResult{Address: address}
+	result := &adminproto.GetKeyDetailsResult{Address: address}
 	err = ir.WithKeyring(func(mk *crypto.Keyring) error {
 		info, err := keymgmt.DetectKeyInfoFromFileWithKeyring(keyFile, mk)
 		if err != nil {

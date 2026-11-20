@@ -182,7 +182,7 @@ func (c Command) readsFiles() bool {
 }
 
 func (c Command) readsStdin() bool {
-	return len(c.Args) == 1 && c.Args[0] == "-" && (c.Verb == VerbCheck || c.Verb == VerbDiff || c.Verb == VerbApply)
+	return c.readsFiles() && len(c.Args) == 1 && c.Args[0] == "-"
 }
 
 func (c Command) mutates() bool {

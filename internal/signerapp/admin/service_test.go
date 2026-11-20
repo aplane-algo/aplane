@@ -5,6 +5,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -73,6 +76,18 @@ func (d *fakeDeps) WithStoreMutation(fn func() error) error {
 	return fn()
 }
 
+// builtinNetworksChain is a chain view with only the built-in networks and
+// no assets.
+type builtinNetworksChain struct{}
+
+func (builtinNetworksChain) Networks() apconfig.GenesisHashNetworkResolver {
+	return apconfig.DefaultGenesisHashNetworkResolver()
+}
+
+func (builtinNetworksChain) ReadAsset(context.Context, []byte, uint64) (models.AssetParams, error) {
+	return models.AssetParams{}, errors.New("no assets")
+}
+
 func setupAdminService(t *testing.T) (Service, *productruntime.Runtime, *fakeDeps) {
 	return setupAdminServiceWithRole(t, noderole.RoleSigner)
 }
@@ -98,7 +113,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		KeyPaths: keyPaths,
 		NodeRole: role,
 	})
-	return Service{Deps: deps, Runtime: ir}, ir, deps
+	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir, deps
 }
 
 func TestServiceReportsTheRuntimeUnlockMethod(t *testing.T) {
@@ -249,7 +264,7 @@ func TestGenerationRequirementsAreSavedAndLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	effective, err := stored.Apply(productruntime.EffectiveConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +294,7 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	effective, err := stored.Apply(productruntime.EffectiveConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

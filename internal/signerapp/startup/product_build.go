@@ -78,7 +78,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		return nil, fmt.Errorf("invalid product approval_wait: %w", err)
 	}
 
-	effectiveCfg, err := storedCfg.Apply(productruntime.ConfigDefaults{
+	effectiveCfg, err := storedCfg.Apply(productruntime.EffectiveConfig{
 		UserAutoApprove:  opts.Config.UserAutoApprove,
 		LockOnDisconnect: opts.Config.ShouldLockOnDisconnect(),
 		SessionTimeout:   opts.DefaultSessionTimeout,
@@ -156,7 +156,7 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
 func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
-	templateManager := newTemplateManager(ir.KeyPaths())
+	templateManager := signertemplates.NewManager(ir.KeyPaths())
 	svc := &signertemplates.ReloadService{
 		KeyStore:        ir.KeyStore(),
 		Session:         session,
@@ -215,14 +215,8 @@ func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks 
 		return svc.Reload(passphrase)
 	})
 	if hooks.ReloadMutationLock != nil {
-		ir.SetReloadMutationLock(func() sync.Locker {
-			return hooks.ReloadMutationLock()
-		})
+		ir.SetReloadMutationLock(hooks.ReloadMutationLock)
 	}
-}
-
-func newTemplateManager(keyPaths storepaths.Paths) *signertemplates.Manager {
-	return signertemplates.NewManager(keyPaths)
 }
 
 // storedAdmissionAlerts are the admission problems of the stored documents,

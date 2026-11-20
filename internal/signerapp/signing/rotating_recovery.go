@@ -158,7 +158,6 @@ type RecoveryGrant struct {
 	// discovery then ends without filling preceding stages.
 	Found     *uint64
 	nextProbe uint64 // probes issued so far: 0 = hint, then +1, -1, +2, -2 …
-	cancelled bool
 	// Lookup is what the grant's chain lookup found; nil until one ran, and
 	// when no Indexer is configured for the account's network. lookedUp
 	// records that it was attempted: a grant looks up once.
@@ -373,7 +372,6 @@ func (r *RotatingRecovery) Cancel(gen uint64, account string) uint64 {
 	if !ok || a.grant == nil || a.grant.Kind != GrantOperator {
 		return 0
 	}
-	a.grant.cancelled = true
 	id := a.grant.ID
 	r.stopLocked(a, a.grant, StopCancelled, nil)
 	return id
@@ -430,13 +428,14 @@ func (r *RotatingRecovery) grantFor(gen uint64, account string, authorizer types
 	return &cp
 }
 
-// live returns the account's active grant if it is still g, in the live
-// session, and not cancelled. Called under mu; it syncs first, so a grant
-// of a session a lock has ended is gone the moment anyone asks.
+// live returns the account's active grant if it is still g. Called under mu;
+// it syncs first, so a grant of a session a lock has ended is gone the moment
+// anyone asks: every grant left after the sync is of the live session. A
+// cancelled grant is no longer the account's.
 func (r *RotatingRecovery) live(g *RecoveryGrant) *RecoveryGrant {
 	r.syncLocked()
 	a, ok := r.accounts[g.Account]
-	if !ok || a.grant == nil || a.grant.ID != g.ID || a.grant.Epoch != r.epoch || a.grant.cancelled {
+	if !ok || a.grant == nil || a.grant.ID != g.ID {
 		return nil
 	}
 	return a.grant

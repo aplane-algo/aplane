@@ -34,10 +34,9 @@ func (s *Service) RecoverRotatingWithContext(ctx context.Context, req signerapi.
 	if deps.Recovery == nil {
 		return nil, internal("rotating recovery is not configured")
 	}
-	session, ok := deps.recoverySession(nil)
-	if !ok {
-		return nil, staleSession()
-	}
+	// Without a captured session this only reads the current one; the stale
+	// session refusals come from StartOperator and Cancel.
+	session, _ := deps.recoverySession(nil)
 	// A cancel does not need the key: a locked signer holds no key files
 	// and has already ended every grant, so the cancel finds nothing.
 	if req.Action == signerapi.RotatingRecoverActionStart {

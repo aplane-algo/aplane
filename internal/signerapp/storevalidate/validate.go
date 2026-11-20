@@ -54,9 +54,6 @@ func FirstGeneration(c storeinit.FirstGenerationCandidate) error {
 // Candidate verifies all destination authority and every managed credential
 // without publishing runtime state or registering process-global providers.
 func Candidate(opts Options) error {
-	if opts.Keyring == nil {
-		return fmt.Errorf("candidate keyring is required")
-	}
 	if err := validateDestinationAuthority(opts); err != nil {
 		return err
 	}

@@ -121,7 +121,7 @@ func (s *Session) HandleGetPolicy(msg *protocol.GetPolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy"}) {
 		return
 	}
-	_ = s.WriteJSON(ProtocolPolicyMessage(msg.ID, s.settingsServices.GetPolicy()))
+	_ = s.WriteJSON(s.settingsServices.GetPolicy().Wire(msg.ID))
 }
 
 func (s *Session) HandleGetPolicyDocument(msg *protocol.GetPolicyDocumentMessage) {
@@ -176,28 +176,14 @@ func (s *Session) HandleApplyPolicy(msg *protocol.ApplyPolicyMessage) {
 }
 
 func (s *Session) HandleListCosignerReferences(requestID string) {
-	if s.requireBoundRuntime(requestID) == nil {
-		return
-	}
 	if !s.authorize(requestID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_references"}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
 	_ = s.WriteJSON(ProtocolCosignerReferencesListMessage(requestID, s.inspectionServices.ListCosignerReferences()))
 }
 
 func (s *Session) HandleGetCosignerReference(msg *protocol.GetCosignerReferenceMessage) {
-	if s.requireBoundRuntime(msg.ID) == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
 	result := s.inspectionServices.GetCosignerReference(adminproto.GetCosignerReferenceRequest{Name: msg.Name})
@@ -211,10 +197,6 @@ func (s *Session) HandleImportCosignerReference(msg *protocol.ImportCosignerRefe
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionCosignersManage, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
 	result := s.inspectionServices.ImportCosignerReference(adminproto.ImportCosignerReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
@@ -237,10 +219,6 @@ func (s *Session) HandleRemoveCosignerReference(msg *protocol.RemoveCosignerRefe
 	if !s.authorize(msg.ID, auth.ActionCosignersManage, auth.Resource{Type: "cosigner_reference", ID: msg.Name}) {
 		return
 	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
-		return
-	}
 	result := s.inspectionServices.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: msg.Name})
 	if audit, ok := s.audit.(interface {
 		LogCosignerReferenceChangedContext(SessionContext, string, string, string, bool)
@@ -251,14 +229,7 @@ func (s *Session) HandleRemoveCosignerReference(msg *protocol.RemoveCosignerRefe
 }
 
 func (s *Session) HandleExportCosignerPublic(msg *protocol.ExportCosignerPublicMessage) {
-	if s.requireBoundRuntime(msg.ID) == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionCosignersView, auth.Resource{Type: "cosigner_public", ID: msg.WitnessKeyID}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
 	result := s.inspectionServices.ExportCosignerPublic(adminproto.ExportCosignerPublicRequest{WitnessKeyID: msg.WitnessKeyID})
@@ -266,14 +237,7 @@ func (s *Session) HandleExportCosignerPublic(msg *protocol.ExportCosignerPublicM
 }
 
 func (s *Session) HandleListGenerations(requestID string) {
-	if s.requireBoundRuntime(requestID) == nil {
-		return
-	}
 	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "generations"}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeInternal, "store inspection service unavailable")
 		return
 	}
 	_ = s.WriteJSON(ProtocolGenerationsListMessage(requestID, s.inspectionServices.ListGenerations()))
@@ -287,10 +251,6 @@ func (s *Session) HandlePruneGenerationQuarantine(
 	}
 	resource := auth.Resource{Type: "generation_quarantine"}
 	if !s.authorize(msg.ID, auth.ActionGenerationQuarantinePrune, resource) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
 		return
 	}
 	if !msg.Confirm {
@@ -360,10 +320,6 @@ func (s *Session) HandleDiscardAbandonedGenerations(
 	respond := func(result adminproto.DiscardAbandonedGenerationsResult) {
 		_ = s.WriteJSON(ProtocolDiscardAbandonedGenerationsResultMessage(msg.ID, result))
 	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "generation service unavailable")
-		return
-	}
 	if !msg.Confirm {
 		respond(adminproto.DiscardAbandonedGenerationsResult{
 			Code:  protocol.ResultCodeConfirmationRequired,
@@ -407,10 +363,6 @@ func (s *Session) HandleListDeletedArchive(requestID string) {
 	if !s.authorize(requestID, auth.ActionGenerationsView, auth.Resource{Type: "deleted_archive"}) {
 		return
 	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(requestID, protocol.ErrCodeInternal, "archive service unavailable")
-		return
-	}
 	_ = s.WriteJSON(ProtocolDeletedArchiveListMessage(requestID, s.inspectionServices.ListDeletedArchive()))
 }
 
@@ -419,10 +371,6 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionArchivePrune, auth.Resource{Type: "deleted_archive"}) {
-		return
-	}
-	if s.inspectionServices == nil {
-		_ = s.SendError(msg.ID, protocol.ErrCodeInternal, "archive service unavailable")
 		return
 	}
 	if !msg.Confirm {
@@ -459,9 +407,6 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 
 func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	defer msg.Passphrase.Zero()
-	if s.requireBoundRuntime(msg.ID) == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionIdentityUnlock, auth.Resource{Type: "identity"}) {
 		return
 	}
@@ -527,10 +472,6 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	result := s.backupServices.BackupIdentity(adminproto.BackupIdentityRequest{
@@ -560,10 +501,6 @@ func (s *Session) HandleListBackups(requestID string) {
 	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.backupServices == nil {
-		_ = s.SendError(requestID, "", "backup service unavailable")
-		return
-	}
 	result := s.backupServices.ListBackups()
 	_ = s.WriteJSON(ProtocolBackupsListMessage(requestID, result))
 }
@@ -575,10 +512,6 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
 	result := s.backupServices.DeleteBackup(adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
 }
@@ -588,10 +521,6 @@ func (s *Session) HandleBeginBackupImport(msg *protocol.BeginBackupImportMessage
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.BeginBackupImport(adminproto.BeginBackupImportRequest{
@@ -607,10 +536,6 @@ func (s *Session) HandleAppendBackupImport(msg *protocol.AppendBackupImportMessa
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
 		return
 	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
 	result := s.backupServices.AppendBackupImport(adminproto.AppendBackupImportRequest{UploadID: msg.UploadID, Offset: msg.Offset, Data: msg.Data})
 	_ = s.WriteJSON(ProtocolAppendBackupImportResultMessage(msg.ID, result))
 }
@@ -621,10 +546,6 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup", ID: msg.FileName}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.CommitBackupImport(adminproto.CommitBackupImportRequest{
@@ -652,14 +573,7 @@ func (s *Session) HandleAbortBackupImport(msg *protocol.AbortBackupImportMessage
 	// Abort removes only an unpublished, path-confined .part upload. Keep this
 	// authorized cleanup available while the bound identity is locked so a
 	// failed import does not require unlocking merely to discard residue.
-	if s.requireBoundRuntime(msg.ID) == nil {
-		return
-	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "backup_upload", ID: msg.UploadID}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.AbortBackupImport(adminproto.AbortBackupImportRequest{UploadID: msg.UploadID})
@@ -671,10 +585,6 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityBackup, auth.Resource{Type: "backup", ID: msg.FileName}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	result := s.backupServices.ReadBackupChunk(adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
@@ -705,10 +615,6 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	if !s.authorize(msg.ID, auth.ActionIdentityPassphrase, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.productServices == nil {
-		_ = s.SendError(msg.ID, "", "identity service unavailable")
-		return
-	}
 	currentPassphrase := msg.CurrentPassphrase.Clone()
 	newPassphrase := msg.NewPassphrase.Clone()
 	defer zeroBytes(currentPassphrase)
@@ -726,10 +632,6 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	exportPassphrase := msg.ExportPassphrase.Clone()
@@ -767,10 +669,6 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 		return
 	}
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
 	audit, ok := s.audit.(interface {
@@ -818,10 +716,6 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
-	if s.backupServices == nil {
-		_ = s.SendError(msg.ID, "", "backup service unavailable")
-		return
-	}
 	result := s.backupServices.RollbackRestore(adminproto.RollbackRestoreRequest{
 		OperationID: msg.ID,
 	})
@@ -838,10 +732,6 @@ func (s *Session) HandleReconcileStore(requestID string) {
 		return
 	}
 	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
-		return
-	}
-	if s.backupServices == nil {
-		_ = s.SendError(requestID, "", "backup service unavailable")
 		return
 	}
 	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, s.backupServices.ReconcileStore()))
@@ -993,9 +883,6 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 }
 
 func (s *Session) HandleListKeyTypes(requestID string) {
-	if s.requireBoundRuntime(requestID) == nil {
-		return
-	}
 	if !s.authorize(requestID, auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}) {
 		return
 	}

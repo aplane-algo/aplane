@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
-	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -73,7 +72,7 @@ func (c chainReviewCase) prompt(t *testing.T) *signerapproval.Prompt {
 			ReviewChainTimeout: c.timeout,
 		},
 		Executor:                      &Executor{},
-		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(txdesc.DetailTxn),
+		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(describeOnBuiltinNetworks),
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor:                     fixedPolicy(cfg),
 		// An approved request stops here, short of signing.

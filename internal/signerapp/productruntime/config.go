@@ -45,19 +45,8 @@ type RuntimeConfig struct {
 // client detects the terminal's background.
 const DefaultTheme = "auto"
 
-// ConfigDefaults contains process-level defaults that the product overlay can
-// inherit at startup.
-type ConfigDefaults struct {
-	UserAutoApprove  bool
-	LockOnDisconnect bool
-	SessionTimeout   time.Duration
-	ApprovalWait     time.Duration
-	RequireContained bool
-	RequireCosigner  bool
-	Theme            string
-}
-
-// EffectiveConfig contains the concrete product runtime settings.
+// EffectiveConfig contains the concrete product runtime settings. It is also
+// the process-level defaults a StoredConfig applies over.
 type EffectiveConfig struct {
 	UserAutoApprove  bool
 	LockOnDisconnect bool
@@ -68,9 +57,8 @@ type EffectiveConfig struct {
 	Theme            string
 }
 
-// StoredConfig is the persisted product runtime configuration overlay.
-// Zero values mean "inherit from process-global defaults" except for
-// PassphraseTimeout, where an empty string means "inherit".
+// StoredConfig is the persisted product runtime configuration overlay. A nil
+// pointer or an empty string inherits the process-level default.
 type StoredConfig struct {
 	UserAutoApprove   *bool  `yaml:"user_auto_approve,omitempty"`
 	LockOnDisconnect  *bool  `yaml:"lock_on_disconnect,omitempty"`
@@ -281,8 +269,8 @@ func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 
 // Apply returns the effective runtime values after overlaying the stored
 // product settings on top of process-global defaults.
-func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
-	effective := EffectiveConfig(defaults)
+func (c *StoredConfig) Apply(defaults EffectiveConfig) (EffectiveConfig, error) {
+	effective := defaults
 
 	if c.UserAutoApprove != nil {
 		effective.UserAutoApprove = *c.UserAutoApprove

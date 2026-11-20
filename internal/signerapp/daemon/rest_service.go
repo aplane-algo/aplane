@@ -11,18 +11,10 @@ import (
 )
 
 func (fs *Signer) restService() signerrest.Service {
-	var signerAudit signingAudit
-	if fs.auditLog != nil {
-		signerAudit = &signingAuditLogger{log: fs.auditLog}
-	}
-	return fs.restServiceWithAudit(optionalAuditLog[keyadmin.AuditLogger](fs.auditLog), signerAudit)
+	return fs.restServiceWithSigningAudit(fs.signingAuditLogger(auditAttribution{}))
 }
 
-func (fs *Signer) restServiceWithSigningAudit(auditLog signingAudit) signerrest.Service {
-	return fs.restServiceWithAudit(optionalAuditLog[keyadmin.AuditLogger](fs.auditLog), auditLog)
-}
-
-func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAudit signingAudit) signerrest.Service {
+func (fs *Signer) restServiceWithSigningAudit(signingAudit signingAudit) signerrest.Service {
 	return signerrest.Service{
 		Deps: signerrest.Dependencies{
 			NewSigningService: func(ir *productruntime.Runtime) signerrest.SigningService {
@@ -31,7 +23,7 @@ func (fs *Signer) restServiceWithAudit(keyAudit keyadmin.AuditLogger, signingAud
 			PlanGroup:    fs.planGroupWithAudit(signingAudit),
 			EncodeTxnHex: txnutil.EncodeWithPrefixHex,
 			KeyAdmin: keyadmin.Service{
-				AuditLog:             keyAudit,
+				AuditLog:             optionalAuditLog[keyadmin.AuditLogger](fs.auditLog),
 				Runtime:              fs.productRuntime(),
 				MutationLock:         &fs.storeMutationLock,
 				GenerateGenericLSig:  fs.generateGenericLSig,

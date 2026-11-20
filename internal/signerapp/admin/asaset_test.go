@@ -304,10 +304,8 @@ func TestASASetRequiresLoadedState(t *testing.T) {
 	if got := svc.ListASASet(); got.Code != "policy_unavailable" {
 		t.Fatalf("ListASASet() before load = %+v", got)
 	}
-	noChain := svc
-	noChain.ASAChain = nil
-	if got := noChain.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9}); !strings.Contains(got.Code, "unavailable") {
-		t.Fatalf("LookupASA() without a chain view = %+v", got)
+	if got := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9}); got.Code != "policy_unavailable" {
+		t.Fatalf("LookupASA() before load = %+v", got)
 	}
 }
 

@@ -54,11 +54,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 		}
 		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
 	case signerapi.ComponentTargetKindBoundedBase:
-		result, err := s.PrepareBoundedComponentWithContext(ctx, req, session)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
+		return s.PrepareBoundedComponentWithContext(ctx, req, session)
 	default:
 		return nil, badRequest("unsupported component target kind")
 	}

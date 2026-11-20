@@ -415,7 +415,8 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 
 	incomingFingerprint := prepared.Fingerprint
 	registryFingerprint := ""
-	if existing := lsigprovider.Get(rec.KeyType); existing != nil {
+	existing := lsigprovider.Get(rec.KeyType)
+	if existing != nil {
 		var ok bool
 		registryFingerprint, ok = lsigprovider.CompatibilityFingerprintOf(existing)
 		if !ok {
@@ -438,13 +439,12 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 		return outcome
 	}
 
-	if existing := lsigprovider.Get(rec.KeyType); existing != nil {
-		existingFingerprint, ok := lsigprovider.CompatibilityFingerprintOf(existing)
+	if existing != nil {
 		// Both fingerprints are computed by this binary (same fingerprint
 		// version), so this is always a same-version comparison; routing it
 		// through the shared helper keeps it consistent and future-proof if
 		// either side is ever sourced from durable storage.
-		if match, comparable := lsigprovider.FingerprintsMatch(existingFingerprint, incomingFingerprint); ok && comparable && match {
+		if match, comparable := lsigprovider.FingerprintsMatch(registryFingerprint, incomingFingerprint); comparable && match {
 			outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
 		} else {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
@@ -485,10 +485,7 @@ func validateCompiledProviderRecords(records []keytypestate.Record) templatepoli
 			outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
 			continue
 		}
-		registryFingerprint, ok := lsigprovider.CompatibilityFingerprintOf(provider)
-		if !ok {
-			registryFingerprint = ""
-		}
+		registryFingerprint, _ := lsigprovider.CompatibilityFingerprintOf(provider)
 		// Only a same-version, different-hash pair is a real conflict; a
 		// cross-version or unparseable stored fingerprint is treated as
 		// idempotent (benign) so a formula bump cannot false-conflict.

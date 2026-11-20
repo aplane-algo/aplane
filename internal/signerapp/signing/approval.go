@@ -608,13 +608,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 		if reason := reviewabilityReason(txn); reason != "" {
 			console.Printf("[REVIEWABILITY] Blocked group approval: tx %d/%d: %s\n", i+1, len(txns), termsafe.Line(reason))
 			console.Sync()
-			for j, txReq := range req.Requests {
-				authAddr := txReq.AuthAddress
-				if plan.ForeignIndices[j] {
-					authAddr = ""
-				}
-				s.logSignRejected(authAddr, txns[j].Sender.String(), "reviewability_blocked: "+reason, forceReviewRuleID)
-			}
+			s.logGroupRejected(req, plan, txns, "reviewability_blocked: "+reason, forceReviewRuleID)
 			return forbidden(fmt.Sprintf("group approval blocked: tx %d/%d: %s", i+1, len(txns), reason))
 		}
 	}
@@ -645,25 +639,13 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	)
 	if err != nil {
 		if errors.Is(err, signerapproval.ErrSessionEnded) {
-			for i, txReq := range req.Requests {
-				authAddr := txReq.AuthAddress
-				if plan.ForeignIndices[i] {
-					authAddr = ""
-				}
-				s.logSignRejected(authAddr, txns[i].Sender.String(), "approval_withdrawn_session_ended", forceReviewRuleID)
-			}
+			s.logGroupRejected(req, plan, txns, "approval_withdrawn_session_ended", forceReviewRuleID)
 			console.Println("[X] GROUP APPROVAL WITHDRAWN: the signer's session ended")
 			console.Sync()
 			return sessionEndedError()
 		}
 		if gone, displaced, reason := approverGone(err); gone {
-			for i, txReq := range req.Requests {
-				authAddr := txReq.AuthAddress
-				if plan.ForeignIndices[i] {
-					authAddr = ""
-				}
-				s.logSignRejected(authAddr, txns[i].Sender.String(), reason, forceReviewRuleID)
-			}
+			s.logGroupRejected(req, plan, txns, reason, forceReviewRuleID)
 			console.Println("[X] GROUP APPROVAL WITHDRAWN: its apadmin session ended before answering")
 			console.Sync()
 			return approverGoneError(displaced)
@@ -678,13 +660,7 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 	if !approved {
 		console.Println("[X] GROUP REQUEST REJECTED")
 		console.Sync()
-		for i, txReq := range req.Requests {
-			authAddr := txReq.AuthAddress
-			if plan.ForeignIndices[i] {
-				authAddr = ""
-			}
-			s.logSignRejected(authAddr, txns[i].Sender.String(), "group_rejected_by_operator", forceReviewRuleID)
-		}
+		s.logGroupRejected(req, plan, txns, "group_rejected_by_operator", forceReviewRuleID)
 		return forbidden("Group request rejected by operator")
 	}
 
@@ -697,22 +673,15 @@ func (s *ApprovalService) requestGroupApprovalWithContext(ctx context.Context, r
 // request's completed review (ApprovalService.review): the prompt's text and
 // warnings are its own, what planning changed shown above the transaction as
 // the group prompt shows it.
-func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, plan *PlanResult, allTxns, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
+func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Context, requestID string, txReq signerapi.SignRequest, plan *PlanResult, txns []types.Transaction, firstValid, lastValid uint64, forceReviewRuleID string, review *txnreview.Review) *ServiceError {
 	console := consoleOf(s.Console)
-	txnApproved := false
-	approvalReason := ""
 	decodedSender := txns[0].Sender.String()
 
 	if s.UserAutoApprove {
 		if forceReviewRuleID != "" {
 			console.Printf("[USER AUTO-APPROVE] Satisfying review requirement (%s) without operator prompt\n", termsafe.Line(forceReviewRuleID))
 		}
-		txnApproved = true
-		approvalReason = "user_auto_approve: true"
-	}
-
-	if txnApproved {
-		console.Printf("[USER AUTO-APPROVE] Txn approved without operator prompt (%s)\n", approvalReason)
+		console.Println("[USER AUTO-APPROVE] Txn approved without operator prompt (user_auto_approve: true)")
 		console.Sync()
 		return nil
 	}
@@ -724,7 +693,7 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	if s.HasClient == nil || !s.HasClient() {
 		return unavailable("no apadmin connected - cannot approve transaction")
 	}
-	if reason := reviewabilityReason(allTxns[0]); reason != "" {
+	if reason := reviewabilityReason(txns[0]); reason != "" {
 		console.Printf("[REVIEWABILITY] Blocked txn approval: %s\n", termsafe.Line(reason))
 		console.Sync()
 		s.logSignRejected(txReq.AuthAddress, decodedSender, "reviewability_blocked: "+reason, forceReviewRuleID)
@@ -793,6 +762,18 @@ func (s *ApprovalService) requestSingleTxnApprovalWithContext(ctx context.Contex
 	console.Println("[OK] TXN APPROVED")
 	console.Sync()
 	return nil
+}
+
+// logGroupRejected records reason against every request of the group, with
+// no auth address for a foreign position.
+func (s *ApprovalService) logGroupRejected(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason, policyRuleID string) {
+	for i, txReq := range req.Requests {
+		authAddr := txReq.AuthAddress
+		if plan.ForeignIndices[i] {
+			authAddr = ""
+		}
+		s.logSignRejected(authAddr, txns[i].Sender.String(), reason, policyRuleID)
+	}
 }
 
 func (s *ApprovalService) logGroupApprovalTimeout(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, policyRuleID string) {
