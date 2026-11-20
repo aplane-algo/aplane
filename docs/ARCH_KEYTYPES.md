@@ -267,9 +267,10 @@ recovery entropy the phrase encodes; see
 [the stored credential format](ARCH_STORE.md#managed-credential-files).
 
 A native key type is immutable. Its key file stores neither the protocol scheme
-nor the address salt, so the rule that derives them from the key type and
-public key (`keys.NativePQAddress`) is frozen for `falcon1024` by literal
-vectors; a new scheme or address rule is a new native key type.
+nor the address salt, so the rules that give them, the scheme from the key
+type (`keys.NativePQScheme`) and the salt and address from the public key
+(`keys.NativePQAddress`), are frozen for `falcon1024` by literal vectors; a
+new scheme or address rule is a new native key type.
 
 ## Designing a new combination
 

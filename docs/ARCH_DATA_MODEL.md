@@ -353,8 +353,9 @@ Durable signing metadata includes:
   bounds is the selected arrangement's or shape's fingerprint rather than the
   type-wide grammar fingerprint,
 - `recovery_entropy` for native PQ keys, which every one keeps; a native PQ
-  key stores no scheme or address salt, since `keys.NativePQAddress` derives
-  both from its key type and public key,
+  key stores no scheme or address salt: its key type fixes the scheme
+  (`keys.NativePQScheme`), and `keys.NativePQAddress` derives the salt and
+  address from its public key,
 - `lsig_opcode_profile` and `teal_source` where applicable,
 - `genesis_hash` for rotating keys,
 - `valid_rekey_target` on every category: the key type's declaration recorded

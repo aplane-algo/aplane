@@ -11,17 +11,19 @@ import (
 )
 
 // A native PQ key file stores neither its protocol scheme nor its address
-// salt: both follow from its key type and public key. These two functions are
-// the one place that derives them, so a second native PQ key type adds one
-// case to each.
+// salt: the key type fixes the scheme, and the salt follows from the public
+// key. These two functions are the one place that maps a key type to either,
+// for the payload validator, the signed envelope and the fee planner alike,
+// so a second native PQ key type adds one case to each.
 
-// nativePQScheme is the protocol PQ scheme a native PQ key type signs with.
-func nativePQScheme(keyType string) (string, error) {
+// NativePQScheme is the protocol PQ scheme a native PQ key type signs with,
+// and false for a key type that is not native PQ.
+func NativePQScheme(keyType string) (types.PQScheme, bool) {
 	switch keyType {
 	case nativefalcon.KeyType:
-		return nativefalcon.Scheme, nil
+		return types.PQScheme{nativefalcon.Scheme[0], nativefalcon.Scheme[1]}, true
 	default:
-		return "", fmt.Errorf("unsupported native PQ key type %q", keyType)
+		return types.PQScheme{}, false
 	}
 }
 

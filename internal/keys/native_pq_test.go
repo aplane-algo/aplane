@@ -64,9 +64,9 @@ func TestNativePQDerivationMatchesFrozenVectors(t *testing.T) {
 		if err != nil || len(publicKey) != nativefalcon.PublicKeySize {
 			t.Fatalf("vector %s public key is not %d bytes of hex", vector.address, nativefalcon.PublicKeySize)
 		}
-		scheme, err := nativePQScheme(vector.keyType)
-		if err != nil || scheme != vector.scheme {
-			t.Fatalf("nativePQScheme(%q) = %q, %v; want %q", vector.keyType, scheme, err, vector.scheme)
+		scheme, ok := NativePQScheme(vector.keyType)
+		if !ok || string(scheme[:]) != vector.scheme {
+			t.Fatalf("NativePQScheme(%q) = %q, %v; want %q", vector.keyType, scheme[:], ok, vector.scheme)
 		}
 		salt, address, err := NativePQAddress(vector.keyType, publicKey)
 		if err != nil {
@@ -83,8 +83,8 @@ func TestNativePQDerivationMatchesFrozenVectors(t *testing.T) {
 
 func TestNativePQDerivationRefusesOtherKeyTypes(t *testing.T) {
 	for _, keyType := range []string{"ed25519", "aplane.falcon1024.v1", ""} {
-		if _, err := nativePQScheme(keyType); err == nil {
-			t.Fatalf("nativePQScheme(%q) accepted a key type that is not native PQ", keyType)
+		if _, ok := NativePQScheme(keyType); ok {
+			t.Fatalf("NativePQScheme(%q) accepted a key type that is not native PQ", keyType)
 		}
 		if _, _, err := NativePQAddress(keyType, make([]byte, nativefalcon.PublicKeySize)); err == nil {
 			t.Fatalf("NativePQAddress(%q) accepted a key type that is not native PQ", keyType)

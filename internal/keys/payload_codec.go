@@ -651,16 +651,16 @@ func validateNativePQPayload(p *Payload, verifyRecovery bool) error {
 	if !nativefalcon.IsCompliant(address) {
 		return incompatibleKeyFormat("native Falcon address is not PQ compliant")
 	}
-	scheme, err := nativePQScheme(p.KeyType)
-	if err != nil {
-		return incompatibleKeyFormat("%v", err)
+	scheme, ok := NativePQScheme(p.KeyType)
+	if !ok {
+		return incompatibleKeyFormat("unsupported native PQ key type %q", p.KeyType)
 	}
 	// Without recoveryEntropy the validator runs its cheaper key-pair probe.
 	recoveryEntropy := p.RecoveryEntropy
 	if !verifyRecovery {
 		recoveryEntropy = nil
 	}
-	if err := validateNativePQKeyPair(scheme, p.PublicKey, p.PrivateKey, recoveryEntropy); err != nil {
+	if err := validateNativePQKeyPair(string(scheme[:]), p.PublicKey, p.PrivateKey, recoveryEntropy); err != nil {
 		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
 	}
 	return nil

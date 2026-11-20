@@ -1352,10 +1352,12 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
 Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`
 and `format_version: 1`, the one format every category uses. The public key
 is exactly 1793 bytes and the private key exactly 2305 bytes. The key file
-stores neither the protocol scheme nor the address salt: both follow from the
-key type and public key, and `keys.NativePQAddress` is the one place that
-derives them. For `falcon1024` the scheme is `f1` and the salt is the lowest
-byte whose `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+stores neither the protocol scheme nor the address salt. The key type fixes
+the scheme: `keys.NativePQScheme` maps it, and the payload validator, the
+signed envelope (`signerops`) and the fee planner all read it there. The salt
+and address follow from the public key: `keys.NativePQAddress` derives them
+for validation, `Selector`, generation and signing. For `falcon1024` the
+scheme is `f1` and the salt is the lowest byte whose `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
 Ed25519 curve point. `internal/keys/native_pq_test.go` freezes that derivation
 with literal vectors: a different scheme or address rule is a new key type,
 not a change to `falcon1024`. Its 25-word Algorand mnemonic encodes 32 bytes
