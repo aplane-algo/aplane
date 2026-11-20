@@ -81,16 +81,16 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 		if err := applyConsoleMode(&cfg, profile.Mode, profileSource); err != nil {
 			return consoleStartupConfig{}, err
 		}
-		if err := applyConsolePath(&cfg.ClientData, &cfg.clientDataSource, profile.ClientData, profileSource, "client_data", &cfg.Notices); err != nil {
+		if err := applyConsoleValue(&cfg.ClientData, &cfg.clientDataSource, profile.ClientData, profileSource, "client_data", &cfg.Notices); err != nil {
 			return consoleStartupConfig{}, err
 		}
-		if err := applyConsolePath(&cfg.SignerData, &cfg.signerDataSource, profile.SignerData, profileSource, "signer_data", &cfg.Notices); err != nil {
+		if err := applyConsoleValue(&cfg.SignerData, &cfg.signerDataSource, profile.SignerData, profileSource, "signer_data", &cfg.Notices); err != nil {
 			return consoleStartupConfig{}, err
 		}
 	}
 
 	if flags.ClientDataEnv != "" {
-		if err := applyConsolePath(&cfg.ClientData, &cfg.clientDataSource, flags.ClientDataEnv, consoleValueSource{
+		if err := applyConsoleValue(&cfg.ClientData, &cfg.clientDataSource, flags.ClientDataEnv, consoleValueSource{
 			label:    "environment APCLIENT_DATA",
 			explicit: true,
 		}, "client_data", &cfg.Notices); err != nil {
@@ -98,7 +98,7 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 		}
 	}
 	if flags.SignerDataEnv != "" {
-		if err := applyConsolePath(&cfg.SignerData, &cfg.signerDataSource, flags.SignerDataEnv, consoleValueSource{
+		if err := applyConsoleValue(&cfg.SignerData, &cfg.signerDataSource, flags.SignerDataEnv, consoleValueSource{
 			label:    "environment APSIGNER_DATA",
 			explicit: true,
 		}, "signer_data", &cfg.Notices); err != nil {
@@ -119,7 +119,7 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 		}
 	}
 	if flags.ClientDataSet {
-		if err := applyConsolePath(&cfg.ClientData, &cfg.clientDataSource, flags.ClientData, consoleValueSource{
+		if err := applyConsoleValue(&cfg.ClientData, &cfg.clientDataSource, flags.ClientData, consoleValueSource{
 			label:    "flag -client-data",
 			explicit: true,
 		}, "client_data", &cfg.Notices); err != nil {
@@ -127,7 +127,7 @@ func resolveConsoleStartup(flags consoleStartupFlags) (consoleStartupConfig, err
 		}
 	}
 	if flags.SignerDataSet {
-		if err := applyConsolePath(&cfg.SignerData, &cfg.signerDataSource, flags.SignerData, consoleValueSource{
+		if err := applyConsoleValue(&cfg.SignerData, &cfg.signerDataSource, flags.SignerData, consoleValueSource{
 			label:                   "flag -d",
 			explicit:                true,
 			overridesIPCEnvironment: true,
@@ -147,10 +147,6 @@ func applyConsoleMode(cfg *consoleStartupConfig, mode consoleMode, source consol
 		return err
 	}
 	return nil
-}
-
-func applyConsolePath(current *string, currentSource *consoleValueSource, incoming string, incomingSource consoleValueSource, field string, notices *[]string) error {
-	return applyConsoleValue(current, currentSource, incoming, incomingSource, field, notices)
 }
 
 func applyConsoleValue(current *string, currentSource *consoleValueSource, incoming string, incomingSource consoleValueSource, field string, notices *[]string) error {

@@ -6,6 +6,7 @@ package main
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/bootstrap/signeradmin"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -17,7 +18,7 @@ func init() {
 }
 
 func TestEnsureProviders(t *testing.T) {
-	if err := ensureProviders(); err != nil {
+	if err := signeradmin.EnsureProviders(); err != nil {
 		t.Fatalf("provider audit failed: %v", err)
 	}
 }
