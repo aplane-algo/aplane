@@ -150,7 +150,7 @@ func TestCreateSelectedKeysArchiveRefusesADuplicateAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(apkeys.AccountKeyFilePathActive(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
