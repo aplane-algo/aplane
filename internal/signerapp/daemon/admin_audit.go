@@ -153,9 +153,9 @@ func (s signerAdminServices) LogBackupFailedContext(ctx adminserver.SessionConte
 	}
 }
 
-func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, archivePath string, keyCount int) {
+func (s signerAdminServices) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, result adminproto.RestorePreviewResult) {
 	if audit := s.signer.auditLog; audit != nil {
-		audit.LogBackupRestorePreviewedContext(ctx, archivePath, keyCount)
+		audit.LogBackupRestorePreviewedContext(ctx, result)
 	}
 }
 

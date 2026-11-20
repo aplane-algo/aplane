@@ -622,25 +622,16 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
 	})
-	switch {
-	case result.Error != "":
+	if result.Error != "" {
 		if audit, ok := s.audit.(interface {
 			LogBackupRestorePreviewFailedContext(SessionContext, string)
 		}); ok {
 			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), result.Error)
 		}
-	case len(result.Errors) > 0:
-		if audit, ok := s.audit.(interface {
-			LogBackupRestorePreviewFailedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), "restore preview returned key errors")
-		}
-	default:
-		if audit, ok := s.audit.(interface {
-			LogBackupRestorePreviewedContext(SessionContext, string, int)
-		}); ok {
-			audit.LogBackupRestorePreviewedContext(s.SessionContext(), result.ArchivePath, len(result.Keys))
-		}
+	} else if audit, ok := s.audit.(interface {
+		LogBackupRestorePreviewedContext(SessionContext, adminproto.RestorePreviewResult)
+	}); ok {
+		audit.LogBackupRestorePreviewedContext(s.SessionContext(), result)
 	}
 	_ = s.WriteJSON(ProtocolRestorePreviewMessage(msg.ID, result))
 }

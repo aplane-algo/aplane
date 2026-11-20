@@ -597,9 +597,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 					KeyType:       "ed25519",
 					AlreadyExists: true,
 				}},
-				Errors: []RestoreError{{
-					Address: "ADDR2",
-					Error:   "failed to decrypt backup",
+				Skipped: []RestoreSkipped{{
+					Selector: "ADDR2",
+					Reason:   "failed to parse backup credential",
 				}},
 			},
 			wantMap: map[string]any{
@@ -613,10 +613,10 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 						"already_exists": true,
 					},
 				},
-				"errors": []any{
+				"skipped": []any{
 					map[string]any{
-						"address": "ADDR2",
-						"error":   "failed to decrypt backup",
+						"selector": "ADDR2",
+						"reason":   "failed to parse backup credential",
 					},
 				},
 			},
@@ -632,6 +632,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				Restored:         []RestoreCredential{{Selector: "ADDR1", Category: "ed25519", KeyType: "ed25519"}},
 				Identical:        []RestoreCredential{{Selector: "ADDR2", Category: "ed25519", KeyType: "ed25519"}},
 				Conflicts:        []RestoreConflict{{Selector: "ADDR3", Category: "ed25519", KeyType: "ed25519", Reason: "existing credential differs from backup"}},
+				Skipped:          []RestoreSkipped{{Selector: "ADDR4", Reason: "failed to parse backup credential"}},
 				PoliciesRestored: []string{"ADDR1"},
 				KeyCount:         3,
 			},
@@ -650,6 +651,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				},
 				"conflicts": []any{
 					map[string]any{"selector": "ADDR3", "category": "ed25519", "key_type": "ed25519", "reason": "existing credential differs from backup"},
+				},
+				"skipped": []any{
+					map[string]any{"selector": "ADDR4", "reason": "failed to parse backup credential"},
 				},
 				"policies_restored": []any{"ADDR1"},
 				"key_count":         float64(3),

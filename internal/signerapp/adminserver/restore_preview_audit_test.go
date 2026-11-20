@@ -5,6 +5,7 @@ package adminserver
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -15,13 +16,12 @@ import (
 
 type recordingPreviewAudit struct {
 	recordingAuthorizationAudit
-	previewed []string
+	previewed []adminproto.RestorePreviewResult
 	failed    []string
 }
 
-func (a *recordingPreviewAudit) LogBackupRestorePreviewedContext(_ SessionContext, archivePath string, keyCount int) {
-	a.previewed = append(a.previewed, archivePath)
-	_ = keyCount
+func (a *recordingPreviewAudit) LogBackupRestorePreviewedContext(_ SessionContext, result adminproto.RestorePreviewResult) {
+	a.previewed = append(a.previewed, result)
 }
 
 func (a *recordingPreviewAudit) LogBackupRestorePreviewFailedContext(_ SessionContext, reason string) {
@@ -55,17 +55,28 @@ func previewAuditForTest(t *testing.T, result adminproto.RestorePreviewResult) (
 	return audit, written
 }
 
-// A preview whose keys report errors is audited as a failed preview.
-func TestPreviewWithKeyErrorsIsAuditedAsFailed(t *testing.T) {
-	audit, written := previewAuditForTest(t, adminproto.RestorePreviewResult{
+// A preview that skips a key is a preview, audited with what it skips, and
+// the wire carries the skipped key with its reason.
+func TestPreviewWithSkippedKeysIsAuditedAsPreviewed(t *testing.T) {
+	result := adminproto.RestorePreviewResult{
 		ArchivePath: "backup.tar.gz",
-		Keys:        []adminproto.RestoreKeyInfo{{Address: "GOOD", KeyType: "ed25519"}, {Address: "BAD", Error: "refused"}},
-		Errors:      []adminproto.RestoreError{{Address: "BAD", Error: "refused"}},
-	})
-	if len(audit.previewed) != 0 || len(audit.failed) != 1 || audit.failed[0] != "restore preview returned key errors" {
-		t.Fatalf("previewed %q, failed %q", audit.previewed, audit.failed)
+		Keys:        []adminproto.RestoreKeyInfo{{Address: "GOOD", KeyType: "ed25519"}},
+		Skipped:     []adminproto.RestoreSkipped{{Selector: "BAD", Reason: "refused"}},
 	}
-	if len(written.Keys) != 2 || written.Keys[1].Error != "refused" || len(written.Errors) != 1 {
+	audit, written := previewAuditForTest(t, result)
+	if len(audit.failed) != 0 || len(audit.previewed) != 1 || !reflect.DeepEqual(audit.previewed[0], result) {
+		t.Fatalf("previewed %+v, failed %q", audit.previewed, audit.failed)
+	}
+	want := []protocol.RestoreSkipped{{Selector: "BAD", Reason: "refused"}}
+	if len(written.Keys) != 1 || !reflect.DeepEqual(written.Skipped, want) {
 		t.Fatalf("written = %+v", written)
+	}
+}
+
+// A preview that failed is audited as failed, with its error.
+func TestFailedPreviewIsAuditedAsFailed(t *testing.T) {
+	audit, _ := previewAuditForTest(t, adminproto.RestorePreviewResult{Code: protocol.ResultCodeRestorePreviewFailed, Error: "decrypt backup manifest: refused"})
+	if len(audit.previewed) != 0 || len(audit.failed) != 1 || audit.failed[0] != "decrypt backup manifest: refused" {
+		t.Fatalf("previewed %+v, failed %q", audit.previewed, audit.failed)
 	}
 }

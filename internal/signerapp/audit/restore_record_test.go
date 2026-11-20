@@ -40,8 +40,9 @@ func restoreRecordForTest(t *testing.T, result adminproto.RestoreBackupResult) m
 	return record
 }
 
-// A restore record names the operation, the archive and how many
-// credentials it restored; a failed one carries the error as its reason.
+// A restore record names the operation, the archive, how many credentials it
+// restored and the ones it skipped; a failed one carries the error as its
+// reason, and still names what it skipped.
 func TestCredentialRestoreRecordShape(t *testing.T) {
 	restored := []adminproto.RestoreCredential{{Selector: "ADDR1"}, {Selector: "ADDR2"}}
 	for _, tc := range []struct {
@@ -54,25 +55,64 @@ func TestCredentialRestoreRecordShape(t *testing.T) {
 			result: adminproto.RestoreBackupResult{
 				Success: true, OperationID: "restore-1", ArchiveSHA256: "abc", GenerationID: "gen-2",
 				Restored: restored, Identical: []adminproto.RestoreCredential{{Selector: "ADDR3"}}, PoliciesRestored: []string{"ADDR1"},
+				Skipped: []adminproto.RestoreSkipped{{Selector: "BAD1", Reason: "refused"}, {Selector: "BAD2", Reason: "refused"}},
 			},
 			want: map[string]any{
 				"event": string(AuditCredentialRestoreSuccess), "outcome": "restored",
 				"operation_id": "restore-1", "archive_sha256": "abc", "key_count": float64(2),
+				"skipped_keys": []any{"BAD1", "BAD2"},
 			},
 		},
 		{
 			name: "failed",
 			result: adminproto.RestoreBackupResult{
-				OperationID: "restore-2", Code: "restore_failed", Error: "validate backup credential BAD: refused",
+				OperationID: "restore-2", Code: "restore_failed", Error: "selected credential cannot be restored: BAD: refused",
+				Skipped: []adminproto.RestoreSkipped{{Selector: "BAD", Reason: "refused"}},
 			},
 			want: map[string]any{
 				"event": string(AuditCredentialRestoreFailed), "outcome": "failed",
-				"operation_id": "restore-2", "reason": "validate backup credential BAD: refused",
+				"operation_id": "restore-2", "reason": "selected credential cannot be restored: BAD: refused",
+				"skipped_keys": []any{"BAD"},
 			},
 		},
 	} {
 		if got := restoreRecordForTest(t, tc.result); !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("%s: record = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// A preview record names the archive, how many credentials a restore would
+// admit, and the ones it would skip.
+func TestRestorePreviewRecordShape(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogBackupRestorePreviewedContext(adminserver.SessionContext{}, adminproto.RestorePreviewResult{
+		ArchivePath: "backup.tar.gz",
+		Keys:        []adminproto.RestoreKeyInfo{{Address: "GOOD"}},
+		Skipped:     []adminproto.RestoreSkipped{{Selector: "BAD", Reason: "refused"}},
+	})
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	delete(record, "timestamp")
+	delete(record, "transport")
+	want := map[string]any{
+		"event": string(AuditBackupRestorePreviewed), "outcome": "previewed", "reason": "backup.tar.gz",
+		"key_count": float64(1), "skipped_keys": []any{"BAD"},
+	}
+	if !reflect.DeepEqual(record, want) {
+		t.Fatalf("record = %v, want %v", record, want)
 	}
 }

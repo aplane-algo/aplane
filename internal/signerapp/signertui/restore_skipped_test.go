@@ -4,11 +4,14 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // fitsMinSizeForTest renders m at the minimum window and fails on a line
@@ -28,21 +31,26 @@ func fitsMinSizeForTest(t *testing.T, m Model) string {
 	return view
 }
 
-// A preview whose archive holds a key the node cannot admit shows it as an
-// error row and again under the warnings, never selected; the keys it can
-// restore are preselected.
-func TestRestorePreviewShowsAnInadmissibleKey(t *testing.T) {
+// squeezeForTest collapses a view's whitespace, borders included, so a test
+// reads rows without their column padding.
+func squeezeForTest(view string) string {
+	return strings.Join(strings.Fields(strings.NewReplacer("║", " ", "│", " ").Replace(view)), " ")
+}
+
+const longSkipReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`
+
+// A preview lists the keys the archive holds that the node cannot admit
+// after the rest, with the reason, before the operator confirms. They are
+// never selected; the highlighted one's reason is shown in full.
+func TestRestorePreviewShowsSkippedKeysBeforeConfirming(t *testing.T) {
 	m := Model{
 		viewState: ViewRestorePassphrase,
 		restore:   restoreState{archivePath: "aplane-backup.tar.gz", passphrase: []byte("export-passphrase"), previewing: true, pendingID: "preview-1"},
 	}
 	m = updateModel(t, m, RestorePreviewMsg{
 		ID: "preview-1", ArchivePath: "aplane-backup.tar.gz",
-		Keys: []RestoreKeyInfo{
-			{Address: "GOODADDR", KeyType: "ed25519"},
-			{Address: "BADADDR", Error: "failed to parse backup credential"},
-		},
-		Errors: []RestoreError{{Address: "BADADDR", Error: "failed to parse backup credential"}},
+		Keys:    []RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519"}},
+		Skipped: []RestoreSkipped{{Selector: "BADADDR", Reason: longSkipReason}},
 	})
 	if m.viewState != ViewRestorePreview {
 		t.Fatalf("viewState = %v, want ViewRestorePreview", m.viewState)
@@ -50,32 +58,101 @@ func TestRestorePreviewShowsAnInadmissibleKey(t *testing.T) {
 	if got := m.selectedRestoreAddresses(); len(got) != 1 || got[0] != "GOODADDR" {
 		t.Fatalf("selected = %q, want only GOODADDR", got)
 	}
-	m.restore.selectedKey = 1
-	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
-	if m.restore.selected["BADADDR"] {
-		t.Fatal("the inadmissible key became selectable")
+	view := squeezeForTest(fitsMinSizeForTest(t, m))
+	for _, want := range []string{"Selected: 1 of 1 Skipped: 1", "GOODADDR", "BADADDR skipped: failed to parse"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("%q missing from:\n%s", want, view)
+		}
 	}
-	view := fitsMinSizeForTest(t, m)
-	for _, want := range []string{"Selected: 1 of 2", "BADADDR", "failed to parse", "Preview warnings:", "BADADDR: failed to parse backup credential"} {
+
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if got := m.selectedRestoreAddresses(); len(got) != 1 || got[0] != "GOODADDR" {
+		t.Fatalf("selected = %q, want only GOODADDR", got)
+	}
+	view = squeezeForTest(fitsMinSizeForTest(t, m))
+	if !strings.Contains(view, `Skipped: failed to parse backup credential: incompatible key file format`) {
+		t.Fatalf("the highlighted skipped key's reason is missing from:\n%s", view)
+	}
+}
+
+// A preview whose keys are all skipped shows them, and refuses to restore.
+func TestRestorePreviewWithNothingToRestore(t *testing.T) {
+	m := Model{
+		viewState: ViewRestorePassphrase,
+		restore:   restoreState{archivePath: "aplane-backup.tar.gz", passphrase: []byte("export-passphrase"), previewing: true, pendingID: "preview-1"},
+	}
+	m = updateModel(t, m, RestorePreviewMsg{
+		ID: "preview-1", ArchivePath: "aplane-backup.tar.gz",
+		Skipped: []RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+	})
+	if m.viewState != ViewRestorePreview {
+		t.Fatalf("viewState = %v, want ViewRestorePreview", m.viewState)
+	}
+	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	next, cmd := m.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd != nil || m.viewState != ViewRestorePreview || m.restore.previewError != "Nothing to restore: every key in this backup is skipped" {
+		t.Fatalf("restore with nothing to restore: view %v, error %q, cmd %v", m.viewState, m.restore.previewError, cmd != nil)
+	}
+	view := squeezeForTest(fitsMinSizeForTest(t, m))
+	for _, want := range []string{"Selected: 0 of 0 Skipped: 1", "BADADDR skipped: failed to parse", "Nothing to restore"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("%q missing from:\n%s", want, view)
 		}
 	}
 }
 
-// The result screen lists the keys the restore activated.
-func TestRestoreResultListsActivatedKeys(t *testing.T) {
-	m := Model{
-		viewState: ViewRestoreDisplay,
-		restore: restoreState{result: RestoreDisplayResult{
-			ArchivePath: "aplane-backup.tar.gz", Success: true,
-			Activated: []RestoreKeyInfo{{Address: "GOODADDR", KeyType: "ed25519", HasPolicy: true}},
-		}},
+// Many skipped keys scroll with the rest, and the view keeps the minimum
+// size whichever row is highlighted.
+func TestRestorePreviewWithManySkippedKeysFitsAtMinSize(t *testing.T) {
+	m := Model{viewState: ViewRestorePreview, restore: restoreState{
+		previewKeys: []RestoreKeyInfo{{Address: fmt.Sprintf("%058d", 0), KeyType: "aplane.falcon1024-allowlist-wide.v1"}},
+		selected:    map[string]bool{fmt.Sprintf("%058d", 0): true},
+	}}
+	for i := 1; i <= 20; i++ {
+		m.restore.previewSkipped = append(m.restore.previewSkipped, RestoreSkipped{Selector: fmt.Sprintf("%058d", i), Reason: strings.Repeat(longSkipReason+" ", 4)})
 	}
-	view := fitsMinSizeForTest(t, m)
-	for _, want := range []string{"Restore Complete", "Archive: aplane-backup.tar.gz", "Activated: 1", "Restored keys:", "GOODADDR  [ed25519]  policy", "Total: 1 activated keys"} {
+	m = sizedForTest(t, m, MinWidth, MinHeight)
+	for step := range 21 {
+		view := fitsMinSizeForTest(t, m)
+		for _, want := range []string{"RESTORE", "╚", "Skipped: 20", "> "} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("row %d: %q missing from:\n%s", step, want, view)
+			}
+		}
+		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+}
+
+// The result screen lists the keys the restore activated, then the keys it
+// skipped, from the preview and from the restore.
+func TestRestoreResultListsActivatedAndSkippedKeys(t *testing.T) {
+	m := Model{viewState: ViewRestoring, restore: restoreState{
+		archivePath:    "aplane-backup.tar.gz",
+		previewSkipped: []RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}},
+	}}
+	m = updateModel(t, m, RestoreBackupResultMsg{Result: protocol.RestoreBackupResultMessage{
+		Success:          true,
+		Restored:         []protocol.RestoreCredential{{Selector: "GOODADDR", KeyType: "ed25519"}},
+		PoliciesRestored: []string{"GOODADDR"},
+		Skipped:          []protocol.RestoreSkipped{{Selector: "BADADDR", Reason: "failed to parse backup credential"}, {Selector: "LATEADDR", Reason: "role-forbidden"}},
+	}})
+	if m.viewState != ViewRestoreDisplay {
+		t.Fatalf("viewState = %v, want ViewRestoreDisplay", m.viewState)
+	}
+	view := squeezeForTest(fitsMinSizeForTest(t, m))
+	for _, want := range []string{
+		"Restore Complete", "Archive: aplane-backup.tar.gz", "Activated: 1", "Skipped: 2 (cannot be restored on this node)",
+		"Restored keys:", "GOODADDR [ed25519] policy", "BADADDR skipped: failed to parse backup credential",
+		"LATEADDR skipped: role-forbidden", "Total: 1 activated keys, 2 skipped",
+	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("%q missing from:\n%s", want, view)
 		}
+	}
+	if strings.Count(view, "BADADDR") != 1 {
+		t.Fatalf("a key both the preview and the restore skipped is listed twice:\n%s", view)
 	}
 }

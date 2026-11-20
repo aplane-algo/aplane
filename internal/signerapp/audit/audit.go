@@ -139,11 +139,15 @@ type AuditEntry struct {
 	TermUnavailable      int            `json:"term_unavailable,omitempty"`
 	TermFailed           int            `json:"term_failed,omitempty"`
 	ArchiveEntries       []string       `json:"archive_entries,omitempty"`
-	// GenerationIDsOmitted and ArchiveEntriesOmitted count the members left
-	// out of a list longer than an entry holds: the list is then a sample,
-	// and the omitted names are not recorded anywhere.
+	// SkippedKeys names the archived credentials a restore or its preview
+	// skips because the node cannot admit them.
+	SkippedKeys []string `json:"skipped_keys,omitempty"`
+	// GenerationIDsOmitted, ArchiveEntriesOmitted and SkippedKeysOmitted
+	// count the members left out of a list longer than an entry holds: the
+	// list is then a sample, and the omitted names are not recorded anywhere.
 	GenerationIDsOmitted  int    `json:"generation_ids_omitted,omitempty"`
 	ArchiveEntriesOmitted int    `json:"archive_entries_omitted,omitempty"`
+	SkippedKeysOmitted    int    `json:"skipped_keys_omitted,omitempty"`
 	GroupTxIDsOmitted     int    `json:"group_txids_omitted,omitempty"`
 	SuppressedCount       int    `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
 	ClientLabel           string `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
@@ -307,6 +311,9 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 	}
 	if entry.ArchiveEntries, omitted = boundList(entry.ArchiveEntries); omitted > 0 {
 		entry.ArchiveEntriesOmitted = omitted
+	}
+	if entry.SkippedKeys, omitted = boundList(entry.SkippedKeys); omitted > 0 {
+		entry.SkippedKeysOmitted = omitted
 	}
 	if entry.PolicyUpdates, omitted = boundList(entry.PolicyUpdates); omitted > 0 {
 		entry.PolicyUpdatesOmitted = omitted
@@ -1158,13 +1165,28 @@ func (a *AuditLogger) LogBackupFailedContext(ctx adminserver.SessionContext, rea
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, archivePath string, keyCount int) {
+// LogBackupRestorePreviewedContext records a preview: the archive, how many
+// credentials a restore would admit, and the ones it would skip.
+func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, result adminproto.RestorePreviewResult) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePreviewed
 	entry.Outcome = "previewed"
-	entry.Reason = archivePath
-	entry.KeyCount = keyCount
+	entry.Reason = result.ArchivePath
+	entry.KeyCount = len(result.Keys)
+	entry.SkippedKeys = skippedSelectors(result.Skipped)
 	a.Log(entry)
+}
+
+// skippedSelectors lists the selectors of the credentials a restore skips.
+func skippedSelectors(skipped []adminproto.RestoreSkipped) []string {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]string, len(skipped))
+	for i, entry := range skipped {
+		out[i] = entry.Selector
+	}
+	return out
 }
 
 func (a *AuditLogger) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
@@ -1199,6 +1221,7 @@ func (a *AuditLogger) LogCredentialRestoreContext(
 	entry.OperationID = result.OperationID
 	entry.ArchiveSHA256 = result.ArchiveSHA256
 	entry.KeyCount = len(result.Restored)
+	entry.SkippedKeys = skippedSelectors(result.Skipped)
 	if !result.Success {
 		if result.CommitUncertain {
 			entry.Event = AuditCredentialRestoreUncertain

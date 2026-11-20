@@ -234,8 +234,8 @@ type restoreState struct {
 	passphrase          []byte
 	passphraseError     string
 	previewing          bool
-	previewKeys         []RestoreKeyInfo
-	previewErrors       []RestoreError
+	previewKeys         []RestoreKeyInfo // the keys the restore would admit
+	previewSkipped      []RestoreSkipped // the keys it skips, listed after them; selectedKey indexes both
 	selected            map[string]bool
 	selectedKey         int
 	previewScrollOffset int
@@ -816,7 +816,7 @@ type RestorePreviewMsg struct {
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
-	Errors           []RestoreError
+	Skipped          []RestoreSkipped
 	Error            string
 }
 
@@ -825,8 +825,11 @@ type RestoreDisplayResult struct {
 	ArchivePath string
 	Success     bool
 	Activated   []RestoreKeyInfo
-	KeyCount    int
-	Error       string
+	// Skipped lists the archived keys the node cannot admit, which were
+	// never restorable.
+	Skipped  []RestoreSkipped
+	KeyCount int
+	Error    string
 }
 
 type RestoreBackupResultMsg struct {

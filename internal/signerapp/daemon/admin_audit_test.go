@@ -22,7 +22,7 @@ func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
 		LogBackupImportedContext(adminserver.SessionContext, string, int64)
 		LogBackupFailedContext(adminserver.SessionContext, string)
 		LogBackupExportStartedContext(adminserver.SessionContext, string)
-		LogBackupRestorePreviewedContext(adminserver.SessionContext, string, int)
+		LogBackupRestorePreviewedContext(adminserver.SessionContext, adminproto.RestorePreviewResult)
 		LogBackupRestorePreviewFailedContext(adminserver.SessionContext, string)
 	}); !ok {
 		t.Fatal("production audit does not satisfy identity/backup handler probes")

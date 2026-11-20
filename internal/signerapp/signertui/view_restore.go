@@ -70,8 +70,6 @@ const (
 	restoreColumnGap         = 2
 	// restoreAddressMinWidth is 7 leading chars + "..." + 7 trailing chars.
 	restoreAddressMinWidth = 17
-	// restoreErrorKeyTypeWidth is what a key type keeps beside an error.
-	restoreErrorKeyTypeWidth = 12
 )
 
 func (m Model) renderRestorePreview() string {
@@ -81,7 +79,8 @@ func (m Model) renderRestorePreview() string {
 	m.clampRestorePreviewScroll()
 
 	sb.WriteString(m.restorePreviewHeader())
-	if len(m.restore.previewKeys) == 0 {
+	rows := m.restorePreviewRowCount()
+	if rows == 0 {
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("No restorable keys were found in this archive."))
 		sb.WriteString("\n")
@@ -92,17 +91,21 @@ func (m Model) renderRestorePreview() string {
 		sb.WriteString(scrollMoreAboveLine(scrollOffset))
 		sb.WriteString("\n")
 
-		endIdx := min(scrollOffset+m.restorePreviewVisibleHeight(), len(m.restore.previewKeys))
+		endIdx := min(scrollOffset+m.restorePreviewVisibleHeight(), rows)
 		for i := scrollOffset; i < endIdx; i++ {
-			key := m.restore.previewKeys[i]
 			prefix := "  "
 			if i == m.restore.selectedKey {
 				prefix = "> "
 			}
+			if i >= len(m.restore.previewKeys) {
+				skipped := m.restore.previewSkipped[i-len(m.restore.previewKeys)]
+				sb.WriteString(errorStyle.Render(restoreSkippedLine(skipped, prefix+"  ", addressWidth, rowWidth)))
+				sb.WriteString("\n")
+				continue
+			}
+			key := m.restore.previewKeys[i]
 			line := restorePreviewKeyLine(m, key, prefix, addressWidth, rowWidth)
-			if key.Error != "" {
-				sb.WriteString(errorStyle.Render(line))
-			} else if key.AlreadyExists {
+			if key.AlreadyExists {
 				sb.WriteString(helpStyle.Render(line))
 			} else if i == m.restore.selectedKey {
 				sb.WriteString(selectedStyle.Render(line))
@@ -112,7 +115,7 @@ func (m Model) renderRestorePreview() string {
 			sb.WriteString("\n")
 		}
 
-		sb.WriteString(scrollMoreBelowLine(len(m.restore.previewKeys) - endIdx))
+		sb.WriteString(scrollMoreBelowLine(rows - endIdx))
 		sb.WriteString("\n")
 	}
 	sb.WriteString(m.restorePreviewFooter())
@@ -128,26 +131,26 @@ func (m Model) restorePreviewHeader() string {
 	sb.WriteString(titleStyle.Render("Backup Contents"))
 	sb.WriteString("\n")
 	sb.WriteString(m.renderBackupViewHeader(popupWidth))
-	sb.WriteString(fmt.Sprintf("Selected: %d of %d\n",
-		len(m.selectedRestoreAddresses()), len(m.restore.previewKeys)))
+	sb.WriteString(fmt.Sprintf("Selected: %d of %d", len(m.selectedRestoreAddresses()), len(m.restore.previewKeys)))
+	if skipped := len(m.restore.previewSkipped); skipped > 0 {
+		sb.WriteString(fmt.Sprintf("  Skipped: %d", skipped))
+	}
+	sb.WriteString("\n")
 	return sb.String()
 }
 
+// restoreSkippedReasonRunes bounds the reason the preview footer shows for
+// the highlighted skipped key, so the footer cannot crowd out the list.
+const restoreSkippedReasonRunes = 200
+
 func (m Model) restorePreviewFooter() string {
 	var sb strings.Builder
-	if len(m.restore.previewErrors) > 0 {
+	if skipped, ok := m.highlightedSkipped(); ok {
+		width := m.popupBodyWidth(restorePreviewPopupWidth)
 		sb.WriteString("\n")
-		sb.WriteString(warningStyle.Render("Preview warnings:"))
+		sb.WriteString(warningStyle.Render(wrapPlainText(
+			"Skipped: "+ellipsize(terminalSafe(skipped.Reason), restoreSkippedReasonRunes), width)))
 		sb.WriteString("\n")
-		for _, restoreErr := range m.restore.previewErrors {
-			sb.WriteString("  ")
-			if restoreErr.Address != "" {
-				sb.WriteString(terminalSafe(restoreErr.Address))
-				sb.WriteString(": ")
-			}
-			sb.WriteString(terminalSafeLines(restoreErr.Error))
-			sb.WriteString("\n")
-		}
 	}
 
 	sb.WriteString("\n")
@@ -211,53 +214,70 @@ func (m Model) renderRestoreDisplay() string {
 	lines = append(lines,
 		fmt.Sprintf("Activated: %d", len(result.Activated)),
 	)
+	if len(result.Skipped) > 0 {
+		lines = append(lines, errorStyle.Render(fmt.Sprintf("Skipped: %d (cannot be restored on this node)", len(result.Skipped))))
+	}
 
 	if result.Error != "" {
 		lines = append(lines, "", errorStyle.Render(terminalSafeLines(result.Error)))
 	}
 	lines = append(lines, "")
 
-	if len(result.Activated) > 0 {
-		overhead := 5 // header, above indicator, below indicator, total, spacer
-		visibleRows := contentHeight - len(lines) - overhead
-		if visibleRows < 1 {
-			visibleRows = 1
-		}
-		displayModel := m
-		displayModel.clampRestoreDisplayScroll(visibleRows)
-		scrollOffset := displayModel.restore.displayScrollOffset
-		endIdx := scrollOffset + visibleRows
-		if endIdx > len(result.Activated) {
-			endIdx = len(result.Activated)
-		}
-
-		lines = append(lines, statusUnlockedStyle.Render("Restored keys:"))
-		if above := scrollMoreAboveLine(scrollOffset); above != "" {
-			lines = append(lines, above)
-		}
-		for i := scrollOffset; i < endIdx; i++ {
-			prefix := "  "
-			if i == displayModel.restore.displaySelectedKey {
-				prefix = "> "
-			}
-			line := restoreDisplayKeyLine(result.Activated[i], prefix, rowWidth)
-			if i == displayModel.restore.displaySelectedKey {
-				lines = append(lines, selectedStyle.Render(line))
-			} else {
-				lines = append(lines, normalStyle.Render(line))
-			}
-		}
-		if below := scrollMoreBelowLine(len(result.Activated) - endIdx); below != "" {
-			lines = append(lines, below)
-		}
-		lines = append(lines, fmt.Sprintf("  Total: %d activated keys", len(result.Activated)))
-		lines = append(lines, "")
+	if result.rowCount() > 0 {
+		const overhead = 5 // header, above indicator, below indicator, total, spacer
+		lines = append(lines, m.restoreDisplayList(rowWidth, max(contentHeight-len(lines)-overhead, 1))...)
 	}
 
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
 	return m.renderPopup(popupWidth, strings.Join(lines, "\n"))
+}
+
+// restoreDisplayList is the result screen's scrolling list: the activated
+// keys, then the skipped ones, under a label and over their total.
+func (m Model) restoreDisplayList(rowWidth, visibleRows int) []string {
+	result := m.restore.result
+	rows := result.rowCount()
+	m.clampRestoreDisplayScroll(visibleRows)
+	scrollOffset := m.restore.displayScrollOffset
+	endIdx := min(scrollOffset+visibleRows, rows)
+
+	label := "Restored keys:"
+	if len(result.Activated) == 0 {
+		label = "Skipped keys:"
+	}
+	lines := []string{statusUnlockedStyle.Render(label)}
+	if above := scrollMoreAboveLine(scrollOffset); above != "" {
+		lines = append(lines, above)
+	}
+	for i := scrollOffset; i < endIdx; i++ {
+		lines = append(lines, restoreDisplayRow(result, i, i == m.restore.displaySelectedKey, rowWidth))
+	}
+	if below := scrollMoreBelowLine(rows - endIdx); below != "" {
+		lines = append(lines, below)
+	}
+	total := fmt.Sprintf("  Total: %d activated keys", len(result.Activated))
+	if len(result.Skipped) > 0 {
+		total += fmt.Sprintf(", %d skipped", len(result.Skipped))
+	}
+	return append(lines, total, "")
+}
+
+// restoreDisplayRow renders row i of the result list.
+func restoreDisplayRow(result RestoreDisplayResult, i int, selected bool, rowWidth int) string {
+	prefix := "  "
+	if selected {
+		prefix = "> "
+	}
+	if i >= len(result.Activated) {
+		return errorStyle.Render(restoreSkippedLine(result.Skipped[i-len(result.Activated)], prefix, keyAddressShortWidth, rowWidth))
+	}
+	line := restoreDisplayKeyLine(result.Activated[i], prefix, rowWidth)
+	if selected {
+		return selectedStyle.Render(line)
+	}
+	return normalStyle.Render(line)
 }
 
 func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) string {
@@ -313,12 +333,6 @@ func restorePreviewAddressWidth(keys []RestoreKeyInfo, rowWidth int) int {
 func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWidth, rowWidth int) string {
 	flags := restorePreviewFlags(key)
 	room := rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - len(flags)
-	if key.Error != "" {
-		// An error is free text: it takes what the key type does not need.
-		errorWidth := max(room-min(restoreKeyTypeWidth(key), restoreErrorKeyTypeWidth)-restoreColumnGap, 0)
-		flags += "  " + ellipsize(terminalSafe(key.Error), errorWidth)
-		room = rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - utf8.RuneCountInString(flags)
-	}
 	keyType := "[" + ellipsizeMiddle(displayKeyType(key.KeyType), max(room-2, 0)) + "]"
 	address := restorePreviewAddress(key, addressWidth)
 	addressPad := max(addressWidth-utf8.RuneCountInString(ellipsizeMiddle(terminalSafe(key.Address), addressWidth)), 0)
@@ -326,6 +340,16 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWi
 
 	return prefix + restoreSelectionMark(m, key) + address + strings.Repeat(" ", addressPad) +
 		"  " + keyType + strings.Repeat(" ", flagPad) + flags
+}
+
+// restoreSkippedLine lays out a key the restore skips: its address, then the
+// reason in what the row has left. lead is the row's cursor and selection
+// columns.
+func restoreSkippedLine(skipped RestoreSkipped, lead string, addressWidth, rowWidth int) string {
+	address := ellipsizeMiddle(terminalSafe(skipped.Selector), addressWidth)
+	addressPad := max(addressWidth-utf8.RuneCountInString(address), 0)
+	room := max(rowWidth-utf8.RuneCountInString(lead)-addressWidth-restoreColumnGap, 0)
+	return lead + address + strings.Repeat(" ", addressPad) + "  " + ellipsize("skipped: "+terminalSafe(skipped.Reason), room)
 }
 
 func restoreKeyTypeWidth(key RestoreKeyInfo) int {

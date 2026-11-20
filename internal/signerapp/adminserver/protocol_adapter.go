@@ -308,7 +308,7 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 		ArchivePath:      result.ArchivePath,
 		ArchiveCreatedAt: result.ArchiveCreatedAt,
 		Keys:             protocolRestoreKeyInfos(result.Keys),
-		Errors:           protocolRestoreErrors(result.Errors),
+		Skipped:          protocolRestoreSkipped(result.Skipped),
 		Code:             result.Code,
 		Error:            result.Error,
 	}
@@ -324,6 +324,7 @@ func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBack
 		Restored:         protocolRestoreCredentials(result.Restored),
 		Identical:        protocolRestoreCredentials(result.Identical),
 		Conflicts:        protocolRestoreConflicts(result.Conflicts),
+		Skipped:          protocolRestoreSkipped(result.Skipped),
 		PoliciesRestored: result.PoliciesRestored,
 		KeyCount:         result.KeyCount,
 		Code:             result.Code,
@@ -436,22 +437,18 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
 			StageHint:     item.StageHint, StageHintRound: item.StageHintRound,
-			Error: item.Error,
 		}
 	}
 	return out
 }
 
-func protocolRestoreErrors(items []adminproto.RestoreError) []protocol.RestoreError {
+func protocolRestoreSkipped(items []adminproto.RestoreSkipped) []protocol.RestoreSkipped {
 	if len(items) == 0 {
 		return nil
 	}
-	out := make([]protocol.RestoreError, len(items))
+	out := make([]protocol.RestoreSkipped, len(items))
 	for i, item := range items {
-		out[i] = protocol.RestoreError{
-			Address: item.Address,
-			Error:   item.Error,
-		}
+		out[i] = protocol.RestoreSkipped{Selector: item.Selector, Reason: item.Reason}
 	}
 	return out
 }

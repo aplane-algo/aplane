@@ -199,14 +199,15 @@ func TestRestoreScreensEscapeArchiveNameAndConflicts(t *testing.T) {
 		`migration\x1b]0;pwned\a\x1b[2J.tar`, `KEY\u202e`, `test.inject\x1b[2J.v1`)
 
 	m.viewState = ViewRestorePreview
-	m.restore.previewKeys = []RestoreKeyInfo{{Address: "ADDR" + rightToLeft, KeyType: "aplane.falcon1024.v1", Error: "bad " + clearScreen}}
-	m.restore.previewErrors = []RestoreError{{Address: "ADDR" + clearScreen, Error: "cannot read " + setTitle}}
+	m.restore.previewKeys = []RestoreKeyInfo{{Address: "ADDR" + rightToLeft, KeyType: "aplane.falcon1024.v1"}}
+	m.restore.previewSkipped = []RestoreSkipped{{Selector: "SKIP" + clearScreen, Reason: "cannot " + setTitle}}
+	m.restore.selectedKey = 1
 	m.restore.previewError = "restore failed: " + clearScreen
-	assertNeutralized(t, "restore preview", m.renderRestorePreview(), `ADDR\x1b[2J`, `cannot read \x1b]0;pwned\a`)
+	assertNeutralized(t, "restore preview", m.renderRestorePreview(), `SKIP\x1b[2J`, `cannot \x1b]0;pwned\a`)
 
 	m.viewState = ViewRestoreDisplay
-	m.restore.result = RestoreDisplayResult{ArchivePath: archive, Error: "partly failed: " + archive}
-	assertNeutralized(t, "restore result", m.renderRestoreDisplay(), `migration\x1b]0;pwned\a\x1b[2J.tar`)
+	m.restore.result = RestoreDisplayResult{ArchivePath: archive, Error: "partly failed: " + archive, Skipped: m.restore.previewSkipped}
+	assertNeutralized(t, "restore result", m.renderRestoreDisplay(), `migration\x1b]0;pwned\a\x1b[2J.tar`, `SKIP\x1b[2J`)
 }
 
 func TestPolicyReviewAndEditorEscapeFileNamesAndCheckOutput(t *testing.T) {

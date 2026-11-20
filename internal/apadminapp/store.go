@@ -464,8 +464,8 @@ func (s Store) restorePreview(name string, secret []byte) error {
 	if result.Error != "" {
 		return resultError("restore preview failed", result.Code, result.Error)
 	}
-	if len(result.Errors) > 0 {
-		return fmt.Errorf("restore preview found %d error(s)", len(result.Errors))
+	if len(result.Keys) == 0 {
+		return fmt.Errorf("nothing to restore: every key in the backup would be skipped")
 	}
 	return nil
 }
@@ -484,13 +484,16 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 	}, &result); err != nil {
 		return err
 	}
+	for _, skipped := range result.Skipped {
+		s.warn("skipped %s: %s", skipped.Selector, skipped.Reason)
+	}
 	if !result.Success {
 		for _, conflict := range result.Conflicts {
 			s.warn("credential conflict: %s (%s, %s): %s", conflict.Selector, conflict.Category, conflict.KeyType, conflict.Reason)
 		}
 		return resultError("credential restore failed", result.Code, result.Error)
 	}
-	s.info("restored %d credential(s); %d already identical", len(result.Restored), len(result.Identical))
+	s.info("restored %d credential(s); %d already identical; %d skipped", len(result.Restored), len(result.Identical), len(result.Skipped))
 	if len(result.PoliciesRestored) > 0 {
 		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
 	}
@@ -540,22 +543,13 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 		if key.AlreadyExists {
 			status = "exists"
 		}
-		if key.Error != "" {
-			status = "error: " + key.Error
-		}
-		parts := []string{key.Address}
-		if key.KeyType != "" {
-			parts = append(parts, key.KeyType)
-		}
-		parts = append(parts, status)
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s\n", strings.Join(parts, "  "))
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s\n", key.Address, key.KeyType, status)
 	}
-	for _, item := range result.Errors {
-		if item.Address != "" {
-			s.warn("%s: %s", item.Address, item.Error)
-		} else {
-			s.warn("%s", item.Error)
-		}
+	for _, skipped := range result.Skipped {
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", skipped.Selector, skipped.Reason)
+	}
+	if len(result.Skipped) > 0 {
+		s.warn("%d key(s) cannot be restored on this node and would be skipped", len(result.Skipped))
 	}
 }
 

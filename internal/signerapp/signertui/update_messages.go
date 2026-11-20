@@ -263,15 +263,9 @@ func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cm
 	}
 	m.restore.pendingID = ""
 	m.restore.previewing = false
-	if msg.Error != "" || (len(msg.Keys) == 0 && len(msg.Errors) > 0) {
+	if msg.Error != "" {
 		m.clearRestorePassphrase()
 		m.restore.passphraseError = msg.Error
-		if m.restore.passphraseError == "" {
-			m.restore.passphraseError = firstRestoreError(msg.Errors)
-		}
-		if m.restore.passphraseError == "" {
-			m.restore.passphraseError = "Restore preview failed"
-		}
 		m.viewState = ViewRestorePassphrase
 		return m, nil
 	}
@@ -279,7 +273,7 @@ func (m Model) handleRestorePreviewMsg(msg RestorePreviewMsg) (tea.Model, tea.Cm
 	m.restore.archivePath = msg.ArchivePath
 	m.restore.archiveCreatedAt = msg.ArchiveCreatedAt
 	m.restore.previewKeys = msg.Keys
-	m.restore.previewErrors = msg.Errors
+	m.restore.previewSkipped = msg.Skipped
 	m.restore.passphraseError = ""
 	m.restore.previewError = ""
 	m.restore.selectedKey = 0
@@ -323,6 +317,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 		ArchivePath: m.restore.archivePath,
 		Success:     msg.Result.Success,
 		Activated:   restored,
+		Skipped:     restoreSkippedUnion(m.restore.previewSkipped, msg.Result.Skipped),
 		KeyCount:    msg.Result.KeyCount,
 		Error:       msg.Result.Error,
 	}

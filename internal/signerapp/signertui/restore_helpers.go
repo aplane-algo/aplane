@@ -56,23 +56,58 @@ func (m Model) currentRestoreBackup() (BackupInfo, bool) {
 	return m.restore.backups[m.restore.selectedBackup], true
 }
 
-// restoreKeySelectable reports whether a previewed key may be selected for
-// recovery. Conflicting (already-existing) keys are freely selectable:
-// recovery is inactive and never overwrites anything, and the
-// replace-existing consent is collected on the restore confirmation beside the
-// exact conflicts it authorizes.
-func restoreKeySelectable(key RestoreKeyInfo) bool {
-	return key.Error == "" && key.Address != ""
-}
-
+// initializeRestoreSelection selects every new key. Conflicting
+// (already-existing) keys stay selectable: the replace-existing consent is
+// collected on the restore confirmation beside the exact conflicts it
+// authorizes.
 func (m *Model) initializeRestoreSelection() {
 	m.restore.selected = make(map[string]bool)
 	for _, key := range m.restore.previewKeys {
-		if restoreKeySelectable(key) && !key.AlreadyExists {
+		if !key.AlreadyExists {
 			m.restore.selected[key.Address] = true
 		}
 	}
 	m.clampRestoreSelection()
+}
+
+// restorePreviewRowCount is the length of the preview list: the keys the
+// restore would admit, then those it skips.
+func (m Model) restorePreviewRowCount() int {
+	return len(m.restore.previewKeys) + len(m.restore.previewSkipped)
+}
+
+// highlightedSkipped is the skipped key under the preview cursor, if any.
+func (m Model) highlightedSkipped() (RestoreSkipped, bool) {
+	i := m.restore.selectedKey - len(m.restore.previewKeys)
+	if i < 0 || i >= len(m.restore.previewSkipped) {
+		return RestoreSkipped{}, false
+	}
+	return m.restore.previewSkipped[i], true
+}
+
+// rowCount is the length of the result list: the activated keys, then the
+// skipped ones.
+func (r RestoreDisplayResult) rowCount() int {
+	return len(r.Activated) + len(r.Skipped)
+}
+
+// restoreSkippedUnion is the skipped keys the preview showed and any the
+// restore reported, each once, in that order.
+func restoreSkippedUnion(preview, restored []RestoreSkipped) []RestoreSkipped {
+	if len(restored) == 0 {
+		return preview
+	}
+	seen := make(map[string]bool, len(preview))
+	out := append([]RestoreSkipped(nil), preview...)
+	for _, skipped := range preview {
+		seen[skipped.Selector] = true
+	}
+	for _, skipped := range restored {
+		if !seen[skipped.Selector] {
+			out = append(out, skipped)
+		}
+	}
+	return out
 }
 
 func (m *Model) clampRestoreSelection() {
@@ -85,8 +120,8 @@ func (m *Model) clampRestoreSelection() {
 	if m.restore.backupScrollOffset > m.restore.selectedBackup {
 		m.restore.backupScrollOffset = m.restore.selectedBackup
 	}
-	if m.restore.selectedKey >= len(m.restore.previewKeys) {
-		m.restore.selectedKey = len(m.restore.previewKeys) - 1
+	if m.restore.selectedKey >= m.restorePreviewRowCount() {
+		m.restore.selectedKey = m.restorePreviewRowCount() - 1
 	}
 	if m.restore.selectedKey < 0 {
 		m.restore.selectedKey = 0
@@ -130,15 +165,15 @@ func restoreDisplayClampOffset(offset, total, visible int) int {
 }
 
 func (m *Model) clampRestoreDisplayScroll(visibleRows int) {
-	if m.restore.displaySelectedKey >= len(m.restore.result.Activated) {
-		m.restore.displaySelectedKey = len(m.restore.result.Activated) - 1
+	if m.restore.displaySelectedKey >= m.restore.result.rowCount() {
+		m.restore.displaySelectedKey = m.restore.result.rowCount() - 1
 	}
 	if m.restore.displaySelectedKey < 0 {
 		m.restore.displaySelectedKey = 0
 	}
 	m.restore.displayScrollOffset = restoreDisplayClampOffset(
 		m.restore.displayScrollOffset,
-		len(m.restore.result.Activated),
+		m.restore.result.rowCount(),
 		visibleRows,
 	)
 	if m.restore.displaySelectedKey < m.restore.displayScrollOffset {
@@ -149,14 +184,14 @@ func (m *Model) clampRestoreDisplayScroll(visibleRows int) {
 	}
 	m.restore.displayScrollOffset = restoreDisplayClampOffset(
 		m.restore.displayScrollOffset,
-		len(m.restore.result.Activated),
+		m.restore.result.rowCount(),
 		visibleRows,
 	)
 }
 
 func (m *Model) clampRestorePreviewScroll() {
 	visibleHeight := m.restorePreviewVisibleHeight()
-	maxOffset := len(m.restore.previewKeys) - visibleHeight
+	maxOffset := m.restorePreviewRowCount() - visibleHeight
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -185,13 +220,4 @@ func (m Model) selectedRestoreAddresses() []string {
 		}
 	}
 	return addresses
-}
-
-func firstRestoreError(errors []RestoreError) string {
-	for _, restoreErr := range errors {
-		if restoreErr.Error != "" {
-			return restoreErr.Error
-		}
-	}
-	return ""
 }

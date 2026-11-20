@@ -222,6 +222,7 @@ type ChangeStorePassphraseResult struct {
 	Error                  string
 }
 
+// RestoreKeyInfo is an archived credential the restore would admit.
 type RestoreKeyInfo struct {
 	StageHint      *uint64
 	StageHintRound *uint64
@@ -229,12 +230,6 @@ type RestoreKeyInfo struct {
 	KeyType        string
 	AlreadyExists  bool
 	HasPolicy      bool
-	Error          string
-}
-
-type RestoreError struct {
-	Address string
-	Error   string
 }
 
 type PreviewRestoreRequest struct {
@@ -246,7 +241,7 @@ type RestorePreviewResult struct {
 	ArchivePath      string
 	ArchiveCreatedAt int64
 	Keys             []RestoreKeyInfo
-	Errors           []RestoreError
+	Skipped          []RestoreSkipped
 	Code             string
 	Error            string
 }

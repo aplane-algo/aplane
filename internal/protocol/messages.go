@@ -458,6 +458,7 @@ type PreviewRestoreMessage struct {
 	ExportPassphrase SensitiveBytes `json:"export_passphrase"`
 }
 
+// RestoreKeyInfo is an archived credential the restore would admit.
 type RestoreKeyInfo struct {
 	StageHint      *uint64 `json:"stage_hint,omitempty"`
 	StageHintRound *uint64 `json:"stage_hint_round,omitempty"`
@@ -465,12 +466,14 @@ type RestoreKeyInfo struct {
 	KeyType        string  `json:"key_type,omitempty"`
 	AlreadyExists  bool    `json:"already_exists,omitempty"`
 	HasPolicy      bool    `json:"has_policy,omitempty"`
-	Error          string  `json:"error,omitempty"`
 }
 
-type RestoreError struct {
-	Address string `json:"address,omitempty"`
-	Error   string `json:"error"`
+// RestoreSkipped is an archived credential the restore skips because the
+// node cannot admit it, with the reason; its archived policy is skipped
+// with it.
+type RestoreSkipped struct {
+	Selector string `json:"selector"`
+	Reason   string `json:"reason"`
 }
 
 type RestorePreviewMessage struct {
@@ -479,7 +482,7 @@ type RestorePreviewMessage struct {
 	// ArchiveCreatedAt is the creation time from the authenticated manifest.
 	ArchiveCreatedAt int64            `json:"archive_created_at,omitempty"`
 	Keys             []RestoreKeyInfo `json:"keys,omitempty"`
-	Errors           []RestoreError   `json:"errors,omitempty"`
+	Skipped          []RestoreSkipped `json:"skipped,omitempty"`
 	Code             string           `json:"code,omitempty"`
 	Error            string           `json:"error,omitempty"`
 }
@@ -517,6 +520,9 @@ type RestoreBackupResultMessage struct {
 	Restored      []RestoreCredential `json:"restored,omitempty"`
 	Identical     []RestoreCredential `json:"identical,omitempty"`
 	Conflicts     []RestoreConflict   `json:"conflicts,omitempty"`
+	// Skipped lists the archived credentials the restore left out, or, on a
+	// refusal for what it would skip, the ones it would have.
+	Skipped []RestoreSkipped `json:"skipped,omitempty"`
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string `json:"policies_restored,omitempty"`

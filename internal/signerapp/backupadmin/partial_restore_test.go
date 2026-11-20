@@ -29,15 +29,15 @@ func TestMixedArchivePreviewAndRestoreResults(t *testing.T) {
 	preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{
 		ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
 	})
-	if preview.Code != "" || preview.Error != "" || len(preview.Keys) != 1 || len(preview.Errors) != 1 {
+	if preview.Code != "" || preview.Error != "" || len(preview.Keys) != 1 || len(preview.Skipped) != 1 {
 		t.Fatalf("PreviewRestore() = %+v", preview)
 	}
-	if key := preview.Keys[0]; key.Address != good || key.KeyType != "ed25519" || key.Error != "" || key.AlreadyExists {
+	if key := preview.Keys[0]; key.Address != good || key.KeyType != "ed25519" || key.AlreadyExists {
 		t.Fatalf("good preview key = %+v", key)
 	}
-	skipped := preview.Errors[0]
-	if skipped.Address != "BAD" || !strings.HasPrefix(skipped.Error, badMemberReason) {
-		t.Fatalf("preview skipped = %+v", preview.Errors)
+	skipped := preview.Skipped[0]
+	if skipped.Selector != "BAD" || !strings.HasPrefix(skipped.Reason, badMemberReason) {
+		t.Fatalf("preview skipped = %+v", preview.Skipped)
 	}
 
 	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
@@ -45,7 +45,7 @@ func TestMixedArchivePreviewAndRestoreResults(t *testing.T) {
 	})
 	if !result.Success || result.Code != "" || result.Error != "" || result.ArchiveSHA256 == "" || result.GenerationID == "" ||
 		len(result.Restored) != 1 || result.Restored[0].Selector != good || len(result.Identical) != 0 || len(result.Conflicts) != 0 ||
-		len(result.Skipped) != 1 || result.Skipped[0] != (adminproto.RestoreSkipped{Selector: "BAD", Reason: skipped.Error}) {
+		len(result.Skipped) != 1 || result.Skipped[0] != skipped {
 		t.Fatalf("RestoreBackup(mixed) = %+v", result)
 	}
 }
