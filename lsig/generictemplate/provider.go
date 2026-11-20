@@ -355,12 +355,13 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 		return "", fmt.Errorf("unsupported template_mode %q", t.spec.TemplateMode)
 	}
 
-	teal, err := ExpandListTemplates(t.spec.TEAL, normalizedParams, t.spec)
+	paramDefs := tealParamDefs(t.spec)
+	teal, err := tealtemplate.ExpandLists(t.spec.TEAL, normalizedParams, paramDefs)
 	if err != nil {
 		return "", fmt.Errorf("failed to expand list templates: %w", err)
 	}
 
-	teal, err = SubstituteVariables(teal, normalizedParams, t.spec)
+	teal, err = tealtemplate.SubstituteVariables(teal, normalizedParams, paramDefs)
 	if err != nil {
 		return "", fmt.Errorf("failed to substitute variables: %w", err)
 	}
@@ -428,9 +429,6 @@ func SaltStyleForDerivationVersion(version int) (lsigsalt.Style, error) {
 
 // ParseTemplateSpec parses YAML data into a TemplateSpec.
 func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
-	if err := ValidateNoSaltStyleField(data); err != nil {
-		return nil, err
-	}
 	schemaVersion, err := inspectTemplateSchema(data)
 	if err != nil {
 		return nil, err
@@ -468,12 +466,20 @@ func inspectTemplateSchema(data []byte) (int, error) {
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return 0, fmt.Errorf("YAML parse error: template must be a mapping")
 	}
-	if err := validateUniqueYAMLKeys(document.Content[0]); err != nil {
+	root := document.Content[0]
+	// Salt style is an implementation detail owned by each provider family;
+	// generic and composed YAML templates must remain relocatable. The field is
+	// refused with its own reason, before any other check of the document.
+	for i := 0; i < len(root.Content); i += 2 {
+		if root.Content[i].Value == "salt_style" {
+			return 0, fmt.Errorf("salt_style is not supported in YAML templates; salt style is owned by APlane")
+		}
+	}
+	if err := validateUniqueYAMLKeys(root); err != nil {
 		return 0, fmt.Errorf("YAML parse error: %w", err)
 	}
 
 	schemaVersion := 1
-	root := document.Content[0]
 	for i := 0; i < len(root.Content); i += 2 {
 		key, value := root.Content[i], root.Content[i+1]
 		if key.Value != "schema_version" {
@@ -610,26 +616,6 @@ func decodeKnownTemplateFields(data []byte, target any) error {
 	return nil
 }
 
-// ValidateNoSaltStyleField rejects user-authored salt-style selection. Salt
-// style is an implementation detail owned by each provider family; generic and
-// composed YAML templates must remain relocatable.
-func ValidateNoSaltStyleField(data []byte) error {
-	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil {
-		return fmt.Errorf("YAML parse error: %w", err)
-	}
-	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return nil
-	}
-	root := document.Content[0]
-	for i := 0; i < len(root.Content); i += 2 {
-		if root.Content[i].Value == "salt_style" {
-			return fmt.Errorf("salt_style is not supported in YAML templates; salt style is owned by APlane")
-		}
-	}
-	return nil
-}
-
 // ValidateSpec validates a template spec for required fields and consistency.
 func ValidateSpec(spec *TemplateSpec) error {
 	// Validate common base fields (schema version, family, version, display_name)
@@ -708,7 +694,7 @@ func ValidateTemplateSpecMode(spec *TemplateSpec) error {
 		if len(spec.TemplateVariables) > 0 {
 			return fmt.Errorf("generated templates must not declare template_variables")
 		}
-		if err := ValidateListTemplateSyntax(spec.TEAL, spec); err != nil {
+		if err := tealtemplate.ValidateListTemplates(spec.TEAL, tealParamDefs(spec)); err != nil {
 			return err
 		}
 		return ValidateVariablesAgainstParams(spec.TEAL, spec)

@@ -32,12 +32,10 @@ func ExtractVariables(teal string) []string {
 	var vars []string
 
 	for _, match := range matches {
-		if len(match) >= 2 {
-			varName := match[1]
-			if !seen[varName] {
-				seen[varName] = true
-				vars = append(vars, varName)
-			}
+		varName := match[1]
+		if !seen[varName] {
+			seen[varName] = true
+			vars = append(vars, varName)
 		}
 	}
 
@@ -69,11 +67,9 @@ func SubstituteVariables(teal string, params map[string]string, paramDefs []Para
 			return match
 		}
 
-		paramType, hasType := paramTypes[varName]
-		if !hasType {
-			return value
-		}
-
+		// A variable with no declared type falls to formatValueForTEAL's
+		// default and is inserted as given.
+		paramType := paramTypes[varName]
 		formatted, err := formatValueForTEAL(value, paramType)
 		if err != nil {
 			substituteErr = fmt.Errorf("invalid value for @%s (%s): %w", varName, paramType, err)

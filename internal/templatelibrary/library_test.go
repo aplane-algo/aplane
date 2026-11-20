@@ -6,6 +6,7 @@ package templatelibrary
 import (
 	"bytes"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
@@ -108,8 +109,8 @@ teal: |
 	}
 }
 
-func TestValidateImportableSchemaDefaultsMissingOpcodeCeiling(t *testing.T) {
-	err := ValidateImportableSchema([]byte(`schema_version: 1
+func TestParseYAMLDefaultsMissingOpcodeCeiling(t *testing.T) {
+	_, err := ParseYAML("missing-opcode-ceiling.yaml", []byte(`schema_version: 1
 template_type: generic
 template_mode: generated
 publisher: test
@@ -121,12 +122,12 @@ teal: |
   int 1
 `))
 	if err != nil {
-		t.Fatalf("ValidateImportableSchema() error = %v, want omitted ceiling accepted", err)
+		t.Fatalf("ParseYAML() error = %v, want omitted ceiling accepted", err)
 	}
 }
 
-func TestValidateImportableSchemaRejectsExplicitZeroOpcodeCeiling(t *testing.T) {
-	err := ValidateImportableSchema([]byte(`schema_version: 1
+func TestParseYAMLRejectsExplicitZeroOpcodeCeiling(t *testing.T) {
+	_, err := ParseYAML("zero-opcode-ceiling.yaml", []byte(`schema_version: 1
 template_type: generic
 template_mode: generated
 publisher: test
@@ -139,7 +140,7 @@ teal: |
   int 1
 `))
 	if err == nil || !strings.Contains(err.Error(), "max_opcode_cost must be greater than zero") {
-		t.Fatalf("ValidateImportableSchema() error = %v, want explicit-zero rejection", err)
+		t.Fatalf("ParseYAML() error = %v, want explicit-zero rejection", err)
 	}
 }
 
@@ -992,23 +993,12 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 	}
 }
 
-func TestParseFileAsRejectsMismatchedDeclaredTemplateType(t *testing.T) {
-	falcon.RegisterClient()
-	paths := newLibraryTestPaths(t)
-	path := writeLibraryFile(t, paths, "composed.yaml", testComposedTemplateYAML("parse-mismatch", "Parse Mismatch"))
-
-	_, err := ParseFileAs(path, templatestore.TemplateTypeGeneric)
-	if err == nil || !strings.Contains(err.Error(), "does not match requested type") {
-		t.Fatalf("ParseFileAs() error = %v, want mismatch error", err)
-	}
-}
-
 func newLibraryTestPaths(t *testing.T) storepaths.Paths {
 	t.Helper()
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	if err := EnsureLibraryDir(paths); err != nil {
-		t.Fatalf("EnsureLibraryDir() error = %v", err)
+	if err := fsutil.MkdirAllPrivate(paths.TemplateLibraryDir()); err != nil {
+		t.Fatalf("create library directory: %v", err)
 	}
 	return paths
 }
@@ -1047,9 +1037,9 @@ func testKeyTypeEnabled(paths storepaths.Paths, keyType string) bool {
 
 func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
 	t.Helper()
-	source, err := stateSourceForTemplateType(templateType)
-	if err != nil {
-		t.Fatalf("stateSourceForTemplateType() error = %v", err)
+	source, ok := templatestore.SourceForTemplateType(templateType)
+	if !ok {
+		t.Fatalf("no state source for template type %q", templateType)
 	}
 	if err := keytypestate.Put(paths, keytypestate.Record{
 		KeyType: keyType,

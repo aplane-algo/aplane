@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -269,7 +270,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 	defer kr.Zero()
 	// The library calls resolve the active generation from the paths.
 	bound := genstoretest.BindActive(t, paths, active)
-	if err := templatelibrary.EnsureLibraryDir(bound); err != nil {
+	if err := fsutil.MkdirAllPrivate(bound.TemplateLibraryDir()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -282,9 +283,6 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 			}
 			if tc.contract && !strings.Contains(err.Error(), "invalid composed template: invalid bounded template contract: ") {
 				t.Fatalf("ParseYAML() error = %v, want the bounded template contract refusal", err)
-			}
-			if _, err := templatelibrary.ParseYAMLAs("imported.yaml", []byte(tc.yaml), tc.templateType); err == nil || !strings.Contains(err.Error(), tc.wantInstall) {
-				t.Fatalf("ParseYAMLAs() error = %v, want %q", err, tc.wantInstall)
 			}
 			file := strings.TrimPrefix(tc.keyType, "test.") + ".yaml"
 			if err := os.WriteFile(filepath.Join(bound.TemplateLibraryDir(), file), []byte(tc.yaml), 0o600); err != nil {
