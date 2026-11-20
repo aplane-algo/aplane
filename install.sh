@@ -1233,7 +1233,6 @@ write_apshell_endpoint_registry() {
 # See docs/USER_CONFIG.md for full documentation.
 
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

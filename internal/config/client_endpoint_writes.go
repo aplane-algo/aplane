@@ -56,12 +56,11 @@ func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointReg
 // StoredClientEndpointUpsertPlan describes the endpoint registry change that
 // would be applied for one endpoint alias.
 type StoredClientEndpointUpsertPlan struct {
-	Registry       ClientEndpointRegistry
-	Alias          string
-	Endpoint       ClientEndpointConfig
-	Created        bool
-	Updated        bool
-	DefaultChanged bool
+	Registry ClientEndpointRegistry
+	Alias    string
+	Endpoint ClientEndpointConfig
+	Created  bool
+	Updated  bool
 	// DestinationChanged reports that Alias already existed and now names a
 	// different node.
 	DestinationChanged bool
@@ -92,7 +91,6 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	}
 	plan := StoredClientEndpointUpsertPlan{Alias: alias}
 	plan.DestinationChanged = exists && ClientEndpointDestinationChanged(existing, normalized)
-	oldDefault := registry.Default
 	registry.Endpoints[alias] = normalized
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return StoredClientEndpointUpsertPlan{}, err
@@ -101,7 +99,6 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	plan.Endpoint = registry.Endpoints[alias]
 	plan.Created = !exists
 	plan.Updated = exists && !storedClientEndpointsEqual(existing, normalized)
-	plan.DefaultChanged = oldDefault != registry.Default
 	return plan, nil
 }
 
@@ -112,25 +109,6 @@ func ClientEndpointDestinationChanged(previous, next ClientEndpointConfig) bool 
 	previousURL := strings.TrimRight(strings.TrimSpace(previous.URL), "/")
 	nextURL := strings.TrimRight(strings.TrimSpace(next.URL), "/")
 	return previousURL != nextURL
-}
-
-func SetStoredClientEndpointDefault(dataDir, alias string) error {
-	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return err
-	}
-	registry, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		return err
-	}
-	endpoint, ok := registry.Endpoints[alias]
-	if !ok {
-		return fmt.Errorf("endpoint alias %q is not defined", alias)
-	}
-	if endpoint.Role != ClientEndpointRoleSigner {
-		return fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
-	}
-	registry.Default = alias
-	return SaveStoredClientEndpointRegistry(dataDir, registry)
 }
 
 // RemoveStoredClientEndpoint removes an endpoint alias. Callers hold the
@@ -144,8 +122,8 @@ func RemoveStoredClientEndpoint(dataDir, alias string) error {
 	if err != nil {
 		return err
 	}
-	if registry.Default == alias {
-		return fmt.Errorf("endpoint alias %q is the default endpoint", alias)
+	if signerAlias, _, _ := registry.SignerEndpoint(); signerAlias == alias {
+		return fmt.Errorf("endpoint alias %q is the signer endpoint", alias)
 	}
 	if _, ok := registry.Endpoints[alias]; !ok {
 		return fmt.Errorf("endpoint alias %q is not defined", alias)
@@ -160,12 +138,6 @@ func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) err
 	}
 	if registry.SchemaVersion != ClientEndpointSchemaVersion {
 		return fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
-	}
-	registry.Default = strings.TrimSpace(registry.Default)
-	if registry.Default != "" {
-		if err := ValidateClientEndpointAlias(registry.Default); err != nil {
-			return fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
-		}
 	}
 	if registry.Endpoints == nil {
 		registry.Endpoints = map[string]ClientEndpointConfig{}

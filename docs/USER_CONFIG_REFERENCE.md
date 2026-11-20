@@ -29,8 +29,7 @@ Signer and cosigner endpoint routing lives here, not in `config.yaml`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `schema_version` | int | `2` | Endpoint registry schema version |
-| `default` | string | `(operator-chosen)` | Default signer endpoint alias |
-| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `cosigner` |
+| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` (at most one; the default for `connect` and `enroll`) or `cosigner` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]` |
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path (the enrolled client key), resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |

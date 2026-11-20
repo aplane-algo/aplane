@@ -59,7 +59,6 @@ signer_status_poll_interval: "10s"
 
 ```yaml
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -173,7 +172,6 @@ EOF
 # Create endpoints.yaml (or start from examples/config/apclient/endpoints.yaml)
 cat > "$APCLIENT_DATA/endpoints.yaml" << 'EOF'
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -286,7 +284,6 @@ The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
 ```yaml
 schema_version: 2
-default: main
 endpoints:
   main:
     role: signer
@@ -308,7 +305,6 @@ endpoints list
 endpoints show main
 endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-cosigner --endpoint ssh://127.0.0.1:2223
-endpoints default main
 endpoints delete old-signer
 ```
 

@@ -114,8 +114,8 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 }
 
 // What MCP clients read back from the endpoints subcommands: the signer
-// endpoint is marked as the default in a listing, and importing it reports
-// it.
+// endpoint is marked as the default in a listing. There is no default to
+// set, so endpoints default is an unknown subcommand.
 func TestEndpointCommandMachineResults(t *testing.T) {
 	dataDir := t.TempDir()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223"})
@@ -147,19 +147,21 @@ func TestEndpointCommandMachineResults(t *testing.T) {
 		want string
 	}{
 		{[]string{"import", "--alias", "main", "--role", "signer", envelopePath},
-			`{"mode":"import","alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","created":true,"default_changed":true}`},
+			`{"mode":"import","alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","created":true}`},
 		{[]string{"create", "--alias", "cos", "--endpoint", "ssh://127.0.0.1:3333"},
 			`{"mode":"create","alias":"cos","role":"cosigner","url":"ssh://127.0.0.1:3333","created":true}`},
 		{[]string{"list"},
 			`[{"alias":"cos","role":"cosigner","url":"ssh://127.0.0.1:3333","default":false},{"alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","default":true}]`},
 		{[]string{"show", "main"}, `{"alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","default":true}`},
-		{[]string{"default", "main"}, `{"mode":"default","alias":"main","default_changed":true,"previous_default":"main"}`},
 		{[]string{"delete", "cos"}, `{"mode":"delete","alias":"cos","deleted":true}`},
 	}
 	for _, step := range steps {
 		if got := machine(step.args...); got != step.want {
 			t.Fatalf("endpoints %v machine result = %s, want %s", step.args, got, step.want)
 		}
+	}
+	if _, err := state.cmdEndpoints([]string{"default", "main"}, nil); err == nil || err.Error() != `unknown endpoints subcommand "default"` {
+		t.Fatalf("endpoints default error = %v, want an unknown subcommand", err)
 	}
 }
 

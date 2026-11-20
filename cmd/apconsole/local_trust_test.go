@@ -34,7 +34,6 @@ network: testnet
 	}
 	writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -79,7 +78,6 @@ network: testnet
 	}
 	writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -123,7 +121,6 @@ network: testnet
 	}
 	writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -164,7 +161,6 @@ network: testnet
 	}
 	writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -252,7 +248,6 @@ func writeLoopbackClientConfig(t *testing.T) string {
 	}
 	writeClientEndpointRegistry(t, clientDir, `
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

@@ -178,7 +178,7 @@ func resolveOptions(opts options) (resolvedOptions, error) {
 	if err != nil {
 		return resolvedOptions{}, fmt.Errorf("load fixture client config: %w", err)
 	}
-	alias, endpoint, ok := clientCfg.ClientEndpointsOrDefault().DefaultEndpoint()
+	alias, endpoint, ok := clientCfg.ClientEndpointsOrDefault().SignerEndpoint()
 	if !ok {
 		return resolvedOptions{}, fmt.Errorf("fixture client %s has no default signer endpoint", clientData)
 	}

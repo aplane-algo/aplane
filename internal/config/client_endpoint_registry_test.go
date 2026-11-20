@@ -19,17 +19,6 @@ endpoints:
     url: ssh://cos.example
 `
 	testSignerRegistry = `schema_version: 2
-default: primary
-endpoints:
-  primary:
-    role: signer
-    url: ssh://signer.example
-    identity_file: keys/id
-  cos:
-    role: cosigner
-    url: ssh://cos.example:2223
-`
-	testSignerRegistryNoDefault = `schema_version: 2
 endpoints:
   primary:
     role: signer
@@ -42,7 +31,6 @@ endpoints:
 	// What saving testSignerRegistry writes: yaml.v3's own layout, with the
 	// relative identity_file kept and no path defaults filled in.
 	testSignerRegistrySaved = `schema_version: 2
-default: primary
 endpoints:
     cos:
         role: cosigner
@@ -73,8 +61,8 @@ func readTestEndpointRegistry(t *testing.T, dataDir string) string {
 }
 
 // A registry loads the same way for runtime use and for editing, and
-// re-saving what was loaded writes the stored form: the signer endpoint,
-// when there is one, is the default.
+// re-saving what was loaded writes the stored form. The signer endpoint is
+// the one whose role is signer; nothing else names it.
 func TestClientEndpointRegistryLoadAndSave(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -93,7 +81,6 @@ endpoints:
 `,
 		},
 		{name: "signer", contents: testSignerRegistry, wantSigner: "primary", wantSaved: testSignerRegistrySaved},
-		{name: "signer, default omitted", contents: testSignerRegistryNoDefault, wantSigner: "primary", wantSaved: testSignerRegistrySaved},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,9 +90,9 @@ endpoints:
 			if err != nil {
 				t.Fatalf("LoadClientEndpointRegistry() error = %v", err)
 			}
-			alias, endpoint, ok := runtime.DefaultEndpoint()
+			alias, endpoint, ok := runtime.SignerEndpoint()
 			if alias != tt.wantSigner || ok != (tt.wantSigner != "") {
-				t.Fatalf("runtime DefaultEndpoint() = %q, %v; want %q", alias, ok, tt.wantSigner)
+				t.Fatalf("runtime SignerEndpoint() = %q, %v; want %q", alias, ok, tt.wantSigner)
 			}
 			if ok && (endpoint.IdentityFile != filepath.Join(dataDir, "keys/id") ||
 				endpoint.KnownHostsPath != filepath.Join(dataDir, ".ssh/known_hosts")) {
@@ -119,8 +106,8 @@ endpoints:
 			if err != nil {
 				t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 			}
-			if alias, _, _ := stored.DefaultEndpoint(); alias != tt.wantSigner {
-				t.Fatalf("stored DefaultEndpoint() = %q, want %q", alias, tt.wantSigner)
+			if alias, _, _ := stored.SignerEndpoint(); alias != tt.wantSigner {
+				t.Fatalf("stored SignerEndpoint() = %q, want %q", alias, tt.wantSigner)
 			}
 			if cos := stored.Endpoints["cos"]; cos.IdentityFile != "" || cos.KnownHostsPath != "" {
 				t.Fatalf("stored cosigner paths = %q, %q; want them left unset", cos.IdentityFile, cos.KnownHostsPath)
@@ -135,6 +122,20 @@ endpoints:
 	}
 }
 
+// The registry has no default field. A file that earlier releases wrote with
+// one is refused by the strict decode until the line is removed.
+func TestClientEndpointRegistryRefusesDefaultField(t *testing.T) {
+	dataDir := writeTestEndpointRegistry(t, "schema_version: 2\ndefault: primary\n"+strings.TrimPrefix(testSignerRegistry, "schema_version: 2\n"))
+	want := "failed to parse " + GetClientEndpointsPath(dataDir) + ": yaml: unmarshal errors:\n" +
+		"  line 2: field default not found in type config.ClientEndpointRegistry"
+	if _, err := LoadClientEndpointRegistry(dataDir); err == nil || err.Error() != want {
+		t.Fatalf("LoadClientEndpointRegistry() error = %v, want %q", err, want)
+	}
+	if _, err := LoadStoredClientEndpointRegistry(dataDir); err == nil || err.Error() != want {
+		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v, want %q", err, want)
+	}
+}
+
 // Both loaders refuse the same files with the same error.
 func TestClientEndpointRegistryLoadRefusals(t *testing.T) {
 	tests := []struct {
@@ -142,21 +143,6 @@ func TestClientEndpointRegistryLoadRefusals(t *testing.T) {
 		contents string
 		wantErr  string
 	}{
-		{
-			name:     "default names a cosigner",
-			contents: "schema_version: 2\ndefault: cos\nendpoints:\n  primary:\n    role: signer\n    url: ssh://signer.example\n  cos:\n    role: cosigner\n    url: ssh://cos.example\n",
-			wantErr:  `endpoints.yaml default endpoint "cos" must be the "signer" endpoint "primary"`,
-		},
-		{
-			name:     "default without a signer",
-			contents: "schema_version: 2\ndefault: primary\nendpoints:\n  cos:\n    role: cosigner\n    url: ssh://cos.example\n",
-			wantErr:  `endpoints.yaml default endpoint "primary" is set but no "signer" endpoint is configured`,
-		},
-		{
-			name:     "invalid default alias",
-			contents: "schema_version: 2\ndefault: bad/alias\nendpoints: {}\n",
-			wantErr:  `endpoints.yaml default: alias "bad/alias" must contain only ASCII letters, digits, '.', '_', or '-'`,
-		},
 		{
 			name:     "two signers",
 			contents: "schema_version: 2\nendpoints:\n  a:\n    role: signer\n    url: ssh://a.example\n  b:\n    role: signer\n    url: ssh://b.example\n",
@@ -196,7 +182,7 @@ func TestRemoveStoredClientEndpointRefusesSignerAlias(t *testing.T) {
 	dataDir := writeTestEndpointRegistry(t, testSignerRegistry)
 
 	err := RemoveStoredClientEndpoint(dataDir, "primary")
-	if err == nil || err.Error() != `endpoint alias "primary" is the default endpoint` {
+	if err == nil || err.Error() != `endpoint alias "primary" is the signer endpoint` {
 		t.Fatalf("RemoveStoredClientEndpoint(primary) error = %v", err)
 	}
 	if got := readTestEndpointRegistry(t, dataDir); got != testSignerRegistry {
@@ -210,7 +196,6 @@ func TestRemoveStoredClientEndpointRefusesSignerAlias(t *testing.T) {
 		t.Fatalf("RemoveStoredClientEndpoint(cos) error = %v", err)
 	}
 	want := `schema_version: 2
-default: primary
 endpoints:
     primary:
         role: signer
@@ -226,14 +211,14 @@ endpoints:
 // each plan says what became of the alias, and the file holds the result.
 func TestStoredClientEndpointAddAndRemove(t *testing.T) {
 	dataDir := t.TempDir()
-	type flags struct{ created, updated, defaultChanged, destinationChanged bool }
+	type flags struct{ created, updated, destinationChanged bool }
 	steps := []struct {
 		alias    string
 		endpoint ClientEndpointConfig
 		want     flags
 	}{
 		{"cos", ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: " ssh://cos.example/ "}, flags{created: true}},
-		{"primary", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://signer.example"}, flags{created: true, defaultChanged: true}},
+		{"primary", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://signer.example"}, flags{created: true}},
 		{"primary", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://signer.example"}, flags{}},
 		{"primary", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://signer.example:2200"}, flags{updated: true, destinationChanged: true}},
 		{"cos", ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: "ssh://cos.example", IdentityFile: "other/id"}, flags{updated: true}},
@@ -243,7 +228,7 @@ func TestStoredClientEndpointAddAndRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("step %d: PlanStoredClientEndpointUpsert(%s) error = %v", i, step.alias, err)
 		}
-		got := flags{plan.Created, plan.Updated, plan.DefaultChanged, plan.DestinationChanged}
+		got := flags{plan.Created, plan.Updated, plan.DestinationChanged}
 		if got != step.want {
 			t.Fatalf("step %d: plan flags = %+v, want %+v", i, got, step.want)
 		}
@@ -252,7 +237,6 @@ func TestStoredClientEndpointAddAndRemove(t *testing.T) {
 		}
 	}
 	want := `schema_version: 2
-default: primary
 endpoints:
     cos:
         role: cosigner
@@ -270,7 +254,6 @@ endpoints:
 		t.Fatalf("RemoveStoredClientEndpoint(cos) error = %v", err)
 	}
 	want = `schema_version: 2
-default: primary
 endpoints:
     primary:
         role: signer

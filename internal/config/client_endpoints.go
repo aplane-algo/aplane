@@ -28,7 +28,6 @@ const (
 // from endpoints.yaml.
 type ClientEndpointRegistry struct {
 	SchemaVersion int                             `yaml:"schema_version"`
-	Default       string                          `yaml:"default,omitempty"`
 	Endpoints     map[string]ClientEndpointConfig `yaml:"endpoints,omitempty"`
 }
 
@@ -181,10 +180,7 @@ func ResolveClientEndpointSSH(endpoint ClientEndpointConfig) (ClientEndpointSSH,
 }
 
 func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
-	out := ClientEndpointRegistry{
-		SchemaVersion: r.SchemaVersion,
-		Default:       r.Default,
-	}
+	out := ClientEndpointRegistry{SchemaVersion: r.SchemaVersion}
 	if len(r.Endpoints) > 0 {
 		out.Endpoints = make(map[string]ClientEndpointConfig, len(r.Endpoints))
 		for alias, endpoint := range r.Endpoints {
@@ -194,13 +190,16 @@ func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 	return out
 }
 
-func (r ClientEndpointRegistry) DefaultEndpoint() (string, ClientEndpointConfig, bool) {
-	alias := r.Default
-	if alias == "" {
-		return "", ClientEndpointConfig{}, false
+// SignerEndpoint returns the registry's signer endpoint, the one connect
+// and enroll use when no alias is named. Loading and saving allow at most
+// one.
+func (r ClientEndpointRegistry) SignerEndpoint() (string, ClientEndpointConfig, bool) {
+	for alias, endpoint := range r.Endpoints {
+		if endpoint.Role == ClientEndpointRoleSigner {
+			return alias, endpoint, true
+		}
 	}
-	endpoint, ok := r.Endpoints[alias]
-	return alias, endpoint, ok
+	return "", ClientEndpointConfig{}, false
 }
 
 func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bool) {
@@ -209,20 +208,13 @@ func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bo
 }
 
 func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {
-	if len(c.Endpoints.Endpoints) > 0 || c.Endpoints.Default != "" {
+	if len(c.Endpoints.Endpoints) > 0 {
 		return c.Endpoints.Clone()
 	}
 	return emptyClientEndpointRegistry()
 }
 
 func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) error {
-	registry.Default = strings.TrimSpace(registry.Default)
-	if registry.Default != "" {
-		if err := ValidateClientEndpointAlias(registry.Default); err != nil {
-			return fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
-		}
-	}
-
 	signerAlias := ""
 	cosignerCount := 0
 	for alias, endpoint := range registry.Endpoints {
@@ -243,16 +235,6 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	if cosignerCount > MaxClientCosignerEndpoints {
 		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)
 	}
-	if signerAlias == "" {
-		if registry.Default != "" {
-			return fmt.Errorf("%s default endpoint %q is set but no %q endpoint is configured", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner)
-		}
-		return nil
-	}
-	if registry.Default != "" && registry.Default != signerAlias {
-		return fmt.Errorf("%s default endpoint %q must be the %q endpoint %q", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner, signerAlias)
-	}
-	registry.Default = signerAlias
 	return nil
 }
 

@@ -25,7 +25,6 @@ const endpointsUsage = "endpoints list | " +
 	"endpoints create --alias <alias> --endpoint <url> [--dry-run] | " +
 	"endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json> | " +
 	"endpoints discover-cosigners | " +
-	"endpoints default <alias> | " +
 	"endpoints delete <alias>"
 
 func (r *REPLState) cmdNetwork(args []string, _ *command.Context) (command.Result, error) {
@@ -164,8 +163,6 @@ func (r *REPLState) cmdEndpoints(args []string, _ *command.Context) (command.Res
 		return r.endpointsImport(args)
 	case "discover-cosigners":
 		return r.endpointsDiscoverCosigners(args)
-	case "default":
-		return r.endpointsDefault(args)
 	case "delete":
 		return r.endpointsDelete(args)
 	default:
@@ -271,8 +268,7 @@ func (r *REPLState) endpointsImport(args []string) (command.Result, error) {
 		})
 	}, endpointMutationProjection{
 		Mode: "import", Alias: result.Alias, Role: result.Role, URL: result.URL,
-		DryRun: result.DryRun, Created: result.Created,
-		Updated: result.Updated, DefaultChanged: result.DefaultChanged,
+		DryRun: result.DryRun, Created: result.Created, Updated: result.Updated,
 	})
 }
 
@@ -304,20 +300,6 @@ func (r *REPLState) endpointsDiscoverCosigners(args []string) (command.Result, e
 			}
 		})
 	}, projection)
-}
-
-// endpointsDefault sets the default endpoint.
-func (r *REPLState) endpointsDefault(args []string) (command.Result, error) {
-	if len(args) != 2 {
-		return nil, fmt.Errorf("usage: endpoints default <alias>")
-	}
-	result, err := r.app().EndpointDefault(r.commandContext(), args[1])
-	if err != nil {
-		return nil, err
-	}
-	return endpointRenderLinesResult(r, result.RenderLines, endpointMutationProjection{
-		Mode: "default", Alias: result.Alias, PreviousDefault: result.PreviousAlias, DefaultChanged: true,
-	})
 }
 
 // endpointsDelete deletes an endpoint.

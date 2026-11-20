@@ -167,9 +167,9 @@ func TestEndpointUpsertsReportWhatBecameOfTheAlias(t *testing.T) {
 		want []string
 	}{
 		{"import dry run", func() []string { return importAs(true) },
-			[]string{"Would import signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+			[]string{"Would import signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223"}},
 		{"import", func() []string { return importAs(false) },
-			[]string{"Imported signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+			[]string{"Imported signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223"}},
 		{"import again", func() []string { return importAs(false) },
 			[]string{"Imported signer endpoint sig (unchanged)", "  url: ssh://127.0.0.1:2223"}},
 		{"cosigner dry run", func() []string { return cosigner("ssh://127.0.0.1:3333", true) },
@@ -313,7 +313,7 @@ func TestEndpointDiscoverCosignersRejectsAuthenticationAndMalformedMetadata(t *t
 	}
 }
 
-func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
+func TestEndpointDeleteUpdatesLiveRegistry(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := upsertStoredClientEndpoint(dataDir, "primary", config.ClientEndpointConfig{Role: config.ClientEndpointRoleSigner, URL: "ssh://signer.example"}, true); err != nil {
 		t.Fatal(err)
@@ -322,9 +322,6 @@ func TestEndpointDefaultAndDeleteUpdateLiveRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := newEndpointTestApp(t, dataDir)
-	if _, err := app.EndpointDefault(t.Context(), "primary"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := app.EndpointDelete(t.Context(), "secondary"); err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +396,7 @@ func TestEndpointDeleteRefusesSignerEndpoint(t *testing.T) {
 	}
 	app := newEndpointTestApp(t, dataDir)
 	_, err := app.EndpointDelete(t.Context(), "primary")
-	if err == nil || err.Error() != `endpoint alias "primary" is the default endpoint` {
+	if err == nil || err.Error() != `endpoint alias "primary" is the signer endpoint` {
 		t.Fatalf("EndpointDelete(primary) error = %v", err)
 	}
 	if _, err := app.EndpointsList(t.Context()); err != nil {

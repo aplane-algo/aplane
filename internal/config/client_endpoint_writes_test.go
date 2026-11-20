@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
+func TestUpsertStoredCosignerEndpointLeavesNoSignerEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	registry, err := upsertStoredClientEndpoint(dataDir, "cosigner-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleCosigner,
@@ -20,16 +20,16 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsertStoredClientEndpoint(first) error = %v", err)
 	}
-	if registry.Default != "" {
-		t.Fatalf("Default = %q, want empty for first endpoint", registry.Default)
+	if alias, _, ok := registry.SignerEndpoint(); ok {
+		t.Fatalf("SignerEndpoint() = %q, want none for a cosigner endpoint", alias)
 	}
 
 	cfg, err := LoadConfig(dataDir)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); ok || alias != "" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want none", alias, ok)
+	if alias, _, ok := cfg.Endpoints.SignerEndpoint(); ok || alias != "" {
+		t.Fatalf("SignerEndpoint() = %q/%v, want none", alias, ok)
 	}
 	if _, ok := cfg.Endpoints.Endpoint("cosigner-local"); !ok {
 		t.Fatal("cosigner-local endpoint missing after LoadConfig")
@@ -110,8 +110,8 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 
 func TestStoredClientEndpointRejectsRetiredSchemaVersions(t *testing.T) {
 	for _, contents := range []string{
-		"default: primary\nendpoints: {}\n",
-		"schema_version: 1\ndefault: primary\nendpoints: {}\n",
+		"endpoints: {}\n",
+		"schema_version: 1\nendpoints: {}\n",
 	} {
 		dataDir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(contents), 0o600); err != nil {

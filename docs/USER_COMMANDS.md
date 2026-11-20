@@ -1113,14 +1113,14 @@ endpoints add [<cosigner-url>] [--alias <alias>] [--replace] [--dry-run]
 endpoints create --alias <alias> --endpoint <url> [--dry-run]
 endpoints import --alias <alias> --role signer|cosigner [--dry-run] <endpoint-json>
 endpoints discover-cosigners
-endpoints default <alias>
 endpoints delete <alias>
 ```
 
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
 `apadmin endpoint export`. Import writes local endpoint routing only:
-`endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
-and `role: cosigner` for cosigner endpoints. Import does not enroll the
+`endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint,
+which `connect` and `enroll` use when no alias is given, and `role: cosigner`
+for cosigner endpoints. Import does not enroll the
 client's key or copy SSH host trust. On the signer side, `apadmin endpoint export` can derive the URL
 from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
@@ -1154,7 +1154,6 @@ connect main
 endpoints discover-cosigners
 endpoints list
 endpoints show main
-endpoints default main
 endpoints delete old-signer
 ```
 
@@ -1952,7 +1951,6 @@ Create `endpoints.yaml` for signer routing:
 
 ```yaml
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer

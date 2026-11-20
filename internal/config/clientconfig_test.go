@@ -219,7 +219,6 @@ func TestLoadConfigAppliesSSHDefaultsFromEndpointRegistry(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
 schema_version: 2
-default: primary
 endpoints:
   primary:
     role: signer
@@ -232,9 +231,9 @@ endpoints:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	_, endpoint, ok := cfg.Endpoints.SignerEndpoint()
 	if !ok {
-		t.Fatal("default endpoint missing")
+		t.Fatal("signer endpoint missing")
 	}
 	endpointSSH, err := ResolveClientEndpointSSH(endpoint)
 	if err != nil {
