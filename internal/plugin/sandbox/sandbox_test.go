@@ -33,7 +33,7 @@ func TestFilterEnv(t *testing.T) {
 		"SERVICE_TOKEN=service_xxx",
 		"LOCAL_SECRET=local_xxx",
 		"DATABASE_PASSWORD=hunter2",
-		"APSHELL_ALGOD_TOKEN=intentional_plugin_token",
+		"APSHELL_ALGOD_TOKEN=operator_set",
 		"APSIGNER_PASSPHRASE=signer_master",
 		"TEST_PASSPHRASE=test_master",
 		"TEST_FUNDING_MNEMONIC=abandon abandon",
@@ -63,8 +63,8 @@ func TestFilterEnv(t *testing.T) {
 		"CUSTOM_API_KEY", "SERVICE_TOKEN", "LOCAL_SECRET", "DATABASE_PASSWORD",
 		"APSIGNER_PASSPHRASE", "TEST_PASSPHRASE", "TEST_FUNDING_MNEMONIC",
 		"WALLET_PRIVATE_KEY", "HD_SEED", "lowercase_password",
-		// Only the host-set APSHELL_ALGOD_TOKEN is exempt, not the whole prefix.
-		"APSHELL_EXTRA_SECRET",
+		// APSHELL_* names take the same rules as any other.
+		"APSHELL_ALGOD_TOKEN", "APSHELL_EXTRA_SECRET",
 	}
 	for _, key := range excluded {
 		if _, exists := envMap[key]; exists {
@@ -82,8 +82,8 @@ func TestFilterEnv(t *testing.T) {
 	if envMap["TERM"] != "xterm" {
 		t.Error("filterEnv should keep TERM")
 	}
-	if envMap["APSHELL_ALGOD_TOKEN"] != "intentional_plugin_token" || envMap["APSHELL_NETWORK"] != "testnet" {
-		t.Error("filterEnv should keep APSHELL plugin runtime variables")
+	if envMap["APSHELL_NETWORK"] != "testnet" {
+		t.Error("filterEnv should keep a non-secret APSHELL_* name")
 	}
 	if envMap["RETI_APP_ID"] != "12345" {
 		t.Error("filterEnv should keep a plugin's own non-secret configuration")

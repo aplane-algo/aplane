@@ -43,8 +43,8 @@ var apshellEnvNames = []string{
 	"APSHELL_PLUGIN_STATE_DIR",
 }
 
-// A real sandboxed plugin sees the host's environment, filtered, plus the
-// variables the host sets for it; the algod settings reach it in initialize.
+// A real sandboxed plugin sees the host's environment, filtered, plus its state
+// directory; the network and algod settings reach it in initialize.
 func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 	base := sandboxedPluginBase(t)
 
@@ -60,8 +60,8 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 		t.Setenv(name, "")
 		_ = os.Unsetenv(name)
 	}
-	// An operator's own copy of a host-set name, a setting of the operator's
-	// own, and a secret-shaped name.
+	// An operator's own APSHELL_ALGOD_TOKEN, a setting of the operator's own,
+	// and a secret-shaped name.
 	t.Setenv("APSHELL_ALGOD_TOKEN", "operator-token")
 	t.Setenv("APLANE_ENV_PROBE_SETTING", "kept")
 	t.Setenv("APLANE_ENV_PROBE_TOKEN", "stripped")
@@ -80,14 +80,9 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 	stateDir := filepath.Join(base, "data", "plugin-state", "env-probe")
 	env := readEnvFile(t, filepath.Join(stateDir, "env"))
 
-	wantAPShell := map[string]string{
-		"APSHELL_NETWORK":          "localnet",
-		"APSHELL_ALGOD_URL":        "http://localhost:4001",
-		"APSHELL_ALGOD_TOKEN":      "config-token",
-		"APSHELL_INDEXER_URL":      "",
-		"APSHELL_PLUGIN":           "1",
-		"APSHELL_PLUGIN_STATE_DIR": stateDir,
-	}
+	// The operator's APSHELL_ALGOD_TOKEN is stripped like any secret-shaped
+	// name.
+	wantAPShell := map[string]string{"APSHELL_PLUGIN_STATE_DIR": stateDir}
 	for _, name := range apshellEnvNames {
 		got, gotOK := env[name]
 		want, wantOK := wantAPShell[name]

@@ -1139,18 +1139,15 @@ func main() {
 
 ### Environment Variables
 
-Plugins receive these environment variables when started:
+A plugin starts with the host environment, filtered as "Environment
+filtering" below describes, plus one variable APlane sets:
 
 | Variable | Description |
 |----------|-------------|
-| `APSHELL_NETWORK` | Current network context token |
-| `APSHELL_ALGOD_URL` | Algod node URL from `config.yaml` (empty if not configured) |
-| `APSHELL_ALGOD_TOKEN` | Algod API token from `config.yaml` (empty for public nodes) |
-| `APSHELL_INDEXER_URL` | Reserved; currently always empty |
-| `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
 | `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>`, where `<name>` is the manifest `name` |
 
-Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
+The network and algod settings arrive in `initialize`, not in the environment.
+Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, `algodUrl` and `algodToken` are empty strings and the plugin must handle this gracefully.
 
 `APSHELL_PLUGIN_STATE_DIR` is writable by the plugin and is preserved by
 default. APlane takes a non-blocking advisory lock on a lockfile in that
@@ -1324,8 +1321,8 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 
 **Environment filtering:**
 
-Plugins start from the host environment (`os.Environ()`) plus the `APSHELL_*`
-variables above. The sandbox then removes:
+Plugins start from the host environment (`os.Environ()`) plus
+`APSHELL_PLUGIN_STATE_DIR`. The sandbox then removes:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
 - `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
@@ -1333,13 +1330,13 @@ variables above. The sandbox then removes:
   `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, or
   `_SEED` — so `APSIGNER_PASSPHRASE` and test mnemonics never reach a plugin
 
-The host-set `APSHELL_ALGOD_TOKEN` is exempt; other `APSHELL_*` names follow
-the same rules as any variable. The two LocalNet overrides
-`APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only
-for the plugin whose manifest name is `algokit-localnet`; every other plugin
-has them stripped, since all plugins run with network access. `PATH` is
-rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and
-`/sbin/`. All other host environment variables are inherited unchanged.
+`APSHELL_*` names follow the same rules as any variable. The two LocalNet
+overrides `APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are
+exempt only for the plugin whose manifest name is `algokit-localnet`; every
+other plugin has them stripped, since all plugins run with network access.
+`PATH` is rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`,
+`/lib64/`, and `/sbin/`. All other host environment variables are inherited
+unchanged.
 
 **Linux Sandbox Details (bubblewrap):**
 

@@ -52,7 +52,7 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 			},
 		},
 	}
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		m.configSnapshot() // Takes the manager lock, so holding it here would hang.
 		return newTestPluginInstance(t), nil
 	}
@@ -127,7 +127,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	}
 
 	var started []*Instance
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		inst := newTestPluginInstance(t)
 		started = append(started, inst)
 		return inst, nil
@@ -189,7 +189,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 
 	var started []*Instance
 	attempt := 0
-	m.startPluginInstanceHook = func(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
+	m.startPluginInstanceHook = func(plugin *discovery.Plugin) (*Instance, error) {
 		attempt++
 		var inst *Instance
 		if attempt == 1 {
