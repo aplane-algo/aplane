@@ -243,13 +243,8 @@ func handleExecute(req *Request) *Response {
 	if execNetwork != "" && execNetwork != "localnet" {
 		return errorResponse(req.ID, -32000, "algokit-localnet only supports localnet", execNetwork)
 	}
-	cfg.network = firstNonEmpty(execNetwork, "localnet")
 
 	args := params.Args
-	if params.Command != "" && params.Command != "localnet" {
-		args = append([]string{params.Command}, params.Args...)
-	}
-
 	subcommand := "help"
 	if len(args) > 0 {
 		subcommand = strings.ToLower(args[0])
