@@ -5,19 +5,26 @@ package composeddsa_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -29,8 +36,9 @@ import (
 // set of templates covering both schema versions, both template modes, every
 // framework Layer 3 policy, a cosigner, a rekey-to list, runtime arguments, and
 // a set of refused templates: admission, registration, fingerprints, parameter
-// definitions, metadata, programs, and the error text of each refusal.
-const composedOutputDigest = "64be52b7e2da59efe444794dbfb696d8c973a55876ff4cbdd5380f3d383bb0b0"
+// definitions, metadata, programs, derived bytecode and addresses, and the
+// error text of each refusal.
+const composedOutputDigest = "75d1bc66016e8dce2638ee256474c8727d37b7af92c2428a2988085673c17dcf"
 
 const composedCharacterizationDumpEnv = "APLANE_COMPOSED_CHARACTERIZATION_DUMP"
 
@@ -222,7 +230,9 @@ func characterizationValues(defs []lsigprovider.ParameterDef) map[string]string 
 	for _, def := range defs {
 		switch {
 		case def.Name == composeddsa.BoundedCosignerPublicKeyParameter:
-			values[def.Name] = strings.Repeat("44", def.MaxLength/2)
+			// Hex with the digits a-f, half of it in upper case.
+			size := def.MaxLength / 2
+			values[def.Name] = strings.ToUpper(strings.Repeat("a5", size/2)) + strings.Repeat("3c", size-size/2)
 		case def.Name == composeddsa.BoundedRekeyToParameter:
 			values[def.Name] = address(0x61) + "," + address(0x62)
 		case def.Type == "address[]":
@@ -244,7 +254,42 @@ func characterizationValues(defs []lsigprovider.ParameterDef) map[string]string 
 	return values
 }
 
-func characterizeComposedTemplate(r *composedRecorder, name, yaml string) {
+// composedCompiler stands in for algod's compiler. The program it returns is
+// the TEAL version 13 byte, the SHA-256 of the TEAL it is sent, and a final
+// counter byte chosen to put the address off the curve; the hash it reports is
+// that address. So a derived program and address pin the TEAL a derivation
+// compiled, and what the derivation made of the reply.
+type composedCompiler struct{}
+
+func (composedCompiler) RoundTrip(req *http.Request) (*http.Response, error) {
+	reply := func(status int, body string) *http.Response {
+		return &http.Response{
+			StatusCode: status,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}
+	}
+	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
+		return reply(http.StatusNotFound, `{"message":"unexpected request"}`), nil
+	}
+	teal, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(teal)
+	program := append(append([]byte{13}, sum[:]...), 0)
+	for counter := 0; counter < 256; counter++ {
+		program[len(program)-1] = byte(counter)
+		address := crypto.LogicSigAddress(types.LogicSig{Logic: program})
+		if !lsigsalt.IsOnCurve(address) {
+			return reply(http.StatusOK, `{"result":"`+base64.StdEncoding.EncodeToString(program)+`","hash":"`+address.String()+`"}`), nil
+		}
+	}
+	return reply(http.StatusBadRequest, `{"message":"no off-curve counter"}`), nil
+}
+
+func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, name, yaml string) {
 	data := []byte(yaml)
 	fingerprint, err := composeddsa.SemanticFingerprint(data)
 	if err != nil {
@@ -306,6 +351,19 @@ func characterizeComposedTemplate(r *composedRecorder, name, yaml string) {
 	} else {
 		r.add(name+" teal", teal)
 	}
+	provider.SetAlgodClient(client)
+	bytecode, address, err := provider.DeriveLsig(context.Background(), publicKey, prepared)
+	if err != nil {
+		r.add(name+" derive", err)
+	} else {
+		r.add(name+" derive", fmt.Sprintf("%x %s", bytecode, address))
+	}
+	salted, err := provider.DeriveLsigWithSalt(context.Background(), publicKey, prepared)
+	if err != nil {
+		r.add(name+" derive with salt", err)
+	} else {
+		r.add(name+" derive with salt", fmt.Sprintf("%x %s %d %v", salted.Bytecode, salted.Address, salted.Counter, salted.CompilerAutoSalted))
+	}
 	if _, err := provider.GenerateTEAL(publicKey[:len(publicKey)-1], prepared); err != nil {
 		r.add(name+" teal short key", err)
 	}
@@ -361,6 +419,10 @@ func TestComposedOutputIsUnchanged(t *testing.T) {
 	falcon1024.RegisterClient()
 	ed25519lsig.RegisterClient()
 	r := &composedRecorder{}
+	client, err := algod.MakeClientWithTransport("http://characterization-algod", "", nil, composedCompiler{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, set := range []map[string]string{characterizationTemplates(), refusedCharacterizationTemplates()} {
 		names := make([]string, 0, len(set))
 		for name := range set {
@@ -368,7 +430,7 @@ func TestComposedOutputIsUnchanged(t *testing.T) {
 		}
 		slices.Sort(names)
 		for _, name := range names {
-			characterizeComposedTemplate(r, name, set[name])
+			characterizeComposedTemplate(r, client, name, set[name])
 		}
 	}
 	for _, keyType := range []string{boundedmeta.DefaultCosignerComponentKeyType, "aplane.witness-ed25519.v1", "example.unknown.v1"} {

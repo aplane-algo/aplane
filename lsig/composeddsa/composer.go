@@ -88,8 +88,13 @@ type Config struct {
 	SaltStyle    lsigsalt.Style
 	TemplateMode string // generated or strict; required with a TEAL suffix
 	TemplateVars []tealtemplate.TemplateVariable
-	Params       []lsigprovider.ParameterDef  // Creation-time parameters
-	RuntimeArgs  []lsigprovider.RuntimeArgDef // Signing-time arguments
+	Params       []lsigprovider.ParameterDef // Creation-time parameters
+	// RuntimeArgs are the signing-time arguments. A bounded composer records
+	// them in its metadata as given, so a bounded composer's arguments must
+	// come from a validated template spec (newProviderFromBase), whose bounded
+	// runtime_args have passed the bounded argument checks. A Config built by
+	// hand with Bounded and RuntimeArgs skips those checks.
+	RuntimeArgs []lsigprovider.RuntimeArgDef
 	// DerivedArgs carries schema-v2-only slot metadata.
 	DerivedArgs   []boundedmeta.DerivedArg
 	Bounded       *BoundedAuthorizationProfile
@@ -629,6 +634,11 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 			}
 			b.WriteString(substituted)
 			b.WriteString("\n\n")
+		default:
+			// Deliberately layered: the suffix switch above has already refused
+			// this mode. Should that ever stop holding, refusing here keeps a
+			// program from being emitted without the author's narrowing TEAL.
+			return "", fmt.Errorf("unsupported template_mode %q", c.templateMode)
 		}
 	}
 
