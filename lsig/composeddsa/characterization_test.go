@@ -38,7 +38,7 @@ import (
 // a set of refused templates: admission, registration, fingerprints, parameter
 // definitions, metadata, programs, derived bytecode and addresses, and the
 // error text of each refusal.
-const composedOutputDigest = "24e1ef1ac64567d1d6cbd9bbdebb43835989ba9756fd5aea9726d94d6347f763"
+const composedOutputDigest = "ff9dd1d205185b7608e43958e2bb3d69be562a2bc4d75602cda0354b5c57bfa7"
 
 const composedCharacterizationDumpEnv = "APLANE_COMPOSED_CHARACTERIZATION_DUMP"
 
@@ -362,9 +362,7 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 	if err != nil {
 		r.add(name+" derive with salt", err)
 	} else {
-		// The 0 is the retired salt counter's column, kept so the records
-		// stay as they were.
-		r.add(name+" derive with salt", fmt.Sprintf("%x %s 0 %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
+		r.add(name+" derive with salt", fmt.Sprintf("%x %s %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
 	}
 	if _, err := provider.GenerateTEAL(publicKey[:len(publicKey)-1], prepared); err != nil {
 		r.add(name+" teal short key", err)
