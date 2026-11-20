@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -132,6 +133,59 @@ func TestEndpointCreateCosignerAndListContainNoCachedInventory(t *testing.T) {
 	show, err := app.EndpointShow(t.Context(), "cosigner-local")
 	if err != nil || show.Endpoint.URL != "ssh://127.0.0.1:2223" {
 		t.Fatalf("EndpointShow() = %#v, %v", show, err)
+	}
+}
+
+// An endpoint import and a cosigner endpoint created by URL are one upsert:
+// a dry run plans without writing, a real one saves and is reported as
+// created, unchanged or updated.
+func TestEndpointUpsertsReportWhatBecameOfTheAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	envelope := writeEndpointEnvelope(t, dataDir)
+	importAs := func(dryRun bool) []string {
+		t.Helper()
+		result, err := app.EndpointImport(t.Context(), EndpointImportRequest{
+			Alias: "sig", Role: config.ClientEndpointRoleSigner, Path: envelope, DryRun: dryRun,
+		})
+		if err != nil {
+			t.Fatalf("EndpointImport(dry run %v) error = %v", dryRun, err)
+		}
+		return result.RenderLines
+	}
+	cosigner := func(url string, dryRun bool) []string {
+		t.Helper()
+		result, err := app.EndpointCreateCosigner(t.Context(), EndpointCreateCosignerRequest{Alias: "cos", URL: url, DryRun: dryRun})
+		if err != nil {
+			t.Fatalf("EndpointCreateCosigner(%s, dry run %v) error = %v", url, dryRun, err)
+		}
+		return result.RenderLines
+	}
+	steps := []struct {
+		name string
+		got  func() []string
+		want []string
+	}{
+		{"import dry run", func() []string { return importAs(true) },
+			[]string{"Would import signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+		{"import", func() []string { return importAs(false) },
+			[]string{"Imported signer endpoint sig (created)", "  url: ssh://127.0.0.1:2223", "  default: yes"}},
+		{"import again", func() []string { return importAs(false) },
+			[]string{"Imported signer endpoint sig (unchanged)", "  url: ssh://127.0.0.1:2223"}},
+		{"cosigner dry run", func() []string { return cosigner("ssh://127.0.0.1:3333", true) },
+			[]string{"Would configure cosigner endpoint cos (created)", "  url: ssh://127.0.0.1:3333"}},
+		{"cosigner", func() []string { return cosigner("ssh://127.0.0.1:3333", false) },
+			[]string{"Configured cosigner endpoint cos (created)", "  url: ssh://127.0.0.1:3333"}},
+		{"cosigner moved", func() []string { return cosigner("ssh://127.0.0.1:3334", false) },
+			[]string{"Configured cosigner endpoint cos (updated)", "  url: ssh://127.0.0.1:3334"}},
+	}
+	for _, step := range steps {
+		if got := step.got(); !reflect.DeepEqual(got, step.want) {
+			t.Fatalf("%s: render lines = %q, want %q", step.name, got, step.want)
+		}
+	}
+	if endpoint, ok := app.eng.EndpointRegistry.Endpoint("cos"); !ok || endpoint.URL != "ssh://127.0.0.1:3334" {
+		t.Fatalf("live registry cos = %+v, %v; want the moved endpoint", endpoint, ok)
 	}
 }
 

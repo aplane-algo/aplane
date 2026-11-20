@@ -15,7 +15,6 @@ type SigningContextDetails struct {
 	SigningAddress    string
 	KeyType           string
 	SigSize           int
-	IsLogicSig        bool
 	AuthorizationKind algorithm.AuthorizationKind
 	DisplayKeyType    string
 }

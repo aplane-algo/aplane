@@ -35,9 +35,17 @@ func TestMCPJSONTextResultReturnsTextContent(t *testing.T) {
 	}
 }
 
+// mcpTestState is a shell with its command registry and nothing else, for a
+// command MCP refuses before running it.
+func mcpTestState() *REPLState {
+	state := &REPLState{}
+	state.CommandRegistry = state.initCommandRegistry()
+	return state
+}
+
 func TestMCPStructuredBlockedQuitAliasesReturnErrorBeforeExecution(t *testing.T) {
 	for _, name := range []string{"quit", "exit", "q"} {
-		result := mcpExecuteCommand(nil, Command{Name: name})
+		result := mcpExecuteCommand(mcpTestState(), Command{Name: name})
 		if !result.IsError {
 			t.Fatalf("%s: expected error result", name)
 		}
@@ -48,7 +56,7 @@ func TestMCPStructuredBlockedQuitAliasesReturnErrorBeforeExecution(t *testing.T)
 }
 
 func TestMCPStructuredKeyregPasteBlocked(t *testing.T) {
-	result := mcpExecuteCommand(nil, Command{Name: "keyreg"})
+	result := mcpExecuteCommand(mcpTestState(), Command{Name: "keyreg"})
 	if !result.IsError {
 		t.Fatal("expected error result")
 	}
@@ -72,6 +80,7 @@ func TestMCPBalanceParsesAssetOnlyQueryLikeREPL(t *testing.T) {
 func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
 	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
+	state.CommandRegistry = state.initCommandRegistry()
 
 	result := mcpExecuteCommand(state, Command{Name: "write", Args: []string{"on"}})
 	if result.IsError {
@@ -85,6 +94,7 @@ func TestMCPStructuredWriteReturnsJSON(t *testing.T) {
 func TestMCPStructuredWritePrefersStructuredResultOverTextRendering(t *testing.T) {
 	eng := newIsolatedTestEngine(t, "testnet")
 	state := &REPLState{App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
+	state.CommandRegistry = state.initCommandRegistry()
 
 	textResult, err := execWrite(state, []string{"on"})
 	if err != nil {
@@ -294,7 +304,7 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 
 func TestMCPStructuredBlocksJSTool(t *testing.T) {
 	for _, cmd := range []string{"js", "jssave", "jslist"} {
-		result := mcpExecuteCommand(nil, Command{Name: cmd})
+		result := mcpExecuteCommand(mcpTestState(), Command{Name: cmd})
 		if !result.IsError {
 			t.Fatalf("%s: expected error result", cmd)
 		}

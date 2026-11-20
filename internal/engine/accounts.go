@@ -55,50 +55,21 @@ func (e *Engine) GetStatus() *StatusResult {
 	}
 }
 
+// GetBalance is GetAccountBalanceRaw for an address or alias, with the
+// account's alias. A missing algod client is reported before a bad address.
 func (e *Engine) GetBalance(ctx context.Context, addressOrAlias string) (*BalanceResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
-
-	// Resolve alias to address
 	address, err := e.AliasCache.ResolveAddress(addressOrAlias)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidAddress, addressOrAlias)
 	}
-
-	// Query algod for account info
-	accountInfo, err := e.AlgodClient.AccountInformation(address).Do(ctx)
+	result, err := e.GetAccountBalanceRaw(ctx, address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account info: %w", err)
+		return nil, err
 	}
-
-	// Build result
-	result := &BalanceResult{
-		Address:     address,
-		Alias:       e.AliasCache.GetAliasForAddress(address),
-		AlgoBalance: accountInfo.Amount,
-		MinBalance:  accountInfo.MinBalance,
-		AuthAddr:    accountInfo.AuthAddr,
-	}
-
-	// Process assets
-	for _, holding := range accountInfo.Assets {
-		ab := AssetBalance{
-			AssetID:   holding.AssetId,
-			Amount:    holding.Amount,
-			IsFrozen:  holding.IsFrozen,
-			IsOptedIn: true,
-		}
-
-		// Resolve metadata through the shared ASA system.
-		if meta, err := e.ASAResolver().MetadataByID(holding.AssetId); err == nil && meta.Source != asa.SourceIDOnly {
-			ab.UnitName = meta.UnitName
-			ab.Decimals = meta.Decimals
-		}
-
-		result.Assets = append(result.Assets, ab)
-	}
-
+	result.Alias = e.AliasCache.GetAliasForAddress(address)
 	return result, nil
 }
 

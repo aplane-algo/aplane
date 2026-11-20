@@ -58,19 +58,13 @@ func (a *App) HasAlias(name string) bool {
 	return a.eng.HasAlias(name)
 }
 
-// IsTunnelConnected reports whether the current signer connection is bound to an SSH tunnel.
-func (a *App) IsTunnelConnected() bool {
-	return a.eng.IsTunnelConnected()
-}
-
 // ExecutionState returns the current shell-relevant runtime state.
 func (a *App) ExecutionState() CommandExecutionState {
 	return CommandExecutionState{
-		Network:       a.Network(),
-		IsConnected:   a.IsConnected(),
-		IsTunnelBound: a.IsTunnelConnected(),
-		WriteMode:     a.eng.GetWriteMode(),
-		Simulate:      a.eng.GetSimulate(),
+		Network:     a.Network(),
+		IsConnected: a.IsConnected(),
+		WriteMode:   a.eng.GetWriteMode(),
+		Simulate:    a.eng.GetSimulate(),
 	}
 }
 
@@ -147,15 +141,12 @@ func (a *App) PluginSupportsCurrentNetwork(plugin *discovery.Plugin) bool {
 	return plugin.Manifest.SupportsNetwork(a.Network())
 }
 
-// Plugins returns discovered plugin metadata for listing or detailed inspection.
+// PluginsInfo returns discovered plugin metadata for listing or detailed inspection.
 func (a *App) PluginsInfo(_ context.Context, args []string) (*PluginsCommandResult, error) {
-	var plugins []*discovery.Plugin
-	var err error
-	if a != nil && a.Plugins != nil {
-		plugins, err = a.Plugins.DiscoverPluginsCached()
-	} else {
-		plugins, err = discovery.New().Discover()
+	if a.Plugins == nil {
+		return nil, fmt.Errorf("plugin manager not initialized")
 	}
+	plugins, err := a.Plugins.DiscoverPluginsCached()
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover plugins: %w", err)
 	}

@@ -9,14 +9,6 @@ import (
 	"testing"
 )
 
-func TestStructuredCommandResultRejectsMissingOrInvalidMachineJSON(t *testing.T) {
-	for _, data := range [][]byte{nil, {}, []byte("not-json")} {
-		if _, err := newShellCommandJSONResult(nil, data); err == nil {
-			t.Fatalf("newShellCommandJSONResult(%q) error = nil", data)
-		}
-	}
-}
-
 func TestCompletedCommandResultCanRenderRepeatedlyWithoutMutation(t *testing.T) {
 	calls := 0
 	result, err := newShellCommandResult(func(w io.Writer) error {

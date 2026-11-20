@@ -145,13 +145,10 @@ func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*Generat
 	return generateResultFromEngine(result), nil
 }
 
-// DeleteKey resolves the provided address or alias and deletes the corresponding key.
-func (a *App) DeleteKey(ctx context.Context, req DeleteKeyRequest) error {
-	address, _, err := a.eng.ResolveAddress(req.Address)
-	if err != nil {
-		return err
-	}
-	return a.eng.DeleteKey(ctx, address)
+// DeleteKey deletes the key of target, the address ResolveDeleteKeyTarget
+// resolved and the user confirmed.
+func (a *App) DeleteKey(ctx context.Context, target DeleteKeyTarget) error {
+	return a.eng.DeleteKey(ctx, target.Address)
 }
 
 // ResolveDeleteKeyTarget resolves the provided address or alias for prompt/display use.

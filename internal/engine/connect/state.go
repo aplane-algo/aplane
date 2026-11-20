@@ -17,7 +17,6 @@ type ConnectionState struct {
 
 	SignerClient     *signerclient.Client
 	SSHTunnelClient  *sshtunnel.Client
-	TunnelConnected  bool
 	TunnelCancel     context.CancelFunc
 	ConnectionTarget string
 	connectingTarget string
@@ -42,13 +41,6 @@ func (s *ConnectionState) Snapshot() (connected bool, target string) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	return s.SignerClient != nil, s.ConnectionTarget
-}
-
-// IsTunnelConnected reports whether an SSH tunnel connection is active.
-func (s *ConnectionState) IsTunnelConnected() bool {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	return s.TunnelConnected
 }
 
 // GetConnectionTarget returns the active connection target.

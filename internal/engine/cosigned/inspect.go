@@ -5,12 +5,9 @@ package cosigned
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/signerclient"
 )
 
 // NodeRoleCosigner is the node role a cosigner endpoint reports in /status.
@@ -37,15 +34,9 @@ func (s *Signer) InspectCosignerEndpoint(ctx context.Context, endpoint config.Cl
 	if err != nil {
 		return EndpointInspection{}, classifyCosignerDiscoveryConnectError(err)
 	}
-	if cleanup != nil {
-		defer cleanup()
-	}
+	defer cleanup()
 	status, err := client.GetStatusWithContext(ctx)
 	if err != nil {
-		var statusErr *signerclient.HTTPStatusError
-		if errors.As(err, &statusErr) && statusErr.IsLocked() {
-			return EndpointInspection{}, fmt.Errorf("%w: %w", ErrCosignerDiscoveryLocked, err)
-		}
 		return EndpointInspection{}, classifyCosignerDiscoveryQueryError(err)
 	}
 	inspection := EndpointInspection{NodeRole: strings.TrimSpace(status.NodeRole)}
@@ -57,7 +48,7 @@ func (s *Signer) InspectCosignerEndpoint(ctx context.Context, endpoint config.Cl
 		return inspection, classifyCosignerDiscoveryQueryError(err)
 	}
 	if keys.Locked {
-		return inspection, fmt.Errorf("%w", ErrCosignerDiscoveryLocked)
+		return inspection, ErrCosignerDiscoveryLocked
 	}
 	inspection.Keys, err = discoverCosignerComponentKeys(keys.Keys)
 	if err != nil {

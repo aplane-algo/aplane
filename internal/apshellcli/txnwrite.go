@@ -32,7 +32,9 @@ func execWrite(r *REPLState, args []string) (toggleOutcome, error) {
 				return toggleOutcome{Toggle: toggle}, nil
 			}
 		case "off", "false", "0":
-			return toggleOutcome{Toggle: mustSetWriteModeOff(r)}, nil
+			// Turning write mode off cannot fail.
+			toggle, _ := r.app().SetWriteMode(false)
+			return toggleOutcome{Toggle: toggle}, nil
 		default:
 			return toggleOutcome{}, fmt.Errorf("usage: write [on|off]")
 		}
@@ -127,11 +129,6 @@ func (r *REPLState) cmdSimulate(args []string, _ *command.Context) (command.Resu
 		return nil, fmt.Errorf("simulated command returned no result")
 	}
 	return result, nil
-}
-
-func mustSetWriteModeOff(r *REPLState) appresult.Toggle {
-	toggle, _ := r.app().SetWriteMode(false)
-	return toggle
 }
 
 // execLogLevel reports or changes the level at which diagnostics are shown.

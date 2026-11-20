@@ -143,13 +143,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
-	endpoint := config.ClientEndpointConfig{Role: req.Role, URL: env.URL}
-	var endpointPlan config.StoredClientEndpointUpsertPlan
-	if req.DryRun {
-		endpointPlan, err = config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
-	} else {
-		endpointPlan, err = lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
-	}
+	endpointPlan, err := a.upsertEndpoint(req.Alias, config.ClientEndpointConfig{Role: req.Role, URL: env.URL}, req.DryRun)
 	if err != nil {
 		return nil, err
 	}
@@ -163,13 +157,14 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		Updated:        endpointPlan.Updated,
 		DefaultChanged: endpointPlan.DefaultChanged,
 	}
-
-	if !req.DryRun {
-		if err := a.reloadConfigAfterEndpointChange(); err != nil {
-			return nil, err
-		}
+	action := "Imported"
+	if result.DryRun {
+		action = "Would import"
 	}
-	result.RenderLines = endpointImportRenderLines(result)
+	result.RenderLines = endpointUpsertLines(action, endpointPlan)
+	if result.DefaultChanged {
+		result.RenderLines = append(result.RenderLines, "  default: yes")
+	}
 	return result, nil
 }
 
@@ -196,16 +191,7 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 		return nil, fmt.Errorf("endpoint URL is required")
 	}
 
-	endpoint := config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: req.URL}
-	var (
-		endpointPlan config.StoredClientEndpointUpsertPlan
-		err          error
-	)
-	if req.DryRun {
-		endpointPlan, err = config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
-	} else {
-		endpointPlan, err = lockedEndpointUpsert(a.DataDir, req.Alias, endpoint, true)
-	}
+	endpointPlan, err := a.upsertEndpoint(req.Alias, config.ClientEndpointConfig{Role: config.ClientEndpointRoleCosigner, URL: req.URL}, req.DryRun)
 	if err != nil {
 		return nil, err
 	}
@@ -218,13 +204,11 @@ func (a *App) EndpointCreateCosigner(_ context.Context, req EndpointCreateCosign
 		Created: endpointPlan.Created,
 		Updated: endpointPlan.Updated,
 	}
-
-	if !req.DryRun {
-		if err := a.reloadConfigAfterEndpointChange(); err != nil {
-			return nil, err
-		}
+	action := "Configured"
+	if result.DryRun {
+		action = "Would configure"
 	}
-	result.RenderLines = endpointCreateCosignerRenderLines(result)
+	result.RenderLines = endpointUpsertLines(action, endpointPlan)
 	return result, nil
 }
 
@@ -350,20 +334,32 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	}, nil
 }
 
-func lockedEndpointUpsert(dataDir, alias string, endpoint config.ClientEndpointConfig, replace bool) (config.StoredClientEndpointUpsertPlan, error) {
+// upsertEndpoint plans alias's endpoint, replacing any it has. Unless dryRun,
+// it saves the plan under the client data lock and adopts the reloaded
+// config.
+func (a *App) upsertEndpoint(alias string, endpoint config.ClientEndpointConfig, dryRun bool) (config.StoredClientEndpointUpsertPlan, error) {
+	if dryRun {
+		return config.PlanStoredClientEndpointUpsert(a.DataDir, alias, endpoint, true)
+	}
 	var applied config.StoredClientEndpointUpsertPlan
-	err := clientdata.WithExclusiveLock(dataDir, func() error {
-		plan, err := config.PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+	err := clientdata.WithExclusiveLock(a.DataDir, func() error {
+		plan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, alias, endpoint, true)
 		if err != nil {
 			return err
 		}
-		if err := config.SaveStoredClientEndpointRegistry(dataDir, plan.Registry); err != nil {
+		if err := config.SaveStoredClientEndpointRegistry(a.DataDir, plan.Registry); err != nil {
 			return err
 		}
 		applied = plan
 		return nil
 	})
-	return applied, err
+	if err != nil {
+		return config.StoredClientEndpointUpsertPlan{}, err
+	}
+	if err := a.reloadConfigAfterEndpointChange(); err != nil {
+		return config.StoredClientEndpointUpsertPlan{}, err
+	}
+	return applied, nil
 }
 
 // loadEndpointView reads the stored endpoint registry and adopts the loaded
@@ -409,45 +405,19 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	}
 }
 
-func endpointImportRenderLines(result *EndpointImportResult) []string {
-	action := "Imported"
-	if result.DryRun {
-		action = "Would import"
-	}
+// endpointUpsertLines are the render lines of an endpoint upsert: action,
+// what became of the alias, and its URL.
+func endpointUpsertLines(action string, plan config.StoredClientEndpointUpsertPlan) []string {
 	state := "unchanged"
 	switch {
-	case result.Created:
+	case plan.Created:
 		state = "created"
-	case result.Updated:
+	case plan.Updated:
 		state = "updated"
 	}
-
-	lines := []string{
-		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
-		fmt.Sprintf("  url: %s", result.URL),
-	}
-	if result.DefaultChanged {
-		lines = append(lines, "  default: yes")
-	}
-	return lines
-}
-
-func endpointCreateCosignerRenderLines(result *EndpointCreateCosignerResult) []string {
-	action := "Configured"
-	if result.DryRun {
-		action = "Would configure"
-	}
-	state := "unchanged"
-	switch {
-	case result.Created:
-		state = "created"
-	case result.Updated:
-		state = "updated"
-	}
-
 	return []string{
-		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
-		fmt.Sprintf("  url: %s", result.URL),
+		fmt.Sprintf("%s %s endpoint %s (%s)", action, plan.Endpoint.Role, plan.Alias, state),
+		fmt.Sprintf("  url: %s", plan.Endpoint.URL),
 	}
 }
 

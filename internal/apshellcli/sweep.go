@@ -17,9 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
-// runSweep handles the sweep command by parsing args, delegating workflow to
+// cmdSweep handles the sweep command by parsing args, delegating workflow to
 // apshellapp, and rendering the result.
-func (r *REPLState) runSweep(args []string) (command.Result, error) {
+func (r *REPLState) cmdSweep(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseSweepCommand(args)
 	if err != nil {
 		return nil, err

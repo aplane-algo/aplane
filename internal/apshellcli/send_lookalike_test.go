@@ -32,9 +32,11 @@ func TestSendAndSweepAskBeforeSendingToALookalike(t *testing.T) {
 	}
 	for name, run := range map[string]func() (command.Result, error){
 		"send": func() (command.Result, error) {
-			return state.runSend([]string{"1", "algo", "from", "cold", "to", fake})
+			return state.cmdSend([]string{"1", "algo", "from", "cold", "to", fake}, nil)
 		},
-		"sweep": func() (command.Result, error) { return state.runSweep([]string{"algo", "from", "[cold]", "to", fake}) },
+		"sweep": func() (command.Result, error) {
+			return state.cmdSweep([]string{"algo", "from", "[cold]", "to", fake}, nil)
+		},
 	} {
 		out.Reset()
 		prompts = nil

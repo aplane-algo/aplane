@@ -11,9 +11,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 )
 
-// runSign handles the sign command by parsing args, delegating workflow to
+// cmdSign handles the sign command by parsing args, delegating workflow to
 // apshellapp, and rendering the result.
-func (r *REPLState) runSign(args []string) (command.Result, error) {
+func (r *REPLState) cmdSign(args []string, _ *command.Context) (command.Result, error) {
 	// REPL layer: Parse arguments
 	if len(args) < 1 {
 		return nil, fmt.Errorf("usage: sign <file> [nowait]")

@@ -215,9 +215,11 @@ func (r *REPLState) cmdBalance(args []string, _ *command.Context) (command.Resul
 				r.showMultiAccountBalances(res.Balances, res.Asset, false, len(res.Warnings))
 				return nil
 			case apshellapp.BalanceModeSingleFull:
-				return r.showFullBalance(res.Single)
+				r.showFullBalance(res.Single)
+				return nil
 			case apshellapp.BalanceModeSingleAsset:
-				return r.showSingleAssetBalance(res.Single, res.Asset)
+				r.showSingleAssetBalance(res.Single, res.Asset)
+				return nil
 			default:
 				return fmt.Errorf("unsupported balance mode: %s", res.Mode)
 			}

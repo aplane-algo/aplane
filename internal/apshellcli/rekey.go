@@ -15,9 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
-// runRekey handles the rekey command by parsing args, delegating workflow to
+// cmdRekey handles the rekey command by parsing args, delegating workflow to
 // apshellapp, and rendering the result.
-func (r *REPLState) runRekey(args []string) (command.Result, error) {
+func (r *REPLState) cmdRekey(args []string, _ *command.Context) (command.Result, error) {
 	// Handle special subcommands (list, refresh) - these stay in REPL layer
 	if len(args) == 0 {
 		return newShellCommandResult(func(w io.Writer) error {
@@ -120,9 +120,9 @@ func rekeyUsageLines() []string {
 	}
 }
 
-// runUnrekey handles the unrekey command by parsing args, delegating workflow
+// cmdUnrekey handles the unrekey command by parsing args, delegating workflow
 // to apshellapp, and rendering the result.
-func (r *REPLState) runUnrekey(args []string) (command.Result, error) {
+func (r *REPLState) cmdUnrekey(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseRekeyCommand(args, true) // true = isUnrekey
 	if err != nil {
 		return nil, err

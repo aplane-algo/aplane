@@ -18,12 +18,12 @@ func TestSignRefusesWordsItWouldIgnore(t *testing.T) {
 				{"txn.json", "nowait", word},
 				{"txn.json", word, "nowait"},
 			} {
-				_, err := (&REPLState{}).runSign(args)
+				_, err := (&REPLState{}).cmdSign(args, nil)
 				if err == nil {
-					t.Fatalf("runSign(%q) accepted %q", args, word)
+					t.Fatalf("cmdSign(%q) accepted %q", args, word)
 				}
 				if !strings.Contains(err.Error(), word) || !strings.Contains(err.Error(), "nowait") {
-					t.Fatalf("runSign(%q) error = %q, want it to name %q and nowait", args, err, word)
+					t.Fatalf("cmdSign(%q) error = %q, want it to name %q and nowait", args, err, word)
 				}
 			}
 		})

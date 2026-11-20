@@ -19,7 +19,6 @@ func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningC
 		SigningAddress:    signingCtx.SigningAddr,
 		KeyType:           signingCtx.KeyType,
 		SigSize:           signingCtx.SigSize,
-		IsLogicSig:        signingCtx.IsLSig,
 		AuthorizationKind: signingCtx.AuthorizationKind,
 		DisplayKeyType:    displaySigningKeyType(signingCtx.KeyType, signingCtx.AuthorizationKind),
 	}

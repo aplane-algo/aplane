@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
+	"github.com/aplane-algo/aplane/internal/clientstate"
 	"github.com/aplane-algo/aplane/internal/refname"
 )
 
@@ -248,11 +250,7 @@ func (e *Core) GetSet(name string) *SetInfo {
 		return nil
 	}
 
-	// Strip @ prefix if present
-	if len(name) > 0 && name[0] == '@' {
-		name = name[1:]
-	}
-	name = refname.NormalizeSet(name)
+	name = normalizeSetRef(name)
 
 	addresses, exists := e.SetCache.Sets[name]
 	if !exists {
@@ -274,35 +272,37 @@ type AddSetResult struct {
 	OldCount   int
 }
 
-// AddSet creates or replaces a set with the given addresses.
-// Addresses can be aliases or raw addresses - they will be resolved.
-func (e *Core) AddSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
-	// Strip @ prefix if present
-	if len(name) > 0 && name[0] == '@' {
-		name = name[1:]
-	}
-	name = refname.NormalizeSet(name)
+// normalizeSetRef is the stored name of a set reference, with or without its
+// leading '@'.
+func normalizeSetRef(name string) string {
+	return refname.NormalizeSet(strings.TrimPrefix(name, "@"))
+}
 
-	mutation, err := e.State.AddSet(name, addressesOrAliases, e.NewAddressResolver().ResolveSingle)
-	if err != nil {
-		return nil, err
-	}
+func addSetResultFrom(name string, mutation *clientstate.SetMutationResult) *AddSetResult {
 	return &AddSetResult{
 		Name:       name,
 		Addresses:  mutation.Addresses,
 		WasUpdated: mutation.WasUpdated,
 		OldCount:   mutation.OldCount,
-	}, nil
+	}
+}
+
+// AddSet creates or replaces a set with the given addresses.
+// Addresses can be aliases or raw addresses - they will be resolved.
+func (e *Core) AddSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
+	name = normalizeSetRef(name)
+
+	mutation, err := e.State.AddSet(name, addressesOrAliases, e.NewAddressResolver().ResolveSingle)
+	if err != nil {
+		return nil, err
+	}
+	return addSetResultFrom(name, mutation), nil
 }
 
 // RemoveSet removes a set.
 // Returns the number of addresses that were in the set.
 func (e *Core) RemoveSet(name string) (int, error) {
-	// Strip @ prefix if present
-	if len(name) > 0 && name[0] == '@' {
-		name = name[1:]
-	}
-	name = refname.NormalizeSet(name)
+	name = normalizeSetRef(name)
 
 	count, found, err := e.State.RemoveSet(name)
 	if err != nil {
@@ -317,31 +317,18 @@ func (e *Core) RemoveSet(name string) (int, error) {
 
 // AddToSet adds addresses to an existing set (or creates it if it doesn't exist).
 func (e *Core) AddToSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
-	// Strip @ prefix if present
-	if len(name) > 0 && name[0] == '@' {
-		name = name[1:]
-	}
-	name = refname.NormalizeSet(name)
+	name = normalizeSetRef(name)
 
 	mutation, err := e.State.AddToSet(name, addressesOrAliases, e.NewAddressResolver().ResolveSingle)
 	if err != nil {
 		return nil, err
 	}
-	return &AddSetResult{
-		Name:       name,
-		Addresses:  mutation.Addresses,
-		WasUpdated: mutation.WasUpdated,
-		OldCount:   mutation.OldCount,
-	}, nil
+	return addSetResultFrom(name, mutation), nil
 }
 
 // RemoveFromSet removes addresses from a set.
 func (e *Core) RemoveFromSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
-	// Strip @ prefix if present
-	if len(name) > 0 && name[0] == '@' {
-		name = name[1:]
-	}
-	name = refname.NormalizeSet(name)
+	name = normalizeSetRef(name)
 
 	mutation, found, err := e.State.RemoveFromSet(name, addressesOrAliases, e.NewAddressResolver().ResolveSingle)
 	if err != nil {
@@ -350,10 +337,5 @@ func (e *Core) RemoveFromSet(name string, addressesOrAliases []string) (*AddSetR
 	if !found {
 		return nil, fmt.Errorf("%w: @%s", ErrSetNotFound, name)
 	}
-	return &AddSetResult{
-		Name:       name,
-		Addresses:  mutation.Addresses,
-		WasUpdated: mutation.WasUpdated,
-		OldCount:   mutation.OldCount,
-	}, nil
+	return addSetResultFrom(name, mutation), nil
 }

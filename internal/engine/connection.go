@@ -53,11 +53,6 @@ func (e *Core) IsConnected() bool {
 	return e.Connection.IsConnected()
 }
 
-// IsTunnelConnected returns whether connected via SSH tunnel
-func (e *Core) IsTunnelConnected() bool {
-	return e.Connection.IsTunnelConnected()
-}
-
 // GetConnectionTarget returns the current connection target
 func (e *Core) GetConnectionTarget() string {
 	return e.Connection.GetConnectionTarget()

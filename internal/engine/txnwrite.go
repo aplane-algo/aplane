@@ -100,15 +100,11 @@ func (e *Engine) WriteTxnCallback(notices *[]TransactionWriteNotice) func(types.
 		return nil
 	}
 	return func(txn types.Transaction, txID string) {
-		filename, err := e.WriteTransactionJSON(txn, txID)
-		if err != nil {
-			if notices != nil {
-				*notices = append(*notices, TransactionWriteNotice{TxID: txID, Error: err.Error()})
-			}
-		} else if filename != "" {
-			if notices != nil {
-				*notices = append(*notices, TransactionWriteNotice{TxID: txID, Filename: filename})
-			}
+		switch filename, err := e.WriteTransactionJSON(txn, txID); {
+		case err != nil:
+			*notices = append(*notices, TransactionWriteNotice{TxID: txID, Error: err.Error()})
+		case filename != "":
+			*notices = append(*notices, TransactionWriteNotice{TxID: txID, Filename: filename})
 		}
 	}
 }

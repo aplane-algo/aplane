@@ -30,9 +30,6 @@ func TestExecutionStateReflectsEngine(t *testing.T) {
 	if state.IsConnected {
 		t.Fatal("state.IsConnected = true, want false")
 	}
-	if state.IsTunnelBound {
-		t.Fatal("state.IsTunnelBound = true, want false")
-	}
 }
 
 func TestConfigurePluginsUsesCurrentNetworkConfig(t *testing.T) {

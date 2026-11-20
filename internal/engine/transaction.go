@@ -68,9 +68,6 @@ type BalanceCheckResult struct {
 }
 
 func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) clientsign.SubmitOptions {
-	if out == nil {
-		out = &bytes.Buffer{}
-	}
 	return clientsign.SubmitOptions{
 		Ctx:                 ctx,
 		WaitForConfirmation: wait,

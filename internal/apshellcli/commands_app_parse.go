@@ -15,66 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 )
 
-type rawAppCallArgs struct {
-	AppID            uint64
-	From             string
-	AppArgs          [][]byte
-	PayAmount        uint64
-	Accounts         []string
-	ForeignApps      []uint64
-	AssetRefs        []cmdspec.AssetRef
-	Boxes            []types.AppBoxReference
-	OnCompletion     types.OnCompletion
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	Note             string
-	Wait             bool
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
-}
-
-type methodAppCallArgs struct {
-	AppID            uint64
-	Method           string
-	ABIPath          string
-	ArgValues        []string
-	PayAmount        uint64
-	From             string
-	Accounts         []string
-	ForeignApps      []uint64
-	AssetRefs        []cmdspec.AssetRef
-	Boxes            []types.AppBoxReference
-	OnCompletion     types.OnCompletion
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	Note             string
-	Wait             bool
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
-}
-
+// commonAppCallOptions are the options both forms of app call parse.
 type commonAppCallOptions struct {
-	Wait             bool
-	PayAmount        uint64
-	Accounts         []string
-	ForeignApps      []uint64
-	AssetRefs        []cmdspec.AssetRef
-	Boxes            []types.AppBoxReference
-	OnCompletion     types.OnCompletion
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	Note             string
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
+	apshellapp.AppCallOptions
 	// seen holds the single-valued options given so far, the app call
 	// forms' own (from, abi) included, so a repeat is refused.
 	seen cmdspec.SeenOptions
@@ -82,9 +25,8 @@ type commonAppCallOptions struct {
 
 func newCommonAppCallOptions() commonAppCallOptions {
 	return commonAppCallOptions{
-		Wait:         true,
-		OnCompletion: types.NoOpOC,
-		seen:         cmdspec.SeenOptions{},
+		AppCallOptions: apshellapp.AppCallOptions{Wait: true, OnCompletion: types.NoOpOC},
+		seen:           cmdspec.SeenOptions{},
 	}
 }
 
@@ -218,12 +160,9 @@ func parseCommonAppCallOption(args []string, i int, opts *commonAppCallOptions) 
 	}
 }
 
-func parseRawAppCallArgs(args []string) (*rawAppCallArgs, error) {
+func parseRawAppCallArgs(args []string) (*apshellapp.AppCallRawRequest, error) {
 	common := newCommonAppCallOptions()
-	params := &rawAppCallArgs{
-		Wait:         common.Wait,
-		OnCompletion: common.OnCompletion,
-	}
+	params := &apshellapp.AppCallRawRequest{}
 
 	if len(args) < 4 || args[0] != "raw" {
 		return nil, fmt.Errorf("usage: app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
@@ -261,21 +200,7 @@ func parseRawAppCallArgs(args []string) (*rawAppCallArgs, error) {
 		}
 	}
 
-	params.Wait = common.Wait
-	params.PayAmount = common.PayAmount
-	params.Accounts = common.Accounts
-	params.ForeignApps = common.ForeignApps
-	params.AssetRefs = common.AssetRefs
-	params.Boxes = common.Boxes
-	params.OnCompletion = common.OnCompletion
-	params.ApprovalPath = common.ApprovalPath
-	params.ApprovalCompiled = common.ApprovalCompiled
-	params.ClearPath = common.ClearPath
-	params.ClearCompiled = common.ClearCompiled
-	params.Note = common.Note
-	params.Fee = common.Fee
-	params.UseFlatFee = common.UseFlatFee
-	params.LsigArgs = common.LsigArgs
+	params.AppCallOptions = common.AppCallOptions
 
 	if params.OnCompletion == types.UpdateApplicationOC {
 		if params.ApprovalPath == "" {
@@ -291,35 +216,9 @@ func parseRawAppCallArgs(args []string) (*rawAppCallArgs, error) {
 	return params, nil
 }
 
-func (a *rawAppCallArgs) toAppRawRequest() apshellapp.AppCallRawRequest {
-	return apshellapp.AppCallRawRequest{
-		AppID:            a.AppID,
-		From:             a.From,
-		AppArgs:          a.AppArgs,
-		PayAmount:        a.PayAmount,
-		Accounts:         a.Accounts,
-		ForeignApps:      a.ForeignApps,
-		AssetRefs:        a.AssetRefs,
-		Boxes:            a.Boxes,
-		OnCompletion:     a.OnCompletion,
-		ApprovalPath:     a.ApprovalPath,
-		ApprovalCompiled: a.ApprovalCompiled,
-		ClearPath:        a.ClearPath,
-		ClearCompiled:    a.ClearCompiled,
-		Note:             a.Note,
-		Wait:             a.Wait,
-		Fee:              a.Fee,
-		UseFlatFee:       a.UseFlatFee,
-		LsigArgs:         a.LsigArgs,
-	}
-}
-
-func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
+func parseMethodAppCallArgs(args []string) (*apshellapp.AppCallMethodRequest, error) {
 	common := newCommonAppCallOptions()
-	params := &methodAppCallArgs{
-		Wait:         common.Wait,
-		OnCompletion: common.OnCompletion,
-	}
+	params := &apshellapp.AppCallMethodRequest{}
 
 	if len(args) < 2 {
 		return nil, fmt.Errorf("usage: app call <app-id> <method> --abi <path> from <account> [--arg <value> ...] [--pay <microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:[<account>:]<name>=<value>]")
@@ -379,21 +278,7 @@ func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
 		}
 	}
 
-	params.Wait = common.Wait
-	params.PayAmount = common.PayAmount
-	params.Accounts = common.Accounts
-	params.ForeignApps = common.ForeignApps
-	params.AssetRefs = common.AssetRefs
-	params.Boxes = common.Boxes
-	params.OnCompletion = common.OnCompletion
-	params.ApprovalPath = common.ApprovalPath
-	params.ApprovalCompiled = common.ApprovalCompiled
-	params.ClearPath = common.ClearPath
-	params.ClearCompiled = common.ClearCompiled
-	params.Note = common.Note
-	params.Fee = common.Fee
-	params.UseFlatFee = common.UseFlatFee
-	params.LsigArgs = common.LsigArgs
+	params.AppCallOptions = common.AppCallOptions
 
 	if params.ABIPath == "" {
 		return nil, fmt.Errorf("app call requires --abi <path>")
@@ -413,31 +298,6 @@ func parseMethodAppCallArgs(args []string) (*methodAppCallArgs, error) {
 	}
 
 	return params, nil
-}
-
-func (a *methodAppCallArgs) toAppMethodRequest() apshellapp.AppCallMethodRequest {
-	return apshellapp.AppCallMethodRequest{
-		AppID:            a.AppID,
-		Method:           a.Method,
-		ABIPath:          a.ABIPath,
-		ArgValues:        a.ArgValues,
-		PayAmount:        a.PayAmount,
-		From:             a.From,
-		Accounts:         a.Accounts,
-		ForeignApps:      a.ForeignApps,
-		AssetRefs:        a.AssetRefs,
-		Boxes:            a.Boxes,
-		OnCompletion:     a.OnCompletion,
-		ApprovalPath:     a.ApprovalPath,
-		ApprovalCompiled: a.ApprovalCompiled,
-		ClearPath:        a.ClearPath,
-		ClearCompiled:    a.ClearCompiled,
-		Note:             a.Note,
-		Wait:             a.Wait,
-		Fee:              a.Fee,
-		UseFlatFee:       a.UseFlatFee,
-		LsigArgs:         a.LsigArgs,
-	}
 }
 
 func parseAppID(raw string) (uint64, error) {
