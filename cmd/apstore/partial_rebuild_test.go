@@ -27,9 +27,12 @@ type inadmissibleKeyForApstore struct {
 }
 
 // inadmissibleKeysForApstore are a payload with a field this release does
-// not know and a key file written before salt_counter was retired.
+// not know, a key file written before salt_counter was retired, and native
+// Falcon key files written before pq_scheme and pq_address_salt were
+// dropped, with and without recovery entropy.
 func inadmissibleKeysForApstore(t *testing.T) []inadmissibleKeyForApstore {
 	t.Helper()
+	RegisterProviders()
 	unknown, unknownJSON := testEd25519KeyJSON(t)
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(unknownJSON, &object); err != nil {
@@ -41,9 +44,14 @@ func inadmissibleKeysForApstore(t *testing.T) []inadmissibleKeyForApstore {
 		t.Fatal(err)
 	}
 	retired, retiredJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
+	falcon, falconJSON := keystest.NativeFalconKeyJSON(t, bytes.Repeat([]byte{0xa1}, 32))
+	noEntropy, noEntropyJSON := keystest.NativeFalconKeyJSON(t, bytes.Repeat([]byte{0xa2}, 32))
+	const preChangeNativeFalcon = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "pq_scheme"; restore or regenerate the key file using the current key schema`
 	return []inadmissibleKeyForApstore{
 		{"unknown field", unknown, extended, `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`},
 		{"retired salt_counter", retired, retiredJSON, `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`},
+		{"native Falcon with pq_scheme and pq_address_salt", falcon, keystest.PreChangeNativeFalconKeyJSON(t, falconJSON, true), preChangeNativeFalcon},
+		{"native Falcon without recovery entropy", noEntropy, keystest.PreChangeNativeFalconKeyJSON(t, noEntropyJSON, false), preChangeNativeFalcon},
 	}
 }
 

@@ -5,6 +5,7 @@ package backupadmin
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -101,42 +103,78 @@ func TestImportThenRestoreOfAMixedArchive(t *testing.T) {
 	}
 }
 
-// A key file written before salt_counter was retired is a key the node
-// cannot admit: the import accepts the archive and names it, and a restore
-// from the import skips it and restores the rest.
-func TestImportThenRestoreSkipsARetiredSaltCounter(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	var reloads atomic.Int64
-	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
-	service := directRestoreTestService(paths, ir)
-	good, goodJSON := keystest.Ed25519KeyJSON(t)
-	retired, retiredJSON := keystest.RetiredSaltCounterLSigKeyJSON(t)
-	want := []adminproto.RestoreSkipped{{
-		Selector: retired,
-		Reason:   `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`,
-	}}
+// A key file written before a field was retired is a key the node cannot
+// admit: the import accepts the archive and names it, and a restore from the
+// import skips it and restores the rest. Each case is one such key file with
+// the reason every step gives.
+func TestImportThenRestoreSkipsARetiredKeyFile(t *testing.T) {
+	nativereg.RegisterSigner()
+	for _, tc := range []struct {
+		name   string
+		build  func(t *testing.T) (string, []byte)
+		reason string
+	}{
+		{
+			name:   "retired salt_counter",
+			build:  func(t *testing.T) (string, []byte) { return keystest.RetiredSaltCounterLSigKeyJSON(t) },
+			reason: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`,
+		},
+		{
+			name:   "native Falcon with pq_scheme and pq_address_salt",
+			build:  func(t *testing.T) (string, []byte) { return preChangeNativeFalconKeyForTest(t, 0x91, true) },
+			reason: preChangeNativeFalconReasonForTest,
+		},
+		{
+			name:   "native Falcon without recovery entropy",
+			build:  func(t *testing.T) (string, []byte) { return preChangeNativeFalconKeyForTest(t, 0x92, false) },
+			reason: preChangeNativeFalconReasonForTest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			var reloads atomic.Int64
+			ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+			service := directRestoreTestService(paths, ir)
+			good, goodJSON := keystest.Ed25519KeyJSON(t)
+			retired, retiredJSON := tc.build(t)
+			want := []adminproto.RestoreSkipped{{Selector: retired, Reason: tc.reason}}
 
-	archivePath := writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{good: goodJSON, retired: retiredJSON})
-	imported := importArchiveForTest(t, service, archivePath, "retired.tar.gz")
-	if !imported.Success || imported.Error != "" || !slices.Equal(imported.Skipped, want) {
-		t.Fatalf("CommitBackupImport() = %+v, want skipped %+v", imported, want)
+			archivePath := writeImportArchiveForTest(t, noderole.RoleSigner, map[string][]byte{good: goodJSON, retired: retiredJSON})
+			imported := importArchiveForTest(t, service, archivePath, "retired.tar.gz")
+			if !imported.Success || imported.Error != "" || !slices.Equal(imported.Skipped, want) {
+				t.Fatalf("CommitBackupImport() = %+v, want skipped %+v", imported, want)
+			}
+			preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{
+				ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
+			})
+			if preview.Error != "" || len(preview.Keys) != 1 || preview.Keys[0].Address != good || !slices.Equal(preview.Skipped, want) {
+				t.Fatalf("PreviewRestore() = %+v", preview)
+			}
+			restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
+				OperationID: "restore-retired", ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
+			})
+			if !restored.Success || len(restored.Restored) != 1 || restored.Restored[0].Selector != good || !slices.Equal(restored.Skipped, want) {
+				t.Fatalf("RestoreBackup() = %+v", restored)
+			}
+			active := resolveAtomicTestGeneration(t, paths)
+			if _, err := os.Stat(filepath.Join(active.KeysDir(), retired+".key")); !os.IsNotExist(err) {
+				t.Fatalf("skipped credential was restored: %v", err)
+			}
+		})
 	}
-	preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{
-		ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
-	})
-	if preview.Error != "" || len(preview.Keys) != 1 || preview.Keys[0].Address != good || !slices.Equal(preview.Skipped, want) {
-		t.Fatalf("PreviewRestore() = %+v", preview)
-	}
-	restored := service.RestoreBackup(adminproto.RestoreBackupRequest{
-		OperationID: "restore-retired", ArchivePath: "retired.tar.gz", ExportPassphrase: []byte("export-passphrase"),
-	})
-	if !restored.Success || len(restored.Restored) != 1 || restored.Restored[0].Selector != good || !slices.Equal(restored.Skipped, want) {
-		t.Fatalf("RestoreBackup() = %+v", restored)
-	}
-	active := resolveAtomicTestGeneration(t, paths)
-	if _, err := os.Stat(filepath.Join(active.KeysDir(), retired+".key")); !os.IsNotExist(err) {
-		t.Fatalf("skipped credential was restored: %v", err)
-	}
+}
+
+// preChangeNativeFalconReasonForTest is why this release refuses a native
+// Falcon key file from before pq_scheme and pq_address_salt were dropped,
+// with or without recovery entropy.
+const preChangeNativeFalconReasonForTest = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "pq_scheme"; restore or regenerate the key file using the current key schema`
+
+// preChangeNativeFalconKeyForTest is a native Falcon key file in the shape
+// written before pq_scheme and pq_address_salt were dropped, and its address.
+func preChangeNativeFalconKeyForTest(t *testing.T, fill byte, recovery bool) (string, []byte) {
+	t.Helper()
+	address, keyJSON := keystest.NativeFalconKeyJSON(t, bytes.Repeat([]byte{fill}, 32))
+	return address, keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, recovery)
 }
 
 // A damaged credential member still refuses the import, as it refuses a
