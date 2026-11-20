@@ -4,6 +4,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -782,16 +783,11 @@ func (m model) navigationHint() string {
 }
 
 func (m model) focusHint() string {
-	if !m.shellEnabled() {
-		if m.daemonPaneShown() {
-			return "F1 signer · F3 daemon"
-		}
-		return "F1 signer"
+	var hints []string
+	for _, p := range m.panes() {
+		hints = append(hints, p.key()+" "+p.String())
 	}
-	if m.daemonPaneShown() {
-		return "F1 signer · F2 shell · F3 daemon"
-	}
-	return "F1 signer · F2 shell"
+	return strings.Join(hints, " · ")
 }
 
 func (m model) renderHostKeyOverlay() string {
@@ -904,29 +900,15 @@ func (m model) renderHelpOverlay() string {
 }
 
 func (m model) helpFocusText() string {
-	if !m.shellEnabled() {
-		if m.daemonPaneShown() {
-			return "focus signer or daemon"
-		}
-		return "focus signer"
-	}
-	if m.daemonPaneShown() {
-		return "focus shell, signer, or daemon"
-	}
-	return "focus shell or signer"
+	return "focus " + listWords(paneNames(m.panes()), "or")
 }
 
 func (m model) helpFocusKeys() string {
-	if !m.shellEnabled() {
-		if m.daemonPaneShown() {
-			return "F1 F3"
-		}
-		return "F1"
+	var keys []string
+	for _, p := range m.panes() {
+		keys = append(keys, p.key())
 	}
-	if m.daemonPaneShown() {
-		return "F1 F2 F3"
-	}
-	return "F1 F2"
+	return strings.Join(keys, " ")
 }
 
 func (m model) helpCycleKeys() string {
@@ -937,29 +919,40 @@ func (m model) helpCycleKeys() string {
 }
 
 func (m model) helpCycleText() string {
-	if !m.shellEnabled() {
-		if m.daemonPaneShown() {
-			return "cycle signer and daemon panes"
-		}
+	panes := m.panes()
+	if len(panes) == 1 {
 		return "signer pane only"
 	}
-	if m.daemonPaneShown() {
-		return "cycle shell, signer, and daemon panes"
-	}
-	return "cycle shell and signer panes"
+	return "cycle " + listWords(paneNames(panes), "and") + " panes"
 }
 
+// helpScrollText names what PgUp/PgDn scrolls: every pane but the signer's,
+// which scrolls itself.
 func (m model) helpScrollText() string {
-	if !m.shellEnabled() {
-		if m.daemonPaneShown() {
-			return "scroll daemon log when focused"
+	var logs []string
+	for _, p := range m.panes() {
+		switch p {
+		case paneShell:
+			logs = append(logs, "shell transcript")
+		case paneDaemon:
+			logs = append(logs, "daemon log")
 		}
+	}
+	if len(logs) == 0 {
 		return "no scrollable pane"
 	}
-	if m.daemonPaneShown() {
-		return "scroll shell transcript or daemon log when focused"
+	return "scroll " + listWords(logs, "or") + " when focused"
+}
+
+// listWords joins words as an English list: "a", "a or b", "a, b, or c".
+func listWords(words []string, conjunction string) string {
+	switch len(words) {
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " " + conjunction + " " + words[1]
 	}
-	return "scroll shell transcript when shell pane is focused"
+	return strings.Join(words[:len(words)-1], ", ") + ", " + conjunction + " " + words[len(words)-1]
 }
 
 // padBetween joins left and right with spaces so the combined visual width equals target.
@@ -1029,12 +1022,37 @@ func scrollDirection(msg tea.KeyMsg) int {
 	return -1
 }
 
-func (m model) nextPane() pane {
-	return nextPaneAvailable(m.focus, m.shellEnabled(), m.daemonPaneShown())
+// panes lists the panes the console has, in navigation order: the signer,
+// then the shell and the daemon when they are shown.
+func (m model) panes() []pane {
+	panes := []pane{paneSigner}
+	if m.shellEnabled() {
+		panes = append(panes, paneShell)
+	}
+	if m.daemonPaneShown() {
+		panes = append(panes, paneDaemon)
+	}
+	return panes
 }
 
-func (m model) prevPane() pane {
-	return prevPaneAvailable(m.focus, m.shellEnabled(), m.daemonPaneShown())
+func paneNames(panes []pane) []string {
+	names := make([]string, len(panes))
+	for i, p := range panes {
+		names[i] = p.String()
+	}
+	return names
+}
+
+// nextPane and prevPane step around the ring of panes. A focus that is not
+// in it, which the console never sets, steps from the signer pane.
+func (m model) nextPane() pane { return m.stepPane(1) }
+
+func (m model) prevPane() pane { return m.stepPane(-1) }
+
+func (m model) stepPane(step int) pane {
+	panes := m.panes()
+	i := max(slices.Index(panes, m.focus), 0)
+	return panes[(i+step+len(panes))%len(panes)]
 }
 
 func (m model) paneAbove() pane {
@@ -1061,57 +1079,15 @@ func (m model) paneBelow() pane {
 	return m.focus
 }
 
-func nextPaneAvailable(p pane, includeShell, includeDaemon bool) pane {
-	if !includeShell {
-		if includeDaemon {
-			if p == paneSigner {
-				return paneDaemon
-			}
-			return paneSigner
-		}
-		return paneSigner
-	}
-	return nextPane(p, includeDaemon)
-}
-
-func prevPaneAvailable(p pane, includeShell, includeDaemon bool) pane {
-	if !includeShell {
-		if includeDaemon {
-			if p == paneSigner {
-				return paneDaemon
-			}
-			return paneSigner
-		}
-		return paneSigner
-	}
-	return prevPane(p, includeDaemon)
-}
-
-func nextPane(p pane, includeDaemon bool) pane {
-	switch p {
-	case paneSigner:
-		return paneShell
-	case paneShell:
-		if !includeDaemon {
-			return paneSigner
-		}
-		return paneDaemon
-	default:
-		return paneSigner
-	}
-}
-
-func prevPane(p pane, includeDaemon bool) pane {
+// key is the function key that focuses the pane.
+func (p pane) key() string {
 	switch p {
 	case paneShell:
-		return paneSigner
+		return "F2"
 	case paneDaemon:
-		return paneShell
+		return "F3"
 	default:
-		if !includeDaemon {
-			return paneShell
-		}
-		return paneDaemon
+		return "F1"
 	}
 }
 
