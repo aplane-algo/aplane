@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -80,17 +80,17 @@ type liveCompilerEndpoint struct {
 // endpoint named by TEAL_COMPILE_ALGOD_URL when set, otherwise a local LocalNet
 // first and the repo's public node second.
 func liveCompilerEndpoints() []liveCompilerEndpoint {
-	token := os.Getenv(algo.TEALCompileAlgodTokenEnv)
+	token := os.Getenv(algotest.TEALCompileAlgodTokenEnv)
 	if token == "" {
 		token = os.Getenv("ALGOD_TOKEN")
 	}
-	if u := os.Getenv(algo.TEALCompileAlgodURLEnv); u != "" {
+	if u := os.Getenv(algotest.TEALCompileAlgodURLEnv); u != "" {
 		return []liveCompilerEndpoint{{name: "TEAL_COMPILE_ALGOD_URL", url: u, token: token}}
 	}
 	return []liveCompilerEndpoint{
 		// algokit LocalNet defaults.
 		{name: "LocalNet", url: "http://localhost:4001", token: strings.Repeat("a", 64), lenient: true},
-		{name: "public algod", url: algo.ResolveTEALCompileAlgodURL(), token: token},
+		{name: "public algod", url: algotest.ResolveTEALCompileAlgodURL(), token: token},
 	}
 }
 
@@ -272,7 +272,7 @@ func falconTestPublicKey(t *testing.T) []byte {
 
 func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 	// Create algod client
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestFalcon1024V1_DeriveLsig(t *testing.T) {
 // TestZeroSuffixMatchesStandardFalcon verifies that a composed provider
 // with no TEAL suffix produces identical bytecode to standard aplane.falcon1024.v1.
 func TestZeroSuffixMatchesStandardFalcon(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Skipf("Could not create algod client: %v", err)
 	}

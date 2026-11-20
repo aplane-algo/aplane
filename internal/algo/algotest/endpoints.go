@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package algo
+// Package algotest resolves the algod endpoint that tests compiling TEAL use.
+package algotest
 
 import "os"
 
 const (
-	// DefaultPublicAlgodURL is the repo-wide public algod default for testnet-facing
-	// tests when no explicit endpoint is provided.
-	DefaultPublicAlgodURL = "https://testnet-api.4160.nodely.dev"
+	// defaultPublicAlgodURL is the public testnet algod these tests use when
+	// no endpoint is configured.
+	defaultPublicAlgodURL = "https://testnet-api.4160.nodely.dev"
 
 	// TEALCompileAlgodURLEnv overrides the algod endpoint used by compile-only
 	// tests. It falls back to ALGOD_URL for consistency with the
-	// integration environment, then to DefaultPublicAlgodURL.
+	// integration environment, then to defaultPublicAlgodURL.
 	TEALCompileAlgodURLEnv = "TEAL_COMPILE_ALGOD_URL"
 
 	// TEALCompileAlgodTokenEnv overrides the algod API token used by compile-only
@@ -29,7 +30,7 @@ func ResolveTEALCompileAlgodURL() string {
 	if v := os.Getenv("ALGOD_URL"); v != "" {
 		return v
 	}
-	return DefaultPublicAlgodURL
+	return defaultPublicAlgodURL
 }
 
 // ResolveTEALCompileAlgodToken returns the algod token for compile-only paths.

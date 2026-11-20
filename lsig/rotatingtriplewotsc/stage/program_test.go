@@ -10,7 +10,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/algo/algotest"
 	"github.com/aplane-algo/aplane/internal/crypto/wotsc"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rotatingstage"
@@ -101,7 +101,7 @@ func TestParseRejectsNonCanonicalPrograms(t *testing.T) {
 // requires the local template substitution to produce the same bytes.
 // Set TEAL_COMPILE_ALGOD_URL to use a local node.
 func TestBuildMatchesStockAssembler(t *testing.T) {
-	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), algo.ResolveTEALCompileAlgodToken())
+	client, err := algod.MakeClient(algotest.ResolveTEALCompileAlgodURL(), algotest.ResolveTEALCompileAlgodToken())
 	if err != nil {
 		t.Skipf("algod client: %v", err)
 	}
