@@ -8,24 +8,23 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 )
 
-func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
+// syntheticFingerprintConfig sets every canonical fingerprint field, under the
+// given salt style and ops.
+func syntheticFingerprintConfig(saltStyle lsigsalt.Style, ops DSAOps) Config {
 	min := uint64(1)
 	max := uint64(999)
-	// SaltStyle is the style this config resolved to when the golden was
-	// recorded, before counter salting was retired. The fingerprint hashes a
-	// configured style as it is, so naming it keeps the hashed bytes, and the
-	// golden, unchanged; GenerateTEAL would refuse it.
-	dsa := NewComposedDSA(Config{
+	return Config{
 		KeyType:      "synthetic-dsa-v7",
 		FamilyName:   "synthetic-dsa",
 		Version:      7,
 		DisplayName:  "Synthetic DSA",
 		Description:  "Exercises every canonical fingerprint field",
-		Ops:          testOps{},
-		SaltStyle:    "pushbytes",
+		Ops:          ops,
+		SaltStyle:    saltStyle,
 		TemplateMode: "strict",
 		TEALSuffix:   "$owner_const\nlen\nint 32\n==\nassert\nint 1\nreturn\n",
 		TemplateVars: []tealtemplate.TemplateVariable{{
@@ -46,11 +45,25 @@ func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
 			{Name: "note", Type: "string"},
 		},
 		OpcodeProfile: lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling),
-	})
+	}
+}
 
-	got := dsa.CompatibilityFingerprint()
-	const want = "1:af88e794770ae2ea19d3590893c6eb4753253e2fc6f0dc5a267357edd6d41886"
-	if got != want {
-		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
+// The goldens were computed on the code before counter salting was retired,
+// for the two salt styles a template can still have.
+func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
+	for _, test := range []struct {
+		style lsigsalt.Style
+		ops   DSAOps
+		want  string
+	}{
+		{style: lsigsalt.StyleNone, ops: testOps{}, want: "1:7fcefee802ed3a478ba98bc4d4f0372d1eeae890a0ebae6cd2e128b685dc3c37"},
+		{style: lsigsalt.StyleAlgodAutoSalt, ops: autoSaltTestOps{}, want: "1:d25542ef6f57768bd15b3df1105fc32c199ce19d4c64ca6753ed07102adc2c7a"},
+	} {
+		t.Run(string(test.style), func(t *testing.T) {
+			got := NewComposedDSA(syntheticFingerprintConfig(test.style, test.ops)).CompatibilityFingerprint()
+			if got != test.want {
+				t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
