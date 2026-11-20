@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/plugin/integrity"
 	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 	"gopkg.in/yaml.v3"
@@ -41,11 +40,6 @@ type Discoverer struct {
 
 type activationConfig struct {
 	EnabledPlugins []string `yaml:"enabled_plugins"`
-}
-
-// New creates a new plugin discoverer
-func New() *Discoverer {
-	return NewWithDataDir(config.GetClientDataDir(""))
 }
 
 // NewWithDataDir creates a plugin discoverer for a specific apshell data dir.
