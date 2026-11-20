@@ -68,9 +68,10 @@ func exportKeyPolicies(active storepaths.GenPaths, role noderole.Role, stageDir 
 	return exported, nil
 }
 
-// readBackupPolicy decrypts and validates the archived policy of one key for
-// role. It returns nil when the archive carries none.
-func readBackupPolicy(keysDir, selector string, exportPassphrase []byte, role noderole.Role) ([]byte, error) {
+// readBackupPolicy reads and decrypts the archived policy of one key. It
+// returns nil when the archive carries none. Its caller decodes it for the
+// destination role.
+func readBackupPolicy(keysDir, selector string, exportPassphrase []byte) ([]byte, error) {
 	path := filepath.Join(backupPoliciesDirFor(keysDir), selector+".apb")
 	data, _, err := fsutil.ReadRegularFileLimited(path, maxBackupPolicyEnvelopeBytes)
 	if os.IsNotExist(err) {
@@ -82,9 +83,6 @@ func readBackupPolicy(keysDir, selector string, exportPassphrase []byte, role no
 	document, err := crypto.DecryptStandaloneLimited(data, exportPassphrase, maxBackupPolicyEnvelopeBytes)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt backup policy: %w", err)
-	}
-	if _, err := policy.DecodePolicyV1(document, selector, role); err != nil {
-		return nil, fmt.Errorf("backup policy for %s: %w", selector, err)
 	}
 	return document, nil
 }

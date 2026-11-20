@@ -1248,9 +1248,11 @@ Important secret-handling contracts:
 - the file keystore caches the keyring only while unlocked,
 - normal signing decrypts individual keys on demand rather than retaining a
   fully decrypted key inventory,
-- backup validation, direct restore, and offline rebuild may transiently
-  decrypt the complete selected credential set so it can be validated before
-  mutation; those plaintext buffers are explicitly zeroed after use,
+- backup validation and direct restore may transiently decrypt the complete
+  selected credential set so it can be admitted before mutation; offline
+  rebuild holds the admitted set from its load, before the store passphrase
+  prompts, until the mint ends. Those plaintext buffers, a skipped
+  credential's included, are explicitly zeroed after use,
 - key/session destruction zeros or invalidates in-memory sensitive state,
 - passphrases typed into apadmin and appass are byte buffers grown through
   `internal/secretbuf`, which zeroes every allocation they outgrow; the copies
@@ -1401,10 +1403,10 @@ genesis hash, and versioned key-type implementation.
 The complete key file and key type state machines are documented in
 [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
 LogicSig key files whose stored bytecode derives an on-curve address are
-rejected during key scan. Key files with no `lsig_derivation` (unsalted
-bytecode) require `salt_counter`, which every writer sets to 0;
-`algod_v13_auto_salt` derivations forbid it and require final TEAL v13+
-bytecode plus a valid `lsig_opcode_profile`.
+rejected during key scan. A key file with no `lsig_derivation` holds unsalted
+bytecode; an `algod_v13_auto_salt` derivation requires final TEAL v13+
+bytecode plus a valid `lsig_opcode_profile`, and any other derivation is
+refused.
 LogicSig key files without `signing_metadata_version` are refused by the key
 parser, which runs at key scan, on every key load and at restore, so none
 reaches signing. Key files with
@@ -2307,8 +2309,9 @@ staged validation, sealing of the outgoing generation, the durable store-root
 replacement, reconciliation/quarantine of ambiguous attempts, reconstruction
 from authenticated history, and garbage collection of sealed priors. `internal/signerapp/backupadmin`
 owns live direct restore, explicit restore rollback, and recovery-mode
-reconciliation. A restore validates every selected credential before writing,
-then commits them by minting one generation behind a single durable store-root
+reconciliation. A restore admits each selected credential before writing,
+skipping and reporting one the node cannot admit, then commits the admitted
+ones by minting one generation behind a single durable store-root
 replacement. Incomplete staging is discarded; complete ambiguous publications
 are quarantined by reconciliation at unlock, never resumed or adopted.
 A commit with unconfirmed durability, or a rollback that fails after mutation
@@ -2380,10 +2383,10 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
     versioned key-type implementation.
 16. Every persisted LogicSig key file has an off-curve address. For DSA-backed
     and generic LogicSig keys, stored bytecode
-    that derives an on-curve LogicSig address is rejected on load. Key files
-    with no `lsig_derivation` (unsalted bytecode) require `salt_counter`, which
-    every writer sets to 0; `algod_v13_auto_salt` derivations must omit it and
-    carry final TEAL v13+ bytecode plus a valid `lsig_opcode_profile`.
+    that derives an on-curve LogicSig address is rejected on load. A key file
+    with no `lsig_derivation` holds unsalted bytecode; an
+    `algod_v13_auto_salt` derivation must carry final TEAL v13+ bytecode plus
+    a valid `lsig_opcode_profile`, and any other derivation is refused.
 
 ## Architectural Seams
 

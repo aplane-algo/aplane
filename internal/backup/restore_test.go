@@ -94,14 +94,14 @@ func TestRestoreKeyWritesCredentialOnlyAndRequiresOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	kr := cryptotest.Keyring(t, testExportMasterKey)
-	if _, err := RestoreForRebuild(active, noderole.RoleSigner, keysDir, address, kr, []byte("export-passphrase"), nil); err != nil {
+	if _, err := rebuildForTest(t, active, noderole.RoleSigner, root, address, kr, []byte("export-passphrase")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), address+keys.AccountKeyExtension)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RestoreForRebuild(active, noderole.RoleSigner, keysDir, address, kr, []byte("export-passphrase"), nil); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("second RestoreForRebuild() error = %v", err)
+	if _, err := rebuildForTest(t, active, noderole.RoleSigner, root, address, kr, []byte("export-passphrase")); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second rebuild error = %v", err)
 	}
 }
 

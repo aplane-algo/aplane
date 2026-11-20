@@ -256,7 +256,7 @@ func ProtocolAppendBackupImportResultMessage(id string, result adminproto.Append
 }
 
 func ProtocolCommitBackupImportResultMessage(id string, result adminproto.CommitBackupImportResult) protocol.CommitBackupImportResultMessage {
-	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Code: result.Code, Error: result.Error}
+	return protocol.CommitBackupImportResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCommitBackupImportResult, ID: id}, Success: result.Success, Backup: protocolBackupInfo(result.Backup), Warning: result.Warning, Skipped: protocolRestoreSkipped(result.Skipped), SkippedOmitted: result.SkippedOmitted, Code: result.Code, Error: result.Error}
 }
 
 func ProtocolAbortBackupImportResultMessage(id string, result adminproto.AbortBackupImportResult) protocol.AbortBackupImportResultMessage {
@@ -308,7 +308,8 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 		ArchivePath:      result.ArchivePath,
 		ArchiveCreatedAt: result.ArchiveCreatedAt,
 		Keys:             protocolRestoreKeyInfos(result.Keys),
-		Errors:           protocolRestoreErrors(result.Errors),
+		Skipped:          protocolRestoreSkipped(result.Skipped),
+		SkippedOmitted:   result.SkippedOmitted,
 		Code:             result.Code,
 		Error:            result.Error,
 	}
@@ -322,8 +323,13 @@ func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBack
 		ArchiveSHA256:    result.ArchiveSHA256,
 		GenerationID:     result.GenerationID,
 		Restored:         protocolRestoreCredentials(result.Restored),
+		RestoredOmitted:  result.RestoredOmitted,
 		Identical:        protocolRestoreCredentials(result.Identical),
+		IdenticalOmitted: result.IdenticalOmitted,
 		Conflicts:        protocolRestoreConflicts(result.Conflicts),
+		ConflictsOmitted: result.ConflictsOmitted,
+		Skipped:          protocolRestoreSkipped(result.Skipped),
+		SkippedOmitted:   result.SkippedOmitted,
 		PoliciesRestored: result.PoliciesRestored,
 		KeyCount:         result.KeyCount,
 		Code:             result.Code,
@@ -436,22 +442,18 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
 			StageHint:     item.StageHint, StageHintRound: item.StageHintRound,
-			Error: item.Error,
 		}
 	}
 	return out
 }
 
-func protocolRestoreErrors(items []adminproto.RestoreError) []protocol.RestoreError {
+func protocolRestoreSkipped(items []adminproto.RestoreSkipped) []protocol.RestoreSkipped {
 	if len(items) == 0 {
 		return nil
 	}
-	out := make([]protocol.RestoreError, len(items))
+	out := make([]protocol.RestoreSkipped, len(items))
 	for i, item := range items {
-		out[i] = protocol.RestoreError{
-			Address: item.Address,
-			Error:   item.Error,
-		}
+		out[i] = protocol.RestoreSkipped{Selector: item.Selector, Reason: item.Reason}
 	}
 	return out
 }

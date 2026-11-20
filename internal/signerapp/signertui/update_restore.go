@@ -96,7 +96,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.restore.previewFocus != restoreFocusList {
 			return m, nil
 		}
-		if m.restore.selectedKey < len(m.restore.previewKeys)-1 {
+		if m.restore.selectedKey < m.restorePreviewRowCount()-1 {
 			m.restore.selectedKey++
 			visibleHeight := m.restorePreviewVisibleHeight()
 			if m.restore.selectedKey >= m.restore.previewScrollOffset+visibleHeight {
@@ -107,13 +107,11 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Recovery is inactive and never overwrites anything: conflicting
 		// keys are freely selectable, and the replace-existing consent is
 		// collected on the restore confirmation beside the exact conflicts.
-		if len(m.restore.previewKeys) == 0 {
+		// A skipped key, listed after the rest, is never selectable.
+		if m.restore.selectedKey >= len(m.restore.previewKeys) {
 			return m, nil
 		}
 		key := m.restore.previewKeys[m.restore.selectedKey]
-		if !restoreKeySelectable(key) {
-			return m, nil
-		}
 		if m.restore.selected == nil {
 			m.restore.selected = make(map[string]bool)
 		}
@@ -125,9 +123,7 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a", "A":
 		m.restore.selected = make(map[string]bool)
 		for _, key := range m.restore.previewKeys {
-			if restoreKeySelectable(key) {
-				m.restore.selected[key.Address] = true
-			}
+			m.restore.selected[key.Address] = true
 		}
 		m.restore.previewError = ""
 	case "tab", "shift+tab":
@@ -144,6 +140,10 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		addresses := m.selectedRestoreAddresses()
+		if len(m.restore.previewKeys) == 0 {
+			m.restore.previewError = "Nothing to restore: every key in this backup is skipped"
+			return m, nil
+		}
 		if len(addresses) == 0 {
 			m.restore.previewError = "Select at least one key to restore"
 			return m, nil
@@ -173,7 +173,7 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restore.displaySelectedKey--
 		}
 	case "down":
-		if m.restore.displaySelectedKey < len(m.restore.result.Activated)-1 {
+		if m.restore.displaySelectedKey < m.restore.result.rowCount()-1 {
 			m.restore.displaySelectedKey++
 		}
 	case "q", "esc", "enter", " ":

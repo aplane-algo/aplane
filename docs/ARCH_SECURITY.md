@@ -1237,7 +1237,11 @@ Audit entries carry attribution fields:
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
 - `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
-- `key_count`: key count for startup and reload events
+- `key_count`: key count for startup and reload events, the keys a restore
+  restored, and the keys a restore preview would admit
+- `skipped_keys`: the archived keys a restore, its preview, or an import
+  names as skipped because the node cannot admit them, selectors only and
+  bounded like the other lists (`skipped_keys_omitted` counts the rest)
 - `witness_key_id`: public witness authority affected by a cosigner-reference mutation
 - `client_label`: display label of the key in enrollment and revocation events
 - `closed_connections`: live connections closed by a key revocation
@@ -1461,21 +1465,23 @@ Signing-audit semantics:
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection) and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled; they are attributed to `system:product-admin`
 - key-management audit events are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
-  violates a load-time key-file invariant; for LogicSig salt failures,
-  `reason` includes the key filename and rejection reason
+  violates a load-time LogicSig invariant (an on-curve address, or missing or
+  undecodable bytecode); `reason` includes the key filename and rejection reason
 
 Backup-audit semantics:
 
 - `BACKUP_CREATED` is emitted when an authenticated admin backup operation
   writes a managed archive; `reason` contains the archive path
 - `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
-  verification and is published into the managed backup set
+  verification and is published into the managed backup set; `reason`
+  contains the file name and size, and `skipped_keys` the keys in it a
+  restore would skip
 - `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
   managed archive transfer, including when a client starts at a non-zero
   offset; reaching EOF closes the inferred transfer for subsequent auditing
 - `BACKUP_FAILED` is emitted when backup creation, import commit, or export
   streaming fails; `reason` contains the failure reason
-- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path and `key_count` contains previewed keys
+- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path, `key_count` the keys a restore would admit, and `skipped_keys` the ones it would skip
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
 - `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
   first generation-store write. It records the operation ID and

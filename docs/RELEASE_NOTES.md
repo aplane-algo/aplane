@@ -7,6 +7,46 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A restore skips a key it cannot use
+
+- **One key no longer blocks a whole restore.** A restore used to check the
+  whole selection before writing anything, so one key this release cannot
+  use (an older format, an unsupported or role-forbidden key type, a missing
+  provider) refused the whole backup. That key is now skipped with its
+  policy and reported with the reason, and the rest restore together as
+  before. `restore preview`, the restore result, the restore audit record
+  (`skipped_keys`) and apadmin's restore screens all list the skipped keys,
+  and `apstore rebuild` prints them. A damaged archive is still refused
+  whole, as is naming a skipped key with `--address` and a restore with
+  nothing left to restore.
+- **Import takes such a backup.** `apadmin backup import` accepts a backup
+  holding a key a restore would skip, names such keys with the reason, and
+  a restore from it restores the rest. The keys are checked for the
+  importing node's role. A damaged archive is still refused, and so is one
+  with no key this node could restore; a cosigner's backup on a signer is
+  refused as "this is a cosigner backup; a signer node cannot restore it".
+  apadmin's batch output now escapes terminal controls in what the daemon
+  sends.
+- **What else changes.** A restore preview now fails whole when a member
+  does not read or decrypt; it used to list that key with an error.
+  `apstore rebuild --address` no longer examines the members it does not
+  select, so a bad unselected key no longer blocks it. `apadmin restore
+  preview` exits 0 when some keys are skipped, and non-zero only when
+  nothing would restore.
+- **Verify still fails.** `apstore verify` answers whether every key would
+  restore: it lists every key a restore would skip and exits non-zero. A
+  backup this release creates is checked the same way, so it always
+  restores whole.
+- **Admin protocol.** `restore_preview` replaces `errors[]` and the per-key
+  `error` with `skipped[]` (`selector`, `reason`); `restore_backup_result`
+  and `commit_backup_import_result` gain `skipped[]`. Each lists at most 64,
+  with long reasons cut, and counts the rest in `skipped_omitted`.
+  `restore_backup_result` also lists at most 64 restored, identical and
+  conflicting keys, with `restored_omitted`, `identical_omitted` and
+  `conflicts_omitted`, so a reply always fits one admin frame. An archive
+  holding a policy for no credential in it is now refused by restore as
+  well as by verify.
+
 ## apshell opens no local port to the signer
 
 - **Only apshell can use its connection to the signer.** `connect` used to

@@ -11,7 +11,8 @@ import (
 
 // TestMarshalAutoSaltedPayloadGoldenBytes pins the bytes MarshalPayload writes
 // for the auto-salted LogicSig constructors, which build on the unsalted ones.
-// The digests were taken before those lost their salt counter parameter.
+// The digests were taken before those lost their salt counter parameter, and
+// held when salt_counter was retired from the payload.
 func TestMarshalAutoSaltedPayloadGoldenBytes(t *testing.T) {
 	bytecode := canonicalOffCurveBytecodeForVersion(t, 13)
 	for _, tt := range []struct {

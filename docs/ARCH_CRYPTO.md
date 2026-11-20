@@ -211,12 +211,11 @@ Falcon, Ed25519 LogicSig, cosigned cosigner, composed DSA, and explicit
 `derivation_version: 3` template paths compile through algod, accept the final
 compiler-produced bytecode only when the reported address matches it, and
 reject an on-curve result. The key file records
-`lsig_derivation: algod_v13_auto_salt` and the authoritative final bytecode; it
-must not also contain `salt_counter`.
+`lsig_derivation: algod_v13_auto_salt` and the authoritative final bytecode.
 
 Templates that omit `derivation_version` remain unsalted and succeed only when
 their unmodified compiled bytecode already derives an off-curve address; their
-key files record no `lsig_derivation` and `salt_counter: 0`. APlane has no
+key files record no `lsig_derivation`. APlane has no
 counter-byte salt of its own: `internal/lsigsalt` only validates a final
 program's address, and no load, scan, restore or rebuild re-derives or patches a
 stored program. New template definitions reject derivation versions 1 and 2
@@ -505,9 +504,9 @@ extension. Compatibility is split across:
 LogicSig entries store final bytecode, the `lsig_derivation` contract, signing
 metadata, and parameters rather than reconstructing authorization from a live
 template at sign time. Every entry also records `valid_rekey_target`, its key
-type's declaration when the key was created, as a plain payload field. A compiler-auto-salted entry forbids
-`salt_counter`; an unsalted entry has no `lsig_derivation` and carries
-`salt_counter`, which every writer sets to 0. DSA-backed entries
+type's declaration when the key was created, as a plain payload field. A compiler-auto-salted entry records
+`lsig_derivation: algod_v13_auto_salt`; an unsalted entry has no
+`lsig_derivation`. DSA-backed entries
 also carry the base signing metadata needed to produce provider-specific
 signatures.
 

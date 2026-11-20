@@ -32,12 +32,12 @@ func TestDeepVerifyBackupValidStandaloneCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeepVerifyBackupBytes() error = %v", err)
 	}
-	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
+	if len(report.Verified) != 1 || report.Verified[0].Address != address || len(report.Skipped) != 0 || report.Incomplete() != nil {
 		t.Fatalf("report = %+v", report)
 	}
 }
 
-func TestVerifyFileDeepRejectsOversizedEnvelopeBeforeReadingIt(t *testing.T) {
+func TestLoadCredentialEntryRejectsOversizedEnvelopeBeforeReadingIt(t *testing.T) {
 	keysDir := t.TempDir()
 	path := filepath.Join(keysDir, "ADDR.apb")
 	file, err := os.Create(path)
@@ -52,9 +52,9 @@ func TestVerifyFileDeepRejectsOversizedEnvelopeBeforeReadingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := verifyFileDeep(keysDir, "ADDR", []byte("passphrase"), noderole.RoleSigner)
-	if result.Valid || !strings.Contains(result.Error, "size limit") {
-		t.Fatalf("verifyFileDeep() result = %+v, want bounded-read rejection", result)
+	_, skip, err := openedArchive{keysDir: keysDir}.loadCredentialEntry("ADDR", []byte("passphrase"), noderole.RoleSigner)
+	if skip != nil || err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("loadCredentialEntry() skip = %+v, error = %v, want bounded-read rejection", skip, err)
 	}
 }
 

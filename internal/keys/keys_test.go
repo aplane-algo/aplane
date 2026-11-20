@@ -598,31 +598,24 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 	})
 }
 
-func TestScanKeysDirectoryWithKeyringReportRecordsSaltWarnings(t *testing.T) {
+// A stored key file written before salt_counter was retired is skipped as an
+// incompatible format, not audited as a LogicSig invariant violation.
+func TestScanKeysDirectoryWithKeyringSkipsARetiredSaltCounter(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	keysDir := activeKeysDirForTest(t, paths)
-	if err := fsutil.MkdirAll(keysDir); err != nil {
-		t.Fatal(err)
-	}
-
-	keyFile := filepath.Join(keysDir, "GENERIC.key")
+	address, bytecode := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
-		"lsig_bytecode": "260101058101",
+		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_opcode_profile": {"default": 20000},
+		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
-	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(keyJSON, mustCredentialContext(t, keyFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(keyFile, encrypted, 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeKeyFile(t, paths, address, keyJSON, masterKey)
 
 	report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
 	if err != nil {
@@ -635,26 +628,20 @@ func TestScanKeysDirectoryWithKeyringReportRecordsSaltWarnings(t *testing.T) {
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
 	warning := report.Warnings[0]
-	if warning.Code != KeyScanWarningLogicSigSaltInvalid {
-		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningLogicSigSaltInvalid)
+	if warning.Code != KeyScanWarningIncompatibleFormat || warning.IsLogicSigInvariantViolation() {
+		t.Fatalf("warning code = %q, want %q and no invariant violation", warning.Code, KeyScanWarningIncompatibleFormat)
 	}
-	if !warning.IsLogicSigInvariantViolation() {
-		t.Fatal("warning should be classified as a LogicSig invariant violation")
-	}
-	if !contains(warning.Message(), "Failed to validate LogicSig salt metadata") {
-		t.Fatalf("warning message = %q", warning.Message())
+	if !contains(warning.Reason(), `unknown field "salt_counter"`) {
+		t.Fatalf("warning reason = %q", warning.Reason())
 	}
 }
 
 // TestKeyPayloadScanWarningClassification pins the typed-error classification
 // chain from codec validation failures to scan warning codes and the audit
-// predicate. LogicSig invariant violations (salt, on-curve, bytecode) must
-// stay audit-visible; see auditRejectedLogicSigKeys in signerapp/templates.
+// predicate. LogicSig invariant violations (on-curve, bytecode) must stay
+// audit-visible; see auditRejectedLogicSigKeys in signerapp/templates.
 func TestKeyPayloadScanWarningClassification(t *testing.T) {
 	offCurve := canonicalOffCurveBytecode(t)
-
-	missingSalt := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, "", nil, "")
-	missingSalt.SaltCounter = nil
 
 	onCurvePayload := NewGenericLSigPayload("test.generic-policy.v1", nil, canonicalOnCurveBytecode(t), "", nil, "")
 
@@ -664,7 +651,7 @@ func TestKeyPayloadScanWarningClassification(t *testing.T) {
 	wrongVersion := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, "", nil, "")
 	wrongVersion.SigningMetadataVersion = CurrentSigningMetadataVersion + 1
 
-	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"test.generic-policy.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
+	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"test.generic-policy.v1","lsig_bytecode":"zz","signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
 
 	cases := []struct {
 		name    string
@@ -672,7 +659,6 @@ func TestKeyPayloadScanWarningClassification(t *testing.T) {
 		want    KeyScanWarningCode
 		audited bool
 	}{
-		{"missing salt counter", missingSalt.Validate(), KeyScanWarningLogicSigSaltInvalid, true},
 		{"on-curve address", onCurvePayload.Validate(), KeyScanWarningLogicSigAddressInvalid, true},
 		{"missing bytecode", missingBytecode.Validate(), KeyScanWarningParseLogicSigFailed, true},
 		{"undecodable bytecode hex", badHexErr, KeyScanWarningParseLogicSigFailed, true},
@@ -706,7 +692,6 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -736,7 +721,6 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -773,7 +757,6 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigWithoutBytecode(t *testing.T)
 	}
 	fields["category"] = CategoryDSALsig
 	fields["base_key_type"] = "ed25519"
-	fields["salt_counter"] = float64(0)
 	fields["signing_metadata_version"] = float64(CurrentSigningMetadataVersion)
 	keyJSON, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
@@ -809,7 +792,6 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 	fields["category"] = CategoryDSALsig
 	fields["base_key_type"] = "ed25519"
 	fields["lsig_bytecode"] = "not-hex"
-	fields["salt_counter"] = float64(0)
 	fields["signing_metadata_version"] = float64(CurrentSigningMetadataVersion)
 	keyJSON, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
@@ -834,7 +816,7 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 }
 
 // unsaltedLogicSigForScanTest returns an off-curve program as an unsalted
-// template stores it: no lsig_derivation, and salt_counter 0.
+// template stores it: no lsig_derivation.
 func unsaltedLogicSigForScanTest(t *testing.T) (string, []byte) {
 	t.Helper()
 	result := lsigsalttest.OffCurve(t, []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}, 4)

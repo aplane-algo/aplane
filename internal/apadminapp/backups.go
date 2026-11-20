@@ -4,6 +4,7 @@
 package apadminapp
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -38,4 +39,14 @@ func BackupCreatedTime(info protocol.BackupInfo) (time.Time, BackupTimeSource) {
 		return t, BackupTimeName
 	}
 	return time.Unix(info.CreatedAt, 0).UTC(), BackupTimeFile
+}
+
+// ImportSkipHeading is the line before an imported archive's skipped keys
+// are listed, empty when there are none.
+func ImportSkipHeading(result protocol.CommitBackupImportResultMessage) string {
+	skipped := len(result.Skipped) + result.SkippedOmitted
+	if skipped == 0 {
+		return ""
+	}
+	return fmt.Sprintf("A restore will skip %d key(s) in it that this node cannot use:", skipped)
 }

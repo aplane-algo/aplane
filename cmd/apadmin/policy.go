@@ -21,7 +21,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		writePolicyError(streams.stderr, err)
+		printBatchError(streams.stderr, err)
 		return 2
 	}
 	command.DataDir = globals.dataDir
@@ -33,7 +33,7 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 	// default and needs the node. The runners take only node commands.
 	if command.NeedsNoNode() {
 		if err := policycmd.WriteOfflineTemplate(command, ioStreams); err != nil {
-			writePolicyError(streams.stderr, err)
+			printBatchError(streams.stderr, err)
 			return 1
 		}
 		return 0
@@ -41,17 +41,17 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 
 	if rescue {
 		if globals.ipcPathPassed {
-			writePolicyError(streams.stderr, fmt.Errorf("policy rescue cannot use --ipc-path"))
+			printBatchError(streams.stderr, fmt.Errorf("policy rescue cannot use --ipc-path"))
 			return 2
 		}
 		dataDir, err := signerbootstrap.ResolveDataDir(globals.dataDir)
 		if err != nil {
-			writePolicyError(streams.stderr, err)
+			printBatchError(streams.stderr, err)
 			return 1
 		}
 		command.DataDir = dataDir
 		if err := (policycmd.RescueRunner{}).Run(ctx, command, ioStreams); err != nil {
-			writePolicyError(streams.stderr, err)
+			printBatchError(streams.stderr, err)
 			return 1
 		}
 		return 0
@@ -59,11 +59,11 @@ func runPolicyCommand(ctx context.Context, args []string, globals adminBatchGlob
 
 	session, err := selectAdminTransport(globals)
 	if err != nil {
-		writePolicyError(streams.stderr, err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	if err := (policycmd.OnlineRunner{Session: session}).Run(ctx, command, ioStreams); err != nil {
-		writePolicyError(streams.stderr, err)
+		printBatchError(streams.stderr, err)
 		return 1
 	}
 	return 0
@@ -213,8 +213,4 @@ func policyOperands(fs *flag.FlagSet, parsed []string) ([]string, error) {
 		}
 	}
 	return operands, nil
-}
-
-func writePolicyError(stderr io.Writer, err error) {
-	_, _ = fmt.Fprintf(stderr, "apadmin: %v\n", err)
 }

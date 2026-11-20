@@ -9,7 +9,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 )
 
@@ -79,32 +78,14 @@ func PublishRotatingHints(tables *stagetable.Store, hints map[string]RotatingSta
 	}
 }
 
-// LoadRebuildHints validates hints against the actual selected archive keys.
-// Call only after a successful fresh-store commit, while still offline.
-func LoadRebuildHints(source string, selectors []string, passphrase []byte) (map[string]RotatingStageHint, error) {
-	manifest, err := OpenSealedManifest(source, passphrase)
-	if err != nil {
-		return nil, err
-	}
-	keysDir := ResolveBackupKeysDir(source)
-	selected, err := normalizeCredentialSelectors(keysDir, selectors)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]RotatingStageHint)
-	for _, selector := range selected {
-		if _, ok := manifest.RotatingStageHints[selector]; !ok {
-			continue
-		}
-		entry, err := loadCredentialEntry(keysDir, selector, passphrase, noderole.RoleSigner)
-		if err != nil {
-			return nil, err
-		}
-		h := validatedRotatingHint(entry, manifest.RotatingStageHints)
-		entry.ZeroSecrets()
-		if h != nil {
-			out[selector] = *h
+// StageHints returns the validated rotating recovery hints of the set's
+// entries, by selector, for PublishRotatingHints once they have committed.
+func (s *RestoreSet) StageHints() map[string]RotatingStageHint {
+	hints := make(map[string]RotatingStageHint)
+	for _, entry := range s.Entries {
+		if entry.StageHint != nil {
+			hints[entry.Selector()] = *entry.StageHint
 		}
 	}
-	return out, nil
+	return hints
 }

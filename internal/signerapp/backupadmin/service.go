@@ -169,14 +169,16 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 			Error: err.Error(),
 		}
 	}
-	// Per-credential validation errors occur after manifest authentication;
+	// Skipped credentials are admitted or not after manifest authentication;
 	// they are not failed export-passphrase guesses.
 	limiter.RecordSuccess(archivePath)
+	skipped, omitted := projectSkippedEntries(preview.Skipped)
 	return adminproto.RestorePreviewResult{
 		ArchivePath:      preview.ArchivePath,
 		ArchiveCreatedAt: preview.CreatedAtUnix,
 		Keys:             projectRestoreKeyInfos(preview.Keys),
-		Errors:           projectRestoreErrors(preview.Errors),
+		Skipped:          skipped,
+		SkippedOmitted:   omitted,
 	}
 }
 
@@ -188,23 +190,11 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
-			Error:         item.Error,
 		}
 		if item.StageHint != nil {
 			n := item.StageHint.Stage
 			out[i].StageHint = &n
 			out[i].StageHintRound = item.StageHint.ObservedRound
-		}
-	}
-	return out
-}
-
-func projectRestoreErrors(items []backup.RestoreError) []adminproto.RestoreError {
-	out := make([]adminproto.RestoreError, len(items))
-	for i, item := range items {
-		out[i] = adminproto.RestoreError{
-			Address: item.Address,
-			Error:   item.Error,
 		}
 	}
 	return out

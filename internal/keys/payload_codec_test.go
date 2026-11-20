@@ -66,8 +66,7 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 			fields: []string{
 				"base_key_type", "category", "created_at", "format_version", "key_type",
 				"lsig_bytecode", "lsig_opcode_profile", "parameters", "private_key", "public_key",
-				"salt_counter", "signing_args", "signing_metadata_version", "teal_source",
-				"template_fingerprint",
+				"signing_args", "signing_metadata_version", "teal_source", "template_fingerprint",
 			},
 		},
 		{
@@ -82,8 +81,8 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 			), false),
 			fields: []string{
 				"category", "created_at", "format_version", "key_type", "lsig_bytecode",
-				"lsig_opcode_profile", "parameters", "salt_counter", "signing_metadata_version",
-				"teal_source", "template_fingerprint",
+				"lsig_opcode_profile", "parameters", "signing_metadata_version", "teal_source",
+				"template_fingerprint",
 			},
 		},
 	}
@@ -408,7 +407,7 @@ func TestCosignedPayloadParametersAgreeOnTheCosignerType(t *testing.T) {
 func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1}`
-	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
 	if payload, err := ParsePayload([]byte(base)); err != nil {
 		t.Fatalf("ParsePayload(base) error = %v", err)
 	} else {
@@ -449,7 +448,7 @@ func TestParsePayloadChecksTheRekeyToListParameters(t *testing.T) {
 	root := strings.Repeat("ab", 32)
 	entry := "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKE3PRHE"
 	base := `{"format_version":1,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
-		`","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","parameters":{"bounded_rekey_to_root":"` + root + `","rekey_to":"` + entry +
+		`","signing_metadata_version":2,"base_key_type":"test.base.v1","parameters":{"bounded_rekey_to_root":"` + root + `","rekey_to":"` + entry +
 		`"},"bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["axfer"],"max_fee":1000,"rekey":"refused","rekey_list":{"contract":"rekey_list1","depth":4,"root":"` + root +
 		`"},"runtime_args":[],"derived_args":[{"name":"rekey_list_proof","kind":"rekey_list_proof","parameter":"rekey_to","max_size":160}],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}},{"index":1,"name":"rekey_list_proof","source":"derived","max_size":160,"paths":{"spend":"forbidden","spending_rekey":"forbidden","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
 	if payload, err := ParsePayload([]byte(base)); err != nil {
@@ -474,33 +473,41 @@ func TestParsePayloadChecksTheRekeyToListParameters(t *testing.T) {
 	}
 }
 
-// The reader requires an unsalted record to carry salt_counter but never
-// checks its value. Writers set 0; a hand-written record with another value
-// still parses, for a generic and a DSA LogicSig alike.
-func TestParsePayloadAcceptsAnyUnsaltedCounter(t *testing.T) {
+// A key file written before salt_counter was retired carries the field, which
+// the strict decoder refuses as unknown: the file must be regenerated.
+func TestParsePayloadRefusesTheRetiredSaltCounter(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
+	autoSaltedHex := hex.EncodeToString(canonicalOffCurveBytecodeForVersion(t, 13))
+	const want = `incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`
 	for name, record := range map[string]string{
-		"generic": `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex +
-			`","salt_counter":7,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`,
-		"dsa": `{"format_version":1,"category":"dsa_lsig","key_type":"test.dsa.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
-			`","salt_counter":7,"signing_metadata_version":1,"base_key_type":"test.base.v1","created_at":"2026-07-10T12:34:56Z"}`,
+		"unsalted generic": `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex +
+			`","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`,
+		"unsalted dsa": `{"format_version":1,"category":"dsa_lsig","key_type":"test.dsa.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
+			`","salt_counter":0,"signing_metadata_version":1,"base_key_type":"test.base.v1","created_at":"2026-07-10T12:34:56Z"}`,
+		"auto-salted generic": `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + autoSaltedHex +
+			`","lsig_derivation":"algod_v13_auto_salt","lsig_opcode_profile":{"default":20000},"salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			payload, err := ParsePayload([]byte(record))
+			if payload != nil {
+				payload.ZeroSecrets()
+			}
+			if !errors.Is(err, ErrIncompatibleKeyFormat) || err.Error() != want {
+				t.Fatalf("ParsePayload() error = %v, want %q", err, want)
+			}
+			// The same record without the field is accepted.
+			payload, err = ParsePayload([]byte(strings.Replace(record, `"salt_counter":0,`, "", 1)))
 			if err != nil {
-				t.Fatalf("ParsePayload() error = %v", err)
+				t.Fatalf("ParsePayload(without salt_counter) error = %v", err)
 			}
-			defer payload.ZeroSecrets()
-			if payload.LogicSigDerivation != "" || payload.SaltCounter == nil || *payload.SaltCounter != 7 {
-				t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 7", payload.LogicSigDerivation, payload.SaltCounter)
-			}
+			payload.ZeroSecrets()
 		})
 	}
 }
 
 func TestParsePayloadRejectsNonCanonicalJSON(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
-	base := `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`
+	base := `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex + `","signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`
 
 	tests := []struct {
 		name string
@@ -597,15 +604,6 @@ func TestPayloadCategoryValidation(t *testing.T) {
 			want: "requires canonical base_key_type",
 		},
 		{
-			name: "logic sig requires salt counter",
-			payload: func() *Payload {
-				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
-				p.SaltCounter = nil
-				return p
-			}(),
-			want: ErrMissingLogicSigSaltCounter.Error(),
-		},
-		{
 			name: "duplicate signing arg",
 			payload: NewGenericLSigPayload(
 				"test.generic.v1", nil, bytecode, "",
@@ -653,8 +651,7 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
-	if strings.Contains(string(encoded), `"salt_counter"`) ||
-		!strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) ||
+	if !strings.Contains(string(encoded), `"lsig_derivation": "algod_v13_auto_salt"`) ||
 		!strings.Contains(string(encoded), `"lsig_opcode_profile"`) {
 		t.Fatalf("auto-salted payload JSON = %s", encoded)
 	}
@@ -663,15 +660,10 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
 	defer decoded.ZeroSecrets()
-	if decoded.LogicSigDerivation != LogicSigDerivationAlgodV13AutoSalt || decoded.SaltCounter != nil {
-		t.Fatalf("decoded derivation = %q salt=%v", decoded.LogicSigDerivation, decoded.SaltCounter)
+	if decoded.LogicSigDerivation != LogicSigDerivationAlgodV13AutoSalt {
+		t.Fatalf("decoded derivation = %q", decoded.LogicSigDerivation)
 	}
 
-	withCounter := *payload
-	withCounter.SaltCounter = SaltCounterPtr(0)
-	if err := withCounter.Validate(); err == nil || !strings.Contains(err.Error(), "forbids salt_counter") {
-		t.Fatalf("Validate(auto-salted with counter) error = %v", err)
-	}
 	oldVersion := *payload
 	oldVersion.LogicSigBytecode = canonicalOffCurveBytecodeForVersion(t, 12)
 	if err := oldVersion.Validate(); err == nil || !strings.Contains(err.Error(), "requires final TEAL v13+") {
@@ -682,6 +674,39 @@ func TestAutoSaltedLogicSigPayloadContract(t *testing.T) {
 	if err := unknown.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported lsig_derivation") {
 		t.Fatalf("Validate(unknown derivation) error = %v", err)
 	}
+}
+
+// An auto-salted record must carry a valid opcode profile for its kind: the
+// default path alone for a key without bounded_authorization.
+func TestAutoSaltedLogicSigPayloadRequiresAValidOpcodeProfile(t *testing.T) {
+	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecodeForVersion(t, 13))
+	record := func(profile string) string {
+		return `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex +
+			`","lsig_derivation":"algod_v13_auto_salt"` + profile + `,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`
+	}
+	const prefix = "incompatible key file format: invalid lsig_opcode_profile: invalid LogicSig resource usage: "
+	const suffix = "; restore or regenerate the key file using the current key schema"
+	for name, test := range map[string]struct{ profile, want string }{
+		"missing":          {"", "default opcode ceiling is missing"},
+		"empty":            {`,"lsig_opcode_profile":{}`, "default opcode ceiling is missing"},
+		"bounded path":     {`,"lsig_opcode_profile":{"default":20000,"spend":20000}`, "spend opcode ceiling is not valid for this profile"},
+		"over the maximum": {`,"lsig_opcode_profile":{"default":320001}`, "default opcode ceiling 320001 exceeds maximum 320000"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := ParsePayload([]byte(record(test.profile)))
+			if payload != nil {
+				payload.ZeroSecrets()
+			}
+			if want := prefix + test.want + suffix; !errors.Is(err, ErrIncompatibleKeyFormat) || err.Error() != want {
+				t.Fatalf("ParsePayload() error = %v, want %q", err, want)
+			}
+		})
+	}
+	payload, err := ParsePayload([]byte(record(`,"lsig_opcode_profile":{"default":20000}`)))
+	if err != nil {
+		t.Fatalf("ParsePayload(valid profile) error = %v", err)
+	}
+	payload.ZeroSecrets()
 }
 
 func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {

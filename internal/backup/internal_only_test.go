@@ -65,15 +65,15 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					archiveDir := t.TempDir()
+					archiveDir, keysDir := newAdmissionArchive(t)
 					passphrase := []byte("restore-internal-provider-test")
-					if err := writeStandaloneBackupFile(filepath.Join(archiveDir, address+".apb"), payload, passphrase); err != nil {
+					if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), payload, passphrase); err != nil {
 						t.Fatal(err)
 					}
 					kr := cryptotest.Keyring(t, testExportMasterKey)
-					restoredType, err := RestoreForRebuild(genstoretest.Active(t, paths), noderole.RoleSigner, archiveDir, address, kr, passphrase, nil)
+					restoredType, err := rebuildForTest(t, genstoretest.Active(t, paths), noderole.RoleSigner, archiveDir, address, kr, passphrase)
 					if err != nil || restoredType != keyType {
-						t.Fatalf("RestoreForRebuild() = %s, %v", restoredType, err)
+						t.Fatalf("rebuild = %s, %v", restoredType, err)
 					}
 					file := filepath.Join(genstoretest.Active(t, paths).KeysDir(), address+keys.AccountKeyExtension)
 					if _, err := os.Stat(file); err != nil {

@@ -27,7 +27,7 @@ import (
 
 func main() {
 	if err := validateFlagSpelling(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "apadmin: %v\n", err)
+		printBatchError(os.Stderr, err)
 		os.Exit(2)
 	}
 

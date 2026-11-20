@@ -32,8 +32,8 @@ account is the exception: its key file stores a seed, a genesis hash and
 stage 0's public record, and every stage program is assembled locally from a
 frozen template at signing time; see category E.) Current
 compiler-auto-salted keys record
-`lsig_derivation: algod_v13_auto_salt` and omit `salt_counter`; keys from an
-unsalted template record no `lsig_derivation` and keep `salt_counter: 0`.
+`lsig_derivation: algod_v13_auto_salt`; keys from an unsalted template record
+no `lsig_derivation`.
 Sign-time code uses that stored metadata;
 DSA-backed keys still use the appropriate base signing provider to produce and
 pack signatures. Templates are used for generation, discovery, lifecycle, and
@@ -102,7 +102,7 @@ referenced above is `signing_metadata_version`, `lsig_derivation`,
 `signing_args`.
 `lsig_derivation: algod_v13_auto_salt` records that the final TEAL v13 bytecode
 was salted by the configured algod compiler; a key from an unsalted template has
-no `lsig_derivation` and carries `salt_counter: 0` instead. A record without a
+no `lsig_derivation`. A record without a
 valid `lsig_opcode_profile` must be regenerated: an auto-salted one fails to
 parse, and an unsalted one parses but key scan skips it with an
 `incompatible_key_format` warning, so it never signs. `lsig_opcode_profile` stores only reviewed per-path opcode

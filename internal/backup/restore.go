@@ -19,8 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-type RestoreLogger func(format string, args ...any)
-
 type ManagedBackupInfo struct {
 	Path     string
 	FileName string
@@ -46,8 +44,10 @@ type RestorePreview struct {
 	// CreatedAtUnix is the creation time sealed in the authenticated
 	// manifest.
 	CreatedAtUnix int64
-	Keys          []RestoreKeyInfo
-	Errors        []RestoreError
+	// Keys lists the credentials this node admits; Skipped those it does
+	// not, with the reason.
+	Keys    []RestoreKeyInfo
+	Skipped []SkippedEntry
 }
 
 type RestoreKeyInfo struct {
@@ -57,12 +57,6 @@ type RestoreKeyInfo struct {
 	AlreadyExists bool
 	// HasPolicy reports that the archive carries this key's own policy.
 	HasPolicy bool
-	Error     string
-}
-
-type RestoreError struct {
-	Address string
-	Error   string
 }
 
 // ResolveBackupKeysDir returns the credential directory in an extracted
@@ -87,6 +81,31 @@ func PrepareRestoreSource(source string) (string, func(), error) {
 		return "", nil, err
 	}
 	return tmpDir, cleanup, nil
+}
+
+// archivePathError is an error about an extracted archive whose text names
+// each file by its path in the archive, never by where it was extracted: an
+// error reaches the operator and the audit log, and the extraction
+// directory is the daemon's.
+type archivePathError struct {
+	root string
+	err  error
+}
+
+func (e *archivePathError) Error() string {
+	text := strings.ReplaceAll(e.err.Error(), e.root+string(filepath.Separator), "")
+	return strings.ReplaceAll(text, e.root, ".")
+}
+
+func (e *archivePathError) Unwrap() error { return e.err }
+
+// withArchivePaths names the files under root in err's text by their paths
+// in the archive extracted there.
+func withArchivePaths(root string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &archivePathError{root: filepath.Clean(root), err: err}
 }
 
 func ResolveManagedBackupPath(paths storepaths.Paths, archivePath string) (string, error) {
@@ -185,6 +204,11 @@ func StatManagedBackupArchive(archivePath string) (os.FileInfo, error) {
 	return info, nil
 }
 
+// PreviewRestoreWithNodeRole admits every credential of a managed archive as
+// a whole-archive restore would, and reports each with its destination
+// presence, or as skipped with the reason. It mutates nothing. An archive
+// with nothing to restore still previews, so every reason is shown; restore
+// refuses it.
 func PreviewRestoreWithNodeRole(
 	paths storepaths.Paths,
 	archivePath string,
@@ -206,87 +230,51 @@ func PreviewRestoreWithNodeRole(
 		return nil, err
 	}
 	defer cleanup()
-	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
+	archive, err := openArchive(sourceRoot, exportPassphrase)
 	if err != nil {
 		return nil, err
 	}
-	if manifest.SourceNodeRole != string(role) {
-		return nil, authenticatedArchiveError(fmt.Errorf("backup source node role %q cannot be restored into %q", manifest.SourceNodeRole, role))
-	}
-	keysDir := ResolveBackupKeysDir(sourceRoot)
-	selectors, err := normalizeCredentialSelectors(keysDir, nil)
-	if err != nil {
-		return nil, authenticatedArchiveError(err)
+	if err := archive.requireSourceRole(role); err != nil {
+		return nil, err
 	}
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: manifest.CreatedAtUnix}
-	for _, selector := range selectors {
-		entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
-		if err == nil {
-			err = func() error {
-				defer entry.ZeroSecrets()
-				_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector(), entry.Category())
-				if destinationErr != nil && !isManagedClassConflict(destinationErr) {
-					return destinationErr
-				}
-				info := RestoreKeyInfo{
-					Address: selector, KeyType: entry.KeyType(),
-					StageHint:     validatedRotatingHint(entry, manifest.RotatingStageHints),
-					AlreadyExists: exists || destinationErr != nil,
-				}
-				document, err := readBackupPolicy(keysDir, selector, exportPassphrase, role)
-				if err != nil {
-					return err
-				}
-				info.HasPolicy = document != nil
-				preview.Keys = append(preview.Keys, info)
-				return nil
-			}()
+	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: archive.manifest.CreatedAtUnix}
+	preview.Skipped, err = archive.admitEach(archive.selectors, exportPassphrase, role, func(entry CredentialEntry) error {
+		defer entry.ZeroSecrets()
+		_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector(), entry.Category())
+		if destinationErr != nil && !isManagedClassConflict(destinationErr) {
+			return destinationErr
 		}
-		if err != nil {
-			preview.Errors = append(preview.Errors, RestoreError{Address: selector, Error: err.Error()})
-			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: selector, Error: err.Error()})
-			continue
-		}
+		preview.Keys = append(preview.Keys, RestoreKeyInfo{
+			Address: entry.Selector(), KeyType: entry.KeyType(), StageHint: entry.StageHint,
+			AlreadyExists: exists || destinationErr != nil, HasPolicy: entry.Policy != nil,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, authenticatedArchiveError(err)
 	}
 	return preview, nil
 }
 
-// RestoreForRebuild restores one credential-only backup entry, and the
-// policy the archive carries for it, into active. It is the offline rebuild
-// adapter; live restores use LoadManagedRestoreSet and a generation mint.
-func RestoreForRebuild(
-	active storepaths.GenPaths,
-	role noderole.Role,
-	keysDir, selector string,
-	kr *crypto.Keyring,
-	exportPassphrase []byte,
-	logf RestoreLogger,
-) (string, error) {
-	entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
-	if err != nil {
-		return "", err
-	}
-	defer entry.ZeroSecrets()
-	if err := ApplyCredentialEntry(active, entry, kr, false); err != nil {
-		return "", err
-	}
-	if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
-		return "", err
-	}
-	if entry.Policy != nil {
-		if err := ApplyPolicyEntry(active, role, entry, kr); err != nil {
-			return "", fmt.Errorf("restore policy for %s: %w", selector, err)
+// ApplyRebuildSet installs every entry of set, with its archived policy, into
+// the staged first generation of a fresh store of role. It is the offline
+// rebuild's apply step; a live restore classifies its set against the
+// destination and applies it inside a generation mint.
+func ApplyRebuildSet(staged storepaths.GenPaths, role noderole.Role, set *RestoreSet, kr *crypto.Keyring) error {
+	for i := range set.Entries {
+		entry := set.Entries[i]
+		if err := ApplyCredentialEntry(staged, entry, kr, false); err != nil {
+			return fmt.Errorf("rebuild %s: %w", entry.Selector(), err)
 		}
-		if logf != nil {
-			logf("restored policy: %s", selector)
+		if entry.Policy != nil {
+			if err := ApplyPolicyEntry(staged, role, entry, kr); err != nil {
+				return fmt.Errorf("restore policy for %s: %w", entry.Selector(), err)
+			}
 		}
 	}
-	if logf != nil {
-		logf("restored credential: %s (%s)", entry.Selector(), entry.KeyType())
-	}
-	return entry.KeyType(), nil
+	return nil
 }

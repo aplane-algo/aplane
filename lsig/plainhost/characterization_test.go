@@ -35,7 +35,7 @@ import (
 // the stored metadata and fingerprints, and the error text of each refusal. It
 // pins the hosts' output across refactors; a change that moves it changes what
 // an account is or what a user is told.
-const plainHostOutputDigest = "abcd01d8016e0fa380d3b98e36a624354109b7efe3eafeb16cd32272863c4db7"
+const plainHostOutputDigest = "b0b0c90d64915f8dbba1af939ee05b21552f3e8987505f7930b694c9fd2cf20f"
 
 // characterizationDumpEnv names a file the characterization test writes its
 // records to, so two runs can be compared line by line.
@@ -181,9 +181,7 @@ func characterizeRequest(c *characterization, b base, name string, params map[st
 		if err != nil {
 			c.add(name+" derive with salt", err)
 		} else {
-			// The 0 is the retired salt counter's column, kept so the records
-			// stay as they were.
-			c.add(name+" derive with salt", fmt.Sprintf("%x %s 0 %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
+			c.add(name+" derive with salt", fmt.Sprintf("%x %s %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
 		}
 	}
 	metadata, err := p.BuildBoundedAuthorizationMetadata(b.spendingKey, prepared, []byte("characterization program"))

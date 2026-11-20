@@ -75,7 +75,7 @@ func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context,
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file. A program
-// the compiler did not auto-salt is unsalted, and records salt_counter 0.
+// the compiler did not auto-salt is unsalted, and records no lsig_derivation.
 func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, compilerAutoSalted bool, tealSource string, signingArgs []keys.StoredSigningArg, opcodeProfile lsigresource.OpcodeProfile, kr *crypto.Keyring) error {
 	var payload *keys.Payload
 	if compilerAutoSalted {

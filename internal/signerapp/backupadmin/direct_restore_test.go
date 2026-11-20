@@ -345,7 +345,9 @@ func TestDirectRestoreDuplicateSelectorsFailWithoutRateLimitingValidPassphrase(t
 	}
 }
 
-func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
+// A credential the node cannot admit is skipped and reported; the rest
+// commit together as one restore generation.
+func TestDirectRestoreSkipsAnInadmissibleCredential(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
@@ -356,12 +358,49 @@ func TestDirectRestoreOneBadCredentialWritesNothing(t *testing.T) {
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
-	if result.Success || !strings.Contains(result.Error, "validate backup credential") {
+	if !result.Success || len(result.Restored) != 1 || result.Restored[0].Selector != validSelector ||
+		len(result.Skipped) != 1 || result.Skipped[0].Selector != "BAD" || !strings.HasPrefix(result.Skipped[0].Reason, badMemberReason) {
 		t.Fatalf("RestoreBackup(one bad) = %+v", result)
 	}
-	after := selectedAtomicTestGenerationID(t, paths)
-	if after != before {
-		t.Fatalf("store root after failed whole-archive validation = %q, want %q", after, before)
+	if after := selectedAtomicTestGenerationID(t, paths); after == before || after != result.GenerationID {
+		t.Fatalf("store root after the restore = %q, want the new generation %q", after, result.GenerationID)
+	}
+	active := resolveAtomicTestGeneration(t, paths)
+	if _, err := os.Stat(filepath.Join(active.KeysDir(), validSelector+".key")); err != nil {
+		t.Fatalf("admitted credential was not restored: %v", err)
+	}
+	entries, err := os.ReadDir(active.KeysDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "BAD") {
+			t.Fatalf("skipped credential was written: %s", entry.Name())
+		}
+	}
+}
+
+// A request naming a credential the node cannot admit is refused whole and
+// writes nothing.
+func TestDirectRestoreNamingAnInadmissibleCredentialWritesNothing(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	archivePath, validSelector := writeMixedValidityManagedArchive(t, paths)
+	before := selectedAtomicTestGenerationID(t, paths)
+	result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID:      "restore-named-bad",
+		ArchivePath:      archivePath,
+		Addresses:        []string{validSelector, "BAD"},
+		ExportPassphrase: []byte("export-passphrase"),
+	})
+	if result.Success || result.Code != protocol.ResultCodeRestoreFailed ||
+		!strings.HasPrefix(result.Error, "selected credential cannot be restored: BAD: "+badMemberReason) ||
+		len(result.Skipped) != 1 || result.Skipped[0].Selector != "BAD" || len(result.Restored) != 0 {
+		t.Fatalf("RestoreBackup(named bad) = %+v", result)
+	}
+	if after := selectedAtomicTestGenerationID(t, paths); after != before {
+		t.Fatalf("store root after a refused restore = %q, want %q", after, before)
 	}
 	active := resolveAtomicTestGeneration(t, paths)
 	if _, err := os.Stat(filepath.Join(active.KeysDir(), validSelector+".key")); !os.IsNotExist(err) {

@@ -188,7 +188,7 @@ func testPayloadRoundTrip(t *testing.T, s Scheme) {
 	if selector != address {
 		t.Fatalf("selector %s, want %s", selector, address)
 	}
-	for _, field := range []string{`"lsig_bytecode"`, `"salt_counter"`, `"lsig_opcode_profile"`, `"base_key_type"`} {
+	for _, field := range []string{`"lsig_bytecode"`, `"lsig_opcode_profile"`, `"base_key_type"`} {
 		if bytes.Contains(encoded, []byte(field)) {
 			t.Fatalf("rotating payload carries %s", field)
 		}
@@ -224,7 +224,6 @@ func testTampering(t *testing.T, s Scheme) {
 		"retired rotating type": func(p *keys.Payload) { p.KeyType = "aplane.rotating-hybrid.v1" },
 		"other key type":        func(p *keys.Payload) { p.KeyType = "aplane.falcon1024.v1" },
 		"stored bytecode":       func(p *keys.Payload) { p.LogicSigBytecode = []byte{0x0d} },
-		"salt counter":          func(p *keys.Payload) { p.SaltCounter = keys.SaltCounterPtr(0) },
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, mutate) })
 	}

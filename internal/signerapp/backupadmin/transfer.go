@@ -4,6 +4,7 @@
 package backupadmin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,7 +25,7 @@ const (
 )
 
 var (
-	deepVerifyImportedBackup  = backup.DeepVerifyBackupBytes
+	deepVerifyImportedBackup  = backup.VerifyImportedBackup
 	syncBackupImportDirectory = fsutil.SyncDir
 )
 
@@ -168,16 +169,15 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err := backup.ExtractTarGzArchive(claimPath, sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("invalid backup archive: %w", err), s.Deps.KeyPaths().Root())
 	}
-	report, err := deepVerifyImportedBackup(sourceRoot, req.ExportPassphrase)
+	role := s.Runtime.NodeRole()
+	report, err := deepVerifyImportedBackup(sourceRoot, req.ExportPassphrase, role)
 	if err != nil {
-		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
+		return importVerifyRefusal(err, s.Deps.KeyPaths().Root())
 	}
-	if report.FailedFiles > 0 {
-		return commitImportError(
-			fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles),
-			s.Deps.KeyPaths().Root(),
-		)
-	}
+	// A credential a restore would skip does not block the import: restore
+	// skips it as well, so the rest of the archive stays restorable. The
+	// result names each one, admitted for this node's role.
+	skipped, omitted := projectSkippedEntries(report.Skipped)
 	if err := removeBackupValidationDirectory(sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("remove backup validation directory: %w", err), s.Deps.KeyPaths().Root())
 	}
@@ -217,7 +217,10 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err != nil {
 		return commitImportError(err, s.Deps.KeyPaths().Root())
 	}
-	return adminproto.CommitBackupImportResult{Success: true, Backup: info, Warning: warning}
+	return adminproto.CommitBackupImportResult{
+		Success: true, Backup: info, Warning: warning,
+		Skipped: skipped, SkippedOmitted: omitted,
+	}
 }
 
 func (s Service) claimBackupImport(dir, uploadID, fileName string, expectedSize int64) (string, error) {
@@ -405,6 +408,25 @@ func beginImportError(err error, storeRoot string) adminproto.BeginBackupImportR
 func appendImportError(err error, storeRoot string) adminproto.AppendBackupImportResult {
 	return adminproto.AppendBackupImportResult{Code: "backup_import_append_failed", Error: backupTransferErrorText(err, storeRoot)}
 }
+
+// importVerifyRefusal reports an archive the import's verification refused.
+// An archive with nothing this node could restore is a valid archive refused
+// for this node, so only damage is called invalid.
+func importVerifyRefusal(err error, storeRoot string) adminproto.CommitBackupImportResult {
+	var refusal *backup.SkipRefusalError
+	var otherRole *backup.OtherRoleError
+	switch {
+	case errors.As(err, &otherRole):
+		return commitImportError(err, storeRoot)
+	case errors.As(err, &refusal):
+		refused := commitImportError(err, storeRoot)
+		refused.Skipped, refused.SkippedOmitted = projectSkippedEntries(refusal.Skipped)
+		return refused
+	default:
+		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), storeRoot)
+	}
+}
+
 func commitImportError(err error, storeRoot string) adminproto.CommitBackupImportResult {
 	return adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: backupTransferErrorText(err, storeRoot)}
 }
