@@ -23,6 +23,9 @@ import (
 type adminBatchGlobalOptions struct {
 	dataDir string
 	ipcPath string
+	// ipcPathPassed is set when --ipc-path was given, even empty; policy
+	// rescue refuses it.
+	ipcPathPassed bool
 }
 
 type adminBatchStreams struct {
@@ -110,13 +113,10 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	}
 
 	prompt := newAdminBatchPrompt(streams.stdin, streams.stderr)
-	passphrase, closePassphraseInput, err := catalogPassphrase(command, args, prompt, streams.stderr)
+	passphrase, err := catalogPassphrase(command, args, prompt, streams.stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(streams.stderr, "apadmin: %v\n", err)
 		return 1
-	}
-	if closePassphraseInput != nil {
-		defer func() { _ = closePassphraseInput.Close() }()
 	}
 	defer crypto.ZeroBytes(passphrase)
 
@@ -144,31 +144,19 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	return 0
 }
 
-func catalogPassphrase(
-	command string,
-	args []string,
-	prompt *adminBatchPrompt,
-	stderr io.Writer,
-) ([]byte, io.Closer, error) {
-	if !apadminapp.CatalogReadsStdin(command, args) {
-		passphrase, err := prompt.passphrase()
-		return passphrase, nil, err
+// catalogPassphrase reads the store passphrase for a catalog command. An
+// import reading its input from stdin, with no APSIGNER_PASSPHRASE, takes the
+// passphrase from the controlling terminal so stdin stays the import's.
+func catalogPassphrase(command string, args []string, prompt *adminBatchPrompt, stderr io.Writer) ([]byte, error) {
+	if !apadminapp.CatalogReadsStdin(command, args) || os.Getenv("APSIGNER_PASSPHRASE") != "" {
+		return prompt.passphrase()
 	}
-	if value := os.Getenv("APSIGNER_PASSPHRASE"); value != "" {
-		return []byte(value), nil, nil
-	}
-
 	tty, err := openControllingTerminal()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", command, err)
+		return nil, fmt.Errorf("%s import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", command, err)
 	}
-	ttyPrompt := newAdminBatchPrompt(tty, stderr)
-	passphrase, err := ttyPrompt.secret("Enter store passphrase: ", false)
-	if err != nil {
-		_ = tty.Close()
-		return nil, nil, err
-	}
-	return passphrase, tty, nil
+	defer func() { _ = tty.Close() }()
+	return newAdminBatchPrompt(tty, stderr).secret("Enter store passphrase: ", false)
 }
 
 func runStoreCommand(command string, args []string, globals adminBatchGlobalOptions, streams adminBatchStreams) int {
@@ -275,12 +263,19 @@ func adminBatchExitCode(err error) int {
 }
 
 func selectAdminTransport(globals adminBatchGlobalOptions) (*transport.IPCClient, error) {
-	dataDir := serverconfig.GetSignerDataDir(globals.dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
-	})
+	_, ipcPath, err := resolveIPCPath(globals)
 	if err != nil {
 		return nil, err
 	}
 	return transport.NewIPC(ipcPath), nil
+}
+
+// resolveIPCPath resolves the signer data directory and the admin socket path
+// from the global flags and the environment.
+func resolveIPCPath(globals adminBatchGlobalOptions) (dataDir, ipcPath string, err error) {
+	dataDir = serverconfig.GetSignerDataDir(globals.dataDir)
+	ipcPath, err = adminipc.ResolveClientPath(adminipc.ClientPathRequest{
+		DataDir: dataDir, IPCPath: globals.ipcPath, DataDirExplicit: globals.dataDir != "",
+	})
+	return dataDir, ipcPath, err
 }

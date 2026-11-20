@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/clientlog"
@@ -62,37 +61,35 @@ func main() {
 	flag.Parse()
 
 	positional := flag.Args()
+	globals := adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}
+	streams := adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 	switch classifyProductionSubcommand(positional) {
 	case productionPolicy:
-		passed := make(map[string]bool)
-		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
-		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
-			dataDir:       *dataDir,
-			ipcPath:       *ipcPathFlag,
-			ipcPathPassed: passed["ipc-path"],
-		}, policyStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "ipc-path" {
+				globals.ipcPathPassed = true
+			}
+		})
+		code := runPolicyCommand(context.Background(), positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionCatalog:
-		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runCatalogCommand(positional[0], positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionStore:
-		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runStoreCommand(positional[0], positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	}
 
-	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
-	})
+	resolvedDataDir, ipcPath, err := resolveIPCPath(globals)
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)
