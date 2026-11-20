@@ -62,12 +62,7 @@ func (r *REPLState) runJS(args []string, rawArgs string) error {
 
 	// Print result if not empty
 	if !result.IsEmpty {
-		switch v := result.Value.(type) {
-		case map[string]interface{}, []interface{}:
-			r.printf("%v\n", v)
-		default:
-			r.println(result.Value)
-		}
+		r.println(result.Value)
 	}
 
 	return nil

@@ -28,11 +28,11 @@ func (r *REPLState) executeAppCallRaw(args []string) (command.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.app().AppCallRaw(r.commandContext(), params.toAppRawRequest())
+	result, err := r.app().AppCallRaw(r.commandContext(), *params)
 	if err != nil {
 		return nil, err
 	}
-	return r.appCallResult(params.Wait, appCallOutput{
+	return r.appCallResult(appCallOutput{
 		from:       result.FromAddress,
 		preSubmit:  result.PreSubmitLines,
 		output:     result.Output,
@@ -47,11 +47,11 @@ func (r *REPLState) executeAppCallMethod(args []string) (command.Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.app().AppCallMethod(r.commandContext(), params.toAppMethodRequest())
+	result, err := r.app().AppCallMethod(r.commandContext(), *params)
 	if err != nil {
 		return nil, err
 	}
-	return r.appCallResult(params.Wait, appCallOutput{
+	return r.appCallResult(appCallOutput{
 		from:       result.FromAddress,
 		preSubmit:  result.PreSubmitLines,
 		output:     result.Output,
@@ -71,7 +71,7 @@ type appCallOutput struct {
 	structured appresult.AppCall
 }
 
-func (r *REPLState) appCallResult(wait bool, out appCallOutput) (command.Result, error) {
+func (r *REPLState) appCallResult(out appCallOutput) (command.Result, error) {
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() {
 			for _, line := range renderAppCallLines(out.preSubmit, out.from, r) {
@@ -79,10 +79,9 @@ func (r *REPLState) appCallResult(wait bool, out appCallOutput) (command.Result,
 			}
 			r.renderSubmissionOutput(out.output)
 			r.renderWarnings(out.warnings)
-			if wait && out.structured.Confirmed {
-				for _, line := range renderAppCallLines(out.confirmed, out.from, r) {
-					r.println(line)
-				}
+			// apshellapp gives confirmed lines only to a call it saw confirmed.
+			for _, line := range renderAppCallLines(out.confirmed, out.from, r) {
+				r.println(line)
 			}
 		})
 	}, out.structured)

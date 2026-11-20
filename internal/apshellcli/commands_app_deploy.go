@@ -21,7 +21,7 @@ func (r *REPLState) executeAppDeploy(args []string) (command.Result, error) {
 		return nil, err
 	}
 
-	result, err := r.app().AppDeploy(r.commandContext(), params.toAppRequest())
+	result, err := r.app().AppDeploy(r.commandContext(), params.AppDeployRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -35,51 +35,18 @@ func (r *REPLState) executeAppDeploy(args []string) (command.Result, error) {
 			if result.Submitted {
 				r.printf("App deploy submitted: %s\n", result.Structured.TxID)
 			}
-			if params.Wait && result.Structured.Confirmed {
-				for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
-					r.println(line)
-				}
+			// apshellapp gives confirmed lines only to a deploy it saw
+			// confirmed, with the app it created.
+			for _, line := range renderAppCallLines(result.ConfirmedLines, result.FromAddress, r) {
+				r.println(line)
 			}
 		})
 	}, result.Structured)
 }
 
+// appDeployArgs is the deploy request the parser fills in.
 type appDeployArgs struct {
-	From             string
-	ApprovalPath     string
-	ApprovalCompiled bool
-	ClearPath        string
-	ClearCompiled    bool
-	GlobalUint       uint64
-	GlobalBytes      uint64
-	LocalUint        uint64
-	LocalBytes       uint64
-	ExtraPages       uint32
-	Note             string
-	Wait             bool
-	Fee              uint64
-	UseFlatFee       bool
-	LsigArgs         cmdspec.LsigArgs
-}
-
-func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
-	return apshellapp.AppDeployRequest{
-		From:             a.From,
-		ApprovalPath:     a.ApprovalPath,
-		ApprovalCompiled: a.ApprovalCompiled,
-		ClearPath:        a.ClearPath,
-		ClearCompiled:    a.ClearCompiled,
-		GlobalUint:       a.GlobalUint,
-		GlobalBytes:      a.GlobalBytes,
-		LocalUint:        a.LocalUint,
-		LocalBytes:       a.LocalBytes,
-		ExtraPages:       a.ExtraPages,
-		Note:             a.Note,
-		Wait:             a.Wait,
-		Fee:              a.Fee,
-		UseFlatFee:       a.UseFlatFee,
-		LsigArgs:         a.LsigArgs,
-	}
+	apshellapp.AppDeployRequest
 }
 
 func parseAppDeployArgs(args []string) (*appDeployArgs, error) {

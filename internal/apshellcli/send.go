@@ -16,7 +16,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
-func (r *REPLState) runSend(args []string) (command.Result, error) {
+// cmdSend handles the send command for ALGO or ASA transfers.
+func (r *REPLState) cmdSend(args []string, _ *command.Context) (command.Result, error) {
 	params, err := shellrepl.ParseSendCommand(args)
 	if err != nil {
 		return nil, err

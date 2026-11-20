@@ -27,12 +27,12 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// runMCPMode starts an MCP server over stdio, exposing apshell as eight MCP tools:
+// RunMCPMode starts an MCP server over stdio, exposing apshell as eight MCP tools:
 // execute (shell commands), mcp_reference (shell command reference),
 // js (JavaScript execution), js_reference (JavaScript API reference),
 // jssave (save JS to file), jslist (list saved scripts), mcp_manual
 // (condensed operating manual), and doc (bundled reference docs).
-func runMCPMode(network string, cfg config.Config, dataDir string) {
+func RunMCPMode(network string, cfg config.Config, dataDir string) {
 	if _, err := clientenroll.LoadEnrolledClient(dataDir, clientenroll.Options{
 		Product:              "apshell --mcp",
 		MissingSSHHint:       "MCP cannot perform first-time enrollment; run interactive apshell enroll first",
@@ -199,10 +199,8 @@ recently executed JavaScript code instead of providing code.`),
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		data, marshalErr := json.Marshal(map[string]string{"path": dest})
-		if marshalErr != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("Saved to %s", dest)), nil
-		}
+		// A map of strings always marshals.
+		data, _ := json.Marshal(map[string]string{"path": dest})
 		return mcp.NewToolResultText(string(data)), nil
 	})
 
@@ -220,10 +218,8 @@ recently executed JavaScript code instead of providing code.`),
 		if entries == nil {
 			entries = []jsScriptEntry{}
 		}
-		data, marshalErr := json.Marshal(entries)
-		if marshalErr != nil {
-			return mcp.NewToolResultError(marshalErr.Error()), nil
-		}
+		// Entries of strings and integers always marshal.
+		data, _ := json.Marshal(entries)
 		return mcp.NewToolResultText(string(data)), nil
 	})
 
@@ -251,12 +247,6 @@ recently executed JavaScript code instead of providing code.`),
 }
 
 func mcpExecuteCommand(state *REPLState, cmd Command) *mcp.CallToolResult {
-	if state == nil {
-		state = &REPLState{}
-	}
-	if state.CommandRegistry == nil {
-		state.CommandRegistry = state.initCommandRegistry()
-	}
 	registered, builtIn := state.CommandRegistry.Lookup(cmd.Name)
 	if refusal := mcpAutomationRefusal(state.CommandRegistry, cmd); refusal != nil {
 		return refusal
@@ -402,10 +392,7 @@ func captureJSExecution(ctx context.Context, state *REPLState, code string) (mcp
 
 	state.Scripts.LastCode = code
 
-	resp := mcpJSResult{}
-	if out != "" {
-		resp.Output = out
-	}
+	resp := mcpJSResult{Output: out}
 	if !result.IsEmpty {
 		resp.Value = result.Value
 	}

@@ -75,14 +75,9 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 	}
 
 	if options.request.Alias == "" {
-		target, resolveErr := r.app().ResolveCosignerSetupTarget(options.request)
-		if resolveErr != nil && errors.Is(resolveErr, apshellapp.ErrCosignerEndpointURLRequired) && !r.AutoConfirm {
-			options.request.URL, err = r.readRequiredSetupValue("Cosigner endpoint (ssh://, https://, or loopback http://): ")
-			if err != nil {
-				return nil, err
-			}
-			target, resolveErr = r.app().ResolveCosignerSetupTarget(options.request)
-		}
+		target, resolveErr := withPromptedCosignerURL(r, &options.request, func() (apshellapp.CosignerSetupTarget, error) {
+			return r.app().ResolveCosignerSetupTarget(options.request)
+		})
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -99,14 +94,9 @@ func (r *REPLState) runEndpointsAdd(args []string) (command.Result, error) {
 			}
 		}
 	}
-	plan, err := r.app().PrepareCosignerSetup(options.request)
-	if err != nil && errors.Is(err, apshellapp.ErrCosignerEndpointURLRequired) && !r.AutoConfirm {
-		options.request.URL, err = r.readRequiredSetupValue("Cosigner endpoint (ssh://, https://, or loopback http://): ")
-		if err != nil {
-			return nil, err
-		}
-		plan, err = r.app().PrepareCosignerSetup(options.request)
-	}
+	plan, err := withPromptedCosignerURL(r, &options.request, func() (apshellapp.CosignerSetupPlan, error) {
+		return r.app().PrepareCosignerSetup(options.request)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +247,20 @@ func parseEndpointsAddArgs(args []string) (cosignerSetupCLIOptions, error) {
 		}
 	}
 	return out, nil
+}
+
+// withPromptedCosignerURL runs step and, when it fails for want of the
+// cosigner's URL in an interactive shell, asks for the URL, sets it on
+// request and runs step again.
+func withPromptedCosignerURL[T any](r *REPLState, request *apshellapp.CosignerSetupRequest, step func() (T, error)) (T, error) {
+	result, err := step()
+	if !errors.Is(err, apshellapp.ErrCosignerEndpointURLRequired) || r.AutoConfirm {
+		return result, err
+	}
+	if request.URL, err = r.readRequiredSetupValue("Cosigner endpoint (ssh://, https://, or loopback http://): "); err != nil {
+		return result, err
+	}
+	return step()
 }
 
 func (r *REPLState) readRequiredSetupValue(prompt string) (string, error) {

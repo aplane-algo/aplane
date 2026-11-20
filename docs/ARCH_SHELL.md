@@ -886,7 +886,7 @@ exception and is blocked from MCP automation.
 ### Command Handler Pattern
 
 ```go
-func (r *REPLState) cmdSend(args []string, _ interface{}) (command.Result, error) {
+func (r *REPLState) cmdSend(args []string, _ *command.Context) (command.Result, error) {
     // 1. PARSE: shell tokens to structured params
     params, err := shellrepl.ParseSendCommand(args)
 

@@ -59,7 +59,8 @@ func startBasicREPL(state *REPLState) {
 	shutdownRuntime(state)
 }
 
-func startREPL(network string, config config.Config, dataDir string) {
+// StartREPL runs the interactive shell until the user quits.
+func StartREPL(network string, config config.Config, dataDir string) {
 	fmt.Println("apshell - APlane Shell")
 	fmt.Println("Type 'help' for available commands or 'quit' to exit")
 	fmt.Println("Features: Command history (↑/↓), Tab completion, Ctrl+C to interrupt")
@@ -151,8 +152,8 @@ func startREPL(network string, config config.Config, dataDir string) {
 	shutdownRuntime(state)
 }
 
-// runScriptMode executes a script file and exits
-func runScriptMode(network string, config config.Config, dataDir string, scriptPath string) {
+// RunScriptMode executes a script file and exits
+func RunScriptMode(network string, config config.Config, dataDir string, scriptPath string) {
 	// Create REPLState with initialized runtime state and app facade.
 	state, err := NewREPLState(network, &config, dataDir)
 	if err != nil {

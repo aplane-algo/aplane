@@ -58,10 +58,8 @@ func readDoc(dataDir, name string) (string, error) {
 			return string(data), nil
 		}
 	}
-	if curated := docassets.CuratedDocs(); curated != nil {
-		if data, err := fs.ReadFile(curated, file); err == nil {
-			return string(data), nil
-		}
+	if data, err := fs.ReadFile(docassets.CuratedDocs(), file); err == nil {
+		return string(data), nil
 	}
 	return "", fmt.Errorf("doc %q not found; call doc with no name to list available docs", bare)
 }
@@ -73,16 +71,15 @@ func readDoc(dataDir, name string) (string, error) {
 func listDocs(dataDir string) []docEntry {
 	desc := map[string]string{}
 
-	if curated := docassets.CuratedDocs(); curated != nil {
-		_ = fs.WalkDir(curated, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
-				return nil
-			}
-			data, _ := fs.ReadFile(curated, p)
-			desc[strings.TrimSuffix(path.Base(p), ".md")] = firstHeading(string(data))
+	curated := docassets.CuratedDocs()
+	_ = fs.WalkDir(curated, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
 			return nil
-		})
-	}
+		}
+		data, _ := fs.ReadFile(curated, p)
+		desc[strings.TrimSuffix(path.Base(p), ".md")] = firstHeading(string(data))
+		return nil
+	})
 	if dataDir != "" {
 		dir := filepath.Join(dataDir, docDir)
 		if entries, err := os.ReadDir(dir); err == nil {

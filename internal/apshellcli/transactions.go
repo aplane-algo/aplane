@@ -38,9 +38,9 @@ func parseValidateLsigArgs(args []string) (cmdspec.LsigArgs, error) {
 	return lsigArgs, nil
 }
 
-// runValidate handles the validate command by parsing args, delegating
+// cmdValidate handles the validate command by parsing args, delegating
 // workflow to apshellapp, and rendering the result.
-func (r *REPLState) runValidate(args []string) (command.Result, error) {
+func (r *REPLState) cmdValidate(args []string, _ *command.Context) (command.Result, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("usage: validate <account> [arg:[<account>:]<name>=<value>]\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
 	}
@@ -104,9 +104,9 @@ func (r *REPLState) runValidate(args []string) (command.Result, error) {
 	return commandResult, nil
 }
 
-// runClose handles the close command by parsing args, delegating workflow to
+// cmdClose handles the close command by parsing args, delegating workflow to
 // apshellapp, and rendering the result.
-func (r *REPLState) runClose(args []string) (command.Result, error) {
+func (r *REPLState) cmdClose(args []string, _ *command.Context) (command.Result, error) {
 	// Parse command using dedicated parser
 	params, err := shellrepl.ParseCloseCommand(args)
 	if err != nil {
