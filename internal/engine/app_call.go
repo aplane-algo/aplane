@@ -146,7 +146,7 @@ func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams)
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
-		AppCallInfo:    &appspecAppCallInfoRaw,
+		AppCallInfo:    &signerapi.AppCallInfo{Mode: "raw"},
 	}, nil
 }
 
@@ -187,8 +187,6 @@ func (e *Engine) PrepareAppCallMethod(ctx context.Context, params MethodAppCallP
 		Method: *method,
 	}, nil
 }
-
-var appspecAppCallInfoRaw = signerapi.AppCallInfo{Mode: "raw"}
 
 // ensureAppReferences returns the call's foreign apps: the caller's list
 // exactly as given, then any app a box reference needs that the list lacks.

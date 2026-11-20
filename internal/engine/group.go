@@ -51,9 +51,6 @@ type paymentMethodGroupPreparer interface {
 
 // PrepareGroup assembles prepared transactions into a canonical grouped plan.
 func PrepareGroup(preps ...*TransactionPrepResult) (*PreparedGroup, error) {
-	if len(preps) == 0 {
-		return nil, fmt.Errorf("no prepared transactions provided")
-	}
 	if len(preps) < 2 {
 		return nil, fmt.Errorf("prepared group requires at least 2 transactions")
 	}

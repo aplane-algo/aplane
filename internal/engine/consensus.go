@@ -23,9 +23,22 @@ const consensusValidationReuseWindow = 30 * time.Second
 type consensusValidationCache struct {
 	mu          sync.Mutex
 	client      *algod.Client
-	version     string
 	network     algodNetwork
 	validatedAt time.Time
+}
+
+// setLocked records that client served params, which passed
+// checkSupportedConsensus, now.
+func (c *consensusValidationCache) setLocked(client *algod.Client, params types.SuggestedParams) {
+	c.client = client
+	c.network = algodNetworkOf(params)
+	c.validatedAt = time.Now()
+}
+
+func (c *consensusValidationCache) clearLocked() {
+	c.client = nil
+	c.network = algodNetwork{}
+	c.validatedAt = time.Time{}
 }
 
 // algodNetwork is the network an algod serves, as its suggested parameters
@@ -90,8 +103,9 @@ func (e *Core) activeAlgodNetwork(ctx context.Context) (algodNetwork, error) {
 
 	e.consensusValidation.mu.Lock()
 	defer e.consensusValidation.mu.Unlock()
+	// Only setLocked sets client, and only for parameters that passed
+	// checkSupportedConsensus.
 	if e.consensusValidation.client == client &&
-		e.consensusValidation.version != "" &&
 		now.Sub(e.consensusValidation.validatedAt) < consensusValidationReuseWindow {
 		return e.consensusValidation.network, nil
 	}
@@ -100,48 +114,30 @@ func (e *Core) activeAlgodNetwork(ctx context.Context) (algodNetwork, error) {
 	if err != nil {
 		return algodNetwork{}, err
 	}
-	e.consensusValidation.client = client
-	e.consensusValidation.version = params.ConsensusVersion
-	e.consensusValidation.network = algodNetworkOf(params)
-	e.consensusValidation.validatedAt = time.Now()
+	e.consensusValidation.setLocked(client, params)
 	return e.consensusValidation.network, nil
 }
 
 func (e *Core) rememberAlgodConsensus(client *algod.Client, params types.SuggestedParams) error {
-	version := params.ConsensusVersion
-	if err := checkSupportedConsensus(version); err != nil {
-		if e != nil {
-			e.consensusValidation.mu.Lock()
-			if e.consensusValidation.client == client {
-				e.consensusValidation.client = nil
-				e.consensusValidation.version = ""
-				e.consensusValidation.network = algodNetwork{}
-				e.consensusValidation.validatedAt = time.Time{}
-			}
-			e.consensusValidation.mu.Unlock()
+	if err := checkSupportedConsensus(params.ConsensusVersion); err != nil {
+		e.consensusValidation.mu.Lock()
+		if e.consensusValidation.client == client {
+			e.consensusValidation.clearLocked()
 		}
+		e.consensusValidation.mu.Unlock()
 		return err
 	}
-	if e == nil || client == nil || e.AlgodClient != client {
+	if client == nil || e.AlgodClient != client {
 		return nil
 	}
 	e.consensusValidation.mu.Lock()
-	e.consensusValidation.client = client
-	e.consensusValidation.version = version
-	e.consensusValidation.network = algodNetworkOf(params)
-	e.consensusValidation.validatedAt = time.Now()
+	e.consensusValidation.setLocked(client, params)
 	e.consensusValidation.mu.Unlock()
 	return nil
 }
 
 func (e *Core) clearAlgodConsensusValidation() {
-	if e == nil {
-		return
-	}
 	e.consensusValidation.mu.Lock()
-	e.consensusValidation.client = nil
-	e.consensusValidation.version = ""
-	e.consensusValidation.network = algodNetwork{}
-	e.consensusValidation.validatedAt = time.Time{}
+	e.consensusValidation.clearLocked()
 	e.consensusValidation.mu.Unlock()
 }

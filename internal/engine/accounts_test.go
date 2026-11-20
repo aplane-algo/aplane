@@ -10,8 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -473,5 +478,53 @@ func TestCurrentKeysRefusesAnInconsistentList(t *testing.T) {
 	setAnswer(signerapi.KeysResponse{Count: 0, Keys: []signerapi.KeyInfo{}})
 	if keys, err := eng.CurrentKeys(context.Background()); err != nil || len(keys) != 0 {
 		t.Fatalf("CurrentKeys(empty) = %v, %v; want an empty list", keys, err)
+	}
+}
+
+// GetBalance is an account's balance from algod, as GetAccountBalanceRaw
+// reads it, for an address or an alias, with the account's alias. A missing
+// algod client is reported before a bad address.
+func TestGetBalanceIsTheRawBalanceWithTheAlias(t *testing.T) {
+	sender, unreachable := types.Address{9}.String(), types.Address{10}.String()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		address, isAccount := strings.CutPrefix(r.URL.Path, "/v2/accounts/")
+		if !isAccount || address == unreachable {
+			http.Error(w, "test node", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.Account{Address: address, Amount: 7_000_000, MinBalance: 200_000, AuthAddr: unreachable,
+			Assets: []models.AssetHolding{{AssetId: 10458941, Amount: 55, IsFrozen: true}, {AssetId: 999, Amount: 3}}})
+	}))
+	t.Cleanup(server.Close)
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := NewEngine("testnet", WithAlgodClient(client))
+	eng.AliasCache.Aliases = map[string]string{"me": sender}
+	eng.AsaCache.Assets = map[uint64]cache.ASAInfo{}
+
+	want := &BalanceResult{
+		Address: sender, Alias: "me", AlgoBalance: 7_000_000, MinBalance: 200_000, AuthAddr: unreachable,
+		Assets: []AssetBalance{
+			{AssetID: 10458941, Amount: 55, UnitName: "USDC", Decimals: 6, IsFrozen: true, IsOptedIn: true},
+			{AssetID: 999, Amount: 3, IsOptedIn: true},
+		},
+	}
+	for _, ref := range []string{"me", sender} {
+		got, err := eng.GetBalance(context.Background(), ref)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("GetBalance(%s) = %+v, %v; want %+v", ref, got, err, want)
+		}
+	}
+	if _, err := eng.GetBalance(context.Background(), "nobody"); !errors.Is(err, ErrInvalidAddress) {
+		t.Fatalf("GetBalance(nobody) error = %v, want ErrInvalidAddress", err)
+	}
+	if _, err := eng.GetBalance(context.Background(), unreachable); err == nil || !strings.HasPrefix(err.Error(), "failed to get account info: ") {
+		t.Fatalf("GetBalance(unreachable) error = %v, want the account info failure", err)
+	}
+	if _, err := NewEngine("testnet").GetBalance(context.Background(), "nobody"); !errors.Is(err, ErrNoAlgodClient) {
+		t.Fatalf("GetBalance() without a client error = %v, want ErrNoAlgodClient", err)
 	}
 }

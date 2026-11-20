@@ -76,9 +76,7 @@ func (e *Engine) AddASAToCache(ctx context.Context, assetID uint64) (*ASAInfo, e
 	}
 
 	err = e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, e.Network)
-		}
+		e.ReloadASACache()
 		e.cacheASA(info)
 		return e.AsaCache.SaveCacheLocked(e.Network)
 	})
@@ -103,9 +101,7 @@ func (e *Engine) cacheASA(info *ASAInfo) {
 // RemoveASAFromCache removes an asset from the cache and persists the change.
 func (e *Engine) RemoveASAFromCache(assetID uint64) error {
 	return e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, e.Network)
-		}
+		e.ReloadASACache()
 		if e.AsaCache.Assets == nil {
 			return fmt.Errorf("%w: %d", ErrInvalidAssetID, assetID)
 		}
@@ -148,9 +144,7 @@ func (e *Core) ResolveASAReference(asaRef string) (uint64, error) {
 func (e *Engine) ClearASACache() (int, error) {
 	var count int
 	err := e.withClientDataLock(func() error {
-		if e.DataDir != "" {
-			e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, e.Network)
-		}
+		e.ReloadASACache()
 		if e.AsaCache.Assets == nil {
 			return nil
 		}

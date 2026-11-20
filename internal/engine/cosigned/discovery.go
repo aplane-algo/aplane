@@ -300,7 +300,7 @@ func (s *Signer) probeConfiguredCosignerEndpoint(ctx context.Context, alias stri
 	}
 	if keys.Locked {
 		resolved.close()
-		return nil, nil, fmt.Errorf("%w", ErrCosignerDiscoveryLocked)
+		return nil, nil, ErrCosignerDiscoveryLocked
 	}
 	discovered, err := discoverCosignerComponentKeys(keys.Keys)
 	if err != nil {

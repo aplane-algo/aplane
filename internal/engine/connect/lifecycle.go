@@ -71,9 +71,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 		}
 	}()
 	client := sshtunnel.NewClient(host, sshPort, identityFile, knownHostsPath)
-	if hostKeyApproval != nil {
-		client.SetHostKeyApprovalHandler(hostKeyApproval)
-	}
+	client.SetHostKeyApprovalHandler(hostKeyApproval)
 	client.SetIdentityCreatedCallback(s.IdentityCreatedHandler())
 
 	client.SetDisconnectCallback(func() {
@@ -169,13 +167,9 @@ func (s *ConnectionState) RequestEnrollmentWithContext(
 	onEnrollmentStart func(string),
 ) (EnrollmentResult, error) {
 	client := sshtunnel.NewClient(host, sshPort, identityFile, knownHostsPath)
-	if hostKeyApproval != nil {
-		client.SetHostKeyApprovalHandler(hostKeyApproval)
-	}
+	client.SetHostKeyApprovalHandler(hostKeyApproval)
 	client.SetIdentityCreatedCallback(s.IdentityCreatedHandler())
-	if onEnrollmentStart != nil {
-		client.SetEnrollmentStartCallback(onEnrollmentStart)
-	}
+	client.SetEnrollmentStartCallback(onEnrollmentStart)
 	result, err := client.RequestEnrollment(ctx, label)
 	if err != nil {
 		return EnrollmentResult{}, fmt.Errorf("enrollment request failed: %w", err)

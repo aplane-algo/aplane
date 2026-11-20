@@ -76,9 +76,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 
 		// Update cache with the queried value under the shared client-data lock.
 		if err := e.withClientDataLock(func() error {
-			if e.DataDir != "" {
-				e.AuthCache = cache.LoadAuthCacheFromStore(e.CacheStore, e.Network)
-			}
+			e.ReloadAuthCache()
 			return e.AuthCache.UpdateAuthAddress(address, authAddr, e.Network)
 		}); err != nil {
 			cache.Debug("failed to save auth cache", "error", err)
