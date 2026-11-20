@@ -341,14 +341,6 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 		}
 	}
 
-	// The network and algod settings reach the plugin in initialize, so the
-	// environment adds only the state directory to the host's, which the
-	// sandbox filters.
-	env := os.Environ()
-	if stateDir != "" {
-		env = append(env, fmt.Sprintf("APSHELL_PLUGIN_STATE_DIR=%s", stateDir))
-	}
-
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
 		PluginName: plugin.Manifest.Name,
@@ -356,7 +348,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 		StateDir:   stateDir,
 		ExecPath:   execPath,
 		Args:       plugin.Manifest.Args,
-		Env:        env,
+		Env:        pluginEnv(os.Environ(), stateDir),
 	}
 
 	cmd, sandboxName, err := sandbox.BuildCommand(sandboxCfg)
@@ -419,6 +411,17 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 	go instance.monitorStderr()
 
 	return instance, nil
+}
+
+// pluginEnv is the environment a plugin starts with, before the sandbox filters
+// it: the host's, plus the plugin's state directory when it has one. Coming
+// last, the state directory overrides an operator's copy of the name. The
+// network and algod settings reach the plugin in initialize instead.
+func pluginEnv(host []string, stateDir string) []string {
+	if stateDir == "" {
+		return host
+	}
+	return append(host, "APSHELL_PLUGIN_STATE_DIR="+stateDir)
 }
 
 // initializePlugin sends the initialize request to the plugin

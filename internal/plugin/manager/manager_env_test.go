@@ -114,8 +114,9 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 }
 
 // sandboxedPluginBase returns a directory for a sandboxed plugin's files, or
-// skips the test where the plugin sandbox cannot run. The directory is outside
-// /tmp, which the Linux sandbox replaces with an empty tmpfs.
+// skips the test where the plugin sandbox cannot run a script from it. The
+// directory is outside /tmp, which the Linux sandbox replaces with an empty
+// tmpfs; a noexec mount there skips the test.
 func sandboxedPluginBase(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -127,10 +128,14 @@ func sandboxedPluginBase(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(base) })
 
+	probe := filepath.Join(base, "probe.sh")
+	if err := os.WriteFile(probe, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cmd, _, err := sandbox.BuildCommand(sandbox.Config{
 		PluginName: "probe",
 		PluginDir:  base,
-		ExecPath:   "/bin/true",
+		ExecPath:   probe,
 		Env:        []string{"PATH=/usr/bin:/bin"},
 	})
 	if err != nil {
@@ -140,6 +145,42 @@ func sandboxedPluginBase(t *testing.T) string {
 		t.Skipf("the plugin sandbox cannot run here: %v: %s", err, out)
 	}
 	return base
+}
+
+// The host adds only the plugin's state directory to its own environment, after
+// the operator's copy of the name so that the host's value is the one used.
+func TestPluginEnvAddsOnlyTheStateDir(t *testing.T) {
+	host := []string{"HOME=/home/operator", "APSHELL_PLUGIN_STATE_DIR=/operator-state"}
+
+	env := pluginEnv(host, "/data/plugin-state/p")
+	for _, name := range apshellEnvNames {
+		value, ok := lastEnvValue(env, name)
+		if name == "APSHELL_PLUGIN_STATE_DIR" {
+			if value != "/data/plugin-state/p" {
+				t.Errorf("plugin env %s = %q, want the host's", name, value)
+			}
+		} else if ok {
+			t.Errorf("plugin env %s = %q, want it unset", name, value)
+		}
+	}
+	if value, _ := lastEnvValue(env, "HOME"); value != "/home/operator" {
+		t.Errorf("plugin env HOME = %q, want the operator's", value)
+	}
+
+	if got := pluginEnv([]string{"HOME=/home/operator"}, ""); len(got) != 1 {
+		t.Errorf("plugin env without a state dir = %q, want the host's alone", got)
+	}
+}
+
+// lastEnvValue reads env as exec does: the last entry for a name is the one
+// used.
+func lastEnvValue(env []string, name string) (string, bool) {
+	for i := len(env) - 1; i >= 0; i-- {
+		if key, value, ok := strings.Cut(env[i], "="); ok && key == name {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func readEnvFile(t *testing.T, path string) map[string]string {
