@@ -121,6 +121,8 @@ Verbs:
                     no node and no passphrase.
 
 apply and remove ask for confirmation on the terminal; --yes skips it.
+Flags come before the files or keys; a file whose name starts with "-"
+follows --.
 
 Files from an export carry its context: check, diff and apply first compare
 the node with it and refuse when the node's policy, ASA set or network map
@@ -159,6 +161,14 @@ apply and remove, and reject --ipc-path.
 	if command.Verb == "" {
 		return command, rescue, fmt.Errorf("policy requires a verb: status, export, check, diff, apply, remove, or template")
 	}
+	operands, err := policyOperands(fs, args)
+	if err != nil {
+		// Refused as the flag package refuses a flag: the error, then the
+		// usage.
+		_, _ = fmt.Fprintln(stderr, err)
+		fs.Usage()
+		return command, rescue, err
+	}
 	command.Key = *key
 	command.Embedded = *embedded
 	command.Preset = *preset
@@ -168,13 +178,41 @@ apply and remove, and reject --ipc-path.
 	command.ExportDir = *all
 	command.NodeContext = *nodeContext
 	command.NoNodeContext = *noNodeContext
-	command.Args = fs.Args()
+	command.Args = operands
 	// The one validation of the command: the runners and
 	// WriteOfflineTemplate take it as given.
 	if err := command.Validate(); err != nil {
 		return command, rescue, err
 	}
 	return command, rescue, nil
+}
+
+// policyOperands is the files or keys that follow the flags parsed from
+// parsed. The flag package stops at the first of them, so a flag after one
+// would be read as a file or key name; it is refused instead, before any
+// passphrase prompt or connection. A lone "-" is stdin, and every argument
+// after "--" is a file or key as given, so a file whose name starts with "-"
+// follows "--".
+func policyOperands(fs *flag.FlagSet, parsed []string) ([]string, error) {
+	rest := fs.Args()
+	// Parsing ended at "--" when the argument before the rest is one.
+	literal := len(rest) < len(parsed) && parsed[len(parsed)-len(rest)-1] == "--"
+	operands := make([]string, 0, len(rest))
+	for _, arg := range rest {
+		switch {
+		case literal || arg == "-" || !strings.HasPrefix(arg, "-"):
+			operands = append(operands, arg)
+		case arg == "--":
+			literal = true
+		default:
+			name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+			if fs.Lookup(name) != nil {
+				return nil, fmt.Errorf("flag -%s must come before the policy files or keys", name)
+			}
+			return nil, fmt.Errorf("flag provided but not defined: -%s", name)
+		}
+	}
+	return operands, nil
 }
 
 func writePolicyError(stderr io.Writer, err error) {

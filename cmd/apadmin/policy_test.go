@@ -53,6 +53,18 @@ func TestParsePolicyCommandGrammar(t *testing.T) {
 		{name: "status takes no files", args: []string{"status", "a.json"}, wantErr: "takes no arguments"},
 		{name: "retired flag", args: []string{"--check"}, wantErr: "flag provided but not defined: -check"},
 		{name: "target retired", args: []string{"check", "--target", "signer", "a.json"}, wantErr: "flag provided but not defined: -target"},
+		// The flag package stops at the first file or key; a flag after one
+		// is refused as a flag, never read as a file or key name.
+		{name: "unknown flag after a file", args: []string{"apply", "a.json", "--online"}, wantErr: "flag provided but not defined: -online"},
+		{name: "unknown flag after files", args: []string{"check", "a.json", "b.json", "--yaml"}, wantErr: "flag provided but not defined: -yaml"},
+		{name: "unknown flag with a value after a file", args: []string{"diff", "a.json", "--save=x"}, wantErr: "flag provided but not defined: -save"},
+		{name: "unknown flag after a key", args: []string{"remove", keyID, "--target", "signer"}, wantErr: "flag provided but not defined: -target"},
+		{name: "single-dash flag after a file", args: []string{"apply", "a.json", "-x"}, wantErr: "flag provided but not defined: -x"},
+		{name: "known flag after a file", args: []string{"apply", "a.json", "--yes"}, wantErr: "flag -yes must come before the policy files or keys"},
+		{name: "known flag with a value after a file", args: []string{"check", "a.json", "-node-context=ctx.json"}, wantErr: "flag -node-context must come before the policy files or keys"},
+		{name: "stdin after a file is a file", args: []string{"check", "a.json", "-"}, wantErr: "sole file"},
+		{name: "dash file after --", args: []string{"check", "--", "-a.json"}, wantVerb: policycmd.VerbCheck, wantArgs: []string{"-a.json"}},
+		{name: "dash file after a file and --", args: []string{"check", "a.json", "--", "-b.json", "--yes"}, wantVerb: policycmd.VerbCheck, wantArgs: []string{"a.json", "-b.json", "--yes"}},
 		{name: "unknown verb", args: []string{"frobnicate"}, wantErr: "unknown policy command"},
 		{name: "template default", args: []string{"template"}, wantVerb: policycmd.VerbTemplate},
 		{name: "template key", args: []string{"template", "--key", keyID}, wantVerb: policycmd.VerbTemplate, wantKey: keyID},
@@ -215,16 +227,28 @@ func TestPolicyTemplateEmbeddedNeedsNoStore(t *testing.T) {
 	}
 }
 
-// A retired flag is an unknown flag: the flag package refuses it and prints
-// the usage, and the command exits 2.
+// A retired flag is an unknown flag wherever it stands. Before the first file
+// or key the flag package refuses it; after one, the policy command does.
+// Either way the usage is printed and the command exits 2 before it asks for
+// a passphrase or connects.
 func TestPolicyCommandRefusesRetiredFlagAsUnknown(t *testing.T) {
-	var stderr bytes.Buffer
-	code := runPolicyCommand(context.Background(), []string{"check", "--yaml", "a.json"}, adminBatchGlobalOptions{}, adminBatchStreams{
-		stdin: strings.NewReader(""), stdout: io.Discard, stderr: &stderr,
-	})
-	out := stderr.String()
-	if code != 2 || !strings.Contains(out, "apadmin: flag provided but not defined: -yaml\n") || !strings.Contains(out, "Usage: apadmin [GLOBAL FLAGS] policy VERB") {
-		t.Fatalf("runPolicyCommand() code=%d stderr=%q", code, out)
+	for _, tt := range []struct {
+		args []string
+		flag string
+	}{
+		{[]string{"check", "--yaml", "a.json"}, "-yaml"},
+		{[]string{"apply", "a.json", "--online"}, "-online"},
+		{[]string{"remove", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ", "--target", "signer"}, "-target"},
+	} {
+		var stderr bytes.Buffer
+		code := runPolicyCommand(context.Background(), tt.args, adminBatchGlobalOptions{ipcPath: "/nonexistent/aplane.sock", ipcPathPassed: true}, adminBatchStreams{
+			stdin: strings.NewReader("secret\n"), stdout: io.Discard, stderr: &stderr,
+		})
+		out := stderr.String()
+		if code != 2 || !strings.Contains(out, "apadmin: flag provided but not defined: "+tt.flag+"\n") ||
+			!strings.Contains(out, "Usage: apadmin [GLOBAL FLAGS] policy VERB") || strings.Contains(out, "connect") {
+			t.Fatalf("%v: runPolicyCommand() code=%d stderr=%q", tt.args, code, out)
+		}
 	}
 }
 
