@@ -699,17 +699,7 @@ func (m Model) renderDisplaceConfirm() string {
 	sb.WriteString("Proceeding will disconnect it.\n\n")
 
 	// Buttons - Cancel is default (safer)
-	var cancelBtn, proceedBtn string
-	if m.displaceConfirmFocus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		proceedBtn = buttonInactiveStyle.Render("  PROCEED")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		proceedBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("214")).Foreground(lipgloss.Color("214")).Render("> PROCEED")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", proceedBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.displaceConfirmFocus, "CANCEL", "PROCEED", buttonCaution))
 
 	return m.renderPopup(60, sb.String())
 }
@@ -733,17 +723,7 @@ func (m Model) renderDeleteConfirm() string {
 	sb.WriteString("\n\n")
 
 	// Buttons - Cancel is default (safer)
-	var cancelBtn, deleteBtn string
-	if m.del.focus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		deleteBtn = buttonInactiveStyle.Render("  DELETE")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		deleteBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> DELETE")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", deleteBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.del.focus, "CANCEL", "DELETE", buttonDanger))
 
 	return m.renderPopup(80, sb.String())
 }
@@ -758,17 +738,7 @@ func (m Model) renderLockConfirm() string {
 	sb.WriteString("This will clear the unlocked key session from signer memory.\n")
 	sb.WriteString("apadmin will stay open and return to the unlock screen.\n\n")
 
-	var cancelBtn, lockBtn string
-	if m.manualLock.focus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		lockBtn = buttonInactiveStyle.Render("  LOCK")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		lockBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("214")).Foreground(lipgloss.Color("214")).Render("> LOCK")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", lockBtn)
-	sb.WriteString(buttons)
+	sb.WriteString(buttonPair(m.manualLock.focus, "CANCEL", "LOCK", buttonCaution))
 
 	return m.renderPopup(70, sb.String())
 }

@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // renderEnrolledClients lists the enrollment requests waiting for approval
@@ -168,15 +166,7 @@ func (m Model) renderRevokeClientConfirm() string {
 	sb.WriteString(subtitleStyle.Render("A revoked client must request enrollment again with: enroll"))
 	sb.WriteString("\n\n")
 
-	var cancelBtn, revokeBtn string
-	if m.clients.confirmFocus == 0 {
-		cancelBtn = buttonActiveStyle.Render("> CANCEL")
-		revokeBtn = buttonInactiveStyle.Render("  REVOKE")
-	} else {
-		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
-		revokeBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("196")).Foreground(lipgloss.Color("196")).Render("> REVOKE")
-	}
-	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", revokeBtn))
+	sb.WriteString(buttonPair(m.clients.confirmFocus, "CANCEL", "REVOKE", buttonDanger))
 	return m.renderPopup(80, sb.String())
 }
 

@@ -43,17 +43,7 @@ func (m Model) renderClientEnrollmentPopup() string {
 	sb.WriteString(subtitleStyle.Render(note))
 	sb.WriteString("\n\n")
 
-	// Buttons - use JoinHorizontal for proper alignment
-	var approveBtn, rejectBtn string
-	if m.enrollmentApproval.focus == 0 {
-		approveBtn = buttonActiveStyle.Render("> APPROVE")
-		rejectBtn = buttonInactiveStyle.Render("  REJECT")
-	} else {
-		approveBtn = buttonInactiveStyle.Render("  APPROVE")
-		rejectBtn = buttonActiveStyle.Render("> REJECT")
-	}
-
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, approveBtn, "  ", rejectBtn)
+	buttons := buttonPair(m.enrollmentApproval.focus, "APPROVE", "REJECT", nil)
 	rows = append(rows, buttons)
 	sb.WriteString(buttons)
 

@@ -170,7 +170,7 @@ func effectTarget(lanes []reviewLane, item int, effect protocol.ReviewEffect) in
 		switch {
 		case effect.NewApp && lane.newApp == item+1,
 			!effect.NewApp && effect.App != 0 && lane.app == effect.App,
-			effect.App == 0 && !effect.NewApp && effect.To != "" && effect.To != effect.From && lane.address == effect.To && lane.newApp == 0 && lane.app == 0:
+			effect.App == 0 && !effect.NewApp && effect.To != "" && effect.To != effect.From && lane.address == effect.To:
 			return i
 		}
 	}
@@ -296,7 +296,7 @@ func (m Model) reviewUpperPane(review *protocol.Review, width int) (reviewPane, 
 func (m Model) reviewPaneFor(review *protocol.Review, width int) reviewPane {
 	switch m.pictureFor(review, width) {
 	case pictureLanes:
-		return lanesPane(review, width)
+		return drawLanes(review, width, true)
 	case pictureTable:
 		return tablePane(review, width)
 	}
@@ -357,19 +357,11 @@ func laneMark(kind string) rune {
 	return '↺'
 }
 
-// lanesPane draws each account and app as a column and each effect as an
-// arrow between two of them, or a mark on one. A filled dot starts an arrow
-// from a transaction this request signs, a hollow one from any other. When
-// not every lane fits, the arrows that leave the lanes shown end in "»".
-func lanesPane(review *protocol.Review, width int) reviewPane {
-	return drawLanes(review, width, true)
-}
-
 // singlePicture is the lanes of a lone transaction that moves something
 // between two parties: the same columns and arrows, with no rows to select.
 // A transaction that touches one account alone has no picture.
 func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
-	if review.Group || len(review.Items) != 1 {
+	if len(review.Items) != 1 {
 		return reviewPane{}, false
 	}
 	lanes := reviewLanes(review)
@@ -383,9 +375,12 @@ func singlePicture(review *protocol.Review, width int) (reviewPane, bool) {
 	return drawLanes(review, width, false), true
 }
 
-// drawLanes draws the lanes. rows is set for a group, whose lines are
-// numbered rows to select; a lone transaction's lines are neither numbered
-// nor selectable.
+// drawLanes draws each account and app as a column and each effect as an
+// arrow between two of them, or a mark on one. A filled dot starts an arrow
+// from a transaction this request signs, a hollow one from any other. When
+// not every lane fits, the arrows that leave the lanes shown end in "»".
+// rows is set for a group, whose lines are numbered rows to select; a lone
+// transaction's lines are neither numbered nor selectable.
 func drawLanes(review *protocol.Review, width int, rows bool) reviewPane {
 	lanes := reviewLanes(review)
 	shown, laneWidth := lanesShown(review, lanes, width)
