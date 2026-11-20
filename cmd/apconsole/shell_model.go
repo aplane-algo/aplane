@@ -311,17 +311,9 @@ func (m shellModel) updateExitedKey(msg tea.KeyMsg) (shellModel, tea.Cmd) {
 	return m, nil
 }
 
-// editKey applies a key that scrolls the transcript or edits the command
-// line. While a command runs, only scrolling works.
+// editKey applies a key that edits the command line. While a command runs,
+// it does nothing. The console scrolls the transcript itself.
 func (m shellModel) editKey(msg tea.KeyMsg) shellModel {
-	switch msg.Type {
-	case tea.KeyPgUp:
-		m.scrollPage(1, shellTranscriptHeight(10))
-		return m
-	case tea.KeyPgDown:
-		m.scrollPage(-1, shellTranscriptHeight(10))
-		return m
-	}
 	if m.running {
 		return m
 	}

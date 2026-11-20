@@ -18,12 +18,9 @@ import (
 func TestCatalogPassphraseKeepsEnvelopeStdinReserved(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if closer != nil {
-		t.Fatal("catalogPassphrase() returned a terminal closer while using the local environment")
 	}
 	if string(secret) != "local-secret" {
 		t.Fatalf("passphrase = %q, want local environment value", secret)
@@ -33,14 +30,11 @@ func TestCatalogPassphraseKeepsEnvelopeStdinReserved(t *testing.T) {
 func TestCatalogPassphraseKeepsCosignerKeyStdinReserved(t *testing.T) {
 	t.Setenv("APSIGNER_PASSPHRASE", "local-secret")
 	prompt := newAdminBatchPrompt(strings.NewReader("cosigner-key-json"), io.Discard)
-	secret, closer, err := catalogPassphrase(
+	secret, err := catalogPassphrase(
 		"cosigner", []string{"import", "-", "lab"}, prompt, io.Discard,
 	)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if closer != nil {
-		t.Fatal("catalogPassphrase() returned a terminal closer while using the local environment")
 	}
 	if string(secret) != "local-secret" {
 		t.Fatalf("passphrase = %q, want local environment value", secret)
@@ -64,17 +58,17 @@ func TestCatalogPassphraseUsesControllingTerminalForLocalStdinImport(t *testing.
 	t.Cleanup(func() { openControllingTerminal = originalOpen })
 
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if closer == nil {
-		t.Fatal("catalogPassphrase() did not return the controlling terminal closer")
 	}
 	if string(secret) != "local-terminal-secret" {
 		t.Fatalf("passphrase = %q", secret)
 	}
-	_ = closer.Close()
+	// The terminal is closed once the passphrase is read.
+	if err := tty.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("closing the terminal again: %v, want it already closed", err)
+	}
 }
 
 // An import reading its input from stdin takes the passphrase from the
@@ -116,12 +110,9 @@ func TestCatalogPassphraseReservesStdinForEveryImportSpelling(t *testing.T) {
 
 			stdin := strings.NewReader(pipedKey)
 			prompt := newAdminBatchPrompt(stdin, io.Discard)
-			secret, closer, err := catalogPassphrase(tt.command, tt.args, prompt, io.Discard)
+			secret, err := catalogPassphrase(tt.command, tt.args, prompt, io.Discard)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if closer != nil {
-				_ = closer.Close()
 			}
 			if !tt.wantReserved {
 				if string(secret) != strings.TrimSpace(pipedKey) {
@@ -146,12 +137,12 @@ func TestCatalogPassphraseRejectsHeadlessLocalStdinImport(t *testing.T) {
 	t.Cleanup(func() { openControllingTerminal = originalOpen })
 
 	prompt := newAdminBatchPrompt(strings.NewReader("public-envelope"), io.Discard)
-	secret, closer, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
+	secret, err := catalogPassphrase("cosigner", []string{"import", "-", "lab"}, prompt, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "APSIGNER_PASSPHRASE or a controlling terminal") {
 		t.Fatalf("error = %v", err)
 	}
-	if secret != nil || closer != nil {
-		t.Fatalf("secret=%q closer=%v, want neither", secret, closer)
+	if secret != nil {
+		t.Fatalf("secret=%q, want none", secret)
 	}
 }
 

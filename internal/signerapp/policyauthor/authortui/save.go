@@ -6,7 +6,6 @@ package authortui
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -86,7 +85,7 @@ func (m Model) saveReview() Model {
 	}
 	title := "Save " + baseName(s.Loaded.Path) + "?"
 	if s.Loaded.Exists {
-		lines = append(lines, m.changeLines(s.Review(), "the file as loaded")...)
+		lines = append(lines, m.changeLines(s.Review(), "compared with the file as loaded")...)
 		return m.openPage(screenSave, title, lines)
 	}
 	lines = append(lines, "A new file.", "")
@@ -99,7 +98,7 @@ func (m Model) saveReview() Model {
 			lines = append(lines, "")
 			m.save.baseline = ""
 		} else {
-			lines = append(lines, m.changeLines(policyauthor.Compare(m.shownFile(j), cur), "the comparison reference "+m.baselineLabel(j))...)
+			lines = append(lines, m.changeLines(policyauthor.Compare(m.shownFile(j), cur), "compared with the comparison reference "+m.baselineLabel(j))...)
 			lines = append(lines, "")
 			for _, line := range wrap("The comparison reference is a file in this workspace, not the node's policy: the policy the node runs for this key now is unknown. Press b to choose another reference.", width) {
 				lines = append(lines, m.styles.subtle.Render(line))
@@ -212,9 +211,12 @@ func (m Model) baselinePickView() string {
 }
 
 // changeLines lays out a comparison.
-func (m Model) changeLines(c policyauthor.Comparison, against string) []string {
+// changeLines lays out a comparison under a heading that says what was
+// compared with what ("compared with the file as loaded"); the comparison's
+// mode follows it.
+func (m Model) changeLines(c policyauthor.Comparison, heading string) []string {
 	var lines []string
-	for _, line := range wrap(fmt.Sprintf("compared with %s, by %s", against, c.Mode), max(20, m.width-2)) {
+	for _, line := range wrap(fmt.Sprintf("%s, by %s", heading, c.Mode), max(20, m.width-2)) {
 		lines = append(lines, m.styles.subtle.Render(line))
 	}
 	if c.Note != "" {
@@ -345,7 +347,7 @@ func (m Model) reviewOverwrite() Model {
 	} else {
 		onDisk := policyauthor.ParseBytes(s.Loaded.Path, disk)
 		lines = append(lines, "These differences are what the overwrite replaces.", "")
-		lines = append(lines, m.changeLines(policyauthor.Compare(onDisk, s.Current()), "the file as it is on disk now")...)
+		lines = append(lines, m.changeLines(policyauthor.Compare(onDisk, s.Current()), "compared with the file as it is on disk now")...)
 	}
 	m = m.openPage(screenOverwrite, "Overwrite "+filepath.Base(s.Loaded.Path)+"?", lines)
 	return m
@@ -412,30 +414,10 @@ func (m Model) saveAs(path string) Model {
 	}
 	delete(m.sessions, old)
 	m.sessions[path] = s
-	files := append(append([]*policyauthor.File(nil), m.ws.Files...), s.Loaded)
-	ws := *m.ws
-	ws.Files = files
-	if !m.coversPath(path) {
-		ws.Paths = append(append([]string(nil), ws.Paths...), path)
-	}
-	m.ws = ws.With(len(files)-1, s.Loaded)
 	// The original file goes back to what is on disk, with no edits.
-	m.ws = m.ws.With(m.current, policyauthor.LoadFile(old))
-	m.current = len(files) - 1
+	m.ws = m.ws.Add(s.Loaded).With(m.current, policyauthor.LoadFile(old))
+	m.current = len(m.ws.Files) - 1
 	return m.saved(path)
-}
-
-// coversPath reports whether reopening the workspace would load path.
-func (m Model) coversPath(path string) bool {
-	for _, p := range m.ws.Paths {
-		if p == path {
-			return true
-		}
-		if info, err := os.Stat(p); err == nil && info.IsDir() && filepath.Dir(path) == filepath.Clean(p) {
-			return true
-		}
-	}
-	return false
 }
 
 func (m Model) conflictView() string {

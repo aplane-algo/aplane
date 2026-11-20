@@ -8,8 +8,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -303,4 +305,47 @@ func TestStoreChangePassphraseCopiesSecretsAndPreservesCommittedWarning(t *testi
 func testSHA256(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
+}
+
+// restore apply takes the backup name, any number of --address values and
+// --replace-existing in any order; a value after --address is an address
+// whatever it spells.
+func TestStoreRestoreApplyArguments(t *testing.T) {
+	tests := []struct {
+		args      []string
+		err       string
+		addresses []string
+		replace   bool
+	}{
+		{args: []string{"apply"}, err: restoreApplyUsage},
+		{args: []string{"apply", "b"}},
+		{args: []string{"apply", "b", "--address"}, err: restoreApplyUsage},
+		{args: []string{"apply", "b", "--bogus"}, err: "unknown restore apply option: --bogus"},
+		{args: []string{"apply", "b", "--address", "A", "--replace-existing", "--address", "B"}, addresses: []string{"A", "B"}, replace: true},
+		{args: []string{"apply", "b", "--address", "--replace-existing"}, addresses: []string{"--replace-existing"}},
+		{args: []string{"apply", "b", "--replace-existing", "--replace-existing"}, replace: true},
+	}
+	for _, tt := range tests {
+		_, err := StoreAuthMode("restore", tt.args)
+		if got := fmt.Sprint(err); (tt.err == "" && err != nil) || (tt.err != "" && got != tt.err) {
+			t.Fatalf("StoreAuthMode(%q) = %v, want %q", tt.args, err, tt.err)
+		}
+		var sent protocol.RestoreBackupMessage
+		requester := &fakeRequester{handle: func(message, result any) error {
+			sent = message.(protocol.RestoreBackupMessage)
+			*result.(*protocol.RestoreBackupResultMessage) = protocol.RestoreBackupResultMessage{Success: true}
+			return nil
+		}}
+		store := Store{Client: requester, ReadSecret: func(string) ([]byte, error) { return []byte("s"), nil }}
+		err = store.RunRestore(tt.args)
+		if tt.err != "" {
+			if fmt.Sprint(err) != tt.err {
+				t.Fatalf("RunRestore(%q) = %v, want %q", tt.args, err, tt.err)
+			}
+			continue
+		}
+		if err != nil || sent.ArchivePath != "b" || !reflect.DeepEqual(sent.Addresses, tt.addresses) || sent.ReplaceExisting != tt.replace {
+			t.Fatalf("RunRestore(%q) = %v, sent %q %#v %v", tt.args, err, sent.ArchivePath, sent.Addresses, sent.ReplaceExisting)
+		}
+	}
 }

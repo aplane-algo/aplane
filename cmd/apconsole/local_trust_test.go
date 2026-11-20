@@ -26,7 +26,7 @@ import (
 func TestTrustLocalSignerHostKeyWritesKnownHosts(t *testing.T) {
 	clientDir := t.TempDir()
 	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
-	stubLocalSignerHostKeyProbe(t, nil)
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
 network: testnet
 `), 0o600); err != nil {
@@ -107,7 +107,7 @@ func TestTrustLocalSignerHostKeyDoesNotDuplicateEntry(t *testing.T) {
 	clientDir := t.TempDir()
 	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
 	hostKey := loadTestSSHPublicKey(t, hostKeyPath)
-	stubLocalSignerHostKeyProbe(t, nil)
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
 	knownHostsPath := filepath.Join(clientDir, ".ssh/known_hosts")
 	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
 		t.Fatalf("mkdir known_hosts dir: %v", err)

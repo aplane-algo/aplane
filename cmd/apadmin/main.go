@@ -13,20 +13,15 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/aplane-algo/aplane/internal/adminipc"
-	"github.com/aplane-algo/aplane/internal/algorithm"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/bootstrap/signeradmin"
 	"github.com/aplane-algo/aplane/internal/clientlog"
-	"github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/manifest"
-	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -62,37 +57,35 @@ func main() {
 	flag.Parse()
 
 	positional := flag.Args()
+	globals := adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}
+	streams := adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 	switch classifyProductionSubcommand(positional) {
 	case productionPolicy:
-		passed := make(map[string]bool)
-		flag.Visit(func(f *flag.Flag) { passed[f.Name] = true })
-		code := runPolicyCommand(context.Background(), positional[1:], policyGlobalOptions{
-			dataDir:       *dataDir,
-			ipcPath:       *ipcPathFlag,
-			ipcPathPassed: passed["ipc-path"],
-		}, policyStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "ipc-path" {
+				globals.ipcPathPassed = true
+			}
+		})
+		code := runPolicyCommand(context.Background(), positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionCatalog:
-		code := runCatalogCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runCatalogCommand(positional[0], positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	case productionStore:
-		code := runStoreCommand(positional[0], positional[1:], adminBatchGlobalOptions{dataDir: *dataDir, ipcPath: *ipcPathFlag}, adminBatchStreams{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr})
+		code := runStoreCommand(positional[0], positional[1:], globals, streams)
 		if code != 0 {
 			os.Exit(code)
 		}
 		return
 	}
 
-	resolvedDataDir := serverconfig.GetSignerDataDir(*dataDir)
-	ipcPath, err := adminipc.ResolveClientPath(adminipc.ClientPathRequest{
-		DataDir: resolvedDataDir, IPCPath: *ipcPathFlag, DataDirExplicit: *dataDir != "",
-	})
+	resolvedDataDir, ipcPath, err := resolveIPCPath(globals)
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)
@@ -112,9 +105,9 @@ func main() {
 	theme.Init("auto")
 
 	// Configure algod client on DSA providers for TEAL compilation
-	configureAlgodOnDSAs(config)
+	signeradmin.ConfigureAlgodOnDSAs(config, logWarnf)
 
-	if err := ensureProviders(); err != nil {
+	if err := signeradmin.EnsureProviders(); err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)
 	}
@@ -173,37 +166,4 @@ func startTUI(connector tui.AdminConnector) {
 		logErrorf("error running TUI: %v", err)
 		os.Exit(1)
 	}
-}
-
-// ensureProviders validates that required providers are registered.
-func ensureProviders() error {
-	if len(keygen.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no key generators registered - check providers.go imports")
-	}
-	if len(mnemonic.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no mnemonic handlers registered - check providers.go imports")
-	}
-	if len(algorithm.GetRegisteredFamilies()) == 0 {
-		return fmt.Errorf("no algorithm metadata registered - check providers.go imports")
-	}
-	return nil
-}
-
-// configureAlgodOnDSAs sets up the algod client on all DSA providers that support it.
-// This enables runtime TEAL compilation for composed providers during key generation.
-func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
-	cfg, err := config.GetTEALCompileAlgod()
-	if err != nil || cfg.Server == "" {
-		logWarnf("no algod.%s.server configured - composed Falcon templates unavailable", config.TEALCompileNetwork)
-		return
-	}
-
-	client, err := algod.MakeClient(cfg.Server, cfg.Token)
-	if err != nil {
-		logWarnf("failed to create algod client: %v", err)
-		logWarnf("composed Falcon templates will be unavailable")
-		return
-	}
-
-	lsigprovider.ConfigureAlgodClient(client)
 }

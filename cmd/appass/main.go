@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,8 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 )
-
-var currentEUID = os.Geteuid
 
 type appassOptions struct {
 	dataDir string
@@ -75,7 +72,7 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := enforceAppassExecutionMode(dataDir, prodManaged); err != nil {
+	if err := bootstrap.EnforceExecutionMode("appass", dataDir, prodManaged, os.Geteuid(), nil); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -132,59 +129,4 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func enforceAppassExecutionMode(dataDir string, prodManaged bool) error {
-	switch {
-	case prodManaged && currentEUID() != 0:
-		return fmt.Errorf(
-			"systemd-managed data directory %s requires root for appass; run:\n  %s",
-			dataDir,
-			appassInvocation(true, dataDir),
-		)
-	case !prodManaged && currentEUID() == 0:
-		return fmt.Errorf(
-			"local signer data directory %s must not be managed as root; rerun without sudo:\n  %s",
-			dataDir,
-			appassInvocation(false, dataDir),
-		)
-	default:
-		return nil
-	}
-}
-
-func appassInvocation(useSudo bool, dataDir string) string {
-	parts := []string{"appass", "-d", dataDir}
-	if useSudo {
-		parts = append([]string{"sudo"}, parts...)
-	}
-	for i := range parts {
-		parts[i] = shellQuoteArg(parts[i])
-	}
-	return strings.Join(parts, " ")
-}
-
-func isShellSafeRune(r rune) bool {
-	switch {
-	case r >= 'a' && r <= 'z':
-		return true
-	case r >= 'A' && r <= 'Z':
-		return true
-	case r >= '0' && r <= '9':
-		return true
-	}
-	return strings.ContainsRune("@%_+=:,./-", r)
-}
-
-func shellQuoteArg(s string) string {
-	if s == "" {
-		return "''"
-	}
-	for _, r := range s {
-		if isShellSafeRune(r) {
-			continue
-		}
-		return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-	}
-	return s
 }

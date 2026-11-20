@@ -152,12 +152,7 @@ func (m Model) shownFile(i int) *policyauthor.File {
 
 // unsaved reports whether any file has edits not yet saved.
 func (m Model) unsaved() bool {
-	for _, s := range m.sessions {
-		if s.Modified() {
-			return true
-		}
-	}
-	return false
+	return m.unsavedCount() > 0
 }
 
 func (m Model) open(i int) Model {

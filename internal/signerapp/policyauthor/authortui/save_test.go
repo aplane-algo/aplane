@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -247,5 +248,71 @@ func TestSaveAsSuggestionWorksForARelativeWorkspace(t *testing.T) {
 	m, _ = press(t, m, "enter")
 	if _, err := os.Stat(filepath.Join(root, "policy", "ops.mine.json")); err != nil || m.save.err != "" {
 		t.Fatalf("save as with the suggestion: %v / %q", err, m.save.err)
+	}
+}
+
+// Save as adds the new file to the workspace, and to the paths it reopens
+// from unless a directory it was opened from already holds it, puts the
+// original file back to what is on disk, and checks the workspace again.
+func TestSaveAsAddsTheFileToTheWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	ops := filepath.Join(dir, "ops.json")
+	other := filepath.Join(dir, "default.json")
+	for path, name := range map[string]string{ops: "signer_key_full.json", other: "signer_default.json"} {
+		if err := os.WriteFile(path, fixture(t, name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		name      string
+		open      []string
+		saveAs    string
+		wantPaths []string
+	}{
+		{"opened from the directory", []string{dir}, "copy.json", []string{dir}},
+		{"opened by file", []string{other, ops}, "copy2.json", []string{other, ops, filepath.Join(dir, "copy2.json")}},
+		{"opened by file, saved where the directory is", []string{dir, ops}, "copy3.json", []string{dir, ops}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws, err := policyauthor.Open(tt.open...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, _ := New(ws, nil, nil).Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+			m := next.(Model)
+			for m.ws.Files[m.current].Path != ops {
+				m.current++
+			}
+			opsIndex := m.current
+			m = selectField(t, m.open(opsIndex), "/max_fee_microalgos")
+			m, _ = press(t, m, "enter")
+			m = typeText(t, clearInput(t, m), "0.5")
+			m, _ = press(t, m, "enter")
+			files := len(m.ws.Files)
+
+			m = m.saveAs(tt.saveAs)
+			if m.save.err != "" {
+				t.Fatal(m.save.err)
+			}
+			target := filepath.Join(dir, tt.saveAs)
+			if !reflect.DeepEqual(m.ws.Paths, tt.wantPaths) {
+				t.Fatalf("paths = %v, want %v", m.ws.Paths, tt.wantPaths)
+			}
+			if len(m.ws.Files) != files+1 || m.current != files || m.ws.Files[files].Path != target {
+				t.Fatalf("files %d (was %d), current %d, last %s", len(m.ws.Files), files, m.current, m.ws.Files[files].Path)
+			}
+			if m.ws.Files[opsIndex].Path != ops || !bytes.Equal(m.ws.Files[opsIndex].Loaded, fixture(t, "signer_key_full.json")) {
+				t.Fatalf("original file not reloaded from disk: %s", m.ws.Files[opsIndex].Path)
+			}
+			if _, ok := m.sessions[ops]; ok {
+				t.Fatal("the original file kept its session")
+			}
+			checked := *m.ws
+			checked.Check()
+			if !reflect.DeepEqual(m.ws.Problems, checked.Problems) || len(m.ws.Problems) == 0 {
+				t.Fatalf("problems %v, want the checked %v", m.ws.Problems, checked.Problems)
+			}
+		})
 	}
 }

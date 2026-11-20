@@ -49,23 +49,8 @@ func cmdPolicyCheck() error {
 		return err
 	}
 	defer kr.Zero()
-	role, err := storeNodeRole()
+	role, docs, np, err := checkStoredPolicies(active, kr)
 	if err != nil {
-		return err
-	}
-	docs, err := storedPolicyDocuments(active)
-	if err != nil {
-		return err
-	}
-	ctx, err := storePolicyContext(role, active, kr)
-	if err != nil {
-		return err
-	}
-	np, err := policyruntime.Compile(role, &config, docs, ctx)
-	if err != nil {
-		return fmt.Errorf("policy invalid: %w", err)
-	}
-	if err := admitStoredPolicies(role, active, kr, ctx, docs); err != nil {
 		return err
 	}
 	for _, doc := range docs {
@@ -121,24 +106,10 @@ func cmdPolicySign() error {
 		return err
 	}
 	defer kr.Zero()
-	role, err := storeNodeRole()
-	if err != nil {
-		return err
-	}
-	docs, err := storedPolicyDocuments(active)
-	if err != nil {
-		return err
-	}
-	ctx, err := storePolicyContext(role, active, kr)
-	if err != nil {
-		return err
-	}
 	// Signing is what accepts a hand-placed document, so it admits the same
 	// documents check does.
-	if _, err := policyruntime.Compile(role, &config, docs, ctx); err != nil {
-		return fmt.Errorf("policy invalid: %w", err)
-	}
-	if err := admitStoredPolicies(role, active, kr, ctx, docs); err != nil {
+	role, _, _, err := checkStoredPolicies(active, kr)
+	if err != nil {
 		return err
 	}
 	now := time.Now()
@@ -156,6 +127,32 @@ func cmdPolicySign() error {
 		logInfof("policy sidecar signed: %s", policy.PolicyIntegritySidecarPath(policyDocumentPath(active, doc.Key)))
 	}
 	return nil
+}
+
+// checkStoredPolicies reads the selected generation's policy documents,
+// compiles them in the node's policy context and admits the hand-placed
+// ones. It returns the node's role, the documents and the compiled policy.
+func checkStoredPolicies(active storepaths.GenPaths, kr *crypto.Keyring) (noderole.Role, []policy.StoredDocument, *policyruntime.NodePolicy, error) {
+	role, err := storeNodeRole()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	docs, err := storedPolicyDocuments(active)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	ctx, err := storePolicyContext(role, active, kr)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	np, err := policyruntime.Compile(role, &config, docs, ctx)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("policy invalid: %w", err)
+	}
+	if err := admitStoredPolicies(role, active, kr, ctx, docs); err != nil {
+		return "", nil, nil, err
+	}
+	return role, docs, np, nil
 }
 
 // storePolicyContext is the policy context of the selected generation: the
