@@ -283,9 +283,6 @@ type KeyFileInfo struct {
 	TemplateFingerprint string
 	// BoundedAuthorization is the stored bounded contract, or nil for any other key.
 	BoundedAuthorization *boundedmeta.Metadata
-	// MnemonicExportable reports whether the credential can reconstruct its
-	// recovery phrase (see keys.Payload.RecoveryPhraseAvailable).
-	MnemonicExportable bool
 	// DisplayTEAL is the stored TEAL source of a generic LogicSig, or empty.
 	DisplayTEAL string
 }
@@ -328,7 +325,6 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 		Parameters:           payload.Parameters,
 		TemplateFingerprint:  payload.TemplateFingerprint,
 		BoundedAuthorization: payload.BoundedAuthorization,
-		MnemonicExportable:   payload.RecoveryPhraseAvailable(),
 		DisplayTEAL:          payload.TEALSource,
 	}, nil
 }

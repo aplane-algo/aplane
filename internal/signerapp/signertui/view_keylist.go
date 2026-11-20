@@ -368,7 +368,7 @@ func (m Model) keyDetailsHeader() string {
 // keyDetailsTrailer is what Key Details draws below the parameters.
 func (m Model) keyDetailsTrailer() string {
 	var sb strings.Builder
-	if m.details.mnemonicExportable {
+	if isNativeKeyType(m.details.keyType) {
 		sb.WriteString("m: Show recovery phrase\n")
 	}
 	// Show save status if present

@@ -354,7 +354,7 @@ slips through, not the process.
 Managed credential files (`.key` account authority and `.cos` cosigner witness
 authority) use the same layered versioning:
 - `envelope_version`: Encryption envelope format (AES-GCM parameters, salt/nonce encoding)
-- `format_version`: Decrypted payload schema (key fields, structure)
+- `format_version`: Decrypted payload schema (key fields, structure); 1 for every category
 - `signing_metadata_version` (LogicSig keys only): durable LogicSig signing-metadata schema; `>= 1` marks a v1 signing-metadata key
 
 This allows independent evolution of the encryption envelope, the payload schema, and LogicSig signing metadata.

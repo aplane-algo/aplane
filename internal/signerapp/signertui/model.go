@@ -448,7 +448,6 @@ type keyDetailsState struct {
 	templateProvenanceStatus string
 	templateProvenanceNote   string
 	policyLabel              string
-	mnemonicExportable       bool
 	saveStatus               string
 }
 
@@ -941,7 +940,6 @@ type KeyDetailsMsg struct {
 	TemplateProvenanceStatus string
 	TemplateProvenanceNote   string
 	PolicyLabel              string
-	MnemonicExportable       bool
 	Error                    string
 }
 

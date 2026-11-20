@@ -964,7 +964,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key | `key` | Yes |
 | `keys.import` | Import a key | `key` | Yes |
-| `keys.export` | Explicitly reveal an exportable native key mnemonic over local IPC | `key` | Yes |
+| `keys.export` | Explicitly reveal a native key's mnemonic over local IPC | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
 | `keys.recover` | Start or cancel a rotating account's stage recovery: a bounded search that derives stage addresses into the signer's own cache and never signs | `key` | Yes to start; a cancel answers while locked |
 | `cosigners.view` | List/show public cosigner references and export public witness metadata | `cosigner_references`, `cosigner_reference`, `cosigner_public` | No |

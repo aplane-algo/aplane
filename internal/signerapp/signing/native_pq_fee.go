@@ -11,6 +11,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	sdkconfig "github.com/algorand/go-algorand-sdk/v2/protocol/config"
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -48,8 +49,10 @@ func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRunt
 				budgets[i].maxFeeConstrained = true
 				budgets[i].maxFee = *boundedItems[i].Metadata.MaxFee
 			}
-			if snapshot.KeyTypes[request.AuthAddress] == nativefalcon.KeyType {
-				budgets[i].pqScheme = nativefalcon.Scheme
+			// A held native PQ key's scheme comes from its key type; one the
+			// fee rules below do not know is refused, not planned as non-PQ.
+			if scheme, ok := keys.NativePQScheme(snapshot.KeyTypes[request.AuthAddress]); ok {
+				budgets[i].pqScheme = string(scheme[:])
 			}
 		}
 		if budgets[i].pqScheme != "" && budgets[i].pqScheme != nativefalcon.Scheme {

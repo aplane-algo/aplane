@@ -1222,6 +1222,7 @@ key is rejected during reload rather than published as a signable key.
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore skips that key, and generation refuses it, unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore skips that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
+| Native Falcon key in an earlier shape | Payload carries `pq_scheme` or `pq_address_salt`, or has no `recovery_entropy`. | No; scan rejects it, its presence fails reload into recovery, and verify fails. | Restore skips that key; move it by its recovery phrase. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
@@ -1354,33 +1355,48 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   beyond that; no secret is cached. Only accounts created at stage 0 are
   supported.
 
-Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`,
-`pq_scheme: "f1"`, and a required numeric `pq_address_salt` in `0..255`.
-The public key is exactly 1793 bytes and the private key exactly 2305 bytes.
-The salt is the lowest byte whose
-`SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
-Ed25519 curve point. Its 25-word Algorand mnemonic encodes 32 bytes of
-recovery entropy; the Falcon working seed is
-`SHA512/256("PQK" || "f1" || entropy)`. Newly generated and mnemonic-imported
-native Falcon credentials use `format_version: 2` and retain the 32-byte entropy
-as canonical hex `recovery_entropy` inside the encrypted payload. The full
-admission parse (`keys.ParsePayload`, also run by `MarshalPayload` before any
-write) requires it to reproduce the exact stored public/private key pair; it is
-never included in public metadata or signing projections. Re-deriving the pair
-is a full Falcon key generation, so hot reads of credentials already in the
+Native Falcon-1024 uses `category: "native_pq"`, `key_type: "falcon1024"`
+and `format_version: 1`, the one format every category uses. The public key
+is exactly 1793 bytes and the private key exactly 2305 bytes. The key file
+stores neither the protocol scheme nor the address salt. The key type fixes
+the scheme: `keys.NativePQScheme` maps it, and the payload validator and the
+fee planner read it there. The Falcon-only signed envelope (`signerops`) uses
+`nativefalcon.Scheme`, the constant that mapping returns for `falcon1024`. The salt
+and address follow from the public key: `keys.NativePQAddress` derives them
+for validation, `Selector`, generation and signing. For `falcon1024` the
+scheme is `f1` and the salt is the lowest byte whose `SHA512/256("PQA" || "f1" || salt || public_key)` address is not an
+Ed25519 curve point. `internal/keys/native_pq_test.go` freezes that derivation
+with literal vectors: a different scheme or address rule is a new key type,
+not a change to `falcon1024`. Its 25-word Algorand mnemonic encodes 32 bytes
+of recovery entropy; the Falcon working seed is
+`SHA512/256("PQK" || "f1" || entropy)`. Every native Falcon credential keeps
+the 32-byte entropy as canonical hex `recovery_entropy` inside the encrypted
+payload; no other category may carry it. The full admission parse
+(`keys.ParsePayload`, also run by `MarshalPayload` before any write) requires
+it to reproduce the exact stored public/private key pair; it is never included
+in public metadata or signing projections. Re-deriving the pair is a full
+Falcon key generation, so hot reads of credentials already in the
 authenticated store (key scans, signing lookups, key list and details) use
 `keys.ParseStoredPayload`, which checks the entropy structurally and runs the
 cheaper key-pair probe instead. Ingress paths (backup restore, import, copy)
-and mnemonic export always use the full parse. Backup/restore and
-passphrase changes preserve it, and secret cleanup wipes it.
+and mnemonic export always use the full parse. Backup/restore and passphrase
+changes preserve it, and secret cleanup wipes it.
 
-Format 1 remains readable and is still written for other key classes. It
-forbids recovery entropy; format 2 is accepted only for native Falcon with
-exactly 32 bytes of matching entropy. Old Falcon credentials remain usable
-but cannot export a mnemonic because their entropy was discarded. No entropy
-can be reconstructed from their expanded private key. Readers through v0.46.0
-reject format 2; stores/backups containing these credentials require the newer
-reader. Native addresses and signing algorithms are unchanged.
+A native Falcon key file written before key files dropped `pq_scheme` and
+`pq_address_salt`, or one from before native Falcon kept recovery entropy, is
+refused by both parses. A store that holds such a file cannot be upgraded in
+place: the scan reports the file as an incompatible key file, and a reload
+fails closed on any scan warning
+([Runtime reload behavior](#runtime-reload-behavior)), so the signer publishes
+no keys at all and enters recovery with signing blocked. A restore of a backup
+that holds such a key admits every other credential and skips that key with
+its reason. To move such a store, install fresh, restore its backup, which
+brings the LogicSig, rotating, witness and other keys and skips the native
+Falcon ones, and then move each native Falcon key by exporting its 25-word
+phrase from the old install and importing the phrase into the new one. A native
+Falcon key from before v0.48.0 has no recovery entropy and so no phrase; move
+its funds to a new account from the old install. Native addresses and signing
+are unchanged.
 
 Native Ed25519 recovery phrases are reconstructed from the validated private
 key and need no storage change. Both native types may explicitly export their

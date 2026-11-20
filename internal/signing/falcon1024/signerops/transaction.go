@@ -18,7 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-var scheme = types.PQScheme{'f', '1'}
+// scheme is the envelope scheme of the falcon1024 key type: nativefalcon's
+// Scheme, the constant keys.NativePQScheme maps falcon1024 to.
+var scheme = types.PQScheme{nativefalcon.Scheme[0], nativefalcon.Scheme[1]}
 
 // AuthorizeTransaction constructs a native Falcon authorization envelope.
 func AuthorizeTransaction(privateKey *falcon.PrivateKey, publicKey []byte, salt byte, txn types.Transaction, authorizer types.Address) (types.SignedTxn, error) {

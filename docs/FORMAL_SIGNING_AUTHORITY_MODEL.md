@@ -224,7 +224,9 @@ Rules:
 Address identity derives from key material:
 
 - native Ed25519 keys derive their address from stored public/private key material;
-  native PQ keys additionally bind the scheme and stored PQ address salt,
+  native PQ keys derive it from the stored public key with the scheme and
+  canonical address salt their key type fixes, which the key file does not
+  store,
 - DSA-backed LogicSig keys derive their account address from stored LogicSig
   bytecode,
 - generic LogicSig keys may persist an `address` field for inventory and lookup,

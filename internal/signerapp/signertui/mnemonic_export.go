@@ -40,8 +40,9 @@ func (m *Model) clearMnemonicExport() {
 }
 
 func (m Model) openMnemonicExport() (tea.Model, tea.Cmd) {
-	// The signer decides eligibility (key details' mnemonic_exportable).
-	if !m.details.mnemonicExportable || m.signerState != signerRuntimeUnlocked {
+	// Every native key exports its recovery phrase; the signer refuses any
+	// other key class.
+	if !isNativeKeyType(m.details.keyType) || m.signerState != signerRuntimeUnlocked {
 		return m, nil
 	}
 	m.clearMnemonicExport()

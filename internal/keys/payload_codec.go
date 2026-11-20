@@ -37,8 +37,6 @@ type Payload struct {
 	PublicKey              []byte
 	PrivateKey             []byte
 	RecoveryEntropy        []byte
-	PQScheme               string
-	PQAddressSalt          *byte
 	Parameters             map[string]string
 	LogicSigBytecode       []byte
 	LogicSigDerivation     string
@@ -59,7 +57,7 @@ type Payload struct {
 	CreatedAt        time.Time
 }
 
-// payloadWire is the canonical JSON DTO for decrypted payload versions 1 and 2.
+// payloadWire is the canonical JSON DTO for decrypted payload version 1.
 // It remains private so durable JSON field ownership stays in this package.
 // Its secret fields are zeroable buffers, cleared with zeroSecrets once the
 // wire value is used.
@@ -70,8 +68,6 @@ type payloadWire struct {
 	PublicKeyHex           string                          `json:"public_key,omitempty"`
 	PrivateKeyHex          secretHex[privateKeyField]      `json:"private_key,omitempty"`
 	RecoveryEntropyHex     secretHex[recoveryEntropyField] `json:"recovery_entropy,omitempty"`
-	PQScheme               string                          `json:"pq_scheme,omitempty"`
-	PQAddressSalt          *byte                           `json:"pq_address_salt,omitempty"`
 	Parameters             map[string]string               `json:"parameters,omitempty"`
 	LogicSigBytecodeHex    string                          `json:"lsig_bytecode,omitempty"`
 	LogicSigDerivation     string                          `json:"lsig_derivation,omitempty"`
@@ -110,17 +106,19 @@ func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
 	}
 }
 
-// NewNativeFalconPayload constructs a native Falcon-1024 key payload.
-func NewNativeFalconPayload(publicKey, privateKey []byte, salt byte) *Payload {
+// NewNativeFalconPayload constructs a native Falcon-1024 key payload from
+// its key pair and the recovery entropy that derives it. The payload stores
+// no scheme or address salt: NativePQAddress derives them from the key type
+// and public key.
+func NewNativeFalconPayload(publicKey, privateKey, recoveryEntropy []byte) *Payload {
 	return &Payload{
-		FormatVersion: CurrentKeyFormatVersion,
-		Category:      CategoryNativePQ,
-		KeyType:       nativefalcon.KeyType,
-		PublicKey:     bytes.Clone(publicKey),
-		PrivateKey:    bytes.Clone(privateKey),
-		PQScheme:      nativefalcon.Scheme,
-		PQAddressSalt: cloneBytePtr(&salt),
-		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+		FormatVersion:   CurrentKeyFormatVersion,
+		Category:        CategoryNativePQ,
+		KeyType:         nativefalcon.KeyType,
+		PublicKey:       bytes.Clone(publicKey),
+		PrivateKey:      bytes.Clone(privateKey),
+		RecoveryEntropy: bytes.Clone(recoveryEntropy),
+		CreatedAt:       time.Now().UTC().Truncate(time.Second),
 	}
 }
 
@@ -340,8 +338,6 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
 		PrivateKeyHex:          newSecretHex[privateKeyField](payload.PrivateKey),
 		RecoveryEntropyHex:     newSecretHex[recoveryEntropyField](payload.RecoveryEntropy),
-		PQScheme:               payload.PQScheme,
-		PQAddressSalt:          cloneBytePtr(payload.PQAddressSalt),
 		Parameters:             maps.Clone(payload.Parameters),
 		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
 		LogicSigDerivation:     payload.LogicSigDerivation,
@@ -372,33 +368,12 @@ func (p *Payload) Validate() error {
 	return p.validate(true)
 }
 
-// RecoveryPhraseAvailable reports whether this credential carries what is
-// needed to reconstruct its recovery phrase: a native Ed25519 key, or a native
-// Falcon key that retained its recovery entropy. It is the single eligibility
-// rule for mnemonic export.
-func (p *Payload) RecoveryPhraseAvailable() bool {
-	switch p.Category {
-	case CategoryEd25519:
-		return p.KeyType == "ed25519"
-	case CategoryNativePQ:
-		return p.KeyType == nativefalcon.KeyType && len(p.RecoveryEntropy) == nativefalcon.RecoveryEntropySize
-	}
-	return false
-}
-
 func (p *Payload) validate(verifyRecovery bool) error {
 	if p == nil {
 		return incompatibleKeyFormat("key payload is nil")
 	}
-	if p.FormatVersion != CurrentKeyFormatVersion && p.FormatVersion != NativeRecoveryKeyFormatVersion {
-		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected 1 or 2", p.FormatVersion)
-	}
-	if p.FormatVersion == NativeRecoveryKeyFormatVersion {
-		if p.Category != CategoryNativePQ || p.KeyType != nativefalcon.KeyType || len(p.RecoveryEntropy) != nativefalcon.RecoveryEntropySize {
-			return incompatibleKeyFormat("format_version 2 requires native Falcon with 32-byte recovery_entropy")
-		}
-	} else if len(p.RecoveryEntropy) != 0 {
-		return incompatibleKeyFormat("format_version 1 forbids recovery_entropy")
+	if p.FormatVersion != CurrentKeyFormatVersion {
+		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected %d", p.FormatVersion, CurrentKeyFormatVersion)
 	}
 	if p.KeyType == "" || p.KeyType != strings.TrimSpace(p.KeyType) {
 		return incompatibleKeyFormat("key_type must be non-empty and canonical")
@@ -442,7 +417,7 @@ func (p *Payload) validate(verifyRecovery bool) error {
 		if p.BaseKeyType == "" || p.BaseKeyType != strings.TrimSpace(p.BaseKeyType) {
 			return incompatibleKeyFormat("dsa_lsig requires canonical base_key_type")
 		}
-		if err := validateNoNativePQFields(p); err != nil {
+		if err := validateNoRecoveryEntropy(p); err != nil {
 			return err
 		}
 		return validateLogicSigFields(p)
@@ -453,7 +428,7 @@ func (p *Payload) validate(verifyRecovery bool) error {
 		if p.BaseKeyType != "" {
 			return incompatibleKeyFormat("generic_lsig forbids base_key_type")
 		}
-		if err := validateNoNativePQFields(p); err != nil {
+		if err := validateNoRecoveryEntropy(p); err != nil {
 			return err
 		}
 		return validateLogicSigFields(p)
@@ -488,10 +463,7 @@ func (p *Payload) Selector() (string, error) {
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
 	case CategoryNativePQ:
-		if p.PQScheme != nativefalcon.Scheme || p.PQAddressSalt == nil {
-			return "", incompatibleKeyFormat("native_pq requires scheme and address salt")
-		}
-		address, err := nativefalcon.Address(*p.PQAddressSalt, p.PublicKey)
+		_, address, err := NativePQAddress(p.KeyType, p.PublicKey)
 		if err != nil {
 			return "", incompatibleKeyFormat("derive native PQ address: %v", err)
 		}
@@ -526,8 +498,6 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 	}
 	return SigningMetadata{
 		Category:              p.Category,
-		PQScheme:              p.PQScheme,
-		PQAddressSalt:         cloneBytePtr(p.PQAddressSalt),
 		BaseKeyType:           p.BaseKeyType,
 		Parameters:            maps.Clone(p.Parameters),
 		SigningArgs:           cloneStoredSigningArgs(p.SigningArgs),
@@ -586,8 +556,6 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 		KeyType:                wire.KeyType,
 		PublicKey:              publicKey,
 		PrivateKey:             privateKey,
-		PQScheme:               wire.PQScheme,
-		PQAddressSalt:          cloneBytePtr(wire.PQAddressSalt),
 		Parameters:             maps.Clone(wire.Parameters),
 		LogicSigBytecode:       bytecode,
 		LogicSigDerivation:     wire.LogicSigDerivation,
@@ -655,11 +623,8 @@ func validateNativePQPayload(p *Payload, verifyRecovery bool) error {
 	if p.KeyType != nativefalcon.KeyType {
 		return incompatibleKeyFormat("native_pq category requires key_type %q", nativefalcon.KeyType)
 	}
-	if p.PQScheme != nativefalcon.Scheme {
-		return incompatibleKeyFormat("native_pq requires pq_scheme %q", nativefalcon.Scheme)
-	}
-	if p.PQAddressSalt == nil {
-		return incompatibleKeyFormat("native_pq requires pq_address_salt")
+	if len(p.RecoveryEntropy) != nativefalcon.RecoveryEntropySize {
+		return incompatibleKeyFormat("native Falcon recovery_entropy length %d invalid (expected %d bytes)", len(p.RecoveryEntropy), nativefalcon.RecoveryEntropySize)
 	}
 	if len(p.PublicKey) != nativefalcon.PublicKeySize {
 		return incompatibleKeyFormat("native Falcon public key length %d invalid (expected %d bytes)", len(p.PublicKey), nativefalcon.PublicKeySize)
@@ -667,22 +632,25 @@ func validateNativePQPayload(p *Payload, verifyRecovery bool) error {
 	if len(p.PrivateKey) != nativefalcon.PrivateKeySize {
 		return incompatibleKeyFormat("native Falcon private key length %d invalid (expected %d bytes)", len(p.PrivateKey), nativefalcon.PrivateKeySize)
 	}
-	canonicalSalt, address, err := nativefalcon.CanonicalAddress(p.PublicKey)
+	_, address, err := NativePQAddress(p.KeyType, p.PublicKey)
 	if err != nil {
 		return incompatibleKeyFormat("derive native Falcon address: %v", err)
 	}
-	if canonicalSalt != *p.PQAddressSalt {
-		return incompatibleKeyFormat("native Falcon address salt %d is not canonical (expected %d)", *p.PQAddressSalt, canonicalSalt)
-	}
+	// NativePQAddress already picks the first compliant salt; this keeps the
+	// compliance rule stated where a payload is admitted.
 	if !nativefalcon.IsCompliant(address) {
 		return incompatibleKeyFormat("native Falcon address is not PQ compliant")
+	}
+	scheme, ok := NativePQScheme(p.KeyType)
+	if !ok {
+		return incompatibleKeyFormat("unsupported native PQ key type %q", p.KeyType)
 	}
 	// Without recoveryEntropy the validator runs its cheaper key-pair probe.
 	recoveryEntropy := p.RecoveryEntropy
 	if !verifyRecovery {
 		recoveryEntropy = nil
 	}
-	if err := validateNativePQKeyPair(p.PQScheme, p.PublicKey, p.PrivateKey, recoveryEntropy); err != nil {
+	if err := validateNativePQKeyPair(string(scheme[:]), p.PublicKey, p.PrivateKey, recoveryEntropy); err != nil {
 		return incompatibleKeyFormat("invalid native PQ key pair: %v", err)
 	}
 	return nil
@@ -716,15 +684,17 @@ func validateRotatingPayload(p *Payload) error {
 }
 
 func validateNonLogicSigPayload(p *Payload) error {
-	if err := validateNoNativePQFields(p); err != nil {
+	if err := validateNoRecoveryEntropy(p); err != nil {
 		return err
 	}
 	return validateNoLogicSigFields(p)
 }
 
-func validateNoNativePQFields(p *Payload) error {
-	if p.PQScheme != "" || p.PQAddressSalt != nil {
-		return incompatibleKeyFormat("category %q forbids native PQ fields", p.Category)
+// validateNoRecoveryEntropy refuses recovery_entropy outside native_pq, the
+// one category that keeps it.
+func validateNoRecoveryEntropy(p *Payload) error {
+	if len(p.RecoveryEntropy) != 0 {
+		return incompatibleKeyFormat("category %q forbids recovery_entropy", p.Category)
 	}
 	return nil
 }
@@ -992,12 +962,4 @@ func opcodeProfileValue(profile *lsigresource.OpcodeProfile) lsigresource.Opcode
 		return lsigresource.OpcodeProfile{}
 	}
 	return *profile
-}
-
-func cloneBytePtr(value *byte) *byte {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

@@ -38,7 +38,7 @@ func TestParseKeyFileInfoProjectsPayloadFields(t *testing.T) {
 		},
 		{
 			data: ed25519JSON,
-			want: KeyFileInfo{Type: "ed25519", PublicKeyHex: ed25519Fields.PublicKey, MnemonicExportable: true},
+			want: KeyFileInfo{Type: "ed25519", PublicKeyHex: ed25519Fields.PublicKey},
 		},
 	} {
 		info, err := parseKeyFileInfo(tc.data)

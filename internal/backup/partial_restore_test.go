@@ -38,10 +38,24 @@ const unknownFieldReason = `failed to parse backup credential: incompatible key 
 // before salt_counter was retired.
 const retiredSaltCounterReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "salt_counter"; restore or regenerate the key file using the current key schema`
 
+// preChangeNativeFalconReason is why this release refuses a native Falcon key
+// file from before key files dropped pq_scheme and pq_address_salt, with or
+// without recovery entropy: the decoder stops at pq_scheme either way.
+const preChangeNativeFalconReason = `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "pq_scheme"; restore or regenerate the key file using the current key schema`
+
 func unknownFieldCredentialForTest(t *testing.T) inadmissibleCredential {
 	t.Helper()
 	selector, keyJSON := testEd25519BackupKeyJSON(t)
 	return inadmissibleCredential{name: "unknown field", selector: selector, keyJSON: withTopLevelFieldForTest(t, keyJSON, "extra", "1"), reason: unknownFieldReason}
+}
+
+// preChangeNativeFalconCredentialForTest is a native Falcon key file in the
+// shape written before pq_scheme and pq_address_salt were dropped, from
+// before recovery entropy when recovery is false.
+func preChangeNativeFalconCredentialForTest(t *testing.T, name string, fill byte, recovery bool) inadmissibleCredential {
+	t.Helper()
+	selector, keyJSON := nativeFalconBackupKeyJSONForTest(t, fill)
+	return inadmissibleCredential{name: name, selector: selector, keyJSON: keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, recovery), reason: preChangeNativeFalconReason}
 }
 
 func retiredSaltCounterCredentialForTest(t *testing.T) inadmissibleCredential {
@@ -86,7 +100,12 @@ func (a mixedArchive) skippedForTest() []SkippedEntry {
 // one without a credential. Verify still fails the archive.
 func TestMixedArchiveSkipsTheInadmissibleCredential(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
-	for _, bad := range []inadmissibleCredential{unknownFieldCredentialForTest(t), retiredSaltCounterCredentialForTest(t)} {
+	for _, bad := range []inadmissibleCredential{
+		unknownFieldCredentialForTest(t),
+		retiredSaltCounterCredentialForTest(t),
+		preChangeNativeFalconCredentialForTest(t, "pre-change native Falcon", 0x81, true),
+		preChangeNativeFalconCredentialForTest(t, "native Falcon without recovery entropy", 0x82, false),
+	} {
 		t.Run(bad.name, func(t *testing.T) {
 			paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
 			checkMixedArchiveSkipsTheInadmissibleCredential(t, paths, writeMixedArchiveForTest(t, paths, bad))

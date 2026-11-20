@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
-	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
 
 // ExportOutcomeReleased is the audit outcome of an export whose phrase was
@@ -110,9 +109,6 @@ func (s Service) ExportKey(ctx context.Context, req adminproto.ExportKeyRequest,
 	})
 	switch {
 	case errors.Is(err, errExportNotEligible):
-		if result.KeyType == nativefalcon.KeyType {
-			return fail(svcerr.KindUnavailable, "mnemonic unavailable: this Falcon credential has no recovery entropy; use encrypted backup")
-		}
 		return fail(svcerr.KindForbidden, "mnemonic export is available only for native ed25519 and falcon1024 keys")
 	case err != nil:
 		return fail(svcerr.KindInternal, "failed to read native recovery material")
@@ -127,10 +123,11 @@ func (s Service) ExportKey(ctx context.Context, req adminproto.ExportKeyRequest,
 	return result
 }
 
-// recoveryPhrase encodes an eligible payload's recovery phrase. Eligibility is
-// keys.Payload.RecoveryPhraseAvailable, the same rule key details project.
+// recoveryPhrase encodes a native key's recovery phrase. Every native key has
+// one: a native Falcon key file always keeps its recovery entropy. Any other
+// key class is not eligible.
 func recoveryPhrase(payload *keys.Payload) (string, int, error) {
-	if !payload.RecoveryPhraseAvailable() {
+	if payload.Category != keys.CategoryEd25519 && payload.Category != keys.CategoryNativePQ {
 		return "", 0, errExportNotEligible
 	}
 	handler, err := mnemonic.GetHandler(payload.KeyType)

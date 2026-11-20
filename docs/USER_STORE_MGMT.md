@@ -103,15 +103,33 @@ after it appears (an unanswered passphrase prompt also closes after two minutes)
 and lock or disconnect clears it. There is no automatic clipboard or plaintext
 file output. Generation itself does not display recovery phrases.
 
-This supports existing Ed25519 keys and newly generated/imported native
-`falcon1024` keys that retain recovery entropy. Older Falcon credentials cannot
-recover their original phrase: use encrypted backups. LogicSig, rotating, and
-witness credentials do not support mnemonic export. Key details show the `m`
-option only for keys whose phrase can be exported.
+This supports every native key: `ed25519` and `falcon1024`. LogicSig,
+rotating, and witness credentials do not support mnemonic export, and key
+details show the `m` option only for a native key.
 
-Native Falcon credentials with recovery entropy use payload format 2. APlane
-v0.46.0 and older cannot read these new credentials or restore backups containing
-them. Existing format-1 credentials remain readable by newer releases.
+Native Falcon key files no longer store `pq_scheme` or `pq_address_salt`,
+which follow from the key type and public key. A native Falcon key written by
+an earlier release does not carry over:
+
+- Upgrading a store that holds one in place is not supported. The signer
+  refuses the old key file, and a store with a key file it refuses does not
+  unlock: it publishes no keys and enters recovery with signing blocked.
+- Restoring a backup that holds one restores every other key and skips the
+  native Falcon key, saying why.
+
+To move such a store:
+
+1. Install fresh.
+2. Restore the old store's backup (see
+   [Scenario 2](#scenario-2-restore-from-a-managed-backup-with-apadmin)). It
+   brings back the LogicSig, rotating, witness and other keys, and skips the
+   native Falcon keys.
+3. Move each native Falcon key by its phrase: on the old install, show its
+   recovery phrase; on the new one, import it with local AP Admin (see
+   [Mnemonic Import](#2-mnemonic-import)).
+
+A native Falcon key from before v0.48.0 has no phrase. Move its funds to a new
+account from the old install.
 
 ---
 
@@ -933,11 +951,10 @@ template YAML.
 
 **Problem**: Key details do not offer `m` (Show recovery phrase).
 
-**Cause**: Export is restricted to native Ed25519 and native Falcon keys. Older
-Falcon credentials did not retain the entropy needed to reconstruct their phrase.
+**Cause**: Export is restricted to native Ed25519 and native Falcon keys.
 
-**Solution**: Use encrypted backups for those credentials. For supported native
-keys, open their details in local apadmin and press `m`, then re-enter the signer
+**Solution**: Use encrypted backups for every other credential. For a native
+key, open its details in local apadmin and press `m`, then re-enter the signer
 passphrase. Keep any externally held recovery phrase offline and separate from
 the store passphrase.
 

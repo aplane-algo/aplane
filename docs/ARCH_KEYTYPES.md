@@ -262,8 +262,15 @@ including stage and leaf-safety checks.
 provider declares mnemonic import. Mnemonic export is native-only and
 generation responses omit recovery phrases. Internal seed/mnemonic handlers
 remain available to derivation code; their presence is not public eligibility.
-Native Falcon export still requires retained recovery entropy; see
+Every native key exports its phrase: a native Falcon key file always keeps the
+recovery entropy the phrase encodes; see
 [the stored credential format](ARCH_STORE.md#managed-credential-files).
+
+A native key type is immutable. Its key file stores neither the protocol scheme
+nor the address salt, so the rules that give them, the scheme from the key
+type (`keys.NativePQScheme`) and the salt and address from the public key
+(`keys.NativePQAddress`), are frozen for `falcon1024` by literal vectors; a
+new scheme or address rule is a new native key type.
 
 ## Designing a new combination
 

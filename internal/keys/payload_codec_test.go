@@ -561,6 +561,33 @@ func TestPayloadCategoryValidation(t *testing.T) {
 			want: "forbids LogicSig fields",
 		},
 		{
+			name: "only native_pq keeps recovery entropy",
+			payload: func() *Payload {
+				p := NewEd25519Payload(publicKey, privateKey)
+				p.RecoveryEntropy = make([]byte, 32)
+				return p
+			}(),
+			want: `incompatible key file format: category "ed25519" forbids recovery_entropy; `,
+		},
+		{
+			name: "logic sig forbids recovery entropy",
+			payload: func() *Payload {
+				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
+				p.RecoveryEntropy = make([]byte, 32)
+				return p
+			}(),
+			want: `incompatible key file format: category "generic_lsig" forbids recovery_entropy; `,
+		},
+		{
+			name: "every category is format 1",
+			payload: func() *Payload {
+				p := NewEd25519Payload(publicKey, privateKey)
+				p.FormatVersion = 2
+				return p
+			}(),
+			want: `incompatible key file format: format_version 2 is not supported by this runtime; expected 1; `,
+		},
+		{
 			name: "generic forbids private key",
 			payload: func() *Payload {
 				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
