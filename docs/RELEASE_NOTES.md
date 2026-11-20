@@ -7,6 +7,13 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## This release is new-install only
+
+- **The installer's minimum supported upgrade version is v0.52.0**, so an
+  install from v0.51.0 or earlier, or a development build before v0.52.0,
+  needs a fresh install root. The release archive's `install_readme.txt`
+  says so before the installer does anything else.
+
 ## A restore skips a key it cannot use
 
 - **One key no longer blocks a whole restore.** A restore used to check the

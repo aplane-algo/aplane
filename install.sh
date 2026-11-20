@@ -358,7 +358,7 @@ shell_quote() {
     printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
-MIN_SUPPORTED_UPGRADE_VERSION="v0.50.0"
+MIN_SUPPORTED_UPGRADE_VERSION="v0.52.0"
 
 release_metadata_version() {
     local path="$1"
