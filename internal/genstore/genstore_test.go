@@ -378,9 +378,9 @@ func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
 		InventorySHA256:    digest,
 	}}
 
-	seed, clean, err := CarryRollbackCapability(manifest, slices.Clone(inventory))
-	if err != nil || !clean || seed == nil {
-		t.Fatalf("CarryRollbackCapability(clean) = (%+v, %v, %v)", seed, clean, err)
+	seed, err := CarryRollbackCapability(manifest, slices.Clone(inventory))
+	if err != nil || seed == nil {
+		t.Fatalf("CarryRollbackCapability(clean) = (%+v, %v)", seed, err)
 	}
 	if seed.EntryCount != 0 || seed.InventorySHA256 != "" || seed.SourceGenerationID != testGenA {
 		t.Fatalf("carried seed = %+v", seed)
@@ -388,9 +388,9 @@ func TestRollbackCapabilityCarriesOnlyAcrossExactCleanInventory(t *testing.T) {
 
 	diverged := slices.Clone(inventory)
 	diverged[0].Size++
-	seed, clean, err = CarryRollbackCapability(manifest, diverged)
-	if err != nil || clean || seed != nil {
-		t.Fatalf("CarryRollbackCapability(diverged) = (%+v, %v, %v)", seed, clean, err)
+	seed, err = CarryRollbackCapability(manifest, diverged)
+	if err != nil || seed != nil {
+		t.Fatalf("CarryRollbackCapability(diverged) = (%+v, %v)", seed, err)
 	}
 }
 

@@ -77,7 +77,17 @@ func testKeyJSON(t *testing.T, keyType string) []byte {
 
 func TestBuildExportPayloadIsCanonicalCredentialOnly(t *testing.T) {
 	keyJSON := testKeyJSON(t, "custom.allowlist.v1")
-	payload, err := buildExportPayload(keyJSON)
+	parsed, err := keys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector, err := parsed.Selector()
+	parsed.ZeroSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := keys.ManagedCredentialFile{Selector: selector, Name: selector + keys.AccountKeyExtension}
+	payload, err := buildExportPayload(source, keyJSON)
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}

@@ -379,7 +379,7 @@ func verifySuccessorMint(paths storepaths.Paths, req MintRequest) error {
 	if req.Parent == "" {
 		return fmt.Errorf("atomic store-root successor mint requires a parent")
 	}
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return fmt.Errorf("mint: %w", err)
 	}

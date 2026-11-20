@@ -169,7 +169,7 @@ func TestReleaseArtifactStoreDrill(t *testing.T) {
 func assertStoreUninitialized(t *testing.T, env *storeEnv) {
 	t.Helper()
 	paths := storepaths.NewPaths(env.dataDir)
-	if crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+	if crypto.StoreRootExistsIn(paths.ProductDir()) {
 		t.Fatal("fresh store fixture already contains store-root authority")
 	}
 	if _, err := os.Lstat(paths.ProductDir()); !os.IsNotExist(err) {

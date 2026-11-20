@@ -7,9 +7,10 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
 
 	"github.com/algorand/falcon"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -98,13 +99,6 @@ func TestNativeRecoveryPayloadRoundTripAndValidation(t *testing.T) {
 	defer parsed.ZeroSecrets()
 	if !bytes.Equal(parsed.RecoveryEntropy, payload.RecoveryEntropy) {
 		t.Fatal("entropy lost")
-	}
-	metadata, err := json.Marshal(parsed.Metadata())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(metadata, []byte("recovery_entropy")) {
-		t.Fatal("secret projected as metadata")
 	}
 	if !parsed.RecoveryPhraseAvailable() {
 		t.Fatal("format 2 Falcon payload not marked phrase-recoverable")

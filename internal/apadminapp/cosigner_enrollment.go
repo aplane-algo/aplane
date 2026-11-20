@@ -44,7 +44,7 @@ func WriteCosignerPublicEnvelope(path string, data []byte) error {
 	if path == "" {
 		return fmt.Errorf("output path is required")
 	}
-	if err := fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(path, data); err != nil {
 		return fmt.Errorf("failed to write public key envelope: %w", err)
 	}
 	return nil

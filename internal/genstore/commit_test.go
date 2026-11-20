@@ -107,7 +107,7 @@ func TestMintSecondGenerationSealsParentAndCopiesIndependently(t *testing.T) {
 func TestMintApplyFailureLeavesRootExact(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, map[string]string{"keys/A.key": "a"})
-	before, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	before, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestMintApplyFailureLeavesRootExact(t *testing.T) {
 	if !errors.Is(err, injected) {
 		t.Fatalf("Mint error = %v", err)
 	}
-	after, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	after, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil || string(after) != string(before) {
 		t.Fatalf("root changed after apply failure: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestMintApplyFailureLeavesRootExact(t *testing.T) {
 func TestMintCandidateValidationFailurePrecedesPublicationAndRootCommit(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	first := mintFirst(t, paths, nil)
-	before, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	before, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestMintCandidateValidationFailurePrecedesPublicationAndRootCommit(t *testi
 	if !errors.Is(err, injected) {
 		t.Fatalf("Mint() error = %v", err)
 	}
-	after, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	after, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("candidate rejection changed store root: %v", err)
 	}

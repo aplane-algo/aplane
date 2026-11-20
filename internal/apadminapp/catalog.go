@@ -662,7 +662,7 @@ func (c Catalog) runEndpoint(args []string) error {
 		_, err := c.Streams.Stdout.Write(data)
 		return err
 	}
-	if err := fsutil.WriteFileDurableWithProfile(*outPath, data, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(*outPath, data); err != nil {
 		return fmt.Errorf("failed to write endpoint envelope: %w", err)
 	}
 	c.info("endpoint envelope written: %s", *outPath)

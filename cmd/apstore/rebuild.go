@@ -138,7 +138,7 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 	}
 	defer kr.Zero()
 
-	roleBytes, _, err := noderole.SaveInitial(keystorePaths(), nodeRole, time.Now())
+	roleBytes, err := noderole.SaveInitial(keystorePaths(), nodeRole, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to create node role: %w", err)
 	}

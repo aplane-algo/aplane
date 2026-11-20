@@ -110,8 +110,6 @@ func runHook(op HookOp, path string) error {
 // or power loss. An error wrapping ErrPublishedNotDurable means the new
 // content is in place but may not survive one; any other error means path
 // still holds its old content.
-//
-// Unlike WriteFile it never falls back to an unsynced in-place write.
 func WriteFileDurable(path string, data []byte) error {
 	return WriteFileDurableWithProfile(path, data, PrivateStoreFileProfile)
 }

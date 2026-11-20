@@ -81,9 +81,7 @@ func (s Service) GetKeyDetails(address string) (*adminproto.GetKeyDetailsResult,
 		result.Parameters = keyDetailsParameters(info.Parameters, info.BoundedAuthorization)
 		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
 		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
-		if result.DisplayTEAL, err = keymgmt.GetDisplayTEALWithKeyring(keyFile, mk); err != nil {
-			return fmt.Errorf("read TEAL for key %s: %w", address, err)
-		}
+		result.DisplayTEAL = info.DisplayTEAL
 		return nil
 	})
 	if err != nil {

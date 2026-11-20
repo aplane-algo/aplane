@@ -22,5 +22,5 @@ func ResolvePath(path, baseDir string) string {
 // the shared private-store publication primitive so symlinks, permissive modes,
 // and unsynced rename paths cannot become config-specific exceptions.
 func WriteConfigAtomic(path string, data []byte) error {
-	return fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile)
+	return fsutil.WriteFileDurable(path, data)
 }

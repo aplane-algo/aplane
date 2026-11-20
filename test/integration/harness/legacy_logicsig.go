@@ -68,7 +68,7 @@ func (v *ApAdminHarness) RestoreLegacyLogicSig(keyType string, seed []byte) (str
 	kr, active := genstoretest.MintFirstAtomic(v.t, paths, []byte("legacy-fixture-store"))
 	defer kr.Zero()
 	paths = genstoretest.BindActive(v.t, paths, active)
-	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Now()); err != nil {
+	if _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Now()); err != nil {
 		return "", err
 	}
 	generator, err := keygen.GetGenerator(keyType)

@@ -20,7 +20,6 @@ type Palette struct {
 	Ed25519Color string // Color for ed25519 addresses/labels
 	FalconColor  string // Color for falcon1024 addresses/labels
 	DefaultColor string // Fallback for unknown key types
-	AliasColor   string // Color for alias names
 	PromptColor  string // Color for shell prompt
 
 	// Lipgloss 256-color codes (for apadmin TUI styles)
@@ -49,7 +48,6 @@ var Dark = Palette{
 	Ed25519Color: "36", // Cyan
 	FalconColor:  "33", // Yellow
 	DefaultColor: "39", // Default terminal foreground
-	AliasColor:   "36", // Cyan
 	PromptColor:  "33", // Yellow
 
 	Title:              "205", // Magenta
@@ -77,7 +75,6 @@ var Light = Palette{
 	Ed25519Color: "30", // Dark cyan (teal)
 	FalconColor:  "94", // Dark yellow/brown
 	DefaultColor: "39", // Default terminal foreground
-	AliasColor:   "30", // Dark cyan
 	PromptColor:  "28", // Dark green
 
 	Title:              "125", // Dark magenta
@@ -101,9 +98,8 @@ var Light = Palette{
 }
 
 var (
-	current     *Palette
-	currentOnce sync.Once
-	mu          sync.Mutex
+	current *Palette
+	mu      sync.Mutex
 )
 
 // Init initializes the theme based on the given mode ("auto", "dark", "light").
@@ -128,9 +124,7 @@ func Current() *Palette {
 	defer mu.Unlock()
 
 	if current == nil {
-		currentOnce.Do(func() {
-			current = detect()
-		})
+		current = detect()
 	}
 	return current
 }

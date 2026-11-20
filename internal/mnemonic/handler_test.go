@@ -77,7 +77,7 @@ func TestGetHandlerUnknownType(t *testing.T) {
 // TestRegisterIdempotency verifies duplicate registrations are ignored
 func TestRegisterIdempotency(t *testing.T) {
 	// Create a mock handler
-	mockHandler := &Ed25519Handler{}
+	mockHandler := NewEd25519Handler("ed25519")
 
 	// Get initial count
 	initialTypes := GetRegisteredFamilies()
@@ -208,7 +208,7 @@ func TestConcurrentAccess(t *testing.T) {
 			}
 
 			// Register operations (idempotent, should be safe)
-			mockHandler := &Ed25519Handler{}
+			mockHandler := NewEd25519Handler("ed25519")
 			Register(mockHandler)
 
 			done <- true

@@ -85,7 +85,7 @@ func saveUnlockConfig(dataRoot string, cfg *UnlockConfig, owner *[2]int) error {
 
 	var writeErr error
 	if owner == nil {
-		writeErr = fsutil.WriteFileDurableWithProfile(path, data, fsutil.PrivateStoreFileProfile)
+		writeErr = fsutil.WriteFileDurable(path, data)
 	} else {
 		writeErr = fsutil.WriteServiceOwnedFileDurable(path, data, owner[0], owner[1])
 	}

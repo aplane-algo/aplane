@@ -59,11 +59,9 @@ func ParseRole(raw string) (Role, error) {
 }
 
 func NewDocument(role Role, createdAt time.Time) (Document, error) {
-	if _, err := ParseRole(string(role)); err != nil {
+	role, err := ParseRole(string(role))
+	if err != nil {
 		return Document{}, err
-	}
-	if createdAt.IsZero() {
-		createdAt = time.Now()
 	}
 	return Document{
 		SchemaVersion: SchemaVersion,
@@ -93,29 +91,4 @@ func ParseDocument(data []byte) (Document, error) {
 		}
 	}
 	return doc, nil
-}
-
-func MarshalDocument(doc Document) ([]byte, error) {
-	if doc.SchemaVersion == 0 {
-		doc.SchemaVersion = SchemaVersion
-	}
-	if doc.SchemaVersion != SchemaVersion {
-		return nil, fmt.Errorf("%w: schema_version %d", ErrInvalidDocument, doc.SchemaVersion)
-	}
-	role, err := ParseRole(string(doc.Role))
-	if err != nil {
-		return nil, err
-	}
-	doc.Role = role
-	doc.CreatedAt = strings.TrimSpace(doc.CreatedAt)
-	if doc.CreatedAt != "" {
-		if _, err := time.Parse(time.RFC3339, doc.CreatedAt); err != nil {
-			return nil, fmt.Errorf("%w: created_at must be RFC3339: %w", ErrInvalidDocument, err)
-		}
-	}
-	data, err := yaml.Marshal(doc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal node role document: %w", err)
-	}
-	return data, nil
 }

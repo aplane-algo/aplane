@@ -30,30 +30,12 @@ type DeletedArchivePruneResult struct {
 // ListDeletedArchive returns canonical generation-relative names. It never
 // exposes a retained generation and rejects an over-limit selected archive.
 func ListDeletedArchive(gen storepaths.GenPaths) ([]DeletedArchiveEntry, DeletedArchiveUsage, error) {
-	usage, err := InspectDeletedArchive(gen)
+	var result []DeletedArchiveEntry
+	usage, err := walkDeletedArchive(gen, func(relative string, size int64) {
+		result = append(result, DeletedArchiveEntry{Path: relative, EncodedBytes: size})
+	})
 	if err != nil {
 		return nil, usage, err
-	}
-	var result []DeletedArchiveEntry
-	for _, namespace := range []struct{ relative, dir string }{
-		{"deleted/keys", gen.DeletedKeysDir()},
-		{"deleted/keytypes", gen.DeletedKeyTypeRecordsDir()},
-		{"deleted/policies", gen.DeletedPoliciesDir()},
-	} {
-		entries, err := os.ReadDir(namespace.dir)
-		if err != nil {
-			return nil, usage, err
-		}
-		for _, entry := range entries {
-			info, err := entry.Info()
-			if err != nil {
-				return nil, usage, err
-			}
-			result = append(result, DeletedArchiveEntry{
-				Path:         filepath.ToSlash(filepath.Join(namespace.relative, entry.Name())),
-				EncodedBytes: info.Size(),
-			})
-		}
 	}
 	slices.SortFunc(result, func(a, b DeletedArchiveEntry) int { return strings.Compare(a.Path, b.Path) })
 	return result, usage, nil

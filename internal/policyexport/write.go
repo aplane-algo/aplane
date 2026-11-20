@@ -117,19 +117,19 @@ func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, s
 	}
 	marker := filepath.Join(contextDir, InProgressFile)
 	started := []byte("export started " + export.ExportedAt.Format(time.RFC3339) + "\n")
-	if err := fsutil.WriteFileDurableWithProfile(marker, started, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(marker, started); err != nil {
 		return nil, fmt.Errorf("write %s: %w", marker, err)
 	}
 	paths := make([]string, 0, len(docs))
 	for i, doc := range stored {
 		path := filepath.Join(dir, names[i])
-		if err := fsutil.WriteFileDurableWithProfile(path, doc.Bytes, fsutil.PrivateStoreFileProfile); err != nil {
+		if err := fsutil.WriteFileDurable(path, doc.Bytes); err != nil {
 			return paths, fmt.Errorf("write %s: %w", path, err)
 		}
 		paths = append(paths, path)
 	}
 	contextPath := filepath.Join(contextDir, ContextFile)
-	if err := fsutil.WriteFileDurableWithProfile(contextPath, contextBytes, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(contextPath, contextBytes); err != nil {
 		return paths, fmt.Errorf("write %s: %w", contextPath, err)
 	}
 	if err := fsutil.RemoveDurable(marker); err != nil {

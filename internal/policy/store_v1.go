@@ -353,7 +353,7 @@ func writePolicySidecar(path string, data []byte, kr *crypto.Keyring, signedAt t
 	if err != nil {
 		return err
 	}
-	if err := fsutil.WriteFileDurableWithProfile(PolicyIntegritySidecarPath(path), sidecarBytes, fsutil.PrivateStoreFileProfile); err != nil {
+	if err := fsutil.WriteFileDurable(PolicyIntegritySidecarPath(path), sidecarBytes); err != nil {
 		return fmt.Errorf("write policy sidecar for %s: %w", filepath.Base(path), err)
 	}
 	return nil

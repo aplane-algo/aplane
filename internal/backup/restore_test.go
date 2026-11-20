@@ -4,12 +4,15 @@
 package backup
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -292,5 +295,65 @@ func TestLoadManagedRestoreSetRejectsMissingRuntimeProvider(t *testing.T) {
 	}
 	if !ArchiveAuthenticated(err) {
 		t.Fatal("missing provider error did not preserve successful archive authentication")
+	}
+}
+
+// A restored witness credential gets its public metadata sidecar; any other
+// credential gets none.
+func TestApplyCredentialEntryWritesWitnessPublicMetadataOnlyForWitnesses(t *testing.T) {
+	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr := cryptotest.Keyring(t, testExportMasterKey)
+
+	witnessSelector, witnessJSON := testCosignerComponentBackupKeyJSON(t)
+	witnessPayload, err := keys.ParsePayload(witnessJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witnessEntry := CredentialEntry{
+		Selector: witnessSelector,
+		Category: witnessPayload.Category,
+		KeyType:  witnessPayload.KeyType,
+		KeyJSON:  witnessJSON,
+	}
+	if err := ApplyCredentialEntry(active, witnessEntry, kr, false); err != nil {
+		t.Fatalf("ApplyCredentialEntry(witness) error = %v", err)
+	}
+	metadata, err := os.ReadFile(keys.WitnessPublicMetadataPathActive(active, witnessSelector))
+	if err != nil {
+		t.Fatalf("witness public metadata missing: %v", err)
+	}
+	want, err := cosignerrefs.NewExportEnvelope(witnessSelector, witnessPayload.KeyType, hex.EncodeToString(witnessPayload.PublicKey))
+	witnessPayload.ZeroSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := json.MarshalIndent(want, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(metadata) != string(wantBytes)+"\n" {
+		t.Fatalf("witness public metadata = %s, want %s", metadata, wantBytes)
+	}
+
+	accountSelector, accountJSON := testEd25519BackupKeyJSON(t)
+	stale := keys.WitnessPublicMetadataPathActive(active, accountSelector)
+	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	accountEntry := CredentialEntry{
+		Selector: accountSelector,
+		Category: keys.CategoryEd25519,
+		KeyType:  "ed25519",
+		KeyJSON:  accountJSON,
+	}
+	if err := ApplyCredentialEntry(active, accountEntry, kr, false); err != nil {
+		t.Fatalf("ApplyCredentialEntry(account) error = %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("account restore left witness public metadata: %v", err)
 	}
 }

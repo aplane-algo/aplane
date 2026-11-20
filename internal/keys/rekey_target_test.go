@@ -30,8 +30,8 @@ func TestPayloadCarriesValidRekeyTarget(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if parsed.ValidRekeyTarget != valid || parsed.Metadata().ValidRekeyTarget != valid {
-			t.Fatalf("parsed valid_rekey_target = %v, metadata %v; want %v", parsed.ValidRekeyTarget, parsed.Metadata().ValidRekeyTarget, valid)
+		if parsed.ValidRekeyTarget != valid {
+			t.Fatalf("parsed valid_rekey_target = %v; want %v", parsed.ValidRekeyTarget, valid)
 		}
 		parsed.ZeroSecrets()
 		payload.ZeroSecrets()

@@ -76,7 +76,7 @@ func SaveNewPayloadActive(active storepaths.GenPaths, payload *Payload, validRek
 	if err := fsutil.WriteFileDurable(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
-	if err := writeWitnessPublicMetadataFromPayload(active, selector, payload); err != nil {
+	if err := WriteWitnessPublicMetadataActive(active, selector, payload); err != nil {
 		return nil, err
 	}
 

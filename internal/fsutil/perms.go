@@ -50,8 +50,3 @@ func MkdirAllPrivate(path string) error {
 	}
 	return os.Chmod(path, info.Mode().Perm()&StoreDirPerm)
 }
-
-// WriteFile atomically and durably publishes a private signer-store file.
-func WriteFile(path string, data []byte) error {
-	return WriteFileDurableWithProfile(path, data, PrivateStoreFileProfile)
-}

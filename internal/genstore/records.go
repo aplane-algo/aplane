@@ -164,28 +164,23 @@ func NewRollbackCapabilitySeed(operationID, archiveSHA256, sourceGenerationID st
 }
 
 // CarryRollbackCapability returns a provenance-only copy when live still
-// matches the manifest's authenticated rollback authority. A mismatch is a
-// normal divergence decision, not a parse error.
-func CarryRollbackCapability(manifest *Manifest, live []InventoryEntry) (*RollbackCapability, bool, error) {
+// matches the manifest's authenticated rollback authority, and nil when the
+// manifest carries none or live has diverged. A mismatch is a normal
+// divergence decision, not a parse error.
+func CarryRollbackCapability(manifest *Manifest, live []InventoryEntry) (*RollbackCapability, error) {
 	if manifest == nil || manifest.RollbackCapability == nil {
-		return nil, false, nil
+		return nil, nil
 	}
 	capability := manifest.RollbackCapability
-	if err := validateRollbackCapability(capability); err != nil {
-		return nil, false, err
-	}
-	digest, err := CanonicalInventoryDigest(live)
-	if err != nil {
-		return nil, false, err
-	}
-	if int64(len(live)) != capability.EntryCount || digest != capability.InventorySHA256 {
-		return nil, false, nil
+	clean, err := RollbackCapabilityMatches(capability, live)
+	if err != nil || !clean {
+		return nil, err
 	}
 	return NewRollbackCapabilitySeed(
 		capability.OriginOperationID,
 		capability.ArchiveSHA256,
 		capability.SourceGenerationID,
-	), true, nil
+	), nil
 }
 
 // RollbackCapabilityMatches reports whether live still equals the authority
@@ -292,12 +287,9 @@ func buildInventoryEntry(gen storepaths.GenPaths, relative string) (InventoryEnt
 		return InventoryEntry{}, fmt.Errorf("inventory %s: %w", relative, err)
 	}
 	sum := sha256.Sum256(data)
-	term, present, err := crypto.InspectTermEnvelope(data)
+	term, _, err := crypto.InspectTermEnvelope(data)
 	if err != nil {
 		return InventoryEntry{}, fmt.Errorf("inventory %s term: %w", relative, err)
-	}
-	if !present {
-		term = 0
 	}
 	return InventoryEntry{
 		Path:   relative,

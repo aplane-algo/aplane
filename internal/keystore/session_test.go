@@ -100,7 +100,7 @@ func TestKeySession_GetKey_ActiveSession(t *testing.T) {
 	// Initialize session
 	session.InitializeSession()
 
-	key, err := session.GetKey(testAddr)
+	key, err := session.GetKeyWithContext(context.Background(), testAddr)
 	if err != nil {
 		t.Fatalf("GetKey failed: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestKeySession_GetKey_InactiveSession(t *testing.T) {
 	session := NewKeySession(store)
 	// Don't initialize - session is inactive
 
-	_, err := session.GetKey("TESTADDR")
+	_, err := session.GetKeyWithContext(context.Background(), "TESTADDR")
 	if err == nil {
 		t.Fatal("expected error from inactive session")
 	}
@@ -137,7 +137,7 @@ func TestKeySession_GetKey_KeyNotFound(t *testing.T) {
 	session := NewKeySession(store)
 	session.InitializeSession()
 
-	_, err := session.GetKey("NONEXISTENT")
+	_, err := session.GetKeyWithContext(context.Background(), "NONEXISTENT")
 	if !errors.Is(err, ErrKeyNotFound) {
 		t.Errorf("expected ErrKeyNotFound, got %v", err)
 	}
@@ -187,7 +187,7 @@ func TestKeySession_Concurrency(t *testing.T) {
 				addr = "ADDR2"
 			}
 			for j := 0; j < numIterations; j++ {
-				_, err := session.GetKey(addr)
+				_, err := session.GetKeyWithContext(context.Background(), addr)
 				if err != nil {
 					errChan <- err
 				}
@@ -261,7 +261,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	session.InitializeSession()
 
 	// Get the key
-	key, err := session.GetKey(testAddr)
+	key, err := session.GetKeyWithContext(context.Background(), testAddr)
 	if err != nil {
 		t.Fatalf("GetKey failed: %v", err)
 	}

@@ -30,7 +30,7 @@ import (
 
 func writeTestNodeRole(t *testing.T, root string, role noderole.Role) {
 	t.Helper()
-	if _, _, err := noderole.SaveInitial(utilkeys.NewPaths(root), role, time.Unix(1700000000, 0)); err != nil {
+	if _, err := noderole.SaveInitial(utilkeys.NewPaths(root), role, time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
 }

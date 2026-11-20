@@ -76,29 +76,12 @@ func validateWitnessPublicMetadataFilename(path string) error {
 	return nil
 }
 
-// WriteWitnessPublicMetadataFromKeyJSONActive is
-// WriteWitnessPublicMetadataFromKeyJSON against resolved active-store paths.
-func WriteWitnessPublicMetadataFromKeyJSONActive(active storepaths.GenPaths, address string, keyJSON []byte) (string, bool, error) {
-	payload, err := ParsePayload(keyJSON)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to parse key payload for witness public metadata: %w", err)
-	}
-	defer payload.ZeroSecrets()
-	if payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
-		return "", false, nil
-	}
-	if err := writeWitnessPublicMetadataFromPayload(active, address, payload); err != nil {
-		return "", false, err
-	}
-	witnessKeyID, err := witness.NormalizeID(address)
-	if err != nil {
-		return "", false, err
-	}
-	return WitnessPublicMetadataPathActive(active, witnessKeyID), true, nil
-}
-
-func writeWitnessPublicMetadataFromPayload(active storepaths.GenPaths, selector string, payload *Payload) error {
-	if payload == nil || payload.Category != CategoryWitness || !witness.IsKeyType(payload.KeyType) {
+// WriteWitnessPublicMetadataActive writes the public-only metadata sidecar
+// of a witness credential and does nothing for any other category. The
+// payload is one ParsePayload or MarshalPayload admitted, whose validation
+// already ties the witness category to a witness key type.
+func WriteWitnessPublicMetadataActive(active storepaths.GenPaths, selector string, payload *Payload) error {
+	if payload == nil || payload.Category != CategoryWitness {
 		return nil
 	}
 	witnessKeyID, err := witness.NormalizeID(selector)

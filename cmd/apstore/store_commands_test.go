@@ -61,7 +61,7 @@ func TestCmdInitializeInitializes(t *testing.T) {
 	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (string, string, error) {
 		gotPassphrase = string(passphrase)
 		gotRole = role
-		return keystorePaths().KeystoreMetadataDir(), "", nil
+		return keystorePaths().ProductDir(), "", nil
 	}
 
 	err := withTestStdin("init-passphrase\ninit-passphrase\n", func() error {

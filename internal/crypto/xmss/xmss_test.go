@@ -366,6 +366,43 @@ func TestVerifySteps(t *testing.T) {
 	}
 }
 
+// VerifySteps counts every chain step from the digits Verify signs over,
+// for arbitrary signature prefixes, not only the vectors'.
+func TestVerifyStepsMatchesDigits(t *testing.T) {
+	pk := vectorPublicKey(t, loadVectors(t))
+	sig := make([]byte, IndexSize+N)
+	msg := make([]byte, 32)
+	for i := 0; i < 2000; i++ {
+		if _, err := rand.Read(sig); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rand.Read(msg); err != nil {
+			t.Fatal(err)
+		}
+		steps, err := VerifySteps(pk, msg, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum, err := MessageChecksum(pk, msg, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var r [N]byte
+		copy(r[:], sig[IndexSize:])
+		mhash := HashMessage(&r, &pk.Root, binary.BigEndian.Uint32(sig[:IndexSize]), msg)
+		want := 0
+		for _, d := range digits(&mhash) {
+			want += Steps - int(d)
+		}
+		if steps != want || sum != Checksum(&mhash) {
+			t.Fatalf("steps %d want %d, checksum %d want %d", steps, want, sum, Checksum(&mhash))
+		}
+	}
+	if _, err := MessageChecksum(pk, nil, make([]byte, IndexSize+N-1)); err == nil {
+		t.Fatal("short signature accepted")
+	}
+}
+
 // Erasing the hashes leaves no trace of the keyed midstate, which is as
 // secret as SK_SEED, in either the serialized state or the hash object.
 func TestHashesZeroErasesSecretState(t *testing.T) {

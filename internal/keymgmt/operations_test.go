@@ -590,7 +590,7 @@ func TestDetectKeyInfoFromFileWithKeyringInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestGetDisplayTEALWithKeyringEncrypted(t *testing.T) {
+func TestDetectKeyInfoFromFileWithKeyringReadsDisplayTEAL(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
@@ -603,49 +603,12 @@ func TestGetDisplayTEALWithKeyringEncrypted(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	teal, err := GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
+	info, err := DetectKeyInfoFromFileWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
 	if err != nil {
-		t.Fatalf("GetDisplayTEALWithKeyring() error = %v", err)
+		t.Fatalf("DetectKeyInfoFromFileWithKeyring() error = %v", err)
 	}
-	if teal != "#pragma version 8\nint 1" {
-		t.Fatalf("TEAL = %q, want stored source", teal)
-	}
-}
-
-func TestGetDisplayTEALWithKeyringWrongMasterKey(t *testing.T) {
-	dir := t.TempDir()
-	keyFile := filepath.Join(dir, "display.key")
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	wrongKey := []byte("fedcba9876543210fedcba9876543210")
-	plaintext := []byte(`{"teal_source":"#pragma version 8\nint 1"}`)
-	encrypted, err := cryptotest.Keyring(t, masterKey).Seal(plaintext, mustCredentialContextForTest(t, keyFile))
-	if err != nil {
-		t.Fatalf("encryptWithTermKey() error = %v", err)
-	}
-	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	_, err = GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, wrongKey))
-	if err == nil {
-		t.Fatal("expected decrypt error, got nil")
-	}
-}
-
-func TestGetDisplayTEALWithKeyringInvalidJSON(t *testing.T) {
-	keyFile := filepath.Join(t.TempDir(), "display.key")
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	encrypted, err := cryptotest.Keyring(t, masterKey).Seal([]byte(`{invalid`), mustCredentialContextForTest(t, keyFile))
-	if err != nil {
-		t.Fatalf("encryptWithTermKey() error = %v", err)
-	}
-	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	_, err = GetDisplayTEALWithKeyring(keyFile, cryptotest.Keyring(t, masterKey))
-	if err == nil {
-		t.Fatal("expected parse error, got nil")
+	if info.DisplayTEAL != "#pragma version 8\nint 1" {
+		t.Fatalf("DisplayTEAL = %q, want stored source", info.DisplayTEAL)
 	}
 }
 
@@ -730,20 +693,13 @@ func TestParseKeyFileInfoInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestParseDisplayTEALMissingFieldReturnsEmpty(t *testing.T) {
-	teal, err := parseDisplayTEAL(canonicalGenericKeyJSON(t, "test.timed-policy.v1", nil, ""))
+func TestParseKeyFileInfoMissingTEALReturnsEmpty(t *testing.T) {
+	info, err := parseKeyFileInfo(canonicalGenericKeyJSON(t, "test.timed-policy.v1", nil, ""))
 	if err != nil {
-		t.Fatalf("parseDisplayTEAL() error = %v", err)
+		t.Fatalf("parseKeyFileInfo() error = %v", err)
 	}
-	if teal != "" {
-		t.Fatalf("TEAL = %q, want empty", teal)
-	}
-}
-
-func TestParseDisplayTEALInvalidJSON(t *testing.T) {
-	_, err := parseDisplayTEAL([]byte(`{invalid`))
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if info.DisplayTEAL != "" {
+		t.Fatalf("DisplayTEAL = %q, want empty", info.DisplayTEAL)
 	}
 }
 

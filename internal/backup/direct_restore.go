@@ -557,11 +557,7 @@ func ApplyCredentialEntry(
 	if payload.Category != keys.CategoryWitness {
 		_ = fsutil.RemoveDurable(keys.WitnessPublicMetadataPathActive(active, entry.Selector))
 	}
-	if _, _, err := keys.WriteWitnessPublicMetadataFromKeyJSONActive(
-		active,
-		entry.Selector,
-		entry.KeyJSON,
-	); err != nil {
+	if err := keys.WriteWitnessPublicMetadataActive(active, entry.Selector, payload); err != nil {
 		return fmt.Errorf("write restored witness public metadata: %w", err)
 	}
 	return nil

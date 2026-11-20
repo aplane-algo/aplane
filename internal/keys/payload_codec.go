@@ -60,31 +60,6 @@ type Payload struct {
 	CreatedAt        time.Time
 }
 
-// CanonicalPayloadMetadata is the non-secret projection of a canonical key
-// payload used by inventory, backup, and signing setup.
-type CanonicalPayloadMetadata struct {
-	FormatVersion          int
-	Category               string
-	KeyType                string
-	PublicKeyHex           string
-	PQScheme               string
-	PQAddressSalt          *byte
-	Parameters             map[string]string
-	LogicSigBytecodeHex    string
-	LogicSigDerivation     string
-	LogicSigOpcodeProfile  lsigresource.OpcodeProfile
-	SaltCounter            *byte
-	TEALSource             string
-	SigningMetadataVersion int
-	BaseKeyType            string
-	SigningArgs            []StoredSigningArg
-	BoundedAuthorization   *boundedmeta.Metadata
-	TemplateFingerprint    string
-	GenesisHashHex         string
-	ValidRekeyTarget       bool
-	CreatedAt              string
-}
-
 // payloadWire is the canonical JSON DTO for decrypted payload versions 1 and 2.
 // It remains private so durable JSON field ownership stays in this package.
 // Its secret fields are zeroable buffers, cleared with zeroSecrets once the
@@ -547,35 +522,6 @@ func (p *Payload) Selector() (string, error) {
 		return address, nil
 	default:
 		return "", incompatibleKeyFormat("unknown category %q", p.Category)
-	}
-}
-
-// Metadata returns a non-secret copy of the payload metadata.
-func (p *Payload) Metadata() CanonicalPayloadMetadata {
-	if p == nil {
-		return CanonicalPayloadMetadata{}
-	}
-	return CanonicalPayloadMetadata{
-		FormatVersion:          p.FormatVersion,
-		Category:               p.Category,
-		KeyType:                p.KeyType,
-		PublicKeyHex:           hex.EncodeToString(p.PublicKey),
-		PQScheme:               p.PQScheme,
-		PQAddressSalt:          cloneBytePtr(p.PQAddressSalt),
-		Parameters:             maps.Clone(p.Parameters),
-		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
-		LogicSigDerivation:     p.LogicSigDerivation,
-		LogicSigOpcodeProfile:  p.LogicSigOpcodeProfile,
-		SaltCounter:            cloneBytePtr(p.SaltCounter),
-		TEALSource:             p.TEALSource,
-		SigningMetadataVersion: p.SigningMetadataVersion,
-		BaseKeyType:            p.BaseKeyType,
-		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
-		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
-		TemplateFingerprint:    p.TemplateFingerprint,
-		GenesisHashHex:         hex.EncodeToString(p.GenesisHash),
-		ValidRekeyTarget:       p.ValidRekeyTarget,
-		CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 

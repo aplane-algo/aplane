@@ -4,12 +4,14 @@
 package keys
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -382,11 +384,10 @@ func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelecto
 			warn(KeyScanWarningAddressDerivationFailed, keyFile, err)
 			continue
 		}
-		payloadMeta := payload.Metadata()
 		signingMeta := payload.SigningMetadata()
-		keyType := payloadMeta.KeyType
-		category := payloadMeta.Category
-		publicKeyHex := payloadMeta.PublicKeyHex
+		keyType := payload.KeyType
+		category := payload.Category
+		publicKeyHex := hex.EncodeToString(payload.PublicKey)
 		if err := ValidateManagedCredentialFilename(entry.Name(), selector, category); err != nil {
 			payload.ZeroSecrets()
 			crypto.ZeroBytes(data)
@@ -422,15 +423,11 @@ func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelecto
 			continue
 		}
 
-		createdAt := payloadMeta.CreatedAt
 		payload.ZeroSecrets()
 		crypto.ZeroBytes(data) // Zero after all processing complete
+		// A second file for a selector fails the whole scan below, so
+		// keysMap is never returned with either entry.
 		addressFiles[selector] = append(addressFiles[selector], keyFile)
-		if len(addressFiles[selector]) > 1 {
-			delete(keysMap, selector)
-			continue
-		}
-
 		keysMap[selector] = KeyScanInfo{
 			KeyFile:                keyFile,
 			KeyType:                keyType,
@@ -442,9 +439,9 @@ func scanKeysDirectoryInternalReport(active storepaths.GenPaths, excludedSelecto
 			SigningArgs:            signingMeta.SigningArgs,
 			BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
-			TemplateFingerprint:    payloadMeta.TemplateFingerprint,
-			ValidRekeyTarget:       payloadMeta.ValidRekeyTarget,
-			CreatedAt:              createdAt,
+			TemplateFingerprint:    payload.TemplateFingerprint,
+			ValidRekeyTarget:       payload.ValidRekeyTarget,
+			CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 

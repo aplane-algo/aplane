@@ -37,10 +37,10 @@ func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
-	if result.MetadataDir != paths.KeystoreMetadataDir() {
-		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.KeystoreMetadataDir())
+	if result.MetadataDir != paths.ProductDir() {
+		t.Fatalf("MetadataDir = %q, want %q", result.MetadataDir, paths.ProductDir())
 	}
-	if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+	if !crypto.StoreRootExistsIn(paths.ProductDir()) {
 		t.Fatal("store root missing after initialize")
 	}
 	// The store root authenticates both key authority and the selected
@@ -53,7 +53,7 @@ func TestInitializeCreatesStoreMetadataKeysAndPolicy(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "CURRENT")); !os.IsNotExist(err) {
 		t.Fatalf("CURRENT exists on a new store: err = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.KeystoreMetadataDir(), "keyring.enc")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(paths.ProductDir(), "keyring.enc")); !os.IsNotExist(err) {
 		t.Fatalf("keyring.enc exists on a new store: err = %v", err)
 	}
 	if _, err := os.Stat(active.KeysDir()); err != nil {
@@ -271,7 +271,7 @@ func TestInitializeChecksOwnershipTreeBeforeCreatingKeyring(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "prepare initialized identity ownership") {
 		t.Fatalf("Initialize() error = %v, want ownership preflight failure", err)
 	}
-	if crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+	if crypto.StoreRootExistsIn(paths.ProductDir()) {
 		t.Fatal("ownership preflight failure left a created store root")
 	}
 }

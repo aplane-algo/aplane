@@ -69,15 +69,12 @@ func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, 
 		return fmt.Errorf("failed to decrypt key: %w", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
-	if err := validateExportSource(source, plaintext); err != nil {
-		return err
-	}
 
 	// The portable authority is the complete managed credential payload. The
 	// destination owns templates and key-generation configuration.
-	payload, err := buildExportPayload(plaintext)
+	payload, err := buildExportPayload(source, plaintext)
 	if err != nil {
-		return fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
+		return err
 	}
 	defer crypto.ZeroBytes(payload)
 
@@ -115,32 +112,24 @@ func resolveManagedCredentialFile(srcDir, selector string) (keys.ManagedCredenti
 	}
 }
 
-func validateExportSource(source keys.ManagedCredentialFile, plaintext []byte) error {
+// buildExportPayload checks the decrypted credential against its source
+// filename and returns a canonical credential-only plaintext for export.
+func buildExportPayload(source keys.ManagedCredentialFile, plaintext []byte) ([]byte, error) {
 	payload, err := keys.ParsePayload(plaintext)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer payload.ZeroSecrets()
 	selector, err := payload.Selector()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := keys.ValidateManagedCredentialFilename(source.Name, selector, payload.Category); err != nil {
-		return err
-	}
-	return nil
-}
-
-// buildExportPayload returns a canonical credential-only plaintext for export.
-func buildExportPayload(keyJSON []byte) ([]byte, error) {
-	payload, err := keys.ParsePayload(keyJSON)
-	if err != nil {
 		return nil, err
 	}
-	defer payload.ZeroSecrets()
 	canonical, err := keys.MarshalPayload(payload)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
 	}
 	return canonical, nil
 }

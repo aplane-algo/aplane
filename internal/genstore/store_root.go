@@ -28,7 +28,7 @@ func ResolveStoreRoot(
 			kr.Zero()
 		}
 	}()
-	if err := validateStoreRootSelectionTarget(gen); err != nil {
+	if err := ValidateStoreRootSelection(gen); err != nil {
 		return storepaths.GenPaths{}, nil, err
 	}
 	success = true
@@ -43,22 +43,12 @@ func OpenStoreRootSelection(
 	paths storepaths.Paths,
 	passphrase []byte,
 ) (storepaths.GenPaths, *crypto.Keyring, error) {
-	kr, selection, err := crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	kr, selection, err := crypto.OpenStoreRootStore(paths.ProductDir(), passphrase)
 	if err != nil {
 		return storepaths.GenPaths{}, nil, err
 	}
 	gen := paths.GenerationPaths(selection.CurrentGenerationID)
 	return gen, kr, nil
-}
-
-func validateStoreRootSelectionTarget(gen storepaths.GenPaths) error {
-	if err := requireRegularDirectory(gen.Dir()); err != nil {
-		return fmt.Errorf("store root selected generation: %w", err)
-	}
-	if err := ValidateCurrent(gen); err != nil {
-		return fmt.Errorf("store root selected generation: %w", err)
-	}
-	return nil
 }
 
 // ResolveStoreRootWithKeyring authenticates a fresh exact root read with an
@@ -88,7 +78,7 @@ func AuthenticateStoreRootSelection(
 	paths storepaths.Paths,
 	kr *crypto.Keyring,
 ) (storepaths.GenPaths, error) {
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}
@@ -102,5 +92,11 @@ func AuthenticateStoreRootSelection(
 // ValidateStoreRootSelection checks that a selected generation is a real,
 // structurally valid current generation.
 func ValidateStoreRootSelection(gen storepaths.GenPaths) error {
-	return validateStoreRootSelectionTarget(gen)
+	if err := requireRegularDirectory(gen.Dir()); err != nil {
+		return fmt.Errorf("store root selected generation: %w", err)
+	}
+	if err := ValidateCurrent(gen); err != nil {
+		return fmt.Errorf("store root selected generation: %w", err)
+	}
+	return nil
 }

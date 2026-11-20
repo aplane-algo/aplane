@@ -1667,7 +1667,7 @@ func (ir *Runtime) LockGeneration() uint64 {
 
 func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 	return func() (int, error) {
-		if err := unlockFailure(crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.KeystoreMetadataDir())); err != nil {
+		if err := unlockFailure(crypto.VerifyPassphraseWithStoreRoot(passphrase, ir.keyPaths.ProductDir())); err != nil {
 			return 0, err
 		}
 

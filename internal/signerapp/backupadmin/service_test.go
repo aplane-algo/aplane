@@ -183,7 +183,7 @@ func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase 
 		t.Fatal(err)
 	}
 	defer kr.Zero()
-	roleBytes, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0))
+	roleBytes, err := noderole.SaveInitial(paths, noderole.RoleSigner, time.Unix(1_700_000_000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}

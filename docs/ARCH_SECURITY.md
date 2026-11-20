@@ -1840,7 +1840,7 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
 2. Run the identity lock callback (`performLockCleanup`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
 3. Drain key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
 4. Acquire `passphraseLock.WLock`:
-   - `keySession.Destroy()` — blocks until in-flight `GetKey` calls release the
+   - `keySession.Destroy()` — blocks until in-flight `GetKeyWithContext` calls release the
      session; request-wide draining is owned by the request server lifecycle.
    - Reinitialize the key session with the same `keyStore`.
    - `keyStore.ClearKeys()` — detaches the keyring under `cacheLock.WLock`,

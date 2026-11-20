@@ -151,7 +151,3 @@ func (p Paths) CosignerRefPath(name string) string {
 	validatePathComponent("cosigner reference name", name)
 	return filepath.Join(p.CosignerRefsDir(), name+".json")
 }
-
-func (p Paths) KeystoreMetadataDir() string {
-	return p.ProductDir()
-}

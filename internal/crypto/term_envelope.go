@@ -127,7 +127,8 @@ func EnvelopeTerm(encryptedJSON []byte) (int64, error) {
 // InspectTermEnvelope reports whether data declares an encryption-envelope
 // version and, when it does, requires the current term-envelope format and a
 // positive term. Plaintext generation members do not declare the field and
-// return present=false.
+// return present=false. The term is 0 whenever present is false or err is
+// set.
 func InspectTermEnvelope(data []byte) (term int64, present bool, err error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(data, &object); err != nil {

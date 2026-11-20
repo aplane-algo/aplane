@@ -1162,7 +1162,7 @@ func TestShutdownPastAStalledTableWriteZeroesTheKeyringAndRecordsTheWorker(t *te
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("keyring after shutdown: %v; want it zeroed", err)
 	}
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("key session after shutdown: %v; want it cleared", err)
 	}
 }

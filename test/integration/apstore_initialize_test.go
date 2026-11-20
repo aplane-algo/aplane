@@ -38,7 +38,7 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 		t.Fatalf("initialize output did not report offline bootstrap completion:\n%s", output)
 	}
 
-	if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+	if !crypto.StoreRootExistsIn(paths.ProductDir()) {
 		t.Fatal("keystore metadata missing after apstore initialize")
 	}
 	// New stores are generational: the keys namespace lives in the first

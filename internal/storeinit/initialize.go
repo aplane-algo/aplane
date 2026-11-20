@@ -65,7 +65,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, err
 	}
 
-	metadataDir := opts.Paths.KeystoreMetadataDir()
+	metadataDir := opts.Paths.ProductDir()
 	result.MetadataDir = metadataDir
 	if crypto.StoreRootExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (store root exists in %s)", metadataDir)
@@ -88,9 +88,8 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 
 	createdNodeRole := false
 	rootCommitted := false
-	success := false
 	defer func() {
-		if !success && createdNodeRole && !rootCommitted {
+		if createdNodeRole && !rootCommitted {
 			_ = os.Remove(opts.Paths.NodeRolePath())
 		}
 	}()
@@ -100,7 +99,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create store keyring: %w", err)
 	}
 	defer keyring.Zero()
-	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
+	roleBytes, err := noderole.SaveInitial(opts.Paths, role, time.Now())
 	if err != nil {
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
@@ -160,7 +159,6 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if err := chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths); err != nil {
 		return result, fmt.Errorf("failed to normalize initialized identity ownership: %w", err)
 	}
-	success = true
 	return result, nil
 }
 
