@@ -141,7 +141,6 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		keyType,
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,
-		salted.Counter,
 		false,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
@@ -175,6 +174,10 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	}
 	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "test.timed-policy.v1" {
 		t.Fatalf("payload = (%q, %q), want canonical generic LogicSig", payload.Category, payload.KeyType)
+	}
+	// A program the compiler did not auto-salt is unsalted and records 0.
+	if payload.LogicSigDerivation != "" || payload.SaltCounter == nil || *payload.SaltCounter != 0 {
+		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", payload.LogicSigDerivation, payload.SaltCounter)
 	}
 }
 

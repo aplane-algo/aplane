@@ -389,13 +389,13 @@ func (m cosignedCompileMockTransport) RoundTrip(req *http.Request) (*http.Respon
 func canonicalGenericKeyJSON(t *testing.T, keyType string, parameters map[string]string, tealSource string) []byte {
 	t.Helper()
 	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
-	return keystest.GenericLSigKeyJSON(t, keyType, salted.Bytecode, salted.Counter, parameters, tealSource)
+	return keystest.GenericLSigKeyJSON(t, keyType, salted.Bytecode, 0, parameters, tealSource)
 }
 
 func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte {
 	t.Helper()
 	salted := lsigsalttest.OffCurve(t, []byte{0x06, 0x81, 0x01, 0x00}, 3)
-	return keystest.DSALSigKeyJSON(t, keyType, "test.base.v1", publicKey, []byte{0x01}, salted.Bytecode, salted.Counter)
+	return keystest.DSALSigKeyJSON(t, keyType, "test.base.v1", publicKey, []byte{0x01}, salted.Bytecode, 0)
 }
 
 func TestDetectKeyInfoFromFileWithKeyringEncrypted(t *testing.T) {

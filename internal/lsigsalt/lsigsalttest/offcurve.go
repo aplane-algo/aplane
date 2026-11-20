@@ -14,7 +14,7 @@ import (
 // OffCurve returns bytecode with the byte at offset set to the first value
 // whose LogicSig address is off the curve, as lsigsalt.UseUnmodifiedOffCurve
 // accepts it, so a test can store or compile it in place of a derived program.
-// Its Counter is 0, as an unsalted key's is. The input is not changed.
+// The input is not changed.
 func OffCurve(t testing.TB, bytecode []byte, offset int) lsigsalt.FindResult {
 	t.Helper()
 	program := slices.Clone(bytecode)

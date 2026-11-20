@@ -699,14 +699,14 @@ func TestScanKeysDirectoryWithKeyringLoadsGenericUnderDerivedAddress(t *testing.
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	address, bytecode, counter := unsaltedLogicSigForScanTest(t)
+	address, bytecode := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
+		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -729,14 +729,14 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
-	_, bytecode, counter := unsaltedLogicSigForScanTest(t)
+	_, bytecode := unsaltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
 		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"lsig_opcode_profile": {"default": 20000},
-		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
+		"salt_counter": 0,
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
 	}`)
@@ -834,11 +834,11 @@ func TestScanKeysDirectoryWithKeyringRejectsDSALSigInvalidBytecode(t *testing.T)
 }
 
 // unsaltedLogicSigForScanTest returns an off-curve program as an unsalted
-// template would store it, with no lsig_derivation and its salt counter.
-func unsaltedLogicSigForScanTest(t *testing.T) (string, []byte, byte) {
+// template stores it: no lsig_derivation, and salt_counter 0.
+func unsaltedLogicSigForScanTest(t *testing.T) (string, []byte) {
 	t.Helper()
 	result := lsigsalttest.OffCurve(t, []byte{0x0c, 0x26, 0x01, 0x01, 0x00, 0x81, 0x01}, 4)
-	return result.Address.String(), result.Bytecode, result.Counter
+	return result.Address.String(), result.Bytecode
 }
 
 func TestScanKeysDirectoryWithKeyringReportRecordsIncompatibleFormatWarnings(t *testing.T) {

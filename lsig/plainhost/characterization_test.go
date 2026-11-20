@@ -181,7 +181,9 @@ func characterizeRequest(c *characterization, b base, name string, params map[st
 		if err != nil {
 			c.add(name+" derive with salt", err)
 		} else {
-			c.add(name+" derive with salt", fmt.Sprintf("%x %s %d %v", salted.Bytecode, salted.Address, salted.Counter, salted.CompilerAutoSalted))
+			// The 0 is the retired salt counter's column, kept so the records
+			// stay as they were.
+			c.add(name+" derive with salt", fmt.Sprintf("%x %s 0 %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
 		}
 	}
 	metadata, err := p.BuildBoundedAuthorizationMetadata(b.spendingKey, prepared, []byte("characterization program"))

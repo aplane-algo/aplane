@@ -1036,7 +1036,7 @@ return`,
 	if err != nil {
 		t.Fatalf("CompileWithSalt() error = %v", err)
 	}
-	if got.Counter != want.Counter || got.Address != want.Address || !bytes.Equal(got.Bytecode, want.Bytecode) {
+	if got.Address != want.Address || !bytes.Equal(got.Bytecode, want.Bytecode) {
 		t.Fatalf("CompileWithSalt() = %+v, want %+v", got, want)
 	}
 }

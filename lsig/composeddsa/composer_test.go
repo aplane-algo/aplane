@@ -228,7 +228,7 @@ func TestComposedDSAExplicitNoSaltStyleUsesUnmodifiedBytecode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
 	}
-	if got.Counter != want.Counter || got.Address != want.Address || string(got.Bytecode) != string(want.Bytecode) {
+	if got.Address != want.Address || string(got.Bytecode) != string(want.Bytecode) {
 		t.Fatalf("DeriveLsigWithSalt() = %+v, want %+v", got, want)
 	}
 }

@@ -174,8 +174,9 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 			signingArgs, templateFingerprint,
 		)
 	} else {
+		// An unsalted program records salt_counter 0.
 		payload = keys.NewDSALSigPayload(
-			keyType, baseKeyType, pub, priv, params, lsigBytecode, derived.Counter,
+			keyType, baseKeyType, pub, priv, params, lsigBytecode, 0,
 			tealSource, signingArgs, templateFingerprint,
 		)
 	}

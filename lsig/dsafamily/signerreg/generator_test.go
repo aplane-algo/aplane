@@ -4,6 +4,7 @@
 package signerreg
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -367,6 +368,38 @@ func TestGenerateRecordsTheAccountsOwnFingerprint(t *testing.T) {
 	defer stored.ZeroSecrets()
 	if stored.TemplateFingerprint != perKeyGeneratorFingerprint {
 		t.Fatalf("TemplateFingerprint = %q, want the shape fingerprint", stored.TemplateFingerprint)
+	}
+}
+
+// A DSA LogicSig the compiler did not auto-salt is unsalted: its key file has
+// no lsig_derivation and records salt_counter 0.
+func TestGenerateRecordsAnUnsaltedProgramWithCounterZero(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	logicsigdsa.Register(&perKeyGeneratorDSA{})
+	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
+
+	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
+	result, err := generator.GenerateFromSeed(context.Background(), paths, make([]byte, 64), cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	if !bytes.Contains(keyJSON, []byte(`"salt_counter": 0,`)) {
+		t.Fatal(`key file does not record "salt_counter": 0`)
+	}
+	stored, err := apkeys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer stored.ZeroSecrets()
+	if stored.LogicSigDerivation != "" || stored.SaltCounter == nil || *stored.SaltCounter != 0 {
+		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", stored.LogicSigDerivation, stored.SaltCounter)
 	}
 }
 

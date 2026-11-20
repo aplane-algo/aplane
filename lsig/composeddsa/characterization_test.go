@@ -362,7 +362,9 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 	if err != nil {
 		r.add(name+" derive with salt", err)
 	} else {
-		r.add(name+" derive with salt", fmt.Sprintf("%x %s %d %v", salted.Bytecode, salted.Address, salted.Counter, salted.CompilerAutoSalted))
+		// The 0 is the retired salt counter's column, kept so the records
+		// stay as they were.
+		r.add(name+" derive with salt", fmt.Sprintf("%x %s 0 %v", salted.Bytecode, salted.Address, salted.CompilerAutoSalted))
 	}
 	if _, err := provider.GenerateTEAL(publicKey[:len(publicKey)-1], prepared); err != nil {
 		r.add(name+" teal short key", err)

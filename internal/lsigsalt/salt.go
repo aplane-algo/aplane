@@ -41,7 +41,6 @@ const (
 type FindResult struct {
 	Bytecode           []byte
 	Address            types.Address
-	Counter            byte
 	CompilerAutoSalted bool
 }
 
@@ -54,8 +53,7 @@ func IsOnCurve(addr [32]byte) bool {
 
 // UseUnmodifiedOffCurve returns the address for bytecode as it is. It fails if
 // that address is on-curve, preserving APlane's persisted LogicSig key-file
-// invariant for templates with no salt. Counter is zero: an unsalted key file
-// records salt_counter 0.
+// invariant for templates with no salt.
 func UseUnmodifiedOffCurve(bytecode []byte) (FindResult, error) {
 	addr, err := deriveLogicSigAddress(bytecode)
 	if err != nil {
@@ -67,7 +65,6 @@ func UseUnmodifiedOffCurve(bytecode []byte) (FindResult, error) {
 	return FindResult{
 		Bytecode: append([]byte(nil), bytecode...),
 		Address:  addr,
-		Counter:  0,
 	}, nil
 }
 

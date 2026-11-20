@@ -50,9 +50,6 @@ func TestUseUnmodifiedOffCurve(t *testing.T) {
 			if !bytes.Equal(result.Bytecode, bytecode) {
 				t.Fatalf("UseUnmodifiedOffCurve() bytecode = %x, want %x", result.Bytecode, bytecode)
 			}
-			if result.Counter != 0 {
-				t.Fatalf("UseUnmodifiedOffCurve() counter = %d, want 0", result.Counter)
-			}
 			if IsOnCurve(result.Address) {
 				t.Fatal("UseUnmodifiedOffCurve() returned on-curve address")
 			}
