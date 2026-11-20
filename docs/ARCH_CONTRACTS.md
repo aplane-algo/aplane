@@ -158,11 +158,14 @@ Validation:
   to `10s`, `"0"` disables background `/status` polling, and nonzero values
   below `1s` are rejected
 - `networks.<token>.algod` is normalized into the runtime algod map
-- the companion Go, TypeScript, and Python SDKs read `config.yaml` as apshell
-  does: they accept exactly the fields apshell knows, at every depth, and
-  refuse any other, top-level `endpoint`, `ssh`, `signer_port` and `algod`
-  included, with apshell's `config field "<name>" is unknown or no longer
-  supported`. They resolve SSH-only connection profiles from `endpoints.yaml`.
+- the companion Go, TypeScript, and Python SDKs accept exactly apshell's
+  `config.yaml` field names, at every depth, and refuse any other, top-level
+  `endpoint`, `ssh`, `signer_port` and `algod` included, with apshell's
+  `config field "<name>" is unknown or no longer supported`. They validate
+  only the values they read, so some files apshell refuses still load in an
+  SDK: an empty file, an unsupported `schema_version`, or a bad
+  `signer_status_poll_interval`. They resolve SSH-only connection profiles
+  from `endpoints.yaml`.
   First-use trust is an explicit connection/enrollment option, not a
   config.yaml routing field.
 

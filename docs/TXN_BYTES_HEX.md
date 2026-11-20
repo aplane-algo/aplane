@@ -45,9 +45,6 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
   `max_opcode_cost` for the selected authorization path. Required for
   passthrough LogicSigs as well, where the declared program and argument sizes
   are checked against the observed ones.
-
-A request names no sender: approval display, policy and audit take the sender
-from the decoded `txn_bytes_hex`.
 - `pq_scheme` — foreign native-PQ hint (`"f1"`), mutually exclusive with
   `lsig_resources`; passthrough PQ is derived from the signed envelope.
 - `app_call_info` — optional approval metadata for app-call transactions; the
@@ -55,6 +52,9 @@ from the decoded `txn_bytes_hex`.
   when available.
 - `signed_txn_hex` — already-signed transaction bytes (msgpack, hex) for
   passthrough mode; mutually exclusive with the sign-mode fields.
+
+A request names no sender: approval display, policy and audit take the sender
+from the decoded `txn_bytes_hex`.
 
 Foreign-mode semantics:
 
