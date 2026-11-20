@@ -217,7 +217,7 @@ func TestEnvironmentAuditUsesManagedSocketWithoutSharedTempFiles(t *testing.T) {
 	if strings.Contains(audit, "/tmp/aplane-audit-version") {
 		t.Error("aplane-env-audit.sh retains a predictable shared-temp version probe")
 	}
-	if strings.Contains(audit, `read_top_level_value "$SIGNER_CONFIG" "ipc_path"`) {
+	if strings.Contains(audit, `yaml_value "$SIGNER_CONFIG" ipc_path`) {
 		t.Error("aplane-env-audit.sh still parses ipc_path independently of approbe")
 	}
 }

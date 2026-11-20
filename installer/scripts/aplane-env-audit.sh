@@ -6,15 +6,15 @@ CLIENT_DATA_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
-Usage: scripts/aplane-env-audit.sh [--signer-data <path>] [--client-data <path>]
+Usage: installer/scripts/aplane-env-audit.sh [--signer-data <path>] [--client-data <path>]
 
 Read-only audit of a local APlane environment. The script inspects config files,
-ports, listeners, token/key permissions, IPC socket state, and common partial
-install issues. It does not modify files.
+the client endpoint registry, ports, listeners, SSH key permissions, IPC socket
+state, and common partial install issues. It does not modify files.
 
 Defaults:
-  signer data: $APSIGNER_DATA, then ~/aplane/apsigner if present, then ~/apsigner
-  client data: $APCLIENT_DATA, then ~/aplane/apclient if present, then ~/apclient
+  signer data: $APSIGNER_DATA, then ~/aplane/apsigner
+  client data: $APCLIENT_DATA, then ~/aplane/apclient
 EOF
 }
 
@@ -77,16 +77,13 @@ expand_user_path() {
 resolve_data_dir() {
   local override="$1"
   local env_value="$2"
-  local local_candidate="$3"
-  local fallback="$4"
+  local default="$3"
   if [ -n "$override" ]; then
     expand_user_path "$override"
   elif [ -n "$env_value" ]; then
     expand_user_path "$env_value"
-  elif [ -d "$local_candidate" ]; then
-    printf '%s\n' "$local_candidate"
   else
-    printf '%s\n' "$fallback"
+    printf '%s\n' "$default"
   fi
 }
 
@@ -100,47 +97,158 @@ resolve_path() {
   fi
 }
 
-read_top_level_value() {
+# yaml_scalars prints one "<key path>\037<value>" line per key in a block-style
+# YAML file. The keys of a path are joined by \036, since an endpoint alias may
+# contain a dot. Any indentation width works: Go rewrites endpoints.yaml with
+# four spaces, where the installers write two.
+yaml_scalars() {
   local path="$1"
-  local key="$2"
   [ -f "$path" ] || return 0
-  awk -F: -v key="$key" '
-    $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
-      value = substr($0, index($0, ":") + 1)
-      sub(/[[:space:]]*#.*/, "", value)
+  awk '
+    /^[[:space:]]*(#|$)/ {
+      next
+    }
+    {
+      match($0, /^[[:space:]]*/)
+      indent = RLENGTH
+      line = substr($0, indent + 1)
+      if (index(line, ":") == 0) {
+        next
+      }
+      key = line
+      sub(/[[:space:]]*:.*/, "", key)
+      gsub(/^"|"$/, "", key)
+      value = line
+      sub(/^[^:]*:/, "", value)
+      sub(/[[:space:]]+#.*/, "", value)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
       gsub(/^"|"$/, "", value)
-      print value
-      exit
+      while (depth > 0 && indents[depth] >= indent) {
+        depth--
+      }
+      depth++
+      indents[depth] = indent
+      keys[depth] = key
+      key_path = keys[1]
+      for (i = 2; i <= depth; i++) {
+        key_path = key_path "\036" keys[i]
+      }
+      print key_path "\037" value
     }
   ' "$path"
 }
 
-read_section_value() {
+# yaml_value prints the value at the key path its remaining arguments name.
+yaml_value() {
   local path="$1"
-  local section_name="$2"
-  local key="$3"
-  [ -f "$path" ] || return 0
-  awk -F: -v section_name="$section_name" -v key="$key" '
-    /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-      next
-    }
-    $0 ~ "^[[:space:]]*" section_name "[[:space:]]*:[[:space:]]*($|#)" {
-      in_section = 1
-      next
-    }
-    /^[^[:space:]#][^:]*:/ {
-      in_section = 0
-    }
-    in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
-      value = substr($0, index($0, ":") + 1)
-      sub(/[[:space:]]*#.*/, "", value)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      gsub(/^"|"$/, "", value)
-      print value
-      exit
-    }
-  ' "$path"
+  shift
+  local want line
+  want="$(IFS=$'\036'; printf '%s' "$*")"
+  while IFS= read -r line; do
+    if [ "${line%%$'\037'*}" = "$want" ]; then
+      printf '%s\n' "${line#*$'\037'}"
+      return 0
+    fi
+  done < <(yaml_scalars "$path")
+}
+
+# load_client_endpoints fills the endpoint_* arrays from endpoints.yaml, in file
+# order, applying apshell's identity and known_hosts defaults.
+endpoint_aliases=()
+endpoint_roles=()
+endpoint_urls=()
+endpoint_identities=()
+endpoint_known_hosts=()
+load_client_endpoints() {
+  local path="$1"
+  local line key_path value rest alias field i
+  while IFS= read -r line; do
+    key_path="${line%%$'\037'*}"
+    value="${line#*$'\037'}"
+    case "$key_path" in
+      endpoints$'\036'*) ;;
+      *) continue ;;
+    esac
+    rest="${key_path#endpoints$'\036'}"
+    alias="${rest%%$'\036'*}"
+    if [ "$rest" = "$alias" ]; then
+      endpoint_aliases+=("$alias")
+      endpoint_roles+=("")
+      endpoint_urls+=("")
+      endpoint_identities+=(".ssh/id_ed25519")
+      endpoint_known_hosts+=(".ssh/known_hosts")
+      continue
+    fi
+    field="${rest#*$'\036'}"
+    i=$((${#endpoint_aliases[@]} - 1))
+    case "$field" in
+      role) endpoint_roles[i]="$value" ;;
+      url) endpoint_urls[i]="$value" ;;
+      identity_file) [ -z "$value" ] || endpoint_identities[i]="$value" ;;
+      known_hosts_path) [ -z "$value" ] || endpoint_known_hosts[i]="$value" ;;
+    esac
+  done < <(yaml_scalars "$path")
+}
+
+# endpoint_host and endpoint_port split an ssh://host[:port] URL; the port
+# defaults to 1127, as apshell's does.
+endpoint_authority() {
+  local authority="${1#ssh://}"
+  authority="${authority%%/*}"
+  printf '%s\n' "${authority##*@}"
+}
+
+endpoint_host() {
+  local authority
+  authority="$(endpoint_authority "$1")"
+  case "$authority" in
+    \[*) authority="${authority#[}"; printf '%s\n' "${authority%%]*}" ;;
+    *) printf '%s\n' "${authority%%:*}" ;;
+  esac
+}
+
+endpoint_port() {
+  local authority
+  authority="$(endpoint_authority "$1")"
+  authority="${authority##*]}"
+  case "$authority" in
+    *:*) printf '%s\n' "${authority##*:}" ;;
+    *) printf '%s\n' "1127" ;;
+  esac
+}
+
+is_loopback_host() {
+  case "$1" in
+    localhost|::1|127.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Endpoints usually share one SSH key and one known_hosts file; check each
+# file once.
+checked_paths=$'\n'
+first_check() {
+  case "$checked_paths" in
+    *$'\n'"$1"$'\n'*) return 1 ;;
+  esac
+  checked_paths="$checked_paths$1"$'\n'
+}
+
+check_client_ssh_files() {
+  local identity_file known_hosts_path
+  identity_file="$(resolve_path "$1" "$CLIENT_DATA")"
+  known_hosts_path="$(resolve_path "$2" "$CLIENT_DATA")"
+  if first_check "$identity_file"; then
+    check_mode_exact "client SSH key" "$identity_file" "600"
+    if [ -f "$identity_file.pub" ]; then
+      pass "client SSH pubkey" "$identity_file.pub"
+    else
+      info "client SSH pubkey" "missing: $identity_file.pub (not required for normal client use)"
+    fi
+  fi
+  if first_check "$known_hosts_path"; then
+    check_file_exists "known_hosts" "$known_hosts_path"
+  fi
 }
 
 file_mode() {
@@ -316,12 +424,13 @@ print_processes() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SIGNER_DATA="$(resolve_data_dir "$SIGNER_DATA_OVERRIDE" "${APSIGNER_DATA:-}" "$HOME/aplane/apsigner" "$HOME/apsigner")"
-CLIENT_DATA="$(resolve_data_dir "$CLIENT_DATA_OVERRIDE" "${APCLIENT_DATA:-}" "$HOME/aplane/apclient" "$HOME/apclient")"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SIGNER_DATA="$(resolve_data_dir "$SIGNER_DATA_OVERRIDE" "${APSIGNER_DATA:-}" "$HOME/aplane/apsigner")"
+CLIENT_DATA="$(resolve_data_dir "$CLIENT_DATA_OVERRIDE" "${APCLIENT_DATA:-}" "$HOME/aplane/apclient")"
 
 SIGNER_CONFIG="$SIGNER_DATA/config.yaml"
 CLIENT_CONFIG="$CLIENT_DATA/config.yaml"
+CLIENT_ENDPOINTS="$CLIENT_DATA/endpoints.yaml"
 
 SIGNER_SERVICE_USER="aplane"
 SIGNER_SERVICE_GROUP="aplane"
@@ -368,23 +477,14 @@ signer_host_key_path=""
 # the daemon is its only writer.
 signer_authorized_keys_path="$SIGNER_DATA/identities/default/.ssh/authorized_keys"
 if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
-  signer_port="$(read_top_level_value "$SIGNER_CONFIG" "signer_port")"
-  signer_ssh_port="$(read_section_value "$SIGNER_CONFIG" "ssh" "port")"
-  signer_host_key_path="$(read_section_value "$SIGNER_CONFIG" "ssh" "host_key_path")"
+  signer_port="$(yaml_value "$SIGNER_CONFIG" endpoint signer_port)"
+  signer_ssh_port="$(yaml_value "$SIGNER_CONFIG" endpoint ssh port)"
+  signer_host_key_path="$(yaml_value "$SIGNER_CONFIG" endpoint ssh host_key_path)"
 fi
-
-client_ssh_host="$(read_section_value "$CLIENT_CONFIG" "ssh" "host")"
-client_ssh_port="$(read_section_value "$CLIENT_CONFIG" "ssh" "port")"
-client_identity_file="$(read_section_value "$CLIENT_CONFIG" "ssh" "identity_file")"
-client_known_hosts_path="$(read_section_value "$CLIENT_CONFIG" "ssh" "known_hosts_path")"
-
 [ -n "$signer_host_key_path" ] || signer_host_key_path=".ssh/ssh_host_key"
-[ -n "$client_identity_file" ] || client_identity_file=".ssh/id_ed25519"
-[ -n "$client_known_hosts_path" ] || client_known_hosts_path=".ssh/known_hosts"
-
 signer_host_key_path="$(resolve_path "$signer_host_key_path" "$SIGNER_DATA")"
-client_identity_file="$(resolve_path "$client_identity_file" "$CLIENT_DATA")"
-client_known_hosts_path="$(resolve_path "$client_known_hosts_path" "$CLIENT_DATA")"
+
+load_client_endpoints "$CLIENT_ENDPOINTS"
 
 echo "APlane Environment Audit"
 echo "Repository: $REPO_ROOT"
@@ -414,22 +514,34 @@ else
   pass "signer store private" "$SIGNER_DATA is not traversable by this operator"
 fi
 check_file_exists "client config" "$CLIENT_CONFIG"
+check_file_exists "client endpoints" "$CLIENT_ENDPOINTS"
 info "signer_port" "${signer_port:-not configured}"
 info "signer ssh.port" "${signer_ssh_port:-not configured}"
-info "client ssh.host" "${client_ssh_host:-not configured}"
-info "client ssh.port" "${client_ssh_port:-not configured}"
+if [ "${#endpoint_aliases[@]}" -eq 0 ]; then
+  info "client endpoints" "none configured"
+fi
+for ((i = 0; i < ${#endpoint_aliases[@]}; i++)); do
+  info "endpoint ${endpoint_aliases[i]}" "${endpoint_roles[i]:-no role} ${endpoint_urls[i]:-no url}"
+done
 
-if [ -n "$signer_ssh_port" ] && [ -n "$client_ssh_port" ]; then
-  if [ "$signer_ssh_port" = "$client_ssh_port" ]; then
-    pass "SSH port match" "$signer_ssh_port"
-  else
-    warn "SSH port mismatch" "signer=$signer_ssh_port client=$client_ssh_port"
+# An endpoint on this machine must use the local signer's SSH port.
+for ((i = 0; i < ${#endpoint_aliases[@]}; i++)); do
+  endpoint_url="${endpoint_urls[i]}"
+  [ -n "$endpoint_url" ] || continue
+  endpoint_ssh_host="$(endpoint_host "$endpoint_url")"
+  is_loopback_host "$endpoint_ssh_host" || continue
+  endpoint_ssh_port="$(endpoint_port "$endpoint_url")"
+  if [ -n "$signer_ssh_port" ]; then
+    if [ "$signer_ssh_port" = "$endpoint_ssh_port" ]; then
+      pass "SSH port match" "${endpoint_aliases[i]}: $signer_ssh_port"
+    else
+      warn "SSH port mismatch" "${endpoint_aliases[i]}: signer=$signer_ssh_port client=$endpoint_ssh_port"
+    fi
   fi
-fi
-
-if [ "$(uname -s)" = "Darwin" ] && [ "${client_ssh_host:-}" = "localhost" ]; then
-  info "macOS localhost" "client uses localhost; current apshell dials IPv4 for localhost"
-fi
+  if [ "$(uname -s)" = "Darwin" ] && [ "$endpoint_ssh_host" = "localhost" ]; then
+    info "macOS localhost" "${endpoint_aliases[i]} uses localhost; current apshell dials IPv4 for localhost"
+  fi
+done
 
 section "Runtime State"
 processes="$(print_processes "apsigner" || true)"
@@ -464,13 +576,12 @@ else
 fi
 
 section "SSH Keys"
-check_mode_exact "client SSH key" "$client_identity_file" "600"
-if [ -f "$client_identity_file.pub" ]; then
-  pass "client SSH pubkey" "$client_identity_file.pub"
-else
-  info "client SSH pubkey" "missing: $client_identity_file.pub (not required for normal client use)"
+if [ "${#endpoint_aliases[@]}" -eq 0 ]; then
+  check_client_ssh_files ".ssh/id_ed25519" ".ssh/known_hosts"
 fi
-check_file_exists "known_hosts" "$client_known_hosts_path"
+for ((i = 0; i < ${#endpoint_aliases[@]}; i++)); do
+  check_client_ssh_files "${endpoint_identities[i]}" "${endpoint_known_hosts[i]}"
+done
 if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
   check_mode_exact "signer host key" "$signer_host_key_path" "600"
   check_file_exists "enrolled clients registry" "$signer_authorized_keys_path"
@@ -481,13 +592,15 @@ fi
 section "Keystore"
 if [ "$SIGNER_STORE_TRAVERSABLE" -eq 1 ]; then
   check_file_exists "keystore" "$SIGNER_DATA/identities/default/.keystore"
-  if [ -d "$SIGNER_DATA/identities/default/keys" ]; then
-    account_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.key' 2>/dev/null | wc -l | tr -d ' ')"
-    cosigner_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.cos' 2>/dev/null | wc -l | tr -d ' ')"
-    managed_count="$((account_count + cosigner_count))"
-    pass "key directory" "$SIGNER_DATA/identities/default/keys ($managed_count managed credentials: $account_count account .key, $cosigner_count cosigner .cos)"
+  check_file_exists "store root" "$SIGNER_DATA/identities/default/store-root.enc"
+  # The encrypted store root selects the current generation, so the audit
+  # counts generations rather than guessing which one holds the keys.
+  generations_dir="$SIGNER_DATA/identities/default/generations"
+  generation_count="$(find "$generations_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$generation_count" -gt 0 ]; then
+    pass "generations" "$generations_dir ($generation_count)"
   else
-    warn "key directory" "missing: $SIGNER_DATA/identities/default/keys"
+    warn "generations" "missing or empty: $generations_dir"
   fi
 else
   info "keystore" "private store contents not inspected"
