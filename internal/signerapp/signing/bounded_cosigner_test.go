@@ -151,7 +151,6 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 			Type: "test.bounded-cosigner.v1", Category: keys.CategoryDSALsig,
 			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
-			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 		}
 	}
 	target := signerapi.AssemblyTarget{
@@ -278,8 +277,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 				BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 				Value:    &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), spendingPrivateKey...)},
 				Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(test.metadata),
-				Parameters:             map[string]string{boundedmeta.RekeyListEntriesParameter: listedTarget.String()},
-				SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+				Parameters: map[string]string{boundedmeta.RekeyListEntriesParameter: listedTarget.String()},
 			}
 			signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial})
 			if test.want != "" {
@@ -491,7 +489,6 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 					Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
 					BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 					Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
-					SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 				}
 			}
 			target := signerapi.AssemblyTarget{

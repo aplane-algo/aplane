@@ -85,7 +85,7 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, summary.TemplateFingerprint, summary.Parameters, summary.BoundedAuthorization)
 
-		if summary.SigningMetadataVersion > 0 {
+		if len(summary.SigningArgs) > 0 {
 			keyInfo.SigningArgs = keytypemeta.RuntimeArgs(summary.SigningArgs)
 		}
 
