@@ -71,8 +71,11 @@ func TestAppolicyShipsWithTheSignerBinaries(t *testing.T) {
 }
 
 // TestInstallerInstallsTheReleaseBinaries pins install.sh's binary list to the
-// release package's, so an install from a checkout installs what a release
-// ships and nothing else that happens to sit in bin/. uninstall.sh must remove
+// binaries every release archive carries: the bootstrap package, and the
+// Linux and macOS archives release.yml and make release-local build (macOS has
+// no appass-systemd-creds). So an install from a checkout installs what a
+// release ships and nothing else that happens to sit in bin/, and a binary
+// added to one archive alone fails here. uninstall.sh must remove
 // each of them: systemd mode from one bindir, local mode from the signer and
 // client bindirs, and client-only mode the same client binaries.
 func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
@@ -95,6 +98,17 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 	if !slices.Equal(installed, packaged) {
 		t.Errorf("install.sh installs %v, but a release packages %v", installed, packaged)
 	}
+	want := slices.Sorted(slices.Values(installed))
+	wantDarwin := slices.DeleteFunc(slices.Clone(want), func(name string) bool { return name == "appass-systemd-creds" })
+	for _, name := range []string{filepath.Join(".github", "workflows", "release.yml"), "Makefile"} {
+		linux, darwin := archiveBinaryLists(t, filepath.Join(root, name))
+		if !slices.Equal(linux, want) {
+			t.Errorf("%s packages %v in a Linux archive, want %v", name, linux, want)
+		}
+		if !slices.Equal(darwin, wantDarwin) {
+			t.Errorf("%s packages %v in a macOS archive, want %v", name, darwin, wantDarwin)
+		}
+	}
 
 	uninstaller, err := os.ReadFile(filepath.Join(root, "uninstall.sh"))
 	if err != nil {
@@ -114,7 +128,6 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 			clients = append(clients, names)
 		}
 	}
-	want := slices.Sorted(slices.Values(installed))
 	if got := slices.Sorted(slices.Values(systemd)); !slices.Equal(got, want) {
 		t.Errorf("systemd uninstall removes %v, want %v", got, want)
 	}
@@ -126,6 +139,41 @@ func TestInstallerInstallsTheReleaseBinaries(t *testing.T) {
 			t.Errorf("signer bindir plus client bindir removal lists cover %v, want %v", got, want)
 		}
 	}
+}
+
+// archiveBinaryLists returns, sorted, the binaries a build file copies into
+// the Linux and the macOS archive's dist/staging/aplane/bin/.
+func archiveBinaryLists(t *testing.T, path string) (linux, darwin []string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.ReplaceAll(string(data), "\\\n", " ")
+	name := regexp.MustCompile(`[A-Za-z0-9-]+$`)
+	var linuxCopies, darwinCopies int
+	for _, command := range strings.FieldsFunc(joined, func(r rune) bool { return r == '\n' || r == ';' }) {
+		fields := strings.Fields(command)
+		if len(fields) < 3 || fields[0] != "cp" || fields[len(fields)-1] != "dist/staging/aplane/bin/" {
+			continue
+		}
+		var names []string
+		for _, source := range fields[1 : len(fields)-1] {
+			names = append(names, name.FindString(source))
+		}
+		slices.Sort(names)
+		if strings.Contains(command, "darwin") {
+			darwin = names
+			darwinCopies++
+		} else {
+			linux = names
+			linuxCopies++
+		}
+	}
+	if linuxCopies != 1 || darwinCopies != 1 {
+		t.Fatalf("%s has %d Linux and %d macOS archive binary copies, want one of each", path, linuxCopies, darwinCopies)
+	}
+	return linux, darwin
 }
 
 func TestRescuePolicyOutputCannotBypassVerifiedStoreRead(t *testing.T) {
