@@ -30,7 +30,7 @@ func TestBuildCommandLinuxStateDir(t *testing.T) {
 		t.Skip("bubblewrap not installed")
 	}
 
-	withCmd, err := BuildCommand(Config{
+	withCmd, _, err := BuildCommand(Config{
 		PluginDir: "/tmp/test-plugin",
 		StateDir:  "/tmp/test-data/plugin-state/foo",
 		ExecPath:  "/tmp/test-plugin/run.sh",
@@ -46,7 +46,7 @@ func TestBuildCommandLinuxStateDir(t *testing.T) {
 		t.Error("plugin dir must remain read-only")
 	}
 
-	withoutCmd, err := BuildCommand(Config{
+	withoutCmd, _, err := BuildCommand(Config{
 		PluginDir: "/tmp/test-plugin",
 		ExecPath:  "/tmp/test-plugin/run.sh",
 	})

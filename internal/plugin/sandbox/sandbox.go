@@ -44,16 +44,19 @@ type Config struct {
 // ErrSandboxUnavailable is returned when sandboxing is required but not available
 var ErrSandboxUnavailable = errors.New("sandbox unavailable: external plugins require sandboxing for security")
 
-// BuildCommand creates an exec.Cmd with appropriate sandboxing for the current OS.
-// Returns an error if sandboxing is not available - plugins cannot run unsandboxed.
-func BuildCommand(cfg Config) (*exec.Cmd, error) {
+// BuildCommand creates an exec.Cmd with appropriate sandboxing for the current
+// OS, and names the sandbox for display. Returns an error if sandboxing is not
+// available - plugins cannot run unsandboxed.
+func BuildCommand(cfg Config) (*exec.Cmd, string, error) {
 	switch runtime.GOOS {
 	case "linux":
-		return buildLinuxCommand(cfg)
+		cmd, err := buildLinuxCommand(cfg)
+		return cmd, "bubblewrap (Linux)", err
 	case "darwin":
-		return buildDarwinCommand(cfg)
+		cmd, err := buildDarwinCommand(cfg)
+		return cmd, "sandbox-exec (macOS)", err
 	default:
-		return nil, fmt.Errorf("%w: unsupported platform %s (use WSL2 on Windows)", ErrSandboxUnavailable, runtime.GOOS)
+		return nil, "", fmt.Errorf("%w: unsupported platform %s (use WSL2 on Windows)", ErrSandboxUnavailable, runtime.GOOS)
 	}
 }
 
@@ -326,22 +329,24 @@ var secretEnvSuffixes = []string{
 	"_PASSPHRASE", "_MNEMONIC", "_PRIVATE_KEY", "_SEED",
 }
 
+// secretEnvKeys are credential variables secretEnvSuffixes does not catch.
+var secretEnvKeys = map[string]bool{
+	"AWS_ACCESS_KEY_ID":     true,
+	"AWS_SECRET_ACCESS_KEY": true,
+	"AWS_SESSION_TOKEN":     true,
+	"GITHUB_TOKEN":          true,
+	"GH_TOKEN":              true,
+	"NPM_TOKEN":             true,
+	"SSH_AUTH_SOCK":         true,
+	"SSH_AGENT_PID":         true,
+	"GPG_AGENT_INFO":        true,
+}
+
 func sensitiveEnvKey(pluginName, key string) bool {
 	if hostEnvKeys[key] || pluginConfigEnvKeys[pluginName][key] {
 		return false
 	}
-	exact := map[string]bool{
-		"AWS_ACCESS_KEY_ID":     true,
-		"AWS_SECRET_ACCESS_KEY": true,
-		"AWS_SESSION_TOKEN":     true,
-		"GITHUB_TOKEN":          true,
-		"GH_TOKEN":              true,
-		"NPM_TOKEN":             true,
-		"SSH_AUTH_SOCK":         true,
-		"SSH_AGENT_PID":         true,
-		"GPG_AGENT_INFO":        true,
-	}
-	if exact[key] {
+	if secretEnvKeys[key] {
 		return true
 	}
 	upper := strings.ToUpper(key)
@@ -351,22 +356,4 @@ func sensitiveEnvKey(pluginName, key string) bool {
 		}
 	}
 	return false
-}
-
-// GetSandboxInfo returns information about the sandbox for display
-func GetSandboxInfo() string {
-	switch runtime.GOOS {
-	case "linux":
-		if _, err := exec.LookPath("bwrap"); err == nil {
-			return "bubblewrap (Linux)"
-		}
-		return "unavailable (install bubblewrap)"
-	case "darwin":
-		if _, err := exec.LookPath("sandbox-exec"); err == nil {
-			return "sandbox-exec (macOS)"
-		}
-		return "unavailable"
-	default:
-		return fmt.Sprintf("unsupported (%s)", runtime.GOOS)
-	}
 }

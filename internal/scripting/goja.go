@@ -131,20 +131,13 @@ func (r *GojaRunner) RunWithContext(ctx context.Context, code string) (result Re
 
 // SetOutput sets the function used for print() and log() output.
 func (r *GojaRunner) SetOutput(fn func(string)) {
-	var warning string
-	var output func(string)
-
 	r.mu.Lock()
 	if fn == nil {
 		r.output = func(s string) {}
 	} else {
 		r.output = fn
 	}
-	if r.startupWarning != "" && !r.warningEmitted {
-		warning = r.startupWarning
-		output = r.output
-		r.warningEmitted = true
-	}
+	warning, output := r.takeStartupWarningLocked()
 	r.mu.Unlock()
 
 	if warning != "" {
@@ -226,18 +219,21 @@ func (r *GojaRunner) getOutput() func(string) {
 }
 
 func (r *GojaRunner) emitStartupWarning() {
-	var warning string
-	var output func(string)
-
 	r.mu.Lock()
-	if r.startupWarning != "" && !r.warningEmitted {
-		warning = r.startupWarning
-		output = r.output
-		r.warningEmitted = true
-	}
+	warning, output := r.takeStartupWarningLocked()
 	r.mu.Unlock()
 
 	if warning != "" {
 		output(warning)
 	}
+}
+
+// takeStartupWarningLocked returns the startup warning and the output to
+// print it on the first time it is called, and nothing after. r.mu is held.
+func (r *GojaRunner) takeStartupWarningLocked() (string, func(string)) {
+	if r.startupWarning == "" || r.warningEmitted {
+		return "", nil
+	}
+	r.warningEmitted = true
+	return r.startupWarning, r.output
 }

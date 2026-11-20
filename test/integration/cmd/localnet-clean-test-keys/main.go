@@ -55,7 +55,7 @@ func run() error {
 		return err
 	}
 	defer closeClient()
-	keys, err := client.GetKeys()
+	keys, err := client.GetKeysWithContext(context.Background())
 	if err != nil {
 		return fmt.Errorf("list signer keys from %s: %w", resolved.endpointURL, err)
 	}
@@ -79,7 +79,7 @@ func run() error {
 	var failed []error
 	deleted := 0
 	for _, key := range keys.Keys {
-		resp, err := client.AdminDeleteKey(key.Address)
+		resp, err := client.AdminDeleteKeyWithContext(context.Background(), key.Address)
 		if err != nil {
 			failed = append(failed, fmt.Errorf("%s: %w", key.Address, err))
 			continue

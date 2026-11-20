@@ -419,7 +419,7 @@ teal: |
 			}
 
 			destClient := signerclient.NewSignerClient(destSigner.GetURL())
-			keyInventory, err := destClient.GetKeys()
+			keyInventory, err := destClient.GetKeysWithContext(context.Background())
 			if err != nil {
 				t.Fatalf("list restored destination credentials: %v", err)
 			}
@@ -434,7 +434,7 @@ teal: |
 				t.Fatalf("restored credential key type = %q, want %q", listedKeyType, keyType)
 			}
 			if tc.activateOnSource {
-				destKeyTypes, err := destClient.GetKeyTypes()
+				destKeyTypes, err := destClient.GetKeyTypesWithContext(context.Background())
 				if err != nil {
 					t.Fatalf("list destination key types: %v", err)
 				}
@@ -743,7 +743,7 @@ func mustAdminGenerateKeyNoCleanup(t *testing.T, signerClient *signerclient.Clie
 		}
 		address = restored
 	} else {
-		resp, err := signerClient.AdminGenerate(keyType, params)
+		resp, err := signerClient.AdminGenerateWithContext(context.Background(), keyType, params)
 		if err != nil {
 			t.Fatalf("failed to generate %s via admin API: %v", keyType, err)
 		}

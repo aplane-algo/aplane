@@ -46,7 +46,7 @@ func TestConnectOpensNoLocalListener(t *testing.T) {
 	if result.KeyCount != 1 || requests.Load() != 1 {
 		t.Fatalf("result = %+v after %d request(s), want a connection that read one key", result, requests.Load())
 	}
-	if _, err := state.SignerClient.GetKeys(); err != nil || requests.Load() != 2 {
+	if _, err := state.SignerClient.GetKeysWithContext(context.Background()); err != nil || requests.Load() != 2 {
 		t.Fatalf("a later request failed (%v) or did not reach the node (%d requests)", err, requests.Load())
 	}
 	for inode := range listeningSockets(t) {
@@ -103,7 +103,7 @@ func TestConnectionOutlivesTheContextItWasMadeUnder(t *testing.T) {
 	}
 	t.Cleanup(func() { state.Disconnect(nil) })
 	cancel()
-	if _, err := state.SignerClient.GetKeys(); err != nil {
+	if _, err := state.SignerClient.GetKeysWithContext(context.Background()); err != nil {
 		t.Fatalf("a request after the connecting context ended failed: %v", err)
 	}
 }

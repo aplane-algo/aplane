@@ -190,7 +190,7 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 		return ClientEndpointConfig{}, err
 	}
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
-	if err := validateClientEndpointURL(alias, endpoint); err != nil {
+	if err := validateClientEndpointURL(endpoint.URL); err != nil {
 		return ClientEndpointConfig{}, err
 	}
 	return endpoint, nil

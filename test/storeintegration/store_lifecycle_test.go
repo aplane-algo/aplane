@@ -4,6 +4,7 @@
 package storeintegration_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
@@ -183,7 +184,7 @@ func storeClient(t *testing.T, env *storeEnv) *signerclient.Client {
 
 func mustGenerateEd25519(t *testing.T, env *storeEnv) string {
 	t.Helper()
-	result, err := storeClient(t, env).AdminGenerate("ed25519", nil)
+	result, err := storeClient(t, env).AdminGenerateWithContext(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("generate ed25519 key: %v", err)
 	}
@@ -216,7 +217,7 @@ func mustWaitForAddresses(t *testing.T, env *storeEnv, addresses ...string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		result, err := storeClient(t, env).GetKeys()
+		result, err := storeClient(t, env).GetKeysWithContext(context.Background())
 		if err == nil && !result.Locked {
 			seen := make(map[string]bool, len(result.Keys))
 			for _, key := range result.Keys {
@@ -237,7 +238,7 @@ func mustWaitForAddresses(t *testing.T, env *storeEnv, addresses ...string) {
 
 func assertCanSign(t *testing.T, env *storeEnv, address string) {
 	t.Helper()
-	response, err := storeClient(t, env).RequestGroupSign([]signerapi.SignRequest{
+	response, err := storeClient(t, env).RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
 		mustOfflineSignRequest(t, address),
 	})
 	if err != nil {
@@ -287,7 +288,7 @@ func mustOfflineSignRequest(t *testing.T, address string) signerapi.SignRequest 
 
 func assertSigningBlocked(t *testing.T, env *storeEnv, address string) {
 	t.Helper()
-	response, err := storeClient(t, env).RequestGroupSign([]signerapi.SignRequest{
+	response, err := storeClient(t, env).RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
 		mustOfflineSignRequest(t, address),
 	})
 	if err == nil {
@@ -300,7 +301,7 @@ func assertSigningBlocked(t *testing.T, env *storeEnv, address string) {
 
 func assertSignerState(t *testing.T, env *storeEnv, want string) {
 	t.Helper()
-	status, err := storeClient(t, env).GetStatus()
+	status, err := storeClient(t, env).GetStatusWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("get signer status: %v", err)
 	}

@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -132,14 +133,14 @@ func TestKeyDerivationRegression(t *testing.T) {
 					t.Fatalf("ImportKeyWithTypeAndParams(%s) failed: %v", tc.keyType, err)
 				}
 			} else {
-				resp, genErr := signerClient.AdminGenerate(tc.keyType, tc.params)
+				resp, genErr := signerClient.AdminGenerateWithContext(context.Background(), tc.keyType, tc.params)
 				if genErr != nil {
 					t.Fatalf("AdminGenerate(%s) failed: %v", tc.keyType, genErr)
 				}
 				got = resp.Address
 			}
 			t.Cleanup(func() {
-				if _, cErr := signerClient.AdminDeleteKey(got); cErr != nil {
+				if _, cErr := signerClient.AdminDeleteKeyWithContext(context.Background(), got); cErr != nil {
 					t.Logf("cleanup: AdminDeleteKey(%s) failed: %v", got, cErr)
 				}
 			})

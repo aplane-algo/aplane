@@ -139,13 +139,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid signer_status_poll_interval in config: %w", err)
 	}
 
-	// Validate algod map keys are valid context tokens.
-	for network := range config.Algod {
-		if err := ValidateNetworkID(network); err != nil {
-			return Config{}, fmt.Errorf("invalid network in algod config: %w", err)
-		}
-	}
-
 	// Fill in defaults for missing values
 	defaults := DefaultConfig()
 	if config.Theme == "" {

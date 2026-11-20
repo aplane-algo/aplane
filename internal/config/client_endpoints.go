@@ -84,7 +84,7 @@ func LoadClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, error) 
 		if err := ValidateClientEndpointAlias(alias); err != nil {
 			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		normalized, err := normalizeClientEndpointConfig(dataDir, alias, endpoint)
+		normalized, err := normalizeClientEndpointConfig(dataDir, endpoint)
 		if err != nil {
 			return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
@@ -129,7 +129,7 @@ func ValidateClientEndpointRole(role string) error {
 	}
 }
 
-func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
+func normalizeClientEndpointConfig(dataDir string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
 	endpoint.Role = strings.TrimSpace(endpoint.Role)
 	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 		return endpoint, err
@@ -138,7 +138,7 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 	if endpoint.URL == "" {
 		return endpoint, fmt.Errorf("url is required")
 	}
-	if err := validateClientEndpointURL(alias, endpoint); err != nil {
+	if err := validateClientEndpointURL(endpoint.URL); err != nil {
 		return endpoint, err
 	}
 
@@ -157,11 +157,11 @@ func normalizeClientEndpointConfig(dataDir, alias string, endpoint ClientEndpoin
 // through its SSH server, which authenticates the client's enrolled key and
 // hands the API channel to the node's REST handler with that identity; there
 // is no credential a raw HTTP endpoint could present.
-func validateClientEndpointURL(_ string, endpoint ClientEndpointConfig) error {
-	if endpoint.URL == "self" {
-		return fmt.Errorf("url %q is not supported; configure an explicit ssh://host[:port] endpoint", endpoint.URL)
+func validateClientEndpointURL(rawURL string) error {
+	if rawURL == "self" {
+		return fmt.Errorf("url %q is not supported; configure an explicit ssh://host[:port] endpoint", rawURL)
 	}
-	parsed, err := url.Parse(endpoint.URL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid url: %w", err)
 	}
@@ -228,7 +228,7 @@ func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 	if len(r.Endpoints) > 0 {
 		out.Endpoints = make(map[string]ClientEndpointConfig, len(r.Endpoints))
 		for alias, endpoint := range r.Endpoints {
-			out.Endpoints[alias] = cloneClientEndpointConfig(endpoint)
+			out.Endpoints[alias] = endpoint
 		}
 	}
 	return out
@@ -240,16 +240,12 @@ func (r ClientEndpointRegistry) DefaultEndpoint() (string, ClientEndpointConfig,
 		return "", ClientEndpointConfig{}, false
 	}
 	endpoint, ok := r.Endpoints[alias]
-	return alias, cloneClientEndpointConfig(endpoint), ok
+	return alias, endpoint, ok
 }
 
 func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bool) {
 	endpoint, ok := r.Endpoints[alias]
-	return cloneClientEndpointConfig(endpoint), ok
-}
-
-func cloneClientEndpointConfig(endpoint ClientEndpointConfig) ClientEndpointConfig {
-	return endpoint
+	return endpoint, ok
 }
 
 func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {

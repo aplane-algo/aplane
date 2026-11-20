@@ -309,7 +309,7 @@ func TestAtomicSendGivesEachLogicSigAccountItsArgument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to build payment: %v", err)
 	}
-	_, err = signerclient.NewSignerClient(env.signerd.GetURL()).RequestGroupSign([]signerapi.SignRequest{{
+	_, err = signerclient.NewSignerClient(env.signerd.GetURL()).RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{
 		AuthAddress: native, TxnSender: native,
 		TxnBytesHex: hex.EncodeToString(append([]byte("TX"), msgpack.Encode(txn)...)),
 		LsigArgs:    map[string]string{"preimage": hex.EncodeToString([]byte(preimage))},

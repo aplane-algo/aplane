@@ -333,9 +333,6 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 // keyRegOnlineOptions reads the participation keys of an online keyreg()
 // from its options into params.
 func (a *API) keyRegOnlineOptions(call goja.FunctionCall, params *engine.KeyRegParams) {
-	if len(call.Arguments) < 3 {
-		panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
-	}
 	opts := a.objectArg(call, 2, "keyreg()")
 	if opts == nil {
 		panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
@@ -573,11 +570,7 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 	filepath := a.stringArg(call, 0)
 
 	wait := true
-	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) && !goja.IsNull(call.Arguments[1]) {
-		m := a.objectArg(call, 1, "sign()")
-		if m == nil {
-			panic(a.runtime.ToValue("sign() options must be an object"))
-		}
+	if m := a.objectArg(call, 1, "sign()"); m != nil {
 		a.refuseUnknownKeys(m, "sign() option", "wait")
 		if w, ok := a.optionBool(m, "wait", "sign()"); ok {
 			wait = w

@@ -1259,7 +1259,7 @@ requests := []signerapi.SignRequest{
 }
 
 // Send to server
-resp, err := signerClient.RequestGroupSign(requests)
+resp, err := signerClient.RequestGroupSignWithContext(ctx, requests)
 
 // After checking the response, decode every nonempty slot and submit the group once.
 var groupBytes []byte

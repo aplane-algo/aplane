@@ -236,9 +236,12 @@ func TestBuildCommandLinux(t *testing.T) {
 		Env:       []string{"HOME=/home/test", "PATH=/usr/bin"},
 	}
 
-	cmd, err := BuildCommand(cfg)
+	cmd, name, err := BuildCommand(cfg)
 	if err != nil {
 		t.Fatalf("BuildCommand() error: %v", err)
+	}
+	if name != "bubblewrap (Linux)" {
+		t.Errorf("BuildCommand() sandbox = %q, want bubblewrap (Linux)", name)
 	}
 
 	args := strings.Join(cmd.Args, " ")
@@ -279,35 +282,6 @@ func TestBuildCommandLinux(t *testing.T) {
 	// Should include plugin args after --
 	if !strings.Contains(args, "-- /tmp/test-plugin/run.sh --foo bar") {
 		t.Errorf("should include plugin command and args, got: %s", args)
-	}
-}
-
-func TestGetSandboxInfo(t *testing.T) {
-	info := GetSandboxInfo()
-	if info == "" {
-		t.Error("GetSandboxInfo() should return non-empty string")
-	}
-
-	switch runtime.GOOS {
-	case "linux":
-		if _, err := exec.LookPath("bwrap"); err == nil {
-			if !strings.Contains(info, "bubblewrap") {
-				t.Errorf("GetSandboxInfo() = %q, want containing 'bubblewrap'", info)
-			}
-		} else {
-			if !strings.Contains(info, "unavailable") {
-				t.Errorf("GetSandboxInfo() = %q, want containing 'unavailable'", info)
-			}
-		}
-	case "darwin":
-		// Either "sandbox-exec" or "unavailable"
-		if !strings.Contains(info, "sandbox") && !strings.Contains(info, "unavailable") {
-			t.Errorf("GetSandboxInfo() = %q, unexpected on darwin", info)
-		}
-	default:
-		if !strings.Contains(info, "unsupported") {
-			t.Errorf("GetSandboxInfo() = %q, want containing 'unsupported'", info)
-		}
 	}
 }
 

@@ -896,7 +896,7 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 	}
 	storedMaxFee := func(account string) uint64 {
 		t.Helper()
-		keys, err := client.GetKeys()
+		keys, err := client.GetKeysWithContext(context.Background())
 		if err != nil {
 			t.Fatalf("list keys: %v", err)
 		}

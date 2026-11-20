@@ -20,12 +20,9 @@ import (
 	"github.com/dop251/goja"
 )
 
-// maxSafeUint64Float is the exclusive upper bound for a float64 -> uint64
-// conversion. At or above 2^63 the cast is implementation-defined (it produces
-// garbage), so such values are rejected. Note that float64 cannot represent
-// consecutive integers above 2^53; an amount that large was already rounded by
-// the JS engine before it reached Go, so the precise bound only needs to fence
-// off the garbage-cast region.
+// maxSafeUint64Float is 2^63. At or above it a float64 -> uint64 cast is
+// implementation-defined; such a value is refused as too large, before the
+// tighter maxSafeJSInteger bound refuses what JavaScript has already rounded.
 const maxSafeUint64Float = float64(1 << 63)
 
 // validateUint64Float rejects float64 amounts that cannot be converted to a
@@ -267,38 +264,14 @@ func exactJSONNumbers(v interface{}) (interface{}, error) {
 	}
 }
 
-// toUint64 converts a Goja value to uint64.
-// Panics with a JS exception if the value is negative.
+// toUint64 reads a Goja value as a uint64 by toUint64Interface's rules and
+// throws a JS exception for a value it refuses.
 func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
-	switch val := v.Export().(type) {
-	case int64:
-		if val < 0 {
-			panic(vm.ToValue("value cannot be negative"))
-		}
-		return uint64(val)
-	case float64:
-		if err := validateUint64Float(val); err != nil {
-			panic(vm.ToValue(err.Error()))
-		}
-		return uint64(val)
-	case int:
-		if val < 0 {
-			panic(vm.ToValue("value cannot be negative"))
-		}
-		return uint64(val)
-	case uint64:
-		return val
-	default:
-		// A decimal string or a BigInt for a value JavaScript can't hold
-		// exactly. Nothing else: null, undefined, booleans and objects
-		// would be coerced to 0, 0, 1 and NaN, and "0x10", "1e6" and ""
-		// read as numbers the script did not write.
-		parsed, err := toUint64Interface(val)
-		if err != nil {
-			panic(vm.ToValue(err.Error()))
-		}
-		return parsed
+	parsed, err := toUint64Interface(v.Export())
+	if err != nil {
+		panic(vm.ToValue(err.Error()))
 	}
+	return parsed
 }
 
 // errNegativeValue is returned when a negative value is passed where uint64 is expected.
@@ -326,8 +299,10 @@ func toUint64Interface(v interface{}) (uint64, error) {
 	case uint64:
 		return val, nil
 	case string:
-		// A decimal string, as toUint64 takes: the way to pass a value
-		// JavaScript can't hold exactly.
+		// A decimal string or a BigInt is the way to pass a value
+		// JavaScript can't hold exactly. Nothing else: null, undefined,
+		// booleans and objects would be coerced to 0, 0, 1 and NaN, and
+		// "0x10", "1e6" and "" read as numbers the script did not write.
 		parsed, err := strconv.ParseUint(val, 10, 64)
 		if err != nil || (len(val) > 1 && val[0] == '0') {
 			return 0, fmt.Errorf("%q is not a whole number in plain decimal", val)
