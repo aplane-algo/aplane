@@ -229,7 +229,7 @@ func saveSignedCacheWithKey(store *Store, filePath string, data interface{}) err
 	save := func() error {
 		return saveSignedCacheWithoutClientLock(store, filePath, data)
 	}
-	if store != nil {
+	if store.persistent() {
 		return clientdata.WithExclusiveLock(store.dataDir, save)
 	}
 	return save()

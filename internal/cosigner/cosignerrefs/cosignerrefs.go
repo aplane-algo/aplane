@@ -116,7 +116,10 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cosigner public-key envelope: %w", err)
 	}
-	publicKeySize, publicKeySHA256 := publicKeyDigest(env.PublicKeyHex)
+	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
+	if err != nil {
+		return nil, err
+	}
 	return &Record{
 		Schema:            RecordSchema,
 		Name:              name,
@@ -322,7 +325,10 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	publicKeySize, publicKeySHA256 := publicKeyDigest(env.PublicKeyHex)
+	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
+	if err != nil {
+		return Record{}, err
+	}
 	if rec.PublicKeyEncoding != "" && rec.PublicKeyEncoding != "hex" {
 		return Record{}, fmt.Errorf("unsupported public_key_encoding %q", rec.PublicKeyEncoding)
 	}
@@ -345,11 +351,22 @@ func normalizeRecord(rec Record) (Record, error) {
 	}, nil
 }
 
-// publicKeyDigest returns the size and SHA-256 of a public key that
-// witness.NewPublicReference has accepted, so its hex decodes to a key of
-// the size its type takes.
-func publicKeyDigest(publicKeyHex string) (int, string) {
-	publicKey, _ := hex.DecodeString(publicKeyHex)
+// publicKeyDigest returns the size and SHA-256 of a cosigner public key.
+// Its callers have had witness.NewPublicReference accept the key; the decode
+// and size checks here are a deliberately layered check on untrusted import
+// input, so a digest is never taken of a key that reference did not vouch for.
+func publicKeyDigest(keyType, publicKeyHex string) (int, string, error) {
+	publicKey, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		return 0, "", fmt.Errorf("public key must be hex: %w", err)
+	}
+	wantSize, ok := witness.PublicKeySize(keyType)
+	if !ok {
+		return 0, "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
+	}
+	if len(publicKey) != wantSize {
+		return 0, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+	}
 	sum := sha256.Sum256(publicKey)
-	return len(publicKey), hex.EncodeToString(sum[:])
+	return len(publicKey), hex.EncodeToString(sum[:]), nil
 }

@@ -32,3 +32,24 @@ func TestCacheWithoutDataDirWritesNothing(t *testing.T) {
 		t.Fatalf("working directory gained %d entries; first %q", len(entries), entries[0].Name())
 	}
 }
+
+// A zero Store has no directory either: it keeps its caches in memory.
+func TestZeroStoreWritesNothing(t *testing.T) {
+	workDir := t.TempDir()
+	t.Chdir(workDir)
+
+	cache := NewAuthAddressCacheForStore(&Store{})
+	if err := cache.UpdateAuthAddress("ADDR1", "AUTH1", "testnet"); err != nil {
+		t.Fatalf("UpdateAuthAddress() error = %v", err)
+	}
+	if err := cache.SaveCache("testnet"); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	entries, err := os.ReadDir(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("working directory holds %d entries, want none", len(entries))
+	}
+}

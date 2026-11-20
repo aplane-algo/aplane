@@ -20,10 +20,11 @@ func NewStore(dataDir string) *Store {
 	return &Store{dataDir: dataDir}
 }
 
-// persistent reports whether the store has a directory to read and write: a
-// nil store, from an empty dataDir, keeps its caches in memory.
+// persistent reports whether the store has a directory to read and write. A
+// nil store, from an empty dataDir, keeps its caches in memory, and so does
+// a zero Store, rather than writing under the working directory.
 func (s *Store) persistent() bool {
-	return s != nil
+	return s != nil && s.dataDir != ""
 }
 
 func (s *Store) path(filename string) string {
