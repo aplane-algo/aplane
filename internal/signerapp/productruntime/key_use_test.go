@@ -306,7 +306,7 @@ func TestEndKeyUsesRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 		lockCtx, cancel := ir.LockCancelContext(context.Background())
 		requireCancelled(t, lockCtx, "lock-cancel context taken after Destroy")
 		cancel()
-		if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+		if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 			t.Fatalf("round %d: key session after Destroy = %v, want ErrStoreLocked", round, err)
 		}
 	}
@@ -385,7 +385,7 @@ func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T
 	lockCtx, cancel := ir.LockCancelContext(context.Background())
 	requireCancelled(t, lockCtx, "lock-cancel context taken after Destroy")
 	cancel()
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("key session after Destroy = %v, want ErrStoreLocked", err)
 	}
 }

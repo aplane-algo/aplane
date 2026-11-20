@@ -44,17 +44,12 @@ func (s *KeySession) InitializeSession() {
 	s.active = true
 }
 
-// GetKey retrieves a key for signing.
-// The session must be active (keyring open in the keystore).
+// GetKeyWithContext retrieves a key for signing using the caller's context for
+// keystore I/O and decryption. The session must be active (keyring open in
+// the keystore).
 //
 // Security: Keys are decrypted on-demand, not pre-loaded. Only the specific
 // key needed for signing is decrypted, minimizing memory exposure.
-func (s *KeySession) GetKey(address string) (*signing.KeyMaterial, error) {
-	return s.GetKeyWithContext(context.Background(), address)
-}
-
-// GetKeyWithContext retrieves a key for signing using the caller's context for
-// keystore I/O and decryption.
 func (s *KeySession) GetKeyWithContext(ctx context.Context, address string) (*signing.KeyMaterial, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
@@ -67,18 +62,13 @@ func (s *KeySession) GetKeyWithContext(ctx context.Context, address string) (*si
 	return s.keyStore.Get(ctx, address)
 }
 
-// clearSession deactivates the session
-func (s *KeySession) clearSession() {
-	s.active = false
-}
-
 // Destroy clears the session state.
 // Call this when shutting down the server.
-// Blocks until any in-flight GetKey (which holds the lock) finishes.
+// Blocks until any in-flight GetKeyWithContext (which holds the lock) finishes.
 // FileKeyStore decrypts under its read lock (Get) or a counted reference
 // (WithKeyring), and ClearKeys waits for both.
 func (s *KeySession) Destroy() {
 	s.lock.Lock()
-	s.clearSession()
+	s.active = false
 	s.lock.Unlock()
 }

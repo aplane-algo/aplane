@@ -77,7 +77,7 @@ func TestRunLifecycleStopsServicesInReverseOrderAndDestroysRuntime(t *testing.T)
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestShutdownLifecycleDoesNotDestroyRuntimeWhileHandlerOutlivesStopTimeout(t
 		},
 	})
 
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime was destroyed after timed-out handler stop: %v", err)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed || !audit.summariesFlushed() {
@@ -203,7 +203,7 @@ func TestShutdownLifecycleDestroysRuntimeAfterNonDeadlineStopError(t *testing.T)
 		AuditLog:       audit,
 	})
 
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after safe teardown", err)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || !closed {
@@ -261,7 +261,7 @@ func TestRunLifecycleReturnsAStartFailure(t *testing.T) {
 	if want := []string{"start:ssh", "stop:ssh"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 }
@@ -292,7 +292,7 @@ func TestRunLifecycleReturnsAServeFailure(t *testing.T) {
 	if !stopped {
 		t.Fatal("the failed service was not stopped")
 	}
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 }
@@ -307,7 +307,7 @@ func TestShutdownWaitsForAKeyUseBeforeZeroing(t *testing.T) {
 	sessionLiveAtRelease := make(chan bool, 1)
 	go func() {
 		<-useCtx.Done()
-		_, err := ir.SnapshotKeySession().GetKey("missing")
+		_, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing")
 		sessionLiveAtRelease <- !errors.Is(err, keystore.ErrStoreLocked)
 		release()
 	}()
@@ -317,7 +317,7 @@ func TestShutdownWaitsForAKeyUseBeforeZeroing(t *testing.T) {
 	if !<-sessionLiveAtRelease {
 		t.Fatal("the session was cleared before the key use released its material")
 	}
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); !stopped || incompleteReason != "" || !closed {
@@ -347,7 +347,7 @@ func TestShutdownBoundsItsWaitForAKeyUse(t *testing.T) {
 		t.Fatal("shutdown waited on a key use past its deadline")
 	}
 
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after destroy", err)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.Contains(incompleteReason, "key use") || closed || !audit.summariesFlushed() {
@@ -426,7 +426,7 @@ func TestShutdownTearsDownPastAServiceStillRunning(t *testing.T) {
 		},
 	})
 
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked after teardown", err)
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || !strings.HasPrefix(incompleteReason, "rotating stage table worker: still running") || !closed {
@@ -455,7 +455,7 @@ func TestShutdownSkipsTeardownForADeadlineEvenWithErrStillRunning(t *testing.T) 
 		},
 	}}, LifecyclePlan{ProductRuntime: ir, AuditLog: audit})
 
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatal("the runtime was destroyed after a stop that reported the shutdown deadline")
 	}
 	if stopped, incompleteReason, closed := audit.snapshot(); stopped || incompleteReason == "" || closed {
@@ -510,7 +510,7 @@ func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
 	}
 	release()
 	waitDone(t, done)
-	if _, err := ir.SnapshotKeySession().GetKey("missing"); !errors.Is(err, keystore.ErrStoreLocked) {
+	if _, err := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "missing"); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("runtime key session error = %v, want ErrStoreLocked once the reload released the lock", err)
 	}
 }
