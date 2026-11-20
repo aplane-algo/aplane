@@ -56,9 +56,19 @@ func SameUIDAuditOptions(root string, expectedUID, expectedGID int, socketPath s
 	}}
 }
 
-// StoppedMigrationOptions recognizes one exact stale in-store socket that a
-// stopped migration may remove after complete inventory validation.
-func StoppedMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
+// RepairMigrationOptions repairs a stopped systemd-managed store. A managed
+// daemon never binds inside the store, so no socket there is removable: one
+// is refused like any other unexpected object.
+func RepairMigrationOptions(root string, expectedUID, expectedGID int) MigrationOptions {
+	return MigrationOptions{policy: options{
+		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
+	}}
+}
+
+// ConversionMigrationOptions converts a stopped same-UID store to the managed
+// layout. It recognizes the one exact in-store socket the same-UID daemon
+// left, which the conversion removes after complete inventory validation.
+func ConversionMigrationOptions(root string, expectedUID, expectedGID int, socketPath string) MigrationOptions {
 	return MigrationOptions{policy: options{
 		root: root, expectedUID: expectedUID, expectedGID: expectedGID,
 		socketPath: socketPath,

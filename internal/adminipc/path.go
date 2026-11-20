@@ -64,20 +64,16 @@ func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, erro
 	return resolved, managed, nil
 }
 
-// ResolveInStoreSocketPath returns the one exact in-store socket that a
-// stopped migration may remove. A configured in-store path supports upgrades
-// from releases that allowed it; an external custom path leaves only the
-// historical default eligible for cleanup.
+// ResolveInStoreSocketPath returns the one exact in-store socket that the
+// stopped conversion of a same-UID store may remove: the path its daemon
+// binds, when that is inside the store, and "" otherwise.
 func ResolveInStoreSocketPath(dataDir, configured string) (string, error) {
 	configured = ResolveDaemonPath(dataDir, configured, false)
 	inside, err := pathWithin(dataDir, configured)
-	if err != nil {
+	if err != nil || !inside {
 		return "", err
 	}
-	if inside {
-		return configured, nil
-	}
-	return filepath.Clean(filepath.Join(dataDir, "aplane.sock")), nil
+	return configured, nil
 }
 
 func validateManagedDaemonPath(dataDir, resolved string, managed bool) error {

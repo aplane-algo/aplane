@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -93,7 +94,7 @@ type offlineBackend struct {
 }
 
 func newOfflineBackend(dataDir string, paths storepaths.Paths, kr *crypto.Keyring) (*offlineBackend, error) {
-	cfg, err := LoadServerConfig(dataDir)
+	cfg, err := serverconfig.LoadServerConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("load signer config: %w", err)
 	}

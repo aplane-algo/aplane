@@ -7,33 +7,28 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aplane-algo/aplane/internal/adminipc"
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
 var (
-	EffectiveUID         = os.Geteuid
-	IsManagedStore       = signerbootstrap.IsProductionManagedDataDir
-	ManagedStoreOwner    = storeperm.ManagedServiceOwner
-	LoadServerConfig     = serverconfig.LoadServerConfig
-	ResolveInStoreSocket = adminipc.ResolveInStoreSocketPath
-	AcquireStoreLock     = storelock.AcquireExclusive
-	NormalizeStore       = func(dataDir string, uid, gid int, socketPath string) error {
-		_, err := storeperm.MigratePrivate(storeperm.StoppedMigrationOptions(dataDir, uid, gid, socketPath))
+	EffectiveUID      = os.Geteuid
+	IsManagedStore    = signerbootstrap.IsProductionManagedDataDir
+	ManagedStoreOwner = storeperm.ManagedServiceOwner
+	AcquireStoreLock  = storelock.AcquireExclusive
+	NormalizeStore    = func(dataDir string, uid, gid int) error {
+		_, err := storeperm.MigratePrivate(storeperm.RepairMigrationOptions(dataDir, uid, gid))
 		return err
 	}
 )
 
 type OfflineMutation struct {
-	dataDir    string
-	uid        int
-	gid        int
-	socketPath string
-	lock       *storelock.Guard
-	managed    bool
+	dataDir string
+	uid     int
+	gid     int
+	lock    *storelock.Guard
+	managed bool
 }
 
 func AcquireOfflineMutation(dataDir string) (*OfflineMutation, error) {
@@ -62,17 +57,7 @@ func AcquireOfflineMutation(dataDir string) (*OfflineMutation, error) {
 		guard.Close()
 		return nil, fmt.Errorf("resolve managed signer service principal: %w", err)
 	}
-	cfg, err := LoadServerConfig(dataDir)
-	if err != nil {
-		guard.Close()
-		return nil, fmt.Errorf("load signer config: %w", err)
-	}
-	socketPath, err := ResolveInStoreSocket(dataDir, cfg.IPCPath)
-	if err != nil {
-		guard.Close()
-		return nil, fmt.Errorf("resolve in-store signer socket: %w", err)
-	}
-	guard.uid, guard.gid, guard.socketPath = uid, gid, socketPath
+	guard.uid, guard.gid = uid, gid
 	return guard, nil
 }
 
@@ -80,7 +65,7 @@ func (g *OfflineMutation) Normalize() error {
 	if g == nil || !g.managed {
 		return nil
 	}
-	return NormalizeStore(g.dataDir, g.uid, g.gid, g.socketPath)
+	return NormalizeStore(g.dataDir, g.uid, g.gid)
 }
 
 func (g *OfflineMutation) Close() {

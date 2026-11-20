@@ -176,9 +176,7 @@ beneath an owned private child without permitting a general writable-ancestor
 exception.
 An explicit custom socket for a systemd-managed signer must remain outside the
 store and its parent runtime directory must be service-user-owned and
-non-writable by group and other users. Valid legacy configurations that placed
-a custom socket inside the store can be migrated while stopped; the daemon
-then refuses that configuration until the socket is moved.
+non-writable by group and other users.
 
 All IPC bind paths use the same directory-chain trust rule. Directory aliases
 are resolved before validation and the daemon binds the canonical result. The
@@ -306,14 +304,16 @@ reports as the repairs to make. It inventories without following
 symlinks and reports unsafe ancestors, ownership, modes, hardlinks, and
 unexpected file types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
-socket without relaxing ancestor checks, and migration alone receives a
-removable legacy socket. Migration validates the complete legacy inventory before mutation,
-removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
-access at the root first, repairs recognized objects through opened
+socket without relaxing ancestor checks, and conversion alone receives a
+removable socket: the one exact in-store path the same-UID daemon's
+`config.yaml` names, when it names one inside the store. Repair of a managed
+store (`permissions migrate` and post-root-mutation normalization) receives
+none and reads no `config.yaml`: a managed daemon never binds inside the store,
+so a socket there is refused like any unexpected object. Migration validates
+the complete inventory before mutation, removes the recognized socket, removes
+group access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A
 clean audit is authority to proceed; an incomplete audit is not.
-Stopped migration and post-root-mutation normalization resolve the same exact
-configured legacy in-store socket; neither hardcodes the historical default.
 
 The installer bootstrap first uses `apstore permissions prepare-managed-root`
 to create and close the real data-directory root through opened directory

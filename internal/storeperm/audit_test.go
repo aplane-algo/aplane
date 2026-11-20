@@ -144,7 +144,7 @@ func TestMigratePrivateRejectsStoreLocalBinariesWithoutMutation(t *testing.T) {
 	}
 	uid, gid := ownerIDs(t, root)
 
-	_, err := MigratePrivate(StoppedMigrationOptions(root, uid, gid, ""))
+	_, err := MigratePrivate(RepairMigrationOptions(root, uid, gid))
 	if err == nil || !strings.Contains(err.Error(), "store-local bin directory") {
 		t.Fatalf("MigratePrivate() error = %v, want local binary rejection", err)
 	}

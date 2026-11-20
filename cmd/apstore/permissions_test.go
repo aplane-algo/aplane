@@ -167,7 +167,7 @@ func TestCanonicalSameUIDAuditRootRejectsSymlinkLeaf(t *testing.T) {
 	}
 }
 
-func TestConfiguredMigrationSocketPathUsesCustomInStoreConfig(t *testing.T) {
+func TestConversionSocketPathUsesCustomInStoreConfig(t *testing.T) {
 	root := t.TempDir()
 	custom := filepath.Join(root, "run", "custom.sock")
 	config := []byte("ipc_path: " + custom + "\n")
@@ -175,16 +175,16 @@ func TestConfiguredMigrationSocketPathUsesCustomInStoreConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := configuredMigrationSocketPath(root)
+	got, err := conversionSocketPath(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != custom {
-		t.Fatalf("configuredMigrationSocketPath() = %q, want %q", got, custom)
+		t.Fatalf("conversionSocketPath() = %q, want %q", got, custom)
 	}
 }
 
-func TestConfiguredMigrationSocketPathKeepsLegacyDefaultForExternalConfig(t *testing.T) {
+func TestConversionSocketPathIsEmptyForExternalConfig(t *testing.T) {
 	root := t.TempDir()
 	external := filepath.Join(filepath.Dir(root), "runtime", "custom.sock")
 	config := []byte("ipc_path: " + external + "\n")
@@ -192,13 +192,23 @@ func TestConfiguredMigrationSocketPathKeepsLegacyDefaultForExternalConfig(t *tes
 		t.Fatal(err)
 	}
 
-	got, err := configuredMigrationSocketPath(root)
+	got, err := conversionSocketPath(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "aplane.sock")
-	if got != want {
-		t.Fatalf("configuredMigrationSocketPath() = %q, want %q", got, want)
+	if got != "" {
+		t.Fatalf("conversionSocketPath() = %q, want none", got)
+	}
+}
+
+func TestConversionSocketPathNamesTheConversionWhenConfigDoesNotParse(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("ipc_path: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := conversionSocketPath(root)
+	if err == nil || !strings.HasPrefix(err.Error(), "load signer config for managed-store conversion: ") {
+		t.Fatalf("conversionSocketPath() error = %v, want the conversion named", err)
 	}
 }
 
