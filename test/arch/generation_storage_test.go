@@ -155,7 +155,6 @@ func TestRetiredRootStorePathAPIsStayDeleted(t *testing.T) {
 // two-record commit protocol from returning to production code.
 func TestRetiredStoreCommitArtifactsStayDeleted(t *testing.T) {
 	root := filepath.Join("..", "..")
-	allowed := filepath.ToSlash("internal/genstore/root_commit.go") // explicit initialization rejection
 	for _, retired := range []string{"CURRENT", "keyring.enc", "rotation.snapshot.enc", "rotation.baseline.enc"} {
 		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
@@ -171,13 +170,6 @@ func TestRetiredStoreCommitArtifactsStayDeleted(t *testing.T) {
 				return nil
 			}
 			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			rel, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				return relErr
-			}
-			if filepath.ToSlash(rel) == allowed {
 				return nil
 			}
 			data, readErr := os.ReadFile(path)

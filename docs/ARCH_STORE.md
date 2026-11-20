@@ -389,8 +389,7 @@ user cannot traverse `/var/lib/apsigner` while the same user can reach
 
 This section is the storage contract for the product store. The only
 supported layout uses one authenticated commit record for both cryptographic
-authority and active-generation selection. There is no compatibility path for
-the retired `CURRENT` plus `keyring.enc` layout.
+authority and active-generation selection.
 
 ### Store root
 
@@ -433,8 +432,8 @@ different from the unwrapped current term, and any selection-MAC mismatch.
 
 The static marker is version 6 with layout `store-root/v1`. No older marker or
 layout is readable, translated, or migrated in place. Initialization refuses
-retired `CURRENT` and `keyring.enc` artifacts and directs operators to rebuild
-from credential backup into a fresh store.
+any other marker, and any store with a generation on disk, and directs
+operators to restore credentials into a freshly initialized store.
 
 Store initialization stages the first generation with its generation-scoped
 node-role sidecar and the role's default policy before the sole commit

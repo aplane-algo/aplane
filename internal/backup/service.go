@@ -274,7 +274,7 @@ func BuildManagedArchivePath(paths storepaths.Paths, ts string) string {
 }
 
 // ManagedArchiveNameTime is the creation time a managed archive's name
-// carries (aplane-backup-YYYYMMDD-HHMMSS[.nnnnnnnnn].tar.gz), in UTC. Names
+// carries (aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz), in UTC. Names
 // are not authenticated; ok is false for any other name.
 func ManagedArchiveNameTime(fileName string) (time.Time, bool) {
 	stamp, found := strings.CutPrefix(fileName, managedArchivePrefix)
@@ -285,10 +285,6 @@ func ManagedArchiveNameTime(fileName string) (time.Time, bool) {
 	if !found {
 		return time.Time{}, false
 	}
-	for _, layout := range []string{ManagedArchiveTimestampLayout, "20060102-150405"} {
-		if t, err := time.ParseInLocation(layout, stamp, time.UTC); err == nil {
-			return t, true
-		}
-	}
-	return time.Time{}, false
+	t, err := time.ParseInLocation(ManagedArchiveTimestampLayout, stamp, time.UTC)
+	return t, err == nil
 }

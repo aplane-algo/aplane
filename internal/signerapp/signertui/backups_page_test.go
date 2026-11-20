@@ -199,7 +199,7 @@ func exportFixture(t *testing.T) (Model, []byte, string) {
 	t.Helper()
 	payload := []byte(strings.Repeat("backup bytes ", 100))
 	sum := sha256.Sum256(payload)
-	info := BackupInfo{FileName: "aplane-backup-20261102-070725.tar.gz", Path: "aplane-backup-20261102-070725.tar.gz", Size: int64(len(payload)), Checksum: hex.EncodeToString(sum[:])}
+	info := BackupInfo{FileName: "aplane-backup-20261102-070725.000000000.tar.gz", Path: "aplane-backup-20261102-070725.000000000.tar.gz", Size: int64(len(payload)), Checksum: hex.EncodeToString(sum[:])}
 	dest := filepath.Join(t.TempDir(), "usb")
 	m := backupsModel(info)
 	m, _ = pressKey(t, m, "x")
@@ -224,10 +224,10 @@ func TestBackupExportStreamsVerifiesAndPublishes(t *testing.T) {
 	m, _ = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: id}, Success: true, Data: []byte("stale")}})
 	m, cmd = update(t, m, BackupChunkMsg{Chunk: protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{ID: next}, Success: true, Offset: int64(half), Data: payload[half:], EOF: true}})
 	m = finishExport(t, m, cmd)
-	if m.viewState != ViewBackups || !strings.Contains(m.backups.status, "Exported to "+filepath.Join(dest, "aplane-backup-20261102-070725.tar.gz")) {
+	if m.viewState != ViewBackups || !strings.Contains(m.backups.status, "Exported to "+filepath.Join(dest, "aplane-backup-20261102-070725.000000000.tar.gz")) {
 		t.Fatalf("export done: view %v status %q", m.viewState, m.backups.status)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "aplane-backup-20261102-070725.tar.gz"))
+	got, err := os.ReadFile(filepath.Join(dest, "aplane-backup-20261102-070725.000000000.tar.gz"))
 	if err != nil || string(got) != string(payload) {
 		t.Fatalf("exported file = %d bytes, err %v", len(got), err)
 	}
@@ -245,7 +245,7 @@ func TestBackupExportRejectsChecksumMismatchAndCleansUp(t *testing.T) {
 	if m.viewState != ViewBackupExport || !strings.Contains(m.backups.export.err, "checksum mismatch") {
 		t.Fatalf("mismatch: view %v err %q", m.viewState, m.backups.export.err)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "aplane-backup-20261102-070725.tar.gz")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dest, "aplane-backup-20261102-070725.000000000.tar.gz")); !os.IsNotExist(err) {
 		t.Fatalf("a mismatched export was published: %v", err)
 	}
 	assertNoExportStaging(t, dest)
@@ -272,7 +272,7 @@ func TestBackupExportRefusesExistingDestination(t *testing.T) {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dest, "aplane-backup-20261102-070725.tar.gz"), []byte("mine"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dest, "aplane-backup-20261102-070725.000000000.tar.gz"), []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m, cmd := pressKey(t, m, "enter")
@@ -513,7 +513,7 @@ func TestBackupImportLockAbortsUploadOrLeavesCommitUnresolved(t *testing.T) {
 }
 
 func TestBackupViewHeaderShowsSealedTimeAndWarnsOnMismatch(t *testing.T) {
-	name := "aplane-backup-20261102-070725.tar.gz"
+	name := "aplane-backup-20261102-070725.000000000.tar.gz"
 	m := backupsModel(BackupInfo{FileName: name, Path: name, Size: 13861, Checksum: "abcd"})
 	m.restore.archivePath = name
 	m.restore.archiveCreatedAt = time.Date(2026, 11, 2, 7, 7, 25, 0, time.UTC).Unix()

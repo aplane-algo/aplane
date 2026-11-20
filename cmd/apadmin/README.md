@@ -62,9 +62,9 @@ Batch commands use the same local IPC transport as the TUI:
 ./apadmin -d /path/to/signer-data policy rescue check policy.json
 ./apadmin -d /path/to/signer-data policy rescue apply policy.json
 ./apadmin backup create all
-./apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
-./apadmin restore preview aplane-backup-YYYYMMDD-HHMMSS.tar.gz
-./apadmin restore apply aplane-backup-YYYYMMDD-HHMMSS.tar.gz
+./apadmin backup export aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz /mnt/usb
+./apadmin restore preview aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz
+./apadmin restore apply aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz
 ./apadmin changepass
 ./apadmin template list
 ./apadmin keytype enable aplane.ed25519.v1
@@ -149,7 +149,7 @@ For live managed backup and restore operations, use `apadmin` on the signer mach
 ```bash
 ./apadmin -d /path/to/signer-data backup create all
 ./apadmin -d /path/to/signer-data backup list
-./apadmin -d /path/to/signer-data backup export aplane-backup-YYYYMMDD-HHMMSS.tar.gz /mnt/usb
+./apadmin -d /path/to/signer-data backup export aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz /mnt/usb
 ./apadmin -d /path/to/signer-data backup import /mnt/usb/aplane-backup.tar.gz
 ./apadmin -d /path/to/signer-data restore preview aplane-backup.tar.gz
 ./apadmin -d /path/to/signer-data restore apply aplane-backup.tar.gz
@@ -160,7 +160,7 @@ For live managed backup and restore operations, use `apadmin` on the signer mach
 For a live signer-managed backup, unlock the signer, open the admin/settings
 panel, choose `Create backup`, and enter an export passphrase. `apsigner`
 writes the resulting archive on the signer host under
-`backups/default/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer
+`backups/default/aplane-backup-YYYYMMDD-HHMMSS.nnnnnnnnn.tar.gz` beneath the signer
 data root.
 
 For a live signer-managed restore, unlock the signer, open the admin/settings

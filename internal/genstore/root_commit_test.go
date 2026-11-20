@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -215,4 +216,27 @@ func testWrappedStoreRootKeyring(t *testing.T, root []byte) []byte {
 		t.Fatal(err)
 	}
 	return decoded.Keyring
+}
+
+// A store in a retired layout carries an older marker, and initialization
+// refuses it at the marker before writing a root.
+func TestInitialStoreRootRefusesARetiredLayout(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	mintTestGeneration(t, paths, testGenA, map[string]string{"keys/A.key": "a"})
+	for name, content := range map[string]string{
+		".keystore":   `{"version":5,"layout":"generations/v1","created":"2026-01-01T00:00:00Z"}`,
+		"CURRENT":     testGenA,
+		"keyring.enc": "{}",
+	} {
+		if err := os.WriteFile(filepath.Join(paths.ProductDir(), name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := CommitInitialStoreRoot(paths, testKeyring(t), []byte("passphrase"), testGenA)
+	if want := "unsupported keystore marker version 5"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("CommitInitialStoreRoot() error = %v, want one containing %q", err, want)
+	}
+	if _, err := os.Lstat(paths.StoreRootPath()); !os.IsNotExist(err) {
+		t.Fatalf("store root written over a retired layout: %v", err)
+	}
 }
