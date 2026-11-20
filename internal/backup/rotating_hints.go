@@ -82,29 +82,30 @@ func PublishRotatingHints(tables *stagetable.Store, hints map[string]RotatingSta
 // LoadRebuildHints validates hints against the actual selected archive keys.
 // Call only after a successful fresh-store commit, while still offline.
 func LoadRebuildHints(source string, selectors []string, passphrase []byte) (map[string]RotatingStageHint, error) {
-	manifest, err := OpenSealedManifest(source, passphrase)
+	archive, err := openArchive(source, passphrase)
 	if err != nil {
 		return nil, err
 	}
-	keysDir := ResolveBackupKeysDir(source)
-	selected, err := normalizeCredentialSelectors(keysDir, selectors)
+	selected, err := archive.selectCredentials(selectors)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]RotatingStageHint)
 	for _, selector := range selected {
-		if _, ok := manifest.RotatingStageHints[selector]; !ok {
+		if _, ok := archive.manifest.RotatingStageHints[selector]; !ok {
 			continue
 		}
-		entry, err := loadCredentialEntry(keysDir, selector, passphrase, noderole.RoleSigner)
+		entry, skip, err := archive.loadCredentialEntry(selector, passphrase, noderole.RoleSigner)
 		if err != nil {
 			return nil, err
 		}
-		h := validatedRotatingHint(entry, manifest.RotatingStageHints)
-		entry.ZeroSecrets()
-		if h != nil {
-			out[selector] = *h
+		if skip != nil {
+			continue
 		}
+		if entry.StageHint != nil {
+			out[selector] = *entry.StageHint
+		}
+		entry.ZeroSecrets()
 	}
 	return out, nil
 }

@@ -269,6 +269,14 @@ type RestoreConflict struct {
 	Reason         string
 }
 
+// RestoreSkipped is an archived credential a restore leaves out because the
+// node cannot admit it, with the reason. Its archived policy is left out
+// with it.
+type RestoreSkipped struct {
+	Selector string
+	Reason   string
+}
+
 // RestoreBackupRequest performs one direct, generational credential restore.
 // OperationID is supplied by the protocol boundary for durable audit and
 // generation-manifest correlation.
@@ -294,6 +302,9 @@ type RestoreBackupResult struct {
 	Restored        []RestoreCredential
 	Identical       []RestoreCredential
 	Conflicts       []RestoreConflict
+	// Skipped lists the archived credentials the restore left out, or, on
+	// a refusal for what it would skip, the ones it would have.
+	Skipped []RestoreSkipped
 	// PoliciesRestored lists the keys whose archived policy document was
 	// installed.
 	PoliciesRestored []string

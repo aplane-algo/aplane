@@ -42,22 +42,21 @@ func verifyDeep(backupPath string) error {
 		return codedError{code: "verification_failed", message: err.Error()}
 	}
 
-	logInfof("found %d key file(s)", report.TotalFiles)
+	logInfof("found %d key file(s)", len(report.Verified)+len(report.Skipped))
 
-	for _, result := range report.Results {
-		if result.Valid {
-			logInfof("  %s (%s, decrypts OK)", result.FileName, result.KeyType)
-		} else {
-			logErrorf("  %s - %s", result.FileName, result.Error)
-		}
+	for _, result := range report.Verified {
+		logInfof("  %s.apb (%s, decrypts OK)", result.Address, result.KeyType)
+	}
+	for _, skipped := range report.Skipped {
+		logErrorf("  %s.apb - %s", skipped.Selector, skipped.Reason)
 	}
 
-	if report.FailedFiles == 0 {
+	if len(report.Skipped) == 0 {
 		logInfof("all keys valid and decryptable")
 	} else {
 		return codedError{
 			code:    "verification_failed",
-			message: fmt.Sprintf("%d credential file(s) failed validation", report.FailedFiles),
+			message: fmt.Sprintf("%d credential file(s) failed validation", len(report.Skipped)),
 		}
 	}
 

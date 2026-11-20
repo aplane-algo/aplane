@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/crypto/rotatinghybrid"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -31,12 +30,25 @@ import (
 
 var admissionPassphrase = []byte("export-passphrase")
 
-// admissionOutcome is what each consumer of an archive reports for it: the
-// failed results of a deep verify, the error of loading it for restore, the
-// per-key errors of a restore preview, and the error of restoring its one
-// credential as a rebuild does. An empty field accepts.
+// admissionOutcome is what each consumer of an archive reports for it: a
+// deep verify, loading it for a whole-archive restore, its restore preview,
+// and loading it for a rebuild. Each is "refused: <error>" for an archive the
+// consumer refuses, or the "skipped <selector>: <reason>" lines of the
+// credentials it skips. An empty field admits everything.
 type admissionOutcome struct {
 	verify, restore, preview, rebuild string
+}
+
+func skippedOutcome(skipped []SkippedEntry) string {
+	lines := make([]string, len(skipped))
+	for i, s := range skipped {
+		lines[i] = "skipped " + s.Selector + ": " + s.Reason
+	}
+	return strings.Join(lines, "\n")
+}
+
+func refusedOutcome(err error) string {
+	return "refused: " + err.Error()
 }
 
 // admissionArchive is one archive root and the credential selector it holds.
@@ -85,55 +97,51 @@ func admissionOutcomes(t *testing.T, paths storepaths.Paths, archive admissionAr
 	}
 	var outcome admissionOutcome
 
-	report, err := DeepVerifyBackupBytes(archive.root, admissionPassphrase)
-	if err != nil {
-		t.Fatalf("DeepVerifyBackupBytes() error = %v", err)
+	if report, err := DeepVerifyBackupBytes(archive.root, admissionPassphrase); err != nil {
+		outcome.verify = refusedOutcome(err)
+	} else {
+		outcome.verify = skippedOutcome(report.Skipped)
 	}
-	var failed []string
-	for _, result := range report.Results {
-		if !result.Valid {
-			failed = append(failed, result.FileName+": "+result.Error)
-		}
-	}
-	outcome.verify = strings.Join(failed, "\n")
 
 	managed := BuildManagedArchivePath(paths, fmt.Sprintf("admission-%d", time.Now().UnixNano()))
 	if err := CreateTarGzArchive(archive.root, managed); err != nil {
 		t.Fatal(err)
 	}
 	set, err := LoadManagedRestoreSet(paths, managed, nil, admissionPassphrase, role)
-	set.ZeroSecrets()
 	if err != nil {
 		if !ArchiveAuthenticated(err) {
 			t.Fatalf("restore error %v does not record the authenticated archive", err)
 		}
-		outcome.restore = err.Error()
+		outcome.restore = refusedOutcome(err)
+	} else {
+		outcome.restore = skippedOutcome(set.Skipped)
+		set.ZeroSecrets()
 	}
 
-	preview, err := PreviewRestoreWithNodeRole(paths, managed, admissionPassphrase, role)
-	if err != nil {
-		t.Fatalf("PreviewRestoreWithNodeRole() error = %v", err)
+	if preview, err := PreviewRestoreWithNodeRole(paths, managed, admissionPassphrase, role); err != nil {
+		if !ArchiveAuthenticated(err) {
+			t.Fatalf("preview error %v does not record the authenticated archive", err)
+		}
+		outcome.preview = refusedOutcome(err)
+	} else {
+		outcome.preview = skippedOutcome(preview.Skipped)
 	}
-	var previewErrors []string
-	for _, e := range preview.Errors {
-		previewErrors = append(previewErrors, e.Address+": "+e.Error)
-	}
-	outcome.preview = strings.Join(previewErrors, "\n")
 
-	active, err := genstore.Resolve(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kr := cryptotest.Keyring(t, testExportMasterKey)
-	if _, err := RestoreForRebuild(active, role, ResolveBackupKeysDir(archive.root), archive.selector, kr, admissionPassphrase, nil); err != nil {
-		outcome.rebuild = err.Error()
+	if set, err := LoadRebuildSet(archive.root, nil, admissionPassphrase, role); err != nil {
+		outcome.rebuild = refusedOutcome(err)
+	} else {
+		outcome.rebuild = skippedOutcome(set.Skipped)
+		set.ZeroSecrets()
 	}
 	return outcome
 }
 
 // Every consumer of an archive admits a credential by the same loader: deep
-// verify, restore, its preview and rebuild accept and refuse the same members
-// and report the same reason. The table pins it.
+// verify, restore, its preview and rebuild admit, skip and refuse the same
+// members and report the same reason. A member that does not read or decrypt
+// is damage and refuses the archive; a decrypted credential or policy the
+// node cannot admit is skipped, which leaves an archive of one credential
+// nothing to restore. The table pins it.
 func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
@@ -145,11 +153,10 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 		// build writes the archive's members and returns its selector and,
 		// for the templates, the selector its payload derives.
 		build func(t *testing.T, root, keysDir string) (selector, derived string)
-		// refusal is the error every consumer reports for the archive's
-		// credential; want is the outcome of an archive whose credential
-		// they all accept.
-		refusal string
-		want    admissionOutcome
+		// refusal is the error every consumer refuses the archive with;
+		// damage is the one it refuses a damaged credential member with;
+		// skip is why every consumer skips the archive's credential.
+		refusal, damage, skip string
 	}{
 		{
 			name: "valid credential",
@@ -166,7 +173,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, address, keyJSON)
 				return address, address
 			},
-			refusal: `decrypt backup file: failed to parse encrypted data: json: unknown field "format_version"`,
+			damage: `decrypt backup file: failed to parse encrypted data: json: unknown field "format_version"`,
 		},
 		{
 			name: "member that is not JSON",
@@ -174,7 +181,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, []byte("not json"))
 				return other, other
 			},
-			refusal: "decrypt backup file: failed to parse encrypted data: invalid character 'o' in literal null (expecting 'u')",
+			damage: "decrypt backup file: failed to parse encrypted data: invalid character 'o' in literal null (expecting 'u')",
 		},
 		{
 			name: "envelope version 3",
@@ -182,7 +189,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, []byte(`{"envelope_version":3,"nonce":"","ciphertext":""}`))
 				return other, other
 			},
-			refusal: "decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)",
+			damage: "decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)",
 		},
 		{
 			name: "member under another passphrase",
@@ -191,7 +198,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, keyJSON, []byte("other-passphrase"))
 				return address, address
 			},
-			refusal: "decrypt backup file: failed to decrypt data: cipher: message authentication failed",
+			damage: "decrypt backup file: failed to decrypt data: cipher: message authentication failed",
 		},
 		{
 			name: "pre-release bundle",
@@ -199,7 +206,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, other, []byte(`{"backup_bundle":1,"key":{}}`), admissionPassphrase)
 				return other, other
 			},
-			refusal: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "backup_bundle"; restore or regenerate the key file using the current key schema`,
+			skip: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "backup_bundle"; restore or regenerate the key file using the current key schema`,
 		},
 		{
 			name: "unknown payload field",
@@ -208,7 +215,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, withExtraFieldForTest(t, keyJSON), admissionPassphrase)
 				return address, address
 			},
-			refusal: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
+			skip: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
 		},
 		{
 			name: "selector mismatch",
@@ -217,7 +224,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, other, keyJSON, admissionPassphrase)
 				return other, address
 			},
-			refusal: "selector mismatch: filename={sel} derived={derived}",
+			skip: "selector mismatch: filename={sel} derived={derived}",
 		},
 		{
 			name: "key type the role forbids",
@@ -226,7 +233,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector
 			},
-			refusal: `role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
+			skip: `role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
 		},
 		{
 			name: "base key type this runtime lacks",
@@ -237,7 +244,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector
 			},
-			refusal: "base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
+			skip: "base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
 		},
 		{
 			name: "oversized member",
@@ -245,7 +252,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, make([]byte, crypto.MaxStandaloneEnvelopeBytes+1))
 				return other, other
 			},
-			refusal: "read backup file: file exceeds size limit 1048576",
+			damage: "read backup file: file exceeds size limit 1048576",
 		},
 		{
 			name: "policy with no credential",
@@ -255,7 +262,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionPolicy(t, root, other, []byte(policytest.MustDocument(noderole.RoleSigner, other, "")))
 				return address, address
 			},
-			want: admissionOutcome{verify: "policies/" + other + ".apb: policy has no credential in the archive"},
+			refusal: "backup policy " + other + " has no credential in the archive",
 		},
 		{
 			name: "policy that does not decode",
@@ -265,12 +272,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionPolicy(t, root, address, []byte("{}"))
 				return address, address
 			},
-			want: admissionOutcome{
-				verify:  "policies/{sel}.apb: backup policy for {sel}: {policyErr}",
-				restore: "backup policy for {sel}: {policyErr}",
-				preview: "{sel}: backup policy for {sel}: {policyErr}",
-				rebuild: "backup policy for {sel}: {policyErr}",
-			},
+			skip: "backup policy for {sel}: {policyErr}",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -282,19 +284,24 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			selector, derived := tc.build(t, root, keysDir)
 			got := admissionOutcomes(t, paths, admissionArchive{root: root, selector: selector}, role, nil)
 			replacer := strings.NewReplacer("{sel}", selector, "{derived}", derived, "{policyErr}", undecodablePolicyErrorForTest(selector))
-			if tc.refusal != "" {
-				tc.want = admissionOutcome{
-					verify:  "{sel}.apb: " + tc.refusal,
-					restore: "validate backup credential {sel}: " + tc.refusal,
-					preview: "{sel}: " + tc.refusal,
-					rebuild: tc.refusal,
-				}
+			var want admissionOutcome
+			if tc.damage != "" {
+				tc.refusal = "backup credential {sel}: " + tc.damage
 			}
-			want := admissionOutcome{
-				verify:  replacer.Replace(tc.want.verify),
-				restore: replacer.Replace(tc.want.restore),
-				preview: replacer.Replace(tc.want.preview),
-				rebuild: replacer.Replace(tc.want.rebuild),
+			switch {
+			case tc.refusal != "":
+				refused := "refused: " + tc.refusal
+				want = admissionOutcome{verify: refused, restore: refused, preview: refused, rebuild: refused}
+			case tc.skip != "":
+				skipped := "skipped {sel}: " + tc.skip
+				nothing := "refused: nothing to restore: the backup's only credential is skipped: {sel}: " + tc.skip
+				want = admissionOutcome{verify: skipped, restore: nothing, preview: skipped, rebuild: nothing}
+			}
+			want = admissionOutcome{
+				verify:  replacer.Replace(want.verify),
+				restore: replacer.Replace(want.restore),
+				preview: replacer.Replace(want.preview),
+				rebuild: replacer.Replace(want.rebuild),
 			}
 			if got != want {
 				t.Fatalf("outcome\n got: %#v\nwant: %#v", got, want)

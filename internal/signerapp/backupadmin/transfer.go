@@ -172,11 +172,8 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 	if err != nil {
 		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
 	}
-	if report.FailedFiles > 0 {
-		return commitImportError(
-			fmt.Errorf("invalid backup contents: %d of %d credential files failed validation", report.FailedFiles, report.TotalFiles),
-			s.Deps.KeyPaths().Root(),
-		)
+	if err := report.Incomplete(); err != nil {
+		return commitImportError(fmt.Errorf("invalid backup contents: %w", err), s.Deps.KeyPaths().Root())
 	}
 	if err := removeBackupValidationDirectory(sourceRoot); err != nil {
 		return commitImportError(fmt.Errorf("remove backup validation directory: %w", err), s.Deps.KeyPaths().Root())

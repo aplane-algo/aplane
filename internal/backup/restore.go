@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,8 +47,10 @@ type RestorePreview struct {
 	// CreatedAtUnix is the creation time sealed in the authenticated
 	// manifest.
 	CreatedAtUnix int64
-	Keys          []RestoreKeyInfo
-	Errors        []RestoreError
+	// Keys lists the credentials this node admits; Skipped those it does
+	// not, with the reason.
+	Keys    []RestoreKeyInfo
+	Skipped []SkippedEntry
 }
 
 type RestoreKeyInfo struct {
@@ -57,12 +60,6 @@ type RestoreKeyInfo struct {
 	AlreadyExists bool
 	// HasPolicy reports that the archive carries this key's own policy.
 	HasPolicy bool
-	Error     string
-}
-
-type RestoreError struct {
-	Address string
-	Error   string
 }
 
 // ResolveBackupKeysDir returns the credential directory in an extracted
@@ -185,6 +182,11 @@ func StatManagedBackupArchive(archivePath string) (os.FileInfo, error) {
 	return info, nil
 }
 
+// PreviewRestoreWithNodeRole admits every credential of a managed archive as
+// a whole-archive restore would, and reports each with its destination
+// presence, or as skipped with the reason. It mutates nothing. An archive
+// with nothing to restore still previews, so every reason is shown; restore
+// refuses it.
 func PreviewRestoreWithNodeRole(
 	paths storepaths.Paths,
 	archivePath string,
@@ -206,51 +208,32 @@ func PreviewRestoreWithNodeRole(
 		return nil, err
 	}
 	defer cleanup()
-	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
+	archive, err := openArchive(sourceRoot, exportPassphrase)
 	if err != nil {
 		return nil, err
 	}
-	if manifest.SourceNodeRole != string(role) {
-		return nil, authenticatedArchiveError(fmt.Errorf("backup source node role %q cannot be restored into %q", manifest.SourceNodeRole, role))
-	}
-	keysDir := ResolveBackupKeysDir(sourceRoot)
-	selectors, err := normalizeCredentialSelectors(keysDir, nil)
-	if err != nil {
-		return nil, authenticatedArchiveError(err)
+	if err := archive.requireSourceRole(role); err != nil {
+		return nil, err
 	}
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return nil, authenticatedArchiveError(err)
 	}
-	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: manifest.CreatedAtUnix}
-	for _, selector := range selectors {
-		entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
-		if err == nil {
-			err = func() error {
-				defer entry.ZeroSecrets()
-				_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector(), entry.Category())
-				if destinationErr != nil && !isManagedClassConflict(destinationErr) {
-					return destinationErr
-				}
-				info := RestoreKeyInfo{
-					Address: selector, KeyType: entry.KeyType(),
-					StageHint:     validatedRotatingHint(entry, manifest.RotatingStageHints),
-					AlreadyExists: exists || destinationErr != nil,
-				}
-				document, err := readBackupPolicy(keysDir, selector, exportPassphrase, role)
-				if err != nil {
-					return err
-				}
-				info.HasPolicy = document != nil
-				preview.Keys = append(preview.Keys, info)
-				return nil
-			}()
+	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: archive.manifest.CreatedAtUnix}
+	preview.Skipped, err = archive.admitEach(archive.selectors, exportPassphrase, role, func(entry CredentialEntry) error {
+		defer entry.ZeroSecrets()
+		_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector(), entry.Category())
+		if destinationErr != nil && !isManagedClassConflict(destinationErr) {
+			return destinationErr
 		}
-		if err != nil {
-			preview.Errors = append(preview.Errors, RestoreError{Address: selector, Error: err.Error()})
-			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: selector, Error: err.Error()})
-			continue
-		}
+		preview.Keys = append(preview.Keys, RestoreKeyInfo{
+			Address: entry.Selector(), KeyType: entry.KeyType(), StageHint: entry.StageHint,
+			AlreadyExists: exists || destinationErr != nil, HasPolicy: entry.Policy != nil,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, authenticatedArchiveError(err)
 	}
 	return preview, nil
 }
@@ -266,15 +249,15 @@ func RestoreForRebuild(
 	exportPassphrase []byte,
 	logf RestoreLogger,
 ) (string, error) {
-	entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
+	entry, skip, err := openedArchive{keysDir: keysDir}.loadCredentialEntry(selector, exportPassphrase, role)
 	if err != nil {
 		return "", err
 	}
+	if skip != nil {
+		return "", errors.New(skip.Reason)
+	}
 	defer entry.ZeroSecrets()
 	if err := ApplyCredentialEntry(active, entry, kr, false); err != nil {
-		return "", err
-	}
-	if entry.Policy, err = readBackupPolicy(keysDir, selector, exportPassphrase, role); err != nil {
 		return "", err
 	}
 	if entry.Policy != nil {

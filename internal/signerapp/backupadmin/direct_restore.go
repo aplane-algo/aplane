@@ -18,8 +18,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/testcheckpoint"
 )
 
-// RestoreBackup authenticates and validates an archive completely before
-// committing its managed credentials through one generation transaction.
+// RestoreBackup authenticates an archive and admits its selected credentials
+// before committing the admitted ones through one generation transaction. A
+// credential the node cannot admit is skipped and reported, unless the
+// request named it.
 // Destination policy, templates, and key-type generation state are neither
 // read from the archive nor changed by this operation.
 func (s Service) RestoreBackup(
@@ -70,8 +72,8 @@ func (s Service) RestoreBackup(
 	limiter.RecordSuccess(archivePath)
 	result.Success = true
 	s.Deps.Logf(
-		"restored %d credential(s) from archive %s as generation %s",
-		len(result.Restored), result.ArchiveSHA256, result.GenerationID,
+		"restored %d credential(s) from archive %s as generation %s; skipped %d",
+		len(result.Restored), result.ArchiveSHA256, result.GenerationID, len(result.Skipped),
 	)
 	return result
 }
@@ -178,10 +180,15 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	)
 	if loadErr != nil {
 		r.archiveAuthenticated = backup.ArchiveAuthenticated(loadErr)
+		var refusal *backup.SkipRefusalError
+		if errors.As(loadErr, &refusal) {
+			result.Skipped = projectSkippedEntries(refusal.Skipped)
+		}
 		return loadErr
 	}
 	r.archiveAuthenticated = true
 	defer set.ZeroSecrets()
+	result.Skipped = projectSkippedEntries(set.Skipped)
 	for _, entry := range set.Entries {
 		if entry.StageHint != nil {
 			r.hints[entry.Selector()] = *entry.StageHint
@@ -324,6 +331,17 @@ func projectCredentialEntries(entries []backup.CredentialEntry) []adminproto.Res
 			Category: entries[i].Category(),
 			KeyType:  entries[i].KeyType(),
 		}
+	}
+	return result
+}
+
+func projectSkippedEntries(skipped []backup.SkippedEntry) []adminproto.RestoreSkipped {
+	if len(skipped) == 0 {
+		return nil
+	}
+	result := make([]adminproto.RestoreSkipped, len(skipped))
+	for i, entry := range skipped {
+		result[i] = adminproto.RestoreSkipped{Selector: entry.Selector, Reason: entry.Reason}
 	}
 	return result
 }

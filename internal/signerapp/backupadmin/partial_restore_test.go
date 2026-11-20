@@ -11,15 +11,14 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
-	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // badMemberReason is why the mixed archive's BAD member is refused.
 const badMemberReason = "failed to parse backup credential: "
 
-// The preview lists the BAD member among the keys with its error and again
-// in errors; the whole-archive restore refuses with nothing restored.
+// The preview lists the BAD member as skipped, apart from the keys; the
+// whole-archive restore restores the rest and reports BAD as skipped.
 func TestMixedArchivePreviewAndRestoreResults(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
@@ -30,44 +29,36 @@ func TestMixedArchivePreviewAndRestoreResults(t *testing.T) {
 	preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{
 		ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
 	})
-	if preview.Code != "" || preview.Error != "" || len(preview.Keys) != 2 || len(preview.Errors) != 1 {
+	if preview.Code != "" || preview.Error != "" || len(preview.Keys) != 1 || len(preview.Errors) != 1 {
 		t.Fatalf("PreviewRestore() = %+v", preview)
 	}
-	byAddress := map[string]adminproto.RestoreKeyInfo{}
-	for _, key := range preview.Keys {
-		byAddress[key.Address] = key
-	}
-	if key := byAddress[good]; key.KeyType != "ed25519" || key.Error != "" || key.AlreadyExists {
+	if key := preview.Keys[0]; key.Address != good || key.KeyType != "ed25519" || key.Error != "" || key.AlreadyExists {
 		t.Fatalf("good preview key = %+v", key)
 	}
-	bad := byAddress["BAD"]
-	if bad.KeyType != "" || !strings.HasPrefix(bad.Error, badMemberReason) {
-		t.Fatalf("BAD preview key = %+v", bad)
-	}
-	if preview.Errors[0] != (adminproto.RestoreError{Address: "BAD", Error: bad.Error}) {
-		t.Fatalf("preview errors = %+v", preview.Errors)
+	skipped := preview.Errors[0]
+	if skipped.Address != "BAD" || !strings.HasPrefix(skipped.Error, badMemberReason) {
+		t.Fatalf("preview skipped = %+v", preview.Errors)
 	}
 
 	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID: "restore-mixed", ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase"),
 	})
-	if result.Success || result.Code != protocol.ResultCodeRestoreFailed ||
-		result.Error != "validate backup credential BAD: "+bad.Error ||
-		result.ArchiveSHA256 != "" || result.GenerationID != "" ||
-		len(result.Restored) != 0 || len(result.Identical) != 0 || len(result.Conflicts) != 0 || len(result.PoliciesRestored) != 0 {
+	if !result.Success || result.Code != "" || result.Error != "" || result.ArchiveSHA256 == "" || result.GenerationID == "" ||
+		len(result.Restored) != 1 || result.Restored[0].Selector != good || len(result.Identical) != 0 || len(result.Conflicts) != 0 ||
+		len(result.Skipped) != 1 || result.Skipped[0] != (adminproto.RestoreSkipped{Selector: "BAD", Reason: skipped.Error}) {
 		t.Fatalf("RestoreBackup(mixed) = %+v", result)
 	}
 }
 
-// An import of an archive holding a key the node cannot admit is refused
-// with the number of members that failed.
+// An import of an archive holding a key the node cannot admit is refused,
+// naming how many restore would skip and the first.
 func TestImportOfAMixedArchiveIsRefused(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	var reloads atomic.Int64
 	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
 	archivePath, _ := writeMixedValidityManagedArchive(t, paths)
 	result := importArchiveForTest(t, directRestoreTestService(paths, ir), archivePath, "imported.tar.gz")
-	if result.Success || result.Error != "invalid backup contents: 1 of 2 credential files failed validation" {
+	if result.Success || !strings.HasPrefix(result.Error, "invalid backup contents: 1 of 2 credentials would be skipped by restore; first BAD: "+badMemberReason) {
 		t.Fatalf("CommitBackupImport(mixed) = %+v", result)
 	}
 }

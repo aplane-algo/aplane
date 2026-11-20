@@ -240,8 +240,8 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to verify rebuild backup: %w", err)
 	}
-	if report.FailedFiles > 0 {
-		return fmt.Errorf("failed to verify rebuild backup: %d file(s) failed deep verification", report.FailedFiles)
+	if len(report.Skipped) > 0 {
+		return fmt.Errorf("failed to verify rebuild backup: %d file(s) failed deep verification", len(report.Skipped))
 	}
 	return nil
 }

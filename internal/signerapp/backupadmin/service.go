@@ -176,7 +176,7 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 		ArchivePath:      preview.ArchivePath,
 		ArchiveCreatedAt: preview.CreatedAtUnix,
 		Keys:             projectRestoreKeyInfos(preview.Keys),
-		Errors:           projectRestoreErrors(preview.Errors),
+		Errors:           projectRestoreErrors(preview.Skipped),
 	}
 }
 
@@ -188,7 +188,6 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
-			Error:         item.Error,
 		}
 		if item.StageHint != nil {
 			n := item.StageHint.Stage
@@ -199,12 +198,12 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 	return out
 }
 
-func projectRestoreErrors(items []backup.RestoreError) []adminproto.RestoreError {
+func projectRestoreErrors(items []backup.SkippedEntry) []adminproto.RestoreError {
 	out := make([]adminproto.RestoreError, len(items))
 	for i, item := range items {
 		out[i] = adminproto.RestoreError{
-			Address: item.Address,
-			Error:   item.Error,
+			Address: item.Selector,
+			Error:   item.Reason,
 		}
 	}
 	return out

@@ -68,7 +68,7 @@ func TestBackupCarriesCosignerPolicyEncryptedAndVerified(t *testing.T) {
 		t.Fatal("archived policy is stored in plaintext")
 	}
 	report, err := DeepVerifyBackupBytes(extractDir, []byte("export-passphrase"))
-	if err != nil || report.FailedFiles != 0 || report.TotalFiles != 2 {
+	if err != nil || len(report.Verified) != 1 || !report.Verified[0].HasPolicy || len(report.Skipped) != 0 {
 		t.Fatalf("DeepVerifyBackupBytes() = %+v, %v; want the credential and its policy valid", report, err)
 	}
 
@@ -143,22 +143,6 @@ func TestPartialBackupCarriesOnlySelectedPolicies(t *testing.T) {
 	stage := t.TempDir()
 	if exported, err = exportKeyPolicies(activePathsForBackupTest(t, paths), noderole.RoleCosigner, stage, []string{selector}, kr, []byte("export-passphrase")); err != nil || len(exported) != 1 {
 		t.Fatalf("export of the selected key = %v, %v", exported, err)
-	}
-}
-
-func TestDeepVerifyRejectsPolicyWithoutCredential(t *testing.T) {
-	paths, selector, _ := cosignerStoreWithPolicy(t)
-	archivePath := BuildManagedArchivePath(paths, "20260721-010205")
-	if _, err := CreateKeysArchive(testCreateKeysArchiveRequest(paths, archivePath, nil, noderole.RoleCosigner, cryptotest.Keyring(t, testExportMasterKey))); err != nil {
-		t.Fatal(err)
-	}
-	extractDir := t.TempDir()
-	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
-		t.Fatal(err)
-	}
-	result := verifyPolicyDeep(filepath.Join(extractDir, "apb"), selector, []byte("export-passphrase"), noderole.RoleCosigner, nil)
-	if result.Valid || !strings.Contains(result.Error, "no credential") {
-		t.Fatalf("verifyPolicyDeep(without credential) = %+v", result)
 	}
 }
 
