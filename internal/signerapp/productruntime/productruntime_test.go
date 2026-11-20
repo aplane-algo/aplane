@@ -333,7 +333,7 @@ func TestStoredConfigApply(t *testing.T) {
 		Theme:             "light",
 	}
 
-	effective, err := cfg.Apply(ConfigDefaults{
+	effective, err := cfg.Apply(EffectiveConfig{
 		UserAutoApprove:  false,
 		LockOnDisconnect: true,
 		SessionTimeout:   15 * time.Minute,
@@ -359,7 +359,7 @@ func TestStoredConfigApply(t *testing.T) {
 		t.Fatalf("theme = %q, want light", effective.Theme)
 	}
 
-	unset, err := (&StoredConfig{}).Apply(ConfigDefaults{Theme: DefaultTheme})
+	unset, err := (&StoredConfig{}).Apply(EffectiveConfig{Theme: DefaultTheme})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestStoredConfigApply(t *testing.T) {
 }
 
 func TestStoredConfigApplyDefault(t *testing.T) {
-	effective, err := (&StoredConfig{}).Apply(ConfigDefaults{})
+	effective, err := (&StoredConfig{}).Apply(EffectiveConfig{})
 	if err != nil {
 		t.Fatalf("Apply(default) error = %v", err)
 	}
@@ -453,7 +453,7 @@ func TestStoredConfigApplyUserAutoApprove(t *testing.T) {
 		UserAutoApprove: &userAutoApprove,
 	}
 
-	effective, err := cfg.Apply(ConfigDefaults{
+	effective, err := cfg.Apply(EffectiveConfig{
 		UserAutoApprove:  true,
 		LockOnDisconnect: true,
 		SessionTimeout:   15 * time.Minute,

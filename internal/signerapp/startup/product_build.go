@@ -78,7 +78,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 		return nil, fmt.Errorf("invalid product approval_wait: %w", err)
 	}
 
-	effectiveCfg, err := storedCfg.Apply(productruntime.ConfigDefaults{
+	effectiveCfg, err := storedCfg.Apply(productruntime.EffectiveConfig{
 		UserAutoApprove:  opts.Config.UserAutoApprove,
 		LockOnDisconnect: opts.Config.ShouldLockOnDisconnect(),
 		SessionTimeout:   opts.DefaultSessionTimeout,

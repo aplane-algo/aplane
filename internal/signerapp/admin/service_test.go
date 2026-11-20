@@ -264,7 +264,7 @@ func TestGenerationRequirementsAreSavedAndLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	effective, err := stored.Apply(productruntime.EffectiveConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective, err := stored.Apply(productruntime.ConfigDefaults{})
+	effective, err := stored.Apply(productruntime.EffectiveConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,13 +26,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
 
-// maxPolicyFileBytes bounds what a policy file read accepts; the node
-// rejects larger documents.
-const maxPolicyFileBytes = 1 << 20
-
-// MaxPolicyBytes is the largest policy document a review accepts, for callers
-// that collect a document some other way than reading a file.
-const MaxPolicyBytes = maxPolicyFileBytes
+// MaxPolicyBytes is the largest policy document a review accepts, whether
+// read from a file or collected some other way; the node rejects larger
+// documents.
+const MaxPolicyBytes = 1 << 20
 
 // ReadDocuments reads policy files. Each file names the document it is in
 // its "key" field: "default" or a key selector. names maps a document's key
@@ -47,7 +44,7 @@ func ReadDocuments(files []string, stdin io.Reader) ([]adminproto.PolicyDocument
 // there is no stdin form.
 func ReadRegularDocuments(files []string) ([]adminproto.PolicyDocument, map[string]string, error) {
 	return readDocuments(files, func(file string) ([]byte, error) {
-		data, _, err := fsutil.ReadRegularFileLimited(file, maxPolicyFileBytes)
+		data, _, err := fsutil.ReadRegularFileLimited(file, MaxPolicyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", file, err)
 		}
@@ -112,14 +109,14 @@ func readPolicyFile(file string, stdin io.Reader) ([]byte, error) {
 		defer func() { _ = f.Close() }()
 		r = f
 	}
-	data, err := io.ReadAll(io.LimitReader(r, maxPolicyFileBytes+1))
+	data, err := io.ReadAll(io.LimitReader(r, MaxPolicyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", file, err)
 	}
 	// The limit reads one byte past the cap only to see that a file is over
 	// it; parsing what was read would send the file without its tail.
-	if len(data) > maxPolicyFileBytes {
-		return nil, fmt.Errorf("%s is larger than %d bytes", file, maxPolicyFileBytes)
+	if len(data) > MaxPolicyBytes {
+		return nil, fmt.Errorf("%s is larger than %d bytes", file, MaxPolicyBytes)
 	}
 	return validPolicyBytes(file, data)
 }
