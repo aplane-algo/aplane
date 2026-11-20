@@ -92,6 +92,11 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
+	// The signer endpoint keeps its role. Rewriting it as a cosigner would
+	// leave the client without a signer endpoint and let delete remove it.
+	if exists && existing.Role == ClientEndpointRoleSigner && normalized.Role != ClientEndpointRoleSigner {
+		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q is the signer endpoint; it cannot become a %s endpoint", alias, normalized.Role)
+	}
 	plan := StoredClientEndpointUpsertPlan{Alias: alias}
 	plan.DestinationChanged = exists && existing.URL != normalized.URL
 	registry.Endpoints[alias] = normalized

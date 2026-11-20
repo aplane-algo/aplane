@@ -264,6 +264,30 @@ endpoints:
 	}
 }
 
+// An upsert may move the signer endpoint to another URL but may not turn it
+// into a cosigner endpoint: the client would be left without a signer
+// endpoint, and delete would then remove it.
+func TestPlanStoredClientEndpointUpsertKeepsTheSignerRole(t *testing.T) {
+	dataDir := writeTestEndpointRegistry(t, testSignerRegistry)
+	for _, url := range []string{"ssh://other.example", "ssh://signer.example"} {
+		_, err := PlanStoredClientEndpointUpsert(dataDir, "primary", ClientEndpointConfig{Role: ClientEndpointRoleCosigner, URL: url}, true)
+		if err == nil || err.Error() != `endpoint alias "primary" is the signer endpoint; it cannot become a cosigner endpoint` {
+			t.Fatalf("PlanStoredClientEndpointUpsert(primary as cosigner at %s) error = %v", url, err)
+		}
+	}
+
+	plan, err := PlanStoredClientEndpointUpsert(dataDir, "primary", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://signer.example:2200"}, true)
+	if err != nil || !plan.Updated || !plan.DestinationChanged {
+		t.Fatalf("moving the signer endpoint = %+v, %v; want an updated destination", plan, err)
+	}
+	if alias, endpoint, _ := plan.Registry.SignerEndpoint(); alias != "primary" || endpoint.URL != "ssh://signer.example:2200" {
+		t.Fatalf("SignerEndpoint() after the move = %q, %+v", alias, endpoint)
+	}
+	if got := readTestEndpointRegistry(t, dataDir); got != testSignerRegistry {
+		t.Fatalf("planning rewrote endpoints.yaml:\n%s", got)
+	}
+}
+
 // The URL rules for a client endpoint record, on the save path (a plan, as
 // endpoints add, create and import make) and the load path. Accepted URLs
 // are stored without surrounding space or a trailing slash.

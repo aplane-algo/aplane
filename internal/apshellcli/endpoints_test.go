@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,6 +163,95 @@ func TestEndpointCommandMachineResults(t *testing.T) {
 	}
 	if _, err := state.cmdEndpoints([]string{"default", "main"}, nil); err == nil || err.Error() != `unknown endpoints subcommand "default"` {
 		t.Fatalf("endpoints default error = %v, want an unknown subcommand", err)
+	}
+}
+
+// No endpoints writer turns the signer endpoint into a cosigner endpoint,
+// from the shell or over MCP, and a refused write leaves endpoints.yaml as
+// it was. Moving the signer endpoint to another URL still works.
+func TestEndpointWritersRefuseChangingTheSignerRole(t *testing.T) {
+	const registry = "schema_version: 2\nendpoints:\n  primary:\n    role: signer\n    url: ssh://127.0.0.1:2223\n"
+	const roleRefusal = `endpoint alias "primary" is the signer endpoint; it cannot become a cosigner endpoint`
+	newState := func(t *testing.T) (*REPLState, string, string) {
+		t.Helper()
+		dataDir := t.TempDir()
+		if err := os.WriteFile(config.GetClientEndpointsPath(dataDir), []byte(registry), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:4444"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelopePath := filepath.Join(dataDir, "moved.endpoint.json")
+		if err := os.WriteFile(envelopePath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		state := &REPLState{
+			Out: &bytes.Buffer{}, App: apshellapp.New(newIsolatedTestEngine(t, "testnet"), config.DefaultConfig(), dataDir),
+			DataDir: dataDir, currentCommandCtx: context.Background(), AutoConfirm: true,
+		}
+		state.CommandRegistry = state.initCommandRegistry()
+		return state, dataDir, envelopePath
+	}
+	shell := func(state *REPLState, args []string) error {
+		_, err := state.cmdEndpoints(args, nil)
+		return err
+	}
+	overMCP := func(state *REPLState, args []string) error {
+		result := mcpExecuteCommand(state, Command{Name: "endpoints", Args: args})
+		if !result.IsError {
+			return nil
+		}
+		return errors.New(mcpResultText(t, result))
+	}
+	tests := []struct {
+		name    string
+		run     func(*REPLState, []string) error
+		args    func(envelope string) []string
+		wantErr string
+	}{
+		{"create", shell, func(string) []string {
+			return []string{"create", "--alias", "primary", "--endpoint", "ssh://127.0.0.1:4444"}
+		}, roleRefusal},
+		{"create over MCP", overMCP, func(string) []string {
+			return []string{"create", "--alias", "primary", "--endpoint", "ssh://127.0.0.1:4444"}
+		}, roleRefusal},
+		{"import", shell, func(envelope string) []string {
+			return []string{"import", "--alias", "primary", "--role", "cosigner", envelope}
+		}, roleRefusal},
+		{"import over MCP", overMCP, func(envelope string) []string {
+			return []string{"import", "--alias", "primary", "--role", "cosigner", envelope}
+		}, roleRefusal},
+		{"add", shell, func(string) []string {
+			return []string{"add", "ssh://127.0.0.1:4444", "--alias", "primary", "--replace"}
+		}, `endpoint alias "primary" has role "signer"; choose a cosigner alias`},
+		{"add over MCP", overMCP, func(string) []string {
+			return []string{"add", "ssh://127.0.0.1:4444", "--alias", "primary", "--replace"}
+		}, "endpoints add is unavailable through MCP; use apshell directly"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, dataDir, envelope := newState(t)
+			if err := tt.run(state, tt.args(envelope)); err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("endpoints %v error = %v, want %q", tt.args(envelope), err, tt.wantErr)
+			}
+			data, err := os.ReadFile(config.GetClientEndpointsPath(dataDir))
+			if err != nil || string(data) != registry {
+				t.Fatalf("a refused write changed endpoints.yaml: %q, %v", data, err)
+			}
+		})
+	}
+
+	for name, run := range map[string]func(*REPLState, []string) error{"shell": shell, "MCP": overMCP} {
+		t.Run("move the signer endpoint over "+name, func(t *testing.T) {
+			state, _, envelope := newState(t)
+			if err := run(state, []string{"import", "--alias", "primary", "--role", "signer", envelope}); err != nil {
+				t.Fatalf("endpoints import of the signer endpoint at a new URL: %v", err)
+			}
+			if alias, endpoint, _ := state.App.Config.Endpoints.SignerEndpoint(); alias != "primary" || endpoint.URL != "ssh://127.0.0.1:4444" {
+				t.Fatalf("SignerEndpoint() after the move = %q, %+v", alias, endpoint)
+			}
+		})
 	}
 }
 
