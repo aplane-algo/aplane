@@ -1703,7 +1703,7 @@ abort_if_macos_install_processes_running() {
     install_root="${install_root%/}"
     local found=0
     local pid exe
-    for name in apsigner apadmin apconsole apshell apstore apapprover appass aplocalnet; do
+    for name in "${RELEASE_BINARIES[@]}"; do
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             exe="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
