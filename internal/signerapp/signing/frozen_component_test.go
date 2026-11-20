@@ -210,6 +210,10 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 
 func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 	service, authorizer, txn := frozenBoundedTestService(t, 4_500)
+	// Configured as the daemon configures it, so the refusal is the
+	// request's own on either kind.
+	service.Approval, service.Executor = &ApprovalService{}, &Executor{}
+	session := newComponentKeySession(&componentKeyStore{})
 	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
 		AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
 	}}})
@@ -246,7 +250,7 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 			if err := request.Validate(); err != nil {
 				t.Fatalf("structural request validation failed: %v", err)
 			}
-			if _, err := service.SignComponentsWithContext(context.Background(), request, nil); err == nil ||
+			if _, err := service.SignComponentsWithContext(context.Background(), request, session); err == nil ||
 				!strings.Contains(err.Error(), "must be declared as dummy_positions") {
 				t.Fatalf("SignComponentsWithContext() error = %v, want undeclared dummy rejection", err)
 			}

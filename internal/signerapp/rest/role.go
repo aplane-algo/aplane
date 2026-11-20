@@ -30,35 +30,29 @@ func requireAccountSigningRole(ir *productruntime.Runtime, operation string) *si
 	}
 }
 
-func requireComponentNodeRole(ir *productruntime.Runtime, role signersigning.ComponentSignRole) *signersigning.ServiceError {
+// requireCosignerNodeRole allows cosigner component signing on a cosigner
+// node only.
+func requireCosignerNodeRole(ir *productruntime.Runtime) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
-	switch role {
-	case signersigning.ComponentSignRoleCosigner:
-		switch nodeRole {
-		case noderole.RoleCosigner:
-			return nil
-		case noderole.RoleSigner:
-			return &signersigning.ServiceError{
-				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("node role %q does not allow cosigner component signing", nodeRole),
-			}
-		default:
-			return &signersigning.ServiceError{
-				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("unknown node role %q does not allow cosigner component signing", nodeRole),
-			}
+	switch nodeRole {
+	case noderole.RoleCosigner:
+		return nil
+	case noderole.RoleSigner:
+		return &signersigning.ServiceError{
+			Kind:    signersigning.ErrorForbidden,
+			Message: fmt.Sprintf("node role %q does not allow cosigner component signing", nodeRole),
 		}
 	default:
 		return &signersigning.ServiceError{
-			Kind:    signersigning.ErrorBadRequest,
-			Message: fmt.Sprintf("unsupported component signing role %q", role),
+			Kind:    signersigning.ErrorForbidden,
+			Message: fmt.Sprintf("unknown node role %q does not allow cosigner component signing", nodeRole),
 		}
 	}
 }
 
 func requireComponentTargetNodeRole(ir *productruntime.Runtime, kind signerapi.ComponentTargetKind) *signersigning.ServiceError {
 	if kind == signerapi.ComponentTargetKindCosigner {
-		return requireComponentNodeRole(ir, signersigning.ComponentSignRoleCosigner)
+		return requireCosignerNodeRole(ir)
 	}
 	if kind == signerapi.ComponentTargetKindBoundedBase {
 		return requireAccountSigningRole(ir, "account component signing")

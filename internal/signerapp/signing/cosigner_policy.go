@@ -36,7 +36,7 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
 		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
 	}
-	group := componentPlanTxns(plan)
+	group := makeTxnSlice(plan.Group)
 	targets := componentTargetPositions(plan)
 	// A group the network could never accept gets no witness signature. This
 	// route reaches neither the planner nor the frozen-component validation,
@@ -114,21 +114,17 @@ func (s *Service) logCosignerRejections(plan *ComponentSignPlan, reason, policyR
 		return
 	}
 	for _, target := range plan.Targets {
-		sender := target.Sender
-		if sender == "" && plan.Group != nil && target.TargetIndex >= 0 && target.TargetIndex < len(plan.Group.Entries) {
-			sender = plan.Group.Entries[target.TargetIndex].Txn.Sender.String()
-		}
 		if limited, ok := s.AuditLog.(AuditCosignerRejectLogger); ok && limited != nil {
-			limited.LogCosignerComponentRejected(plan.ComponentKey, sender, reason, policyRuleID)
+			limited.LogCosignerComponentRejected(plan.ComponentKey, target.Sender, reason, policyRuleID)
 			continue
 		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, sender, reason, policyRuleID)
+				ruleLogger.LogSignRejectedWithPolicyRule(plan.ComponentKey, target.Sender, reason, policyRuleID)
 				continue
 			}
 		}
-		rejectLogger.LogSignRejected(plan.ComponentKey, sender, reason)
+		rejectLogger.LogSignRejected(plan.ComponentKey, target.Sender, reason)
 	}
 }
 
@@ -163,18 +159,6 @@ func (s *Service) genesisHashResolver() apconfig.GenesisHashNetworkResolver {
 		return apconfig.GenesisHashNetworkResolver{}
 	}
 	return s.Planner.GenesisHashResolver
-}
-
-// componentPlanTxns returns every transaction in a component plan's group.
-func componentPlanTxns(plan *ComponentSignPlan) []types.Transaction {
-	if plan == nil || plan.Group == nil {
-		return nil
-	}
-	txns := make([]types.Transaction, len(plan.Group.Entries))
-	for i, entry := range plan.Group.Entries {
-		txns[i] = entry.Txn
-	}
-	return txns
 }
 
 // cosignerKeyAddresses is the address of each witness key this cosigner holds

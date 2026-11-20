@@ -161,9 +161,8 @@ func TestCosignerRefusesNonparticipationBeforePolicy(t *testing.T) {
 
 	_, err := service.signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-nonparticipation",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	requireNonparticipationRefusal(t, err, "transaction 1:")
@@ -190,9 +189,8 @@ func TestCosignerChecksTheKeyBeforeTheInvariant(t *testing.T) {
 
 	_, err := service.signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-unknown-key",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(&componentKeyStore{}))
 	if err == nil || err.HTTPStatus() != 400 || !strings.Contains(err.Message, "not found") {

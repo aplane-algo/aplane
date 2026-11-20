@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -46,21 +47,14 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	componentKey := testFalconComponentSelector(t, 0xab)
 	req := componentPlanRequest{
 		RequestID:     "cli-component-1",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])}),
 		TargetIndices: []int{1, 0},
 	}
 
-	plan, err := prepareComponentSigning(req)
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
+	plan := prepareComponentSigning(req)
 	if plan.RequestID != req.RequestID || plan.ComponentKey != componentKey {
 		t.Fatalf("plan request metadata = %#v, want request_id %q component_key %q", plan, req.RequestID, componentKey)
-	}
-	if plan.MessageRole != message.RoleCosigner {
-		t.Fatalf("MessageRole = %v, want cosigner", plan.MessageRole)
 	}
 	if len(plan.Targets) != 2 {
 		t.Fatalf("Targets len = %d, want 2", len(plan.Targets))
@@ -89,16 +83,12 @@ func TestPrepareComponentSigningKeepsTheRequestID(t *testing.T) {
 	receiver := types.Address{2}.String()
 	txn := paymentTransaction(t, sender, receiver, 7)
 
-	plan, err := prepareComponentSigning(componentPlanRequest{
+	plan := prepareComponentSigning(componentPlanRequest{
 		RequestID:     "req-42",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
 	if plan.RequestID != "req-42" {
 		t.Fatalf("RequestID = %q, want the request's req-42", plan.RequestID)
 	}
@@ -110,72 +100,17 @@ func TestPrepareComponentSigningUsesCosignerRoleDomain(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 7)
 
 	req := componentPlanRequest{
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}
 
-	plan, err := prepareComponentSigning(req)
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
-	if plan.MessageRole != message.RoleCosigner {
-		t.Fatalf("MessageRole = %v, want cosigner", plan.MessageRole)
-	}
+	plan := prepareComponentSigning(req)
 	// The cosigner signs a domain-tagged message, never the TxID the spending
 	// key signs.
 	txID := plan.Group.Entries[0].TxID
 	if bytes.Equal(plan.Targets[0].Message[:], txID[:]) {
 		t.Fatal("cosigner component message is the TxID")
-	}
-}
-
-func TestPrepareComponentSigningRejectsMalformedGroupBytes(t *testing.T) {
-	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          ComponentSignRoleCosigner,
-		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
-	})
-	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("prepareComponentSigning() error = %v, want bad request", err)
-	}
-	if !strings.Contains(err.Message, "invalid msgpack") {
-		t.Fatalf("prepareComponentSigning() error = %q, want invalid msgpack", err.Message)
-	}
-}
-
-func TestPrepareComponentSigningRejectsDivergentGroup(t *testing.T) {
-	sender := types.Address{5}.String()
-	receiver := types.Address{6}.String()
-	txns := groupedPaymentTransactions(t, sender, receiver)
-	txns[1].Group = types.Digest{9}
-
-	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          ComponentSignRoleCosigner,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
-		TargetIndices: []int{0},
-	})
-	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("prepareComponentSigning() error = %v, want bad request", err)
-	}
-	if !strings.Contains(err.Message, "divergent group ID") {
-		t.Fatalf("prepareComponentSigning() error = %q, want divergent group ID", err.Message)
-	}
-}
-
-func TestPrepareComponentSigningRejectsInvalidRequestShape(t *testing.T) {
-	// The retired user role is no role at all.
-	_, err := prepareComponentSigning(componentPlanRequest{
-		Role:          ComponentSignRole("user"),
-		GroupBytesHex: []string{"5458aa"},
-		TargetIndices: []int{0},
-	})
-	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("prepareComponentSigning() error = %v, want bad request", err)
-	}
-	if !strings.Contains(err.Message, "role must be") {
-		t.Fatalf("prepareComponentSigning() error = %q, want unsupported role", err.Message)
 	}
 }
 
@@ -185,22 +120,12 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 10)
 
 	_, err := (&Service{Planner: cosignerTestPlanner, HoldsCosignerKey: holdsAllCosignerKeys}).signComponentWithContext(context.Background(), componentPlanRequest{
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, nil)
 	if err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("SignComponentWithContext() error = %#v, want internal (policy not loaded)", err)
-	}
-
-	_, err = (&Service{}).signComponentWithContext(context.Background(), componentPlanRequest{
-		Role:          ComponentSignRole("user"),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
-		TargetIndices: []int{0},
-	}, nil)
-	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("SignComponentWithContext(invalid) error = %#v, want bad request", err)
 	}
 }
 
@@ -211,9 +136,8 @@ func TestSignComponentCosignerFailsClosedWithoutLoadedPolicyBeforeKeyLoad(t *tes
 
 	_, err := (&Service{Planner: cosignerTestPlanner, HoldsCosignerKey: holdsAllCosignerKeys}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-no-policy",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorInternal {
@@ -236,9 +160,8 @@ func TestSignComponentCosignerRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 
 	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-no-routing",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -269,9 +192,8 @@ func TestSignComponentCosignerRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 
 	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-appl",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -295,9 +217,8 @@ func TestSignComponentCosignerRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 
 	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-route-miss",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -326,16 +247,12 @@ func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 		HoldsCosignerKey: holdsAllCosignerKeys,
 	}
 	txn := testnetPaymentTransaction(t, source, secondDest, 1)
-	plan, err := prepareComponentSigning(componentPlanRequest{
+	plan := prepareComponentSigning(componentPlanRequest{
 		RequestID:     "cmp-cosigner-per-key",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  secondKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
 	if signErr := svc.runCosignerGates(plan); signErr != nil {
 		t.Fatalf("runCosignerGates() error = %v", signErr)
 	}
@@ -358,9 +275,8 @@ func TestSignComponentCosignerRejectsKeyNotHeldBeforePolicy(t *testing.T) {
 	}
 	_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-not-held",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "not found") {
@@ -381,9 +297,8 @@ func TestSignComponentCosignerRejectsInheritedReviewRouteMissBeforeKeyLoad(t *te
 
 	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-review-route-miss",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -420,9 +335,8 @@ func TestSignComponentCosignerRejectsInheritedReviewAboveBeforeKeyLoad(t *testin
 
 	_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-review-above",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -451,9 +365,8 @@ func TestSignComponentCosignerRejectsRekeyBeforeKeyLoad(t *testing.T) {
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -521,9 +434,8 @@ func TestSignComponentCosignerRefusesARekeyToItsOwnEd25519Key(t *testing.T) {
 			AuditLog:         &testAuditLogger{},
 		}).signComponentWithContext(context.Background(), componentPlanRequest{
 			RequestID:     "cmp-cosigner-own-key",
-			Role:          ComponentSignRoleCosigner,
 			ComponentKey:  falconKey,
-			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+			Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 			TargetIndices: []int{0},
 		}, newComponentKeySession(store))
 		refused := signErr != nil && signErr.Kind == ErrorRekeyTargetNotValid
@@ -546,8 +458,8 @@ func TestSignComponentCosignerRefusesARekeyToItsOwnEd25519Key(t *testing.T) {
 		HoldsCosignerKey: holdsAllCosignerKeys,
 		AuditLog:         &testAuditLogger{},
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
-		RequestID: "cmp-cosigner-broken-key", Role: ComponentSignRoleCosigner, ComponentKey: falconKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)}, TargetIndices: []int{0},
+		RequestID: "cmp-cosigner-broken-key", ComponentKey: falconKey,
+		Group: componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}), TargetIndices: []int{0},
 	}, newComponentKeySession(&componentKeyStore{}))
 	if signErr == nil || signErr.Kind != ErrorInternal {
 		t.Fatalf("unreadable key: error = %#v, want an internal refusal", signErr)
@@ -586,9 +498,8 @@ func TestSignComponentCosignerAllowsExplicitRekeyPolicy(t *testing.T) {
 
 	result, signErr := cosignerTestServiceFor(componentKey, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey-allow",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if signErr != nil {
@@ -620,9 +531,8 @@ func TestSignComponentCosignerRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing
 
 	_, err := cosignerTestServiceFor(testFalconComponentSelector(t, 0xbb), cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey-deny",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xbb),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -665,9 +575,8 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-policy-pass",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if signErr != nil {
@@ -683,16 +592,12 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeString(signature) error = %v", err)
 	}
-	plan, prepErr := prepareComponentSigning(componentPlanRequest{
+	plan := prepareComponentSigning(componentPlanRequest{
 		RequestID:     "cmp-cosigner-policy-pass",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	})
-	if prepErr != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", prepErr)
-	}
 	if err := sigverify.Verify(sigconstruction.Falcon1024(), publicKey, plan.Targets[0].Message[:], sigBytes); err != nil {
 		t.Fatal("cosigner signature does not verify over component message")
 	}
@@ -1148,37 +1053,6 @@ func TestSignPreparedCosignerComponentsSignsFalcon1024Messages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedCosignerComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
-	sender := types.Address{9}.String()
-	receiver := types.Address{10}.String()
-	txn := paymentTransaction(t, sender, receiver, 11)
-	plan, err := prepareComponentSigning(componentPlanRequest{
-		RequestID:     "cmp-user",
-		Role:          ComponentSignRoleCosigner,
-		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
-		TargetIndices: []int{0},
-	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
-	// 0x01 named the retired user role; a plan carrying it is refused before
-	// any key loads.
-	plan.MessageRole = message.Role(0x01)
-	session := &componentKeyTestSession{}
-
-	result, signErr := signPreparedCosignerComponents(context.Background(), plan, session)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
-	}
-	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedCosignerComponents() error = %#v, want bad request", signErr)
-	}
-	if session.calls != 0 {
-		t.Fatalf("session calls = %d, want 0 before role rejection", session.calls)
-	}
-}
-
 func TestSignPreparedCosignerComponentsRejectsWrongKeyType(t *testing.T) {
 	plan := preparedCosignerComponentPlan(t, testFalconComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
@@ -1234,6 +1108,17 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 }
 
 func holdsAllCosignerKeys(string) bool { return true }
+
+// componentTestGroup decodes a group as SignComponentsWithContext does before
+// it hands a cosigner request on.
+func componentTestGroup(t *testing.T, hexes []string) *canonical.Group {
+	t.Helper()
+	group, err := canonical.DecodeGroupHex(hexes)
+	if err != nil {
+		t.Fatalf("DecodeGroupHex() error = %v", err)
+	}
+	return group
+}
 
 func cosignerTestService(t *testing.T, cfg *policy.Config) *Service {
 	t.Helper()
@@ -1295,16 +1180,12 @@ func preparedCosignerComponentPlan(t *testing.T, componentKey string) *Component
 	sender := types.Address{11}.String()
 	receiver := types.Address{12}.String()
 	txn := paymentTransaction(t, sender, receiver, 12)
-	plan, err := prepareComponentSigning(componentPlanRequest{
+	plan := prepareComponentSigning(componentPlanRequest{
 		RequestID:     "cmp-cosigner",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	})
-	if err != nil {
-		t.Fatalf("prepareComponentSigning() error = %v", err)
-	}
 	return plan
 }
 
@@ -1516,9 +1397,8 @@ func TestCosignerPolicyRejectionUsesLimitedAuditPath(t *testing.T) {
 		AuditLog:         audit,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-limited-audit",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(&componentKeyStore{}))
 	if err == nil || err.Kind != ErrorForbidden {
@@ -1571,9 +1451,8 @@ func TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything(t *testing.T)
 		store := &componentKeyStore{}
 		_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
 			RequestID:     "cmp-cosigner-default-" + name,
-			Role:          ComponentSignRoleCosigner,
 			ComponentKey:  testFalconComponentSelector(t, 0xab),
-			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+			Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 			TargetIndices: []int{0},
 		}, newComponentKeySession(store))
 		if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.TransactionTypeRuleID(name)) {
@@ -1591,9 +1470,8 @@ func TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything(t *testing.T)
 	pay := types.Transaction{Type: types.PaymentTx, Header: header, PaymentTxnFields: types.PaymentTxnFields{Receiver: types.Address{91}, Amount: 1}}
 	_, err := svc.signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-own-route-miss",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(pay)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(pay)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(&componentKeyStore{}))
 	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
@@ -1627,9 +1505,8 @@ func TestSignComponentCosignerRejectsAllowedRekeyOnUnknownNetwork(t *testing.T) 
 
 	_, signErr := cosignerTestServiceFor(componentKey, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-rekey-unknown-network",
-		Role:          ComponentSignRoleCosigner,
 		ComponentKey:  componentKey,
-		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
 	if signErr == nil || signErr.Kind != ErrorForbidden || !strings.Contains(signErr.Message, policy.UnknownGenesisHashRuleID) {
@@ -1637,5 +1514,148 @@ func TestSignComponentCosignerRejectsAllowedRekeyOnUnknownNetwork(t *testing.T) 
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+// A cosigner component request signs each target's component message and
+// audits each target, as decoded from the presented group. The test pins the
+// signatures and the audit records through the public entry point.
+func TestSignComponentsCosignerSignsAndAuditsEachTarget(t *testing.T) {
+	edkeygen.RegisterWitnessKeygen()
+	privateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, ed25519.SeedSize))
+	publicKey := []byte(privateKey.Public().(ed25519.PublicKey))
+	componentKey, err := witness.ID(witness.Ed25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("witness.ID() error = %v", err)
+	}
+	store := &componentKeyStore{key: &coresigning.KeyMaterial{
+		Type:     witness.Ed25519V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
+			PublicKey:    append([]byte(nil), publicKey...),
+			PrivateKey:   append([]byte(nil), privateKey...),
+		},
+	}}
+	audit := &testAuditLogger{}
+	svc := cosignerTestServiceFor(componentKey, wildcardCosignerPolicy(t))
+	svc.AuditLog = audit
+	svc.IsUnlocked = func() bool { return true }
+
+	txns := groupedPaymentTransactions(t, types.Address{51}.String(), types.Address{52}.String())
+	hexes := []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])}
+	resp, signErr := svc.SignComponentsWithContext(context.Background(), signerapi.ComponentRequest{
+		RequestID:     "cmp-characterize",
+		GroupBytesHex: hexes,
+		Targets: []signerapi.ComponentTarget{
+			{TargetIndex: 1, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: componentKey},
+			{TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: componentKey},
+		},
+	}, newComponentKeySession(store))
+	if signErr != nil {
+		t.Fatalf("SignComponentsWithContext() error = %v", signErr)
+	}
+	group, decodeErr := canonical.DecodeGroupHex(hexes)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if resp.RequestID != "cmp-characterize" || len(resp.Components) != 2 {
+		t.Fatalf("response = %#v, want two components for cmp-characterize", resp)
+	}
+	for i, component := range resp.Components {
+		msg := message.ComponentMessage(message.RoleCosigner, group.Entries[i].TxID)
+		want := signerapi.Component{
+			TargetIndex: i, Kind: signerapi.ComponentTargetKindCosigner,
+			Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
+			SignatureScheme: witness.Ed25519V1,
+		}
+		if fmt.Sprintf("%#v", component) != fmt.Sprintf("%#v", want) {
+			t.Fatalf("component %d = %#v, want %#v", i, component, want)
+		}
+	}
+	groupID := base64.StdEncoding.EncodeToString(group.GroupID[:])
+	groupTxIDs := []string{txIDString(group.Entries[0].TxID), txIDString(group.Entries[1].TxID)}
+	if len(audit.approved) != 2 {
+		t.Fatalf("approved = %#v, want two records", audit.approved)
+	}
+	for i, entry := range audit.approved {
+		want := SignedRecord{
+			AuthAddress: componentKey,
+			TxnSender:   types.Address{51}.String(),
+			Details:     fmt.Sprintf("cosigner component signature target %d signed", i),
+			TxID:        groupTxIDs[i],
+			Fee:         uint64(txns[i].Fee),
+			GroupID:     groupID,
+			GroupTxIDs:  groupTxIDs,
+		}
+		if fmt.Sprintf("%#v", entry.record) != fmt.Sprintf("%#v", want) {
+			t.Fatalf("approved[%d] = %#v, want %#v", i, entry.record, want)
+		}
+	}
+	if len(audit.rejected)+len(audit.rejectedRecords)+len(audit.failed) != 0 {
+		t.Fatalf("unexpected refusal records: %#v %#v %#v", audit.rejected, audit.rejectedRecords, audit.failed)
+	}
+}
+
+// Both component kinds refuse a group that does not decode, or whose dummy
+// positions are mislabeled, with the same first error, before any key loads.
+func TestSignComponentsRefusesUndecodableGroupsForEitherKind(t *testing.T) {
+	sender, receiver := types.Address{53}.String(), types.Address{54}.String()
+	divergent := groupedPaymentTransactions(t, sender, receiver)
+	divergent[1].Group = types.Digest{9}
+	original := testnetPaymentTransaction(t, sender, receiver, 1)
+	dummies, err := coresigning.CreateDummyTransactions(1, types.SuggestedParams{
+		Fee: original.Fee, FirstRoundValid: original.FirstValid, LastRoundValid: original.LastValid,
+		GenesisID: original.GenesisID, GenesisHash: original.GenesisHash[:], FlatFee: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	undeclared := regroupedHex(t, []types.Transaction{original, dummies[0]})
+	cases := []struct {
+		name    string
+		hexes   []string
+		dummies []signerapi.ComponentDummyPosition
+		want    string
+	}{
+		{name: "malformed bytes", hexes: []string{"5458aa"}, want: "invalid msgpack"},
+		{name: "divergent group", hexes: []string{txnutil.EncodeWithPrefixHex(divergent[0]), txnutil.EncodeWithPrefixHex(divergent[1])}, want: "divergent group ID"},
+		{name: "undeclared dummy", hexes: undeclared, want: "canonical signer-added dummy suffix beginning at position 1 must be declared as dummy_positions"},
+		{
+			name:    "fabricated dummy",
+			hexes:   regroupedHex(t, []types.Transaction{original, testnetPaymentTransaction(t, sender, receiver, 2)}),
+			dummies: []signerapi.ComponentDummyPosition{{TargetIndex: 1}},
+			want:    "dummy position 1 is not the canonical signer-added dummy",
+		},
+	}
+	targets := map[signerapi.ComponentTargetKind]signerapi.ComponentTarget{
+		signerapi.ComponentTargetKindCosigner:    {TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: testFalconComponentSelector(t, 0xab)},
+		signerapi.ComponentTargetKindBoundedBase: {TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: sender},
+	}
+	for _, tc := range cases {
+		for kind, target := range targets {
+			t.Run(tc.name+"/"+string(kind), func(t *testing.T) {
+				store := &componentKeyStore{}
+				svc := &Service{
+					Planner: cosignerTestPlanner, Approval: &ApprovalService{}, Executor: &Executor{},
+					PolicyFor: fixedPolicy(wildcardCosignerPolicy(t)), HoldsCosignerKey: holdsAllCosignerKeys,
+					IsUnlocked: func() bool { return true },
+				}
+				var contextual []signerapi.ComponentContextPosition
+				for i := 1; i < len(tc.hexes)-len(tc.dummies); i++ {
+					contextual = append(contextual, signerapi.ComponentContextPosition{TargetIndex: i})
+				}
+				_, signErr := svc.SignComponentsWithContext(context.Background(), signerapi.ComponentRequest{
+					RequestID: "cmp-undecodable", GroupBytesHex: tc.hexes,
+					Targets: []signerapi.ComponentTarget{target}, ContextualPositions: contextual, DummyPositions: tc.dummies,
+				}, newComponentKeySession(store))
+				if signErr == nil || signErr.Kind != ErrorBadRequest || !strings.Contains(signErr.Message, tc.want) {
+					t.Fatalf("SignComponentsWithContext() error = %#v, want bad request %q", signErr, tc.want)
+				}
+				if store.calls != 0 {
+					t.Fatalf("store calls = %d, want none", store.calls)
+				}
+			})
+		}
 	}
 }

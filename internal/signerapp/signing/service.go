@@ -124,14 +124,6 @@ func (s *Service) planGroupWhileSignable(req signerapi.GroupSignRequest) (*PlanR
 }
 
 func (s *Service) signComponentWithContext(ctx context.Context, req componentPlanRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
-	var getter componentKeyGetter
-	if session != nil {
-		getter = session
-	}
-	return s.signComponentWithSession(ctx, req, getter)
-}
-
-func (s *Service) signComponentWithSession(ctx context.Context, req componentPlanRequest, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -139,35 +131,27 @@ func (s *Service) signComponentWithSession(ctx context.Context, req componentPla
 		return nil, canceledSignRequest(err)
 	}
 
-	plan, err := prepareComponentSigning(req)
-	if err != nil {
-		return nil, err
-	}
+	plan := prepareComponentSigning(req)
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return nil, lockedError()
 	}
-	switch plan.Role {
-	case ComponentSignRoleCosigner:
-		if err := s.runCosignerGates(plan); err != nil {
-			return nil, err
-		}
-		if session == nil {
-			return nil, internal("key session is nil")
-		}
-		release, leaseErr := s.beforeExecute()
-		if leaseErr != nil {
-			return nil, leaseErr
-		}
-		defer release()
-		result, signErr := signPreparedCosignerComponents(ctx, plan, session)
-		if signErr != nil {
-			return nil, signErr
-		}
-		s.logCosignerComponentApproved(plan, result)
-		return result, nil
-	default:
-		return nil, badRequest("unsupported component signing role")
+	if err := s.runCosignerGates(plan); err != nil {
+		return nil, err
 	}
+	if session == nil {
+		return nil, internal("key session is nil")
+	}
+	release, leaseErr := s.beforeExecute()
+	if leaseErr != nil {
+		return nil, leaseErr
+	}
+	defer release()
+	result, signErr := signPreparedCosignerComponents(ctx, plan, session)
+	if signErr != nil {
+		return nil, signErr
+	}
+	s.logCosignerComponentApproved(plan, result)
+	return result, nil
 }
 
 func (s *Service) AssembleWithContext(ctx context.Context, req signerapi.AssemblyRequest, session *keystore.KeySession) (*AssemblyResult, *ServiceError) {

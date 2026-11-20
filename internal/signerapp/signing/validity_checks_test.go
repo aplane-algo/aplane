@@ -380,16 +380,12 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 		t.Helper()
 		audit := &limitedCosignerAuditLogger{}
 		svc := &Service{Planner: cosignerTestPlanner, PolicyFor: fixedPolicy(wildcardCosignerPolicy(t)), HoldsCosignerKey: holds, AuditLog: audit}
-		plan, planErr := prepareComponentSigning(componentPlanRequest{
+		plan := prepareComponentSigning(componentPlanRequest{
 			RequestID:     "cmp-cosigner-bounds",
-			Role:          ComponentSignRoleCosigner,
 			ComponentKey:  componentKey,
-			GroupBytesHex: regroupedHex(t, txns),
+			Group:         componentTestGroup(t, regroupedHex(t, txns)),
 			TargetIndices: []int{0},
 		})
-		if planErr != nil {
-			t.Fatalf("prepareComponentSigning() error = %v", planErr)
-		}
 		return svc.runCosignerGates(plan), audit
 	}
 	unaudited := func(t *testing.T, audit *limitedCosignerAuditLogger) {

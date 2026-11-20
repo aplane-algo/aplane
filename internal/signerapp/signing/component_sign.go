@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -35,9 +34,6 @@ func signPreparedCosignerComponents(ctx context.Context, plan *ComponentSignPlan
 	}
 	if plan == nil {
 		return nil, internal("component sign plan is nil")
-	}
-	if plan.MessageRole != message.RoleCosigner {
-		return nil, badRequest("cosigner component signing requires cosigner role")
 	}
 	if plan.ComponentKey == "" {
 		return nil, badRequest("component_key is required for cosigner component signing")
