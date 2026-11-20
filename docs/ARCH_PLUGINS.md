@@ -763,22 +763,6 @@ accounts the plugin's transactions send from.
   judges each argument against the key that signs, and refuses one a key does
   not take, a native key's included.
 
-### Unsupported `localSigners`
-
-Top-level `localSigners` is intentionally unsupported. APlane does not accept
-plugin-supplied secret keys, even for ephemeral accounts. If a plugin returns
-`localSigners`, apshell rejects the result and tells the plugin author to use
-one of the audited group modes below.
-
-Plugins that need to sign accounts or LogicSigs outside apsigner custody must
-either:
-
-- return a complete, already-signed group with `groupMode:"pregrouped-signed"`,
-  or
-- use `groupMode:"presign-plan"` plus `pluginSigners`, so APlane can
-  canonicalize the group and ask the plugin to sign only its declared slots over
-  canonical bytes.
-
 ### Plugin Transaction Flows (Group Modes)
 
 The default transaction intent flow covers plugins that propose transactions for

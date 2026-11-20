@@ -361,10 +361,9 @@ return {
 };
 ```
 
-Do not return top-level `localSigners`. APlane Shell rejects plugin-supplied
-secret keys. Plugins that need to sign their own accounts should use
-`groupMode:"presign-plan"` with `pluginSigners`, or return a complete signed
-group with `groupMode:"pregrouped-signed"`.
+Plugins that need to sign their own accounts use `groupMode:"presign-plan"`
+with `pluginSigners`, or return a complete signed group with
+`groupMode:"pregrouped-signed"`.
 
 Use `echo-plugin` as the minimal in-repo reference implementation and `reti`
 as a protocol example for a real DeFi integration whose runtime payload is

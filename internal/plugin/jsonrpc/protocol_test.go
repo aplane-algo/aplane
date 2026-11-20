@@ -220,22 +220,6 @@ func TestPluginExecutionContextOmitsReservedZeroFields(t *testing.T) {
 	}
 }
 
-func TestExecuteResultUnsupportedLocalSignersJSONShape(t *testing.T) {
-	result := ExecuteResult{
-		Success:      true,
-		LocalSigners: []json.RawMessage{json.RawMessage(`{"address":"ADDR1","secretKey":"SECRET"}`)},
-	}
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-
-	want := `{"success":true,"localSigners":[{"address":"ADDR1","secretKey":"SECRET"}]}`
-	if string(data) != want {
-		t.Fatalf("Marshal() = %s, want %s", data, want)
-	}
-}
-
 func TestResponseJSONRoundTrip(t *testing.T) {
 	// Test successful response
 	original := Response{

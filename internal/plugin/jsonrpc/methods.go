@@ -4,11 +4,7 @@
 // Package jsonrpc defines the methods and types for plugin communication
 package jsonrpc
 
-import (
-	"encoding/json"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
-)
+import "github.com/algorand/go-algorand-sdk/v2/types"
 
 // Standard methods that all plugins must implement
 const (
@@ -97,10 +93,6 @@ type ExecuteResult struct {
 	Presentation     *Presentation       `json:"presentation,omitempty"`
 	RequiresApproval bool                `json:"requiresApproval,omitempty"`
 	Continuation     *Continuation       `json:"continuation,omitempty"` // For multi-step workflows
-	// LocalSigners is an unsupported secret-bearing field from a removed plugin
-	// signing design. It is retained only so hosts can fail closed when a plugin
-	// returns the field instead of silently ignoring secret-bearing input.
-	LocalSigners []json.RawMessage `json:"localSigners,omitempty"`
 
 	// PluginSigners declares slots the plugin owns but will sign itself, by
 	// reference, in the pre-sign planning flow (GroupModePresignPlan). APlane never

@@ -26,7 +26,8 @@ submission unless they passed exactly one of the two authorization gates:
 
 The legacy third path (`localSigners`, plugin-supplied keys signing locally
 with a plugin-controlled, content-free prompt) violated this claim and was
-removed; `apshellapp/submission.go` now rejects it outright.
+removed. The plugin protocol no longer has the field: a result that still
+carries it decodes without it and goes through its mode's gates.
 
 ## Scope
 
@@ -215,9 +216,9 @@ does not know before decoding, for the review and for submission, which also
 refuses one; signed intents outside pregrouped-signed fail
 `DecodePluginDraft`, with which `CheckPluginGroup` reads the presign-plan and
 default-flow drafts, and a pregrouped-signed intent that is not signed is
-refused there too; `localSigners` is rejected at `apshellapp/submission.go`),
-so there is no third path. The REPL, MCP and JS `plugin()` all reach
-submission through the same review-then-submit loop (see Scope).
+refused there too), so there is no third path. The REPL, MCP and JS
+`plugin()` all reach submission through the same review-then-submit loop (see
+Scope).
 
 ### PS8: No Rekey To A Held Aplane Key That Is Not A Valid Rekey Target
 
@@ -415,7 +416,8 @@ what was reviewed.
 - Mixed passthrough display and auto-approval disable:
   `internal/signerapp/signing/approval_test.go`, `always_review_test.go`;
   end-to-end `test/integration` Passthrough* tests.
-- `localSigners` rejection: `internal/apshellapp/submission_pregrouped_test.go`.
+- A result carrying the retired `localSigners` takes the default flow's gates
+  and signs nothing: `internal/apshellapp/submission_pregrouped_test.go`.
 - JS `plugin()` through the shared loop (continuations, a later step's error,
   the mandatory pregrouped review, the IDs a failed run lists, a failed run's
   REPL and MCP record unchanged):
