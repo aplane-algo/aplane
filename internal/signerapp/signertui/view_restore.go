@@ -203,10 +203,20 @@ func (m Model) renderRestoring() string {
 	return m.renderPopup(70, sb.String())
 }
 
+// restoreDisplayListOverhead is the lines the result list takes beside its
+// rows: its label, the more-above and more-below lines, its total and a
+// spacer.
+const restoreDisplayListOverhead = 5
+
+// renderRestoreDisplay lays the result screen out one screen line per
+// element of lines, wrapping text before it counts it, so the list is given
+// exactly the rows the window has left and the popup's border and the total
+// stay on screen.
 func (m Model) renderRestoreDisplay() string {
 	result := m.restore.result
 	popupWidth := m.popupWidth(110)
 	rowWidth := restorePreviewRowWidth(popupWidth)
+	width := m.popupBodyWidth(110)
 	contentHeight := m.restoreDisplayContentHeight()
 
 	lines := make([]string, 0, contentHeight)
@@ -217,29 +227,50 @@ func (m Model) renderRestoreDisplay() string {
 	}
 	lines = append(lines, "")
 	if result.ArchivePath != "" {
-		lines = append(lines, fmt.Sprintf("Archive: %s", restoreArchiveLabel(result.ArchivePath)))
+		const label = "Archive: "
+		lines = append(lines, label+ellipsizeMiddle(restoreArchiveLabel(result.ArchivePath), max(width-len(label), 1)))
 	}
 	lines = append(lines,
 		fmt.Sprintf("Activated: %d", len(result.Activated)),
 	)
 	if len(result.Skipped) > 0 {
-		lines = append(lines, errorStyle.Render(skippedCountText(len(result.Skipped), result.SkippedOmitted)+" (cannot be restored on this node)"))
+		lines = append(lines, errorStyle.Render(ellipsize(skippedCountText(len(result.Skipped), result.SkippedOmitted)+" (cannot be restored on this node)", width)))
 	}
 
+	listRoom := 0
+	if result.rowCount() > 0 {
+		listRoom = restoreDisplayListOverhead + 1 // and at least one row
+	}
 	if result.Error != "" {
-		lines = append(lines, "", errorStyle.Render(terminalSafeLines(result.Error)))
+		// The error gives way to the list: two blank lines frame it.
+		budget := max(contentHeight-len(lines)-2-listRoom, 1)
+		lines = append(lines, "")
+		for _, line := range restoreErrorLines(result.Error, width, budget) {
+			lines = append(lines, errorStyle.Render(line))
+		}
 	}
 	lines = append(lines, "")
 
-	if result.rowCount() > 0 {
-		const overhead = 5 // header, above indicator, below indicator, total, spacer
-		lines = append(lines, m.restoreDisplayList(rowWidth, max(contentHeight-len(lines)-overhead, 1))...)
+	if listRoom > 0 {
+		lines = append(lines, m.restoreDisplayList(rowWidth, max(contentHeight-len(lines)-restoreDisplayListOverhead, 1))...)
 	}
 
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
 	return m.renderPopup(popupWidth, strings.Join(lines, "\n"))
+}
+
+// restoreErrorLines wraps an error to width and keeps at most budget lines,
+// marking a cut.
+func restoreErrorLines(text string, width, budget int) []string {
+	lines := strings.Split(wrapPlainText(terminalSafeLines(text), width), "\n")
+	if len(lines) <= budget {
+		return lines
+	}
+	lines = lines[:budget]
+	lines[budget-1] = ellipsize(strings.TrimRight(lines[budget-1], " ")+" …", width)
+	return lines
 }
 
 // restoreDisplayList is the result screen's scrolling list: the activated

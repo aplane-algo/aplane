@@ -347,8 +347,17 @@ func (m Model) handleCommitBackupImportResult(msg CommitBackupImportResultMsg) (
 	return m, nil
 }
 
-// importedStatus reports an import that committed, naming every key in it
-// a restore would skip, with the reason.
+// importStatusSkips and importStatusKeyRunes keep an import's skipped keys
+// to a few lines of the Backups page, so the backup list stays in view at
+// the minimum window; the batch import and the backup's restore preview
+// list them all.
+const (
+	importStatusSkips    = 3
+	importStatusKeyRunes = 70
+)
+
+// importedStatus reports an import that committed, with the count of keys in
+// it a restore would skip and the first few, each on one line.
 func importedStatus(name string, result protocol.CommitBackupImportResultMessage) string {
 	status := "Imported " + name + ". Restoring from it is a separate step."
 	if result.Warning != "" {
@@ -357,8 +366,13 @@ func importedStatus(name string, result protocol.CommitBackupImportResultMessage
 	if heading := apadminapp.ImportSkipHeading(result); heading != "" {
 		status += "\n" + heading
 	}
-	for _, skipped := range result.Skipped {
-		status += "\n  " + skipped.Selector + ": " + skipped.Reason
+	shown := result.Skipped[:min(len(result.Skipped), importStatusSkips)]
+	for _, skipped := range shown {
+		key := ellipsizeMiddle(terminalSafe(skipped.Selector), keyAddressShortWidth)
+		status += "\n  " + ellipsize(key+": "+terminalSafe(skipped.Reason), importStatusKeyRunes)
+	}
+	if more := len(result.Skipped) + result.SkippedOmitted - len(shown); more > 0 {
+		status += fmt.Sprintf("\n  and %d more; the backup's preview lists them", more)
 	}
 	return status
 }

@@ -157,30 +157,35 @@ func TestRestoreResultListsActivatedAndSkippedKeys(t *testing.T) {
 	}
 }
 
-// An import whose archive holds keys a restore would skip names each one,
-// with the reason, on the Backups page, which keeps the minimum size.
+// An import whose archive holds keys a restore would skip counts them on
+// the Backups page and names the first few, each on one line, so the backup
+// list stays in view at the minimum size.
 func TestBackupImportListsTheKeysARestoreWouldSkip(t *testing.T) {
 	m, commit := importToCommit(t)
 	reply := commitReply(commit, true, "", "")
-	reply.Result.Skipped = []protocol.RestoreSkipped{
-		{Selector: "BADADDR1", Reason: "failed to parse backup credential"},
-		{Selector: "BADADDR2", Reason: longSkipReason},
+	for i := range 40 {
+		reply.Result.Skipped = append(reply.Result.Skipped, protocol.RestoreSkipped{Selector: fmt.Sprintf("BADADDR%02d", i), Reason: longSkipReason})
 	}
+	reply.Result.SkippedOmitted = 5
 	m, _ = update(t, m, reply)
 	if m.viewState != ViewBackups || m.backups.statusErr {
 		t.Fatalf("committed: view %v status %q", m.viewState, m.backups.status)
 	}
 	for _, want := range []string{
-		"Imported lab.tar.gz.", "A restore will skip 2 key(s) in it that this node cannot use:",
-		"BADADDR1: failed to parse backup credential", "BADADDR2: " + longSkipReason,
+		"Imported lab.tar.gz.", "A restore will skip 45 key(s) in it that this node cannot use:",
+		"BADADDR00: failed to parse backup credential", "BADADDR02: ", "and 42 more; the backup's preview lists them",
 	} {
 		if !strings.Contains(m.backups.status, want) {
 			t.Fatalf("%q missing from the status %q", want, m.backups.status)
 		}
 	}
+	if strings.Contains(m.backups.status, "BADADDR03") {
+		t.Fatalf("the status lists more than the first few keys: %q", m.backups.status)
+	}
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "lab.tar.gz", Size: 100}}})
-	if view := squeezeForTest(fitsMinSizeForTest(t, m)); !strings.Contains(view, "BADADDR1: failed to parse backup credential") {
-		t.Fatalf("the Backups page does not show the skipped keys:\n%s", view)
+	view := fitsMinSizeForTest(t, m)
+	if !strings.Contains(view, "> unknown *") || !strings.Contains(view, "lab.tar.gz") || strings.Contains(view, "Panel lines") {
+		t.Fatalf("the backup list is not in view:\n%s", view)
 	}
 }
 
@@ -208,5 +213,28 @@ func TestRestorePreviewCountsSkippedKeysItDoesNotList(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("%q missing from:\n%s", want, view)
 		}
+	}
+}
+
+// A failed restore whose error wraps over four lines, with twelve skipped
+// keys, keeps the popup's border, the total and the cursor's row on screen
+// at the minimum size, wherever the cursor is.
+func TestRestoreResultWithAWrappedErrorFitsAtMinSize(t *testing.T) {
+	result := RestoreDisplayResult{
+		ArchivePath: "aplane-backup-20261120T101010.000000000Z.tar.gz",
+		Error:       strings.Repeat("restore committed but runtime reload failed; signing is blocked pending recovery ", 4),
+	}
+	for i := range 12 {
+		result.Skipped = append(result.Skipped, RestoreSkipped{Selector: fmt.Sprintf("SKIPPED%051d", i), Reason: longSkipReason})
+	}
+	m := sizedForTest(t, Model{viewState: ViewRestoreDisplay, restore: restoreState{result: result}}, MinWidth, MinHeight)
+	for step := range 12 {
+		view := fitsMinSizeForTest(t, m)
+		for _, want := range []string{"╚", "Total: 0 activated keys, 12 skipped", "> SKIPPED", "runtime reload failed"} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("cursor at row %d: %q missing from:\n%s", step, want, view)
+			}
+		}
+		m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	}
 }
