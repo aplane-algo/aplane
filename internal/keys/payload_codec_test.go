@@ -59,7 +59,6 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				[]byte{0x03, 0x04},
 				map[string]string{"network": "testnet"},
 				bytecode,
-				0,
 				"#pragma version 8\nint 1",
 				[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}},
 				"1:test",
@@ -77,7 +76,6 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				"test.generic.v1",
 				map[string]string{"recipient": "ALICE"},
 				bytecode,
-				0,
 				"#pragma version 8\nint 1",
 				nil,
 				"1:test",
@@ -164,7 +162,7 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
 	payload := NewDSALSigPayload(
 		"test.bounded.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil,
-		bytecode, 0, "", []StoredSigningArg{{Name: "legacy_runtime_arg", Type: "bytes", MaxSize: 32}}, "1:bounded",
+		bytecode, "", []StoredSigningArg{{Name: "legacy_runtime_arg", Type: "bytes", MaxSize: 32}}, "1:bounded",
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
@@ -229,7 +227,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			bytecode := canonicalOffCurveBytecode(t)
 			payload := NewDSALSigPayload(
 				"example.bounded.v1", "aplane.falcon1024.v1", []byte{1, 2, 3, 4}, []byte{5, 6, 7, 8},
-				map[string]string{"recipients": "ADDR"}, bytecode, 0, "", nil, "1:bounded",
+				map[string]string{"recipients": "ADDR"}, bytecode, "", nil, "1:bounded",
 			)
 			defer payload.ZeroSecrets()
 			payload.CreatedAt = canonicalTestTime
@@ -274,7 +272,7 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	payload := NewDSALSigPayload(
 		"test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
 		map[string]string{boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
-		bytecode, 0, "", nil, "1:bounded-cosigner",
+		bytecode, "", nil, "1:bounded-cosigner",
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
@@ -333,7 +331,7 @@ func cosignedTestPayload(t *testing.T, componentKeyType, recordedType string) *P
 		params[boundedmeta.CosignerKeyTypeParameter] = recordedType
 	}
 	payload := NewDSALSigPayload("test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
-		params, canonicalOffCurveBytecode(t), 0, "", nil, "1:bounded-cosigner")
+		params, canonicalOffCurveBytecode(t), "", nil, "1:bounded-cosigner")
 	payload.CreatedAt = canonicalTestTime
 	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
@@ -476,6 +474,30 @@ func TestParsePayloadChecksTheRekeyToListParameters(t *testing.T) {
 	}
 }
 
+// The reader requires an unsalted record to carry salt_counter but never
+// checks its value. Writers set 0; a hand-written record with another value
+// still parses, for a generic and a DSA LogicSig alike.
+func TestParsePayloadAcceptsAnyUnsaltedCounter(t *testing.T) {
+	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
+	for name, record := range map[string]string{
+		"generic": `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex +
+			`","salt_counter":7,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`,
+		"dsa": `{"format_version":1,"category":"dsa_lsig","key_type":"test.dsa.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
+			`","salt_counter":7,"signing_metadata_version":1,"base_key_type":"test.base.v1","created_at":"2026-07-10T12:34:56Z"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := ParsePayload([]byte(record))
+			if err != nil {
+				t.Fatalf("ParsePayload() error = %v", err)
+			}
+			defer payload.ZeroSecrets()
+			if payload.LogicSigDerivation != "" || payload.SaltCounter == nil || *payload.SaltCounter != 7 {
+				t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 7", payload.LogicSigDerivation, payload.SaltCounter)
+			}
+		})
+	}
+}
+
 func TestParsePayloadRejectsNonCanonicalJSON(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1,"category":"generic_lsig","key_type":"test.generic.v1","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T12:34:56Z"}`
@@ -534,7 +556,7 @@ func TestPayloadCategoryValidation(t *testing.T) {
 		{
 			name: "generic forbids private key",
 			payload: func() *Payload {
-				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, 0, "", nil, "")
+				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
 				p.PrivateKey = []byte{0x01}
 				return p
 			}(),
@@ -543,14 +565,14 @@ func TestPayloadCategoryValidation(t *testing.T) {
 		{
 			name: "dsa requires base key type",
 			payload: NewDSALSigPayload(
-				"test.dsa.v1", "", []byte{0x01}, []byte{0x02}, nil, bytecode, 0, "", nil, "",
+				"test.dsa.v1", "", []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "",
 			),
 			want: "requires canonical base_key_type",
 		},
 		{
 			name: "logic sig requires salt counter",
 			payload: func() *Payload {
-				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, 0, "", nil, "")
+				p := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
 				p.SaltCounter = nil
 				return p
 			}(),
@@ -559,7 +581,7 @@ func TestPayloadCategoryValidation(t *testing.T) {
 		{
 			name: "duplicate signing arg",
 			payload: NewGenericLSigPayload(
-				"test.generic.v1", nil, bytecode, 0, "",
+				"test.generic.v1", nil, bytecode, "",
 				[]StoredSigningArg{{Name: "proof", Type: "bytes"}, {Name: "proof", Type: "bytes"}}, "",
 			),
 			want: "duplicate name",
@@ -669,7 +691,7 @@ func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 		t.Fatalf("component Selector() = %q, want %q", gotComponent, wantComponent)
 	}
 
-	generic := NewGenericLSigPayload("test.generic.v1", nil, bytecode, 0, "", nil, "")
+	generic := NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
 	generic.CreatedAt = canonicalTestTime
 	wantLogicSig, err := logicSigAddress(bytecode)
 	if err != nil {
@@ -819,10 +841,10 @@ func TestLogicSigPayloadRequiresTheCurrentSigningMetadataVersion(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
 	builds := map[string]func() *Payload{
 		CategoryGenericLsig: func() *Payload {
-			return NewGenericLSigPayload("test.generic.v1", nil, bytecode, 0, "", nil, "")
+			return NewGenericLSigPayload("test.generic.v1", nil, bytecode, "", nil, "")
 		},
 		CategoryDSALsig: func() *Payload {
-			return NewDSALSigPayload("test.dsa.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 0, "", nil, "")
+			return NewDSALSigPayload("test.dsa.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "")
 		},
 	}
 	for category, build := range builds {

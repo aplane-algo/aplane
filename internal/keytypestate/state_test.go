@@ -156,7 +156,7 @@ func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 	paths = genstoretest.MintFirst(t, paths)
 	masterKey := []byte("01234567890123456789012345678901")
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-	payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+	payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "")
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}

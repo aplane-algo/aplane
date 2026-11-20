@@ -605,7 +605,7 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-	payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+	payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "")
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}
@@ -1059,7 +1059,7 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	t.Helper()
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressForTemplateTest(t, bytecode)
-	payload := apkeys.NewGenericLSigPayload(keyType, map[string]string{"recipient": address}, bytecode, 5, "", nil, "")
+	payload := apkeys.NewGenericLSigPayload(keyType, map[string]string{"recipient": address}, bytecode, "", nil, "")
 	if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}

@@ -26,10 +26,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
-const saltCounterForTest byte = 5
-
-func saltedLogicSigBytecodeForTest() []byte {
-	return []byte{0x26, 0x01, 0x01, saltCounterForTest, 0x81, 0x01}
+func logicSigBytecodeForTest() []byte {
+	return []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 }
 
 func TestCmdRebuildRejectsExistingIdentityBeforePrompt(t *testing.T) {
@@ -457,7 +455,7 @@ func TestRestoreKeyDoesNotActivateLibraryVisibleCompiledProvider(t *testing.T) {
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8a)
 	keyType := "restore-library-provider-v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	registerRestoreLibraryProvider(keyType)
@@ -490,7 +488,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	paths := boundKeystorePaths(t)
 	masterKey := bytes32(0x8b)
 	keyType := "aplane.htlc.v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
@@ -525,7 +523,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8c)
 	keyType := "missing-restore-template-v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	keyJSON := canonicalGenericKeyWithoutSigningMetadataForApstore(t, keyType, bytecode)
@@ -554,7 +552,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8d)
 	keyType := "aplane.htlc.v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
@@ -640,7 +638,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8e)
 	keyType := "test.falcon1024-timelock.v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	// The library file must be a template the library accepts, or the test
@@ -679,7 +677,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	paths := boundKeystorePaths(t)
 	masterKey := bytes32(0x8f)
 	keyType := "aplane.htlc.v1"
-	bytecode := saltedLogicSigBytecodeForTest()
+	bytecode := logicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
 	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))

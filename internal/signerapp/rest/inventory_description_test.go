@@ -118,13 +118,13 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 	t.Cleanup(func() { lsigprovider.Unregister(composed.KeyType()) })
 	writeTemplateStateForRestTest(t, ir.KeyPaths(), composed.KeyType(), templatestore.TemplateTypeComposed, keytypestate.StateEnabled)
 
-	genericKey := keys.NewGenericLSigPayload(generic.KeyType(), map[string]string{"limit": "1"}, []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}, 5, "",
+	genericKey := keys.NewGenericLSigPayload(generic.KeyType(), map[string]string{"limit": "1"}, []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}, "",
 		signingargs.FromRuntimeDefs(generic.RuntimeArgs()), "")
 	if err := genericKey.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 		t.Fatal(err)
 	}
 	boundedKey := keys.NewDSALSigPayload(composed.KeyType(), "aplane.falcon1024.v1", bytes.Repeat([]byte{1}, 1793), bytes.Repeat([]byte{2}, 2305), nil,
-		[]byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x02}, 0, "", nil, "")
+		[]byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x02}, "", nil, "")
 	if err := boundedKey.SetLogicSigOpcodeProfile(composed.LogicSigOpcodeProfile(), true); err != nil {
 		t.Fatal(err)
 	}

@@ -85,7 +85,7 @@ func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, 
 		)
 	} else {
 		payload = keys.NewGenericLSigPayload(
-			keyType, parameters, bytecode, 0, tealSource, signingArgs,
+			keyType, parameters, bytecode, tealSource, signingArgs,
 			lsigprovider.TemplateFingerprintForKeyType(keyType),
 		)
 	}

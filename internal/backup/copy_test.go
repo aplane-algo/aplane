@@ -72,7 +72,7 @@ func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
 
 func testKeyJSON(t *testing.T, keyType string) []byte {
 	t.Helper()
-	return keystest.GenericLSigKeyJSON(t, keyType, saltedLogicSigBytecodeForTest(), saltCounterForTest, nil, "")
+	return keystest.GenericLSigKeyJSON(t, keyType, logicSigBytecodeForTest(), nil, "")
 }
 
 func TestBuildExportPayloadIsCanonicalCredentialOnly(t *testing.T) {

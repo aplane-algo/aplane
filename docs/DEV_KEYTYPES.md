@@ -102,8 +102,10 @@ referenced above is `signing_metadata_version`, `lsig_derivation`,
 `signing_args`.
 `lsig_derivation: algod_v13_auto_salt` records that the final TEAL v13 bytecode
 was salted by the configured algod compiler; a key from an unsalted template has
-no `lsig_derivation` and carries `salt_counter: 0` instead, and pre-profile
-development records must be regenerated. `lsig_opcode_profile` stores only reviewed per-path opcode
+no `lsig_derivation` and carries `salt_counter: 0` instead. A record without a
+valid `lsig_opcode_profile` must be regenerated: an auto-salted one fails to
+parse, and an unsalted one parses but key scan skips it with an
+`incompatible_key_format` warning, so it never signs. `lsig_opcode_profile` stores only reviewed per-path opcode
 ceilings; program length and argument maxima are derived from the final
 bytecode and the frozen argument layout. Non-bounded LogicSig keys
 use signing-metadata version 1. Bounded keys use version 2 and persist the full

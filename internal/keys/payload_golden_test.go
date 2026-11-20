@@ -73,7 +73,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 		{"witness", NewWitnessPayload(witness.Falcon1024V1, componentPublic, componentPrivate), "d6e494aa574e43ba93dc1be7994fee193d6d57277bfaa5d0f7cf1e711a43d70f"},
 		{"dsa_lsig", payloadWithOpcodeProfile(t, NewDSALSigPayload(
 			"test.dsa.v1", "test.base.v1", []byte{0x01, 0x02}, []byte{0x03, 0x04},
-			map[string]string{"network": "testnet"}, bytecode, 0, "#pragma version 8\nint 1",
+			map[string]string{"network": "testnet"}, bytecode, "#pragma version 8\nint 1",
 			[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}}, "1:test",
 		), false), "fddba8e4d2e43803060d8bbb32aeaf289bd3be0cc065c26f0af4d4b37e1b39c5"},
 		{"rotating_lsig", NewRotatingLSigPayload(
@@ -83,7 +83,7 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 			bytes.Repeat([]byte{0x33}, profile.StagePublicKeySize),
 		), "01167e6148ce7956c424547a5880667b431bebca0efedb413dbf43652afff4f4"},
 		{"generic_lsig", payloadWithOpcodeProfile(t, NewGenericLSigPayload(
-			"test.generic.v1", map[string]string{"recipient": "ALICE"}, bytecode, 0,
+			"test.generic.v1", map[string]string{"recipient": "ALICE"}, bytecode,
 			"#pragma version 8\nint 1", nil, "1:test",
 		), false), "19addbe5b44e24b9d37a430f92f7e2be6c7d347ea2bb5371fddfc1dc4f4e7e41"},
 	}

@@ -6,6 +6,7 @@ package signerreg
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -400,6 +402,32 @@ func TestGenerateRecordsAnUnsaltedProgramWithCounterZero(t *testing.T) {
 	defer stored.ZeroSecrets()
 	if stored.LogicSigDerivation != "" || stored.SaltCounter == nil || *stored.SaltCounter != 0 {
 		t.Fatalf("derivation = %q, salt counter = %v, want unsalted with counter 0", stored.LogicSigDerivation, stored.SaltCounter)
+	}
+}
+
+// The generator writes the same key file bytes, apart from created_at. The
+// digest was taken before the payload constructors lost their salt counter
+// parameter.
+func TestGenerateKeyFileIsUnchanged(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	logicsigdsa.Register(&perKeyGeneratorDSA{})
+	t.Cleanup(func() { lsigprovider.Unregister(perKeyGeneratorKeyType) })
+	registerTestCatalogEntry(perKeyGeneratorKeyType, "generator-per-key")
+
+	generator := NewLogicSigGenerator("generator-per-key", map[string]LogicSigKeygenOps{perKeyGeneratorKeyType: &testFalcon1024V1{}})
+	result, err := generator.GenerateFromSeed(context.Background(), paths, bytes.Repeat([]byte{0x42}, 64), cryptotest.Keyring(t, testMasterKey), perKeyGeneratorKeyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithKeyring(result.KeyFiles.PrivateFile, cryptotest.Keyring(t, testMasterKey))
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithKeyring() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	sum := sha256.Sum256(regexp.MustCompile(`"created_at": "[^"]*"`).ReplaceAll(keyJSON, []byte(`"created_at": ""`)))
+	if got, want := hex.EncodeToString(sum[:]), "0ebf051902ccb5b96e5c50b3c60458e99aae6263f3b9e3446d7c095078089ef4"; got != want {
+		t.Fatalf("key file digest = %s, want %s", got, want)
 	}
 }
 

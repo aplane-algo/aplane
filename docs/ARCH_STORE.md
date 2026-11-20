@@ -1512,10 +1512,11 @@ LogicSig salting is a generation-time contract:
   exact final artifact.
 - Source-to-address goldens are pinned to the configured compiler toolchain;
   runtime reproducibility comes from persisted final bytecode.
-- Manual-counter derivation remains parseable only for stored records that also
-  carry a valid reviewed opcode profile. Pre-profile development records are
-  rejected with regeneration guidance. New template-derived key types use
-  `derivation_version: 3`.
+- An auto-salted record's opcode profile is checked when it parses. An unsalted
+  record (no `lsig_derivation`) without a valid opcode profile still parses,
+  but key scan skips it with an `incompatible_key_format` warning
+  (`scanLogicSigResources` in `internal/keys/keys.go` refuses it), so it never
+  signs. New template-derived key types use `derivation_version: 3`.
 - The stored bytecode, not a live template or regenerated TEAL, is the signing
   authority.
 

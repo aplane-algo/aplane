@@ -259,8 +259,7 @@ func TestLoadManagedRestoreSetRejectsMissingRuntimeProvider(t *testing.T) {
 		"example.missing-provider.v1",
 		[]byte{0x01},
 		[]byte{0x02},
-		saltedLogicSigBytecodeForTest(),
-		saltCounterForTest,
+		logicSigBytecodeForTest(),
 	)
 	defer func() {
 		for i := range payload {

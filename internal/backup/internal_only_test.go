@@ -54,7 +54,7 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 			for _, keyType := range []string{base, "test.retired-template.v1"} {
 				t.Run(keyType, func(t *testing.T) {
 					paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
-					payload := keystest.DSALSigKeyJSON(t, keyType, base, pub, priv, saltedLogicSigBytecodeForTest(), saltCounterForTest)
+					payload := keystest.DSALSigKeyJSON(t, keyType, base, pub, priv, logicSigBytecodeForTest())
 					defer crypto.ZeroBytes(payload)
 					parsed, err := keys.ParsePayload(payload)
 					if err != nil {
@@ -89,7 +89,7 @@ func TestPlainProgramRestoresAndSignsExistingCredentials(t *testing.T) {
 						t.Fatal(err)
 					}
 					defer stored.ZeroSecrets()
-					if restoredAddress, err := stored.Selector(); err != nil || restoredAddress != address || stored.KeyType != keyType || stored.BaseKeyType != base || !bytes.Equal(stored.LogicSigBytecode, saltedLogicSigBytecodeForTest()) {
+					if restoredAddress, err := stored.Selector(); err != nil || restoredAddress != address || stored.KeyType != keyType || stored.BaseKeyType != base || !bytes.Equal(stored.LogicSigBytecode, logicSigBytecodeForTest()) {
 						t.Fatal("restore changed stored account authority")
 					}
 					if _, exists, err := keytypestate.Get(paths, base); err != nil || exists {

@@ -68,7 +68,7 @@ func TestKeysComparesAccountDefinition(t *testing.T) {
 
 			ir := setupProductRuntime(t, true)
 			bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-			payload := keys.NewGenericLSigPayload(keyType, map[string]string{"shape": "list"}, bytecode, 5, "", nil, test.stored)
+			payload := keys.NewGenericLSigPayload(keyType, map[string]string{"shape": "list"}, bytecode, "", nil, test.stored)
 			if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
 				t.Fatal(err)
 			}

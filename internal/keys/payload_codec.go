@@ -154,7 +154,8 @@ func NewRotatingLSigPayload(keyType string, seed, genesisHash, stageZeroPublicKe
 	}
 }
 
-// NewDSALSigPayload constructs a canonical DSA-backed LogicSig key payload.
+// NewDSALSigPayload constructs a canonical DSA-backed LogicSig key payload for
+// unsalted bytecode, which records salt_counter 0.
 func NewDSALSigPayload(
 	keyType string,
 	baseKeyType string,
@@ -162,7 +163,6 @@ func NewDSALSigPayload(
 	privateKey []byte,
 	parameters map[string]string,
 	bytecode []byte,
-	saltCounter byte,
 	tealSource string,
 	signingArgs []StoredSigningArg,
 	templateFingerprint string,
@@ -175,7 +175,7 @@ func NewDSALSigPayload(
 		PrivateKey:             bytes.Clone(privateKey),
 		Parameters:             maps.Clone(parameters),
 		LogicSigBytecode:       bytes.Clone(bytecode),
-		SaltCounter:            SaltCounterPtr(saltCounter),
+		SaltCounter:            SaltCounterPtr(0),
 		TEALSource:             tealSource,
 		SigningMetadataVersion: CurrentSigningMetadataVersion,
 		BaseKeyType:            baseKeyType,
@@ -198,18 +198,18 @@ func NewAutoSaltedDSALSigPayload(
 	signingArgs []StoredSigningArg,
 	templateFingerprint string,
 ) *Payload {
-	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p := NewDSALSigPayload(keyType, baseKeyType, publicKey, privateKey, parameters, bytecode, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
 	return p
 }
 
-// NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload.
+// NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload for
+// unsalted bytecode, which records salt_counter 0.
 func NewGenericLSigPayload(
 	keyType string,
 	parameters map[string]string,
 	bytecode []byte,
-	saltCounter byte,
 	tealSource string,
 	signingArgs []StoredSigningArg,
 	templateFingerprint string,
@@ -220,7 +220,7 @@ func NewGenericLSigPayload(
 		KeyType:                keyType,
 		Parameters:             maps.Clone(parameters),
 		LogicSigBytecode:       bytes.Clone(bytecode),
-		SaltCounter:            SaltCounterPtr(saltCounter),
+		SaltCounter:            SaltCounterPtr(0),
 		TEALSource:             tealSource,
 		SigningMetadataVersion: CurrentSigningMetadataVersion,
 		SigningArgs:            cloneStoredSigningArgs(signingArgs),
@@ -239,7 +239,7 @@ func NewAutoSaltedGenericLSigPayload(
 	signingArgs []StoredSigningArg,
 	templateFingerprint string,
 ) *Payload {
-	p := NewGenericLSigPayload(keyType, parameters, bytecode, 0, tealSource, signingArgs, templateFingerprint)
+	p := NewGenericLSigPayload(keyType, parameters, bytecode, tealSource, signingArgs, templateFingerprint)
 	p.SaltCounter = nil
 	p.LogicSigDerivation = LogicSigDerivationAlgodV13AutoSalt
 	return p
