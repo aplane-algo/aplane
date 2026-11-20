@@ -107,14 +107,19 @@ This supports every native key: `ed25519` and `falcon1024`. LogicSig,
 rotating, and witness credentials do not support mnemonic export, and key
 details show the `m` option only for a native key.
 
-Native Falcon key files changed shape in this release: they no longer store
-`pq_scheme` or `pq_address_salt`, which follow from the key type and public
-key. A native Falcon key file or backup written by an earlier release is
-refused, so an older backup that holds a native Falcon key does not restore.
-Move each native Falcon key by its phrase instead: show it with the release
-that holds the key, then import it here with local AP Admin (see
+Native Falcon key files no longer store `pq_scheme` or `pq_address_salt`,
+which follow from the key type and public key. A store or backup that holds a
+native Falcon key written by an earlier release does not carry over:
+
+- Upgrading such a store in place is not supported. The signer refuses the old
+  key file, and a store with a key file it refuses does not unlock: it publishes
+  no keys and enters recovery with signing blocked.
+- A backup that holds such a key does not restore.
+
+Install fresh instead. On the old install, show each native Falcon key's
+recovery phrase; on the new one, import it with local AP Admin (see
 [Mnemonic Import](#2-mnemonic-import)). A native Falcon key from before v0.48.0
-has no phrase; move its funds to a new account from the release that holds it.
+has no phrase; move its funds to a new account from the old install.
 
 ---
 
