@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,7 @@ func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) 
 	}})
 	t.Cleanup(func() { setServerKeyTypes(nil) })
 	m := approvalTestModel(ViewImportParams)
+	m = m.initGenericLSigParamsForKeyType("import-params-test-v1")
 	id := m.beginOperation(ViewImporting)
 	m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{ID: "token-1"}})
 	m = updateModel(t, m, ErrorMsg{ID: id, Error: errors.New("authorization denied")})
@@ -89,6 +91,55 @@ func TestBackgroundFailureUnderPopupReachesTheOperationInProgress(t *testing.T) 
 	m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if m.viewState != ViewImportParams || m.forms.importError != "authorization denied" {
 		t.Fatalf("after answering: view %v error %q, want the import form with the failure", m.viewState, m.forms.importError)
+	}
+}
+
+// A failed import returns to the import parameter form only when that form
+// was filled. An import sent from the plain import form, whose key type list
+// changed while it ran so that the selected type now takes parameters,
+// returns to the import form: the parameter form it would otherwise open has
+// no values, and the first key typed into it crashed apadmin.
+func TestFailedImportReturnsToAParameterFormOnlyWhenFilled(t *testing.T) {
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType: "import-params-test-v1", DisplayName: "Import Params Test", MnemonicImport: true, MnemonicWordCount: 25,
+		CreationParams: []protocol.TemplateParamInfo{{Name: "label", Type: "string"}},
+	}})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
+	for _, failure := range []struct {
+		name string
+		msg  func(id string) tea.Msg
+	}{
+		{"error", func(id string) tea.Msg { return ErrorMsg{ID: id, Error: errors.New("authorization denied")} }},
+		{"result", func(id string) tea.Msg { return ImportResultMsg{ID: id, Error: "authorization denied"} }},
+	} {
+		for _, filled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, form filled %v", failure.name, filled), func(t *testing.T) {
+				m := approvalTestModel(ViewImportForm)
+				want := ViewImportForm
+				if filled {
+					m.viewState = ViewImportParams
+					m = m.initGenericLSigParamsForKeyType("import-params-test-v1")
+					m.forms.genericLSigParams["label"] = "kept"
+					want = ViewImportParams
+				}
+				id := m.beginOperation(ViewImporting)
+				m = updateModel(t, m, failure.msg(id))
+				if m.viewState != want || m.forms.importError != "authorization denied" {
+					t.Fatalf("after the failure: view %v error %q, want view %v with the failure", m.viewState, m.forms.importError, want)
+				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Fatalf("typing into the form panicked: %v", r)
+						}
+					}()
+					m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+				}()
+				if filled && m.forms.genericLSigParams["label"] != "kepta" {
+					t.Fatalf("label = %q, want the kept value typed onto", m.forms.genericLSigParams["label"])
+				}
+			})
+		}
 	}
 }
 

@@ -759,7 +759,10 @@ func (m Model) getMaxVisibleParams() int {
 // appendToCurrentParam appends input to the currently focused parameter field.
 // It strips bracketed paste sequences and other non-printable characters.
 // In ViewGenerateParams, focus 0..N-1 are the parameters. Every way into a
-// parameter form fills genericLSigParams first.
+// parameter form fills genericLSigParams first, and the views a failed
+// generate or import returns to (generateErrorView, importErrorView, the
+// generating case of failOperationInProgress) open one only when it is
+// filled.
 func (m Model) appendToCurrentParam(input string, params []lsigprovider.ParameterDef) Model {
 	paramIdx := m.forms.generateFocus
 	if paramIdx < 0 || paramIdx >= len(params) {

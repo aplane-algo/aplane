@@ -448,9 +448,12 @@ func (m Model) applyBackupResult(msg BackupResultMsg) (tea.Model, tea.Cmd) {
 }
 
 // importErrorView is the form a failed import returns to: the parameter form
-// for a key type that takes parameters, otherwise the import form.
+// for a key type that takes parameters, otherwise the import form. As on the
+// generate side (generateErrorView), the parameter form needs its values: an
+// import sent from the import form while the key type list changed under it
+// has none, and returns to the import form.
 func (m Model) importErrorView() ViewState {
-	if getParamSpecForKeyType(getImportKeyTypeByIndex(m.forms.importKeyType)) != nil {
+	if m.forms.genericLSigParams != nil && getParamSpecForKeyType(getImportKeyTypeByIndex(m.forms.importKeyType)) != nil {
 		return ViewImportParams
 	}
 	return ViewImportForm
