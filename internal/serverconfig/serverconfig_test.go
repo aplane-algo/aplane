@@ -4,12 +4,14 @@
 package serverconfig
 
 import (
-	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
 func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
@@ -318,6 +320,51 @@ endpoint:
 			}
 			if !strings.Contains(err.Error(), "invalid endpoint.advertise_url") {
 				t.Fatalf("LoadServerConfig error = %q, want endpoint.advertise_url", err)
+			}
+		})
+	}
+}
+
+// The URL rules for endpoint.advertise_url, which apadmin endpoint export
+// writes into an envelope. An accepted URL is kept without surrounding space
+// or a trailing slash; an empty one means none is advertised.
+func TestLoadServerConfigEndpointAdvertiseURLRules(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		raw     string
+		wantURL string
+		wantErr string // after "invalid endpoint.advertise_url in config: "
+	}{
+		{raw: "", wantURL: ""},
+		{raw: "ssh://signer.example", wantURL: "ssh://signer.example"},
+		{raw: " ssh://signer.example:2223/ ", wantURL: "ssh://signer.example:2223"},
+		{raw: "ssh://[::1]:2223", wantURL: "ssh://[::1]:2223"},
+		{raw: "ssh://signer.example:0", wantErr: `invalid url port "0"`},
+		{raw: "ssh:///path", wantErr: "url host is required"},
+		{raw: "https://signer.example:8443", wantURL: "https://signer.example:8443"},
+		{raw: "http://127.0.0.1:11270", wantURL: "http://127.0.0.1:11270"},
+		{raw: "http://localhost:11270", wantURL: "http://localhost:11270"},
+		{raw: "http://signer.example:11270", wantErr: "raw http endpoints must be loopback; use ssh:// or https:// for remote endpoints"},
+		{raw: "ftp://signer.example", wantErr: `unsupported url scheme "ftp"`},
+		{raw: "self", wantErr: `url "self" is not allowed in exported endpoint envelopes`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			dir := t.TempDir()
+			data := fmt.Sprintf("endpoint:\n  advertise_url: %q\n", tt.raw)
+			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(data), 0o640); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			cfg, err := LoadServerConfig(dir)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != "invalid endpoint.advertise_url in config: "+tt.wantErr {
+					t.Fatalf("LoadServerConfig error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg.Endpoint.AdvertiseURL != tt.wantURL {
+				t.Fatalf("LoadServerConfig = %q, %v; want %q", cfg.Endpoint.AdvertiseURL, err, tt.wantURL)
 			}
 		})
 	}

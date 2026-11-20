@@ -5,6 +5,7 @@ package endpointrefs
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -143,5 +144,60 @@ func TestMarshalParseRoundTripStable(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Fatalf("marshal/parse/marshal changed envelope:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// The URL rules for an endpoint envelope, which apadmin endpoint export
+// writes and apshell endpoints import reads. Accepted URLs are kept without
+// surrounding space or a trailing slash.
+func TestEnvelopeURLRules(t *testing.T) {
+	tests := []struct {
+		raw     string
+		wantURL string
+		wantErr string
+	}{
+		{raw: "ssh://signer.example", wantURL: "ssh://signer.example"},
+		{raw: "ssh://signer.example:2223", wantURL: "ssh://signer.example:2223"},
+		{raw: " ssh://signer.example:2223/ ", wantURL: "ssh://signer.example:2223"},
+		{raw: "SSH://signer.example", wantURL: "SSH://signer.example"},
+		{raw: "ssh://user@signer.example", wantURL: "ssh://user@signer.example"},
+		{raw: "ssh://[::1]:2223", wantURL: "ssh://[::1]:2223"},
+		{raw: "ssh://127.0.0.1:65535", wantURL: "ssh://127.0.0.1:65535"},
+		{raw: "ssh://signer.example:0", wantErr: `invalid url port "0"`},
+		{raw: "ssh://signer.example:65536", wantErr: `invalid url port "65536"`},
+		{raw: "ssh://signer.example:abc", wantErr: `invalid url: parse "ssh://signer.example:abc": invalid port ":abc" after host`},
+		{raw: "ssh://", wantErr: "url host is required"},
+		{raw: "ssh:///path", wantErr: "url host is required"},
+		{raw: "https://signer.example", wantURL: "https://signer.example"},
+		{raw: "https://signer.example:8443", wantURL: "https://signer.example:8443"},
+		{raw: "http://127.0.0.1:11270", wantURL: "http://127.0.0.1:11270"},
+		{raw: "http://localhost:11270", wantURL: "http://localhost:11270"},
+		{raw: "http://[::1]:11270", wantURL: "http://[::1]:11270"},
+		{raw: "http://signer.example:11270", wantErr: "raw http endpoints must be loopback; use ssh:// or https:// for remote endpoints"},
+		{raw: "ftp://signer.example", wantErr: `unsupported url scheme "ftp"`},
+		{raw: "self", wantErr: `url "self" is not allowed in exported endpoint envelopes`},
+		{raw: "", wantErr: "url is required"},
+		{raw: "://bad", wantErr: `invalid url: parse "://bad": missing protocol scheme`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			data, err := json.Marshal(Envelope{Schema: Schema, URL: tt.raw})
+			if err != nil {
+				t.Fatal(err)
+			}
+			env, err := Parse(data)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("Parse() error = %v, want %q", err, tt.wantErr)
+				}
+				if _, err := Marshal(Envelope{Schema: Schema, URL: tt.raw}); err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("Marshal() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || env.URL != tt.wantURL {
+				t.Fatalf("Parse() = %q, %v; want %q", env.URL, err, tt.wantURL)
+			}
+		})
 	}
 }

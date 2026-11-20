@@ -113,6 +113,56 @@ func TestEndpointImportCommandRefreshesREPLConfig(t *testing.T) {
 	}
 }
 
+// What MCP clients read back from the endpoints subcommands: the signer
+// endpoint is marked as the default in a listing, and importing it reports
+// it.
+func TestEndpointCommandMachineResults(t *testing.T) {
+	dataDir := t.TempDir()
+	data, err := endpointrefs.Marshal(endpointrefs.Envelope{Schema: endpointrefs.Schema, URL: "ssh://127.0.0.1:2223"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopePath := filepath.Join(dataDir, "signer.endpoint.json")
+	if err := os.WriteFile(envelopePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := &REPLState{
+		Out: &bytes.Buffer{}, App: apshellapp.New(newIsolatedTestEngine(t, "testnet"), config.DefaultConfig(), dataDir),
+		DataDir: dataDir, currentCommandCtx: context.Background(),
+	}
+	machine := func(args ...string) string {
+		t.Helper()
+		result, err := state.cmdEndpoints(args, nil)
+		if err != nil {
+			t.Fatalf("cmdEndpoints(%v) error = %v", args, err)
+		}
+		out, err := result.MarshalMachine()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	steps := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"import", "--alias", "main", "--role", "signer", envelopePath},
+			`{"mode":"import","alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","created":true,"default_changed":true}`},
+		{[]string{"create", "--alias", "cos", "--endpoint", "ssh://127.0.0.1:3333"},
+			`{"mode":"create","alias":"cos","role":"cosigner","url":"ssh://127.0.0.1:3333","created":true}`},
+		{[]string{"list"},
+			`[{"alias":"cos","role":"cosigner","url":"ssh://127.0.0.1:3333","default":false},{"alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","default":true}]`},
+		{[]string{"show", "main"}, `{"alias":"main","role":"signer","url":"ssh://127.0.0.1:2223","default":true}`},
+		{[]string{"default", "main"}, `{"mode":"default","alias":"main","default_changed":true,"previous_default":"main"}`},
+		{[]string{"delete", "cos"}, `{"mode":"delete","alias":"cos","deleted":true}`},
+	}
+	for _, step := range steps {
+		if got := machine(step.args...); got != step.want {
+			t.Fatalf("endpoints %v machine result = %s, want %s", step.args, got, step.want)
+		}
+	}
+}
+
 func TestEndpointsUsageListsDiscoverCosigners(t *testing.T) {
 	state := &REPLState{}
 	registry := state.initCommandRegistry()
