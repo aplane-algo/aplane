@@ -65,14 +65,7 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 	ir := s.Runtime
 	var outcome policyapply.Outcome
 	err := s.Deps.WithStoreMutation(func() error {
-		err := s.commitAndReload(ir, req, &outcome)
-		// Enter recovery before releasing the mutation lock, as restore does.
-		// Until reload succeeds the runtime may still serve the superseded
-		// generation, so no key write or signing request may run in between.
-		if outcome.Uncertain {
-			ir.SetRecovery()
-		}
-		return err
+		return s.commitAndReload(ir, req, &outcome)
 	})
 	if err != nil {
 		if errors.Is(err, keystore.ErrStoreLocked) {
@@ -100,7 +93,10 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 
 // commitAndReload commits the change and reloads the runtime from the
 // committed generation. outcome.Uncertain reports a commit that may have
-// landed without the runtime following it.
+// landed without the runtime following it; such a commit enters recovery
+// here, before the caller releases the mutation lock, as restore does. Until
+// a reload succeeds the runtime may still serve the superseded generation, so
+// no key write or signing request may run in between.
 func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.ApplyPolicyRequest, outcome *policyapply.Outcome) error {
 	// Recovery mode admits only the operations that resolve the store
 	// (reconcile, rollback, restore, prune). Its keyring is open, but minting
@@ -131,6 +127,7 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	}
 	if _, err := ir.Reload(); err != nil {
 		outcome.Uncertain = true
+		ir.SetRecovery()
 		return policyapply.Error{Code: "policy_reload_failed", Msg: "policy committed as generation " +
 			outcome.GenerationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
 	}

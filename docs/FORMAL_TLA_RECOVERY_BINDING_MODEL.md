@@ -48,8 +48,9 @@ The transitions transcribe the post-commit reload and the recovery paths:
 - `ReloadSucceed` rebuilds the key cache from the root's generation and lifts
   recovery. `ReloadFail` leaves the cache on the generation it last scanned
   and, with `RecoveryBeforeRelease`, enters recovery in the same step the
-  lock is released (`commitAndReload` sets `Uncertain`, `ApplyPolicy` calls
-  `SetRecovery` inside `WithStoreMutation`; restore does the same, and so does
+  lock is released (`commitAndReload` sets `Uncertain` and calls
+  `SetRecovery` itself, inside `ApplyPolicy`'s `WithStoreMutation`, as
+  `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
 - `Serve` is a signing request or key write, gated by the runtime state

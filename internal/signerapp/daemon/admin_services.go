@@ -36,8 +36,7 @@ import (
 )
 
 type signerAdminServices struct {
-	signer  *Signer
-	product *productruntime.Runtime
+	signer *Signer
 }
 
 type signerBackupServices struct {
@@ -66,7 +65,7 @@ var (
 )
 
 func (fs *Signer) adminServices() signerAdminServices {
-	return signerAdminServices{signer: fs, product: fs.productRuntime()}
+	return signerAdminServices{signer: fs}
 }
 
 func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
@@ -88,7 +87,7 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 }
 
 func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
-	return s.product
+	return s.signer.productRuntime()
 }
 
 // VerifyPassphrase checks a login passphrase against the store root. A
@@ -155,18 +154,14 @@ func failedUnlock(errMsg string) (bool, int, string, string) {
 // reconcileGenerations opens the authenticated root under the store mutation
 // lock and validates the selected generation fail-closed.
 func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, passphrase []byte) error {
-	work := func() error {
+	return s.withStoreMutation(func() error {
 		_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
 		if err != nil {
 			return err
 		}
 		defer kr.Zero()
 		return s.reconcileGenerationsLocked(ir, kr)
-	}
-	if s.signer == nil {
-		return work()
-	}
-	return s.signer.withStoreMutation(work)
+	})
 }
 
 // reconcileGenerationsLocked performs reconciliation without acquiring the
@@ -178,7 +173,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 		return err
 	}
 	if len(preview.Quarantined) > 0 {
-		if s.signer == nil || s.signer.auditLog == nil {
+		if s.signer.auditLog == nil {
 			return fmt.Errorf("reconcile: durable audit unavailable; refusing generation quarantine")
 		}
 		for _, candidate := range preview.Quarantined {
@@ -192,7 +187,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 		}
 	}
 	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr, nil)
-	if s.signer != nil && s.signer.auditLog != nil {
+	if s.signer.auditLog != nil {
 		for _, quarantined := range report.Quarantined {
 			s.signer.auditLog.LogGenerationQuarantined(quarantined)
 		}
@@ -242,7 +237,7 @@ func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {
 }
 
 func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
-	if s.signer == nil || s.signer.auditLog == nil {
+	if s.signer.auditLog == nil {
 		return
 	}
 	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
@@ -381,15 +376,10 @@ var errReconcileStateChanged = errors.New("runtime state changed while store rec
 // no recovery either way.
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
-	work := func() (err error) {
+	err := s.withStoreMutation(func() (err error) {
 		report, err = s.reconcileLocked(ir, enterRecoveryOnFailure)
 		return err
-	}
-	if s.signer == nil {
-		err := work()
-		return report, err
-	}
-	err := s.signer.withStoreMutation(work)
+	})
 	return report, err
 }
 
@@ -437,11 +427,8 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
 		return nil, false
 	}
-	ir.EnsureKeyWatcher(startKeyWatcherForDir)
-	if s.signer != nil {
-		if hub := s.signer.adminHub(); hub != nil {
-			hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
-		}
+	if hub := s.signer.adminHub(); hub != nil {
+		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
 	}
 	return report, true
 }
@@ -454,9 +441,6 @@ func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
 			Code:  "list_failed",
 			Error: err.Error(),
 		}
-	}
-	if resp == nil {
-		return adminproto.ListKeyTypesResult{KeyTypes: nil}
 	}
 	return adminproto.ListKeyTypesResult{KeyTypes: resp.KeyTypes}
 }
@@ -742,16 +726,10 @@ func adminQuarantinedGeneration(record genstore.QuarantineRecord) adminproto.Qua
 }
 
 func (s signerAdminServices) withStoreMutation(fn func() error) error {
-	if s.signer == nil {
-		return fn()
-	}
 	return s.signer.withStoreMutation(fn)
 }
 
 func (s signerAdminServices) withStoreInspection(fn func() error) error {
-	if s.signer == nil {
-		return fn()
-	}
 	return s.signer.tryWithStoreInspection(fn)
 }
 
@@ -771,43 +749,6 @@ func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerRefer
 	}
 }
 
-func (s signerAdminServices) Config() *serverconfig.ServerConfig {
-	cfg := s.signer.ConfigSnapshot()
-	return &cfg
-}
-
-func (s signerAdminServices) DataDir() string {
-	return s.signer.dataDir
-}
-
-func (s signerAdminServices) KeyPaths() storepaths.Paths {
-	return s.signer.keyPaths
-}
-
-func (s signerAdminServices) SSHEnabled() bool {
-	return s.signer.currentSSHServer() != nil
-}
-
-func (s signerAdminServices) SSHPort() int {
-	return s.signer.ConfigSnapshot().Endpoint.SSH.Port
-}
-
-func (s signerAdminServices) SSHClients() int {
-	sshServer := s.signer.currentSSHServer()
-	if sshServer == nil {
-		return 0
-	}
-	return sshServer.ActiveConnectionCount()
-}
-
-func (s signerAdminServices) SSHFingerprint() string {
-	sshServer := s.signer.currentSSHServer()
-	if sshServer == nil {
-		return ""
-	}
-	return sshServer.GetHostKeyFingerprint()
-}
-
 func (s signerAdminServices) LogSessionConnectedContext(ctx adminserver.SessionContext) {
 	if s.signer.auditLog != nil {
 		s.signer.auditLog.LogSessionConnectedContext(ctx)
@@ -821,7 +762,7 @@ func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.Sessi
 }
 
 func (s signerAdminServices) adminApp() signeradmin.Service {
-	return signeradmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime(), ASAChain: signerASAChain{signer: s.signer}}
+	return signeradmin.Service{Deps: signerAdminAppDeps(s), Runtime: s.ProductRuntime(), ASAChain: signerASAChain(s)}
 }
 
 // signerASAChain is the node's network mapping and its genesis-checked algod
@@ -837,7 +778,7 @@ func (c signerASAChain) ReadAsset(ctx context.Context, genesisHash []byte, asset
 }
 
 func (s signerAdminServices) backupApp() backupadmin.Service {
-	return backupadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
+	return backupadmin.Service{Deps: signerAdminAppDeps(s), Runtime: s.ProductRuntime()}
 }
 
 func (s signerAdminServices) backupServices() signerBackupServices {
@@ -845,7 +786,7 @@ func (s signerAdminServices) backupServices() signerBackupServices {
 }
 
 func (s signerAdminServices) templateApp() templateadmin.Service {
-	return templateadmin.Service{Deps: signerAdminAppDeps{signer: s.signer}, Runtime: s.ProductRuntime()}
+	return templateadmin.Service{Deps: signerAdminAppDeps(s), Runtime: s.ProductRuntime()}
 }
 
 func (s signerAdminServices) templateServices() signerTemplateServices {
@@ -854,7 +795,7 @@ func (s signerAdminServices) templateServices() signerTemplateServices {
 
 func (s signerAdminServices) storeApp() storeadmin.Service {
 	return storeadmin.Service{
-		Deps:           signerAdminAppDeps{signer: s.signer},
+		Deps:           signerAdminAppDeps(s),
 		Runtime:        s.ProductRuntime(),
 		AuditLog:       optionalAuditLog[storeadmin.AuditLogger](s.signer.auditLog),
 		UnlockIdentity: s.UnlockIdentity,

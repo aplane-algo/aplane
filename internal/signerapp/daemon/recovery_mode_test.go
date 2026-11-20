@@ -29,7 +29,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
 		KeyPaths: paths,
 	})
-	service := signerAdminServices{product: ir}
+	service := (&Signer{runtime: ir}).adminServices()
 
 	success, keyCount, errMsg, code := service.UnlockIdentity(passphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
