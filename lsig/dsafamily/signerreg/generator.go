@@ -215,17 +215,13 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 
 func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
 	if salted, ok := dsa.(logicsigdsa.SaltedDeriver); ok {
-		result, err := salted.DeriveLsigWithSalt(ctx, publicKey, params)
-		if err != nil {
-			return lsigsalt.FindResult{}, err
-		}
-		return result, nil
+		return salted.DeriveLsigWithSalt(ctx, publicKey, params)
 	}
 
 	return lsigsalt.FindResult{}, fmt.Errorf("%s does not implement salted LogicSig derivation", dsa.KeyType())
 }
 
-// GenerateFromSeed generates a Falcon key from a deterministic seed.
+// GenerateFromSeed generates a LogicSig key from a deterministic seed.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, seed []byte, kr *crypto.Keyring, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	// Make a copy of seed since generateKey will zero it
@@ -235,7 +231,7 @@ func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepat
 	return g.generateKey(ctx, paths, seedCopy, kr, keyType, params)
 }
 
-// GenerateFromMnemonic generates a Falcon key from mnemonic words.
+// GenerateFromMnemonic generates a LogicSig key from mnemonic words.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Seed and entropy derivation route through the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
@@ -255,7 +251,7 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 	return g.generateKey(ctx, paths, seed, kr, keyType, params)
 }
 
-// GenerateRandom generates a new random Falcon key.
+// GenerateRandom generates a new random LogicSig key.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Seed and entropy come from the family's registered mnemonic handler so
 // families with a non-BIP-39 scheme derive correctly. The handler derives the

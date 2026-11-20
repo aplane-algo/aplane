@@ -29,7 +29,6 @@ func RegisterSigner() {
 				Family: ed25519lsig.FamilyName,
 				Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
 					ed25519lsig.FamilyName: keygenOps,
-					ed25519lsig.KeyTypeV1:  keygenOps,
 				},
 				Mnemonic: mnemonic.NewEd25519Handler(ed25519lsig.FamilyName),
 			}},

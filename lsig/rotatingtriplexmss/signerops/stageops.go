@@ -277,27 +277,27 @@ func (o *StageOps) evict(among func(treeKey) bool) {
 }
 
 func (o *StageOps) deriveFromMaterial(key *signing.RotatingKeyMaterial, i uint64) (*StageKeys, stage.Program, error) {
-	d, tag, err := deriverFor(key)
+	d, err := openDeriver(key)
 	if err != nil {
 		return nil, stage.Program{}, err
 	}
 	defer d.Zero()
-	treeNo, _, _ := stage.RangeFor(i)
-	t, err := o.tree(d, tag, treeNo)
-	if err != nil {
-		return nil, stage.Program{}, err
+	return o.Derive(d, i)
+}
+
+// openDeriver opens the key material's deriver. The caller must Zero it.
+func openDeriver(key *signing.RotatingKeyMaterial) (*rotatinghybrid.Deriver, error) {
+	if key == nil {
+		return nil, errors.New("rotating key material is nil")
 	}
-	return DeriveStage(d, i, t)
+	return rotatinghybrid.OpenDeriver(key.Seed, key.GenesisHash, DerivationLabel)
 }
 
 // deriverFor opens the key material's deriver and account tag. The caller
 // must Zero the deriver.
 func deriverFor(key *signing.RotatingKeyMaterial) (*rotatinghybrid.Deriver, [AccountTagSize]byte, error) {
 	var tag [AccountTagSize]byte
-	if key == nil {
-		return nil, tag, errors.New("rotating key material is nil")
-	}
-	d, err := rotatinghybrid.OpenDeriver(key.Seed, key.GenesisHash, DerivationLabel)
+	d, err := openDeriver(key)
 	if err != nil {
 		return nil, tag, err
 	}
@@ -339,7 +339,7 @@ func (o *StageOps) CachedTree(d *rotatinghybrid.Deriver, n uint64) (*PublicTree,
 
 // TreeReady reports whether the tree serving stage i is cached.
 func (o *StageOps) TreeReady(key *signing.RotatingKeyMaterial, i uint64) bool {
-	d, _, err := deriverFor(key)
+	d, err := openDeriver(key)
 	if err != nil {
 		return false
 	}
