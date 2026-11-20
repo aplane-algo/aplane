@@ -6,6 +6,7 @@ package daemon
 import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/signerapp/txdesc"
@@ -61,5 +62,9 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			return err == nil
 		},
 		Rotating: fs.rotatingDeps(ir),
+		// No token store yet: a source that declares a token has none, and
+		// its checks refuse.
+		ExternalChecks: &externalcheck.Runner{Fetcher: &fs.externalFetcher},
+		KeyUse:         ir.KeyUseContext,
 	}
 }

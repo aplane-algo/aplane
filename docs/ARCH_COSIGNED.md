@@ -854,9 +854,9 @@ standing statement, fixed in the program.
 
 A cosigner document may also define external checks: REST lookups whose
 JSON answers must satisfy rules the document states, run only on a request
-the policy would sign. They only refuse. The document format is accepted
-today, and no lookup runs yet: a request governed by a document that has
-checks is refused with `external_check:<id>:unavailable`. See
+the policy would sign. They only refuse, and any lookup that fails refuses
+the request. A source's token cannot be kept yet, so a check on a source
+that declares one refuses. See
 [ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks).
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific

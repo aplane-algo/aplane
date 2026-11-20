@@ -15,9 +15,15 @@ before it was renamed `enroll`.
   signs. Checks only refuse; they never allow what the policy rejects.
   `apadmin policy`, `appolicy` and the schema accept, check, explain and
   compare the two fields.
-- **No lookup runs yet.** Until it does, a cosigner refuses every request
-  governed by a document that has checks, with rule
-  `external_check:<id>:unavailable`, rather than sign without them.
+- **The cosigner makes the lookups** for a request its policy would sign,
+  and signs only if every check passes. A lookup that times out, is
+  redirected, answers anything but 200, or answers something that is not
+  strict JSON refuses the request. The requester is told which check
+  refused; what the source answered stays in the cosigner's audit log. A
+  lock ends lookups in flight at once.
+- **Sources that need a token cannot be used yet.** There is nowhere to
+  keep a token, so a check on such a source refuses with
+  `external_check:<id>:token_not_set`.
 
 ## This release is new-install only
 

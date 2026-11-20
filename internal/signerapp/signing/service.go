@@ -58,6 +58,15 @@ type Service struct {
 	HoldsCosignerKey func(witnessKeyID string) bool
 	// Rotating holds the rotating flow's dependencies; nil disables it.
 	Rotating *RotatingDeps
+	// ExternalChecks runs a cosigner document's external checks. Nil means
+	// this node cannot run them, and a document that has any signs nothing.
+	ExternalChecks ExternalCheckRunner
+	// KeyUse registers a holder of key material for as long as the returned
+	// release is not called: the context it returns ends when the node
+	// locks, and the lock waits for the release. The external check step
+	// holds one while it reads tokens and makes lookups. Nil uses the
+	// request's own context.
+	KeyUse func(ctx context.Context) (context.Context, func())
 }
 
 type SignGroupResult struct {
@@ -128,7 +137,7 @@ func (s *Service) signComponentWithContext(ctx context.Context, req componentPla
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return nil, lockedError()
 	}
-	if err := s.runCosignerGates(plan); err != nil {
+	if err := s.runCosignerGates(ctx, plan); err != nil {
 		return nil, err
 	}
 	if session == nil {

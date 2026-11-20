@@ -709,9 +709,14 @@ default every request is rejected with `transaction_type:<type>`.
 
 An external check refuses with `external_check:<check_id>` when one of its
 rules does not hold, and with `external_check:<check_id>:<outcome>` when it
-could not be judged, where `<outcome>` is `unavailable`, `missing_fact`,
-`token_not_set` or `too_many_lookups`. Today only `unavailable` is emitted:
-see [External Sources and Checks](#external-sources-and-checks).
+could not be judged:
+
+- `unavailable`: the lookup failed, or the node cannot run checks;
+- `missing_fact`: the unit lacks a fact the check uses;
+- `token_not_set`: the source declares a token and the key has none for it;
+- `too_many_lookups`: the request would need more than 32 lookups.
+
+See [External Sources and Checks](#external-sources-and-checks).
 
 ## Transaction Scope
 
@@ -1153,13 +1158,10 @@ rule of every check that applies must hold for it to be signed. They can
 never allow what the policy rejects. Any lookup that cannot be made or read
 refuses the request.
 
-**Status.** The format, its validation, the advisories and the diff are
-implemented (`internal/policy/external_checks_v1.go`,
-`external_checks_review.go`). No lookup runs yet. Until it does, the
-cosigner refuses every request governed by a document that has checks, with
-rule `external_check:<id>:unavailable`
-(`internal/signerapp/signing/cosigner_policy.go`), so no build signs a
-request its operator asked to have checked.
+**Status.** Lookups run. A source's token cannot be kept yet, so a check
+on a source that declares one refuses with
+`external_check:<id>:token_not_set`. A node that cannot run checks at all
+refuses with `external_check:<id>:unavailable`.
 
 ```json
 "external_sources": {
@@ -1290,6 +1292,90 @@ into the answer, with one operand.
 A `number` operand is a decimal string of at most 40 digits, without
 exponent or leading zeros, as amounts are. A `string` operand is at most
 1024 bytes.
+
+### Running the checks
+
+`runCosignerGates` runs the checks last, after the policy verdict
+(`internal/signerapp/signing/external_checks.go`). Nothing is looked up for
+a request an earlier gate refused, so transaction facts leave the node only
+when the answer is not already no.
+
+1. **Plan** (`externalcheck.BuildPlan`). For every check and every unit it
+   applies to, the request is rendered and the unit's facts are kept.
+   Identical requests are merged into one lookup. A unit that lacks a fact
+   its check uses refuses here, before any lookup. A request may need at most
+   32 lookups.
+2. **Fetch** (`externalcheck.Fetcher`). At most 4 lookups are in flight per
+   request and 16 per URL origin (`scheme://host:port`) across the node. Each
+   lookup has its source's timeout, and all of a request's lookups share a
+   10-second deadline. Every lookup uses a fresh connection, and nothing is
+   cached.
+3. **Judge** (`externalcheck.Judge`). Each check's rules, and its echo when
+   it has one, are applied to the answer of its lookup. Checks that share a
+   lookup are judged separately.
+
+The first failure refuses the request and cancels the remaining lookups.
+
+**The request.** This shape is what a source can rely on:
+
+```text
+GET <base_url path, trailing "/" removed><rendered path>?<query, in name order>
+Accept: application/json
+Cache-Control: no-store
+User-Agent: apsigner/<version>
+X-Aplane-Request-Id: <32 hex characters, fresh per lookup>
+<token.header>: <token.prefix><token>      (when the source declares a token)
+```
+
+A fact is escaped as one path segment in the path, and a query value is
+escaped whole. The method is always GET, with no body and no cookies. The
+rendered URL must still be at the source's scheme, host and port.
+
+**The connection.**
+
+- An `https://` source honors the environment's HTTP proxy, as algod and
+  the Indexer do, and requires TLS 1.2 or later. Without pins the system
+  roots and the host name decide.
+- With `tls_spki_sha256`, chain verification is off and the server's key
+  is trusted directly, as an SSH host key is. The connection is accepted
+  only when the leaf certificate is valid for the host name, is within its
+  validity period, and has a pinned public key.
+- An `http://` source uses no proxy and connects only to a loopback
+  address. The check is made on the address actually dialed, so a
+  `localhost` that resolves elsewhere is refused.
+- A redirect is never followed.
+
+**The answer.** It is accepted only with status 200, a body within
+`max_response_bytes`, and strict JSON (`internal/strictjson`): valid UTF-8,
+one value with nothing after it, no duplicate keys, nesting at most 64 deep,
+and number literals of at most 64 characters with an exponent within ±64.
+The `Content-Type` header is not checked. Anything else is a failed lookup.
+
+**Judging.**
+
+- A rule holds only on a value of the right type. A missing value, a
+  `null` and a value of another type all fail, for `ne` and `not_in` too.
+- Numbers are compared as exact decimals, never floats: `1`, `1.0` and
+  `1e0` are equal, and `-0` equals `0`.
+- Strings are compared byte for byte.
+- An array is indexed only by `0` or a number without sign or leading
+  zeros.
+- With `echo_pointer`, the string there must equal the lookup's
+  `X-Aplane-Request-Id`.
+
+**Refusals.** A refusal is a 403 policy rejection. The requester is told the
+check, its rule ID and the unit, for example `external check
+screen-destination refused the pay movement of transaction 0
+(external_check:screen-destination)`. What the source answered is written
+only to the cosigner's audit record, with the source, the request path and
+what failed, for example `/risk/score = 72, want le 30`. A quoted string is
+cut to 64 characters with control and non-ASCII characters escaped. A signed
+request's audit record names the checks that passed and the lookup count.
+
+**Locking.** The fetch step holds a key use (`KeyUseContext`). A lock
+cancels its context, which ends every lookup at once, and waits for the
+release. A request overtaken by a lock is refused as locked, and one that
+was canceled as canceled; neither is audited as a refusal.
 
 ## Semantic Rules
 

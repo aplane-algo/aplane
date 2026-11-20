@@ -5,6 +5,7 @@ package signing
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -386,7 +387,7 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 			Group:         componentTestGroup(t, regroupedHex(t, txns)),
 			TargetIndices: []int{0},
 		})
-		return svc.runCosignerGates(plan), audit
+		return svc.runCosignerGates(context.Background(), plan), audit
 	}
 	unaudited := func(t *testing.T, audit *limitedCosignerAuditLogger) {
 		t.Helper()

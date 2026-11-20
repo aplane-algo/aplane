@@ -145,10 +145,8 @@ func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
 	}
 	if f.Role == noderole.RoleCosigner && verdict.Outcome == policyeval.Approve && len(f.Document.ExternalChecks) > 0 {
 		network, _ := networks.Resolver.NetworkForGenesisHashBytes(built.GenesisHash[:])
-		result.ExternalChecks = &TryExternalChecks{
-			Apply:   applicableExternalChecks(f.Document, network, built),
-			Refusal: externalChecksRefusal,
-		}
+		apply := applicableExternalChecks(f.Document, network, built)
+		result.ExternalChecks = &TryExternalChecks{Apply: apply, Refusal: externalChecksRefusal(f.Document, apply)}
 	}
 	result.Summary = trySummary(result)
 	result.Assumes = tryAssumptions(f.Role, txn, built, networks)

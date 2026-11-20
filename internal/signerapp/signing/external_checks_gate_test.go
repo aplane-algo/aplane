@@ -5,62 +5,255 @@ package signing
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-// A cosigner document with external checks signs nothing while the checks
-// cannot run: a transfer its routes allow is refused before any key is used,
-// under the check's rule ID. A transfer the routes refuse keeps the policy's
-// own rule, since the checks judge only what the policy would sign.
-func TestCosignerRefusesWhileExternalChecksCannotRun(t *testing.T) {
-	source := types.Address{25}.String()
-	allowed := types.Address{26}.String()
-	other := types.Address{27}.String()
-	cfg := cosignerRoutePolicy(t, source, allowed)
-	cfg.ExternalSources = map[string]policy.ExternalSourceV1{"ops": {BaseURL: "http://127.0.0.1:1"}}
-	cfg.ExternalChecks = []policy.ExternalCheckV1{{ID: "ops-switch", Source: "ops", Scope: policy.ExternalScopeRequest, NetworkWildcard: true}}
+// externalGate is a cosigner gate test: a route policy from source to allowed,
+// with one screening check on every pay movement, asked of a stub source.
+type externalGate struct {
+	t       *testing.T
+	svc     *Service
+	audit   *limitedCosignerAuditLogger
+	cfg     *policy.Config
+	source  string
+	allowed string
+	hits    atomic.Int32
+	mu      sync.Mutex
+	answer  func(w http.ResponseWriter, r *http.Request)
+}
 
-	sign := func(destination string) (*ServiceError, *componentKeyStore) {
-		store := &componentKeyStore{}
-		txn := testnetPaymentTransaction(t, source, destination, 1)
-		_, err := cosignerTestService(t, cfg).signComponentWithContext(context.Background(), componentPlanRequest{
-			RequestID:     "cmp-cosigner-external",
-			ComponentKey:  testFalconComponentSelector(t, 0xab),
-			Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
-			TargetIndices: []int{0},
-		}, newComponentKeySession(store))
-		return err, store
+func newExternalGate(t *testing.T) *externalGate {
+	t.Helper()
+	g := &externalGate{t: t, source: types.Address{25}.String(), allowed: types.Address{26}.String(), audit: &limitedCosignerAuditLogger{}}
+	g.answer = func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"score": 12}`)) }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.hits.Add(1)
+		g.mu.Lock()
+		answer := g.answer
+		g.mu.Unlock()
+		answer(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	g.cfg = cosignerRoutePolicy(t, g.source, g.allowed)
+	g.cfg.DocumentKey = policy.DefaultKey
+	g.cfg.ExternalSources = map[string]policy.ExternalSourceV1{"screening": {BaseURL: srv.URL, TimeoutMS: 5000, MaxResponseBytes: 1024}}
+	limit := "30"
+	g.cfg.ExternalChecks = []policy.ExternalCheckV1{{
+		ID: "screen", Source: "screening", Scope: policy.ExternalScopeMovement, NetworkWildcard: true,
+		Path: policy.ExternalTemplateV1{Text: "/screen/{destination}", Parts: []policy.ExternalTemplatePart{
+			{Literal: "/screen/"}, {Fact: "destination"}}},
+		Require: []policy.ExternalRuleV1{{Pointer: "/score", Op: policy.ExternalOpLe, Number: &limit}},
+	}}
+	g.svc = &Service{
+		Planner: cosignerTestPlanner, PolicyFor: fixedPolicy(g.cfg), HoldsCosignerKey: holdsAllCosignerKeys,
+		AuditLog: g.audit, ExternalChecks: &externalcheck.Runner{Fetcher: &externalcheck.Fetcher{}},
 	}
+	return g
+}
 
-	err, store := sign(allowed)
+func (g *externalGate) setAnswer(answer func(w http.ResponseWriter, r *http.Request)) {
+	g.mu.Lock()
+	g.answer = answer
+	g.mu.Unlock()
+}
+
+func (g *externalGate) plan(destination string) *ComponentSignPlan {
+	txn := testnetPaymentTransaction(g.t, g.source, destination, 1)
+	return prepareComponentSigning(componentPlanRequest{
+		RequestID:     "cmp-cosigner-external",
+		ComponentKey:  testFalconComponentSelector(g.t, 0xab),
+		Group:         componentTestGroup(g.t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+		TargetIndices: []int{0},
+	})
+}
+
+// A request the policy would sign is signed when its checks pass, and the
+// gates record what ran for the audit record.
+func TestCosignerSignsWhenExternalChecksPass(t *testing.T) {
+	g := newExternalGate(t)
+	plan := g.plan(g.allowed)
+	if err := g.svc.runCosignerGates(context.Background(), plan); err != nil {
+		t.Fatalf("runCosignerGates() error = %#v", err)
+	}
+	if plan.ExternalChecks == nil || !slices.Equal(plan.ExternalChecks.CheckIDs, []string{"screen"}) || plan.ExternalChecks.Lookups != 1 {
+		t.Fatalf("plan.ExternalChecks = %+v, want screen over one lookup", plan.ExternalChecks)
+	}
+	if got := externalChecksNote(plan.ExternalChecks); got != "; external checks passed: screen (1 lookup)" {
+		t.Fatalf("audit note = %q", got)
+	}
+	if g.hits.Load() != 1 {
+		t.Fatalf("%d lookups, want 1", g.hits.Load())
+	}
+	if externalChecksNote(nil) != "" {
+		t.Fatal("a document without checks adds nothing to the audit record")
+	}
+}
+
+// A refusal tells the requester which check refused which unit and no more.
+// What the source answered stays in the cosigner's audit record.
+func TestCosignerExternalCheckRefusalKeepsTheAnswerInTheAuditRecord(t *testing.T) {
+	g := newExternalGate(t)
+	g.setAnswer(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"score": 72}`)) })
+	err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed))
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("error = %#v, want forbidden", err)
 	}
-	wantRule := policy.ExternalCheckRuleID("ops-switch", policy.ExternalCheckUnavailableOutcome)
-	if !strings.Contains(err.Message, wantRule) {
-		t.Fatalf("error = %q, want rule %s", err.Message, wantRule)
+	want := "cosigner policy rejected request: external check screen refused the pay movement of transaction 0 (external_check:screen)"
+	if err.Message != want {
+		t.Fatalf("message = %q, want %q", err.Message, want)
 	}
-	if store.calls != 0 {
-		t.Fatalf("store calls = %d, want none before the refusal", store.calls)
+	if strings.Contains(err.Message, "72") {
+		t.Fatal("the requester was told what the source answered")
 	}
+	if len(g.audit.limited) != 1 {
+		t.Fatalf("%d audit entries, want 1", len(g.audit.limited))
+	}
+	entry := g.audit.limited[0]
+	if entry.policyRule != "external_check:screen" || !strings.Contains(entry.reason, "/score = 72, want le 30") ||
+		!strings.Contains(entry.reason, "source screening, GET /screen/"+g.allowed) {
+		t.Fatalf("audit entry = %+v", entry)
+	}
+}
 
-	err, _ = sign(other)
+// A lookup that fails refuses the request, under its own rule ID.
+func TestCosignerRefusesWhenAnExternalLookupFails(t *testing.T) {
+	g := newExternalGate(t)
+	g.setAnswer(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
+	err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed))
+	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, "external_check:screen:unavailable") {
+		t.Fatalf("error = %#v, want the check unavailable", err)
+	}
+	if entry := g.audit.limited[0]; !strings.Contains(entry.reason, "status 503") {
+		t.Fatalf("audit entry = %+v, want the status", entry)
+	}
+}
+
+// Nothing is looked up for a request the policy refuses, and the refusal is
+// the policy's own.
+func TestCosignerMakesNoLookupForARequestThePolicyRefuses(t *testing.T) {
+	g := newExternalGate(t)
+	err := g.svc.runCosignerGates(context.Background(), g.plan(types.Address{27}.String()))
 	if err == nil || !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("error = %#v, want the policy's route miss", err)
 	}
 	if strings.Contains(err.Message, "external_check") {
-		t.Fatalf("error = %q names an external check for a request the policy refused", err.Message)
+		t.Fatalf("error = %q names an external check", err.Message)
+	}
+	if g.hits.Load() != 0 {
+		t.Fatalf("%d lookups for a request the policy refused, want none", g.hits.Load())
+	}
+}
+
+// A node that cannot run checks signs nothing under a document that has any.
+func TestCosignerRefusesWhenItCannotRunExternalChecks(t *testing.T) {
+	g := newExternalGate(t)
+	g.svc.ExternalChecks = nil
+	store := &componentKeyStore{}
+	txn := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+	_, err := g.svc.signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-external",
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, "external_check:screen:unavailable") {
+		t.Fatalf("error = %#v, want the check unavailable", err)
+	}
+	if store.calls != 0 || g.hits.Load() != 0 {
+		t.Fatalf("store calls = %d, lookups = %d; want none of either", store.calls, g.hits.Load())
+	}
+	// A document without checks needs no runner.
+	g.cfg.ExternalChecks = nil
+	if err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed)); err != nil {
+		t.Fatalf("runCosignerGates() without checks error = %#v", err)
+	}
+}
+
+// The step holds a key use for as long as it runs. A lock cancels the key
+// use's context: the lookup ends at once, the request is refused as locked,
+// and the key use is released, which is what the lock waits for before it
+// clears the tokens.
+func TestCosignerExternalChecksEndWhenTheNodeLocks(t *testing.T) {
+	g := newExternalGate(t)
+	arrived := make(chan struct{})
+	g.setAnswer(func(_ http.ResponseWriter, r *http.Request) {
+		close(arrived)
+		<-r.Context().Done()
+	})
+	var held, released atomic.Int32
+	lockCtx, lock := context.WithCancel(context.Background())
+	g.svc.KeyUse = func(context.Context) (context.Context, func()) {
+		held.Add(1)
+		return lockCtx, func() { released.Add(1) }
+	}
+	done := make(chan *ServiceError, 1)
+	go func() { done <- g.svc.runCosignerGates(context.Background(), g.plan(g.allowed)) }()
+	<-arrived
+	if held.Load() != 1 || released.Load() != 0 {
+		t.Fatalf("held = %d, released = %d during the lookup; want 1 and 0", held.Load(), released.Load())
+	}
+	start := time.Now()
+	lock()
+	select {
+	case err := <-done:
+		if err == nil || err.Kind != ErrorLocked {
+			t.Fatalf("error = %#v, want locked", err)
+		}
+		if waited := time.Since(start); waited > time.Second {
+			t.Fatalf("the gates returned %s after the lock; a lock must not wait for the source", waited)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the gates did not return after the lock")
+	}
+	if released.Load() != 1 {
+		t.Fatalf("released = %d after the gates returned, want 1", released.Load())
+	}
+	if len(g.audit.limited) != 0 {
+		t.Fatalf("a lock was audited as a refusal: %+v", g.audit.limited)
 	}
 
-	// Without checks the same allowed transfer passes the gates.
-	cfg.ExternalChecks = nil
-	if err, _ = sign(allowed); err != nil && strings.Contains(err.Message, "external") {
-		t.Fatalf("error = %q without checks", err.Message)
+	// A request that reaches the step on a locked node makes no lookup.
+	before := g.hits.Load()
+	if err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed)); err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("error = %#v on a locked node, want locked", err)
+	}
+	if g.hits.Load() != before {
+		t.Fatal("a lookup was made on a locked node")
+	}
+}
+
+// A canceled request ends its lookups and is reported as canceled.
+func TestCosignerExternalChecksEndWhenTheRequestIsCanceled(t *testing.T) {
+	g := newExternalGate(t)
+	arrived := make(chan struct{})
+	g.setAnswer(func(_ http.ResponseWriter, r *http.Request) {
+		close(arrived)
+		<-r.Context().Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *ServiceError, 1)
+	go func() { done <- g.svc.runCosignerGates(ctx, g.plan(g.allowed)) }()
+	<-arrived
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil || err.Kind == ErrorForbidden || !strings.Contains(err.Message, "canceled") {
+			t.Fatalf("error = %#v, want a canceled request", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the gates did not return after the cancel")
 	}
 }

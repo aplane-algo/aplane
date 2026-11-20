@@ -82,7 +82,7 @@ func TestExternalChecksExplain(t *testing.T) {
 		t.Fatalf("explain: exit %d: %s", code, errOut)
 	}
 	for _, want := range []string{
-		"This build cannot run external checks, so it refuses every request under a document that has them",
+		"This build cannot keep a source's token, so every lookup to screening or treasury is refused",
 		"  treasury: https://treasury.internal.example:8443, with a token, pinned to 1 server key",
 		"    asks screening: GET /api/v2/addresses/{destination}?chain=algorand",
 		"      /remaining is at least the movement's amount",
@@ -106,11 +106,11 @@ func TestExternalChecksTry(t *testing.T) {
 	}
 	x := report.ExternalChecks
 	if report.Outcome != "approve" || x == nil || strings.Join(x.Apply, ",") != "ops-switch,screen-destination,daily-allowance" ||
-		!strings.Contains(x.Refusal, "refuses every request") || !strings.Contains(report.Summary, "then external checks") {
+		!strings.Contains(x.Refusal, "every lookup to screening or treasury is refused") || !strings.Contains(report.Summary, "then external checks") {
 		t.Fatalf("report = %+v, external %+v", report, x)
 	}
 	code, out, _ = appolicy(args...)
-	if code != exitOK || !strings.Contains(out, "permits the supplied transaction; then external checks ops-switch, screen-destination and daily-allowance decide, and this build cannot run external checks") {
+	if code != exitOK || !strings.Contains(out, "permits the supplied transaction; then external checks ops-switch, screen-destination and daily-allowance decide, and this build cannot keep a source's token") {
 		t.Fatalf("try text output: exit %d\n%s", code, out)
 	}
 

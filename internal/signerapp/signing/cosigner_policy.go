@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 
@@ -24,8 +25,10 @@ import (
 // refused as such and never audited, and before the policy, so no policy can
 // allow what they refuse. A cosigner has no operator, so every verdict is sign
 // or reject: a review verdict, which the document format cannot express on a
-// cosigner node, is treated as a rejection.
-func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
+// cosigner node, is treated as a rejection. Last come the document's external
+// checks, which run only for a request the policy would sign and can only
+// refuse it.
+func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
@@ -86,17 +89,7 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if len(violations) > 0 {
 		return s.rejectCosignerComponentPolicy(plan, violations)
 	}
-	// External checks only refuse, and they judge only a request the policy
-	// would sign. This build cannot run them, so a document that has any
-	// signs nothing: passing the request would drop a refusal its operator
-	// asked for.
-	if len(cfg.ExternalChecks) > 0 {
-		check := cfg.ExternalChecks[0]
-		ruleID := policy.ExternalCheckRuleID(check.ID, policy.ExternalCheckUnavailableOutcome)
-		s.logCosignerRejections(plan, auditCosignerPolicyRejected+ruleID+": external checks are not available in this build", ruleID)
-		return forbidden(fmt.Sprintf("cosigner policy rejected request: external check %s refused: external checks are not available in this build (%s)", check.ID, ruleID))
-	}
-	return nil
+	return s.runExternalChecks(ctx, plan, cfg, group, targets)
 }
 
 func (s *Service) rejectCosignerComponentPolicy(plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
@@ -155,7 +148,7 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 		s.AuditLog.LogSignApproved(group.inGroup(SignedRecord{
 			AuthAddress: componentKey,
 			TxnSender:   target.Sender,
-			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
+			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex) + externalChecksNote(plan.ExternalChecks),
 			TxID:        txIDString(target.TxID),
 			Fee:         target.Fee,
 		}))

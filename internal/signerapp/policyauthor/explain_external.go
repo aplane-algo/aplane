@@ -6,21 +6,48 @@ package policyauthor
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
-// externalChecksRefusal is what this build does with a document that has
-// external checks. Explain and try both say it from here.
-const externalChecksRefusal = "this build cannot run external checks, so it refuses every request under a document that has them"
+// externalChecksRefusal is what this build cannot do for the checks of doc
+// named in checkIDs, or "" when there is nothing it cannot do. Explain says
+// it of every check and try of those that apply. A source's token is kept
+// with the key, and this build has nowhere to keep one, so a lookup to a
+// source that declares a token is always refused.
+func externalChecksRefusal(doc *policy.PolicyV1, checkIDs []string) string {
+	var names []string
+	for _, name := range doc.ExternalSourceNames() {
+		if doc.ExternalSources[name].Token == nil {
+			continue
+		}
+		for _, c := range doc.ExternalChecks {
+			if c.Source == name && slices.Contains(checkIDs, c.ID) {
+				names = append(names, name)
+				break
+			}
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "this build cannot keep a source's token, so every lookup to " + joinOr(names) + " is refused"
+}
 
 // externalChecks says a cosigner document's sources and checks in words.
 func (e *explainer) externalChecks() {
 	d := e.doc
 	e.line("External checks: asked only when this document would sign; a check can only refuse")
-	e.line("%s", strings.ToUpper(externalChecksRefusal[:1])+externalChecksRefusal[1:])
+	all := make([]string, len(d.ExternalChecks))
+	for i, c := range d.ExternalChecks {
+		all[i] = c.ID
+	}
+	if refusal := externalChecksRefusal(d, all); refusal != "" {
+		e.line("%s", strings.ToUpper(refusal[:1])+refusal[1:])
+	}
 	e.line("Sources:")
 	for _, name := range d.ExternalSourceNames() {
 		e.line("  %s: %s", name, externalSourceWords(d.ExternalSources[name]))

@@ -253,12 +253,12 @@ func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	})
-	if signErr := svc.runCosignerGates(plan); signErr != nil {
+	if signErr := svc.runCosignerGates(context.Background(), plan); signErr != nil {
 		t.Fatalf("runCosignerGates() error = %v", signErr)
 	}
 
 	plan.ComponentKey = firstKey
-	signErr := svc.runCosignerGates(plan)
+	signErr := svc.runCosignerGates(context.Background(), plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("runCosignerGates(first key) error = %#v, want route miss", signErr)
 	}

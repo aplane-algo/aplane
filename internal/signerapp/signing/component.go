@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 )
 
 type ComponentSignPlan struct {
@@ -15,6 +16,9 @@ type ComponentSignPlan struct {
 	ComponentKey string
 	Group        *canonical.Group
 	Targets      []ComponentSignTarget
+	// ExternalChecks is what the external check step ran for this request;
+	// nil when the governing document has no checks.
+	ExternalChecks *externalcheck.Summary
 }
 
 type ComponentSignTarget struct {

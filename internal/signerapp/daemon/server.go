@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/chainread"
 	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -58,6 +59,7 @@ type Signer struct {
 	indexerTransport  http.RoundTripper              // Tests answer the Indexer's requests; nil is the default transport
 	indexerTimeout    time.Duration                  // Tests shorten a stage lookup; 0 is chainread.DefaultLookupTimeout
 	indexerPause      chainread.IndexerPause         // Per-network pause after a failed stage lookup, shared by every chain reader
+	externalFetcher   externalcheck.Fetcher          // Makes cosigner external check lookups; one per node, so its per-origin limit covers every request
 	rotatingLocks     signersigning.RotatingLocks    // Serializes rotating sign per account
 	rotatingReleases  signersigning.ReleaseMemory    // Last release per rotating account, for status; rebuilt from the audit log at unlock
 	rotatingRecovery  signersigning.RotatingRecovery // Per-unlock stage recovery allowance and grants, keyed by the lock generation

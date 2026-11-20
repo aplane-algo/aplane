@@ -107,7 +107,7 @@ func TestTryWithExternalChecks(t *testing.T) {
 	out := strings.Join(strings.Fields(view(m)), " ")
 	for _, want := range []string{
 		"permits the supplied transaction; then external checks ops-switch, screen-destination and daily-allowance decide",
-		"this build cannot run external checks, so it refuses every request under a document that has them",
+		"this build cannot keep a source's token, so every lookup to screening or treasury is refused",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("try view lacks %q:\n%s", want, view(m))

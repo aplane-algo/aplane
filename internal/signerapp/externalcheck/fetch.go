@@ -23,6 +23,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/strictjson"
+	"github.com/aplane-algo/aplane/internal/version"
 )
 
 const (
@@ -47,7 +48,7 @@ type Answer struct {
 
 // Fetcher makes lookups. The zero value is ready to use.
 type Fetcher struct {
-	// UserAgent is sent with every lookup.
+	// UserAgent is sent with every lookup; "" is apsigner and its version.
 	UserAgent string
 	// RootCAs replaces the system roots for sources without pins. Tests set
 	// it; nil is the system roots.
@@ -90,7 +91,11 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cache-Control", "no-store")
-	req.Header.Set("User-Agent", f.UserAgent)
+	userAgent := f.UserAgent
+	if userAgent == "" {
+		userAgent = "apsigner/" + version.Version
+	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set(RequestIDHeader, requestID)
 	if lookup.Source.Token != nil {
 		req.Header.Set(lookup.Source.Token.Header, lookup.Source.Token.Prefix+token)

@@ -408,7 +408,7 @@ func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transacti
 		Planner:                       cosignerTestPlanner,
 		HoldsCosignerKey:              holdsAllCosignerKeys,
 	}
-	signErr := svc.runCosignerGates(plan)
+	signErr := svc.runCosignerGates(context.Background(), plan)
 	if signErr == nil {
 		return verdictWant{Outcome: "approve"}
 	}
