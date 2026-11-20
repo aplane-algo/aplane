@@ -1378,15 +1378,19 @@ changes preserve it, and secret cleanup wipes it.
 
 A native Falcon key file written before key files dropped `pq_scheme` and
 `pq_address_salt`, or one from before native Falcon kept recovery entropy, is
-refused by both parses, and every backup consumer refuses an archive that
-holds one. A store that holds such a file cannot be upgraded in place: the
-scan reports the file as an incompatible key file, and a reload fails closed
-on any scan warning ([Runtime reload behavior](#runtime-reload-behavior)), so
-the signer publishes no keys at all and enters recovery with signing blocked.
-Install fresh instead, and move each native Falcon key by exporting its 25-word
-phrase from the old install and importing the phrase into the new one. A key
-without recovery entropy has no phrase to export; move its funds to a new
-account from the old install. Native addresses and signing are unchanged.
+refused by both parses. A store that holds such a file cannot be upgraded in
+place: the scan reports the file as an incompatible key file, and a reload
+fails closed on any scan warning
+([Runtime reload behavior](#runtime-reload-behavior)), so the signer publishes
+no keys at all and enters recovery with signing blocked. A restore of a backup
+that holds such a key admits every other credential and skips that key with
+its reason. To move such a store, install fresh, restore its backup, which
+brings the LogicSig, rotating, witness and other keys and skips the native
+Falcon ones, and then move each native Falcon key by exporting its 25-word
+phrase from the old install and importing the phrase into the new one. A native
+Falcon key from before v0.48.0 has no recovery entropy and so no phrase; move
+its funds to a new account from the old install. Native addresses and signing
+are unchanged.
 
 Native Ed25519 recovery phrases are reconstructed from the validated private
 key and need no storage change. Both native types may explicitly export their
