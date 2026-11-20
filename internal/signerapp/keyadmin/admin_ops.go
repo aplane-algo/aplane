@@ -15,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
@@ -134,27 +133,15 @@ func (s Service) ImportKey(ctx context.Context, keyType string, mnemonic []byte,
 		return nil, mapGenerateError(activeErr)
 	}
 
-	if provider := lsigprovider.Get(keyType); provider != nil {
-		// Canonicalize at the admin boundary so persisted params and API responses
-		// are stable; lower layers also normalize defensively.
-		normalized, err := lsigprovider.NormalizeCreationParams(params, provider.CreationParams())
-		if err != nil {
-			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-		}
-		params = normalized
-	}
-
 	activated, activationErr := activatedKeyTypes(activeKeyPaths)
 	if activationErr != nil {
 		return nil, activationErr
 	}
-	canGenerate, stateErr := keytypestate.CanGenerate(activeKeyPaths, keyType)
-	if stateErr != nil {
-		return nil, &Error{Kind: ErrorInternal, Message: "failed to read key type state"}
+	if err := checkGenerationAllowed(activeKeyPaths, keyType); err != nil {
+		return nil, err
 	}
-	if !canGenerate {
-		return nil, unavailableKeyTypeError(activeKeyPaths, keyType)
-	}
+	// This refuses every LogicSig key type, so import has no LogicSig
+	// parameters to canonicalize.
 	if !keymgmt.SupportsMnemonicImport(keyType) {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "mnemonic import not supported for key type: " + keyType}
 	}
@@ -163,7 +150,7 @@ func (s Service) ImportKey(ctx context.Context, keyType string, mnemonic []byte,
 	var importResult *keymgmt.ImportResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var importErr error
-		importResult, importErr = mut.ImportKeyFromMnemonicWithActivated(keyType, string(mnemonic), mk, params, activated)
+		importResult, importErr = mut.ImportKeyFromMnemonicWithActivatedContext(ctx, keyType, string(mnemonic), mk, params, activated)
 		return importErr
 	})
 	if err != nil {

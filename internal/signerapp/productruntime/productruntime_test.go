@@ -478,6 +478,12 @@ func TestSaveAndLoadStoredConfig(t *testing.T) {
 	if err := SaveStoredSetting(root, "approval_wait", "10m"); err != nil {
 		t.Fatalf("SaveStoredSetting() error = %v", err)
 	}
+	if err := SaveStoredSetting(root, "passphrase_timeout", "30m"); err != nil {
+		t.Fatalf("SaveStoredSetting() error = %v", err)
+	}
+	if err := SaveStoredSetting(root, "theme", "dark"); err != nil {
+		t.Fatalf("SaveStoredSetting() error = %v", err)
+	}
 
 	cfg, err := LoadStoredConfig(root)
 	if err != nil {
@@ -491,6 +497,12 @@ func TestSaveAndLoadStoredConfig(t *testing.T) {
 	}
 	if cfg.ApprovalWait != "10m" {
 		t.Fatalf("approval_wait = %q, want %q", cfg.ApprovalWait, "10m")
+	}
+	if cfg.PassphraseTimeout != "30m" {
+		t.Fatalf("passphrase_timeout = %q, want %q", cfg.PassphraseTimeout, "30m")
+	}
+	if cfg.Theme != "dark" {
+		t.Fatalf("theme = %q, want %q", cfg.Theme, "dark")
 	}
 }
 

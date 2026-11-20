@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -40,15 +39,15 @@ type PreparedGeneration struct {
 // store state, and returns nothing that can sign. Generation repeats every
 // check, so this result grants nothing.
 func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*PreparedGeneration, *Error) {
-	creation, resolveErr := s.resolveCreation(keyType, params)
-	if resolveErr != nil {
-		return nil, resolveErr
-	}
 	unlockMutation, lockErr := s.lockUnlockedMutation()
 	if lockErr != nil {
 		return nil, lockErr
 	}
 	defer unlockMutation()
+	creation, resolveErr := s.resolveCreation(keyType, params)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
 	activeKeyPaths, activeErr := s.Runtime.ActiveKeyPaths()
 	if activeErr != nil {
 		return nil, mapGenerateError(activeErr)
@@ -65,7 +64,7 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 	}
 
 	prepared := &PreparedGeneration{KeyType: creation.keyType, Parameters: creation.params, Warnings: warnings}
-	if provider := lsigprovider.Get(creation.keyType); provider != nil {
+	if provider := creation.provider; provider != nil {
 		if err := provider.ValidateCreationParams(creation.params); err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}

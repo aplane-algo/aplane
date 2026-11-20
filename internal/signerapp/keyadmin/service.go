@@ -96,8 +96,11 @@ type GenerateGenericLSigFunc func(ctx context.Context, keyType string, params ma
 // resolvedCreation is a creation request after its references are resolved and
 // its instance selected.
 type resolvedCreation struct {
-	keyType  string
-	params   map[string]string
+	keyType string
+	params  map[string]string
+	// provider and instance are nil for a key type no LogicSig provider
+	// serves.
+	provider lsigprovider.LSigProvider
 	instance *lsigprovider.Instance
 	// warnings are the provider's and the signer's own advice about the request.
 	// They refuse nothing.
@@ -109,6 +112,8 @@ type resolvedCreation struct {
 
 // resolveCreation runs the checks generation and preparation share, so a
 // reviewed request cannot be judged differently from the one that follows it.
+// The caller holds the mutation lock, which template changes also take, so
+// the instance it selects is the one every later check judges.
 func (s Service) resolveCreation(keyType string, params map[string]string) (*resolvedCreation, *Error) {
 	ir := s.Runtime
 	keyType = keytypecatalog.Canonicalize(keyType)
@@ -124,36 +129,32 @@ func (s Service) resolveCreation(keyType string, params map[string]string) (*res
 	if rotatingkey.IsRotatingKeyType(keyType) {
 		params = s.resolveRotatingNetwork(params)
 	}
-	if provider := lsigprovider.Get(keyType); provider != nil {
-		if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, params); ok {
-			resolved, err := cosignerrefs.ResolveCreationParamsForComponents(ir.KeyPaths(), keyType, components, params)
-			if err != nil {
-				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-			}
-			params = resolved
-		}
+	provider := lsigprovider.Get(keyType)
+	if provider == nil {
+		return &resolvedCreation{keyType: keyType, params: params}, nil
 	}
-
-	var instance *lsigprovider.Instance
-	var warnings []string
-	perKey := false
-	if provider := lsigprovider.Get(keyType); provider != nil {
-		_, perKey = provider.(lsigprovider.InstanceResolver)
-		// Canonicalize at the admin boundary so persisted params and API responses
-		// are stable; lower layers also normalize defensively.
-		resolved, err := lsigprovider.ResolveInstance(provider, params)
+	if components, ok := lsigprovider.CosignerComponentKeyTypes(provider, params); ok {
+		resolved, err := cosignerrefs.ResolveCreationParamsForComponents(ir.KeyPaths(), keyType, components, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
-		instance = resolved
-		params = instance.Values
-		if advisor, ok := provider.(lsigprovider.CreationAdvisor); ok {
-			if warnings, err = advisor.CreationWarnings(params); err != nil {
-				return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
-			}
+		params = resolved
+	}
+	_, perKey := provider.(lsigprovider.InstanceResolver)
+	// Canonicalize at the admin boundary so persisted params and API responses
+	// are stable; lower layers also normalize defensively.
+	instance, err := lsigprovider.ResolveInstance(provider, params)
+	if err != nil {
+		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+	}
+	params = instance.Values
+	var warnings []string
+	if advisor, ok := provider.(lsigprovider.CreationAdvisor); ok {
+		if warnings, err = advisor.CreationWarnings(params); err != nil {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 	}
-	return &resolvedCreation{keyType: keyType, params: params, instance: instance, warnings: warnings, perKey: perKey}, nil
+	return &resolvedCreation{keyType: keyType, params: params, provider: provider, instance: instance, warnings: warnings, perKey: perKey}, nil
 }
 
 // ReviewedValues are what PrepareGenerateKey returned for the request an operator
@@ -173,17 +174,16 @@ func (s Service) GenerateKey(ctx context.Context, keyType string, params map[str
 // or the resolved request changed after the operator reviewed it.
 func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params map[string]string, reviewed ReviewedValues) (*GenerateResult, *Error) {
 	ir := s.Runtime
-	creation, resolveErr := s.resolveCreation(keyType, params)
-	if resolveErr != nil {
-		return nil, resolveErr
-	}
-	keyType, params = creation.keyType, creation.params
-
 	unlockMutation, lockErr := s.lockUnlockedMutation()
 	if lockErr != nil {
 		return nil, lockErr
 	}
 	defer unlockMutation()
+	creation, resolveErr := s.resolveCreation(keyType, params)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
+	keyType, params = creation.keyType, creation.params
 	activeKeyPaths, activeErr := ir.ActiveKeyPaths()
 	if activeErr != nil {
 		return nil, mapGenerateError(activeErr)
@@ -203,7 +203,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if heldErr != nil {
 		return nil, heldErr
 	}
-	if err := checkReviewedValues(keyType, params, reviewed); err != nil {
+	if err := checkReviewedValues(creation, reviewed); err != nil {
 		return nil, err
 	}
 	if genericlsig.IsGenericLSigType(keyType) {
@@ -264,20 +264,16 @@ func checkGenerationAllowed(paths storepaths.Paths, keyType string) *Error {
 	return nil
 }
 
-// checkReviewedValues recomputes what a review saw. Called under the lock, which
-// also guards template changes.
-func checkReviewedValues(keyType string, params map[string]string, reviewed ReviewedValues) *Error {
+// checkReviewedValues compares what a review saw with the instance resolved
+// under the lock, which also guards template changes.
+func checkReviewedValues(creation *resolvedCreation, reviewed ReviewedValues) *Error {
 	if reviewed == (ReviewedValues{}) {
 		return nil
 	}
-	changed := &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("key type %s changed after this request was reviewed; review it again", keyType)}
-	provider := lsigprovider.Get(keyType)
-	if provider == nil {
+	changed := &Error{Kind: ErrorInvalidInput, Message: fmt.Sprintf("key type %s changed after this request was reviewed; review it again", creation.keyType)}
+	instance := creation.instance
+	if instance == nil {
 		return changed
-	}
-	instance, err := lsigprovider.ResolveInstance(provider, params)
-	if err != nil {
-		return &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 	if reviewed.Fingerprint != "" && reviewed.Fingerprint != instance.ReviewFingerprint {
 		return changed
@@ -346,7 +342,7 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 // list: it refuses a rekey-to list naming a rotating account held here, and adds
 // a warning when the cosigner key is one held here. The caller holds the
 // mutation lock, so the list can't change between this and the write that
-// follows; resolveCreation runs before the lock and so can't make them.
+// follows.
 //
 // These are admission checks for a new LogicSig account. Nothing here runs when
 // a stored account loads, and import takes no account of this kind.
