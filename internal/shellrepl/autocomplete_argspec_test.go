@@ -5,6 +5,7 @@ package shellrepl
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -278,4 +279,51 @@ func FuzzResolveArgSpec(f *testing.F) {
 			t.Fatalf("resolveArgSpec() returned a branching spec %#v", spec)
 		}
 	})
+}
+
+// TestPluginCompletionOffersEachPositionItsOwnSpec pins plugin completion
+// position by position for "pace <amount> <speed> <account>". The prefix
+// tree only completes the command's name; it once offered the next
+// position's values where a position had none of its own.
+func TestPluginCompletionOffersEachPositionItsOwnSpec(t *testing.T) {
+	addr := crypto.GenerateAccount().Address.String()
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(addr, "ed25519")
+	plugin := &discovery.Plugin{Manifest: &manifest.Manifest{
+		Name: "pace",
+		Commands: []manifest.Command{{Name: "pace", ArgSpecs: []cmdspec.ArgSpec{
+			{Type: cmdspec.ArgTypeNumber},
+			{Type: cmdspec.ArgTypeKeyword, Values: []string{"fast", "slow"}},
+			{Type: cmdspec.ArgTypeAddress},
+		}}},
+	}}
+	completer := CreateDynamicCompleter(&cache.AliasCache{Aliases: map[string]string{}}, &cache.ASACache{}, &cache.SetCache{}, &signerCache, nil, nil, []*discovery.Plugin{plugin})
+
+	tests := []struct {
+		line       string
+		want       []string
+		wantOffset int
+	}{
+		{"pac", []string{"e "}, 3},
+		{"pace ", nil, 0}, // a number: nothing, not the speeds
+		{"pace 5", nil, 0},
+		{"pace 5 ", []string{"fast ", "slow "}, 0},
+		{"pace 5 f", []string{"ast "}, 1},
+		{"pace 5 x", nil, 0},
+		{"pace 5 fast ", []string{addr + " "}, 0},
+		{"pace 5 fast " + addr[:3], []string{addr[3:] + " "}, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			suggestions, offset := completer.Do([]rune(tt.line), len(tt.line))
+			var got []string
+			for _, suggestion := range suggestions {
+				got = append(got, string(suggestion))
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) || (len(got) > 0 && offset != tt.wantOffset) {
+				t.Fatalf("Do(%q) = %q, %d; want %q, %d", tt.line, got, offset, tt.want, tt.wantOffset)
+			}
+		})
+	}
 }

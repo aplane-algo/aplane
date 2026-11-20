@@ -477,3 +477,80 @@ func TestIncentiveEligibilityUsesEmbeddedPromptAndPropagatesCancellation(t *test
 		})
 	}
 }
+
+// TestKeyRegPasteModeReadsUntilTwoBlankLines pins how paste mode reads:
+// input ends at two blank lines in a row, a line of spaces counts as blank,
+// a single blank line does not end it, and Ctrl+C cancels.
+func TestKeyRegPasteModeReadsUntilTwoBlankLines(t *testing.T) {
+	const parseFailure = "failed to parse partkeyinfo output: "
+	tests := []struct {
+		name      string
+		lines     []string
+		wantReads int
+		wantErr   string // a prefix
+	}{
+		{"single blank lines do not end input", []string{"x", "", "y", " ", "\t", "unread"}, 5, parseFailure},
+		{"two blank lines end input", []string{"x", "", "y", "", "", "unread"}, 5, parseFailure},
+		{"only blank lines", []string{"", " ", "unread"}, 2, "no input provided"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reads := 0
+			state := &REPLState{Out: &bytes.Buffer{}, LineReader: func() (string, error) {
+				line := tt.lines[reads]
+				reads++
+				return line, nil
+			}}
+			_, err := state.keyRegPasteMode()
+			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("keyRegPasteMode() error = %v, want %q", err, tt.wantErr)
+			}
+			if reads != tt.wantReads {
+				t.Fatalf("reads = %d, want %d", reads, tt.wantReads)
+			}
+		})
+	}
+
+	t.Run("Ctrl+C cancels", func(t *testing.T) {
+		var out bytes.Buffer
+		reads := 0
+		state := &REPLState{Out: &out, LineReader: func() (string, error) {
+			reads++
+			if reads == 2 {
+				return "", readline.ErrInterrupt
+			}
+			return "x", nil
+		}}
+		result, err := state.keyRegPasteMode()
+		if err != nil || result == nil {
+			t.Fatalf("keyRegPasteMode() = %v, %v; want a cancelled result", result, err)
+		}
+		if !strings.HasSuffix(out.String(), "\nCancelled.\n") {
+			t.Fatalf("output = %q, want it to end with the cancellation", out.String())
+		}
+	})
+
+	t.Run("a read error is returned as it is", func(t *testing.T) {
+		state := &REPLState{Out: &bytes.Buffer{}, LineReader: func() (string, error) { return "", io.ErrUnexpectedEOF }}
+		if _, err := state.keyRegPasteMode(); err != io.ErrUnexpectedEOF {
+			t.Fatalf("keyRegPasteMode() error = %v, want the read error", err)
+		}
+	})
+
+	for _, tt := range []struct {
+		name, stdin, wantErr string
+	}{
+		{"stdin: single blank lines do not end input", "x\n\ny\n \n\nunread\n", parseFailure},
+		{"stdin: the end of input ends it", "x", parseFailure},
+		{"stdin: only blank lines", "\n \n", "no input provided"},
+		{"stdin: no input", "", "no input provided"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withStdin(t, tt.stdin)
+			state := &REPLState{Out: &bytes.Buffer{}}
+			if _, err := state.keyRegPasteMode(); err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("keyRegPasteMode() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

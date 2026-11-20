@@ -92,7 +92,7 @@ func (r *REPLState) jsCode(args []string, rawArgs string) (code string, ok bool,
 func (r *REPLState) jsCodeFromLines() (string, bool, error) {
 	r.println("Enter JavaScript code (blank line to execute, Ctrl+C to cancel):")
 
-	lines, cancelled, err := r.readJSLines(nil, func(line string) bool { return line == "" })
+	lines, cancelled, err := r.readLinesUntil(nil, func(line string) bool { return line == "" })
 	if err != nil || cancelled || len(lines) == 0 {
 		return "", false, err
 	}
@@ -111,7 +111,7 @@ func (r *REPLState) jsCodeFromBraces(rawArgs string) (string, bool, error) {
 		return strings.TrimSpace(code), true, nil
 	}
 
-	lines, cancelled, err := r.readJSLines([]string{inner}, func(line string) bool { return strings.TrimSpace(line) == "}" })
+	lines, cancelled, err := r.readLinesUntil([]string{inner}, func(line string) bool { return strings.TrimSpace(line) == "}" })
 	if err != nil || cancelled {
 		return "", false, err
 	}
@@ -131,10 +131,11 @@ func (r *REPLState) jsCodeFromFile(scriptPath string) (string, bool, error) {
 	return string(content), true, nil
 }
 
-// readJSLines appends lines to lines until isEnd accepts one, reading from
-// the interactive line reader when there is one and from standard input
-// otherwise. An interrupt at the line reader cancels the command.
-func (r *REPLState) readJSLines(lines []string, isEnd func(line string) bool) (_ []string, cancelled bool, _ error) {
+// readLinesUntil appends lines to lines until isEnd accepts one, reading
+// from the interactive line reader when there is one and from standard input
+// otherwise, where the end of input also ends it. An interrupt at the line
+// reader cancels the command, which it says.
+func (r *REPLState) readLinesUntil(lines []string, isEnd func(line string) bool) (_ []string, cancelled bool, _ error) {
 	if !r.hasInteractiveLineReader() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {

@@ -46,9 +46,7 @@ func (r *REPLState) cmdWrite(args []string, _ *command.Context) (command.Result,
 	if err != nil {
 		return nil, err
 	}
-	return newShellCommandResult(func(w io.Writer) error {
-		return r.withOutput(w, func() { renderToggle(r, result) })
-	}, toggleProjection(result))
+	return r.toggleResult(result)
 }
 
 func (r *REPLState) cmdVerbose(args []string, _ *command.Context) (command.Result, error) {
@@ -56,6 +54,12 @@ func (r *REPLState) cmdVerbose(args []string, _ *command.Context) (command.Resul
 	if err != nil {
 		return nil, err
 	}
+	return r.toggleResult(result)
+}
+
+// toggleResult is a mode toggle's result: drawn by renderToggle, projected
+// as its name and state.
+func (r *REPLState) toggleResult(result toggleOutcome) (command.Result, error) {
 	return newShellCommandResult(func(w io.Writer) error {
 		return r.withOutput(w, func() { renderToggle(r, result) })
 	}, toggleProjection(result))

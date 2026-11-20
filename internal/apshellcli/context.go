@@ -9,11 +9,7 @@ import "github.com/aplane-algo/aplane/internal/apshellapp"
 // eligibility. Nothing is known about the account yet: the registration
 // decides whether the 2 ALGO fee is paid.
 func askIncentiveEligibility(r *REPLState) (bool, error) {
-	incentiveResponse, err := r.readPromptResponse("Request consensus incentive eligibility? (2 ALGO fee unless already eligible) [y/N]: ")
-	if err != nil {
-		return false, err
-	}
-	return incentiveResponse == "y" || incentiveResponse == "yes", nil
+	return r.confirm("Request consensus incentive eligibility? (2 ALGO fee unless already eligible) [y/N]: ")
 }
 
 // reportIncentiveEligibility says what a registration's transaction carries

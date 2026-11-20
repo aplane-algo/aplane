@@ -131,3 +131,57 @@ func TestOneShotSimulateReturnsTheCommandsOwnResult(t *testing.T) {
 		t.Fatal("one-shot simulate left simulate mode on")
 	}
 }
+
+// TestSimulateToggleOutput pins what the simulate toggle draws and its
+// machine projection, for a query and for each spelling of on and off.
+func TestSimulateToggleOutput(t *testing.T) {
+	tests := []struct {
+		args     []string
+		wantText string
+		wantJSON string
+		wantMode bool
+	}{
+		{nil, "Simulate mode: off\n", `{"name":"simulate","enabled":false}`, false},
+		{[]string{"on"}, "✓ Simulate mode enabled\n", `{"name":"simulate","enabled":true}`, true},
+		{[]string{"ON"}, "✓ Simulate mode enabled\n", `{"name":"simulate","enabled":true}`, true},
+		{[]string{"true"}, "✓ Simulate mode enabled\n", `{"name":"simulate","enabled":true}`, true},
+		{[]string{"1"}, "✓ Simulate mode enabled\n", `{"name":"simulate","enabled":true}`, true},
+		{[]string{"off"}, "✓ Simulate mode disabled\n", `{"name":"simulate","enabled":false}`, false},
+		{[]string{"false"}, "✓ Simulate mode disabled\n", `{"name":"simulate","enabled":false}`, false},
+		{[]string{"0"}, "✓ Simulate mode disabled\n", `{"name":"simulate","enabled":false}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			repl := testREPLForSimulate(t)
+			result, err := repl.cmdSimulate(tt.args, nil)
+			if err != nil {
+				t.Fatalf("cmdSimulate(%v) error = %v", tt.args, err)
+			}
+			var text bytes.Buffer
+			if err := result.RenderText(&text); err != nil {
+				t.Fatalf("RenderText() error = %v", err)
+			}
+			if got := text.String(); got != tt.wantText {
+				t.Fatalf("text = %q, want %q", got, tt.wantText)
+			}
+			machine, err := result.MarshalMachine()
+			if err != nil || string(machine) != tt.wantJSON {
+				t.Fatalf("MarshalMachine() = %s, %v; want %s", machine, err, tt.wantJSON)
+			}
+			if repl.app().IsSimulateEnabled() != tt.wantMode {
+				t.Fatalf("simulate mode = %v, want %v", repl.app().IsSimulateEnabled(), tt.wantMode)
+			}
+		})
+	}
+
+	repl := testREPLForSimulate(t)
+	repl.app().SetSimulateMode(true)
+	result, err := repl.cmdSimulate(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text bytes.Buffer
+	if err := result.RenderText(&text); err != nil || text.String() != "Simulate mode: on\n" {
+		t.Fatalf("query when on = %q, %v", text.String(), err)
+	}
+}

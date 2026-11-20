@@ -75,9 +75,5 @@ func (r *REPLState) confirmLookalikes(lookalikes []apshellapp.RecipientLookalike
 	for _, lookalike := range lookalikes {
 		r.printf("⚠️  Warning: %s\n", lookalike.Message())
 	}
-	response, err := r.readPromptResponse("Send anyway? [y/N]: ")
-	if err != nil {
-		return false, err
-	}
-	return response == "y" || response == "yes", nil
+	return r.confirm("Send anyway? [y/N]: ")
 }
