@@ -49,18 +49,18 @@ func TestStatusToMCPJSONShape(t *testing.T) {
 	}
 }
 
-func TestAliasesAndSetsToMCPJSONShape(t *testing.T) {
-	aliases := AliasesToMCP([]AliasView{{
+func TestAliasAndSetMCPJSONShape(t *testing.T) {
+	aliases := []MCPAlias{{
 		Name:       "treasury",
 		Address:    "ADDR1",
 		IsSignable: true,
 		KeyType:    "ed25519",
-	}})
-	sets := SetsToMCP([]SetView{{
+	}}
+	sets := []MCPSet{{
 		Name:      "ops",
 		Addresses: []string{"ADDR1", "ADDR2"},
 		Count:     2,
-	}})
+	}}
 
 	aliasData, err := json.Marshal(aliases)
 	if err != nil {
@@ -122,9 +122,9 @@ func TestRemainingMCPProjectionJSONShapes(t *testing.T) {
 		},
 		{
 			name: "accounts",
-			got: AccountsToMCP([]AccountView{{
+			got: []MCPAccount{{
 				Address: "ADDR1", Alias: "alice", Source: "signer", IsSignable: true, KeyType: "ed25519",
-			}}),
+			}},
 			want: `[{"address":"ADDR1","alias":"alice","source":"signer","is_signable":true,"key_type":"ed25519"}]`,
 		},
 		{
@@ -138,19 +138,19 @@ func TestRemainingMCPProjectionJSONShapes(t *testing.T) {
 		},
 		{
 			name: "asa info",
-			got: ASAInfoToMCP(ASAInfoView{
+			got: MCPASAInfo{
 				AssetID: 7, Name: "USD Coin", UnitName: "USDC", Decimals: 6,
 				Total: 1_000_000, URL: "https://example.test", Creator: "CREATOR",
 				Manager: "MANAGER", Reserve: "RESERVE", Freeze: "FREEZE",
 				Clawback: "CLAWBACK", DefaultFrozen: true,
-			}),
+			},
 			want: `{"asset_id":7,"name":"USD Coin","unit_name":"USDC","decimals":6,"total":1000000,"url":"https://example.test","creator":"CREATOR","manager":"MANAGER","reserve":"RESERVE","freeze":"FREEZE","clawback":"CLAWBACK","default_frozen":true}`,
 		},
 		{
 			name: "cached asas",
-			got: CachedASAsToMCP([]ASAInfoView{{
+			got: []MCPASACacheEntry{{
 				AssetID: 7, Name: "USD Coin", UnitName: "USDC", Decimals: 6,
-			}}),
+			}},
 			want: `[{"asset_id":7,"name":"USD Coin","unit_name":"USDC","decimals":6}]`,
 		},
 		{

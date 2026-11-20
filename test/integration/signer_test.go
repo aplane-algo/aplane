@@ -1976,7 +1976,7 @@ func TestLSigSigningFlow(t *testing.T) {
 			"timeout_round":  fmt.Sprintf("%d", status.LastRound+2_000),
 		}
 		params[name] = types.ZeroAddress.String()
-		resp, err := signerClient.AdminGenerate("aplane.htlc.v1", params)
+		resp, err := signerClient.AdminGenerateWithContext(context.Background(), "aplane.htlc.v1", params)
 		if err == nil {
 			t.Fatalf("generation accepted a zero %s: %+v", name, resp)
 		}
@@ -2495,7 +2495,7 @@ func mustAdminGenerateKey(t *testing.T, signerClient *signerclient.Client, signe
 
 	address := mustAdminGenerateKeyNoCleanup(t, signerClient, signerd, keyType, params)
 	t.Cleanup(func() {
-		if _, err := signerClient.AdminDeleteKey(address); err != nil {
+		if _, err := signerClient.AdminDeleteKeyWithContext(context.Background(), address); err != nil {
 			t.Fatalf("failed to delete generated key %s: %v", address, err)
 		}
 	})

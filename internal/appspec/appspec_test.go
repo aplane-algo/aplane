@@ -153,7 +153,7 @@ func TestEncodeArgs(t *testing.T) {
 }
 
 func TestParseArgValueAddressAndTuple(t *testing.T) {
-	addressValue, err := parseArgValue("address", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ")
+	addressValue, err := parseArgText("address", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ")
 	if err != nil {
 		t.Fatalf("parseArgValue(address) error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestParseArgValueAddressAndTuple(t *testing.T) {
 		t.Fatalf("address parse returned %T len=%d, want []byte len=32", addressValue, len(addressBytes))
 	}
 
-	tupleValue, err := parseArgValue("(uint64,bool)", "json:[7,true]")
+	tupleValue, err := parseArgText("(uint64,bool)", "json:[7,true]")
 	if err != nil {
 		t.Fatalf("parseArgValue(tuple) error = %v", err)
 	}
@@ -216,7 +216,7 @@ func TestParseArgValueHoldsScalarsToPlainDecimal(t *testing.T) {
 		{"(uint64,bool)", "[1,true]"},
 	}
 	for _, tc := range accepted {
-		if _, err := parseArgValue(tc.typeName, tc.raw); err != nil {
+		if _, err := parseArgText(tc.typeName, tc.raw); err != nil {
 			t.Errorf("parseArgValue(%s, %q) = %v, want accepted", tc.typeName, tc.raw, err)
 		}
 	}
@@ -245,10 +245,19 @@ func TestParseArgValueHoldsScalarsToPlainDecimal(t *testing.T) {
 		{"string", "json:null"},
 	}
 	for _, tc := range refused {
-		if value, err := parseArgValue(tc.typeName, tc.raw); err == nil {
+		if value, err := parseArgText(tc.typeName, tc.raw); err == nil {
 			t.Errorf("parseArgValue(%s, %q) = %v, want refused", tc.typeName, tc.raw, value)
 		}
 	}
+}
+
+// parseArgText parses typeName and reads raw as a value of it.
+func parseArgText(typeName, raw string) (interface{}, error) {
+	abiType, err := abi.TypeOf(typeName)
+	if err != nil {
+		return nil, err
+	}
+	return parseArgValue(abiType, typeName, raw)
 }
 
 // encodeOneArg encodes raw as the only argument of a method that takes typeName
@@ -350,7 +359,7 @@ func TestParseArgValueReadsDecimalAsTyped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := parseArgValue("uint64", "100")
+	value, err := parseArgValue(abiType, "uint64", "100")
 	if err != nil {
 		t.Fatal(err)
 	}

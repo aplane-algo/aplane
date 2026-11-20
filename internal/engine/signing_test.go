@@ -125,7 +125,7 @@ func TestBuildSigningContext_RekeyedNotSignable(t *testing.T) {
 	// sender is in signer cache but authAddr is NOT
 	// (setupEngineWithMockAlgod adds both since they're in transport.accounts,
 	// so remove authAddr to simulate not-signable)
-	eng.SignerCache.RemoveAddress(authAddr)
+	delete(eng.SignerCache.Keys, authAddr)
 
 	_, err := eng.BuildSigningContext(context.Background(), sender)
 	if err == nil {

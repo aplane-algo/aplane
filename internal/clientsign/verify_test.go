@@ -371,3 +371,33 @@ func TestValidateGroupPlanGroupIDRules(t *testing.T) {
 		})
 	}
 }
+
+// A group with no appended transactions passes when it carries its canonical
+// group ID, and is refused when it does not.
+func TestValidateCanonicalGroupAndDummiesWithoutDummies(t *testing.T) {
+	single := verificationPayment(1, 2)
+	if err := ValidateCanonicalGroupAndDummies(single, []types.Transaction{single}, 1); err != nil {
+		t.Fatalf("single transaction: %v", err)
+	}
+	if err := ValidateCanonicalGroupAndDummies(types.Transaction{}, nil, 0); err != nil {
+		t.Fatalf("empty group: %v", err)
+	}
+
+	pair := []types.Transaction{verificationPayment(1, 2), verificationPayment(3, 4)}
+	groupID, err := sdkcrypto.ComputeGroupID(pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range pair {
+		pair[i].Group = groupID
+	}
+	if err := ValidateCanonicalGroupAndDummies(pair[0], pair, 2); err != nil {
+		t.Fatalf("grouped pair: %v", err)
+	}
+
+	ungrouped := []types.Transaction{verificationPayment(1, 2), verificationPayment(3, 4)}
+	err = ValidateCanonicalGroupAndDummies(ungrouped[0], ungrouped, 2)
+	if err == nil || err.Error() != "returned transaction at index 0 does not carry the canonical group ID" {
+		t.Fatalf("ungrouped pair error = %v, want the canonical group ID refusal", err)
+	}
+}

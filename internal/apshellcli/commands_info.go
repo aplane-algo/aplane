@@ -168,9 +168,9 @@ func (r *REPLState) cmdAccounts(_ []string, _ *command.Context) (command.Result,
 	if err != nil {
 		return nil, err
 	}
-	projected := make([]appresult.AccountView, len(result.Accounts))
+	projected := make([]appresult.MCPAccount, len(result.Accounts))
 	for i, account := range result.Accounts {
-		projected[i] = appresult.AccountView{
+		projected[i] = appresult.MCPAccount{
 			Address: account.Address, Alias: account.Alias, Source: account.Source,
 			IsSignable: account.IsSignable, KeyType: account.KeyType,
 		}
@@ -188,7 +188,7 @@ func (r *REPLState) cmdAccounts(_ []string, _ *command.Context) (command.Result,
 				r.printf("  %s\n", r.app().FormatAddress(acct.Address))
 			}
 		})
-	}, appresult.AccountsToMCP(projected))
+	}, projected)
 }
 
 func (r *REPLState) cmdBalance(args []string, _ *command.Context) (command.Result, error) {

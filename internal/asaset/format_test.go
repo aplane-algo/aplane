@@ -25,6 +25,8 @@ func TestFormatFixed(t *testing.T) {
 		want             string
 	}{
 		{5, 0, "5"}, {5, 2, "0.05"}, {1000, 6, "0.001000"}, {1500000, 6, "1.500000"}, {0, 3, "0.000"},
+		{0, 0, "0"}, {1, 6, "0.000001"}, {123456789, 8, "1.23456789"},
+		{1000000000000000000, 18, "1.000000000000000000"}, {18446744073709551615, 0, "18446744073709551615"},
 	} {
 		if got := FormatFixed(tc.amount, tc.decimals); got != tc.want {
 			t.Errorf("FormatFixed(%d, %d) = %q, want %q", tc.amount, tc.decimals, got, tc.want)

@@ -164,9 +164,6 @@ func ParseOptinCommand(args []string) (OptInParams, error) {
 	}
 
 	// Extract account (token after "for")
-	if len(args) < 3 {
-		return params, fmt.Errorf("missing account after 'for'")
-	}
 	params.From = args[2]
 
 	// Parse optional flags
@@ -202,9 +199,6 @@ func ParseOptoutCommand(args []string) (OptOutParams, error) {
 	}
 
 	// Extract account (token after "from")
-	if len(args) < 3 {
-		return params, fmt.Errorf("missing account after 'from'")
-	}
 	params.Account = args[2]
 
 	nextIdx := 3
@@ -251,9 +245,6 @@ func ParseCloseCommand(args []string) (CloseParams, error) {
 	}
 
 	// Extract destination (token after "to")
-	if len(args) < 3 {
-		return params, fmt.Errorf("missing destination after 'to'")
-	}
 	params.CloseTo = args[2]
 
 	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
@@ -300,9 +291,6 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 
 	// Extract signer (token after "to")
-	if len(args) < 3 {
-		return params, fmt.Errorf("missing signer after 'to'")
-	}
 	params.Signer = args[2]
 
 	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {

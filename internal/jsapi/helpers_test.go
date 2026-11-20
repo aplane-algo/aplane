@@ -730,3 +730,48 @@ func TestToJSObjectKeepsAppStateUintsExact(t *testing.T) {
 	}
 	check("small.uint", 1<<53-1)
 }
+
+// toUint64 reads a JS value as a uint64 or throws; each throw keeps its text.
+func TestToUint64ResultsAndThrows(t *testing.T) {
+	vm := goja.New()
+	for _, tc := range []struct{ expr, want string }{
+		{"42", "42"},
+		{"0", "0"},
+		{"-1", "throws: value cannot be negative"},
+		{"1.5", "throws: value must be a whole number of base units (got 1.5)"},
+		{"NaN", "throws: value must be a finite number"},
+		{"Infinity", "throws: value must be a finite number"},
+		{"-0.5", "throws: value cannot be negative"},
+		{"1e19", "throws: value 1e+19 is too large"},
+		{"9223372036854775808", "throws: value 9.223372036854776e+18 is too large"},
+		{"9007199254740993", "throws: value 9007199254740992 is past the largest whole number JavaScript holds exactly; pass a BigInt or a decimal string"},
+		{"9007199254740991", "9007199254740991"},
+		{"'123'", "123"},
+		{"'0123'", "throws: \"0123\" is not a whole number in plain decimal"},
+		{"''", "throws: \"\" is not a whole number in plain decimal"},
+		{"'0x10'", "throws: \"0x10\" is not a whole number in plain decimal"},
+		{"12345678901234567890n", "12345678901234567890"},
+		{"123456789012345678901n", "throws: value 123456789012345678901 is too large"},
+		{"-5n", "throws: value cannot be negative"},
+		{"null", "throws: a number is needed, got null or undefined"},
+		{"undefined", "throws: a number is needed, got null or undefined"},
+		{"true", "throws: a number is needed, got a boolean"},
+		{"({})", "throws: a number is needed, got an object"},
+		{"[1]", "throws: a number is needed, got an array"},
+	} {
+		v, err := vm.RunString(tc.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got uint64
+		result := ""
+		if err := jsError(func() { got = toUint64(vm, v) }); err != nil {
+			result = "throws: " + err.Error()
+		} else {
+			result = fmt.Sprint(got)
+		}
+		if result != tc.want {
+			t.Errorf("toUint64(%s) = %s, want %s", tc.expr, result, tc.want)
+		}
+	}
+}

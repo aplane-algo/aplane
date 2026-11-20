@@ -101,16 +101,13 @@ type TestHooks struct {
 
 // NewManagerWithDataDir creates a new plugin manager scoped to an apshell data dir.
 func NewManagerWithDataDir(dataDir string) *Manager {
-	discoverer := discovery.New()
-	resolvedDataDir := config.GetClientDataDir("")
-	if dataDir != "" {
-		discoverer = discovery.NewWithDataDir(dataDir)
-		resolvedDataDir = dataDir
+	if dataDir == "" {
+		dataDir = config.GetClientDataDir("")
 	}
 	return &Manager{
-		discoverer: discoverer,
+		discoverer: discovery.NewWithDataDir(dataDir),
 		instances:  make(map[string]*Instance),
-		dataDir:    resolvedDataDir,
+		dataDir:    dataDir,
 	}
 }
 
@@ -375,13 +372,13 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		Env:        env,
 	}
 
-	cmd, err := sandbox.BuildCommand(sandboxCfg)
+	cmd, sandboxName, err := sandbox.BuildCommand(sandboxCfg)
 	if err != nil {
 		cleanupStateLock()
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
-	logSandboxBanner(plugin)
+	logSandboxBanner(plugin, sandboxName)
 
 	// Create pipes
 	stdin, err := cmd.StdinPipe()
@@ -507,8 +504,8 @@ func (i *Instance) stderrLogger() *slog.Logger {
 	return pluginLogger(i.Plugin.Manifest.Name).With("stream", "stderr")
 }
 
-func logSandboxBanner(plugin *discovery.Plugin) {
-	pluginLogger(plugin.Manifest.Name).Info(fmt.Sprintf("Running in sandbox (%s)", sandbox.GetSandboxInfo()))
+func logSandboxBanner(plugin *discovery.Plugin, sandboxName string) {
+	pluginLogger(plugin.Manifest.Name).Info(fmt.Sprintf("Running in sandbox (%s)", sandboxName))
 }
 
 // logStderrLine logs one line at info, because a plugin's stderr is routine detail

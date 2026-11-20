@@ -225,7 +225,7 @@ func TestPluginLinesEscapeHostileManifestName(t *testing.T) {
 
 	t.Run("sandbox banner", func(t *testing.T) {
 		sink := installLogs(t, slog.LevelInfo)
-		logSandboxBanner(testPlugin(name))
+		logSandboxBanner(testPlugin(name), "bubblewrap (Linux)")
 		assertSafe(t, sink.lines())
 	})
 }
@@ -233,7 +233,7 @@ func TestPluginLinesEscapeHostileManifestName(t *testing.T) {
 func TestSandboxBannerIsRoutineDetail(t *testing.T) {
 	sink := installLogs(t, slog.LevelWarn)
 
-	logSandboxBanner(testPlugin("mithras"))
+	logSandboxBanner(testPlugin("mithras"), "bubblewrap (Linux)")
 
 	if got := sink.lines(); len(got) != 0 {
 		t.Fatalf("banner shown at the default level: %q", got)

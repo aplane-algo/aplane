@@ -12,7 +12,7 @@ import (
 
 // GetAuthCacheFilenameForStore returns the auth cache filename for a network in the provided store.
 func GetAuthCacheFilenameForStore(store *Store, network string) string {
-	return storePath(store, fmt.Sprintf("%s_auth_cache.json", network))
+	return store.path(fmt.Sprintf("%s_auth_cache.json", network))
 }
 
 // NewAuthAddressCacheForStore creates a new empty auth address cache bound to a store.
@@ -62,11 +62,7 @@ func QueryAuthAddresses(ctx context.Context, algodClient *algod.Client, addresse
 		if err != nil {
 			continue
 		}
-		if authAddr := acctInfo.AuthAddr; authAddr != "" && authAddr != address {
-			answers[address] = authAddr
-		} else {
-			answers[address] = ""
-		}
+		answers[address] = normalizeAuthAddr(address, acctInfo.AuthAddr)
 	}
 	return answers
 }
@@ -124,22 +120,14 @@ func MergeAuthCacheIntoStore(store *Store, network string, before AuthCacheSnaps
 // If authAddress is empty or same as address, it means the account is not rekeyed
 func (cache *AuthAddressCache) UpdateAuthAddress(address string, authAddress string, network string) error {
 	cache.ensureInitialized()
-
-	// Store normalized: if auth address is same as address, store empty string
-	if authAddress == address {
-		cache.AuthAddresses[address] = ""
-	} else {
-		cache.AuthAddresses[address] = authAddress
-	}
-
-	// Save to disk
+	cache.AuthAddresses[address] = normalizeAuthAddr(address, authAddress)
 	return cache.persistCache(network)
 }
 
 // GetAuthAddress returns the cached auth address for an account
 // Returns empty string if not cached or if account is not rekeyed
 func (cache *AuthAddressCache) GetAuthAddress(address string) (string, bool) {
-	if cache == nil || cache.AuthAddresses == nil {
+	if cache == nil {
 		return "", false
 	}
 
@@ -169,18 +157,8 @@ func (cache *AuthAddressCache) RefreshAuthAddressWithContext(ctx context.Context
 	}
 
 	cache.ensureInitialized()
-
-	authAddr := acctInfo.AuthAddr
-	if authAddr == "" || authAddr == address {
-		// Not rekeyed, store empty string
-		cache.AuthAddresses[address] = ""
-		authAddr = ""
-	} else {
-		// Rekeyed, store auth address
-		cache.AuthAddresses[address] = authAddr
-	}
-
-	// Save to disk
+	authAddr := normalizeAuthAddr(address, acctInfo.AuthAddr)
+	cache.AuthAddresses[address] = authAddr
 	if err := cache.persistCache(network); err != nil {
 		return authAddr, fmt.Errorf("updated cache but failed to save: %w", err)
 	}
@@ -200,6 +178,16 @@ func (cache *AuthAddressCache) PruneToOwnedAddresses(owned map[string]bool, netw
 	}
 
 	return cache.persistCache(network)
+}
+
+// normalizeAuthAddr is the auth address the cache holds for address: empty
+// when the account is not rekeyed, whether algod reported no auth address or
+// the account itself.
+func normalizeAuthAddr(address, authAddr string) string {
+	if authAddr == address {
+		return ""
+	}
+	return authAddr
 }
 
 // ensureInitialized makes a zero-value AuthAddressCache usable by

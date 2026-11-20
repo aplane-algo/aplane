@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,7 +74,7 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	client := signerclient.NewSignerClient(signerd.GetURL())
-	keys, err := client.GetKeys()
+	keys, err := client.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("failed to fetch keys after initialize: %v", err)
 	}

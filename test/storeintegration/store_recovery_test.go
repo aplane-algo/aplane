@@ -4,6 +4,7 @@
 package storeintegration_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,7 +62,7 @@ func TestRestoreCleanupFailureBlocksSigningUntilRollbackPromotes(t *testing.T) {
 	}
 	assertSignerState(t, env, "unlocked")
 	assertCanSign(t, env, address)
-	keysResult, err := storeClient(t, env).GetKeys()
+	keysResult, err := storeClient(t, env).GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("list keys after restore rollback: %v", err)
 	}
@@ -203,7 +204,7 @@ func TestRestoreReloadFailureEntersRecoveryUntilExplicitRollback(t *testing.T) {
 		t.Fatalf("explicit rollback after reload failure: %v\n%s", err, output)
 	}
 	assertSignerState(t, destination, "unlocked")
-	keysResult, err := storeClient(t, destination).GetKeys()
+	keysResult, err := storeClient(t, destination).GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("list keys after explicit rollback: %v", err)
 	}

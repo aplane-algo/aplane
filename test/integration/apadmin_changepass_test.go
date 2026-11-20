@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"context"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	"os"
 	"os/exec"
@@ -50,7 +51,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 			t.Fatalf("connect to LocalNet for rotation acceptance: %v", networkErr)
 		}
 		beforeClient := signerclient.NewSignerClient(signerd.GetURL())
-		generated, generateErr := beforeClient.AdminGenerate("ed25519", nil)
+		generated, generateErr := beforeClient.AdminGenerateWithContext(context.Background(), "ed25519", nil)
 		if generateErr != nil {
 			_ = signerd.Stop()
 			t.Fatalf("generate rotation acceptance key: %v", generateErr)
@@ -95,7 +96,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 	t.Cleanup(func() { _ = signerd.Stop() })
 
 	client := signerclient.NewSignerClient(signerd.GetURL())
-	keys, err := client.GetKeys()
+	keys, err := client.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("failed to fetch keys after restart: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 		if err != nil {
 			t.Fatalf("get LocalNet params after rotation: %v", err)
 		}
-		response, err := client.RequestGroupSign([]signerapi.SignRequest{{
+		response, err := client.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{
 			AuthAddress: rotationAddress,
 			TxnBytesHex: mustUnsignedPaymentTxnHex(
 				t,

@@ -79,7 +79,6 @@ func httpStatusError(resp *http.Response) *HTTPStatusError {
 }
 
 const (
-	healthTimeout             = 3 * time.Second
 	statusTimeout             = 5 * time.Second
 	inventoryTimeout          = 30 * time.Second
 	mutationTimeout           = 60 * time.Second
@@ -125,15 +124,10 @@ func (c *Client) Context() context.Context {
 	return c.Ctx
 }
 
-// doRequest performs an HTTP request. Explicit ctx takes precedence;
-// otherwise c.Ctx is used when set.
+// doRequest performs an HTTP request under ctx, which requestContext has
+// resolved: the caller's context, else c.Ctx, else a background one.
 func (c *Client) doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
-	if ctx != nil {
-		req = req.WithContext(ctx)
-	} else if clientCtx := c.Context(); clientCtx != nil {
-		req = req.WithContext(clientCtx)
-	}
-	return c.Client.Do(req)
+	return c.Client.Do(req.WithContext(ctx))
 }
 
 func (c *Client) requestContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -274,42 +268,7 @@ func (c *Client) signRequestTimeout() time.Duration {
 	return wait + signApprovalSlack
 }
 
-// Health checks if the Signer service is healthy and responding.
-func (c *Client) Health() error {
-	return c.HealthWithContext(context.Background())
-}
-
-func (c *Client) HealthWithContext(ctx context.Context) error {
-	req, err := http.NewRequest("GET", c.BaseURL+"/health", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create health check request: %w", err)
-	}
-
-	reqCtx, cancel := c.requestContext(ctx, healthTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return fmt.Errorf("signer not responding at %s: %w", c.BaseURL, err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			logger().Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("signer health check failed (status %d): %s", resp.StatusCode, readErrorResponse(resp))
-	}
-
-	return nil
-}
-
-// GetStatus fetches authenticated signer status and keyset revision from Signer.
-func (c *Client) GetStatus() (*signerapi.StatusResponse, error) {
-	return c.GetStatusWithContext(context.Background())
-}
-
+// GetStatusWithContext fetches authenticated signer status and keyset revision from Signer.
 func (c *Client) GetStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
 	statusResp, err := doJSON[signerapi.StatusResponse](c, ctx, "GET", "/status", nil, statusTimeout, "failed to get signer status")
 	if err != nil {
@@ -319,13 +278,9 @@ func (c *Client) GetStatusWithContext(ctx context.Context) (*signerapi.StatusRes
 	return statusResp, nil
 }
 
-// RequestGroupPlan sends transactions to the /plan endpoint for group planning.
+// RequestGroupPlanWithContext sends transactions to the /plan endpoint for group planning.
 // The server computes the canonical group (dummies, fee pooling, group ID) without
 // signing or triggering approval. Returns unsigned canonical transactions.
-func (c *Client) RequestGroupPlan(requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
-	return c.RequestGroupPlanWithContext(context.Background(), requests)
-}
-
 func (c *Client) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	groupReq := signerapi.GroupSignRequest{Requests: requests}
 	if err := groupReq.Validate(); err != nil {
@@ -342,13 +297,9 @@ func (c *Client) RequestGroupPlanWithContext(ctx context.Context, requests []sig
 	return planResp, nil
 }
 
-// RequestGroupSign sends transactions to the /sign endpoint for group signing.
+// RequestGroupSignWithContext sends transactions to the /sign endpoint for group signing.
 // The server handles dummy transaction creation, fee pooling, and group ID computation.
 // Returns the signed transactions (including any dummies added by the server).
-func (c *Client) RequestGroupSign(requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
-	return c.RequestGroupSignWithContext(context.Background(), requests)
-}
-
 func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
 	return c.RequestGroupSignInBatchWithContext(ctx, requests, nil)
 }
@@ -462,10 +413,6 @@ func (c *Client) postSignApprovalRequest(ctx context.Context, path, requestID st
 	return nil
 }
 
-func (c *Client) RequestAssemble(req signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
-	return c.RequestAssembleWithContext(context.Background(), req)
-}
-
 func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signerapi.AssemblyRequest) (*signerapi.AssemblyResponse, error) {
 	if reqBody.RequestID == "" {
 		requestID, err := newSignRequestID()
@@ -488,10 +435,6 @@ func (c *Client) RequestAssembleWithContext(ctx context.Context, reqBody signera
 		return nil, fmt.Errorf("assembly response request_id does not match request")
 	}
 	return result, nil
-}
-
-func (c *Client) RequestComponents(req signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
-	return c.RequestComponentsWithContext(context.Background(), req)
 }
 
 func (c *Client) RequestComponentsWithContext(ctx context.Context, reqBody signerapi.ComponentRequest) (*signerapi.ComponentResponse, error) {
@@ -592,11 +535,7 @@ func (c *Client) progressWriter() io.Writer {
 	return os.Stdout
 }
 
-// GetKeys fetches the list of available signing keys from Signer.
-func (c *Client) GetKeys() (*KeysResult, error) {
-	return c.GetKeysWithContext(context.Background())
-}
-
+// GetKeysWithContext fetches the list of available signing keys from Signer.
 func (c *Client) GetKeysWithContext(ctx context.Context) (*KeysResult, error) {
 	req, err := http.NewRequest("GET", c.BaseURL+"/keys", nil)
 	if err != nil {
@@ -632,11 +571,7 @@ func (c *Client) GetKeysWithContext(ctx context.Context) (*KeysResult, error) {
 	return &KeysResult{KeysResponse: keysResp}, nil
 }
 
-// AdminGenerate requests key generation from Signer.
-func (c *Client) AdminGenerate(keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
-	return c.AdminGenerateWithContext(context.Background(), keyType, params)
-}
-
+// AdminGenerateWithContext requests key generation from Signer.
 func (c *Client) AdminGenerateWithContext(ctx context.Context, keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
 	reqBody := signerapi.AdminGenerateRequest{
 		KeyType:    keyType,
@@ -653,11 +588,7 @@ func (c *Client) AdminGenerateWithContext(ctx context.Context, keyType string, p
 	return genResp, nil
 }
 
-// AdminDeleteKey requests key deletion from Signer.
-func (c *Client) AdminDeleteKey(address string) (*signerapi.AdminDeleteResponse, error) {
-	return c.AdminDeleteKeyWithContext(context.Background(), address)
-}
-
+// AdminDeleteKeyWithContext requests key deletion from Signer.
 func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
 	path := "/admin/keys?" + url.Values{"address": []string{address}}.Encode()
 	delResp, err := doJSON[signerapi.AdminDeleteResponse](c, ctx, "DELETE", path, nil, mutationTimeout, "failed to delete key")
@@ -680,11 +611,7 @@ func (c *Client) RotatingRecoverWithContext(ctx context.Context, req signerapi.R
 	return doJSON[signerapi.RotatingRecoverResponse](c, ctx, "POST", "/admin/rotating/recover", req, mutationTimeout, "failed to request rotating recovery")
 }
 
-// GetKeyTypes fetches available key types from Signer.
-func (c *Client) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
-	return c.GetKeyTypesWithContext(context.Background())
-}
-
+// GetKeyTypesWithContext fetches available key types from Signer.
 func (c *Client) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
 	return doJSON[signerapi.KeyTypesResponse](c, ctx, "GET", "/keytypes", nil, inventoryTimeout, "failed to get key types")
 }

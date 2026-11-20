@@ -508,7 +508,7 @@ func activateKeyType(t *testing.T, n *cosignedNode, keyType string) protocol.Act
 // waits until the signer serves it.
 func generatePlainHost(t *testing.T, n *cosignedNode, keyType string, params map[string]string) string {
 	t.Helper()
-	resp, err := n.client.AdminGenerate(keyType, params)
+	resp, err := n.client.AdminGenerateWithContext(context.Background(), keyType, params)
 	if err != nil || resp.Address == "" {
 		t.Fatalf("generate: %+v, %v", resp, err)
 	}
@@ -682,7 +682,7 @@ func TestPlainHostThroughSigner(t *testing.T) {
 		if result.Success || !strings.Contains(result.Error, "is not library-visible") {
 			t.Fatalf("activate %s: %+v, want the not-library-visible refusal", plainFalconKeyType, result)
 		}
-		keyTypes, err := n.client.GetKeyTypes()
+		keyTypes, err := n.client.GetKeyTypesWithContext(context.Background())
 		if err != nil {
 			t.Fatalf("list key types: %v", err)
 		}
@@ -715,7 +715,7 @@ func TestPlainHostThroughSigner(t *testing.T) {
 		{"the plain program", plainFalconKeyType, nil, "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := n.client.AdminGenerate(tc.keyType, tc.params)
+			resp, err := n.client.AdminGenerateWithContext(context.Background(), tc.keyType, tc.params)
 			if err != nil || resp.Address == "" {
 				t.Fatalf("generate: %+v, %v", resp, err)
 			}

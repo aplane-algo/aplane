@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -219,7 +220,7 @@ func decorateValidateResult(result *ValidateCommandResult) {
 // OptIn resolves and executes an ASA opt-in.
 func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	address, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	address, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
@@ -263,7 +264,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 // OptOut resolves and executes an ASA opt-out.
 func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	accountAddr, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	accountAddr, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve account %q: %w", req.Account, err)
 	}
@@ -279,7 +280,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 
 	var closeToAddr string
 	if req.CloseTo != "" {
-		closeToAddr, err = cmdspec.ResolveSingleAddress(req.CloseTo, resolver)
+		closeToAddr, err = resolver.ResolveSingle(req.CloseTo)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve close-to address %q: %w", req.CloseTo, err)
 		}
@@ -335,7 +336,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 	}
 
 	resolver := a.eng.NewAddressResolver()
-	address, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	address, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
@@ -441,7 +442,7 @@ func (a *App) RefreshAuthCache(ctx context.Context) error {
 // RefreshAuthAddress refreshes the cached auth-address relationship for one account.
 func (a *App) RefreshAuthAddress(ctx context.Context, account string) (*AuthRefreshCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	address, err := cmdspec.ResolveSingleAddress(account, resolver)
+	address, err := resolver.ResolveSingle(account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
@@ -459,11 +460,11 @@ func (a *App) RefreshAuthAddress(ctx context.Context, account string) (*AuthRefr
 // Rekey prepares and executes a rekey transaction.
 func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	fromAddress, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	fromAddress, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve from address: %w", err)
 	}
-	toAddress, err := cmdspec.ResolveSingleAddress(req.Target, resolver)
+	toAddress, err := resolver.ResolveSingle(req.Target)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve to address: %w", err)
 	}
@@ -518,7 +519,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 // Unrekey prepares and executes a rekey-back-to-self transaction.
 func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	address, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	address, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
@@ -643,11 +644,11 @@ func decorateRekeyResult(result *RekeyCommandResult) {
 // Close prepares and executes an account close transaction.
 func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	fromAddress, err := cmdspec.ResolveSingleAddress(req.Account, resolver)
+	fromAddress, err := resolver.ResolveSingle(req.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve source address %q: %w", req.Account, err)
 	}
-	toAddress, err := cmdspec.ResolveSingleAddress(req.CloseTo, resolver)
+	toAddress, err := resolver.ResolveSingle(req.CloseTo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve destination address %q: %w", req.CloseTo, err)
 	}
@@ -699,7 +700,7 @@ func decorateCloseResult(result *CloseCommandResult) {
 		return
 	}
 	result.PreSubmitLines = []string{
-		fmt.Sprintf("Closing account {from} (%s ALGO) to {to} using %s...", asa.FormatAmountWithDecimals(result.Balance, 6), result.SigningKeyType),
+		fmt.Sprintf("Closing account {from} (%s ALGO) to {to} using %s...", asaset.FormatFixed(result.Balance, 6), result.SigningKeyType),
 	}
 	result.ConfirmedLines = []string{
 		"Account {from} closed to {to}",
@@ -773,7 +774,7 @@ func (a *App) planSweep(ctx context.Context, req SweepRequest) (sweepPlan, *Swee
 		return sweepPlan{}, nil, err
 	}
 
-	toAddress, err := cmdspec.ResolveSingleAddress(req.ToRaw, resolver)
+	toAddress, err := resolver.ResolveSingle(req.ToRaw)
 	if err != nil {
 		return sweepPlan{}, nil, fmt.Errorf("failed to resolve destination address: %w", err)
 	}

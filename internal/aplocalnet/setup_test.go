@@ -380,28 +380,6 @@ func TestEnsureLocalnetEnvConfigWarnsWhenEnvScriptMissing(t *testing.T) {
 	}
 }
 
-func TestClientConfigWarningsReportsLocalnetDisallowed(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configData := `network: testnet
-networks_allowed:
-  - mainnet
-  - testnet
-`
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(configData), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	warnings := clientConfigWarnings(dir)
-	if len(warnings) != 1 {
-		t.Fatalf("warnings = %#v, want one warning", warnings)
-	}
-	if !strings.Contains(warnings[0], "networks_allowed") || !strings.Contains(warnings[0], NetworkID) {
-		t.Fatalf("warning = %q, want networks_allowed/localnet", warnings[0])
-	}
-}
-
 func TestNormalizeOptionsLeavesTheIndexerUnsetWithoutFlagOrEnv(t *testing.T) {
 	t.Setenv("APLANE_LOCALNET_INDEXER_URL", "")
 	if opts := NormalizeOptions(Options{}); opts.IndexerURL != "" {

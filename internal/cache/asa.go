@@ -19,7 +19,7 @@ import (
 
 // GetASACacheFilenameForStore returns the ASA cache filename for a network in the provided store.
 func GetASACacheFilenameForStore(store *Store, network string) string {
-	return storePath(store, fmt.Sprintf("%s_asa_cache.json", network))
+	return store.path(fmt.Sprintf("%s_asa_cache.json", network))
 }
 
 // builtinASACache returns a cache holding only the built-in entries for

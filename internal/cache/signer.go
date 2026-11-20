@@ -32,7 +32,7 @@ func NewSignerCache() SignerCache {
 func LoadSignerCacheFromStore(store *Store) SignerCache {
 	cache := NewSignerCache()
 	cache.bindStore(store)
-	if err := loadSignedCacheWithKey(store, storePath(store, "signer_cache.json"), &cache); err != nil {
+	if err := loadSignedCacheWithKey(store, store.path("signer_cache.json"), &cache); err != nil {
 		warnCacheLoadError("signer cache", err)
 	}
 	return cache
@@ -40,13 +40,13 @@ func LoadSignerCacheFromStore(store *Store) SignerCache {
 
 // SaveCache saves the signer cache to disk with HMAC signature.
 func (cache *SignerCache) SaveCache() error {
-	return saveSignedCacheWithKey(cache.store, storePath(cache.store, "signer_cache.json"), cache)
+	return saveSignedCacheWithKey(cache.store, cache.store.path("signer_cache.json"), cache)
 }
 
 // SaveCacheLocked saves the signer cache while the caller already holds the
 // APCLIENT_DATA mutation lock.
 func (cache *SignerCache) SaveCacheLocked() error {
-	return saveSignedCacheWithoutClientLock(cache.store, storePath(cache.store, "signer_cache.json"), cache)
+	return saveSignedCacheWithoutClientLock(cache.store, cache.store.path("signer_cache.json"), cache)
 }
 
 // HasAddress checks if Signer can sign for this address
@@ -66,19 +66,6 @@ func (cache *SignerCache) AddAddress(address string, keyType string) {
 	cache.Keys[address] = keyType
 }
 
-// RemoveAddress removes an address from the signer cache
-func (cache *SignerCache) RemoveAddress(address string) {
-	delete(cache.Keys, address)
-	delete(cache.GenericLsigs, address)
-	delete(cache.LogicSigResources, address)
-	delete(cache.SigningArgs, address)
-	delete(cache.SigningFlows, address)
-	delete(cache.CosignerComponentKeyTypes, address)
-	delete(cache.CosignerPublicKeys, address)
-	delete(cache.BoundedMaxFees, address)
-	delete(cache.BoundedContracts, address)
-}
-
 // Count returns the number of addresses in the cache
 func (cache *SignerCache) Count() int {
 	return len(cache.Keys)
@@ -86,9 +73,6 @@ func (cache *SignerCache) Count() int {
 
 // IsGenericLsig checks if an address is a generic LogicSig (no cryptographic signature needed)
 func (cache *SignerCache) IsGenericLsig(address string) bool {
-	if cache.GenericLsigs == nil {
-		return false
-	}
 	return cache.GenericLsigs[address]
 }
 
@@ -107,9 +91,6 @@ func (cache *SignerCache) SetGenericLsig(address string, isGeneric bool) {
 // LogicSigResourceProfile returns a defensive copy of the address's complete
 // LogicSig resource profile.
 func (cache *SignerCache) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
-	if cache.LogicSigResources == nil {
-		return lsigresource.Profile{}, false
-	}
 	profile, ok := cache.LogicSigResources[address]
 	if !ok {
 		return lsigresource.Profile{}, false
@@ -129,9 +110,6 @@ func (cache *SignerCache) SetLogicSigResourceProfile(address string, profile lsi
 // inventory reported for an address (e.g. "cosigned1"). Empty means the
 // ordinary /sign path.
 func (cache *SignerCache) SigningFlowForAddress(address string) string {
-	if cache.SigningFlows == nil {
-		return ""
-	}
 	return cache.SigningFlows[address]
 }
 
@@ -159,9 +137,6 @@ func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
 // CosignerComponentKeyTypeForAddress returns the cosigner component key type the
 // signer inventory reported for a cosigned account.
 func (cache *SignerCache) CosignerComponentKeyTypeForAddress(address string) (string, bool) {
-	if cache.CosignerComponentKeyTypes == nil {
-		return "", false
-	}
 	value, ok := cache.CosignerComponentKeyTypes[address]
 	return value, ok && value != ""
 }
@@ -182,9 +157,6 @@ func (cache *SignerCache) SetCosignerComponentKeyTypeForAddress(address, compone
 // CosignerPublicKeyForAddress returns the cosigner public key embedded in a
 // cosigned account LogicSig, when signer inventory exposed it.
 func (cache *SignerCache) CosignerPublicKeyForAddress(address string) (string, bool) {
-	if cache.CosignerPublicKeys == nil {
-		return "", false
-	}
 	value, ok := cache.CosignerPublicKeys[address]
 	return value, ok && value != ""
 }
@@ -206,9 +178,6 @@ func (cache *SignerCache) SetCosignerPublicKeyForAddress(address, publicKeyHex s
 // bounded account. The boolean distinguishes a valid zero ceiling from
 // missing metadata.
 func (cache *SignerCache) BoundedMaxFeeForAddress(address string) (uint64, bool) {
-	if cache.BoundedMaxFees == nil {
-		return 0, false
-	}
 	value, ok := cache.BoundedMaxFees[address]
 	return value, ok
 }
@@ -225,9 +194,6 @@ func (cache *SignerCache) SetBoundedMaxFeeForAddress(address string, maxFee uint
 // signer inventory reported for an account: bounded2 for a bounded host, which
 // has a fee ceiling, or plain1 for a plain host, which has none.
 func (cache *SignerCache) BoundedContractForAddress(address string) (string, bool) {
-	if cache.BoundedContracts == nil {
-		return "", false
-	}
 	value, ok := cache.BoundedContracts[address]
 	return value, ok && value != ""
 }
@@ -247,9 +213,6 @@ func (cache *SignerCache) SetBoundedContractForAddress(address, contract string)
 // GetSigningArgs returns the key-file signing args schema for a LogicSig address.
 // Returns nil if address is not in cache or has no signing args.
 func (cache *SignerCache) GetSigningArgs(address string) []SigningArgInfo {
-	if cache.SigningArgs == nil {
-		return nil
-	}
 	return cache.SigningArgs[address]
 }
 
@@ -273,11 +236,8 @@ func (cache *SignerCache) SetSigningArgs(address string, args []SigningArgInfo) 
 func (cache *SignerCache) ValidateLsigArgs(address string, providedArgs map[string][]byte) error {
 	schema := cache.GetSigningArgs(address)
 	if schema == nil {
-		// No schema - either not a generic lsig or no args required
-		if len(providedArgs) > 0 {
-			// Args provided but no schema - might be an error, but let server handle it
-			return nil
-		}
+		// Not a generic LogicSig, or one with no args: the signer checks any
+		// args given.
 		return nil
 	}
 

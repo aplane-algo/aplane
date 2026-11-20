@@ -485,7 +485,7 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 func (s *Server) handleEnrollmentAuth(key ssh.PublicKey, remoteAddr, keyFingerprint string) (*ssh.Permissions, error) {
 	// clientKeyAlgorithms has already refused other key types before
 	// verification; this keeps enrollment to the same set.
-	if err := checkEnrollmentKey(key); err != nil {
+	if err := CheckClientKey(key); err != nil {
 		fmt.Printf("[SSH] Enrollment key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
 		return nil, err
 	}
@@ -1049,7 +1049,7 @@ func (s *Server) respondEnrollment(sshConn ssh.Conn, channel ssh.Channel, msg st
 	if _, err := channel.Write([]byte(msg)); err != nil {
 		return err
 	}
-	return s.sendExitStatus(channel, status)
+	return sendExitStatus(channel, status)
 }
 
 // quoteClientText renders unauthenticated client text for a log line: quoted
@@ -1074,13 +1074,8 @@ func parseExecCommand(payload []byte) (string, bool) {
 }
 
 // sendExitStatus sends an exit-status message on an SSH channel
-func (s *Server) sendExitStatus(channel ssh.Channel, status uint32) error {
-	payload := make([]byte, 4)
-	payload[0] = byte(status >> 24)
-	payload[1] = byte(status >> 16)
-	payload[2] = byte(status >> 8)
-	payload[3] = byte(status)
-	_, err := channel.SendRequest("exit-status", false, payload)
+func sendExitStatus(channel ssh.Channel, status uint32) error {
+	_, err := channel.SendRequest("exit-status", false, binary.BigEndian.AppendUint32(nil, status))
 	return err
 }
 
@@ -1089,13 +1084,6 @@ func (s *Server) sendExitStatus(channel ssh.Channel, status uint32) error {
 // handoff as a connection carrying the client's identity, so the HTTP server
 // knows who is calling without any credential in the request.
 func (s *Server) handleChannel(sshConn *ssh.ServerConn, info sshConnInfo, newChannel ssh.NewChannel) {
-	if newChannel.ChannelType() != "direct-tcpip" {
-		if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil {
-			fmt.Printf("Failed to reject channel: %v\n", err)
-		}
-		return
-	}
-
 	var req struct {
 		DestAddr   string
 		DestPort   uint32
@@ -1124,7 +1112,7 @@ func (s *Server) handleChannel(sshConn *ssh.ServerConn, info sshConnInfo, newCha
 	// Hand the connection over before accepting the channel, so a full or
 	// closed listener refuses the channel instead of accepting and dropping it.
 	apiSide, tunnelSide := net.Pipe()
-	apiConn := &APIConn{Conn: apiSide, fingerprint: info.fingerprint, remote: sshConn.RemoteAddr(), local: sshConn.LocalAddr()}
+	apiConn := NewAPIConn(apiSide, info.fingerprint, sshConn.RemoteAddr(), sshConn.LocalAddr())
 	if err := s.apiHandoff(apiConn); err != nil {
 		_ = apiSide.Close()
 		_ = tunnelSide.Close()

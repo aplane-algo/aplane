@@ -351,16 +351,15 @@ func TestJSAliasAndAccountHelpersMatchMCPProjectionSemantics(t *testing.T) {
 	}
 
 	aliasList := eng.ListAliases()
-	mcpAliasInput := make([]appresult.AliasView, len(aliasList.Aliases))
+	mcpAliases := make([]appresult.MCPAlias, len(aliasList.Aliases))
 	for i, alias := range aliasList.Aliases {
-		mcpAliasInput[i] = appresult.AliasView{
+		mcpAliases[i] = appresult.MCPAlias{
 			Name:       alias.Name,
 			Address:    alias.Address,
 			IsSignable: alias.IsSignable,
 			KeyType:    alias.KeyType,
 		}
 	}
-	mcpAliases := appresult.AliasesToMCP(mcpAliasInput)
 	if len(mcpAliases) != 1 {
 		t.Fatalf("len(mcpAliases) = %d, want 1", len(mcpAliases))
 	}
@@ -390,9 +389,9 @@ func TestJSAliasAndAccountHelpersMatchMCPProjectionSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAccounts() error = %v", err)
 	}
-	mcpAccountInput := make([]appresult.AccountView, len(accounts))
+	mcpAccounts := make([]appresult.MCPAccount, len(accounts))
 	for i, account := range accounts {
-		mcpAccountInput[i] = appresult.AccountView{
+		mcpAccounts[i] = appresult.MCPAccount{
 			Address:    account.Address,
 			Alias:      account.Alias,
 			Source:     account.Source,
@@ -400,7 +399,6 @@ func TestJSAliasAndAccountHelpersMatchMCPProjectionSemantics(t *testing.T) {
 			KeyType:    account.KeyType,
 		}
 	}
-	mcpAccounts := appresult.AccountsToMCP(mcpAccountInput)
 	if len(mcpAccounts) != 1 {
 		t.Fatalf("len(mcpAccounts) = %d, want 1", len(mcpAccounts))
 	}

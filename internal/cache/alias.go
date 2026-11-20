@@ -16,7 +16,7 @@ import (
 func LoadAliasCacheFromStore(store *Store) AliasCache {
 	cache := AliasCache{SchemaVersion: cachePayloadSchemaVersion, Aliases: make(map[string]string)}
 	cache.bindStore(store)
-	if err := loadSignedCacheWithKey(store, storePath(store, "alias_cache.json"), &cache); err != nil {
+	if err := loadSignedCacheWithKey(store, store.path("alias_cache.json"), &cache); err != nil {
 		warnCacheLoadError("alias cache", err)
 	}
 	cache.dropAddressNamedAliases()
@@ -37,64 +37,10 @@ func (cache *AliasCache) dropAddressNamedAliases() {
 	}
 }
 
-// SaveCache saves the alias cache to disk with HMAC signature
-func (cache *AliasCache) SaveCache() error {
-	return saveSignedCacheWithKey(cache.store, storePath(cache.store, "alias_cache.json"), cache)
-}
-
 // SaveCacheLocked saves the alias cache while the caller already holds the
 // APCLIENT_DATA mutation lock.
 func (cache *AliasCache) SaveCacheLocked() error {
-	return saveSignedCacheWithoutClientLock(cache.store, storePath(cache.store, "alias_cache.json"), cache)
-}
-
-// UpdateAlias adds or updates an alias. The caller is responsible for any
-// user-facing message about the change; this function only mutates state.
-func (cache *AliasCache) UpdateAlias(alias, address string, force bool) error {
-	alias = refname.NormalizeAlias(alias)
-	if err := refname.ValidateAlias(alias); err != nil {
-		return err
-	}
-	decoded, err := types.DecodeAddress(address)
-	if err != nil {
-		return fmt.Errorf("invalid address: %w", err)
-	}
-	address = decoded.String() // Normalize to uppercase
-
-	if existingAddr, exists := cache.Aliases[alias]; exists {
-		if existingAddr == address {
-			return nil
-		}
-		if !force {
-			return fmt.Errorf("alias '%s' already exists and points to %s. Use 'alias update' to change it", alias, existingAddr)
-		}
-	}
-
-	cache.Aliases[alias] = address
-	if err := cache.SaveCache(); err != nil {
-		return fmt.Errorf("failed to save alias cache: %w", err)
-	}
-
-	return nil
-}
-
-// RemoveAlias removes an alias. The caller is responsible for any user-facing
-// confirmation message; this function only mutates state.
-func (cache *AliasCache) RemoveAlias(alias string) error {
-	alias = refname.NormalizeAlias(alias)
-	if err := refname.ValidateAlias(alias); err != nil {
-		return err
-	}
-	if _, exists := cache.Aliases[alias]; !exists {
-		return fmt.Errorf("alias '%s' does not exist", alias)
-	}
-
-	delete(cache.Aliases, alias)
-	if err := cache.SaveCache(); err != nil {
-		return fmt.Errorf("failed to save alias cache: %w", err)
-	}
-
-	return nil
+	return saveSignedCacheWithoutClientLock(cache.store, cache.store.path("alias_cache.json"), cache)
 }
 
 // ResolveAddress resolves an address or alias to an address (normalized to

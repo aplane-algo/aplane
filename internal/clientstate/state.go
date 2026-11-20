@@ -147,16 +147,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 		logicSigProfiles[keyInfo.Address] = profile
 	}
 
-	s.SignerCache.Keys = make(map[string]string, len(keys))
-	s.SignerCache.GenericLsigs = make(map[string]bool)
-	s.SignerCache.LogicSigResources = make(map[string]lsigresource.Profile)
-	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
-	s.SignerCache.SigningFlows = make(map[string]string)
-	s.SignerCache.CosignerComponentKeyTypes = make(map[string]string)
-	s.SignerCache.CosignerPublicKeys = make(map[string]string)
-	s.SignerCache.BoundedMaxFees = make(map[string]uint64)
-	s.SignerCache.BoundedContracts = make(map[string]string)
-	s.SignerCache.Locked = false
+	s.SignerCache = cache.NewSignerCache()
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
 		s.SignerCache.Keys[keyInfo.Address] = keyInfo.KeyType
@@ -267,9 +258,6 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 // SaveSignerCacheLocked persists the signer cache while the caller already
 // holds the shared APCLIENT_DATA mutation lock.
 func (s *State) SaveSignerCacheLocked() error {
-	if s.CacheStore == nil {
-		return nil
-	}
 	s.SignerCache.BindStore(s.CacheStore)
 	return s.SignerCache.SaveCacheLocked()
 }

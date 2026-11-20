@@ -91,9 +91,7 @@ func Import(paths storepaths.Paths, name string, data []byte) (*Record, error) {
 			record.Name, existing.ComponentKey, record.ComponentKey,
 		)
 	}
-	if record.ImportedAt == "" {
-		record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
-	}
+	record.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := putRecord(paths, *record); err != nil {
 		return nil, err
 	}
@@ -118,7 +116,7 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cosigner public-key envelope: %w", err)
 	}
-	publicKeyBytes, publicKeySHA256, err := validatePublicKey(env.KeyType, env.WitnessKeyID, env.PublicKeyHex)
+	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +127,7 @@ func ParseImport(name string, data []byte) (*Record, error) {
 		KeyType:           env.KeyType,
 		PublicKeyEncoding: "hex",
 		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     len(publicKeyBytes),
+		PublicKeySize:     publicKeySize,
 		PublicKeySHA256:   publicKeySHA256,
 	}, nil
 }
@@ -327,15 +325,15 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	publicKeyBytes, publicKeySHA256, err := validatePublicKey(env.KeyType, env.WitnessKeyID, env.PublicKeyHex)
+	publicKeySize, publicKeySHA256, err := publicKeyDigest(env.KeyType, env.PublicKeyHex)
 	if err != nil {
 		return Record{}, err
 	}
 	if rec.PublicKeyEncoding != "" && rec.PublicKeyEncoding != "hex" {
 		return Record{}, fmt.Errorf("unsupported public_key_encoding %q", rec.PublicKeyEncoding)
 	}
-	if rec.PublicKeySize != 0 && rec.PublicKeySize != len(publicKeyBytes) {
-		return Record{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", rec.PublicKeySize, len(publicKeyBytes))
+	if rec.PublicKeySize != 0 && rec.PublicKeySize != publicKeySize {
+		return Record{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", rec.PublicKeySize, publicKeySize)
 	}
 	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
 		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
@@ -347,34 +345,28 @@ func normalizeRecord(rec Record) (Record, error) {
 		KeyType:           env.KeyType,
 		PublicKeyEncoding: "hex",
 		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     len(publicKeyBytes),
+		PublicKeySize:     publicKeySize,
 		PublicKeySHA256:   publicKeySHA256,
 		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
 	}, nil
 }
 
-func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, string, error) {
-	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
+// publicKeyDigest returns the size and SHA-256 of a cosigner public key.
+// Its callers have had witness.NewPublicReference accept the key; the decode
+// and size checks here are a deliberately layered check on untrusted import
+// input, so a digest is never taken of a key that reference did not vouch for.
+func publicKeyDigest(keyType, publicKeyHex string) (int, string, error) {
+	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		return nil, "", fmt.Errorf("public key must be hex: %w", err)
-	}
-	if len(publicKeyBytes) == 0 {
-		return nil, "", fmt.Errorf("public key is required")
+		return 0, "", fmt.Errorf("public key must be hex: %w", err)
 	}
 	wantSize, ok := witness.PublicKeySize(keyType)
 	if !ok {
-		return nil, "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
+		return 0, "", fmt.Errorf("key type %q is not a cosigner key type", keyType)
 	}
-	if len(publicKeyBytes) != wantSize {
-		return nil, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKeyBytes), wantSize)
+	if len(publicKey) != wantSize {
+		return 0, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
-	derivedSelector, err := witness.ID(keyType, publicKeyBytes)
-	if err != nil {
-		return nil, "", err
-	}
-	if derivedSelector != componentKey {
-		return nil, "", fmt.Errorf("witness key ID %q does not match public key-derived Witness Key ID %q", componentKey, derivedSelector)
-	}
-	sum := sha256.Sum256(publicKeyBytes)
-	return publicKeyBytes, hex.EncodeToString(sum[:]), nil
+	sum := sha256.Sum256(publicKey)
+	return len(publicKey), hex.EncodeToString(sum[:]), nil
 }

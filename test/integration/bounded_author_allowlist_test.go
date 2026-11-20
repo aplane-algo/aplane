@@ -379,7 +379,7 @@ func TestBoundedAllowlistAuthorTEALThroughSigner(t *testing.T) {
 
 func assertAuthorAllowlistInventory(t *testing.T, client *signerclient.Client, address, want string) {
 	t.Helper()
-	keys, err := client.GetKeys()
+	keys, err := client.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("list keys: %v", err)
 	}

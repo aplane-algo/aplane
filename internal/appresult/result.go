@@ -223,30 +223,6 @@ type BalanceView struct {
 	Assets      []AssetBalanceView
 }
 
-// AccountView is the appresult-owned projection input for account listings.
-type AccountView struct {
-	Address    string
-	Alias      string
-	Source     string
-	IsSignable bool
-	KeyType    string
-}
-
-// AliasView is the appresult-owned projection input for alias listings.
-type AliasView struct {
-	Name       string
-	Address    string
-	IsSignable bool
-	KeyType    string
-}
-
-// SetView is the appresult-owned projection input for set listings.
-type SetView struct {
-	Name      string
-	Addresses []string
-	Count     int
-}
-
 // ParticipationView is the appresult-owned projection input for participation payloads.
 type ParticipationView struct {
 	Address           string
@@ -258,22 +234,6 @@ type ParticipationView struct {
 	VoteFirstValid    uint64
 	VoteLastValid     uint64
 	VoteKeyDilution   uint64
-}
-
-// ASAInfoView is the appresult-owned projection input for ASA metadata payloads.
-type ASAInfoView struct {
-	AssetID       uint64
-	Name          string
-	UnitName      string
-	Decimals      uint64
-	Total         uint64
-	URL           string
-	Creator       string
-	Manager       string
-	Reserve       string
-	Freeze        string
-	Clawback      string
-	DefaultFrozen bool
 }
 
 // StatusToMCP projects an engine status result into the MCP status schema.
@@ -314,33 +274,6 @@ func BalanceToMCP(result BalanceView) MCPBalance {
 	return projected
 }
 
-// AccountsToMCP projects engine account info into the MCP account schema.
-func AccountsToMCP(accounts []AccountView) []MCPAccount {
-	projected := make([]MCPAccount, len(accounts))
-	for i, account := range accounts {
-		projected[i] = MCPAccount(account)
-	}
-	return projected
-}
-
-// AliasesToMCP projects engine alias listings into the MCP alias schema.
-func AliasesToMCP(aliases []AliasView) []MCPAlias {
-	projected := make([]MCPAlias, len(aliases))
-	for i, alias := range aliases {
-		projected[i] = MCPAlias(alias)
-	}
-	return projected
-}
-
-// SetsToMCP projects engine set listings into the MCP set schema.
-func SetsToMCP(sets []SetView) []MCPSet {
-	projected := make([]MCPSet, len(sets))
-	for i, set := range sets {
-		projected[i] = MCPSet(set)
-	}
-	return projected
-}
-
 // ParticipationToMCP projects engine participation status into the MCP schema.
 func ParticipationToMCP(result ParticipationView, isRekeyed bool, authAddr string) MCPParticipation {
 	projected := MCPParticipation{
@@ -357,25 +290,6 @@ func ParticipationToMCP(result ParticipationView, isRekeyed bool, authAddr strin
 	if isRekeyed {
 		projected.IsRekeyed = true
 		projected.AuthAddr = authAddr
-	}
-	return projected
-}
-
-// ASAInfoToMCP projects engine ASA metadata into the MCP schema.
-func ASAInfoToMCP(info ASAInfoView) MCPASAInfo {
-	return MCPASAInfo(info)
-}
-
-// CachedASAsToMCP projects cached engine ASA entries into the MCP schema.
-func CachedASAsToMCP(asas []ASAInfoView) []MCPASACacheEntry {
-	projected := make([]MCPASACacheEntry, len(asas))
-	for i, asa := range asas {
-		projected[i] = MCPASACacheEntry{
-			AssetID:  asa.AssetID,
-			Name:     asa.Name,
-			UnitName: asa.UnitName,
-			Decimals: asa.Decimals,
-		}
 	}
 	return projected
 }

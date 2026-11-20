@@ -583,14 +583,10 @@ func setShellExportLine(text string, name string, line string) (string, bool) {
 		}
 	}
 	if !replaced {
-		if len(lines) == 0 {
-			lines = append(lines, line+"\n")
-		} else {
-			if text != "" && !strings.HasSuffix(text, "\n") {
-				lines = append(lines, "\n")
-			}
-			lines = append(lines, line+"\n")
+		if text != "" && !strings.HasSuffix(text, "\n") {
+			lines = append(lines, "\n")
 		}
+		lines = append(lines, line+"\n")
 		changed = true
 	}
 	return strings.Join(lines, ""), changed
@@ -604,17 +600,8 @@ func clientConfigWarnings(clientDataDir string) []string {
 	if clientDataDir == "" {
 		return nil
 	}
-	cfg, err := apconfig.LoadConfig(clientDataDir)
-	if err != nil {
+	if _, err := apconfig.LoadConfig(clientDataDir); err != nil {
 		return []string{fmt.Sprintf("could not inspect apclient config.yaml: %v", err)}
-	}
-	if len(cfg.NetworksAllowed) > 0 && !cfg.IsNetworkAllowed(NetworkID) {
-		return []string{
-			fmt.Sprintf("%s is not listed in %s networks_allowed; apshell cannot switch to localnet until it is added",
-				NetworkID,
-				apconfig.GetConfigPath(clientDataDir),
-			),
-		}
 	}
 	return nil
 }

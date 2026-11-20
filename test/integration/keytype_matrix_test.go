@@ -657,7 +657,7 @@ func plannedMatrixSignRequest(
 	// fees before setting drain amounts. The final request remains ungrouped so
 	// /sign must independently reproduce the minimal v42 group and fee plan.
 	draft := matrixSignRequest(t, sp, fundingAddress, signTxns)
-	plan, err := client.RequestGroupPlan(draft.Requests)
+	plan, err := client.RequestGroupPlanWithContext(context.Background(), draft.Requests)
 	if err != nil {
 		t.Fatalf("failed to plan v42 matrix group: %v", err)
 	}
@@ -710,7 +710,7 @@ func assertMatrixPlannerDummies(t *testing.T, response signerapi.GroupSignRespon
 
 func matrixLogicSigResourceProfiles(t *testing.T, client *signerclient.Client) map[string]*signerapi.LogicSigResourceProfile {
 	t.Helper()
-	keys, err := client.GetKeys()
+	keys, err := client.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("read generated key resource profiles: %v", err)
 	}

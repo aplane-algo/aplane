@@ -21,7 +21,7 @@ import (
 
 func TestRequestGroupSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
-	_, err := client.RequestGroupSign([]signerapi.SignRequest{{AuthAddress: "ADDR"}})
+	_, err := client.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{AuthAddress: "ADDR"}})
 	if err == nil || !strings.Contains(err.Error(), "invalid group sign request") {
 		t.Fatalf("RequestGroupSign() error = %v", err)
 	}
@@ -29,7 +29,7 @@ func TestRequestGroupSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 
 func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
-	_, err := client.RequestGroupPlan([]signerapi.SignRequest{{AuthAddress: "ADDR"}})
+	_, err := client.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{{AuthAddress: "ADDR"}})
 	if err == nil || !strings.Contains(err.Error(), "invalid group plan request") {
 		t.Fatalf("RequestGroupPlan() error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 
 func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
-	_, err := client.RequestComponents(signerapi.ComponentRequest{
+	_, err := client.RequestComponentsWithContext(context.Background(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase}},
 	})
@@ -48,7 +48,7 @@ func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 
 func TestRequestAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
-	_, err := client.RequestAssemble(signerapi.AssemblyRequest{
+	_, err := client.RequestAssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid assembly request") {
@@ -69,41 +69,41 @@ func TestNewSignerClientHasNoGlobalTimeout(t *testing.T) {
 	}
 }
 
-func TestSignerClientHealthUsesConfiguredClient(t *testing.T) {
+func TestSignerClientUsesConfiguredClient(t *testing.T) {
 	used := false
 	client := NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		used = true
-		if req.URL.Path != "/health" {
-			t.Fatalf("request path = %s, want /health", req.URL.Path)
+		if req.URL.Path != "/keytypes" {
+			t.Fatalf("request path = %s, want /keytypes", req.URL.Path)
 		}
 		if got := req.Header.Get("Authorization"); got != "" {
 			t.Fatalf("Authorization header = %q, want none: requests carry no credential", got)
 		}
 		return &http.Response{
 			StatusCode: 200,
-			Body:       io.NopCloser(strings.NewReader("ok")),
+			Body:       io.NopCloser(strings.NewReader(`{"key_types":[]}`)),
 			Header:     make(http.Header),
 		}, nil
 	})}
 
-	if err := client.Health(); err != nil {
-		t.Fatalf("Health() error = %v", err)
+	if _, err := client.GetKeyTypesWithContext(context.Background()); err != nil {
+		t.Fatalf("GetKeyTypesWithContext() error = %v", err)
 	}
 	if !used {
-		t.Fatal("Health() did not use configured client transport")
+		t.Fatal("GetKeyTypesWithContext() did not use configured client transport")
 	}
 }
 
-func TestSignerClientHealthPropagatesConfiguredClientError(t *testing.T) {
+func TestSignerClientPropagatesConfiguredClientError(t *testing.T) {
 	client := NewSignerClient("http://signer.test")
 	client.Client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("transport boom")
 	})}
 
-	err := client.Health()
+	_, err := client.GetKeyTypesWithContext(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "transport boom") {
-		t.Fatalf("Health() error = %v", err)
+		t.Fatalf("GetKeyTypesWithContext() error = %v", err)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestGetStatus_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.GetStatus()
+	got, err := c.GetStatusWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetStatus() error = %v", err)
 	}
@@ -188,13 +188,13 @@ func TestGetStatusRefreshesApprovalWaitCacheForSign(t *testing.T) {
 		}
 	})
 
-	if _, err := c.GetStatus(); err != nil {
+	if _, err := c.GetStatusWithContext(context.Background()); err != nil {
 		t.Fatalf("first GetStatus() error = %v", err)
 	}
-	if _, err := c.GetStatus(); err != nil {
+	if _, err := c.GetStatusWithContext(context.Background()); err != nil {
 		t.Fatalf("second GetStatus() error = %v", err)
 	}
-	if _, err := c.RequestGroupSign([]signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+	if _, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
 		t.Fatalf("RequestGroupSign() error = %v", err)
 	}
 	if identityCalls != 2 {
@@ -218,7 +218,7 @@ func TestRequestGroupSignDiscoversApprovalWaitBeforeSigning(t *testing.T) {
 		}
 	})
 
-	if _, err := c.RequestGroupSign([]signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+	if _, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
 		t.Fatalf("RequestGroupSign() error = %v", err)
 	}
 	if strings.Join(paths, ",") != "/status,/sign" {
@@ -243,10 +243,10 @@ func TestRequestGroupSignFallsBackWhenApprovalWaitMissing(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(60)
 
-	if _, err := c.GetStatus(); err != nil {
+	if _, err := c.GetStatusWithContext(context.Background()); err != nil {
 		t.Fatalf("GetStatus() error = %v", err)
 	}
-	if _, err := c.RequestGroupSign([]signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+	if _, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
 		t.Fatalf("RequestGroupSign() error = %v", err)
 	}
 	if calls != 2 {
@@ -321,7 +321,7 @@ func TestGetKeys_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.GetKeys()
+	got, err := c.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetKeys() error = %v", err)
 	}
@@ -338,7 +338,7 @@ func TestGetKeys_Locked(t *testing.T) {
 		return mockResponse(403, `{"error":"signer is locked","code":"locked"}`), nil
 	})
 
-	got, err := c.GetKeys()
+	got, err := c.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetKeys() error = %v", err)
 	}
@@ -352,7 +352,7 @@ func TestGetKeys_ForbiddenNonLocked(t *testing.T) {
 		return mockResponse(403, `{"error":"Forbidden"}`), nil
 	})
 
-	_, err := c.GetKeys()
+	_, err := c.GetKeysWithContext(context.Background())
 	if err == nil {
 		t.Fatal("expected error for non-locked 403")
 	}
@@ -370,7 +370,7 @@ func TestGetKeys_ServerError(t *testing.T) {
 		return mockResponse(500, `internal error`), nil
 	})
 
-	_, err := c.GetKeys()
+	_, err := c.GetKeysWithContext(context.Background())
 	if err == nil {
 		t.Fatal("expected error for 500")
 	}
@@ -388,7 +388,7 @@ func TestGetKeys_InvalidJSONIsTyped(t *testing.T) {
 		return mockResponse(200, `{`), nil
 	})
 
-	_, err := c.GetKeys()
+	_, err := c.GetKeysWithContext(context.Background())
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -412,7 +412,7 @@ func TestGetKeyTypes_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.GetKeyTypes()
+	got, err := c.GetKeyTypesWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetKeyTypes() error = %v", err)
 	}
@@ -426,7 +426,7 @@ func TestGetKeyTypes_ServerError(t *testing.T) {
 		return mockResponse(500, `boom`), nil
 	})
 
-	_, err := c.GetKeyTypes()
+	_, err := c.GetKeyTypesWithContext(context.Background())
 	if err == nil {
 		t.Fatal("expected error for 500")
 	}
@@ -446,7 +446,7 @@ func TestAdminGenerate_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.AdminGenerate("ed25519", nil)
+	got, err := c.AdminGenerateWithContext(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("AdminGenerate() error = %v", err)
 	}
@@ -463,7 +463,7 @@ func TestAdminGenerate_ErrorResponse(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	_, err := c.AdminGenerate("badtype", nil)
+	_, err := c.AdminGenerateWithContext(context.Background(), "badtype", nil)
 	if err == nil {
 		t.Fatal("expected error for error response")
 	}
@@ -477,7 +477,7 @@ func TestAdminGenerate_ServerError(t *testing.T) {
 		return mockResponse(500, `server error`), nil
 	})
 
-	_, err := c.AdminGenerate("ed25519", nil)
+	_, err := c.AdminGenerateWithContext(context.Background(), "ed25519", nil)
 	if err == nil {
 		t.Fatal("expected error for 500")
 	}
@@ -497,7 +497,7 @@ func TestAdminDeleteKey_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.AdminDeleteKey("TESTADDR")
+	got, err := c.AdminDeleteKeyWithContext(context.Background(), "TESTADDR")
 	if err != nil {
 		t.Fatalf("AdminDeleteKey() error = %v", err)
 	}
@@ -512,7 +512,7 @@ func TestAdminDeleteKey_ErrorResponse(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	_, err := c.AdminDeleteKey("NOADDR")
+	_, err := c.AdminDeleteKeyWithContext(context.Background(), "NOADDR")
 	if err == nil {
 		t.Fatal("expected error for error response")
 	}
@@ -535,7 +535,7 @@ func TestRequestGroupSign_Success(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(60)
 
-	got, err := c.RequestGroupSign([]signerapi.SignRequest{
+	got, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err != nil {
@@ -644,7 +644,7 @@ func TestRequestGroupSign_ErrorField(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(60)
 
-	_, err := c.RequestGroupSign([]signerapi.SignRequest{
+	_, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err == nil {
@@ -661,7 +661,7 @@ func TestRequestGroupSign_ServerError(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(60)
 
-	_, err := c.RequestGroupSign([]signerapi.SignRequest{
+	_, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err == nil {
@@ -782,7 +782,7 @@ func TestRequestComponentsPostsToComponentEndpoint(t *testing.T) {
 		return mockResponse(http.StatusOK, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.RequestComponents(signerapi.ComponentRequest{
+	got, err := c.RequestComponentsWithContext(context.Background(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.ComponentTarget{{
 			TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner,
@@ -818,7 +818,7 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		})), nil
 	})
 
-	got, err := c.RequestAssemble(signerapi.AssemblyRequest{
+	got, err := c.RequestAssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
@@ -850,7 +850,7 @@ func TestRequestGroupPlan_Success(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.RequestGroupPlan([]signerapi.SignRequest{
+	got, err := c.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err != nil {
@@ -867,7 +867,7 @@ func TestRequestGroupPlan_ErrorField(t *testing.T) {
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	_, err := c.RequestGroupPlan([]signerapi.SignRequest{
+	_, err := c.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err == nil {
@@ -888,7 +888,7 @@ func TestRequestGroupPlanDoesNotUseApprovalWaitDeadline(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(20 * 60)
 
-	_, err := c.RequestGroupPlan([]signerapi.SignRequest{
+	_, err := c.RequestGroupPlanWithContext(context.Background(), []signerapi.SignRequest{
 		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
 	})
 	if err != nil {
@@ -908,7 +908,7 @@ func TestNoAuthorizationHeader(t *testing.T) {
 		return mockResponse(200, jsonBody(t, signerapi.KeysResponse{})), nil
 	})
 
-	_, _ = c.GetKeys()
+	_, _ = c.GetKeysWithContext(context.Background())
 }
 
 // --- sign cancel watcher ---
@@ -925,7 +925,7 @@ func TestRequestGroupSignDoesNotCancelAfterSuccess(t *testing.T) {
 	})
 	c.cacheApprovalWaitSeconds(60)
 
-	if _, err := c.RequestGroupSign([]signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+	if _, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
 		t.Fatalf("RequestGroupSign() error = %v", err)
 	}
 

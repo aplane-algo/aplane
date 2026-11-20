@@ -5,10 +5,8 @@ package cache
 
 import "path/filepath"
 
-// Store owns a cache filesystem root.
-// It replaces the old process-global mutable cache base directory.
+// Store owns the cache directory <dataDir>/cache.
 type Store struct {
-	baseDir string
 	dataDir string
 }
 
@@ -19,31 +17,26 @@ func NewStore(dataDir string) *Store {
 	if dataDir == "" {
 		return nil
 	}
-	return &Store{baseDir: filepath.Join(dataDir, "cache"), dataDir: dataDir}
+	return &Store{dataDir: dataDir}
 }
 
-// persistent reports whether the store has a directory to read and write.
+// persistent reports whether the store has a directory to read and write. A
+// nil store, from an empty dataDir, keeps its caches in memory, and so does
+// a zero Store, rather than writing under the working directory.
 func (s *Store) persistent() bool {
-	return s != nil && s.baseDir != ""
+	return s != nil && s.dataDir != ""
 }
 
 func (s *Store) path(filename string) string {
 	if !s.persistent() {
 		return ""
 	}
-	return filepath.Join(s.baseDir, filename)
+	return filepath.Join(s.dir(), filename)
 }
 
 func (s *Store) dir() string {
 	if !s.persistent() {
 		return ""
 	}
-	return s.baseDir
-}
-
-func (s *Store) clientDataDir() string {
-	if s == nil {
-		return ""
-	}
-	return s.dataDir
+	return filepath.Join(s.dataDir, "cache")
 }

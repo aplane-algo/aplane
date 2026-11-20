@@ -20,14 +20,14 @@ type aliasProjection struct {
 
 func projectAliasResult(result *apshellapp.AliasCommandResult) interface{} {
 	if result.Mode == "list" {
-		aliases := make([]appresult.AliasView, len(result.Aliases))
+		aliases := make([]appresult.MCPAlias, len(result.Aliases))
 		for i, alias := range result.Aliases {
-			aliases[i] = appresult.AliasView{
+			aliases[i] = appresult.MCPAlias{
 				Name: alias.Name, Address: alias.Address,
 				IsSignable: alias.IsSignable, KeyType: alias.KeyType,
 			}
 		}
-		return appresult.AliasesToMCP(aliases)
+		return aliases
 	}
 	projection := aliasProjection{Mode: result.Mode, Name: result.Name, Usage: result.Usage}
 	switch result.Mode {
@@ -59,11 +59,11 @@ type setsProjection struct {
 
 func projectSetsResult(result *apshellapp.SetsCommandResult) interface{} {
 	if result.Mode == "list" {
-		sets := make([]appresult.SetView, len(result.Sets))
+		sets := make([]appresult.MCPSet, len(result.Sets))
 		for i, set := range result.Sets {
-			sets[i] = appresult.SetView{Name: set.Name, Addresses: set.Addresses, Count: set.Count}
+			sets[i] = appresult.MCPSet{Name: set.Name, Addresses: set.Addresses, Count: set.Count}
 		}
-		return appresult.SetsToMCP(sets)
+		return sets
 	}
 	projection := setsProjection{
 		Mode: result.Mode, Name: result.SetName, Addresses: result.Addresses,
@@ -88,23 +88,23 @@ type asaCacheProjection struct {
 }
 
 func projectASAInfo(info apshellapp.ASAInfoDetails) appresult.MCPASAInfo {
-	return appresult.ASAInfoToMCP(appresult.ASAInfoView{
+	return appresult.MCPASAInfo{
 		AssetID: info.AssetID, Name: info.Name, UnitName: info.UnitName,
 		Decimals: info.Decimals, Total: info.Total, URL: info.URL,
 		Creator: info.Creator, Manager: info.Manager, Reserve: info.Reserve,
 		Freeze: info.Freeze, Clawback: info.Clawback, DefaultFrozen: info.DefaultFrozen,
-	})
+	}
 }
 
 func projectASACacheResult(result *apshellapp.ASACommandResult) interface{} {
 	if result.Mode == "list" {
-		items := make([]appresult.ASAInfoView, len(result.ASAs))
+		items := make([]appresult.MCPASACacheEntry, len(result.ASAs))
 		for i, info := range result.ASAs {
-			items[i] = appresult.ASAInfoView{
+			items[i] = appresult.MCPASACacheEntry{
 				AssetID: info.AssetID, Name: info.Name, UnitName: info.UnitName, Decimals: info.Decimals,
 			}
 		}
-		return appresult.CachedASAsToMCP(items)
+		return items
 	}
 	projection := asaCacheProjection{
 		Mode: result.Mode, Network: result.Network, AssetID: result.AssetID, Count: result.Count,

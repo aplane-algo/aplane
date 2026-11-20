@@ -31,16 +31,10 @@ var clientKeyAlgorithms = []string{
 const clientKeyRequirement = "Ed25519, ECDSA (P-256/384/521), or hardware-backed sk- Ed25519/ECDSA"
 
 // CheckClientKey reports whether key is of a type the server accepts for
-// client access, for a key enrolled outside the SSH flow (an operator
-// import).
-func CheckClientKey(key ssh.PublicKey) error {
-	return checkEnrollmentKey(key)
-}
-
-// checkEnrollmentKey reports whether key may be enrolled through
-// enroll. clientKeyAlgorithms already refuses other keys during
+// client access: a key enrolled outside the SSH flow (an operator import), or
+// through enroll. clientKeyAlgorithms already refuses other keys during
 // authentication; this check keeps enrollment correct if that list changes.
-func checkEnrollmentKey(key ssh.PublicKey) error {
+func CheckClientKey(key ssh.PublicKey) error {
 	if !slices.Contains(clientKeyAlgorithms, key.Type()) {
 		return fmt.Errorf("key type %q is not accepted for client access", key.Type())
 	}

@@ -349,13 +349,9 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 		txnOptions:   a.parseNotedTxnOptions(call, argIndex, funcName, "pay", "accounts", "apps", "assets", "boxes", "onCompletion"),
 		OnCompletion: types.NoOpOC,
 	}
-	if len(call.Arguments) <= argIndex || goja.IsUndefined(call.Arguments[argIndex]) || goja.IsNull(call.Arguments[argIndex]) {
+	m := a.objectArg(call, argIndex, funcName)
+	if m == nil {
 		return opts
-	}
-
-	m, ok := call.Arguments[argIndex].Export().(map[string]interface{})
-	if !ok {
-		panic(a.runtime.ToValue(fmt.Sprintf("%s options must be an object", funcName)))
 	}
 
 	if p, ok := m["pay"]; ok {
@@ -395,7 +391,7 @@ func (a *API) parseAppCallOptions(call goja.FunctionCall, argIndex int, funcName
 		opts.ForeignBoxes = a.parseBoxRefsValue(boxes, funcName)
 	}
 	if raw, ok := a.optionString(m, "onCompletion", funcName); ok {
-		onComp, err := parseOnCompletionString(raw)
+		onComp, err := appinput.ParseOnCompletion(raw)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid onCompletion: %v", funcName, err)))
 		}
@@ -750,10 +746,6 @@ func byteNumbers(value []byte) []interface{} {
 		out[i] = int64(b)
 	}
 	return out
-}
-
-func parseOnCompletionString(raw string) (types.OnCompletion, error) {
-	return appinput.ParseOnCompletion(raw)
 }
 
 func toUint64SliceValue(v interface{}) ([]uint64, error) {
