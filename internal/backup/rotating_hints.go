@@ -75,7 +75,7 @@ func PublishRotatingHints(tables *stagetable.Store, hints map[string]RotatingSta
 			if h.Authorizer != "" {
 				auth, _ = types.DecodeAddress(h.Authorizer)
 			}
-			err = table.SetHint(stagetable.Hint{Stage: h.Stage, Round: h.ObservedRound, Authorizer: auth, Source: "backup"})
+			err = table.SetHint(stagetable.Hint{Stage: h.Stage, Round: h.ObservedRound, Authorizer: auth, Source: stagetable.HintSourceBackup})
 		}
 		if err != nil && logf != nil {
 			logf("restored %s, but its optional rotating recovery hint was not saved: %v", account, err)

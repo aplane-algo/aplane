@@ -267,7 +267,7 @@ func derivedStageAddress(ctx context.Context, deps *RotatingDeps, table *stageta
 
 // rememberStage stores only an observation that has matched a seed derivation.
 func (s *Service) rememberStage(table *stagetable.Table, stage uint64, authorizer types.Address, round uint64) {
-	if err := table.RecordHint(stagetable.Hint{Stage: stage, Authorizer: authorizer, Round: &round, Source: "local_observation"}); err != nil {
+	if err := table.RecordHint(stagetable.Hint{Stage: stage, Authorizer: authorizer, Round: &round, Source: stagetable.HintSourceLocalObservation}); err != nil {
 		consoleOf(s.Console).Printf("[ROTATING] WARNING: could not save stage observation: %v\n", err)
 	}
 }
