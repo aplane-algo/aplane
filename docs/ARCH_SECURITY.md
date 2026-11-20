@@ -1842,13 +1842,13 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
    The key users are the holders that register with `KeyUseContext`: the
    rotating stage-table worker, rotating prepare and sign, and mnemonic
    export. Ordinary `/sign`, component signing (bounded-base and
-   cosigner-role) and assembly register none. Their last session check after
-   the gates is a moment, not a hold, so the lock does not wait for a
-   signature whose key is already decrypted. While this step waits for a
-   registered key user, their key loads still succeed; once step 4 has
-   cleared the key session a load fails as locked, which the request answers
-   as `locked`, except an assembly's passthrough key lookup, which answers
-   `internal`.
+   cosigner-role) and assembly register none. Their last session check (after
+   the gates, or for assembly, which has no gates, before it assembles) is a
+   moment, not a hold, so the lock does not wait for a signature whose key is
+   already decrypted. While this step waits for a registered key user, their
+   key loads still succeed; once step 4 has cleared the key session a load
+   fails as locked, which the request answers as `locked`, except an
+   assembly's passthrough key lookup, which answers `internal`.
 4. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until in-flight `GetKeyWithContext` calls release the
      session; request-wide draining is owned by the request server lifecycle.
