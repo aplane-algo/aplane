@@ -43,7 +43,7 @@ func OpenStoreRootSelection(
 	paths storepaths.Paths,
 	passphrase []byte,
 ) (storepaths.GenPaths, *crypto.Keyring, error) {
-	kr, selection, err := crypto.OpenStoreRootStore(paths.KeystoreMetadataDir(), passphrase)
+	kr, selection, err := crypto.OpenStoreRootStore(paths.ProductDir(), passphrase)
 	if err != nil {
 		return storepaths.GenPaths{}, nil, err
 	}
@@ -88,7 +88,7 @@ func AuthenticateStoreRootSelection(
 	paths storepaths.Paths,
 	kr *crypto.Keyring,
 ) (storepaths.GenPaths, error) {
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return storepaths.GenPaths{}, err
 	}

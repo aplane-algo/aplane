@@ -64,7 +64,7 @@ func TestCmdInitializeInitializes(t *testing.T) {
 		gotRole = role
 		return protocol.InitializeStoreResultMessage{
 			Success:     true,
-			MetadataDir: keystorePaths().KeystoreMetadataDir(),
+			MetadataDir: keystorePaths().ProductDir(),
 		}, nil
 	}
 

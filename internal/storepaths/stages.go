@@ -6,7 +6,6 @@ package storepaths
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 )
 
 const (
@@ -21,14 +20,11 @@ const (
 	StageTableFileSuffix = ".stages"
 )
 
-// stageSelectorPattern accepts the base32 Algorand address that selects a
-// rotating account's key file.
-var stageSelectorPattern = regexp.MustCompile(`^[A-Z2-7]{58}$`)
-
 // ValidateStageSelector reports whether selector is usable as a stage table
-// file-name component.
+// file-name component: the base32 Algorand address that selects a rotating
+// account's key file.
 func ValidateStageSelector(selector string) error {
-	if !stageSelectorPattern.MatchString(selector) {
+	if !addressPattern.MatchString(selector) {
 		return fmt.Errorf("invalid stage table selector %q", selector)
 	}
 	return nil

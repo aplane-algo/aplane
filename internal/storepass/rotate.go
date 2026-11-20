@@ -71,8 +71,8 @@ func Rotate(
 	opts RotateOptions,
 ) (RotateResult, error) {
 	var result RotateResult
-	if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
-		return result, fmt.Errorf("no store root found in %s - store not initialized", paths.KeystoreMetadataDir())
+	if !crypto.StoreRootExistsIn(paths.ProductDir()) {
+		return result, fmt.Errorf("no store root found in %s - store not initialized", paths.ProductDir())
 	}
 	if len(oldPassphrase) == 0 || len(newPassphrase) == 0 {
 		return result, fmt.Errorf("current and new passphrases are required")

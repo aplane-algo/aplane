@@ -58,7 +58,7 @@ func ReconcileStoreRoot(paths storepaths.Paths, kr *crypto.Keyring, referenced m
 }
 
 func selectedGenerationFromStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (string, error) {
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return "", err
 	}

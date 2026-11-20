@@ -275,7 +275,7 @@ func TestUnlockOfADamagedStoreRootIsNotAnInvalidPassphrase(t *testing.T) {
 		t.Fatalf("UnlockIdentity(wrong) = (%v, %q, %q), want invalid_passphrase", success, errMsg, code)
 	}
 
-	rootPath := filepath.Join(server.keyPaths.KeystoreMetadataDir(), storepaths.StoreRootName)
+	rootPath := filepath.Join(server.keyPaths.ProductDir(), storepaths.StoreRootName)
 	if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
 		t.Fatal(err)
 	}

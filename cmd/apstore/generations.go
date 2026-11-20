@@ -33,7 +33,7 @@ func cmdGenerations(args []string) error {
 			return err
 		}
 		paths := keystorePaths()
-		if !crypto.StoreRootExistsIn(paths.KeystoreMetadataDir()) {
+		if !crypto.StoreRootExistsIn(paths.ProductDir()) {
 			return fmt.Errorf("store is not initialized with the required atomic store-root layout")
 		}
 		retainRollbackParent := !opts.allPriors

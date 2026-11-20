@@ -65,7 +65,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, err
 	}
 
-	metadataDir := opts.Paths.KeystoreMetadataDir()
+	metadataDir := opts.Paths.ProductDir()
 	result.MetadataDir = metadataDir
 	if crypto.StoreRootExistsIn(metadataDir) {
 		return result, fmt.Errorf("keystore already initialized (store root exists in %s)", metadataDir)

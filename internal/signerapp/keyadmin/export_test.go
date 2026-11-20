@@ -130,7 +130,7 @@ func TestNativeMnemonicExportReportsADamagedStoreRootApartFromAPassphrase(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootPath := filepath.Join(ir.KeyPaths().KeystoreMetadataDir(), storepaths.StoreRootName)
+	rootPath := filepath.Join(ir.KeyPaths().ProductDir(), storepaths.StoreRootName)
 	if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
 		t.Fatal(err)
 	}

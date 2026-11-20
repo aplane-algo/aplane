@@ -59,7 +59,7 @@ func (s Service) ExportKey(ctx context.Context, req adminproto.ExportKeyRequest,
 	if len(req.Passphrase) == 0 {
 		return fail(svcerr.KindInvalidPassphrase, "incorrect passphrase")
 	}
-	if err := crypto.VerifyPassphraseWithStoreRoot(req.Passphrase, s.Runtime.KeyPaths().KeystoreMetadataDir()); err != nil {
+	if err := crypto.VerifyPassphraseWithStoreRoot(req.Passphrase, s.Runtime.KeyPaths().ProductDir()); err != nil {
 		if errors.Is(err, crypto.ErrInvalidPassphrase) {
 			return fail(svcerr.KindInvalidPassphrase, "incorrect passphrase")
 		}

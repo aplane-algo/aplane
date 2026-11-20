@@ -151,7 +151,7 @@ func TestCmdRebuildRemovesItsNodeRoleWhenTheMintFails(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild(retry) error = %v", err)
 	}
-	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
+	if !apcrypto.StoreRootExistsIn(keystorePaths().ProductDir()) {
 		t.Fatal("store root missing after the retried rebuild")
 	}
 }
@@ -238,7 +238,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
-	if !apcrypto.StoreRootExistsIn(keystorePaths().KeystoreMetadataDir()) {
+	if !apcrypto.StoreRootExistsIn(keystorePaths().ProductDir()) {
 		t.Fatal("store root missing after rebuild")
 	}
 	active, kr, err := genstore.ResolveStoreRoot(keystorePaths(), []byte("new-store-passphrase"))

@@ -102,7 +102,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 
 	if testPassphrase != "" {
 		passphrase := []byte(testPassphrase)
-		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
+		if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.ProductDir()); err != nil {
 			crypto.ZeroBytes(passphrase)
 			return nil, startupPassphraseError("TEST_PASSPHRASE", "", err)
 		}
@@ -133,7 +133,7 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 	if err != nil {
 		return nil, err
 	}
-	if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.KeystoreMetadataDir()); err != nil {
+	if err := crypto.VerifyPassphraseWithStoreRoot(passphrase, opts.Paths.ProductDir()); err != nil {
 		crypto.ZeroBytes(passphrase)
 		return nil, startupPassphraseError(
 			"the passphrase from the unlock.yaml passphrase helper",

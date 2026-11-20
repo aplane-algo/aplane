@@ -96,7 +96,7 @@ func (s signerAdminServices) ProductRuntime() *productruntime.Runtime {
 // root is damaged or unreadable; its cause is logged here, because the login
 // reply carries none of it.
 func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
-	err := crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().KeystoreMetadataDir())
+	err := crypto.VerifyPassphraseWithStoreRoot(passphrase, s.ProductRuntime().KeyPaths().ProductDir())
 	if err != nil && !errors.Is(err, crypto.ErrInvalidPassphrase) {
 		logErrorf("admin login: the store root could not be opened: %v", err)
 	}

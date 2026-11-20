@@ -59,7 +59,7 @@ func CommitStoreRoot(
 			err,
 		)
 	}
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func CommitReplacementStoreRoot(
 	if err := ValidateSealed(paths.GenerationPaths(expectedCurrentGenerationID), current); err != nil {
 		return fmt.Errorf("outgoing generation %s is not durably sealed: %w", expectedCurrentGenerationID, err)
 	}
-	exact, err := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	exact, err := crypto.ReadStoreRootExact(paths.ProductDir())
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func CommitInitialStoreRoot(
 	}
 	for _, retired := range []string{
 		filepath.Join(paths.ProductDir(), "CURRENT"),
-		filepath.Join(paths.KeystoreMetadataDir(), "keyring.enc"),
+		filepath.Join(paths.ProductDir(), "keyring.enc"),
 	} {
 		if _, err := os.Lstat(retired); err == nil {
 			return fmt.Errorf("refusing atomic store-root initialization over retired layout artifact %s", retired)
@@ -149,7 +149,7 @@ func CommitInitialStoreRoot(
 			return err
 		}
 	}
-	if err := crypto.InitializeStoreRootMarker(paths.KeystoreMetadataDir()); err != nil {
+	if err := crypto.InitializeStoreRootMarker(paths.ProductDir()); err != nil {
 		return err
 	}
 	rootPath := paths.StoreRootPath()
@@ -187,7 +187,7 @@ func replaceStoreRootClassified(
 	if writeErr == nil {
 		return nil
 	}
-	visible, readErr := crypto.ReadStoreRootExact(paths.KeystoreMetadataDir())
+	visible, readErr := crypto.ReadStoreRootExact(paths.ProductDir())
 	switch {
 	case readErr == nil && bytes.Equal(visible, candidate):
 		return fmt.Errorf("%w: %v", ErrStoreRootCommitDurabilityUnknown, writeErr)

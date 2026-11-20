@@ -164,7 +164,7 @@ func TestBuildUnlockPlanReportsADamagedStoreRootApartFromAWrongPassphrase(t *tes
 	}
 	damage := func(t *testing.T, opts *Options) {
 		t.Helper()
-		rootPath := filepath.Join(opts.Paths.KeystoreMetadataDir(), storepaths.StoreRootName)
+		rootPath := filepath.Join(opts.Paths.ProductDir(), storepaths.StoreRootName)
 		if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
 			t.Fatal(err)
 		}

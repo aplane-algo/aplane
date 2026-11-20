@@ -146,7 +146,7 @@ func acceptCandidate(storepaths.GenPaths, *crypto.Keyring) error { return nil }
 func TestRotateRefusesWithoutCandidateValidation(t *testing.T) {
 	fixture := newRotateFixture(t)
 	newPassphrase := []byte("new-store-passphrase")
-	before, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	before, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestRotateRefusesWithoutCandidateValidation(t *testing.T) {
 	if sealed, err := genstore.HasSeal(fixture.paths.GenerationPaths(rotateFirstGeneration)); err != nil || sealed {
 		t.Fatalf("selected generation sealed after the refusal = %v, %v; want no seal written", sealed, err)
 	}
-	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	after, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("the refused passphrase change replaced the store root")
 	}
@@ -289,7 +289,7 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	crypto.ZeroBytes(plaintext)
 	for _, retired := range []string{
 		filepath.Join(fixture.paths.ProductDir(), "CURRENT"),
-		filepath.Join(fixture.paths.KeystoreMetadataDir(), "keyring.enc"),
+		filepath.Join(fixture.paths.ProductDir(), "keyring.enc"),
 		filepath.Join(fixture.paths.ProductDir(), "rotation.snapshot.enc"),
 		filepath.Join(fixture.paths.ProductDir(), "rotation.baseline.enc"),
 	} {
@@ -333,14 +333,14 @@ func TestRotatePreRootFailureLeavesOldAuthorityAndQuarantinableSuccessor(t *test
 
 func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) {
 	fixture := newRotateFixture(t)
-	before, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	before, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Rotate(fixture.paths, []byte("wrong"), []byte("new"), RotateOptions{ValidateCandidate: acceptCandidate}); err == nil || !strings.Contains(err.Error(), "current passphrase") {
 		t.Fatalf("Rotate(wrong passphrase) error = %v", err)
 	}
-	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	after, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("wrong passphrase changed store root")
 	}
@@ -350,7 +350,7 @@ func TestRotateWrongPassphraseAndDamagedAuthorityDoNotReplaceRoot(t *testing.T) 
 	if _, err := Rotate(fixture.paths, fixture.oldPassphrase, []byte("new"), RotateOptions{ValidateCandidate: acceptCandidate}); err == nil {
 		t.Fatal("Rotate accepted damaged policy authority")
 	}
-	after, err = crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	after, err = crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("damaged authority changed store root")
 	}
@@ -417,7 +417,7 @@ func TestRotateRefusesAnOverLimitGenerationBeforeSealing(t *testing.T) {
 	if err := os.Truncate(big, 64<<20+1); err != nil {
 		t.Fatal(err)
 	}
-	before, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	before, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func TestRotateRefusesAnOverLimitGenerationBeforeSealing(t *testing.T) {
 	if _, err := os.Lstat(active.SealPath()); !os.IsNotExist(err) {
 		t.Fatalf("outgoing seal after the refusal: %v, want none written", err)
 	}
-	after, err := crypto.ReadStoreRootExact(fixture.paths.KeystoreMetadataDir())
+	after, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("the refused passphrase change replaced the store root")
 	}

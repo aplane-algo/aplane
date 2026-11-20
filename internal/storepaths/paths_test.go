@@ -39,7 +39,7 @@ func TestCanonicalProductStorePathMatrix(t *testing.T) {
 		want string
 	}{
 		{"identity", paths.ProductDir(), identityDir},
-		{"metadata", paths.KeystoreMetadataDir(), identityDir},
+		{"metadata", paths.ProductDir(), identityDir},
 		{"backups", paths.ProductBackupsDir(), filepath.Join(root, "backups", "default")},
 		{"cosigner references", paths.CosignerRefsDir(), filepath.Join(identityDir, "cosigners")},
 		{"cosigner reference", paths.CosignerRefPath("primary"), filepath.Join(identityDir, "cosigners", "primary.json")},
