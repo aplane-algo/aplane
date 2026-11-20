@@ -346,11 +346,10 @@ sudo systemctl start apsigner
 ```
 
 `permissions audit` is read-only. `permissions migrate` acquires the exclusive
-store lock and validates the whole legacy inventory before changing anything.
-It refuses unsafe ancestors, symlinks, hardlinks, unrecognized sockets,
-devices, and other unexpected objects rather than repairing through them. The
-one exactly resolved legacy in-store admin socket is removed as stale runtime
-residue. An unsafe ancestor is
+store lock and validates the whole store inventory before changing anything.
+It refuses unsafe ancestors, symlinks, hardlinks, sockets, devices, and other
+unexpected objects rather than repairing through them; the signer's socket is
+`/run/apsigner/aplane.sock`, outside the store. An unsafe ancestor is
 outside the store and must be repaired manually: make every reported ancestor
 a real directory that is not group/other writable, then rerun `permissions
 audit`. `apsigner` performs the same private-profile audit before reading

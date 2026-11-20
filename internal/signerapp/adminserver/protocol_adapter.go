@@ -543,9 +543,15 @@ func ProtocolCosignerReferencesListMessage(id string, result adminproto.ListCosi
 	for i := range result.References {
 		refs[i] = protocolCosignerReference(result.References[i])
 	}
+	var invalid []protocol.InvalidCosignerReferenceInfo
+	for _, bad := range result.Invalid {
+		invalid = append(invalid, protocol.InvalidCosignerReferenceInfo{
+			Path: bad.Path, Name: bad.Name, Reason: bad.Reason, Removable: bad.Removable,
+		})
+	}
 	return protocol.CosignerReferencesListMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCosignerReferencesList, ID: id},
-		References:  refs, Code: result.Code, Error: result.Error,
+		References:  refs, Invalid: invalid, Code: result.Code, Error: result.Error,
 	}
 }
 
@@ -559,7 +565,7 @@ func ProtocolCosignerReferenceMessage(id, messageType string, result adminproto.
 func ProtocolRemoveCosignerReferenceResultMessage(id string, result adminproto.RemoveCosignerReferenceResult) protocol.RemoveCosignerReferenceResultMessage {
 	return protocol.RemoveCosignerReferenceResultMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReferenceResult, ID: id},
-		Success:     result.Success, Name: result.Name, Removed: result.Removed, Code: result.Code, Error: result.Error,
+		Success:     result.Success, Name: result.Name, Removed: result.Removed, Path: result.Path, Code: result.Code, Error: result.Error,
 	}
 }
 
@@ -660,9 +666,7 @@ func ProtocolPruneDeletedArchiveResultMessage(id string, result adminproto.Prune
 func protocolCosignerReference(item adminproto.CosignerReferenceInfo) protocol.CosignerReferenceInfo {
 	return protocol.CosignerReferenceInfo{
 		Schema: item.Schema, Name: item.Name, ComponentKey: item.ComponentKey, KeyType: item.KeyType,
-		PublicKeyEncoding: item.PublicKeyEncoding, PublicKeyHex: item.PublicKeyHex,
-		PublicKeySize: item.PublicKeySize, PublicKeySHA256: item.PublicKeySHA256,
-		ImportedAt: item.ImportedAt,
+		PublicKeyHex: item.PublicKeyHex, ImportedAt: item.ImportedAt,
 	}
 }
 

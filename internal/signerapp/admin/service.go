@@ -140,9 +140,6 @@ func primaryOutboundIPv4() string {
 }
 
 func (s Service) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
-	if req.Key == adminproto.AdminSettingSSHListenAddress || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
-		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
-	}
 	return s.Deps.WithStoreMutation(func() error {
 		return s.updateAdminSettingLocked(req)
 	})

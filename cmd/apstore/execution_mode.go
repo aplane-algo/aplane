@@ -16,9 +16,8 @@ import (
 
 var currentEUID = os.Geteuid
 
-var migrateManagedStore = func(dataDir string, uid, gid int, socketPath string) error {
-	opts := storeperm.StoppedMigrationOptions(dataDir, uid, gid, socketPath)
-	_, err := storeperm.MigratePrivate(opts)
+var migrateManagedStore = func(dataDir string, uid, gid int) error {
+	_, err := storeperm.MigratePrivate(storeperm.RepairMigrationOptions(dataDir, uid, gid))
 	return err
 }
 
@@ -60,11 +59,7 @@ func normalizeManagedStoreOwnership(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	socketPath, err := configuredMigrationSocketPath(dataDir)
-	if err != nil {
-		return err
-	}
-	return migrateManagedStore(dataDir, uid, gid, socketPath)
+	return migrateManagedStore(dataDir, uid, gid)
 }
 
 func enforceApstoreExecutionMode(dataDir string, args []string) error {

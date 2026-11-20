@@ -332,6 +332,7 @@ type cosignerChoice struct {
 
 type cosignerState struct {
 	references []CosignerReferenceInfo
+	invalid    []InvalidCosignerReferenceInfo // reference files that are not valid references
 	loaded     bool
 	listErr    string // why the last list failed; a list that arrives clears it
 	choices    []cosignerChoice
@@ -983,6 +984,7 @@ type KeyTypesMsg struct {
 
 type CosignerReferencesMsg struct {
 	References []CosignerReferenceInfo
+	Invalid    []InvalidCosignerReferenceInfo
 	Error      string
 }
 

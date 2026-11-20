@@ -1487,7 +1487,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 |---|---|---|---|---|---|
 | Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import` input | `internal/endpointrefs` (schema, parse, and the `ssh://` URL rule that client records and `advertise_url` share), `internal/apadminapp` (export), `internal/apshellapp` (import), `internal/serverconfig` (`advertise_url` validation), `internal/config` (registry written by import) | No alias, role, credential, known hosts, private key, or cosigner inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
 | Witness public reference | public handoff | JSON `schema:"aplane.witness-key-public.v1"` | cosigner key export; signer cosigner reference import | `internal/witness`, `internal/apadminapp`, `internal/signerapp/signertui`, `internal/cosigner/cosignerrefs` | Contains `key_type`, `witness_key_id`, and full `public_key_hex`; no custody, role, endpoint, or trust claim. The cosigner's address is handed to clients separately for `endpoints add`. |
-| Public cosigner reference record | public signer catalog | JSON `schema:"aplane.cosigner-public-key-ref.v2"` | generation select option | `internal/cosigner/cosignerrefs` | Stored under `cosigners/`; populated by explicit operator import. Only the v2 record is read. |
+| Public cosigner reference record | public signer catalog | JSON `schema:"aplane.cosigner-public-key-ref.v3"` | generation select option | `internal/cosigner/cosignerrefs` | Stored under `cosigners/`; populated by explicit operator import. Only the v3 record is read; a record of another schema is reported as an unsupported schema. |
 
 ### Installer And Release Metadata
 

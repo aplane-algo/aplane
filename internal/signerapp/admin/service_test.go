@@ -217,37 +217,34 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	}
 }
 
-func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
-	tests := []struct {
-		key   string
-		value string
-	}{
-		{key: adminproto.AdminSettingSSHListenAddress, value: "0.0.0.0"},
-		{key: adminproto.AdminSettingEndpointAdvertiseURL, value: "ssh://signer.example:1127"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
+// Only the writable settings can be updated. Settings read from config.yaml
+// alone, such as the SSH listener address and the advertised endpoint URL, are
+// refused like any key the signer does not know, and nothing is saved.
+func TestUpdateAdminSettingRefusesKeysThatAreNotWritable(t *testing.T) {
+	for _, key := range []string{"ssh.listen_address", "endpoint.advertise_url", "approval_wait", "no_such_setting"} {
+		t.Run(key, func(t *testing.T) {
 			svc, _, deps := setupAdminService(t)
+			before, err := productruntime.LoadStoredConfig(deps.dataDir)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
-				Key:   tt.key,
-				Value: tt.value,
-			})
-			if err == nil {
-				t.Fatalf("UpdateAdminSetting(%s) error = nil, want read-only rejection", tt.key)
+			err = svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: key, Value: "0.0.0.0"})
+			if want := "unknown or read-only setting: " + key; err == nil || err.Error() != want {
+				t.Fatalf("UpdateAdminSetting(%s) error = %v, want %q", key, err, want)
 			}
-			if !strings.Contains(err.Error(), "unknown or read-only setting") {
-				t.Fatalf("UpdateAdminSetting(%s) error = %v, want read-only rejection", tt.key, err)
+			if code := protocol.CodeForError(err); code != protocol.ErrCodeInvalidRequest {
+				t.Fatalf("UpdateAdminSetting(%s) code = %q, want %q", key, code, protocol.ErrCodeInvalidRequest)
 			}
-			if deps.identityMutationCalls != 0 {
-				t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
+			if deps.config.Endpoint.SSH.ListenAddress != apconfig.DefaultSSHListenAddress || deps.config.Endpoint.AdvertiseURL != "" {
+				t.Fatalf("endpoint config changed: %+v", deps.config.Endpoint)
 			}
-			if deps.config.Endpoint.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
-				t.Fatalf("Endpoint.SSH.ListenAddress = %q, want unchanged default", deps.config.Endpoint.SSH.ListenAddress)
+			after, err := productruntime.LoadStoredConfig(deps.dataDir)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if deps.config.Endpoint.AdvertiseURL != "" {
-				t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("stored config changed: %+v -> %+v", before, after)
 			}
 		})
 	}

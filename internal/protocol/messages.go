@@ -1394,24 +1394,33 @@ type ApplyPolicyResultMessage struct {
 }
 
 type CosignerReferenceInfo struct {
-	Schema            string `json:"schema"`
-	Name              string `json:"name"`
-	ComponentKey      string `json:"component_key"`
-	KeyType           string `json:"key_type"`
-	PublicKeyEncoding string `json:"public_key_encoding"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	PublicKeySize     int    `json:"public_key_size"`
-	PublicKeySHA256   string `json:"public_key_sha256"`
-	ImportedAt        string `json:"imported_at,omitempty"`
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	ComponentKey string `json:"component_key"`
+	KeyType      string `json:"key_type"`
+	PublicKeyHex string `json:"public_key_hex"`
+	ImportedAt   string `json:"imported_at,omitempty"`
 }
 
 type ListCosignerReferencesMessage struct{ BaseMessage }
 
+// InvalidCosignerReferenceInfo is a file in the reference directory that is
+// not a valid reference. Name is the file name without ".json"; when
+// Removable, removing that reference clears it, and otherwise the file has to
+// be deleted by hand.
+type InvalidCosignerReferenceInfo struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Reason    string `json:"reason"`
+	Removable bool   `json:"removable"`
+}
+
 type CosignerReferencesListMessage struct {
 	BaseMessage
-	References []CosignerReferenceInfo `json:"references"`
-	Code       string                  `json:"code,omitempty"`
-	Error      string                  `json:"error,omitempty"`
+	References []CosignerReferenceInfo        `json:"references"`
+	Invalid    []InvalidCosignerReferenceInfo `json:"invalid,omitempty"`
+	Code       string                         `json:"code,omitempty"`
+	Error      string                         `json:"error,omitempty"`
 }
 
 type GetCosignerReferenceMessage struct {
@@ -1445,6 +1454,7 @@ type RemoveCosignerReferenceResultMessage struct {
 	Success bool   `json:"success"`
 	Name    string `json:"name,omitempty"`
 	Removed bool   `json:"removed,omitempty"`
+	Path    string `json:"path,omitempty"` // the file removed
 	Code    string `json:"code,omitempty"`
 	Error   string `json:"error,omitempty"`
 }

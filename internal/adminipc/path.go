@@ -64,10 +64,11 @@ func ResolveDaemonPathForDataDir(dataDir, configured string) (string, bool, erro
 	return resolved, managed, nil
 }
 
-// ResolveInStoreSocketPath returns the one exact in-store socket that a
-// stopped migration may remove. A configured in-store path supports upgrades
-// from releases that allowed it; an external custom path leaves only the
-// historical default eligible for cleanup.
+// ResolveInStoreSocketPath returns the one exact in-store socket that the
+// stopped conversion of a same-UID store may remove: the path its daemon
+// binds, when that is inside the store. When config names a path outside the
+// store, it is the same-UID default, which a daemon run before that config
+// change left behind.
 func ResolveInStoreSocketPath(dataDir, configured string) (string, error) {
 	configured = ResolveDaemonPath(dataDir, configured, false)
 	inside, err := pathWithin(dataDir, configured)

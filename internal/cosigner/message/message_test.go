@@ -22,27 +22,19 @@ func TestComponentMessageSeparatesTheCosignerFromTheSpendingKey(t *testing.T) {
 	}
 }
 
-func TestComponentMessageBytesValidation(t *testing.T) {
-	if _, err := ComponentMessageBytes(RoleCosigner, make([]byte, 31)); err == nil {
-		t.Fatal("ComponentMessageBytes accepted short txid")
-	}
-	for _, role := range []Role{0x01, 99} {
-		if _, err := ComponentMessageBytes(role, make([]byte, 32)); err == nil {
-			t.Fatalf("ComponentMessageBytes accepted role %d", role)
-		}
-	}
-}
-
+// The vector pins the message every cosigned program checks, role byte
+// included: a change to it changes on-chain behaviour.
 func TestComponentMessageKnownVectors(t *testing.T) {
-	txid := make([]byte, 32)
+	var txid [32]byte
 	for i := range txid {
 		txid[i] = byte(i)
 	}
-	got, err := ComponentMessageBytes(RoleCosigner, txid)
-	if err != nil {
-		t.Fatalf("ComponentMessageBytes() error = %v", err)
-	}
+	got := ComponentMessage(RoleCosigner, txid)
 	if want := "fb26b88a40894de1c59e3f64a8a10349f7eb32092630e39b2d610fe098b9ebce"; hex.EncodeToString(got[:]) != want {
-		t.Fatalf("ComponentMessageBytes() = %s, want %s", hex.EncodeToString(got[:]), want)
+		t.Fatalf("ComponentMessage() = %s, want %s", hex.EncodeToString(got[:]), want)
+	}
+	retired := ComponentMessage(Role(0x01), txid)
+	if bytes.Equal(retired[:], got[:]) {
+		t.Fatal("the retired user role signs the cosigner's message")
 	}
 }

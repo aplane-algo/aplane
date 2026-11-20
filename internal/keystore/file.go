@@ -43,14 +43,13 @@ type FileKeyStore struct {
 
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
 type SigningSummary struct {
-	Category               string
-	BaseKeyType            string
-	Parameters             map[string]string
-	SigningArgs            []lsigprovider.RuntimeArgDef
-	BoundedAuthorization   *boundedmeta.Metadata
-	SigningMetadataVersion int
-	TemplateFingerprint    string
-	LogicSigResources      *lsigresource.Profile
+	Category             string
+	BaseKeyType          string
+	Parameters           map[string]string
+	SigningArgs          []lsigprovider.RuntimeArgDef
+	BoundedAuthorization *boundedmeta.Metadata
+	TemplateFingerprint  string
+	LogicSigResources    *lsigresource.Profile
 	// ValidRekeyTarget is the value the aplane key recorded at creation.
 	ValidRekeyTarget bool
 }
@@ -352,7 +351,6 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	km.Parameters = maps.Clone(signingMeta.Parameters)
 	km.SigningArgs = signingargs.ToRuntimeDefs(signingMeta.SigningArgs)
 	km.BoundedAuthorization = boundedmeta.Clone(signingMeta.BoundedAuthorization)
-	km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
 	return km, nil
 }
 
@@ -361,13 +359,12 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 // transactions - so Value stays nil.
 func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) *signing.KeyMaterial {
 	return &signing.KeyMaterial{
-		Type:                   keyType,
-		Category:               signingMeta.Category,
-		Bytecode:               bytes.Clone(payload.LogicSigBytecode),
-		Parameters:             maps.Clone(signingMeta.Parameters),
-		SigningArgs:            signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
-		BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
-		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
+		Type:                 keyType,
+		Category:             signingMeta.Category,
+		Bytecode:             bytes.Clone(payload.LogicSigBytecode),
+		Parameters:           maps.Clone(signingMeta.Parameters),
+		SigningArgs:          signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
+		BoundedAuthorization: boundedmeta.Clone(signingMeta.BoundedAuthorization),
 	}
 }
 
@@ -442,19 +439,18 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	result := make(map[string]SigningSummary, len(f.cache))
 	for k, v := range f.cache {
 		summary := SigningSummary{
-			Category:               v.Category,
-			BaseKeyType:            v.BaseKeyType,
-			Parameters:             maps.Clone(v.Parameters),
-			SigningMetadataVersion: v.SigningMetadataVersion,
-			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),
-			TemplateFingerprint:    v.TemplateFingerprint,
-			ValidRekeyTarget:       v.ValidRekeyTarget,
+			Category:             v.Category,
+			BaseKeyType:          v.BaseKeyType,
+			Parameters:           maps.Clone(v.Parameters),
+			BoundedAuthorization: boundedmeta.Clone(v.BoundedAuthorization),
+			TemplateFingerprint:  v.TemplateFingerprint,
+			ValidRekeyTarget:     v.ValidRekeyTarget,
 		}
 		if v.LogicSigResources != nil {
 			cloned := v.LogicSigResources.Clone()
 			summary.LogicSigResources = &cloned
 		}
-		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {
+		if len(v.SigningArgs) > 0 {
 			summary.SigningArgs = signingargs.ToRuntimeDefs(v.SigningArgs)
 		}
 		result[k] = summary

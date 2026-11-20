@@ -176,9 +176,9 @@ beneath an owned private child without permitting a general writable-ancestor
 exception.
 An explicit custom socket for a systemd-managed signer must remain outside the
 store and its parent runtime directory must be service-user-owned and
-non-writable by group and other users. Valid legacy configurations that placed
-a custom socket inside the store can be migrated while stopped; the daemon
-then refuses that configuration until the socket is moved.
+non-writable by group and other users. A same-UID store whose `config.yaml`
+places a custom socket inside the store can still be converted while stopped;
+the managed daemon then refuses that configuration until the socket is moved.
 
 All IPC bind paths use the same directory-chain trust rule. Directory aliases
 are resolved before validation and the daemon binds the canonical result. The
@@ -306,14 +306,19 @@ reports as the repairs to make. It inventories without following
 symlinks and reports unsafe ancestors, ownership, modes, hardlinks, and
 unexpected file types. Its public policies are opaque operation-specific values: production
 audit rejects every in-store socket, same-UID audit recognizes one exact live
-socket without relaxing ancestor checks, and migration alone receives a
-removable legacy socket. Migration validates the complete legacy inventory before mutation,
-removes the recognized stale legacy `<data-root>/aplane.sock`, removes group
-access at the root first, repairs recognized objects through opened
+socket without relaxing ancestor checks, and conversion of a same-UID store
+alone receives a removable socket: the one exact in-store path its
+`config.yaml` names, or the same-UID default `<data-root>/aplane.sock` when
+`config.yaml` names a path outside the store, which a daemon run before that
+change left behind. Repair of a managed store (`permissions migrate`,
+post-root-mutation normalization, and `convert-managed` run again on a store
+that is already managed, as the systemd installer does) receives none and
+reads no `config.yaml`: a managed daemon never binds inside the store, so a
+socket there is refused like any unexpected object. Migration validates
+the complete inventory before mutation, removes the recognized socket, removes
+group access at the root first, repairs recognized objects through opened
 descriptors, syncs directories, and independently audits the private result. A
 clean audit is authority to proceed; an incomplete audit is not.
-Stopped migration and post-root-mutation normalization resolve the same exact
-configured legacy in-store socket; neither hardcodes the historical default.
 
 The installer bootstrap first uses `apstore permissions prepare-managed-root`
 to create and close the real data-directory root through opened directory
@@ -331,7 +336,7 @@ deliberately does not infer an owner from untrusted store metadata and does not
 create `.apstore.lock`.
 
 `apstore permissions convert-managed` then acquires the exclusive store lock,
-migrates and audits the legacy tree, and publishes root-controlled
+migrates and audits the same-UID tree, and publishes root-controlled
 `install/service-principal.json` followed by `.prod`. A busy store therefore
 fails before either managed marker appears. The marker is published last so a
 failed migration remains an unmarked local store.
@@ -359,8 +364,8 @@ state directs the operator to the permission migration command.
 
 Installer-owned management scripts, release metadata, operator metadata, and
 the template library are installed only after migration succeeds. In
-particular, recursive template ownership repair never runs against a legacy
-tree. The shell installer does not repair `.apstore.lock`; the descriptor-based
+particular, recursive template ownership repair never runs against a tree
+that has not been migrated. The shell installer does not repair `.apstore.lock`; the descriptor-based
 Go migrator owns that operation.
 
 ### Implemented rollout
@@ -373,8 +378,8 @@ The migration order is fixed:
 4. move the socket to the protected runtime directory;
 5. audit and migrate a stopped shared-group store to the private layout;
 6. enable strict startup enforcement and private creation defaults;
-7. remove legacy group-shared behavior from normal writers, retaining only the
-   read-only legacy profile needed to validate supported upgrades.
+7. remove group-shared behavior from normal writers, keeping only the
+   read-only structural preflight that conversion and installer upgrades run.
 
 The systemd installer performs this ordering while the service is stopped and
 runs both migration and post-migration audit before starting the daemon.

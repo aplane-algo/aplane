@@ -685,7 +685,6 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 			Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
 			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
-			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
 		},
 		baseSignature:     baseSignature,
 		cosignerSignature: cosignerSignature,

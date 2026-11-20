@@ -6,7 +6,11 @@ package cosignerrefs
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,17 +48,17 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatalf("PublicKeyHex = %q, want %q", got.PublicKeyHex, rec.PublicKeyHex)
 	}
 
-	list, err := List(paths)
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
+	list, invalid, err := List(paths)
+	if err != nil || len(invalid) != 0 {
+		t.Fatalf("List() invalid = %+v, error = %v", invalid, err)
 	}
 	if len(list) != 1 || list[0].Name != "lab-cosigner" {
 		t.Fatalf("List() = %#v, want one lab-cosigner record", list)
 	}
 
-	removed, err := Delete(paths, "lab-cosigner")
-	if err != nil || !removed {
-		t.Fatalf("Delete() = (%v, %v), want removed", removed, err)
+	removal, err := Remove(paths, "lab-cosigner")
+	if err != nil || !removal.Removed || removal.Path != paths.CosignerRefPath("lab-cosigner") || removal.ComponentKey != rec.ComponentKey {
+		t.Fatalf("Remove() = (%+v, %v), want removed", removal, err)
 	}
 	_, ok, err = Get(paths, "lab-cosigner")
 	if err != nil || ok {
@@ -157,27 +161,92 @@ func TestImportAllowsFormerEndpointDiscoveryNamespace(t *testing.T) {
 	}
 }
 
-func TestListSkipsInvalidReferenceRecordWithoutHidingValidReferences(t *testing.T) {
+// List reports every file that is not a valid reference beside the valid
+// ones: one bad file never hides the rest. A file named for a reference name
+// is cleared with Remove; any other one has to be deleted by hand.
+func TestListReportsInvalidFilesBesideTheValidOnes(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(paths.CosignerRefsDir(), 0o700); err != nil {
-		t.Fatalf("MkdirAll(cosigners) error = %v", err)
+	valid, err := os.ReadFile(paths.CosignerRefPath("valid"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(paths.CosignerRefPath("bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
-		t.Fatalf("WriteFile(bad reference) error = %v", err)
+	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
+	unreachable := []string{"._lab.json", "Foo.json", "a..b.json", "my ref.json"}
+	for _, file := range unreachable {
+		if err := os.WriteFile(filepath.Join(paths.CosignerRefsDir(), file), valid, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	records, err := List(paths)
+	records, invalid, err := List(paths)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if len(records) != 1 || records[0].Name != "valid" {
-		t.Fatalf("List() = %#v, want only valid reference", records)
+		t.Fatalf("List() records = %#v, want the valid one", records)
 	}
-	if _, _, err := Get(paths, "bad"); err == nil || !strings.Contains(err.Error(), "invalid cosigner reference bad") {
-		t.Fatalf("Get(bad) error = %v, want explicit validation failure", err)
+	want := []InvalidRecord{
+		{Path: filepath.Join(paths.CosignerRefsDir(), "._lab.json"), Stem: "._lab", Reason: `"._lab" is not a reference name`},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "Foo.json"), Stem: "Foo", Reason: `"Foo" is not a reference name`},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "a..b.json"), Stem: "a..b", Reason: `"a..b" is not a reference name`},
+		{Path: paths.CosignerRefPath("bad"), Stem: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
+		{Path: filepath.Join(paths.CosignerRefsDir(), "my ref.json"), Stem: "my ref", Reason: `"my ref" is not a reference name`},
+	}
+	if !reflect.DeepEqual(invalid, want) {
+		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
+	}
+	if got, want := invalid[1].String(), fmt.Sprintf("%q", invalid[1].Path)+`: "Foo" is not a reference name (remove does not reach it; delete the file to clear it)`; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got, want := invalid[3].String(), fmt.Sprintf("%q", invalid[3].Path)+`: unsupported schema "wrong" (remove reference bad to clear it)`; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+
+	if removal, err := Remove(paths, "bad"); err != nil || !removal.Removed || removal.ComponentKey != "" {
+		t.Fatalf("Remove(bad) = %+v, %v", removal, err)
+	}
+	if _, invalid, err = List(paths); err != nil || len(invalid) != len(unreachable) {
+		t.Fatalf("List() after Remove invalid = %+v, %v; want the unreachable files only", invalid, err)
+	}
+}
+
+// Choosing a cosigner by Witness Key ID takes a valid match even beside
+// invalid files. With no valid match it fails naming them, since the one
+// sought may be among them; with none, the ID is simply not found.
+func TestResolveByWitnessKeyIDNamesInvalidFilesOnlyWithoutAMatch(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
+	if _, err := Import(paths, "valid", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+		t.Fatal(err)
+	}
+	matching, err := witness.ID(witness.Falcon1024V1, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := witness.ID(witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xcd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(id string) (map[string]string, error) {
+		return ResolveCreationParamsForComponents(paths, "test.cosigned.v1", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: id})
+	}
+
+	if _, err := resolve(other); err == nil || errors.Is(err, ErrInvalidRecord) || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("resolve(no match, no invalid files) error = %v, want not found", err)
+	}
+	writeRawRecordBytes(t, paths, "bad", []byte(`{"schema":"wrong"}`))
+	if resolved, err := resolve(matching); err != nil || resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(pub) {
+		t.Fatalf("resolve(match) = %v, %v; want the valid reference", resolved, err)
+	}
+	// A REST client gets this error, so it names the file, not its path on
+	// the signer.
+	_, err = resolve(other)
+	if !errors.Is(err, ErrInvalidRecord) || !strings.HasSuffix(err.Error(), `these reference files are not valid: "bad.json": unsupported schema "wrong"`) ||
+		strings.Contains(err.Error(), paths.CosignerRefsDir()) {
+		t.Fatalf("resolve(no match) error = %v, want the invalid file named by its file name", err)
 	}
 }
 
@@ -382,19 +451,99 @@ func bytesOfLen(n int, fill byte) []byte {
 	return b
 }
 
-func TestPublicKeyDigestRefusesWhatTheReferenceWouldRefuse(t *testing.T) {
-	key := strings.Repeat("ab", witness.Ed25519PublicKeySize)
-	size, digest, err := publicKeyDigest(witness.Ed25519V1, key)
-	if err != nil || size != witness.Ed25519PublicKeySize || len(digest) != 64 {
-		t.Fatalf("publicKeyDigest(valid) = %d, %q, %v", size, digest, err)
+// Remove takes a reference name exactly as listed. Removing "Foo" beside a
+// valid "foo" would otherwise delete foo.json and leave Foo.json, so it is
+// refused, naming both files.
+func TestRemoveRefusesANameNotAsListed(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "foo", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range []struct{ keyType, hex, want string }{
-		{witness.Ed25519V1, "zz", "public key must be hex"},
-		{witness.Ed25519V1, "abcd", "component public key length 2 invalid"},
-		{"unknown", key, "is not a cosigner key type"},
-	} {
-		if _, _, err := publicKeyDigest(tc.keyType, tc.hex); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("publicKeyDigest(%q, %q) error = %v, want %q", tc.keyType, tc.hex, err, tc.want)
+	valid, err := os.ReadFile(paths.CosignerRefPath("foo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper := filepath.Join(paths.CosignerRefsDir(), "Foo.json")
+	if err := os.WriteFile(upper, valid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"Foo", " foo"} {
+		removal, err := Remove(paths, name)
+		want := fmt.Sprintf(`remove takes a reference name exactly as listed: %q would be the reference "foo", stored as "foo.json", not %q`, name, name+".json")
+		if err == nil || err.Error() != want || removal.Removed {
+			t.Fatalf("Remove(%q) = %+v, %v; want %q", name, removal, err, want)
 		}
+	}
+	for _, path := range []string{paths.CosignerRefPath("foo"), upper} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("a refused remove deleted %s: %v", path, err)
+		}
+	}
+	if removal, err := Remove(paths, "foo"); err != nil || removal.Path != paths.CosignerRefPath("foo") {
+		t.Fatalf("Remove(foo) = %+v, %v", removal, err)
+	}
+	records, invalid, err := List(paths)
+	if err != nil || len(records) != 0 || len(invalid) != 1 || invalid[0].Path != upper {
+		t.Fatalf("List() after Remove(foo) = %+v, %+v, %v; want only Foo.json reported", records, invalid, err)
+	}
+}
+
+// An entry that cannot be read, or is not a regular file, is reported, not
+// fatal, and Remove does not reach it. A dangling symlink is reported too, and
+// Remove deletes it. Only a directory that cannot be read fails the list.
+func TestListReportsEntriesItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode 000 file")
+	}
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := Import(paths, "foo", testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))); err != nil {
+		t.Fatal(err)
+	}
+	dir := paths.CosignerRefsDir()
+	if err := os.WriteFile(filepath.Join(dir, "locked.json"), []byte("{}"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, link := range map[string]string{"todir.json": target, "dangling.json": filepath.Join(dir, "missing")} {
+		if err := os.Symlink(link, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	records, invalid, err := List(paths)
+	if err != nil || len(records) != 1 || records[0].Name != "foo" {
+		t.Fatalf("List() = %+v, %v; want the valid reference", records, err)
+	}
+	want := []InvalidRecord{
+		{Path: filepath.Join(dir, "dangling.json"), Stem: "dangling", Reason: "symlink to a missing file", Removable: true},
+		{Path: filepath.Join(dir, "dir.json"), Stem: "dir", Reason: "is a directory"},
+		{Path: filepath.Join(dir, "locked.json"), Stem: "locked", Reason: "cannot be read: permission denied"},
+		{Path: filepath.Join(dir, "todir.json"), Stem: "todir", Reason: "is a directory"},
+	}
+	if !reflect.DeepEqual(invalid, want) {
+		t.Fatalf("List() invalid = %+v\nwant %+v", invalid, want)
+	}
+	if removal, err := Remove(paths, "dangling"); err != nil || !removal.Removed {
+		t.Fatalf("Remove(dangling) = %+v, %v", removal, err)
+	}
+	for _, name := range []string{"locked", "todir", "dir"} {
+		if removal, err := Remove(paths, name); err == nil || removal.Removed {
+			t.Fatalf("Remove(%s) = %+v, %v; want it refused", name, removal, err)
+		}
+	}
+
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, _, err := List(paths); err == nil || !strings.HasPrefix(err.Error(), "failed to read cosigner reference directory: ") {
+		t.Fatalf("List() of an unreadable directory error = %v, want it to fail", err)
 	}
 }
