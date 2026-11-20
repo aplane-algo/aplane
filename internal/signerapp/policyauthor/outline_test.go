@@ -256,3 +256,52 @@ func TestOutlineShowsAnUnknownMemberInEveryObject(t *testing.T) {
 		}
 	}
 }
+
+// The transaction types section offers adding a type while transaction_types
+// is an object or absent, and replacing it with a reject-all object whenever
+// it is not an object.
+func TestOutlineTransactionTypeAdds(t *testing.T) {
+	const add, replace = "Add a transaction type", "Set transaction types to reject every type (\"*\": \"reject\")"
+	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json"} {
+		tests := []struct {
+			value any
+			drop  bool
+			want  []string
+		}{
+			{want: []string{add}},
+			{drop: true, want: []string{add, replace}},
+			{value: "reject", want: []string{replace}},
+			{value: []any{}, want: []string{replace}},
+			{value: nil, want: []string{replace}},
+		}
+		for _, tt := range tests {
+			var doc map[string]any
+			if err := json.Unmarshal(fixture(t, name), &doc); err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tt.drop:
+				delete(doc, "transaction_types")
+			case tt.want[0] == replace:
+				doc["transaction_types"] = tt.value
+			}
+			data, err := json.Marshal(doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := LoadFile(writeFile(t, t.TempDir(), name, data))
+			var got []string
+			for _, s := range Outline(f, f.Problems, asa.BuiltinMetadata) {
+				if s.ID != "types" {
+					continue
+				}
+				for _, a := range s.Adds {
+					got = append(got, a.Label)
+				}
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("%s with transaction_types %v (dropped %v): adds %q, want %q", name, tt.value, tt.drop, got, tt.want)
+			}
+		}
+	}
+}

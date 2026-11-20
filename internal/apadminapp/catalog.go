@@ -867,14 +867,7 @@ func requestInspectionWithRetry[T any](c Catalog, build func() any, resultCode f
 		if resultCode(&result) != protocol.ResultCodeStoreBusy {
 			return result, nil
 		}
-		wait := inspectionRetryInterval
-		if remaining < wait {
-			wait = remaining
-		}
-		if wait <= 0 {
-			return result, protocol.WithCode(protocol.ResultCodeStoreBusy, fmt.Errorf("store remained busy during read-only inspection"))
-		}
-		c.Sleep(wait)
+		c.Sleep(min(inspectionRetryInterval, remaining))
 	}
 }
 

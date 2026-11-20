@@ -5,10 +5,6 @@ package main
 
 import "github.com/aplane-algo/aplane/internal/backup"
 
-func resolveBackupKeysDir(source string) string {
-	return backup.ResolveBackupKeysDir(source)
-}
-
 func prepareBackupSource(source string) (string, func(), error) {
 	root, cleanup, err := backup.PrepareRestoreSource(source)
 	if err != nil {

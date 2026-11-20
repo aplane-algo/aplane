@@ -260,8 +260,6 @@ func TestShellPaneKeysThatDelegate(t *testing.T) {
 		key  tea.KeyMsg
 		want func(m shellModel) shellModel
 	}{
-		{"page up scrolls back", key(tea.KeyPgUp), func(m shellModel) shellModel { m.scrollPage(1, shellTranscriptHeight(10)); return m }},
-		{"page down scrolls forward", key(tea.KeyPgDown), func(m shellModel) shellModel { m.scrollPage(-1, shellTranscriptHeight(10)); return m }},
 		{"up recalls history", key(tea.KeyUp), func(m shellModel) shellModel { m.clearCompletions(); m.previousHistory(); return m }},
 		{"ctrl+p recalls history", key(tea.KeyCtrlP), func(m shellModel) shellModel { m.clearCompletions(); m.previousHistory(); return m }},
 		{"down moves forward in history", key(tea.KeyDown), func(m shellModel) shellModel { m.clearCompletions(); m.nextHistory(); return m }},
@@ -284,16 +282,14 @@ func TestShellPaneKeysThatDelegate(t *testing.T) {
 				t.Fatal("the key changed nothing: the case tests nothing")
 			}
 
-			// While a command runs, history and completion keys are dropped;
-			// scrolling still works.
+			// While a command runs, history and completion keys are dropped.
 			running := base()
 			running.running = true
 			running.executor = &keyTestExecutor{}
 			frozen := stateOf(running)
 			after, _ := running.updateKey(tt.key)
-			scrolls := tt.key.Type == tea.KeyPgUp || tt.key.Type == tea.KeyPgDown
-			if changed := !reflect.DeepEqual(stateOf(after), frozen); changed != scrolls {
-				t.Fatalf("while a command runs, the key changed the pane = %v, want %v", changed, scrolls)
+			if !reflect.DeepEqual(stateOf(after), frozen) {
+				t.Fatal("while a command runs, the key changed the pane")
 			}
 		})
 	}

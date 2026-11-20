@@ -117,21 +117,8 @@ func validateRestoreArgs(args []string) error {
 			return fmt.Errorf("usage: apadmin restore preview <backup-id|name>")
 		}
 	case "apply":
-		if len(args) < 2 {
-			return errors.New(restoreApplyUsage)
-		}
-		for i := 2; i < len(args); i++ {
-			switch args[i] {
-			case "--replace-existing":
-			case "--address":
-				if i+1 >= len(args) {
-					return errors.New(restoreApplyUsage)
-				}
-				i++
-			default:
-				return fmt.Errorf("unknown restore apply option: %s", args[i])
-			}
-		}
+		_, err := parseRestoreApply(args)
+		return err
 	case "rollback", "reconcile":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apadmin restore %s", args[0])
@@ -140,6 +127,37 @@ func validateRestoreArgs(args []string) error {
 		return fmt.Errorf("usage: apadmin restore <preview|apply|rollback|reconcile>")
 	}
 	return nil
+}
+
+// restoreApply is a restore apply command line: the backup and the options.
+type restoreApply struct {
+	name            string
+	addresses       []string
+	replaceExisting bool
+}
+
+// parseRestoreApply parses "apply <backup-id|name> [--address ADDRESS ...]
+// [--replace-existing]".
+func parseRestoreApply(args []string) (restoreApply, error) {
+	if len(args) < 2 {
+		return restoreApply{}, errors.New(restoreApplyUsage)
+	}
+	apply := restoreApply{name: args[1]}
+	for i := 2; i < len(args); i++ {
+		switch args[i] {
+		case "--replace-existing":
+			apply.replaceExisting = true
+		case "--address":
+			if i+1 >= len(args) {
+				return restoreApply{}, errors.New(restoreApplyUsage)
+			}
+			apply.addresses = append(apply.addresses, args[i+1])
+			i++
+		default:
+			return restoreApply{}, fmt.Errorf("unknown restore apply option: %s", args[i])
+		}
+	}
+	return apply, nil
 }
 
 // RunBackup executes one validated managed-backup command.
@@ -420,7 +438,11 @@ func (s Store) RunRestore(args []string) error {
 		defer crypto.ZeroBytes(secret)
 		return s.restorePreview(args[1], secret)
 	case "apply":
-		return s.restoreApply(args[1:])
+		apply, err := parseRestoreApply(args)
+		if err != nil {
+			return err
+		}
+		return s.restoreApplyBackup(apply)
 	case "rollback":
 		return s.restoreRollback()
 	case "reconcile":
@@ -448,19 +470,7 @@ func (s Store) restorePreview(name string, secret []byte) error {
 	return nil
 }
 
-func (s Store) restoreApply(args []string) error {
-	name := args[0]
-	var addresses []string
-	replaceExisting := false
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "--replace-existing":
-			replaceExisting = true
-		case "--address":
-			addresses = append(addresses, args[i+1])
-			i++
-		}
-	}
+func (s Store) restoreApplyBackup(apply restoreApply) error {
 	secret, err := s.ReadSecret("Enter export passphrase (to decrypt backup files): ")
 	if err != nil {
 		return err
@@ -470,7 +480,7 @@ func (s Store) restoreApply(args []string) error {
 	var result protocol.RestoreBackupResultMessage
 	if err := s.Client.Request(protocol.RestoreBackupMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: s.requestID("restore")},
-		ArchivePath: name, Addresses: addresses, ExportPassphrase: protocol.SensitiveBytes(secret), ReplaceExisting: replaceExisting,
+		ArchivePath: apply.name, Addresses: apply.addresses, ExportPassphrase: protocol.SensitiveBytes(secret), ReplaceExisting: apply.replaceExisting,
 	}, &result); err != nil {
 		return err
 	}

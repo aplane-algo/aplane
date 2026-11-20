@@ -56,14 +56,6 @@ func (m daemonModel) preferredCompactHeight() int {
 
 func (m daemonModel) Update(msg tea.Msg) (daemonModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyPgUp:
-			m.scrollPage(1, 10)
-		case tea.KeyPgDown:
-			m.scrollPage(-1, 10)
-		}
-		return m, nil
 	case daemonLogMsg:
 		if msg.event.Status != "" {
 			m.status = msg.event.Status
