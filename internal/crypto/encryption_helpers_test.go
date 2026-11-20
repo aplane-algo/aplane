@@ -45,7 +45,7 @@ func TestSealWithRandomNonce_RoundTrip(t *testing.T) {
 	}
 
 	plaintext := []byte("round-trip test data")
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext)
+	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext, nil)
 	if err != nil {
 		t.Fatalf("sealWithRandomNonce: %v", err)
 	}
@@ -74,11 +74,11 @@ func TestSealWithRandomNonce_UniqueNonces(t *testing.T) {
 		t.Fatalf("newGCM: %v", err)
 	}
 
-	nonce1, _, err := sealWithRandomNonce(gcm, []byte("a"))
+	nonce1, _, err := sealWithRandomNonce(gcm, []byte("a"), nil)
 	if err != nil {
 		t.Fatalf("first seal: %v", err)
 	}
-	nonce2, _, err := sealWithRandomNonce(gcm, []byte("a"))
+	nonce2, _, err := sealWithRandomNonce(gcm, []byte("a"), nil)
 	if err != nil {
 		t.Fatalf("second seal: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSealWithRandomNonce_EmptyPlaintext(t *testing.T) {
 		t.Fatalf("newGCM: %v", err)
 	}
 
-	nonce, ciphertext, err := sealWithRandomNonce(gcm, []byte{})
+	nonce, ciphertext, err := sealWithRandomNonce(gcm, []byte{}, nil)
 	if err != nil {
 		t.Fatalf("sealWithRandomNonce: %v", err)
 	}

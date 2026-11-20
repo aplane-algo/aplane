@@ -223,9 +223,9 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		term, err := crypto.EnvelopeTerm(encoded)
-		if err != nil || term != kr.CurrentTerm() {
-			t.Fatalf("%s term = %d, %v", item.path, term, err)
+		term, present, err := crypto.InspectTermEnvelope(encoded)
+		if err != nil || !present || term != kr.CurrentTerm() {
+			t.Fatalf("%s term = %d, %v, %v", item.path, term, present, err)
 		}
 		plaintext, err := kr.Open(encoded, item.ctx)
 		if err != nil || string(plaintext) != item.want {

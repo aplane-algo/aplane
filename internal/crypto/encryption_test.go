@@ -164,7 +164,7 @@ func TestDecryptStandaloneRejectsEnvelopeWithoutKDFParams(t *testing.T) {
 	}
 
 	_, err = DecryptStandalone(legacy, passphrase)
-	if err == nil || !strings.Contains(err.Error(), "do not match envelope version 2") {
+	if err == nil || !strings.Contains(err.Error(), "are not this release's") {
 		t.Fatalf("DecryptStandalone legacy envelope error = %v, want exact KDF tuple rejection", err)
 	}
 }
@@ -188,7 +188,7 @@ func TestDecryptStandaloneRejectsIncompleteKDFParams(t *testing.T) {
 	if err == nil {
 		t.Fatal("DecryptStandalone should reject incomplete KDF parameters")
 	}
-	if !strings.Contains(err.Error(), "do not match envelope version 2") {
+	if !strings.Contains(err.Error(), "are not this release's") {
 		t.Errorf("Expected exact KDF tuple error, got: %v", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestDecryptStandaloneRejectsModifiedKDFParamsBeforeDerivation(t *testing.T)
 		t.Fatalf("Marshal() error = %v", err)
 	}
 	_, err = DecryptStandalone(modified, []byte("pass"))
-	if err == nil || !strings.Contains(err.Error(), "do not match envelope version 2") {
+	if err == nil || !strings.Contains(err.Error(), "are not this release's") {
 		t.Fatalf("DecryptStandalone() error = %v, want exact KDF tuple rejection", err)
 	}
 }

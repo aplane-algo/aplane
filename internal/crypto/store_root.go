@@ -506,7 +506,7 @@ func decodeStoreRootKeyringHeader(
 			file.EnvelopeVer,
 		)
 	}
-	if err := checkKDFParams(file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
+	if err := checkKDFParams("keyring", file.KDFTime, file.KDFMemory, file.KDFThreads); err != nil {
 		return keyringFile{}, nil, nil, nil, err
 	}
 	salt, err := decodeCanonicalBase64("store root keyring salt", file.Salt)

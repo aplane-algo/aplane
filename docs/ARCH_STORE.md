@@ -475,9 +475,10 @@ Behavior:
   caller asked for
 - passphrase rotation re-encrypts under a new term key with the same context,
   so a rotation cannot relabel a file while it rewrites it
-- `crypto.EnvelopeTerm` exposes only the positive term header. Any caller
-  using that term as inventory authority must open the same byte buffer with
-  its expected logical context; inspecting the header alone is insufficient.
+- `crypto.InspectTermEnvelope` exposes only the positive term header. Any
+  caller using that term as inventory authority must open the same byte buffer
+  with its expected logical context; inspecting the header alone is
+  insufficient.
 
 ### Active-path capability
 
