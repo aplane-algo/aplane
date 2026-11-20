@@ -91,12 +91,13 @@ func TestBuildExportPayloadIsCanonicalCredentialOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildExportPayload() error = %v", err)
 	}
-	gotKeyJSON, err := ParseBackup(payload)
+	exported, err := keys.ParsePayload(payload)
 	if err != nil {
-		t.Fatalf("ParseBackup() error = %v", err)
+		t.Fatalf("ParsePayload(export) error = %v", err)
 	}
-	if !jsonEqualForBackupTest(t, gotKeyJSON, keyJSON) {
-		t.Fatalf("credential JSON mismatch\n got: %s\nwant: %s", gotKeyJSON, keyJSON)
+	exported.ZeroSecrets()
+	if !jsonEqualForBackupTest(t, payload, keyJSON) {
+		t.Fatalf("credential JSON mismatch\n got: %s\nwant: %s", payload, keyJSON)
 	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &object); err != nil {
@@ -104,13 +105,6 @@ func TestBuildExportPayloadIsCanonicalCredentialOnly(t *testing.T) {
 	}
 	if _, exists := object["backup_bundle"]; exists {
 		t.Fatal("credential backup contains obsolete backup_bundle wrapper")
-	}
-}
-
-func TestParseBackupRejectsInternalBundle(t *testing.T) {
-	data := []byte(`{"backup_bundle":1,"payload_version":1,"key":{}}`)
-	if _, err := ParseBackup(data); err == nil || !strings.Contains(err.Error(), "unsupported internal backup bundle") {
-		t.Fatalf("ParseBackup() error = %v, want pre-release bundle rejection", err)
 	}
 }
 

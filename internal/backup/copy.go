@@ -4,7 +4,6 @@
 package backup
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -14,30 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 )
-
-// ParseBackup returns the complete canonical managed credential payload.
-// Backup bundles were an internal pre-release format and are deliberately not
-// accepted by the first supported credential-backup contract.
-func ParseBackup(decryptedJSON []byte) ([]byte, error) {
-	var probe struct {
-		BackupBundle int `json:"backup_bundle"`
-	}
-	if err := json.Unmarshal(decryptedJSON, &probe); err != nil {
-		return nil, fmt.Errorf("failed to parse backup data: %w", err)
-	}
-
-	if probe.BackupBundle != 0 {
-		return nil, fmt.Errorf(
-			"unsupported internal backup bundle format; create a new credential backup with this release",
-		)
-	}
-	parsed, err := keys.ParsePayload(decryptedJSON)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse backup credential: %w", err)
-	}
-	parsed.ZeroSecrets()
-	return decryptedJSON, nil
-}
 
 func exportManagedCredential(destDir string, source keys.ManagedCredentialFile, kr *crypto.Keyring, exportPassphrase []byte) error {
 	destFile := filepath.Join(destDir, source.Selector+".apb")

@@ -184,7 +184,7 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	defer set.ZeroSecrets()
 	for _, entry := range set.Entries {
 		if entry.StageHint != nil {
-			r.hints[entry.Selector] = *entry.StageHint
+			r.hints[entry.Selector()] = *entry.StageHint
 		}
 	}
 	result.ArchiveSHA256 = set.ArchiveSHA256
@@ -219,7 +219,7 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	if r.wasRecovery {
 		repaired := make(map[string]bool, len(classification.Pending))
 		for i := range classification.Pending {
-			repaired[classification.Pending[i].Selector] = true
+			repaired[classification.Pending[i].Selector()] = true
 		}
 		if validateErr := storevalidate.RecoveryDestination(storevalidate.Options{
 			Paths: s.Deps.KeyPaths(), Candidate: current, Keyring: masterKey,
@@ -276,7 +276,7 @@ func (r *restoreRun) commit(
 			for i := range classification.Policies {
 				entry := classification.Policies[i]
 				if applyErr := backup.ApplyPolicyEntry(staged, ir.NodeRole(), entry, masterKey); applyErr != nil {
-					return fmt.Errorf("apply restored policy %s: %w", entry.Selector, applyErr)
+					return fmt.Errorf("apply restored policy %s: %w", entry.Selector(), applyErr)
 				}
 			}
 			for i := range classification.Pending {
@@ -284,7 +284,7 @@ func (r *restoreRun) commit(
 				if applyErr := backup.ApplyCredentialEntry(
 					staged, entry, masterKey, req.ReplaceExisting,
 				); applyErr != nil {
-					return fmt.Errorf("apply restored credential %s: %w", entry.Selector, applyErr)
+					return fmt.Errorf("apply restored credential %s: %w", entry.Selector(), applyErr)
 				}
 			}
 			return nil
@@ -310,7 +310,7 @@ func (r *restoreRun) commit(
 	r.committedGeneration = generationID
 	result.Restored = projectCredentialEntries(classification.Pending)
 	for _, entry := range classification.Policies {
-		result.PoliciesRestored = append(result.PoliciesRestored, entry.Selector)
+		result.PoliciesRestored = append(result.PoliciesRestored, entry.Selector())
 	}
 
 	return nil
@@ -320,9 +320,9 @@ func projectCredentialEntries(entries []backup.CredentialEntry) []adminproto.Res
 	result := make([]adminproto.RestoreCredential, len(entries))
 	for i := range entries {
 		result[i] = adminproto.RestoreCredential{
-			Selector: entries[i].Selector,
-			Category: entries[i].Category,
-			KeyType:  entries[i].KeyType,
+			Selector: entries[i].Selector(),
+			Category: entries[i].Category(),
+			KeyType:  entries[i].KeyType(),
 		}
 	}
 	return result

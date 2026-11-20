@@ -224,19 +224,16 @@ func PreviewRestoreWithNodeRole(
 	}
 	preview := &RestorePreview{ArchivePath: resolved, CreatedAtUnix: manifest.CreatedAtUnix}
 	for _, selector := range selectors {
-		entry, err := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, role)
+		entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
 		if err == nil {
 			err = func() error {
 				defer entry.ZeroSecrets()
-				if err := validateCredentialRuntimeSupport(&entry); err != nil {
-					return err
-				}
-				_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector, entry.Category)
+				_, exists, destinationErr := keys.ManagedCredentialDestinationActive(active, entry.Selector(), entry.Category())
 				if destinationErr != nil && !isManagedClassConflict(destinationErr) {
 					return destinationErr
 				}
 				info := RestoreKeyInfo{
-					Address: selector, KeyType: entry.KeyType,
+					Address: selector, KeyType: entry.KeyType(),
 					StageHint:     validatedRotatingHint(entry, manifest.RotatingStageHints),
 					AlreadyExists: exists || destinationErr != nil,
 				}
@@ -269,14 +266,11 @@ func RestoreForRebuild(
 	exportPassphrase []byte,
 	logf RestoreLogger,
 ) (string, error) {
-	entry, err := inspectCredentialBackupEntry(keysDir, selector, exportPassphrase, role)
+	entry, err := loadCredentialEntry(keysDir, selector, exportPassphrase, role)
 	if err != nil {
 		return "", err
 	}
 	defer entry.ZeroSecrets()
-	if err := validateCredentialRuntimeSupport(&entry); err != nil {
-		return "", err
-	}
 	if err := ApplyCredentialEntry(active, entry, kr, false); err != nil {
 		return "", err
 	}
@@ -292,7 +286,7 @@ func RestoreForRebuild(
 		}
 	}
 	if logf != nil {
-		logf("restored credential: %s (%s)", entry.Selector, entry.KeyType)
+		logf("restored credential: %s (%s)", entry.Selector(), entry.KeyType())
 	}
-	return entry.KeyType, nil
+	return entry.KeyType(), nil
 }

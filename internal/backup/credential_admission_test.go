@@ -4,7 +4,6 @@
 package backup
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -132,9 +131,9 @@ func admissionOutcomes(t *testing.T, paths storepaths.Paths, archive admissionAr
 	return outcome
 }
 
-// Every consumer of an archive admits a credential by the same checks:
-// deep verify, restore, its preview and rebuild accept and refuse the same
-// members. The table pins what each reports.
+// Every consumer of an archive admits a credential by the same loader: deep
+// verify, restore, its preview and rebuild accept and refuse the same members
+// and report the same reason. The table pins it.
 func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
@@ -146,7 +145,11 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 		// build writes the archive's members and returns its selector and,
 		// for the templates, the selector its payload derives.
 		build func(t *testing.T, root, keysDir string) (selector, derived string)
-		want  admissionOutcome
+		// refusal is the error every consumer reports for the archive's
+		// credential; want is the outcome of an archive whose credential
+		// they all accept.
+		refusal string
+		want    admissionOutcome
 	}{
 		{
 			name: "valid credential",
@@ -163,12 +166,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, address, keyJSON)
 				return address, address
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: backup file must be encrypted",
-				restore: "validate backup credential {sel}: backup file must be encrypted",
-				preview: "{sel}: backup file must be encrypted",
-				rebuild: "backup file must be encrypted",
-			},
+			refusal: `decrypt backup file: failed to parse encrypted data: json: unknown field "format_version"`,
 		},
 		{
 			name: "member that is not JSON",
@@ -176,12 +174,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, []byte("not json"))
 				return other, other
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: backup file must be encrypted",
-				restore: "validate backup credential {sel}: backup file must be encrypted",
-				preview: "{sel}: backup file must be encrypted",
-				rebuild: "backup file must be encrypted",
-			},
+			refusal: "decrypt backup file: failed to parse encrypted data: invalid character 'o' in literal null (expecting 'u')",
 		},
 		{
 			name: "envelope version 3",
@@ -189,12 +182,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, []byte(`{"envelope_version":3,"nonce":"","ciphertext":""}`))
 				return other, other
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: unsupported backup envelope_version 3",
-				restore: "validate backup credential {sel}: unsupported envelope_version: 3; create a new credential backup with this release",
-				preview: "{sel}: unsupported envelope_version: 3; create a new credential backup with this release",
-				rebuild: "unsupported envelope_version: 3; create a new credential backup with this release",
-			},
+			refusal: "decrypt backup file: envelope_version 3 not supported by standalone decryption (expected 2)",
 		},
 		{
 			name: "member under another passphrase",
@@ -203,12 +191,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, keyJSON, []byte("other-passphrase"))
 				return address, address
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: decryption failed: failed to decrypt data: cipher: message authentication failed",
-				restore: "validate backup credential {sel}: failed to decrypt backup (wrong passphrase?): failed to decrypt data: cipher: message authentication failed",
-				preview: "{sel}: failed to decrypt backup (wrong passphrase?): failed to decrypt data: cipher: message authentication failed",
-				rebuild: "failed to decrypt backup (wrong passphrase?): failed to decrypt data: cipher: message authentication failed",
-			},
+			refusal: "decrypt backup file: failed to decrypt data: cipher: message authentication failed",
 		},
 		{
 			name: "pre-release bundle",
@@ -216,12 +199,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, other, []byte(`{"backup_bundle":1,"key":{}}`), admissionPassphrase)
 				return other, other
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: failed to parse backup payload: unsupported internal backup bundle format; create a new credential backup with this release",
-				restore: "validate backup credential {sel}: unsupported internal backup bundle format; create a new credential backup with this release",
-				preview: "{sel}: unsupported internal backup bundle format; create a new credential backup with this release",
-				rebuild: "unsupported internal backup bundle format; create a new credential backup with this release",
-			},
+			refusal: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "backup_bundle"; restore or regenerate the key file using the current key schema`,
 		},
 		{
 			name: "unknown payload field",
@@ -230,12 +208,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, address, withExtraFieldForTest(t, keyJSON), admissionPassphrase)
 				return address, address
 			},
-			want: admissionOutcome{
-				verify:  `{sel}.apb: failed to parse backup payload: failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
-				restore: `validate backup credential {sel}: failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
-				preview: `{sel}: failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
-				rebuild: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
-			},
+			refusal: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "extra"; restore or regenerate the key file using the current key schema`,
 		},
 		{
 			name: "selector mismatch",
@@ -244,12 +217,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, other, keyJSON, admissionPassphrase)
 				return other, address
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: address mismatch: filename={sel}, derived={derived}",
-				restore: "validate backup credential {sel}: selector mismatch: filename={sel} derived={derived}",
-				preview: "{sel}: selector mismatch: filename={sel} derived={derived}",
-				rebuild: "selector mismatch: filename={sel} derived={derived}",
-			},
+			refusal: "selector mismatch: filename={sel} derived={derived}",
 		},
 		{
 			name: "key type the role forbids",
@@ -258,12 +226,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector
 			},
-			want: admissionOutcome{
-				verify:  `{sel}.apb: role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
-				restore: `validate backup credential {sel}: role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
-				preview: `{sel}: role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
-				rebuild: `role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
-			},
+			refusal: `role-forbidden: node role inventory conflict: node role "signer" does not allow key type "aplane.witness-falcon1024.v1"`,
 		},
 		{
 			name: "base key type this runtime lacks",
@@ -274,12 +237,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				sealAdmissionMember(t, keysDir, selector, keyJSON, admissionPassphrase)
 				return selector, selector
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
-				restore: "validate backup credential {sel}: base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
-				preview: "{sel}: base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
-				rebuild: "base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
-			},
+			refusal: "base key type example.missing-provider.v1 is not available for restored key type example.missing-provider-lsig.v1",
 		},
 		{
 			name: "oversized member",
@@ -287,12 +245,7 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 				writeAdmissionMember(t, keysDir, other, make([]byte, crypto.MaxStandaloneEnvelopeBytes+1))
 				return other, other
 			},
-			want: admissionOutcome{
-				verify:  "{sel}.apb: failed to read file: file exceeds size limit 1048576",
-				restore: "validate backup credential {sel}: read backup file: file exceeds size limit 1048576",
-				preview: "{sel}: read backup file: file exceeds size limit 1048576",
-				rebuild: "read backup file: file exceeds size limit 1048576",
-			},
+			refusal: "read backup file: file exceeds size limit 1048576",
 		},
 		{
 			name: "policy with no credential",
@@ -329,6 +282,14 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			selector, derived := tc.build(t, root, keysDir)
 			got := admissionOutcomes(t, paths, admissionArchive{root: root, selector: selector}, role, nil)
 			replacer := strings.NewReplacer("{sel}", selector, "{derived}", derived, "{policyErr}", undecodablePolicyErrorForTest(selector))
+			if tc.refusal != "" {
+				tc.want = admissionOutcome{
+					verify:  "{sel}.apb: " + tc.refusal,
+					restore: "validate backup credential {sel}: " + tc.refusal,
+					preview: "{sel}: " + tc.refusal,
+					rebuild: tc.refusal,
+				}
+			}
 			want := admissionOutcome{
 				verify:  replacer.Replace(tc.want.verify),
 				restore: replacer.Replace(tc.want.restore),
@@ -572,25 +533,36 @@ func undecodablePolicyErrorForTest(selector string) string {
 	return ""
 }
 
+// admittedEntryForTest admits keyJSON as loadCredentialEntry does a
+// decrypted archive member.
+func admittedEntryForTest(t *testing.T, keyJSON []byte, role noderole.Role) CredentialEntry {
+	t.Helper()
+	entry, err := admitCredentialEntry(keyJSON, selectorForTest(t, keyJSON), role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entry
+}
+
 // ApplyCredentialEntry installs only an entry restore loaded: one with no
-// credential, or whose credential was cleared, writes nothing.
+// credential, or whose credential was cleared, writes nothing. An entry's
+// selector and category are unexported, so one from outside this package
+// cannot name a selector or category its credential does not have.
 func TestApplyCredentialEntryRefusesAnEntryItDidNotLoad(t *testing.T) {
 	paths := mintFirstGenerationForBackupTest(t, storepaths.NewPaths(t.TempDir()))
 	active := activePathsForBackupTest(t, paths)
 	kr := cryptotest.Keyring(t, testExportMasterKey)
 	address, keyJSON := testEd25519BackupKeyJSON(t)
-	cleared := CredentialEntry{Selector: address, Category: keys.CategoryEd25519, KeyType: "ed25519", KeyJSON: bytes.Clone(keyJSON)}
+	cleared := admittedEntryForTest(t, keyJSON, noderole.RoleSigner)
 	cleared.ZeroSecrets()
-	mismatched := CredentialEntry{Selector: address, Category: keys.CategoryWitness, KeyType: "ed25519", KeyJSON: canonicalPayloadForTest(t, keyJSON)}
 	before := keysDirFilesForTest(t, active, kr)
 	for _, tc := range []struct {
 		name  string
 		entry CredentialEntry
 		want  string
 	}{
-		{"empty", CredentialEntry{}, "incompatible key file format: invalid canonical payload JSON: EOF; restore or regenerate the key file using the current key schema"},
-		{"cleared", cleared, "incompatible key file format: invalid canonical payload JSON: EOF; restore or regenerate the key file using the current key schema"},
-		{"mismatched", mismatched, "restore entry metadata no longer matches canonical payload"},
+		{"empty", CredentialEntry{}, `restore entry "" holds no admitted credential`},
+		{"cleared", cleared, `restore entry "` + address + `" holds no admitted credential`},
 	} {
 		if err := ApplyCredentialEntry(active, tc.entry, kr, true); err == nil || err.Error() != tc.want {
 			t.Fatalf("%s: ApplyCredentialEntry() error = %v, want %q", tc.name, err, tc.want)

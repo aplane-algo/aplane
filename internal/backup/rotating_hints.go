@@ -9,6 +9,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 )
 
@@ -36,8 +37,8 @@ func SnapshotRotatingHints(tables *stagetable.Store) map[string]RotatingStageHin
 // validatedRotatingHint ignores unusable auxiliary metadata. A bad hint must
 // never prevent restoring otherwise valid credentials or create authority.
 func validatedRotatingHint(entry CredentialEntry, hints map[string]RotatingStageHint) *RotatingStageHint {
-	h, ok := hints[entry.Selector]
-	if !ok || entry.Category != keys.CategoryRotatingLsig || h.KeyType != entry.KeyType || h.Stage >= math.MaxUint64-1 {
+	h, ok := hints[entry.Selector()]
+	if !ok || entry.Category() != keys.CategoryRotatingLsig || h.KeyType != entry.KeyType() || h.Stage >= math.MaxUint64-1 {
 		return nil
 	}
 	if h.Authorizer != "" {
@@ -45,12 +46,7 @@ func validatedRotatingHint(entry CredentialEntry, hints map[string]RotatingStage
 			return nil
 		}
 	}
-	payload, err := keys.ParsePayload(entry.KeyJSON)
-	if err != nil {
-		return nil
-	}
-	defer payload.ZeroSecrets()
-	if h.GenesisHash != hex.EncodeToString(payload.GenesisHash) {
+	if h.GenesisHash != hex.EncodeToString(entry.payload.GenesisHash) {
 		return nil
 	}
 	return &h
@@ -100,7 +96,7 @@ func LoadRebuildHints(source string, selectors []string, passphrase []byte) (map
 		if _, ok := manifest.RotatingStageHints[selector]; !ok {
 			continue
 		}
-		entry, err := inspectCredentialBackupEntry(keysDir, selector, passphrase, "signer")
+		entry, err := loadCredentialEntry(keysDir, selector, passphrase, noderole.RoleSigner)
 		if err != nil {
 			return nil, err
 		}

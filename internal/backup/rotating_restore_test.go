@@ -78,7 +78,7 @@ func TestRotatingArchiveRestoreKeepsTheAccount(t *testing.T) {
 			if len(set.Entries) != 1 {
 				t.Fatalf("restore set has %d keys, want 1", len(set.Entries))
 			}
-			restored, err := keys.ParsePayload(set.Entries[0].KeyJSON)
+			restored, err := keys.ParsePayload(set.Entries[0].keyJSON)
 			if err != nil {
 				t.Fatal(err)
 			}
