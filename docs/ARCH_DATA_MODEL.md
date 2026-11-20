@@ -401,8 +401,12 @@ The full durable payload is `keys.Payload` (codec in
 `internal/keys/payload_codec.go`). The signing-argument *schema slice* is
 modeled by `internal/signingargs.Info`; key-file storage aliases that type as
 `keys.StoredSigningArg`, signer cache aliases it as `cache.SigningArgInfo`, and
-`/keys` projects it to the SDK-facing `signerapi.SigningArgInfo` DTO. Template
-and `/keytypes` generation metadata uses `runtime_args`.
+`/keys` projects it to the SDK-facing `signerapi.RuntimeArgInfo` DTO, the type
+`/keytypes` uses for the generation metadata `runtime_args`. Every projection of
+key-type metadata into these DTOs (creation parameters, runtime arguments, a
+bounded contract's runtime arguments, and signing arguments) goes through
+`internal/signerapp/keytypemeta`, which drops the line break a YAML block scalar
+ends a description with (`lsigprovider.DescriptionText`).
 
 ### Bounded Authorization
 

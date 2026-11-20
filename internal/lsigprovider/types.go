@@ -199,6 +199,14 @@ type RuntimeArgDef struct {
 	MaxSize     int    // Maximum encoded byte length (0 when ByteLength fixes it)
 }
 
+// DescriptionText is a description as its author means it: a provider's, a
+// parameter's or a runtime argument's, bounded ones included. Every
+// description is one line of text, but a YAML block scalar (description: |
+// or >) ends its text with a line break, which is no part of it. The
+// installed YAML keeps that break, so whatever checks or lists a description
+// drops it here.
+func DescriptionText(s string) string { return strings.TrimRight(s, "\n") }
+
 // ValidateAndOrderArgs validates runtime args against their definitions and returns
 // them in declaration order. Rejects unknown arg names, enforces required args,
 // and validates byte lengths.

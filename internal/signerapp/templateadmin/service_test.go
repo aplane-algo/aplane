@@ -425,3 +425,64 @@ teal: |
 		t.Fatalf("reloadCount = %d, want 0: nothing was installed", got)
 	}
 }
+
+// The library lists a template whose descriptions are YAML block scalars
+// without the line break each one ends with, as /keytypes lists the key type
+// once it is installed.
+func TestLibraryListingDropsTheBlockScalarLineBreak(t *testing.T) {
+	svc, ir, _ := setupServiceWithReloadCounter(t)
+	if err := fsutil.MkdirAllPrivate(ir.KeyPaths().TemplateLibraryDir()); err != nil {
+		t.Fatal(err)
+	}
+	yaml := []byte(`schema_version: 1
+derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: admin-block-description
+version: 1
+display_name: "Admin Block Description"
+description: |
+  Pays one recipient
+valid_rekey_target: false
+max_opcode_cost: 20000
+parameters:
+  - name: limit
+    label: "Limit"
+    description: >
+      A limit for
+      the operator
+    type: uint64
+runtime_args:
+  - name: secret
+    label: "Secret"
+    description: |
+      The secret
+    type: bytes
+    max_size: 32
+teal: |
+  #pragma version 8
+  int 1
+  return
+`)
+	if err := os.WriteFile(filepath.Join(ir.KeyPaths().TemplateLibraryDir(), "block.yaml"), yaml, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	listed := svc.ListLibraryTemplates()
+	for _, item := range listed.Templates {
+		if item.FileName != "block.yaml" {
+			continue
+		}
+		if item.Invalid != "" || item.Description != "Pays one recipient" {
+			t.Fatalf("library entry = %+v", item)
+		}
+		if len(item.Parameters) != 1 || item.Parameters[0].Description != "A limit for the operator" {
+			t.Fatalf("parameters = %+v", item.Parameters)
+		}
+		if len(item.RuntimeArgs) != 1 || item.RuntimeArgs[0].Description != "The secret" {
+			t.Fatalf("runtime arguments = %+v", item.RuntimeArgs)
+		}
+		return
+	}
+	t.Fatalf("ListLibraryTemplates() = %+v, want an entry for block.yaml", listed)
+}

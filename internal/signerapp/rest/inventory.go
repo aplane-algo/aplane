@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
+	"github.com/aplane-algo/aplane/internal/signerapp/keytypemeta"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -85,7 +86,7 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, summary.TemplateFingerprint, summary.Parameters, summary.BoundedAuthorization)
 
 		if summary.SigningMetadataVersion > 0 {
-			keyInfo.SigningArgs = signingArgInfos(summary.SigningArgs)
+			keyInfo.SigningArgs = keytypemeta.RuntimeArgs(summary.SigningArgs)
 		}
 
 		keyList = append(keyList, keyInfo)
@@ -150,42 +151,6 @@ func boundedAccountParameters(parameters map[string]string) map[string]string {
 			out = make(map[string]string)
 		}
 		out[name] = value
-	}
-	return out
-}
-
-func restInputModeInfos(modes []lsigprovider.InputMode) []signerapi.InputModeInfo {
-	if len(modes) == 0 {
-		return nil
-	}
-	out := make([]signerapi.InputModeInfo, len(modes))
-	for i, mode := range modes {
-		out[i] = signerapi.InputModeInfo{
-			Name:       mode.Name,
-			Label:      mode.Label,
-			Transform:  mode.Transform,
-			ByteLength: mode.ByteLength,
-			InputType:  mode.InputType,
-		}
-	}
-	return out
-}
-
-func signingArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.SigningArgInfo {
-	if len(args) == 0 {
-		return nil
-	}
-	out := make([]signerapi.SigningArgInfo, len(args))
-	for i, arg := range args {
-		out[i] = signerapi.SigningArgInfo{
-			Name:        arg.Name,
-			Label:       arg.Label,
-			Description: arg.Description,
-			Type:        arg.Type,
-			Required:    arg.Required,
-			ByteLength:  arg.ByteLength,
-			MaxSize:     arg.MaxSize,
-		}
 	}
 	return out
 }
@@ -319,46 +284,12 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		info := signerapi.KeyTypeInfo{
 			KeyType:           tmpl.KeyType(),
 			Family:            tmpl.RoutingFamily(),
-			DisplayName:       tmpl.DisplayName(),
-			Description:       tmpl.Description(),
 			AuthorizationKind: string(algorithm.AuthorizationLogicSig),
 			RequiresLogicSig:  true,
 			ValidRekeyTarget:  lsigprovider.ValidRekeyTarget(tmpl.KeyType()),
-			CreationParams:    []signerapi.CreationParamInfo{},
-			RuntimeArgs:       []signerapi.RuntimeArgInfo{},
 		}
-
-		for _, p := range tmpl.CreationParams() {
-			info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
-				Name:        p.Name,
-				Label:       p.Label,
-				Description: p.Description,
-				Type:        p.Type,
-				Required:    p.Required,
-				MaxLength:   p.MaxLength,
-				InputModes:  restInputModeInfos(p.InputModes),
-				MinItems:    p.MinItems,
-				MaxItems:    p.MaxItems,
-				Example:     p.Example,
-				Placeholder: p.Placeholder,
-				Min:         p.Min,
-				Max:         p.Max,
-				Default:     p.Default,
-			})
-		}
-
-		for _, a := range tmpl.RuntimeArgs() {
-			info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
-				Name:        a.Name,
-				Label:       a.Label,
-				Description: a.Description,
-				Type:        a.Type,
-				Required:    a.Required,
-				ByteLength:  a.ByteLength,
-				MaxSize:     a.MaxSize,
-			})
-		}
-
+		// A generic template is a provider like any other, described alike.
+		describeProvider(&info, tmpl)
 		keyTypes = append(keyTypes, info)
 	}
 
@@ -370,7 +301,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 // parameters and arguments it takes.
 func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigProvider) {
 	info.DisplayName = provider.DisplayName()
-	info.Description = descriptionText(provider.Description())
+	info.Description = lsigprovider.DescriptionText(provider.Description())
 	if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 		if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
 			info.SigningFlow = boundedSigningFlow(metadata)
@@ -391,43 +322,9 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 		}
 	}
 
-	for _, p := range provider.CreationParams() {
-		info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
-			Name:        p.Name,
-			Label:       p.Label,
-			Description: descriptionText(p.Description),
-			Type:        p.Type,
-			Required:    p.Required,
-			MaxLength:   p.MaxLength,
-			InputModes:  restInputModeInfos(p.InputModes),
-			Options:     append([]string(nil), p.Options...),
-			MinItems:    p.MinItems,
-			MaxItems:    p.MaxItems,
-			Example:     p.Example,
-			Placeholder: p.Placeholder,
-			Min:         p.Min,
-			Max:         p.Max,
-			Default:     p.Default,
-		})
-	}
-
-	for _, a := range provider.RuntimeArgs() {
-		info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
-			Name:        a.Name,
-			Label:       a.Label,
-			Description: descriptionText(a.Description),
-			Type:        a.Type,
-			Required:    a.Required,
-			ByteLength:  a.ByteLength,
-			MaxSize:     a.MaxSize,
-		})
-	}
+	info.CreationParams = keytypemeta.CreationParams(provider.CreationParams())
+	info.RuntimeArgs = keytypemeta.RuntimeArgs(provider.RuntimeArgs())
 }
-
-// descriptionText is a description as a template's author means it: a YAML
-// block scalar (description: | or >) ends its text with a line break, which
-// install accepts and is no part of it. The installed YAML keeps it.
-func descriptionText(s string) string { return strings.TrimRight(s, "\n") }
 
 // boundaryGrammarProvider is a per-key type whose requests a boundary file
 // grammar describes.
@@ -458,6 +355,7 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		},
 		SpendEffects: append([]string{}, metadata.SpendEffects...), // [] on a plain host, never null
 		MaxFee:       boundedmeta.CloneMaxFee(metadata.MaxFee),
+		RuntimeArgs:  keytypemeta.BoundedRuntimeArgs(metadata.RuntimeArgs),
 		Layer3Policy: metadata.Layer3Policy,
 	}
 	if metadata.Cosigner != nil {
@@ -478,12 +376,6 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize,
 		})
 	}
-	for _, arg := range metadata.RuntimeArgs {
-		info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
-			Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
-			Required: arg.Required, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
-		})
-	}
 	for _, slot := range metadata.ArgumentLayout {
 		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.BoundedArgumentSlotInfo{
 			Index: slot.Index, Name: slot.Name, Source: slot.Source, MaxSize: slot.MaxSize,
@@ -494,9 +386,6 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 	}
 	if info.DerivedArgs == nil {
 		info.DerivedArgs = []signerapi.BoundedDerivedArgInfo{}
-	}
-	if info.RuntimeArgs == nil {
-		info.RuntimeArgs = []signerapi.RuntimeArgInfo{}
 	}
 	if info.ArgumentLayout == nil {
 		info.ArgumentLayout = []signerapi.BoundedArgumentSlotInfo{}

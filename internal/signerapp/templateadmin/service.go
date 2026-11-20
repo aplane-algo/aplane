@@ -19,12 +19,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/keytypemeta"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
-	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 type Deps interface {
@@ -66,11 +66,11 @@ func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 			KeyType:      item.KeyType,
 			TemplateType: item.TemplateType,
 			DisplayName:  item.DisplayName,
-			Description:  item.Description,
+			Description:  lsigprovider.DescriptionText(item.Description),
 			SourcePath:   item.SourcePath,
 			FileName:     item.FileName,
-			Parameters:   creationParamInfos(item.Parameters),
-			RuntimeArgs:  runtimeArgInfos(item.RuntimeArgs),
+			Parameters:   keytypemeta.CreationParams(item.Parameters),
+			RuntimeArgs:  keytypemeta.RuntimeArgs(item.RuntimeArgs),
 			Installed:    item.Installed,
 			Enabled:      item.Enabled,
 			Conflict:     item.Conflict,
@@ -707,67 +707,4 @@ func recordWireTemplateType(rec keytypestate.Record) string {
 func installedTemplateEnabled(paths storepaths.Paths, keyType string) bool {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
-}
-
-func creationParamInfos(params []lsigprovider.ParameterDef) []signerapi.CreationParamInfo {
-	if len(params) == 0 {
-		return nil
-	}
-	out := make([]signerapi.CreationParamInfo, len(params))
-	for i, p := range params {
-		out[i] = signerapi.CreationParamInfo{
-			Name:        p.Name,
-			Label:       p.Label,
-			Description: p.Description,
-			Type:        p.Type,
-			Required:    p.Required,
-			MaxLength:   p.MaxLength,
-			InputModes:  creationInputModeInfos(p.InputModes),
-			Options:     append([]string(nil), p.Options...),
-			MinItems:    p.MinItems,
-			MaxItems:    p.MaxItems,
-			Example:     p.Example,
-			Placeholder: p.Placeholder,
-			Min:         p.Min,
-			Max:         p.Max,
-			Default:     p.Default,
-		}
-	}
-	return out
-}
-
-func creationInputModeInfos(modes []lsigprovider.InputMode) []signerapi.InputModeInfo {
-	if len(modes) == 0 {
-		return nil
-	}
-	out := make([]signerapi.InputModeInfo, len(modes))
-	for i, mode := range modes {
-		out[i] = signerapi.InputModeInfo{
-			Name:       mode.Name,
-			Label:      mode.Label,
-			Transform:  mode.Transform,
-			ByteLength: mode.ByteLength,
-			InputType:  mode.InputType,
-		}
-	}
-	return out
-}
-
-func runtimeArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.RuntimeArgInfo {
-	if len(args) == 0 {
-		return nil
-	}
-	out := make([]signerapi.RuntimeArgInfo, len(args))
-	for i, a := range args {
-		out[i] = signerapi.RuntimeArgInfo{
-			Name:        a.Name,
-			Label:       a.Label,
-			Description: a.Description,
-			Type:        a.Type,
-			Required:    a.Required,
-			ByteLength:  a.ByteLength,
-			MaxSize:     a.MaxSize,
-		}
-	}
-	return out
 }

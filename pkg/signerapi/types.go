@@ -547,19 +547,10 @@ type InputModeInfo struct {
 	InputType  string `json:"input_type,omitempty"`
 }
 
-// RuntimeArgInfo is runtime-argument metadata exposed from /keytypes.
+// RuntimeArgInfo is runtime-argument metadata: a key type's from /keytypes
+// (runtime_args, and a bounded contract's), or the signing arguments an aplane
+// key recorded when it was created, from /keys (signing_args).
 type RuntimeArgInfo struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"` // "address", "uint64", "string", "bytes"
-	Label       string `json:"label,omitempty"`
-	Description string `json:"description,omitempty"`
-	Required    bool   `json:"required,omitempty"`
-	ByteLength  int    `json:"byte_length,omitempty"`
-	MaxSize     int    `json:"max_size,omitempty"`
-}
-
-// SigningArgInfo is the key-file-owned signing-argument metadata exposed from /keys.
-type SigningArgInfo struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"` // "address", "uint64", "string", "bytes"
 	Label       string `json:"label,omitempty"`
@@ -587,7 +578,7 @@ type KeyInfo struct {
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
 	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
 	IsSpendingAccount        *bool                     `json:"is_spending_account,omitempty"`
-	SigningArgs              []SigningArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
+	SigningArgs              []RuntimeArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
 	Parameters               map[string]string         `json:"parameters,omitempty"`
 	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string                    `json:"template_provenance_note,omitempty"`
