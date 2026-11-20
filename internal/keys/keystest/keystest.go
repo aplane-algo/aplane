@@ -8,8 +8,12 @@
 package keystest
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -17,6 +21,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
+	nativeops "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -74,6 +80,72 @@ func CosignerComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentK
 	payload := keys.NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	defer payload.ZeroSecrets()
 	return componentKey, marshal(t, payload, "witness")
+}
+
+// NativeFalconKeyJSON returns the canonical native Falcon key payload the
+// writers produce for entropy, with valid_rekey_target set as they set it,
+// and its address. The caller registers the native Falcon signer.
+func NativeFalconKeyJSON(t testing.TB, entropy []byte) (address string, keyJSON []byte) {
+	t.Helper()
+	publicKey, privateKey, err := nativeops.DeriveKeyPair(entropy)
+	if err != nil {
+		t.Fatalf("DeriveKeyPair() error = %v", err)
+	}
+	defer crypto.ZeroBytes(privateKey[:])
+	salt, derived, err := nativefalcon.CanonicalAddress(publicKey[:])
+	if err != nil {
+		t.Fatalf("CanonicalAddress() error = %v", err)
+	}
+	payload := keys.NewNativeFalconPayload(publicKey[:], privateKey[:], salt)
+	defer payload.ZeroSecrets()
+	payload.FormatVersion = keys.NativeRecoveryKeyFormatVersion
+	payload.RecoveryEntropy = append([]byte(nil), entropy...)
+	payload.ValidRekeyTarget = true
+	return derived.String(), marshal(t, payload, "native_pq")
+}
+
+// PreChangeNativeFalconKeyJSON returns keyJSON, a canonical native Falcon
+// payload, as writers wrote it before key files dropped pq_scheme and
+// pq_address_salt: both fields after the key material. With recovery false
+// it is a format 1 file from before native Falcon kept recovery entropy.
+func PreChangeNativeFalconKeyJSON(t testing.TB, keyJSON []byte, recovery bool) []byte {
+	t.Helper()
+	var fields struct {
+		PublicKey string `json:"public_key"`
+	}
+	if err := json.Unmarshal(keyJSON, &fields); err != nil {
+		t.Fatalf("decode native Falcon payload: %v", err)
+	}
+	publicKey, err := hex.DecodeString(fields.PublicKey)
+	if err != nil {
+		t.Fatalf("decode native Falcon public key: %v", err)
+	}
+	salt, _, err := nativefalcon.CanonicalAddress(publicKey)
+	if err != nil {
+		t.Fatalf("CanonicalAddress() error = %v", err)
+	}
+	lines := strings.Split(string(keyJSON), "\n")
+	out := make([]string, 0, len(lines)+2)
+	inserted := slices.ContainsFunc(lines, func(line string) bool { return strings.HasPrefix(line, `  "pq_scheme": `) })
+	for _, line := range lines {
+		if !inserted && (strings.HasPrefix(line, `  "valid_rekey_target": `) || strings.HasPrefix(line, `  "created_at": `)) {
+			out = append(out, `  "pq_scheme": "f1",`, fmt.Sprintf(`  "pq_address_salt": %d,`, salt))
+			inserted = true
+		}
+		if !recovery {
+			if strings.HasPrefix(line, `  "recovery_entropy": `) {
+				continue
+			}
+			if line == `  "format_version": 2,` {
+				line = `  "format_version": 1,`
+			}
+		}
+		out = append(out, line)
+	}
+	if !inserted {
+		t.Fatal("native Falcon payload has no created_at line")
+	}
+	return []byte(strings.Join(out, "\n"))
 }
 
 var registerFalconComponentValidator sync.Once

@@ -24,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
@@ -455,5 +456,54 @@ func TestClearKeysBlocksDuringWithKeyring(t *testing.T) {
 	// Verify the keyring was actually dropped
 	if fs.keyringIsLoaded() {
 		t.Error("keyring should be gone after ClearKeys")
+	}
+}
+
+// A native Falcon key file from before key files dropped pq_scheme and
+// pq_address_salt, with or without recovery entropy, is skipped by the scan
+// as an incompatible key file.
+func TestFileKeyStoreScanSkipsPreChangeNativeFalconKeyFiles(t *testing.T) {
+	nativereg.RegisterSigner()
+	for _, tc := range []struct {
+		name     string
+		recovery bool
+		want     string
+	}{
+		{"format 2 with recovery entropy", true, ""},
+		{"format 1 without recovery entropy", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, paths, cleanup := setupTestKeysDir(t)
+			defer cleanup()
+			kr := cryptotest.Keyring(t, testMasterKey)
+			address, current := keystest.NativeFalconKeyJSON(t, bytes.Repeat([]byte{0x6b}, 32))
+			defer crypto.ZeroBytes(current)
+			preChange := keystest.PreChangeNativeFalconKeyJSON(t, current, tc.recovery)
+			defer crypto.ZeroBytes(preChange)
+			objectContext, err := keys.CredentialContext(address, keys.CategoryNativePQ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encrypted, err := kr.Seal(preChange, objectContext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyFile := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address)
+			if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			report, err := keys.ScanKeysDirectory(genstoretest.Active(t, paths), kr, nil)
+			if err != nil {
+				t.Fatalf("ScanKeysDirectory() error = %v", err)
+			}
+			var got string
+			if len(report.Warnings) == 1 {
+				got = report.Warnings[0].Message()
+			}
+			want := strings.ReplaceAll(tc.want, "{file}", keyFile)
+			if got != want || len(report.Keys) != 1-len(report.Warnings) || len(report.Warnings) > 1 {
+				t.Fatalf("scan kept %d keys and warned %q, want warning %q", len(report.Keys), got, want)
+			}
+		})
 	}
 }

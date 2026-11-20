@@ -14,6 +14,7 @@ import (
 
 	"github.com/algorand/falcon"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 )
 
@@ -165,5 +166,43 @@ func TestStoredPayloadParseDefersRecoveryDerivation(t *testing.T) {
 	if parsed, err := keys.ParseStoredPayload(short); err == nil {
 		parsed.ZeroSecrets()
 		t.Fatal("stored parse accepted short recovery entropy")
+	}
+}
+
+// A native Falcon key file from before key files dropped pq_scheme and
+// pq_address_salt, with or without recovery entropy, is refused by both
+// parses. The two writers never wrote another native Falcon shape.
+func TestPreChangeNativeFalconKeyFilesAreRefused(t *testing.T) {
+	RegisterKeyValidator()
+	entropy := bytes.Repeat([]byte{0x5a}, nativefalcon.RecoveryEntropySize)
+	_, current := keystest.NativeFalconKeyJSON(t, entropy)
+	defer crypto.ZeroBytes(current)
+	for _, tc := range []struct {
+		name     string
+		recovery bool
+		want     string
+	}{
+		{"format 2 with recovery entropy", true, ""},
+		{"format 1 without recovery entropy", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preChange := keystest.PreChangeNativeFalconKeyJSON(t, current, tc.recovery)
+			defer crypto.ZeroBytes(preChange)
+			for parse, fn := range map[string]func([]byte) (*keys.Payload, error){
+				"ParsePayload":       keys.ParsePayload,
+				"ParseStoredPayload": keys.ParseStoredPayload,
+			} {
+				payload, err := fn(preChange)
+				got := ""
+				if err != nil {
+					got = err.Error()
+				} else {
+					payload.ZeroSecrets()
+				}
+				if got != tc.want {
+					t.Fatalf("%s() error = %q, want %q", parse, got, tc.want)
+				}
+			}
+		})
 	}
 }

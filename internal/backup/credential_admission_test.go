@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	wotsc "github.com/aplane-algo/aplane/lsig/rotatingtriplewotsc/signerreg"
 )
@@ -169,6 +171,30 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			refusal: `decrypt backup file: failed to parse encrypted data: json: unknown field "format_version"`,
 		},
 		{
+			name: "native Falcon credential",
+			build: func(t *testing.T, _, keysDir string) (string, string) {
+				address, keyJSON := nativeFalconBackupKeyJSONForTest(t, 0x7c)
+				sealAdmissionMember(t, keysDir, address, keyJSON, admissionPassphrase)
+				return address, address
+			},
+		},
+		{
+			name: "native Falcon credential from before pq_scheme and pq_address_salt were dropped",
+			build: func(t *testing.T, _, keysDir string) (string, string) {
+				address, keyJSON := nativeFalconBackupKeyJSONForTest(t, 0x7d)
+				sealAdmissionMember(t, keysDir, address, keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, true), admissionPassphrase)
+				return address, address
+			},
+		},
+		{
+			name: "native Falcon credential from before recovery entropy",
+			build: func(t *testing.T, _, keysDir string) (string, string) {
+				address, keyJSON := nativeFalconBackupKeyJSONForTest(t, 0x7e)
+				sealAdmissionMember(t, keysDir, address, keystest.PreChangeNativeFalconKeyJSON(t, keyJSON, false), admissionPassphrase)
+				return address, address
+			},
+		},
+		{
 			name: "member that is not JSON",
 			build: func(t *testing.T, _, keysDir string) (string, string) {
 				writeAdmissionMember(t, keysDir, other, []byte("not json"))
@@ -301,6 +327,14 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			}
 		})
 	}
+}
+
+// nativeFalconBackupKeyJSONForTest returns a native Falcon credential, one
+// per entropy fill, since rebuild restores every case into one store.
+func nativeFalconBackupKeyJSONForTest(t *testing.T, fill byte) (string, []byte) {
+	t.Helper()
+	nativereg.RegisterSigner()
+	return keystest.NativeFalconKeyJSON(t, bytes.Repeat([]byte{fill}, 32))
 }
 
 // A rotating key restores whatever its hint: a hint that matches the key is

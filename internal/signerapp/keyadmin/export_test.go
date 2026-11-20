@@ -6,9 +6,13 @@ package keyadmin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativereg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -85,6 +90,19 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 			if imported.Address != generated.Address {
 				t.Fatal("import changed the account address")
 			}
+			// Generate and import are the two writers. The same key must
+			// leave the same file, created_at apart: same public key, same
+			// private key and entropy, same fields.
+			generatedFile := maskedKeyFileForTest(t, ir, generated.Address)
+			importedFile := maskedKeyFileForTest(t, other.Runtime, imported.Address)
+			defer crypto.ZeroBytes(generatedFile)
+			defer crypto.ZeroBytes(importedFile)
+			if !bytes.Equal(generatedFile, importedFile) {
+				t.Fatal("generate and import wrote different key files")
+			}
+			if got := keyFileFieldsForTest(t, generatedFile); got != wantKeyFileFields[keyType] {
+				t.Fatalf("key file fields = %s, want %s", got, wantKeyFileFields[keyType])
+			}
 			reresult, reexported := exportWith(other, context.Background(), imported.Address, bytes.Clone(testPassphrase))
 			defer crypto.ZeroBytes(reexported.mnemonic)
 			if !reresult.Success || !bytes.Equal(exported.mnemonic, reexported.mnemonic) {
@@ -92,6 +110,51 @@ func TestNativeMnemonicExportRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+// wantKeyFileFields is each native key type's decrypted key file fields.
+var wantKeyFileFields = map[string]string{
+	"ed25519":    "category,created_at,format_version,key_type,private_key,public_key,valid_rekey_target",
+	"falcon1024": "category,created_at,format_version,key_type,pq_address_salt,pq_scheme,private_key,public_key,recovery_entropy,valid_rekey_target",
+}
+
+// maskedKeyFileForTest returns the decrypted key file of address with its
+// created_at value blanked.
+func maskedKeyFileForTest(t *testing.T, ir *productruntime.Runtime, address string) []byte {
+	t.Helper()
+	file, err := ir.FindKeyFile(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var masked []byte
+	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		raw, err := keys.ReadDecryptedKeyJSONWithKeyring(file, kr)
+		if err != nil {
+			return err
+		}
+		masked = createdAtPattern.ReplaceAll(raw, []byte(`"created_at": "MASKED"`))
+		crypto.ZeroBytes(raw)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(masked, createdAtPattern.ReplaceAll(masked, nil)) {
+		t.Fatal("key file has no created_at to mask")
+	}
+	return masked
+}
+
+var createdAtPattern = regexp.MustCompile(`"created_at": "[^"]*"`)
+
+func keyFileFieldsForTest(t *testing.T, data []byte) string {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	names := slices.Sorted(maps.Keys(fields))
+	return strings.Join(names, ",")
 }
 
 func TestNativeMnemonicExportDenials(t *testing.T) {
