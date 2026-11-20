@@ -106,6 +106,15 @@ type PlanResult struct {
 	approval approvalBinding
 }
 
+// boundedItem is the plan's bounded classification for position i, or nil
+// for a position that is not a bounded account's (or no plan).
+func (p *PlanResult) boundedItem(i int) *boundedPlanItem {
+	if p == nil || i < 0 || i >= len(p.BoundedItems) {
+		return nil
+	}
+	return p.BoundedItems[i]
+}
+
 // SnapshotFunc retrieves the identity snapshot needed for planning.
 type SnapshotFunc func() PlannerRuntimeSnapshot
 

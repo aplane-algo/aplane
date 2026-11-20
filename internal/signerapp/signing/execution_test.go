@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
+	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -167,10 +168,9 @@ func TestExecutorSignSingleTransactionZeroesKeyAfterPostLoadCancel(t *testing.T)
 
 func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 	exec := &Executor{}
-	privateKey := []byte{1, 2, 3}
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:  "unsupported-v1",
-		Value: privateKey,
+		Value: []byte{1, 2, 3},
 	}
 
 	_, keyType, err := exec.signCryptoKey(
@@ -194,12 +194,8 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 	if err.Message != "unsupported key type: unsupported-v1" {
 		t.Fatalf("error message = %q, want unsupported key type message", err.Message)
 	}
-	if keyMaterial.Value != nil {
-		t.Fatalf("keyMaterial.Value = %#v, want nil after cleanup", keyMaterial.Value)
-	}
-	if !bytes.Equal(privateKey, []byte{0, 0, 0}) {
-		t.Fatalf("private key bytes = %v, want zeroed", privateKey)
-	}
+	// signSingleTransaction zeroes the key it loaded on this exit
+	// (TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit).
 }
 
 func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
@@ -241,45 +237,33 @@ func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
 	}
 }
 
-func TestExecutorSignCryptoKeyRejectsCosignerKeyTypesBeforeProviderLookup(t *testing.T) {
-	tests := []struct {
-		name    string
-		keyType string
-		want    string
-	}{
-		{name: "ed25519 component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
-		{name: "falcon component", keyType: witness.Falcon1024V1, want: cosignerComponentSignRejectMessage},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+// A key that loads as a witness key is refused before any provider is
+// looked up, and zeroed.
+func TestExecutorSignSingleTransactionRejectsLoadedCosignerKeyTypes(t *testing.T) {
+	for _, keyType := range []string{witness.Falcon1024V1, witness.Ed25519V1} {
+		t.Run(keyType, func(t *testing.T) {
 			privateKey := []byte{1, 2, 3}
 			keyMaterial := &coresigning.KeyMaterial{
-				Type:        tt.keyType,
+				Type:        keyType,
 				BaseKeyType: "ed25519",
 				Value:       privateKey,
 			}
+			session := keystore.NewKeySession(cancelAfterGetKeyStore{key: keyMaterial})
+			session.InitializeSession()
 
-			_, keyType, err := (&Executor{}).signCryptoKey(
-				types.Transaction{},
-				"AUTHADDR",
-				"",
-				nil,
-				nil,
-				keyMaterial,
-			)
+			_, gotKeyType, err := (&Executor{}).signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, nil, session, context.Background())
 			if err == nil {
-				t.Fatal("signCryptoKey() error = nil, want cosigner key type rejection")
+				t.Fatal("signSingleTransaction() error = nil, want cosigner key type rejection")
 				return
 			}
-			if keyType != tt.keyType {
-				t.Fatalf("keyType = %q, want %q", keyType, tt.keyType)
+			if gotKeyType != keyType {
+				t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
 			}
 			if err.Kind != ErrorBadRequest {
 				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
 			}
-			if !strings.Contains(err.Message, tt.want) {
-				t.Fatalf("error message = %q, want %q", err.Message, tt.want)
+			if !strings.Contains(err.Message, cosignerComponentSignRejectMessage) {
+				t.Fatalf("error message = %q, want %q", err.Message, cosignerComponentSignRejectMessage)
 			}
 			if keyMaterial.Value != nil {
 				t.Fatalf("keyMaterial.Value = %#v, want nil after cleanup", keyMaterial.Value)
@@ -329,17 +313,20 @@ func TestExecutorRejectsUnexpectedTransactionAuthorizerBeforeInvocation(t *testi
 	}
 	coresigning.Register(provider)
 	privateKey := []byte{1, 2, 3}
+	session := keystore.NewKeySession(cancelAfterGetKeyStore{key: &coresigning.KeyMaterial{Type: keyType, Value: privateKey}})
+	session.InitializeSession()
 
-	_, gotKeyType, err := (&Executor{}).signCryptoKey(
+	_, gotKeyType, err := (&Executor{}).signSingleTransaction(
 		types.Transaction{},
 		types.Address{1}.String(),
 		types.Address{1}.String(),
 		nil,
 		nil,
-		&coresigning.KeyMaterial{Type: keyType, Value: privateKey},
+		session,
+		context.Background(),
 	)
 	if err == nil || !strings.Contains(err.Message, "unexpectedly implements structured transaction authorization") {
-		t.Fatalf("signCryptoKey() error = %#v, want unexpected transaction authorizer rejection", err)
+		t.Fatalf("signSingleTransaction() error = %#v, want unexpected transaction authorizer rejection", err)
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -423,38 +410,6 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 	}
 	if err.Message != "invalid hex for arg secret: encoding/hex: invalid byte: U+0078 'x'" {
 		t.Fatalf("error message = %q, want runtime arg decode failure", err.Message)
-	}
-}
-
-func TestExecutorSignGenericLSigRejectsMissingSigningMetadata(t *testing.T) {
-	keyType := "test-generic-missing-signing-metadata-v1"
-
-	exec := &Executor{}
-
-	_, gotKeyType, err := exec.signGenericLSig(
-		types.Transaction{},
-		"AUTHADDR",
-		"",
-		nil,
-		&coresigning.KeyMaterial{
-			Type:     keyType,
-			Category: keys.CategoryGenericLsig,
-			Bytecode: []byte{1},
-		},
-	)
-	if err == nil {
-		t.Fatal("signGenericLSig() error = nil, want missing signing metadata rejection")
-		return
-	}
-	if gotKeyType != keyType {
-		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
-	}
-	if err.Kind != ErrorInternal {
-		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorInternal)
-	}
-	want := "logic sig key " + keyType + " is missing signing metadata; regenerate the key or restore from a current-format backup"
-	if err.Message != want {
-		t.Fatalf("error message = %q, want %q", err.Message, want)
 	}
 }
 
@@ -607,41 +562,6 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 	}
 	if err.Message != "missing required arg: secret" {
 		t.Fatalf("error message = %q, want missing required secret", err.Message)
-	}
-}
-
-func TestExecutorAssembleDSALogicSigRejectsMissingSigningMetadata(t *testing.T) {
-	keyType := "test-dsa-missing-signing-metadata-v1"
-
-	exec := &Executor{}
-
-	_, gotKeyType, err := exec.assembleDSALogicSig(
-		types.Transaction{},
-		"AUTHADDR",
-		"",
-		nil,
-		nil,
-		&coresigning.KeyMaterial{
-			Type:     keyType,
-			Category: keys.CategoryDSALsig,
-			Bytecode: []byte{1},
-		},
-		[]byte{1, 2, 3},
-		keyType,
-	)
-	if err == nil {
-		t.Fatal("assembleDSALogicSig() error = nil, want missing signing metadata rejection")
-		return
-	}
-	if gotKeyType != keyType {
-		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
-	}
-	if err.Kind != ErrorInternal {
-		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorInternal)
-	}
-	want := "logic sig key " + keyType + " is missing signing metadata; regenerate the key or restore from a current-format backup"
-	if err.Message != want {
-		t.Fatalf("error message = %q, want %q", err.Message, want)
 	}
 }
 
@@ -943,14 +863,6 @@ func TestVerifyBoundedPlanIntegrity(t *testing.T) {
 		t.Fatalf("key lost bounded metadata: error = %#v, want internal", err)
 	}
 
-	wrongVersion := &coresigning.KeyMaterial{
-		SigningMetadataVersion: keys.BoundedSigningMetadataVersion - 1,
-		BoundedAuthorization:   boundedmeta.Clone(metadata),
-	}
-	if err := verifyBoundedPlanIntegrity(item, wrongVersion); err == nil || err.Kind != ErrorInternal {
-		t.Fatalf("wrong signing metadata version: error = %#v, want internal", err)
-	}
-
 	drifted := boundedmeta.Clone(metadata)
 	drifted.MaxFee = new(*drifted.MaxFee - 1)
 	changed := &coresigning.KeyMaterial{
@@ -1103,6 +1015,138 @@ func assertLogicSigArgs(t *testing.T, signedBytes []byte, want [][]byte) {
 	for i := range want {
 		if !bytes.Equal(stxn.Lsig.Args[i], want[i]) {
 			t.Fatalf("LogicSig arg %d = %x, want %x", i, stxn.Lsig.Args[i], want[i])
+		}
+	}
+}
+
+// Every way out of signSingleTransaction after the key loads zeroes the
+// loaded key, the refusals before signing and the signatures alike, and
+// returns the loaded key's type.
+func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T) {
+	nativeType := uniqueSigningTestFamily("test-native-zeroing")
+	coresigning.Register(&testNativeSigningProvider{family: nativeType})
+	baseType := uniqueSigningTestFamily("test-dsa-zeroing-base")
+	coresigning.Register(&testNativeSigningProvider{family: baseType})
+	lsigprovider.RegisterIfAbsent(&testBaseSignatureProvider{keyType: baseType, family: baseType})
+	cosigned := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x52}, boundedmeta.DefaultCosignerPublicKeySize))
+	sender := types.Address{1}.String()
+	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1_000, FirstValid: 1, LastValid: 2}}
+
+	cases := []struct {
+		name    string
+		key     func(private []byte) *coresigning.KeyMaterial
+		item    *boundedPlanItem
+		wantErr string
+		want    func(t *testing.T, signed []byte)
+	}{
+		{name: "witness key", wantErr: cosignerComponentSignRejectMessage,
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: witness.Falcon1024V1, Value: private}
+			}},
+		{name: "rotating key", wantErr: "rotating",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: rotatingkey.RotatingTripleSlhdsaV1, Value: private}
+			}},
+		{name: "bounded metadata the plan lacks", wantErr: "key gained bounded metadata after planning",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned), SigningMetadataVersion: keys.BoundedSigningMetadataVersion}
+			}},
+		{name: "cosigned bounded account", item: &boundedPlanItem{Path: boundedPathPureSpend, Metadata: boundedmeta.Clone(cosigned)}, wantErr: "cosign",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned), SigningMetadataVersion: keys.BoundedSigningMetadataVersion}
+			}},
+		{name: "unsupported key type", wantErr: "unsupported key type: test-unsupported-zeroing-v1",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: "test-unsupported-zeroing-v1", Value: private}
+			}},
+		{name: "native signature",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private}
+			},
+			want: func(t *testing.T, signed []byte) {
+				var sig types.Signature
+				copy(sig[:], bytes.Repeat([]byte{0x11}, 64))
+				if !bytes.Equal(signed, msgpack.Encode(types.SignedTxn{Txn: txn, Sig: sig})) {
+					t.Fatal("native signed bytes differ from the transaction with its signature")
+				}
+			}},
+		{name: "DSA LogicSig signature",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{
+					Type: "test-dsa-zeroing-v1", BaseKeyType: baseType, Category: keys.CategoryDSALsig, Value: private,
+					Bytecode: append([]byte(nil), testApprovalProgram...), SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+				}
+			},
+			want: func(t *testing.T, signed []byte) {
+				assertLogicSigArgs(t, signed, [][]byte{bytes.Repeat([]byte{0x11}, 64)})
+			}},
+		{name: "generic LogicSig",
+			key: func(private []byte) *coresigning.KeyMaterial {
+				return &coresigning.KeyMaterial{
+					Type: "test-generic-zeroing-v1", Category: keys.CategoryGenericLsig, Value: private,
+					Bytecode: append([]byte(nil), testApprovalProgram...), SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+				}
+			},
+			want: func(t *testing.T, signed []byte) {
+				assertLogicSigArgs(t, signed, nil)
+			}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			private := []byte{1, 2, 3}
+			key := tc.key(private)
+			wantType, bytecode := key.Type, key.Bytecode
+			session := keystore.NewKeySession(cancelAfterGetKeyStore{key: key})
+			session.InitializeSession()
+
+			signed, keyType, err := (&Executor{}).signSingleTransaction(txn, sender, sender, nil, tc.item, session, context.Background())
+			if keyType != wantType {
+				t.Fatalf("keyType = %q, want the loaded key's %q", keyType, wantType)
+			}
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Message, tc.wantErr) {
+					t.Fatalf("err = %#v, want %q", err, tc.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				tc.want(t, signed)
+			}
+			if !bytes.Equal(private, []byte{0, 0, 0}) {
+				t.Fatalf("private key bytes = %v, want zeroed", private)
+			}
+			if len(bytecode) > 0 && !bytes.Equal(bytecode, make([]byte, len(bytecode))) {
+				t.Fatalf("bytecode = %x, want zeroed", bytecode)
+			}
+		})
+	}
+}
+
+// Both bounded paths check base signature arguments against the stored
+// layout with the same rule and the same text.
+func TestCheckBaseSignatureLayout(t *testing.T) {
+	layout := boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{3, 2}}
+	cases := []struct {
+		args [][]byte
+		want string
+	}{
+		{[][]byte{{1}, {2}}, ""},
+		{[][]byte{{1, 2, 3}, {4, 5}}, ""},
+		{[][]byte{{1}}, "base provider emitted 1 signature args, stored bounded layout requires 2"},
+		{[][]byte{{1}, {}}, "base signature arg 1 length 0 violates stored bounded maximum 2"},
+		{[][]byte{{1, 2, 3, 4}, {1}}, "base signature arg 0 length 4 violates stored bounded maximum 3"},
+	}
+	for _, tc := range cases {
+		err := checkBaseSignatureLayout(layout, tc.args)
+		if tc.want == "" {
+			if err != nil {
+				t.Fatalf("checkBaseSignatureLayout(%v) = %v, want nil", tc.args, err)
+			}
+			continue
+		}
+		if err == nil || err.Kind != ErrorInternal || err.Message != tc.want {
+			t.Fatalf("checkBaseSignatureLayout(%v) = %#v, want internal %q", tc.args, err, tc.want)
 		}
 	}
 }

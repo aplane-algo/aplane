@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -808,5 +809,34 @@ func canonicalOnCurveBytecode(t *testing.T) []byte {
 func zeroTestBytes(data []byte) {
 	for i := range data {
 		data[i] = 0
+	}
+}
+
+// A LogicSig key without bounded authorization must carry the current
+// signing metadata version. The signer relies on this refusal alone: a key
+// that loads has a version it can sign with (S2).
+func TestLogicSigPayloadRequiresTheCurrentSigningMetadataVersion(t *testing.T) {
+	bytecode := canonicalOffCurveBytecode(t)
+	builds := map[string]func() *Payload{
+		CategoryGenericLsig: func() *Payload {
+			return NewGenericLSigPayload("test.generic.v1", nil, bytecode, 0, "", nil, "")
+		},
+		CategoryDSALsig: func() *Payload {
+			return NewDSALSigPayload("test.dsa.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 0, "", nil, "")
+		},
+	}
+	for category, build := range builds {
+		for _, version := range []int{0, BoundedSigningMetadataVersion} {
+			t.Run(fmt.Sprintf("%s version %d", category, version), func(t *testing.T) {
+				p := build()
+				defer p.ZeroSecrets()
+				p.CreatedAt = canonicalTestTime
+				p.SigningMetadataVersion = version
+				want := fmt.Sprintf("%s without bounded_authorization requires signing_metadata_version %d", category, CurrentSigningMetadataVersion)
+				if err := p.Validate(); err == nil || !errors.Is(err, ErrIncompatibleKeyFormat) || !strings.Contains(err.Error(), want) {
+					t.Fatalf("Validate() error = %v, want %q", err, want)
+				}
+			})
+		}
 	}
 }

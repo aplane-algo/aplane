@@ -265,7 +265,7 @@ func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []typ
 	}
 
 	for i, txn := range allTxns[:total] {
-		item := reviewItem(txn, req.Requests[i], describe, boundedItemAt(plan, i))
+		item := reviewItem(txn, req.Requests[i], describe, plan.boundedItem(i))
 		switch held := plan.HeldForeign[i]; {
 		case plan.PassthroughIndices[i]:
 			item.Position = txnreview.PositionPassthrough
@@ -435,14 +435,6 @@ func approvalTransactionNumbers(indices []int) []int {
 		numbers[i] = index + 1
 	}
 	return numbers
-}
-
-// boundedItemAt is a plan's bounded item for position i, or nil.
-func boundedItemAt(plan *PlanResult, i int) *boundedPlanItem {
-	if plan == nil || i < 0 || i >= len(plan.BoundedItems) {
-		return nil
-	}
-	return plan.BoundedItems[i]
 }
 
 // boundedRekeyFields names a bounded rekey's authorization for the operator:

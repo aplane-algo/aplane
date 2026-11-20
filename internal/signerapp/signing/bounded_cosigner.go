@@ -203,14 +203,8 @@ func boundedSpendingProofVerifies(keyMaterial *coresigning.KeyMaterial, workflow
 }
 
 func validateBoundedBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes []byte, args [][]byte) *ServiceError {
-	layout := keyMaterial.BoundedAuthorization.BaseSignatureArgLayout
-	if len(args) != layout.Count {
-		return internal("base provider argument count does not match bounded metadata")
-	}
-	for i, arg := range args {
-		if len(arg) == 0 || len(arg) > layout.MaxSizes[i] {
-			return internal(fmt.Sprintf("base signature arg %d violates bounded metadata", i))
-		}
+	if err := checkBaseSignatureLayout(keyMaterial.BoundedAuthorization.BaseSignatureArgLayout, args); err != nil {
+		return err
 	}
 	if !boundedSpendingProofVerifies(keyMaterial, boundedWorkflowCosigner, messageBytes, args...) {
 		return internal("generated bounded base component failed verification")
