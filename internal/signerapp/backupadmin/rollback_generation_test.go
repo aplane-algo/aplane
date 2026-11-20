@@ -86,8 +86,7 @@ func TestRollbackMintReconstructsOnlyActiveAuthorityAndPreservesMonotonicState(t
 		SkipCandidateValidation: true,
 		GenerationID:            genC, Parent: second.GenerationID(),
 		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
-		RollbackSourceGenerationID: first.GenerationID(),
-		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
+		CreatedAt: time.Unix(1_785_300_002, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
 		},
@@ -189,8 +188,7 @@ func TestRollbackKeepsTheOutgoingASASet(t *testing.T) {
 		SkipCandidateValidation: true,
 		GenerationID:            genC, Parent: second.GenerationID(),
 		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
-		RollbackSourceGenerationID: first.GenerationID(),
-		CreatedAt:                  time.Unix(1_785_300_002, 0), Integrity: kr,
+		CreatedAt: time.Unix(1_785_300_002, 0), Integrity: kr,
 		Apply: func(staged storepaths.GenPaths) error {
 			return populateRollbackGeneration(source, noderole.RoleSigner, staged, kr)
 		},

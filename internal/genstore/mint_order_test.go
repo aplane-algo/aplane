@@ -5,6 +5,7 @@ package genstore
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,6 @@ import (
 // wrong in the way its name says and in a way a later check would catch, so
 // the error names which check ran first.
 func TestMintRefusesInOrder(t *testing.T) {
-	apply := func(storepaths.GenPaths) error { return nil }
 	valid := func(t *testing.T) MintRequest {
 		return MintRequest{
 			SkipCandidateValidation: true, GenerationID: testGenD, Parent: testGenC, Integrity: testKeyring(t),
@@ -32,6 +32,7 @@ func TestMintRefusesInOrder(t *testing.T) {
 		rootless           // A, B and C on disk and no store root
 		empty              // nothing
 		residue            // established, with a staging directory left behind
+		fullArchive        // established, with C's deleted archive over its entry limit
 	)
 	tests := []struct {
 		name    string
@@ -48,26 +49,14 @@ func TestMintRefusesInOrder(t *testing.T) {
 			r.OperationID, r.SkipCandidateValidation = "", false
 			return r
 		}, "mint requires a durable operation identity"},
-		{"missing candidate validation before an empty reconstruction with no apply", established, func(t *testing.T, r MintRequest) MintRequest {
-			r.SkipCandidateValidation, r.StartEmpty = false, true
+		{"missing candidate validation before a missing keyring", established, func(t *testing.T, r MintRequest) MintRequest {
+			r.SkipCandidateValidation, r.Integrity = false, nil
 			return r
 		}, "mint requires candidate validation"},
-		{"an empty reconstruction with no apply before a rollback source that is the parent", established, func(t *testing.T, r MintRequest) MintRequest {
-			r.StartEmpty, r.RollbackSourceGenerationID = true, r.Parent
-			return r
-		}, "empty reconstruction requires a parent and apply function"},
-		{"a rollback source with no apply before one that is the parent", established, func(t *testing.T, r MintRequest) MintRequest {
-			r.RollbackSourceGenerationID = r.Parent
-			return r
-		}, "rollback source requires a parent and apply function"},
-		{"a rollback source that is the parent before a missing keyring", established, func(t *testing.T, r MintRequest) MintRequest {
-			r.RollbackSourceGenerationID, r.Apply, r.Integrity = r.Parent, apply, nil
-			return r
-		}, "rollback source must differ from the outgoing parent"},
 		{"a parent with no keyring before a first mint with no passphrase", established, func(t *testing.T, r MintRequest) MintRequest {
 			r.Integrity, r.FirstGeneration = nil, true
 			return r
-		}, "mint with a parent requires an integrity keyring"},
+		}, "store-root mint requires an integrity keyring"},
 		{"no keyring before a first mint with no passphrase", established, func(t *testing.T, r MintRequest) MintRequest {
 			r.Parent, r.Integrity, r.FirstGeneration = "", nil, true
 			return r
@@ -123,6 +112,11 @@ func TestMintRefusesInOrder(t *testing.T) {
 		{"a store that needs reconciling", residue, func(t *testing.T, r MintRequest) MintRequest {
 			return r
 		}, "mint preflight: generation store requires reconciliation before another mint"},
+		// The successor preflight validates the parent as the current
+		// generation, deleted archive included, before Mint looks at it again.
+		{"a parent whose deleted archive is over its limit", fullArchive, func(t *testing.T, r MintRequest) MintRequest {
+			return r
+		}, "mint preflight: reconcile: current generation failed validation, nothing deleted: deleted archive contains"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -138,6 +132,13 @@ func TestMintRefusesInOrder(t *testing.T) {
 			case residue:
 				if err := os.Mkdir(filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"left-behind"), 0o700); err != nil {
 					t.Fatal(err)
+				}
+			case fullArchive:
+				dir := paths.GenerationPaths(testGenC).DeletedKeysDir()
+				for i := 0; i <= DeletedArchiveMaxEntries; i++ {
+					if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("D%d.key", i)), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			before := generationNames(t, paths)

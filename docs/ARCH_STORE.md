@@ -612,6 +612,8 @@ Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
 comparison to fail. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
+The rollback generation does not record its source again: its manifest's parent
+is the restore generation, whose capability names the source.
 Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
 restore installs a key's archived policy with the key on both node roles. Each
 restored policy document is checked against the source seal and written with a
