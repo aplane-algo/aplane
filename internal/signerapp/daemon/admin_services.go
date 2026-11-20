@@ -266,11 +266,11 @@ func (s signerAdminServices) EnrolledKeys() []protocol.EnrolledKeyInfo {
 }
 
 func (s signerAdminServices) RevokeEnrolledKey(ctx adminserver.SessionContext, fingerprint string) (int, error) {
-	return s.signer.RevokeClientKey(ctx, s.ProductRuntime(), fingerprint)
+	return s.signer.RevokeClientKey(ctx, fingerprint)
 }
 
 func (s signerAdminServices) RevokeAllEnrolledKeys(ctx adminserver.SessionContext) (int, int, error) {
-	return s.signer.RevokeAllClientKeys(ctx, s.ProductRuntime())
+	return s.signer.RevokeAllClientKeys(ctx)
 }
 
 func (s signerAdminServices) PendingEnrollments() []protocol.PendingEnrollmentInfo {
@@ -293,15 +293,15 @@ func (s signerAdminServices) PendingEnrollments() []protocol.PendingEnrollmentIn
 }
 
 func (s signerAdminServices) ApproveEnrollment(ctx adminserver.SessionContext, fingerprint, label string) (string, error) {
-	return s.signer.ApproveClientEnrollment(ctx, s.ProductRuntime(), fingerprint, label)
+	return s.signer.ApproveClientEnrollment(ctx, fingerprint, label)
 }
 
 func (s signerAdminServices) RejectEnrollment(ctx adminserver.SessionContext, fingerprint string) error {
-	return s.signer.RejectClientEnrollment(ctx, s.ProductRuntime(), fingerprint)
+	return s.signer.RejectClientEnrollment(ctx, fingerprint)
 }
 
 func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (string, string, bool, error) {
-	return s.signer.ImportClientKey(ctx, s.ProductRuntime(), publicKey, label)
+	return s.signer.ImportClientKey(ctx, publicKey, label)
 }
 
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {

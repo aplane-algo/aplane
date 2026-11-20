@@ -56,7 +56,7 @@ func TestRevokeClientKeyAppliedNotDurableIsAudited(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	_, err = fs.RevokeClientKey(adminserver.SessionContext{}, ir, fingerprint)
+	_, err = fs.RevokeClientKey(adminserver.SessionContext{}, fingerprint)
 	if !errors.Is(err, productruntime.ErrAppliedNotDurable) {
 		t.Fatalf("RevokeClientKey() error = %v, want the applied-not-durable failure", err)
 	}
@@ -99,7 +99,7 @@ func TestApproveClientEnrollmentAppliedNotDurableIsAudited(t *testing.T) {
 	}
 	defer func() { fsutil.TestHook = nil }()
 
-	label, err := fs.ApproveClientEnrollment(adminserver.SessionContext{}, ir, fingerprint, "")
+	label, err := fs.ApproveClientEnrollment(adminserver.SessionContext{}, fingerprint, "")
 	if !errors.Is(err, productruntime.ErrAppliedNotDurable) || label != "laptop" {
 		t.Fatalf("ApproveClientEnrollment() = (%q, %v), want the applied-not-durable failure", label, err)
 	}

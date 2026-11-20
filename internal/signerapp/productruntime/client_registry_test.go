@@ -7,12 +7,15 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/signerapp/clientregistry"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -353,5 +356,64 @@ func TestRejectEnrollmentRefusesEnrolledKey(t *testing.T) {
 	}
 	if len(ir.PendingEnrollments()) != 0 || !ir.HasAuthorizedKey(key) {
 		t.Fatal("repeat approval did not clear the request")
+	}
+}
+
+// A runtime whose registry and queue were never loaded holds neither, and
+// every enrollment operation treats that as an empty registry and an empty
+// queue: refusals name the missing entry, and the first change publishes
+// files holding only that change.
+func TestNeverLoadedRegistryAndQueueAreEmpty(t *testing.T) {
+	ir := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	key := testSSHKey(t)
+	fingerprint := ssh.FingerprintSHA256(key)
+
+	if ir.HasAuthorizedKey(key) || len(ir.EnrolledKeys()) != 0 || len(ir.PendingEnrollments()) != 0 {
+		t.Fatal("a never-loaded runtime reports enrolled keys or waiting requests")
+	}
+	if _, revoked, err := ir.RevokeAuthorizedKey(fingerprint); revoked || !errors.Is(err, clientregistry.ErrNotEnrolled) {
+		t.Fatalf("RevokeAuthorizedKey() = (%v, %v), want not enrolled", revoked, err)
+	}
+	if entries, revoked, err := ir.RevokeAllAuthorizedKeys(); len(entries) != 0 || revoked || err != nil {
+		t.Fatalf("RevokeAllAuthorizedKeys() = (%v, %v, %v), want an empty no-op", entries, revoked, err)
+	}
+	if _, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, ""); enrolled || cleared || !errors.Is(err, enrollqueue.ErrNotPending) {
+		t.Fatalf("ApproveEnrollment() = (%v, %v, %v), want not pending", enrolled, cleared, err)
+	}
+	if _, rejected, err := ir.RejectEnrollment(fingerprint); rejected || !errors.Is(err, enrollqueue.ErrNotPending) {
+		t.Fatalf("RejectEnrollment() = (%v, %v), want not pending", rejected, err)
+	}
+	if _, err := os.Stat(ir.AuthorizedKeysPath()); !os.IsNotExist(err) {
+		t.Fatalf("a refused operation wrote the registry: stat error = %v", err)
+	}
+	if _, err := os.Stat(ir.PendingEnrollmentsPath()); !os.IsNotExist(err) {
+		t.Fatalf("a refused operation wrote the queue: stat error = %v", err)
+	}
+
+	if pending, added, err := ir.QueueEnrollment(key, "laptop", "10.0.0.1:1"); !pending || !added || err != nil {
+		t.Fatalf("QueueEnrollment() = (%v, %v, %v), want a new waiting request", pending, added, err)
+	}
+	queued, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now())
+	if err != nil || queued.Len() != 1 {
+		t.Fatalf("queue file after the request: len = %d, err = %v", queued.Len(), err)
+	}
+	entry, enrolled, cleared, err := ir.ApproveEnrollment(fingerprint, "")
+	if !enrolled || !cleared || err != nil || entry.Label != "laptop" {
+		t.Fatalf("ApproveEnrollment() = (%+v, %v, %v, %v), want enrolled and cleared", entry, enrolled, cleared, err)
+	}
+	reg, err := clientregistry.Load(ir.AuthorizedKeysPath())
+	if err != nil || len(reg.Entries()) != 1 || !reg.Has(key) {
+		t.Fatalf("registry file after the approval: entries = %d, err = %v", len(reg.Entries()), err)
+	}
+	if queued, err := enrollqueue.Load(ir.PendingEnrollmentsPath(), time.Now()); err != nil || queued.Len() != 0 {
+		t.Fatalf("queue file after the approval: len = %d, err = %v", queued.Len(), err)
+	}
+
+	other := New(Config{KeyPaths: storepaths.NewPaths(t.TempDir())})
+	if added, cleared, err := other.ImportClientKey(key, "ops"); !added || cleared || err != nil {
+		t.Fatalf("ImportClientKey() on a never-loaded runtime = (%v, %v, %v), want added with no request to clear", added, cleared, err)
+	}
+	if !other.HasAuthorizedKey(key) {
+		t.Fatal("imported key is not enrolled")
 	}
 }

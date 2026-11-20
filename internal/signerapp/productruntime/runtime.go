@@ -147,7 +147,8 @@ type Runtime struct {
 
 	// Enrolled client keys for this identity: the validated view of the
 	// authorized_keys registry. The daemon is its only writer; see
-	// publishRegistry for the validate, publish, install sequence.
+	// publishRegistry for the validate, publish, install sequence. A nil
+	// clients or pending is empty: every method used on them is nil-safe.
 	clients   *clientregistry.Registry
 	pending   *enrollqueue.Queue // Enrollment requests waiting for the operator
 	clientsMu sync.RWMutex       // Guards clients and pending together, so approval is one step
@@ -639,11 +640,7 @@ func (ir *Runtime) publishRegistryLocked(mutate func(current *clientregistry.Reg
 		return false, err
 	}
 	// Taken after the re-publish, which may have read the file again.
-	current := ir.clients
-	if current == nil {
-		current, _ = clientregistry.Parse(nil)
-	}
-	next, changed, err := mutate(current)
+	next, changed, err := mutate(ir.clients)
 	if err != nil {
 		return false, err
 	}
@@ -691,11 +688,7 @@ func (ir *Runtime) ensureRegistryDurableLocked() error {
 		ir.clientsIntended = nil
 		return nil
 	}
-	current := ir.clients
-	if current == nil {
-		current, _ = clientregistry.Parse(nil)
-	}
-	if _, err := ir.publishRegistryFileLocked(current); err != nil {
+	if _, err := ir.publishRegistryFileLocked(ir.clients); err != nil {
 		return fmt.Errorf("registry from an earlier failed write is still not durable: %w", err)
 	}
 	return nil
@@ -865,17 +858,10 @@ func (ir *Runtime) ensureQueueDurableLocked() error {
 		ir.pendingIntended = nil
 		return nil
 	}
-	if _, err := ir.publishQueueFileLocked(ir.pendingLocked()); err != nil {
+	if _, err := ir.publishQueueFileLocked(ir.pending); err != nil {
 		return fmt.Errorf("enrollment queue from an earlier failed write is still not durable: %w", err)
 	}
 	return nil
-}
-
-func (ir *Runtime) pendingLocked() *enrollqueue.Queue {
-	if ir.pending == nil {
-		ir.pending = &enrollqueue.Queue{}
-	}
-	return ir.pending
 }
 
 // QueueEnrollment records a client's request to be enrolled. A key that is
@@ -893,13 +879,13 @@ func (ir *Runtime) QueueEnrollment(key ssh.PublicKey, label, remoteAddr string) 
 	if err := ir.ensureRegistryDurableLocked(); err != nil {
 		return false, false, err
 	}
-	if ir.clients != nil && ir.clients.Has(key) {
+	if ir.clients.Has(key) {
 		return false, false, nil
 	}
 	if err := ir.ensureQueueDurableLocked(); err != nil {
 		return false, false, err
 	}
-	next, _, added, err := ir.pendingLocked().WithRequest(key, label, remoteAddr, time.Now())
+	next, _, added, err := ir.pending.WithRequest(key, label, remoteAddr, time.Now())
 	if err != nil {
 		return false, false, err
 	}
@@ -937,7 +923,7 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollque
 	if err := ir.ensureQueueDurableLocked(); err != nil {
 		return enrollqueue.Entry{}, false, false, err
 	}
-	entry, ok := ir.pendingLocked().Pruned(time.Now()).Lookup(fingerprint)
+	entry, ok := ir.pending.Pruned(time.Now()).Lookup(fingerprint)
 	if !ok {
 		return enrollqueue.Entry{}, false, false, enrollqueue.ErrNotPending
 	}
@@ -952,9 +938,9 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollque
 	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
 		return entry, enrolled, false, registryErr
 	}
-	next, _, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
+	next, _, err := ir.pending.WithoutFingerprint(fingerprint)
 	if err != nil {
-		return entry, enrolled, false, firstError(registryErr, err)
+		return entry, enrolled, false, err
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
 		cleared = errors.Is(err, ErrAppliedNotDurable)
@@ -964,15 +950,6 @@ func (ir *Runtime) ApproveEnrollment(fingerprint, label string) (entry enrollque
 		return entry, enrolled, cleared, err
 	}
 	return entry, enrolled, true, registryErr
-}
-
-func firstError(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // RejectEnrollment removes a pending request without enrolling its key.
@@ -991,11 +968,11 @@ func (ir *Runtime) RejectEnrollment(fingerprint string) (entry enrollqueue.Entry
 	if err := ir.ensureRegistryDurableLocked(); err != nil {
 		return enrollqueue.Entry{}, false, err
 	}
-	next, entry, err := ir.pendingLocked().WithoutFingerprint(fingerprint)
+	next, entry, err := ir.pending.WithoutFingerprint(fingerprint)
 	if err != nil {
 		return enrollqueue.Entry{}, false, err
 	}
-	if ir.clients != nil && ir.clients.Has(entry.Key) {
+	if ir.clients.Has(entry.Key) {
 		return entry, false, ErrAlreadyEnrolled
 	}
 	if err := ir.publishQueueLocked(next); err != nil {
@@ -1025,7 +1002,7 @@ func (ir *Runtime) ImportClientKey(key ssh.PublicKey, label string) (added, clea
 	if registryErr != nil && !errors.Is(registryErr, ErrAppliedNotDurable) {
 		return added, false, registryErr
 	}
-	if next, _, err := ir.pendingLocked().WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
+	if next, _, err := ir.pending.WithoutFingerprint(ssh.FingerprintSHA256(key)); err == nil {
 		if err := ir.publishQueueLocked(next); err != nil {
 			cleared = errors.Is(err, ErrAppliedNotDurable)
 			if registryErr != nil {
