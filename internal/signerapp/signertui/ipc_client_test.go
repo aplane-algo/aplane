@@ -80,8 +80,8 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		}
 		backupLineCh <- line
 	}()
-	if err := client.SendBackup([]byte("backup-passphrase"), "backup-1"); err != nil {
-		t.Fatalf("SendBackup() error = %v", err)
+	if msg := (Model{adminClient: client}).sendBackupCmd([]byte("backup-passphrase"), "backup-1")(); msg != nil {
+		t.Fatalf("sendBackupCmd() = %#v", msg)
 	}
 	var line []byte
 	select {
@@ -113,8 +113,8 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 		}
 		previewLineCh <- line
 	}()
-	if err := client.SendPreviewRestore("aplane-backup.tar.gz", passphrase, "preview-restore-1"); err != nil {
-		t.Fatalf("SendPreviewRestore() error = %v", err)
+	if msg := (Model{adminClient: client}).sendPreviewRestoreCmd("aplane-backup.tar.gz", passphrase, "preview-restore-1")(); msg != nil {
+		t.Fatalf("sendPreviewRestoreCmd() = %#v", msg)
 	}
 	select {
 	case err := <-previewErrCh:
@@ -179,8 +179,8 @@ func TestIPCClientSendLockIdentityMessage(t *testing.T) {
 	}
 
 	lockLineCh := startReadLine()
-	if err := client.SendLockIdentity(manualLockReason); err != nil {
-		t.Fatalf("SendLockIdentity() error = %v", err)
+	if msg := (Model{adminClient: client}).sendLockIdentityCmd(manualLockReason)(); msg != nil {
+		t.Fatalf("sendLockIdentityCmd() = %#v", msg)
 	}
 	lockLine := awaitLine(lockLineCh)
 	var lock protocol.LockIdentityMessage

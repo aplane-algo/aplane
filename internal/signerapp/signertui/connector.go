@@ -20,17 +20,13 @@ type LocalIPCConnector struct {
 }
 
 func (c LocalIPCConnector) Connect() (io.ReadWriteCloser, error) {
-	return dialUnixSocket(c.Path)
-}
-
-func (c LocalIPCConnector) Label() string {
-	return "IPC"
-}
-
-func dialUnixSocket(path string) (io.ReadWriteCloser, error) {
-	conn, err := net.Dial("unix", path)
+	conn, err := net.Dial("unix", c.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to IPC socket: %w", err)
 	}
 	return conn, nil
+}
+
+func (c LocalIPCConnector) Label() string {
+	return "IPC"
 }

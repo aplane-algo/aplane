@@ -129,7 +129,7 @@ func (m Model) restorePreviewHeader() string {
 	sb.WriteString("\n")
 	sb.WriteString(m.renderBackupViewHeader(popupWidth))
 	sb.WriteString(fmt.Sprintf("Selected: %d of %d\n",
-		m.selectedRestoreCount(), len(m.restore.previewKeys)))
+		len(m.selectedRestoreAddresses()), len(m.restore.previewKeys)))
 	return sb.String()
 }
 
@@ -154,7 +154,7 @@ func (m Model) restorePreviewFooter() string {
 	sb.WriteString(restoreActionButton(
 		"RESTORE",
 		m.restore.previewFocus == restoreFocusAction,
-		m.selectedRestoreCount() > 0,
+		len(m.selectedRestoreAddresses()) > 0,
 	))
 	sb.WriteString("\n")
 

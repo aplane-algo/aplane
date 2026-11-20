@@ -282,14 +282,14 @@ func (m Model) submitImport() (tea.Model, tea.Cmd) {
 	}
 
 	id := m.beginOperation(ViewImporting)
-	return m, m.sendImportKeyCmd(keyType, mnemonic, id)
+	return m, m.sendImportKeyCmd(keyType, mnemonic, nil, id)
 }
 
 // handleImportParamsKeys handles keyboard input on parameter input modal for import.
 func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
 	submitFn := func(keyType string, params map[string]string, id string) tea.Cmd {
-		return m.sendImportKeyWithParamsCmd(keyType, mnemonic, params, id)
+		return m.sendImportKeyCmd(keyType, mnemonic, params, id)
 	}
 	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {

@@ -71,7 +71,7 @@ func TestLockDoesNotAskForKeyTypes(t *testing.T) {
 			}
 			runSends(cmd)
 			// A request sent after the lock's own marks the end of what it sent.
-			go func() { _ = got.adminClient.SendListCosignerReferences() }()
+			go got.sendListCosignerReferencesCmd()()
 			var types []string
 			for {
 				select {
