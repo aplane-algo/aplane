@@ -117,10 +117,10 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   did, and its reload or recovery follows. Policy apply and the ASA set
   change are refused unless the runtime is unlocked
   (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
-  only restore and rollback commit from recovery; the offline template
-  repair, outside `Next`, commits a store whose unlock enters recovery, and
-  an uncertain one is settled by the next unlock. A refused mutation never
-  takes `CommitRoot`, a run the model already has. A passphrase change
+  only restore and rollback commit from recovery. A refused mutation never
+  takes `CommitRoot`, a run the model already has. The offline template
+  repair, outside `Next`, repairs a store whose unlock entered recovery,
+  and an uncertain repair is settled by the next unlock. A passphrase change
   withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
   the runtime locked rather than in recovery; locked refuses signing as
   recovery does, so RB2 and RB3 hold for it in substance. The same holds for
