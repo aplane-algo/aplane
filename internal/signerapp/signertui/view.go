@@ -192,7 +192,8 @@ func (m Model) renderScrollablePopupBody(body string, maxLines, maxWidth int) st
 	if maxLines <= 0 {
 		return body
 	}
-	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	// Counted as the popup draws them: a line wider than the body wraps.
+	lines := strings.Split(lipgloss.NewStyle().Width(maxWidth).Render(strings.TrimRight(body, "\n")), "\n")
 	if len(lines) <= maxLines {
 		return strings.Join(lines, "\n")
 	}

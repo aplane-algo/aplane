@@ -126,6 +126,14 @@ func populatedLongErrorScreens() []longErrorScreen {
 		{"group approval review", func(t *testing.T, standalone bool) Model {
 			return reviewModelForTest(t, groupReviewRequest(), standalone, MinWidth, MinHeight)
 		}, "REJECT (n)"},
+		{"cosigner picker", func(t *testing.T, standalone bool) Model {
+			var choices []cosignerChoice
+			for i := range 30 {
+				choices = append(choices, cosignerChoice{WitnessKeyID: fmt.Sprintf("W%063d", i), KeyType: "aplane.falcon1024.v1",
+					PrimaryAlias: fmt.Sprintf("alias-%02d", i), Aliases: []string{fmt.Sprintf("alias-%02d", i)}})
+			}
+			return sizedForTest(t, Model{viewState: ViewCosignerPicker, standalone: standalone, cosigner: cosignerState{choices: choices, selected: 29}}, MinWidth, MinHeight)
+		}, "alias-29"},
 		{"policy editor", func(t *testing.T, standalone bool) Model {
 			m := cosignerPoliciesModel("default")
 			m.standalone = standalone
@@ -233,6 +241,35 @@ func checkLongErrorScreen(t *testing.T, name string, m Model, msgs statusMessage
 	t.Errorf("%s: the selected row %q is not on screen:\n%s", name, selected, view)
 }
 
+// approvalPopups are the two approval popups, each delivered as the signer
+// sends its request, over whatever screen is showing, with the selected
+// button a line of each shows: a payroll to approve, and the longest
+// client enrollment request, a 64-byte label from an IPv6 address, with two
+// more waiting behind it.
+func approvalPopups() []struct {
+	name     string
+	deliver  func(t *testing.T, m Model) Model
+	selected string
+} {
+	return []struct {
+		name     string
+		deliver  func(t *testing.T, m Model) Model
+		selected string
+	}{
+		{"signing review", func(t *testing.T, m Model) Model {
+			return updateModel(t, m, SignRequestReceivedMsg{Request: *payrollReviewRequest(10)})
+		}, "REJECT (n)"},
+		{"enrollment request", func(t *testing.T, m Model) Model {
+			for i := range 3 {
+				m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{
+					ID: fmt.Sprintf("enroll-%d", i), SSHFingerprint: fmt.Sprintf("SHA256:%043d", i),
+					Label: strings.Repeat("l", 64), RemoteAddr: "[2001:db8:1234:5678:9abc:def0:1234:5678]:54321"}})
+			}
+			return m
+		}, "REJECT"},
+	}
+}
+
 // Every apadmin screen fits 80x24, standalone and in an apconsole pane, with
 // an error that wraps under the status bar, one too long for its rows, and
 // a long alert, notice and warning beside an error: no line is wider than
@@ -240,7 +277,8 @@ func checkLongErrorScreen(t *testing.T, name string, m Model, msgs statusMessage
 // screen, the whole status bar is, and the error's end, which names its
 // cause, ends the screen. The empty screens are drawn as
 // TestEveryViewFitsAtMinSize draws them, and the populated ones with more
-// rows than the window holds, the selection at the far end.
+// rows than the window holds, the selection at the far end, each also under
+// each approval popup with a real request.
 func TestEveryScreenFitsWithALongError(t *testing.T) {
 	for _, msgs := range longErrorStatusMessages() {
 		for _, standalone := range []bool{false, true} {
@@ -262,6 +300,14 @@ func TestEveryScreenFitsWithALongError(t *testing.T) {
 				// As a daemon error arrives, after the screen was drawn.
 				m = updateModel(t, m, ErrorMsg{Error: errors.New(msgs.err)})
 				checkLongErrorScreen(t, fmt.Sprintf("%s standalone %v %s", screen.name, standalone, msgs.name), m, msgs, screen.selected)
+				for _, popup := range approvalPopups() {
+					if isApprovalView(m.viewState) {
+						continue
+					}
+					over := popup.deliver(t, m)
+					over = updateModel(t, over, ErrorMsg{Error: errors.New(msgs.err)})
+					checkLongErrorScreen(t, fmt.Sprintf("%s over %s standalone %v %s", popup.name, screen.name, standalone, msgs.name), over, msgs, popup.selected)
+				}
 			}
 		}
 	}

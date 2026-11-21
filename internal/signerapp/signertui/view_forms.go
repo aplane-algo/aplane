@@ -227,8 +227,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		return m.renderPopup(70, "Error: parameters not available")
 	}
 
+	// The title's margin is the gap above the fields.
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s Parameters", spec.DisplayName)))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	params := spec.Params
 	sb.WriteString(scrollMoreAboveLine(m.forms.generateParamScrollOffset))

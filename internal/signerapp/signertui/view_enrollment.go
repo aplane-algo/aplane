@@ -28,26 +28,30 @@ func (m Model) renderClientEnrollmentPopup() string {
 		// The label comes from the client, before the client is trusted.
 		rows = append(rows, fmt.Sprintf("Requested label: %s", terminalSafe(req.Label)))
 	}
-	var sb strings.Builder
-
-	sb.WriteString(titleStyle.Render(rows[0]))
-	sb.WriteString("\n\n")
+	// The title's margin is the gap under it.
+	var head strings.Builder
+	head.WriteString(titleStyle.Render(rows[0]))
+	head.WriteString("\n")
 	for _, row := range rows[1:] {
-		sb.WriteString(row + "\n")
+		head.WriteString(row + "\n")
 	}
 	queued := len(m.enrollmentApproval.queue)
 	note := "Approving enrolls this key as a client; the client then connects on its own. No credential is issued. Esc leaves the request waiting."
 	if queued > 0 {
 		note += fmt.Sprintf(" %d more request(s) waiting.", queued)
 	}
-	sb.WriteString(subtitleStyle.Render(note))
-	sb.WriteString("\n\n")
-
 	buttons := buttonPair(m.enrollmentApproval.focus, "APPROVE", "REJECT", nil)
-	rows = append(rows, buttons)
-	sb.WriteString(buttons)
+	popupWidth := enrollmentPopupWidth(append(rows, buttons))
+	width := m.popupBodyWidth(popupWidth)
 
-	return m.renderPopup(enrollmentPopupWidth(rows), sb.String())
+	// The request and the buttons stay whole; the note takes the rows they
+	// leave, cut in the middle so it still ends with the requests waiting.
+	noteLines := strings.Split(wrapPlainText(note, width), "\n")
+	if available := m.popupContentHeight(); available > 0 {
+		fixed := wrappedHeight(head.String()+"\n"+buttons, width)
+		noteLines = wrapCutLines(note, width, max(available-fixed, 1))
+	}
+	return m.renderPopup(popupWidth, head.String()+subtitleStyle.Render(strings.Join(noteLines, "\n"))+"\n\n"+buttons)
 }
 
 func enrollmentPopupWidth(rows []string) int {

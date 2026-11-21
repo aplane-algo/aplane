@@ -573,13 +573,14 @@ func (m Model) cosignerPickerAliasWidth() int {
 	return min(longest, max(m.popupBodyWidth(80)-rest, 8))
 }
 
+// renderCosignerPicker shows the cosigner choices, scrolled around the
+// selected one when they do not all fit, and under them the two actions,
+// which stay on screen; with an action selected, the list keeps its end in
+// view.
 func (m Model) renderCosignerPicker() string {
-	var body strings.Builder
-	body.WriteString(titleStyle.Render("Choose Cosigner"))
-	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Select a cosigner key"))
-	body.WriteString("\n\n")
+	header := titleStyle.Render("Choose Cosigner") + "\n\n" + subtitleStyle.Render("Select a cosigner key") + "\n\n"
 	aliasWidth := m.cosignerPickerAliasWidth()
+	rows := make([]string, len(m.cosigner.choices))
 	for index, choice := range m.cosigner.choices {
 		prefix := "  "
 		if index == m.cosigner.selected {
@@ -591,13 +592,12 @@ func (m Model) renderCosignerPicker() string {
 			row += fmt.Sprintf("  (%d aliases)", len(choice.Aliases))
 		}
 		if index == m.cosigner.selected {
-			body.WriteString(selectedStyle.Render(row))
-		} else {
-			body.WriteString(row)
+			row = selectedStyle.Render(row)
 		}
-		body.WriteString("\n")
+		rows[index] = row
 	}
-	body.WriteString("\n")
+	var footer strings.Builder
+	footer.WriteString("\n")
 	for action, label := range [cosignerPickerActionRows]string{
 		cosignerPickerUseFileRow: "Use setup file...",
 		cosignerPickerPasteRow:   "Paste public JSON...",
@@ -606,12 +606,12 @@ func (m Model) renderCosignerPicker() string {
 		if m.cosigner.selected == len(m.cosigner.choices)+action {
 			row = selectedStyle.Render("> " + label)
 		}
-		body.WriteString(row + "\n")
+		footer.WriteString(row + "\n")
 	}
-	body.WriteString("\n")
-	body.WriteString(helpStyle.Render("↑/↓ navigate  Enter select  Esc cancel"))
-	body.WriteString("\n")
-	return m.renderPopup(80, body.String())
+	footer.WriteString("\n")
+	footer.WriteString(helpStyle.Render("↑/↓ navigate  Enter select  Esc cancel"))
+	footer.WriteString("\n")
+	return m.renderPopup(80, m.fitSelectionList(header, rows, m.cosigner.selected, footer.String(), 80))
 }
 
 func (m Model) renderCosignerImportForm() string {
