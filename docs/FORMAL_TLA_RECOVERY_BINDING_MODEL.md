@@ -67,8 +67,8 @@ The transitions transcribe the post-commit reload and the recovery paths:
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
   Policy apply and the ASA set change commit only on an unlocked signer,
-  and restore and rollback only on one unlocked or in recovery, each
-  checked under the lock: an unlock in flight on another connection, which
+  and restore, rollback and the recovery reconcile run only on one unlocked
+  or in recovery, each checked under the lock: an unlock in flight on another connection, which
   the model does not have, opens the keyring under the lock and publishes
   unlocked only after releasing it, and would otherwise publish over a
   commit whose reload failed, where `SetRecovery` did nothing on the
@@ -147,8 +147,9 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.
 - An unlock that begins in recovery is a second way out of it, not modeled
-  here: it reconciles under the store mutation lock, releases it, takes it
-  again to check the state and reload, and publishes after releasing it.
+  here: it checks the state and reconciles under one hold of the store
+  mutation lock, releases it, takes it again to check the state and reload,
+  and publishes after releasing it.
   No commit lands during its reload, and it cannot publish over a recovery
   entered after it began (KU5), but a commit can land between its reload
   and its publish, and which generation its own reload bound when it

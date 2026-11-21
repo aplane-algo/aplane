@@ -29,6 +29,15 @@ before it was renamed `enroll`.
   No reconcile, policy apply, ASA set change, token change or passphrase
   change lands during an unlock's reload. An unlock still never publishes
   over a recovery that a store change entered after it began.
+- **An unlock is answered from the session only if the signer stays
+  unlocked through its passphrase check.** One that a lock overtakes during
+  the check goes on as an unlock of a locked signer. An unlock whose
+  reconcile fails after another unlock published answers from that session
+  instead of putting it into recovery.
+- **A reconcile that finds the signer locked once it holds the store
+  mutation lock is refused** and reloads nothing, as restore and rollback
+  already were. It once reloaded, and an unlock still in flight could then
+  publish over a reload that had failed.
 
 ## Cosigner policy documents can describe external checks
 

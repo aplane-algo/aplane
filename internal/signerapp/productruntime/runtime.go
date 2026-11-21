@@ -550,36 +550,41 @@ func (ir *Runtime) FinishStoreMaintenance(
 // Returns (success, keyCount, errorMessage).
 // The passphrase bytes are NOT zeroed by this function.
 //
-// An attempt that finds the signer already unlocked verifies the passphrase
-// and answers with the session's key count; it loads, publishes and clears
-// nothing. A load replaces the keyring, the policy, the key maps and the
-// source token index, and one that then fails closes the keyring, so a load
-// under the session in service would leave a signer that says unlocked and
-// cannot sign, and would republish state that concurrent changes had moved
-// on from. Two locks make the check race-free. Attempts run one at a time
-// (unlockMu), so no other attempt publishes while this one loads. The check
-// and the load run under the store mutation lock (reloadLock), which a
-// reconcile holds across its promotion out of recovery and a passphrase
-// change across its republish, the only other ways to the unlocked state
-// once the admin listener is up, so neither lands between the check and the
-// end of the load. The passphrase is verified under that lock too, so a
-// passphrase change cannot land between the check of the passphrase and the
-// answer.
+// An attempt that finds the signer already unlocked answers from the session
+// (AnswerFromSession): it verifies the passphrase and answers with the
+// session's key count, and loads, publishes and clears nothing. A load
+// replaces the keyring, the policy, the key maps and the source token index,
+// and one that then fails closes the keyring, so a load under the session in
+// service would leave a signer that says unlocked and cannot sign, and would
+// republish state that concurrent changes had moved on from. An attempt whose
+// session ended during the passphrase check is not answered from it and
+// loads, as one that found the signer locked does.
+//
+// Two locks make the check race-free. Attempts run one at a time (unlockMu),
+// so no other attempt publishes while this one loads. The check and the load
+// run under the store mutation lock (reloadLock), which a reconcile holds
+// across its promotion out of recovery and a passphrase change across its
+// republish, the only other ways to the unlocked state once the admin
+// listener is up, so neither lands between the check and the end of the
+// load.
 //
 // The attempt reads the session generations before it takes the store
-// mutation lock and publishes after it releases it, so a lock or an entry
-// into recovery that a store change makes in either gap still wins: the
-// fence in signerruntime.Runtime.TryUnlock compares them. An attempt that
-// answered from the session ended at its check, before the fence: it loaded
-// nothing, so it has nothing to publish over a later lock or recovery and
-// nothing for a loser's cleanup to clear.
+// mutation lock and publishes after it releases it. A lock in either gap
+// wins at the fence in signerruntime.Runtime.TryUnlock, which compares them,
+// and so does an entry into recovery: a store change that can enter recovery
+// runs only on a signer unlocked or in recovery, checked under the store
+// mutation lock, so in an unlock from locked none runs in either gap, and in
+// one from recovery its entry moves the session. An attempt that answered
+// from the session ended at its check, before the fence: it loaded nothing,
+// so it has nothing to publish over a later lock or recovery and nothing for
+// a loser's cleanup to clear.
 func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, string) {
 	ir.unlockMu.Lock()
 	defer ir.unlockMu.Unlock()
-	var fromSession sessionAnswer
+	var fromSession SessionAnswer
 	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase, &fromSession), onUnlocked)
-	if fromSession.answered {
-		return true, fromSession.keyCount, ""
+	if fromSession.Answered {
+		return fromSession.ErrMsg == "", fromSession.KeyCount, fromSession.ErrMsg
 	}
 	if ok {
 		// Only now, once the fence let the attempt publish: an attempt
@@ -601,31 +606,59 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	return ok, keyCount, errMsg
 }
 
-// AnswerIfUnlocked answers an unlock request on a signer that is already
-// unlocked, under the store mutation lock: it verifies the passphrase and
-// reports the session's key count, and reconciles, loads and publishes
-// nothing. answered is false when the signer is not unlocked; the request
-// then goes on as an unlock from locked or recovery does. errMsg is set when
-// the passphrase does not open the store root, as TryUnlock reports it.
+// SessionAnswer is an unlock request's answer from the session in service.
+type SessionAnswer struct {
+	// Answered is false when the request was not answered from a session:
+	// the signer was not unlocked, or its session ended during the check.
+	Answered bool
+	KeyCount int
+	// ErrMsg is set when the passphrase does not open the store root, as
+	// TryUnlock reports it.
+	ErrMsg string
+}
+
+// AnswerFromSession answers an unlock request from the session in service,
+// and reconciles, loads and publishes nothing. It answers only for a session
+// the signer was unlocked in from before the passphrase check to after it:
+// it reads the session generation, verifies the passphrase, reads the key
+// count, and confirms the session still holds. A lock, a store maintenance or
+// an entry into recovery during the check ends the session, and the request
+// is then not answered, so the caller goes on as an unlock from locked or
+// recovery does and answers from the state it finds. A wrong passphrase is
+// refused whatever came meanwhile; a refusal changes nothing.
 //
-// A reconcile's promotion out of recovery and a passphrase change's
-// republish run under the same lock, so the state checked here does not
-// become unlocked while it answers. The answer is the state at the check: a
-// lock that comes after it is a later event, which this request neither
-// waits for nor undoes. An answer that the signer is not unlocked can be
-// overtaken before the request's later steps (another request's unlock may
-// publish, or a reconcile may promote): TryUnlock checks again under the
-// same lock before it loads.
-func (ir *Runtime) AnswerIfUnlocked(passphrase []byte) (answered bool, keyCount int, errMsg string) {
-	release := ir.lockStoreMutation()
-	defer release()
-	if !ir.IsUnlocked() {
-		return false, 0, ""
+// The answer is the session at the confirmation: a lock after it is a later
+// event, which the request neither waits for nor undoes.
+func (ir *Runtime) AnswerFromSession(passphrase []byte) SessionAnswer {
+	generation, unlocked := ir.UnlockedGeneration()
+	if !unlocked {
+		return SessionAnswer{}
 	}
 	if err := verifyUnlockPassphrase(passphrase, ir.keyPaths); err != nil {
-		return true, 0, err.Error()
+		return SessionAnswer{Answered: true, ErrMsg: err.Error()}
 	}
-	return true, ir.KeyCount(), ""
+	keyCount := ir.KeyCount()
+	if !ir.IsUnlockedIn(generation) {
+		return SessionAnswer{}
+	}
+	return SessionAnswer{Answered: true, KeyCount: keyCount}
+}
+
+// AnswerIfUnlocked is an unlock request's first step, under one hold of the
+// store mutation lock: it answers from the session in service
+// (AnswerFromSession), and otherwise runs reconcile and returns its error. A
+// reconcile's promotion out of recovery and a passphrase change's republish
+// hold the same lock, so neither lands between the check and the reconcile.
+// An unlock's publish does not hold it, so another request may publish
+// meanwhile; the caller checks again before it enters recovery on a failed
+// reconcile, and TryUnlock checks again before it loads.
+func (ir *Runtime) AnswerIfUnlocked(passphrase []byte, reconcile func() error) (SessionAnswer, error) {
+	release := ir.lockStoreMutation()
+	defer release()
+	if answer := ir.AnswerFromSession(passphrase); answer.Answered {
+		return answer, nil
+	}
+	return SessionAnswer{}, reconcile()
 }
 
 // --- Approval ---
@@ -1812,34 +1845,26 @@ func (ir *Runtime) LockGeneration() uint64 {
 	return ir.lockRuntime.LockGeneration()
 }
 
-// sessionAnswer records an unlock attempt that found the signer already
-// unlocked and answered from the session at its check.
-type sessionAnswer struct {
-	answered bool
-	keyCount int
-}
-
-// errAnsweredFromSession ends the unlock function of an attempt that found
-// the signer already unlocked. signerruntime.Runtime.TryUnlock returns on an
-// unlock function's error before its fence and changes nothing, which is
-// what such an attempt needs; TryUnlock reads the answer from its
-// sessionAnswer, not from this error.
-var errAnsweredFromSession = errors.New("signer already unlocked")
+// errAnsweredFromSession ends the unlock function of an attempt answered
+// from the session. signerruntime.Runtime.TryUnlock returns on an unlock
+// function's error before its fence and changes nothing, which is what such
+// an attempt needs; TryUnlock reads the answer from its SessionAnswer, not
+// from this error.
+var errAnsweredFromSession = errors.New("answered from the session")
 
 // performUnlock is the unlock function TryUnlock runs outside the state lock,
-// under the store mutation lock: it verifies the passphrase, then loads the
-// store unless the signer is already unlocked, in which case it records the
-// session's key count in answer and loads nothing.
-func (ir *Runtime) performUnlock(passphrase []byte, answer *sessionAnswer) func() (int, error) {
+// under the store mutation lock: an attempt the session answers
+// (AnswerFromSession) records the answer and loads nothing; any other
+// verifies the passphrase and loads the store.
+func (ir *Runtime) performUnlock(passphrase []byte, answer *SessionAnswer) func() (int, error) {
 	return func() (int, error) {
 		release := ir.lockStoreMutation()
 		defer release()
+		if *answer = ir.AnswerFromSession(passphrase); answer.Answered {
+			return 0, errAnsweredFromSession
+		}
 		if err := verifyUnlockPassphrase(passphrase, ir.keyPaths); err != nil {
 			return 0, err
-		}
-		if ir.IsUnlocked() {
-			*answer = sessionAnswer{answered: true, keyCount: ir.KeyCount()}
-			return 0, errAnsweredFromSession
 		}
 		if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
 			return 0, fmt.Errorf("failed to load keys: %v", err)
@@ -1849,8 +1874,9 @@ func (ir *Runtime) performUnlock(passphrase []byte, answer *sessionAnswer) func(
 }
 
 // verifyUnlockPassphrase checks an unlock's passphrase against the store
-// root, classified for the lock runtime as unlockFailure does.
-func verifyUnlockPassphrase(passphrase []byte, paths storepaths.Paths) error {
+// root, classified for the lock runtime as unlockFailure does. Tests replace
+// it to land a transition during the check.
+var verifyUnlockPassphrase = func(passphrase []byte, paths storepaths.Paths) error {
 	return unlockFailure(crypto.VerifyPassphraseWithStoreRoot(passphrase, paths.ProductDir()))
 }
 

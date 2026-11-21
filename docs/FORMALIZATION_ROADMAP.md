@@ -923,12 +923,18 @@ and one that failed after opening it closed it again, so the signer said
 unlocked and could not sign; it also republished the policy, the key maps
 and the source token index over changes made since it read them.
 `UnlockIdentity` now answers such a request from the session
-(`AnswerIfUnlocked`: the passphrase is checked under the store mutation
-lock, and nothing is reconciled, loaded or published).
-`productruntime.TryUnlock` runs attempts one at a time (`unlockMu`), checks
-the passphrase and the state again under the store mutation lock before it
-loads, and holds that lock to the end of the load; an attempt that finds the
-signer unlocked ends there, before the fence (`errAnsweredFromSession`).
+(`AnswerIfUnlocked`, which holds the store mutation lock across the check and
+the request's reconcile, and `AnswerFromSession`, which answers only for a
+session the signer stays unlocked in from before the passphrase check to
+after it; nothing is reconciled, loaded or published), and a request whose
+reconcile or load fails asks the session again before it enters recovery.
+`productruntime.TryUnlock` runs attempts one at a time (`unlockMu`), asks
+the session again under the store mutation lock before it loads, and holds
+that lock to the end of the load; an attempt the session answers ends
+there, before the fence (`errAnsweredFromSession`). `UnlockCheck` is the
+confirmation that the session still holds. The recovery reconcile's locked
+work (`reconcileLocked`) now refuses a signer neither unlocked nor in
+recovery, as restore and rollback do.
 `key_use_lock.tla` splits the unlock into `UnlockStart`, `UnlockCheck`,
 `UnlockLoaded` and `UnlockFinish`, gives `TryRecovery` actions of its own
 (`RecoveryStart`, `RecoveryFinish`, the branch from the locked state

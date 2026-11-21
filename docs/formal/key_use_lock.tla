@@ -45,7 +45,11 @@ generation; UnlockCheck takes the store mutation lock and checks the state;
 UnlockLoaded is the end of the load, where that lock is released; and
 UnlockFinish compares the generations. An attempt that finds the signer
 already unlocked at its check answers from the session in service and ends
-there: it loads nothing, publishes nothing and clears nothing. The load
+there: it loads nothing, publishes nothing and clears nothing. The code
+answers only for a session the signer stayed unlocked in across the
+passphrase check, and UnlockCheck is the step that confirms it: an attempt
+whose session ended during the passphrase check loads, as one that found
+the signer locked does. The load
 replaces the keyring and a load that fails closes it, so a load under a
 session in service could leave a signer that says unlocked and cannot sign.
 Unlock attempts run one at a time (unlockMu), and the check and the load
@@ -108,8 +112,9 @@ Thirteen guards are switchable:
                       entered recovery again, and publishes over it.
   AnswersFromSession  an unlock checks the state before it loads, and one
                       that finds the signer unlocked loads nothing
-                      (productruntime performUnlock). Without it, the
-                      attempt loads under the session in service.
+                      (productruntime performUnlock, AnswerFromSession).
+                      Without it, the attempt loads under the session in
+                      service.
   AnswerEndsAtCheck   an attempt that answered from the session ends at its
                       check, before the fence (errAnsweredFromSession).
                       Without it, the attempt goes on to the fence with
@@ -178,10 +183,15 @@ Code anchors:
     UnlockStart's read of the session with it; UnlockStart's other guard
     is productruntime's unlockMu, which TryUnlock holds across the attempt.
     UnlockCheck and UnlockLoaded transcribe productruntime's performUnlock:
-    lockStoreMutation, the passphrase check, IsUnlocked and, when the
-    signer is unlocked, the return of errAnsweredFromSession, which ends the
-    attempt before the fence; otherwise ReloadWithPassphrase, and the
-    release of the store mutation lock. UnlockFinish and RecoveryFinish
+    lockStoreMutation and AnswerFromSession, which reads the session
+    generation, checks the passphrase and confirms the signer is still
+    unlocked in that session, and, when it is, the return of
+    errAnsweredFromSession, which ends the attempt before the fence;
+    otherwise the passphrase check, ReloadWithPassphrase, and the release
+    of the store mutation lock. UnlockCheck is that confirmation, or the
+    read when the signer was not unlocked: under unlockMu and the store
+    mutation lock nothing returns the signer to unlocked between it and the
+    end of the load. UnlockFinish and RecoveryFinish
     transcribe the fences after the unlock function: when the lock
     generation moved, lockForCleanupLocked and the cleanup it decides, and
     otherwise, for TryUnlock, when the session moved, the return with

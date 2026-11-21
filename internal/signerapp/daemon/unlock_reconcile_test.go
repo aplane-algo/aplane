@@ -38,9 +38,11 @@ func convertTestSignerToGenerational(t *testing.T, server *Signer) string {
 	return selection.GenerationID()
 }
 
-func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
+// mintUnselectedGenerationForTest leaves a complete successor generation that
+// the store root never selected, as a crash before the root rename does. The
+// next reconcile quarantines it, and refuses to without a durable audit log.
+func mintUnselectedGenerationForTest(t *testing.T, server *Signer) string {
+	t.Helper()
 	selection, keyring, err := genstore.OpenStoreRootSelection(server.keyPaths, testPassphrase)
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +72,13 @@ func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.
 	if mintErr == nil {
 		t.Fatal("Mint succeeded despite injected pre-flip crash")
 	}
+	return successor
+}
+
+func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	successor := mintUnselectedGenerationForTest(t, server)
 
 	if err := server.adminServices().reconcileGenerations(server.runtime, testPassphrase); err != nil {
 		t.Fatal(err)
@@ -334,9 +343,9 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // it (SetReloadMutationLock), with hooks that run on the goroutine taking it:
 // before[n] ahead of the nth acquisition through the runtime, after[n] once
 // that acquisition is released. An unlock request takes it first to check
-// whether the signer is already unlocked (AnswerIfUnlocked), and then, in
-// TryUnlock, after it has read its session generations, to check again and
-// load, releasing it before its fence. The hooks land another connection's
+// whether the signer is already unlocked and, when it is not, to reconcile
+// (AnswerIfUnlocked), and then, in TryUnlock, after it has read its session
+// generations, to check again and load, releasing it before its fence. The hooks land another connection's
 // transition in those gaps without a sleep. Other holders of the same mutex
 // (withStoreMutation) take it directly and run no hook.
 type gatedMutationLock struct {
@@ -371,8 +380,8 @@ func gateStoreMutation(server *Signer, g *gatedMutationLock) {
 }
 
 // The acquisitions an unlock request of a signer not yet unlocked makes
-// through the runtime: AnswerIfUnlocked's check, then TryUnlock's check and
-// load.
+// through the runtime: AnswerIfUnlocked's check and reconcile, then
+// TryUnlock's check and load.
 const (
 	unlockAnswerCheck int32 = 1
 	unlockLoadCheck   int32 = 2
@@ -664,5 +673,116 @@ func TestTwoUnlocksAtOnceReloadOnce(t *testing.T) {
 	}
 	if !ir.IsUnlocked() {
 		t.Fatal("the signer is not unlocked")
+	}
+}
+
+// Two unlock requests on a locked signer: the second finds the signer not
+// unlocked, the first publishes, and the second's reconcile fails. The second
+// once entered recovery all the same (TryRecoveryUnlock), which ended the
+// session the first had just published. It now checks again before it enters
+// recovery, and answers from the session it finds, as a request that found
+// the signer unlocked does.
+//
+// The second's reconcile fails because a generation the store root never
+// selected appears after the first's reconcile, and there is no audit log to
+// record its quarantine.
+func TestAFailedReconcileLeavesASessionPublishedBesideIt(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ir.Lock() // the test signer starts unlocked; these unlocks begin from locked
+	auditLog := server.auditLog
+	defer func() { server.auditLog = auditLog }()
+	minted := false
+	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil && !minted {
+			minted = true
+			mintUnselectedGenerationForTest(t, server)
+			server.auditLog = nil
+		}
+		return &signertemplates.ReloadReport{}, nil
+	})
+	type outcome struct {
+		success      bool
+		keyCount     int
+		errMsg, code string
+	}
+	unlock := func(results chan<- outcome) {
+		success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+		results <- outcome{success, keyCount, errMsg, code}
+	}
+	first, second := make(chan outcome, 1), make(chan outcome, 1)
+	firstLoaded := make(chan struct{})
+	var firstGot outcome
+	var published uint64
+	gate := &gatedMutationLock{after: map[int32]func(){
+		// The first has reconciled and loaded, and not yet published.
+		unlockLoadCheck: func() {
+			go unlock(second)
+			<-firstLoaded
+		},
+		// The second has found the signer not unlocked: the first publishes.
+		unlockLoadCheck + unlockAnswerCheck: func() {
+			close(firstLoaded)
+			firstGot = <-first
+			published, _ = ir.UnlockedGeneration()
+		},
+	}}
+	gateStoreMutation(server, gate)
+
+	unlock(first)
+	secondGot := <-second
+	if !firstGot.success || firstGot.errMsg != "" || firstGot.code != "" {
+		t.Fatalf("the first unlock = %+v, want a plain success", firstGot)
+	}
+	if !secondGot.success || secondGot.errMsg != "" || secondGot.code != "" {
+		t.Fatalf("the second unlock = %+v, want a plain success from the first's session", secondGot)
+	}
+	if !ir.IsUnlockedIn(published) {
+		t.Fatalf("state = %v: the second unlock ended the session the first published", ir.GetState())
+	}
+}
+
+// A reconcile that reaches the store mutation lock on a signer that is
+// neither unlocked nor in recovery is refused there, before it reloads, and
+// enters no recovery. The handler's state check runs before the request
+// queues on the lock, and an unlock from locked whose load has ended and
+// that has not yet published leaves the keyring open on a locked signer. A
+// reconcile there once reloaded, and when the reload failed it called
+// SetRecovery, which does nothing on a locked signer; the unlock then
+// published unlocked over the failed reload.
+func TestAReconcileOfALockedSignerIsRefusedUnderTheLock(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ir.Lock()
+	var reloads atomic.Int32 // without a passphrase: the reconcile's, and the watcher's after the publish
+	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil {
+			return &signertemplates.ReloadReport{}, ir.KeyStore().Unlock(passphrase)
+		}
+		reloads.Add(1)
+		return nil, errors.New("simulated reconcile reload failure")
+	})
+	var reconcileErr error
+	var reconcileReloads int32
+	gateStoreMutation(server, &gatedMutationLock{after: map[int32]func(){
+		unlockLoadCheck: func() {
+			_, reconcileErr = server.adminServices().reconcileReloadAndPromote(ir, true)
+			reconcileReloads = reloads.Load()
+		},
+	}})
+
+	if success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want a plain success", success, errMsg, code)
+	}
+	if !errors.Is(reconcileErr, keystore.ErrStoreLocked) {
+		t.Fatalf("reconcile on the locked signer = %v, want a refusal as locked", reconcileErr)
+	}
+	if reconcileReloads != 0 {
+		t.Fatalf("the refused reconcile reloaded %d time(s), want none", reconcileReloads)
+	}
+	if !ir.IsUnlocked() {
+		t.Fatalf("state = %v, want the unlock published", ir.GetState())
 	}
 }

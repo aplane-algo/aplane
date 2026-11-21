@@ -386,11 +386,20 @@ passphrase and answers `unlock_result{success:true}` with the session's
 current `key_count`. It reloads nothing: it does not reconcile generations,
 reopen the keyring, or republish the policy, the key maps or the source
 token index, so the session in service keeps all of them. A wrong passphrase
-is refused with `invalid_passphrase` and leaves the session as it is. Unlock
+is refused with `invalid_passphrase` and leaves the session as it is. The
+answer comes only from a session the signer stays unlocked in from before
+the passphrase verification to after it: a request whose session a lock or
+an entry into recovery ends during the verification is not answered from it,
+and goes on as an unlock of a signer that is not unlocked does. Unlock
 requests run one at a time, and the check, the passphrase verification and
 the load run under the store mutation lock, so a request that arrives while
 another is loading waits for it and then answers from the session that one
-published.
+published. A request that finds the signer not unlocked reconciles in the
+same hold of the lock as its check. An unlock publishes after it releases
+the lock, so another request can publish while this one reconciles: a
+request whose reconcile fails, or whose load fails validation, checks again
+before it enters recovery, and answers from a session published meanwhile
+instead of ending it.
 
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails,
@@ -670,12 +679,15 @@ transaction type is one more entry in `fields` and needs no client change.
   reconciliation are available to an authenticated recovery-mode session so
   repair material can be admitted and inspected, damaged credentials replaced,
   and the clean generation promoted. A locked session remains rejected with
-  `signer_locked`. `restore_backup` and `rollback_restore` check the state
-  again under the store mutation lock, since a lock and a new unlock can
-  come between the handler's check and the lock: a signer that is then
-  neither unlocked nor in recovery, one whose unlock is still in flight
-  included, is refused with `restore_failed` or `restore_rollback_refused`
-  and `signer is locked: keystore is locked`, and nothing is committed.
+  `signer_locked`. `restore_backup`, `rollback_restore` and
+  `reconcile_store` check the state again under the store mutation lock,
+  since a lock and a new unlock can come between the handler's check and the
+  lock: a signer that is then neither unlocked nor in recovery, one whose
+  unlock is still in flight included, is refused with `signer is locked:
+  keystore is locked`, and nothing is committed, reloaded or put into
+  recovery. A restore answers `restore_failed` and a rollback
+  `restore_rollback_refused`; a reconcile's result carries the `state` it
+  found.
 
 #### Admin and Policy Settings
 

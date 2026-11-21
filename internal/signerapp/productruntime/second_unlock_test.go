@@ -104,30 +104,76 @@ func TestAnUnlockThatFindsTheSignerUnlockedEndsAtItsCheck(t *testing.T) {
 
 // A wrong passphrase on an unlocked signer is refused, by TryUnlock and by
 // AnswerIfUnlocked, and leaves the session as it was. The right one answers
-// with the session's key count; on a signer that is not unlocked,
-// AnswerIfUnlocked does not answer, and the unlock goes on.
+// with the session's key count, and neither runs the reconcile; on a signer
+// that is not unlocked, AnswerIfUnlocked does not answer and runs it.
 func TestAnUnlockOfAnUnlockedSignerChecksThePassphrase(t *testing.T) {
 	ir, _, loads, _ := unlockedRuntimeForTest(t)
 	generation, _ := ir.UnlockedGeneration()
+	reconciles := 0
+	reconcile := func() error { reconciles++; return nil }
 	wrong := []byte("not the passphrase")
 	if ok, _, msg := ir.TryUnlock(wrong, nil); ok || msg != InvalidPassphraseMessage {
 		t.Fatalf("TryUnlock(wrong) = (%v, %q), want %q", ok, msg, InvalidPassphraseMessage)
 	}
-	if answered, _, msg := ir.AnswerIfUnlocked(wrong); !answered || msg != InvalidPassphraseMessage {
-		t.Fatalf("AnswerIfUnlocked(wrong) = (%v, %q), want %q", answered, msg, InvalidPassphraseMessage)
+	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); !answer.Answered || answer.ErrMsg != InvalidPassphraseMessage {
+		t.Fatalf("AnswerIfUnlocked(wrong) = %+v, want %q", answer, InvalidPassphraseMessage)
 	}
-	if answered, keyCount, msg := ir.AnswerIfUnlocked([]byte(secondUnlockPassphrase)); !answered || msg != "" || keyCount != ir.KeyCount() {
-		t.Fatalf("AnswerIfUnlocked() = (%v, %d, %q), want the session's key count", answered, keyCount, msg)
+	if answer, _ := ir.AnswerIfUnlocked([]byte(secondUnlockPassphrase), reconcile); !answer.Answered || answer.ErrMsg != "" || answer.KeyCount != ir.KeyCount() {
+		t.Fatalf("AnswerIfUnlocked() = %+v, want the session's key count", answer)
 	}
-	if loads.Load() != 0 || !ir.IsUnlockedIn(generation) {
-		t.Fatal("a refused or answered unlock loaded or ended the session")
+	if loads.Load() != 0 || reconciles != 0 || !ir.IsUnlockedIn(generation) {
+		t.Fatal("a refused or answered unlock loaded, reconciled or ended the session")
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
 		t.Fatalf("the session's keyring is closed: %v", err)
 	}
 	ir.Lock()
-	if answered, _, _ := ir.AnswerIfUnlocked(wrong); answered {
-		t.Fatal("AnswerIfUnlocked() answered for a locked signer")
+	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); answer.Answered || reconciles != 1 {
+		t.Fatalf("AnswerIfUnlocked() on a locked signer = %+v with %d reconcile(s), want no answer and one", answer, reconciles)
+	}
+}
+
+// lockDuringPassphraseCheck makes the next passphrase check lock the signer
+// once it has checked, so the lock lands during the check.
+func lockDuringPassphraseCheck(t *testing.T, ir *Runtime) {
+	t.Helper()
+	verify := verifyUnlockPassphrase
+	t.Cleanup(func() { verifyUnlockPassphrase = verify })
+	verifyUnlockPassphrase = func(passphrase []byte, paths storepaths.Paths) error {
+		verifyUnlockPassphrase = verify
+		err := verify(passphrase, paths)
+		ir.Lock()
+		return err
+	}
+}
+
+// An unlock request is answered from the session only when the signer was
+// unlocked in it from before the passphrase check to after it. A lock that
+// lands during the check ends that session, and the request is not answered
+// from it: the answer from the session once said success, with the key count
+// of a session that had ended, on a signer that had locked. An attempt goes
+// on to load, as one that found the signer locked does, and its fence then
+// answers that the signer locked during the unlock.
+func TestALockDuringThePassphraseCheckIsNotAnsweredFromTheSession(t *testing.T) {
+	ir, _, loads, _ := unlockedRuntimeForTest(t)
+	lockDuringPassphraseCheck(t, ir)
+	if answer := ir.AnswerFromSession([]byte(secondUnlockPassphrase)); answer.Answered {
+		t.Fatalf("AnswerFromSession() = %+v after a lock during the check, want no answer", answer)
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked {
+		t.Fatalf("state = %v, want the lock to stand", ir.GetState())
+	}
+
+	ir.SetUnlocked()
+	lockDuringPassphraseCheck(t, ir)
+	if ok, _, msg := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); ok || msg != signerruntime.LockedDuringUnlockMessage {
+		t.Fatalf("TryUnlock() = (%v, %q) after a lock during the check, want %q", ok, msg, signerruntime.LockedDuringUnlockMessage)
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("the attempt loaded %d time(s), want once: the session it found had ended", got)
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked {
+		t.Fatalf("state = %v, want the lock to stand", ir.GetState())
 	}
 }
 

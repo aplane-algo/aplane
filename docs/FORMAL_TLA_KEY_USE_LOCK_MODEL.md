@@ -135,12 +135,20 @@ waits for it; KU2 and KU3 cover that case.
   is in flight, since `TryUnlock` holds `unlockMu` across the attempt.
   `UnlockCheck` is the unlock function's start (`performUnlock`): it takes
   the store mutation lock (`lockStoreMutation`), which another unlock's load
-  holds, with `passphraseLock`; verifies the passphrase; and checks the
-  state. An attempt that finds the signer unlocked records the session's key
-  count and returns `errAnsweredFromSession`, which ends the attempt before
-  the fence (`runtime.Runtime.TryUnlock` returns on an unlock function's
-  error without touching the state); `TryUnlock` answers success from the
-  record. Otherwise the attempt loads (`ReloadWithPassphrase`), and
+  holds, with `passphraseLock`, and asks the session (`AnswerFromSession`).
+  That reads the session generation, verifies the passphrase, and confirms
+  the signer is still unlocked in that session; `UnlockCheck` is the
+  confirmation, or the read when the signer was not unlocked. A session that
+  a lock or an entry into recovery ended during the passphrase check does
+  not answer, and the attempt loads, as one that found the signer not
+  unlocked does: under `unlockMu` and the store mutation lock nothing
+  returns the signer to unlocked between the confirmation and the end of
+  the load. An attempt the session answers
+  records the session's key count and returns `errAnsweredFromSession`,
+  which ends the attempt before the fence (`runtime.Runtime.TryUnlock`
+  returns on an unlock function's error without touching the state);
+  `TryUnlock` answers success from the record. Otherwise the attempt
+  verifies the passphrase and loads (`ReloadWithPassphrase`), and
   `UnlockLoaded` is the end of the load, where the store mutation lock is
   released. `UnlockFinish` is the fence after the unlock function. An
   attempt that finds `lockGen` moved has lost to a lock; its unlock function
@@ -159,9 +167,10 @@ waits for it; KU2 and KU3 cover that case.
   state it then finds, `recovery_blocked` while the recovery lasts.
 - `RecoveryStart` and `RecoveryFinish` transcribe `TryRecovery`, which
   `UnlockIdentity` calls when the reconcile or the selected generation
-  fails, and which does not take `unlockMu`: the wait for cleanups and the
-  read of `lockGen`, then the fence. One that finds `lockGen` moved loses
-  as an unlock does; otherwise it enters recovery from whatever state the
+  fails and a second ask finds no session to answer from, and which does
+  not take `unlockMu`: the wait for cleanups and the read of `lockGen`, then
+  the fence. One that finds `lockGen` moved loses as an unlock does;
+  otherwise it enters recovery from whatever state the
   signer is in, the locked one included (`enterRecoveryLocked`), moving the
   session, so an unlock in flight beside it does not publish over it. Its
   keyring open (`KeyStore.Unlock`) is not a step of its own: it takes
@@ -199,7 +208,7 @@ The guards are constants:
 | `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
 | `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `RecoveryDuringUnlockMessage` without publishing or cleaning up | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
 | `RecoveryReentryMovesSession` | TRUE: `enterRecoveryLocked` moves the session on every entry, one from recovery included | Without it an unlock begun in recovery misses a restore, rollback or reconcile that entered recovery again, and publishes over it |
-| `AnswersFromSession` | TRUE: `performUnlock` checks `IsUnlocked` before it loads, and an attempt that finds the signer unlocked loads nothing; `UnlockIdentity` checks first too (`AnswerIfUnlocked`), so a request on an unlocked signer reconciles nothing either | Without it an unlock of an unlocked signer loads under the session in service |
+| `AnswersFromSession` | TRUE: `performUnlock` asks the session before it loads (`AnswerFromSession`), and an attempt the session answers loads nothing; `UnlockIdentity` asks first too, in the same hold of the store mutation lock as its reconcile (`AnswerIfUnlocked`), so a request on an unlocked signer reconciles nothing either | Without it an unlock of an unlocked signer loads under the session in service |
 | `AnswerEndsAtCheck` | TRUE: such an attempt returns `errAnsweredFromSession`, and `runtime.Runtime.TryUnlock` returns before its fence | Without it the attempt goes on to the fence with nothing loaded, and when a lock came in after its check it locks the signer and runs a cleanup as a loser does |
 | `UnlocksOneAtATime` | TRUE: `productruntime.Runtime.TryUnlock` holds `unlockMu` from before its generation read to after its fence | Without it a second unlock checks while the first has loaded and not yet published, loads, and the first publishes under it |
 | `LoadHoldsStoreLock` | TRUE: `performUnlock` holds the store mutation lock from its passphrase check to the end of its load (`lockStoreMutation`), the lock every `SetRecovery` caller, the reconcile's promotion and the passphrase change's republish hold | Without it a reconcile promotes the signer out of recovery while an unlock begun there loads |
@@ -333,26 +342,34 @@ for each.
   in recovery is the recovery exit once its reconcile passed (KU5 is about
   recoveries entered later). A first unlock of a locked signer is not fenced:
   `SetRecovery` does nothing there and the session does not move. Store
-  mutations refuse a signer that is not unlocked (or, for restore and
-  rollback, in recovery), checked under the store mutation lock, so none
-  commits under such an unlock; that is a Go-level contract pinned by the
-  `admin` and `backupadmin` tests.
+  mutations refuse a signer that is not unlocked (or, for restore, rollback
+  and the recovery reconcile, in recovery), checked under the store mutation
+  lock, so none commits or reloads under such an unlock; that is a Go-level
+  contract pinned by the `admin`, `backupadmin` and `daemon` tests
+  (`TestAReconcileOfALockedSignerIsRefusedUnderTheLock` for the reconcile).
 - A `TryRecovery` from the locked state moves the session too
   (`enterRecoveryLocked`), so a `TryUnlock` in flight beside it does not
   publish over the recovery it enters: `RecoveryFinish` from the locked state
   is that branch, and `TestAnUnlockInFlightDoesNotPublishOverALaterRecovery`
   pins it in Go.
 - An unlock request on an unlocked signer is answered before it becomes an
-  attempt: `UnlockIdentity` first calls `AnswerIfUnlocked`, which checks the
-  state and the passphrase under the store mutation lock and answers from
-  the session, before any reconcile. It reads and changes nothing the model
-  has, so it is not an action; `UnlockCheck`'s answer covers the request
-  that found the signer locked or in recovery there and unlocked by the time
-  `TryUnlock` checks (another request published, or a reconcile promoted).
-  Such a request has reconciled meanwhile, under the store mutation lock, as
-  an explicit reconcile of an unlocked signer does; a reconcile that fails
-  then enters recovery, which ends the session, through
-  `TryRecoveryUnlock`.
+  attempt: `UnlockIdentity` first calls `AnswerIfUnlocked`, which, under one
+  hold of the store mutation lock, answers from the session
+  (`AnswerFromSession`) or, when the signer is not unlocked, runs the
+  request's reconcile. The answer reads and changes nothing the model has,
+  so it is not an action; `UnlockCheck`'s answer covers the request that
+  found the signer locked or in recovery there and unlocked by the time
+  `TryUnlock` checks (another request published, or a reconcile promoted, in
+  the gap between the two holds, which is accepted). An unlock's publish
+  does not take the store mutation lock, so another request can publish
+  while this one reconciles. A request whose reconcile failed, or whose
+  load failed validation, asks the session again before it enters recovery
+  (`enterRecoveryUnlessUnlocked`), and answers from a session published
+  meanwhile instead of ending it
+  (`TestAFailedReconcileLeavesASessionPublishedBesideIt`). The second ask
+  and `TryRecoveryUnlock` are separate steps, so a publish between them is
+  still ended: `RecoveryStart` may start on an unlocked signer, which the
+  model allows.
 - `LoadHoldsStoreLock` also keeps a passphrase change's republish
   (`FinishStoreMaintenance`) from landing during a load: the change holds
   the store mutation lock from `BeginStoreMaintenance` to its finish.

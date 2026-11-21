@@ -359,8 +359,8 @@ func (r *Runtime) FinishMaintenance(
 
 // TryRecovery runs the keyring unlock function and enters recovery state
 // unless a concurrent lock wins. Entered from the unlocked state (an unlock
-// request that found the signer locked or in recovery, whose reconcile then
-// failed after another request or a reconcile had unlocked it), it ends the
+// request whose reconcile or load failed, when another request or a
+// reconcile unlocked the signer after the request last checked), it ends the
 // session as SetRecovery does. Like TryUnlock, it waits for a lock's cleanup
 // in progress before it starts.
 func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
