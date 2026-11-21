@@ -34,7 +34,12 @@ The transitions transcribe the commit protocol in `internal/genstore`:
 - `Publish`, `SyncPublication`, and `SealOutgoing` are the staged mint in
   `internal/genstore/commit.go`: validate the complete candidate copy, sync
   the tree bottom-up, rename into `generations/`, sync the parent directory,
-  then seal the outgoing generation.
+  then seal the outgoing generation. Every ordinary successor mint takes
+  them: credential restore and rollback (`internal/signerapp/backupadmin`),
+  policy apply (`internal/signerapp/policyapply`), ASA set updates
+  (`internal/signerapp/admin/asaset.go`), and the offline template repair
+  (`internal/signerapp/templaterepair`), which mints under apstore's
+  exclusive store lock with the signer stopped.
 - `SubstituteInput`, `BuildCandidate`, `RenameRoot`, and `SyncRoot` are
   `internal/genstore/root_commit.go`: `ValidateSealed` before a fresh exact
   reread, `AuthenticateStoreRoot`, the outgoing-generation equality check,

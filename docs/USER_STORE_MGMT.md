@@ -43,6 +43,7 @@ Live key management is requested through **apadmin** and executed by
 │    • Check/sign/verify policy documents and sidecars        │
 │    • Verify backup archives                                 │
 │    • Rebuild an absent keystore from a backup archive       │
+│    • Repair template records that block unlock              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -440,6 +441,12 @@ For normal operator use, manage key types from the apadmin **KeyType Library**.
 For scripted maintenance, use the `apadmin template` and `apadmin keytype`
 commands listed in the command summary below.
 
+A template record that unlock refuses, an externally edited record or one
+whose template file is missing, puts the store into recovery. Stop `apsigner`
+and repair it with `apstore template repair`, which commits the repair as a
+new generation and keeps the damaged one; see
+[Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record).
+
 ---
 
 ## Restoring Keys
@@ -574,8 +581,8 @@ decryptable.
 
 Every policy apply or removal that changes the policy set (`apadmin policy
 apply|remove`, online or rescue) also commits a new generation, so each policy change leaves a retained
-prior generation until explicit generation pruning. Key mutations do not mint
-generations.
+prior generation until explicit generation pruning. So does an offline
+`apstore template repair`. Key mutations do not mint generations.
 
 Inspect generations through the running daemon; stop the daemon only for
 destructive pruning:
@@ -865,6 +872,10 @@ From the key details view:
 ./apadmin template remove <key-type>
 ./apadmin keytype enable <key-type>
 ./apadmin keytype disable <key-type>
+
+# Template records that block unlock (apsigner stopped)
+./apstore template repair
+./apstore template repair [repin <key-type>...] [drop <key-type>...] --confirm
 ```
 
 For a same-UID local install, `permissions audit` is diagnostic only: automatic
