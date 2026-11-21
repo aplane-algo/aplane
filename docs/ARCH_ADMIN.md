@@ -1458,7 +1458,11 @@ screen shows the complete grouped ID, witness key type, public-key digest,
 import time, and all aliases for the same authority. It deliberately does not
 render the raw public-key hex. Imports reuse the full-ID enrollment review and
 return to the manager when they were started there. Removing a reference is an
-explicit alias-scoped mutation whose confirmation defaults to Cancel.
+explicit alias-scoped mutation whose confirmation defaults to Cancel. Reference
+files that are not valid references are listed after the references, each with
+why. Choosing one that `remove_cosigner_reference` clears (`removable`) asks the
+same confirmation and removes it by its `name`; choosing any other says to
+delete the file.
 
 From reference details, `Generate account` filters the signer-advertised key
 types to those whose `cosigner_component_key_types` include the reference's

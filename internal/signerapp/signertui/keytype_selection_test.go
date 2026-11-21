@@ -224,7 +224,7 @@ func TestManagerGenerationIgnoresAnEarlierPreset(t *testing.T) {
 	m := Model{
 		viewState: ViewCosignerReferenceDetails,
 		forms:     formsState{boundaryKeyType: boundedHostKeyType, boundaryPreset: &preset},
-		cosigner: cosignerState{references: []CosignerReferenceInfo{{
+		cosigner: cosignerState{detailsName: "lab", references: []CosignerReferenceInfo{{
 			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",
 		}}},
 	}

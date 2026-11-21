@@ -279,7 +279,7 @@ Importing an endpoint creates routing/configuration only. It does not copy SSH
 host trust, private keys, or passphrases, and it does not enroll the client's
 key at the node; that is still done with `enroll --endpoint <alias>`
 (or automatically by `endpoints add`). Re-import with the same alias replaces
-that alias's endpoint data.
+that alias's role and URL and keeps its `identity_file` and `known_hosts_path`.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 

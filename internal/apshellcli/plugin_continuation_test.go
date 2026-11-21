@@ -701,6 +701,51 @@ func TestJSPluginKeepsAnEmptyDataObject(t *testing.T) {
 	}
 }
 
+// plugin() takes a command, as the command line does. A plugin's manifest
+// name runs the plugin's one command: the plugin is sent that command, which
+// its manifest declares, never its own name.
+func TestJSPluginByManifestNameRunsItsCommand(t *testing.T) {
+	state, scripted := scriptedPluginShell(t, map[string]any{"success": true, "message": "status"})
+	out, err := runScript(t, state, `plugin("workflow", "status").message`)
+	if err != nil || out != "status" {
+		t.Fatalf("plugin().message = %q, %v; want status", out, err)
+	}
+	calls := scripted.executeCalls()
+	if len(calls) != 1 || calls[0].Command != "wf" || !reflect.DeepEqual(calls[0].Args, []string{"status"}) {
+		t.Fatalf("execute calls = %+v, want command wf with [status]", calls)
+	}
+}
+
+// A manifest name with several commands names none of them, so plugin() is
+// refused before the plugin starts.
+func TestJSPluginRefusesTheNameOfAPluginWithSeveralCommands(t *testing.T) {
+	pm := pluginmanager.NewManagerWithDataDir("")
+	pm.SetCachedPluginsForTest([]*discovery.Plugin{{
+		Manifest: &manifest.Manifest{
+			Name:     "toolkit",
+			Commands: []manifest.Command{{Name: "tk-b"}, {Name: "tk-a"}},
+			Timeout:  5,
+		},
+	}})
+	pm.SetTestHooks(pluginmanager.TestHooks{
+		StartPluginInstance: func(*discovery.Plugin) (*pluginmanager.Instance, error) {
+			t.Error("plugin started")
+			return nil, errors.New("not started")
+		},
+	})
+	state := &REPLState{
+		App:             apshellapp.New(newIsolatedTestEngine(t, "testnet"), config.DefaultConfig(), t.TempDir()),
+		CommandRegistry: command.NewRegistry(),
+		Out:             &bytes.Buffer{},
+	}
+	state.App.Plugins = pm
+	_, err := runScript(t, state, `plugin("toolkit", "status")`)
+	want := `plugin() error: no plugin command "toolkit": plugin toolkit has several commands; name one of tk-a, tk-b`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("plugin() error = %v, want %q", err, want)
+	}
+}
+
 // Once the run has produced transaction IDs, a step that fails, is cancelled
 // or reports failure is an error that lists them in one list and says to look
 // them up, the failing step's own IDs included; in simulate mode the

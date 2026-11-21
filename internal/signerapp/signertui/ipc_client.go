@@ -554,6 +554,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeKeyDetails: decodeAs(func(detailsResult KeyDetailsMessage) tea.Msg {
 		return KeyDetailsMsg{
+			ID:                       detailsResult.ID,
 			Success:                  detailsResult.Success,
 			Address:                  detailsResult.Address,
 			KeyType:                  detailsResult.KeyType,
@@ -584,6 +585,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeShowLibraryTemplateResult: decodeAs(func(result ShowLibraryTemplateResultMessage) tea.Msg {
 		return ShowLibraryTemplateResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			TemplateType:  result.TemplateType,
@@ -596,6 +598,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeShowInstalledTemplateResult: decodeAs(func(result ShowInstalledTemplateResultMessage) tea.Msg {
 		return ShowLibraryTemplateResultMsg{
+			ID:           result.ID,
 			Success:      result.Success,
 			KeyType:      result.KeyType,
 			TemplateType: result.TemplateType,
@@ -1195,10 +1198,10 @@ func (m Model) sendUpdateAdminSettingCmd(key, value string) tea.Cmd {
 }
 
 // sendGetKeyDetailsCmd returns a tea.Cmd that sends a get key details request
-func (m Model) sendGetKeyDetailsCmd(address string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+func (m Model) sendGetKeyDetailsCmd(address, id string) tea.Cmd {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(GetKeyDetailsMessage{
-			BaseMessage: BaseMessage{Type: MsgTypeGetKeyDetails, ID: clockRequestID("details")},
+			BaseMessage: BaseMessage{Type: MsgTypeGetKeyDetails, ID: id},
 			Address:     address,
 		})
 	})
