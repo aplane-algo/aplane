@@ -172,6 +172,17 @@ func TestSignAndPlanRefuseRetiredLogicSigSize(t *testing.T) {
 	}
 }
 
+// An assembly target names no kind: every target is a bounded-cosigner one.
+func TestAssembleRefusesTheRetiredTargetKind(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	body := []byte(`{"group_bytes_hex":["5458aa"],"targets":[{"target_index":0,"kind":"bounded-cosigner","auth_address":"A","base_signatures":["aa"],"assembly_receipt":"bb"}]}`)
+	w := httptest.NewRecorder()
+	server.handleSignAssemble(w, requestWithIdentity(http.MethodPost, "/sign/assemble", body))
+	assertUnknownFieldRefusal(t, w, `request has unknown field "kind"`)
+}
+
 func assertUnknownFieldRefusal(t *testing.T, w *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	if w.Code != http.StatusBadRequest {
@@ -379,7 +390,7 @@ func TestSignerClientRequestsDecodeStrictly(t *testing.T) {
 				RequestID:     "req-4",
 				GroupBytesHex: []string{"00", "01"},
 				Targets: []signerapi.AssemblyTarget{{
-					TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: "AUTH",
+					TargetIndex: 0, AuthAddress: "AUTH",
 					BaseSignatures: []string{"aa"}, BoundedRuntimeArgs: map[string]string{"a": "00"},
 					AssemblyReceipt: "bb", BaseSourceRequestID: "req-2",
 					CosignerSignature: "cc", CosignerSourceRequestID: "req-3",

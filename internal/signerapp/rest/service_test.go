@@ -279,7 +279,6 @@ func TestServiceAssembleDelegates(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR",
 			BaseSignatures:    []string{"aa"},
 			AssemblyReceipt:   "cc",

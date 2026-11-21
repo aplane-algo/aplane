@@ -5,13 +5,6 @@ package signerapi
 
 import "fmt"
 
-// AssemblyTargetKind selects the authorization material used for one target.
-type AssemblyTargetKind string
-
-const (
-	AssemblyTargetKindBoundedCosigner AssemblyTargetKind = "bounded-cosigner"
-)
-
 // AssemblyRequest is the shared request payload for POST /sign/assemble.
 // Every group position must appear exactly once as a target or passthrough.
 type AssemblyRequest struct {
@@ -22,11 +15,10 @@ type AssemblyRequest struct {
 }
 
 // AssemblyTarget carries the authorization material for one frozen group
-// position.
+// position of a cosigned (bounded-cosigner) account.
 type AssemblyTarget struct {
-	TargetIndex int                `json:"target_index"`
-	Kind        AssemblyTargetKind `json:"kind"`
-	AuthAddress string             `json:"auth_address"`
+	TargetIndex int    `json:"target_index"`
+	AuthAddress string `json:"auth_address"`
 
 	BaseSignatures      []string          `json:"base_signatures,omitempty"`
 	BoundedRuntimeArgs  map[string]string `json:"bounded_runtime_args,omitempty"`
@@ -100,16 +92,11 @@ func (t AssemblyTarget) validate() error {
 	if err := validateOptionalSourceRequestID(t.CosignerSourceRequestID); err != nil {
 		return fmt.Errorf("cosigner_source_request_id: %w", err)
 	}
-	switch t.Kind {
-	case AssemblyTargetKindBoundedCosigner:
-		if len(t.BaseSignatures) == 0 || t.AssemblyReceipt == "" {
-			return fmt.Errorf("base_signatures and assembly_receipt are required for bounded-cosigner target")
-		}
-		if err := validateOptionalSourceRequestID(t.BaseSourceRequestID); err != nil {
-			return fmt.Errorf("base_source_request_id: %w", err)
-		}
-	default:
-		return fmt.Errorf("kind must be %q", AssemblyTargetKindBoundedCosigner)
+	if len(t.BaseSignatures) == 0 || t.AssemblyReceipt == "" {
+		return fmt.Errorf("base_signatures and assembly_receipt are required")
+	}
+	if err := validateOptionalSourceRequestID(t.BaseSourceRequestID); err != nil {
+		return fmt.Errorf("base_source_request_id: %w", err)
 	}
 	return nil
 }

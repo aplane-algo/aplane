@@ -616,7 +616,7 @@ func TestSigningServiceAssembleCosignedDispatchesAfterValidation(t *testing.T) {
 	_, err := (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.AssemblyTarget{{Kind: signerapi.AssemblyTargetKindBoundedCosigner,
+		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
 			AuthAddress:       "ADDR",
 			BaseSignatures:    []string{"aa"},
@@ -689,7 +689,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 		baseSignature:     baseSignature,
 		cosignerSignature: cosignerSignature,
 		target: signerapi.AssemblyTarget{
-			TargetIndex: targetIndex, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+			TargetIndex: targetIndex, AuthAddress: account,
 			BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
 			AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
 		},

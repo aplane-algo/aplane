@@ -1813,8 +1813,8 @@ transaction's effects; only which branch of the author's Layer 3 accepts it
 can differ from what was approved.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
-the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
-Every target is `bounded-cosigner` (the retired `cosigned` kind is refused) and
+the frozen group, `targets[]`, and optional `passthrough[]`. Every target is a
+cosigned account's (bounded-cosigner) position, so a target names no kind, and
 carries base signatures, runtime arguments, an assembly receipt, and a cosigner
 signature, which is optional on the wire: a listed rekey carries none.
 `cosigner_source_request_id` needs a `cosigner_signature`. Every position is

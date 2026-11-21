@@ -711,8 +711,7 @@ listed rekeys (spending key alone):
    `listed_rekey` one. When no target needs the cosigner, no cosigner request
    is sent.
 5. Return the base component, receipt, cosigner signature (none for a listed
-   rekey), and exact group to the user signer through `/sign/assemble` with
-   `kind:"bounded-cosigner"`.
+   rekey), and exact group to the user signer through `/sign/assemble`.
 6. The signer classifies each target again from the canonical transaction and
    stored metadata, through the planner's function, and requires a cosigner
    signature on `spend` and `spending_rekey` and refuses one on
@@ -1058,7 +1057,7 @@ The frozen online flow is:
 client -> user signer  POST /plan
 client -> user signer  POST /sign/component (kind=bounded-base)
 client -> cosigner node  POST /sign/component (kind=cosigner)
-client -> user signer  POST /sign/assemble (kind=bounded-cosigner)
+client -> user signer  POST /sign/assemble
 client -> algod         submit or simulate exact signed group
 ```
 

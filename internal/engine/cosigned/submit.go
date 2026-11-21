@@ -183,7 +183,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	for _, target := range targets {
 		component := components[target.Index]
 		assemblyTarget := signerapi.AssemblyTarget{
-			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: target.Account,
+			TargetIndex: target.Index, AuthAddress: target.Account,
 			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: baseRequestID,
 		}

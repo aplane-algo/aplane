@@ -974,8 +974,7 @@ budgets a cosigned position in a mixed group on its component's path. The mark
 routes the request only. `/sign/assemble` classifies the canonical transaction
 against stored metadata again, through the planner's function, then requires a
 cosigner signature on `spend` and `spending_rekey` and refuses one on
-`listed_rekey`, so `cosigner_signature` is optional on a `bounded-cosigner`
-assembly target. A wrong mark can stall a request, never weaken it. The cosigner
+`listed_rekey`, so `cosigner_signature` is optional on an assembly target. A wrong mark can stall a request, never weaken it. The cosigner
 node decides a cosigned rekey as it decides any rekey, by its `reject_rekey`,
 `rekey_policy` edge and pure-shape check; a listed rekey never reaches it.
 

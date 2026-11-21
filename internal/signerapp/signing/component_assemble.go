@@ -43,14 +43,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 
 	signedGroup := make([]string, len(group.Entries))
 	for _, target := range req.Targets {
-		var signedTxnHex string
-		var err *ServiceError
-		switch target.Kind {
-		case signerapi.AssemblyTargetKindBoundedCosigner:
-			signedTxnHex, err = assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
-		default:
-			return nil, badRequest("unsupported assembly target kind")
-		}
+		signedTxnHex, err := assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		if err != nil {
 			return nil, err
 		}

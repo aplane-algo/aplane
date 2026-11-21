@@ -10,7 +10,7 @@ final acceptance boundary of the `cosigned1` choreography, and the passthrough
 binding (A8) it took over from the retired cosigned assembly model. First-party
 orchestration releases an ordinary bounded base signature, requests the
 cosigner only after signer policy and operator approval, and then uses the
-shared `/sign/assemble` route with the distinct `bounded-cosigner` target kind
+shared `/sign/assemble` route, whose targets are all bounded-cosigner targets,
 to derive and place the declared arguments.
 
 A cosigned account's target takes one of three paths. A spend and a cosigned

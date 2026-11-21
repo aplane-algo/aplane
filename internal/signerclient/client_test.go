@@ -540,7 +540,7 @@ func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 	}
 	assembly, err := c.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.AssemblyTarget{{
-			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "cc",
+			TargetIndex: 0, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "cc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
@@ -755,7 +755,7 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindBoundedCosigner || got.Targets[0].AuthAddress != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].AuthAddress != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{
@@ -768,7 +768,6 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR1",
 			BaseSignatures:    []string{"aabb"},
 			AssemblyReceipt:   "ccdd",
