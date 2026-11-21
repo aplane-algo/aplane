@@ -108,6 +108,14 @@ func TestHandlerMethodCompatibilitySurface(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantBody:   "\"service\":\"Signer\"",
 		},
+		{
+			name: "health answers HEAD today",
+			call: func(w *httptest.ResponseRecorder) {
+				server.handleHealth(w, requestWithIdentity(http.MethodHead, "/health", nil))
+			},
+			wantStatus: http.StatusOK,
+			wantBody:   "\"service\":\"Signer\"",
+		},
 	}
 
 	for _, tt := range tests {

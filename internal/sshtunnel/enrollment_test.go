@@ -4,16 +4,19 @@
 package sshtunnel
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestParseExecCommandRejectsOversizedLength(t *testing.T) {
@@ -273,5 +276,37 @@ func TestEnrollment_Refused(t *testing.T) {
 	}
 	if !strings.Contains(output, "ERROR: ") || !strings.Contains(output, "enrollment queue is full") {
 		t.Errorf("output = %q, want the refusal", output)
+	}
+}
+
+// A refused request reaches the client as the server's ERROR line, which the
+// server writes to the session's standard output.
+func TestRequestEnrollmentReportsTheRefusalLine(t *testing.T) {
+	srv, dir := testServer(t)
+	setEnrollmentHooks(srv, EnrollmentHooks{
+		Request: func(ssh.PublicKey, string, string) (bool, error) {
+			return false, fmt.Errorf("enrollment queue is full")
+		},
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Stop() }()
+	host, port := splitHostPort(t, srv.listener.Addr().String())
+	known := filepath.Join(dir, "known_hosts")
+	line := knownhosts.Line([]string{hostWithPort(host, port)}, srv.hostKey.PublicKey()) + "\n"
+	if err := os.WriteFile(known, []byte(line), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, identity := generateClientIdentityFile(t, dir)
+
+	result, err := NewClient(host, port, identity, known).RequestEnrollment(ctx, "")
+	if err == nil {
+		t.Fatalf("RequestEnrollment() = %+v, want the refusal", result)
+	}
+	if want := `ERROR: "enrollment queue is full"`; err.Error() != want {
+		t.Fatalf("RequestEnrollment() error = %q, want %q", err.Error(), want)
 	}
 }
