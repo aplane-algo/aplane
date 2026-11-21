@@ -54,6 +54,7 @@ The transitions transcribe the post-commit reload and the recovery paths:
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
   Policy apply and the ASA set change commit only on an unlocked signer,
+  and restore and rollback only on one unlocked or in recovery, each
   checked under the lock: an unlock in flight on another connection, which
   the model does not have, opens the keyring before it publishes unlocked,
   and would otherwise publish over a commit whose reload failed, where

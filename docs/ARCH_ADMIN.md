@@ -637,7 +637,12 @@ transaction type is one more entry in `fields` and needs no client change.
   reconciliation are available to an authenticated recovery-mode session so
   repair material can be admitted and inspected, damaged credentials replaced,
   and the clean generation promoted. A locked session remains rejected with
-  `signer_locked`.
+  `signer_locked`. `restore_backup` and `rollback_restore` check the state
+  again under the store mutation lock, since a lock and a new unlock can
+  come between the handler's check and the lock: a signer that is then
+  neither unlocked nor in recovery, one whose unlock is still in flight
+  included, is refused with `restore_failed` or `restore_rollback_refused`
+  and `signer is locked: keystore is locked`, and nothing is committed.
 
 #### Admin and Policy Settings
 

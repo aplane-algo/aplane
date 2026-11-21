@@ -88,3 +88,70 @@ func TestRestoreEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 		})
 	}
 }
+
+// A restore or rollback passes the handler's state gate before it queues on
+// the store mutation lock. A lock and a new unlock in that time leave the
+// keyring open on a signer not yet published unlocked: the mutation once
+// committed there, its failed reload's SetRecovery did nothing on the locked
+// signer, and the unlock then published unlocked over a generation the
+// runtime had not followed. Both now refuse under the lock unless the signer
+// is unlocked or in recovery.
+func TestRestoreAndRollbackOnASignerNotYetUnlockedAreRefused(t *testing.T) {
+	const want = "signer is locked: keystore is locked"
+	failReload := func(ir *productruntime.Runtime) {
+		ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+			return nil, errors.New("reload failed")
+		})
+	}
+
+	t.Run("restore", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		initializeAtomicTestStore(t, paths, backupAdminTestPassphrase)
+		ir := testUnpublishedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		before := selectedAtomicTestGenerationID(t, paths)
+		failReload(ir)
+
+		result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
+			OperationID:      "restore-during-unlock",
+			ArchivePath:      archivePath,
+			ExportPassphrase: []byte("export-passphrase"),
+		})
+		ir.SetUnlocked() // the unlock in flight publishes
+
+		if after := selectedAtomicTestGenerationID(t, paths); after != before && ir.IsUnlocked() {
+			t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (restore answered %s)", after, result.Code)
+		}
+		if result.Success || result.Code != protocol.ResultCodeRestoreFailed || result.Error != want || result.GenerationID != "" {
+			t.Fatalf("RestoreBackup() during an unlock = %+v, want %s: %s", result, protocol.ResultCodeRestoreFailed, want)
+		}
+	})
+
+	t.Run("rollback", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		restorer := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		if result := directRestoreTestService(paths, restorer).RestoreBackup(adminproto.RestoreBackupRequest{
+			OperationID:      "restore-for-rollback",
+			ArchivePath:      archivePath,
+			ExportPassphrase: []byte("export-passphrase"),
+		}); !result.Success {
+			t.Fatalf("RestoreBackup() = %+v", result)
+		}
+		ir := testUnpublishedBackupIdentityRuntime(t, paths, &reloads)
+		before := selectedAtomicTestGenerationID(t, paths)
+		failReload(ir)
+
+		result := directRestoreTestService(paths, ir).RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback-during-unlock"})
+		ir.SetUnlocked() // the unlock in flight publishes
+
+		if after := selectedAtomicTestGenerationID(t, paths); after != before && ir.IsUnlocked() {
+			t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (rollback answered %s)", after, result.Code)
+		}
+		if result.Success || result.Code != protocol.ResultCodeRestoreRollbackRefused || result.Error != want || result.GenerationID != "" {
+			t.Fatalf("RollbackRestore() during an unlock = %+v, want %s: %s", result, protocol.ResultCodeRestoreRollbackRefused, want)
+		}
+	})
+}

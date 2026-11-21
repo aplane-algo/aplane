@@ -112,6 +112,9 @@ func (r *restoreRun) mutate() (restoreErr error) {
 			backup.PublishRotatingHints(ir.StageTables(), r.hints, s.Deps.Logf)
 		}
 	}()
+	if err := requireUnlockedOrRecovery(ir); err != nil {
+		return err
+	}
 	prepareErr := ir.WithKeyring(r.loadAndCommit)
 	if prepareErr != nil {
 		// If publication may have occurred, reload the visible generation
