@@ -158,9 +158,7 @@ func (m Model) handleKeysListMsg(msg KeysListMsg) (tea.Model, tea.Cmd) {
 			m.keylist.selectedKey = 0
 		}
 	}
-	if m.keylist.scrollOffset > m.keylist.selectedKey {
-		m.keylist.scrollOffset = m.keylist.selectedKey
-	}
+	m.keylist.scrollOffset = m.keyListScrollOffset(len(displayKeys))
 	return m, nil
 }
 

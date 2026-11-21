@@ -236,16 +236,17 @@ func (m Model) renderKeyListView() string {
 	return sb.String()
 }
 
+// keyListScrollOffset is the first of count shown keys the list draws, kept
+// so the selected key is in view.
+func (m Model) keyListScrollOffset(count int) int {
+	return scrollToSelection(m.keylist.scrollOffset, m.keylist.selectedKey, count, m.keyListVisibleHeight())
+}
+
 // writeKeyRows writes the visible part of the key list, the selected key
 // marked, and under it how many keys are shown.
 func (m Model) writeKeyRows(sb *strings.Builder, displayKeys, tabKeys []KeyInfo) {
 	visibleHeight := m.keyListVisibleHeight()
-
-	// Adjust scroll offset for filtered list
-	scrollOffset := m.keylist.scrollOffset
-	if scrollOffset >= len(displayKeys) {
-		scrollOffset = 0
-	}
+	scrollOffset := m.keyListScrollOffset(len(displayKeys))
 
 	sb.WriteString(scrollMoreAboveLine(scrollOffset))
 	sb.WriteString("\n")

@@ -93,6 +93,18 @@ func selectionWindow(selected, total, visible int) (start, end int) {
 	return start, start + visible
 }
 
+// scrollToSelection is the first row a list of total rows, visible at a time,
+// draws from: offset moved the least that shows selected, and held where the
+// window is full when the list allows. A screen that draws from a kept offset
+// passes it through here as it draws, since a status bar or a list that
+// changed after the last key can leave fewer rows than the key scrolled for.
+func scrollToSelection(offset, selected, total, visible int) int {
+	visible = max(visible, 1)
+	selected = min(max(selected, 0), max(total-1, 0))
+	offset = max(min(offset, selected), selected-visible+1)
+	return max(0, min(offset, total-visible))
+}
+
 func joinRows(rows []string) string {
 	var sb strings.Builder
 	for _, row := range rows {

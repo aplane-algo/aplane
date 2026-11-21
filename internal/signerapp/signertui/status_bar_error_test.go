@@ -4,11 +4,15 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // A long error is cut in the middle, not at its end, where a Go error names
@@ -91,4 +95,58 @@ func TestSettingWarningShowsBesideAnErrorUnderTheLine(t *testing.T) {
 		t.Fatalf("status bar:\n%s", strings.Join(bar, "\n"))
 	}
 	checkFitsMinSize(t, stripANSI(m.View()))
+}
+
+// scrolledKeyListModel is the key list at the minimum size holding count
+// keys, scrolled to the last, which is selected.
+func scrolledKeyListModel(t *testing.T, count int, standalone bool) (Model, string) {
+	t.Helper()
+	var keys []KeyInfo
+	for i := range count {
+		keys = append(keys, KeyInfo{Address: fmt.Sprintf("K%02dAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", i), KeyType: "ed25519"})
+	}
+	m := sizedForTest(t, Model{viewState: ViewKeyList, standalone: standalone, connectionState: ConnectionConnected,
+		signerState: signerRuntimeUnlocked, signerStatusKnown: true, keylist: keyListState{keys: keys}}, MinWidth, MinHeight)
+	for range count - 1 {
+		m = press(t, m, "down")
+	}
+	return m, "> " + keys[count-1].Address[:10]
+}
+
+// An error that arrives after the operator scrolled a list takes rows from
+// it, and the selected row stays on screen: enter and d act on the row the
+// operator sees.
+func TestALongErrorKeepsTheSelectedRowOnScreen(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		m, selected := scrolledKeyListModel(t, 40, standalone)
+		before := m.keyListVisibleHeight()
+		m = updateModel(t, m, ErrorMsg{Error: errors.New(longDaemonError)})
+		if m.keyListVisibleHeight() >= before {
+			t.Fatalf("standalone %v: the error takes no rows from the key list", standalone)
+		}
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		if !strings.Contains(view, selected) {
+			t.Errorf("standalone %v: the selected key %q is not on screen:\n%s", standalone, selected, view)
+		}
+		if view := stripANSI(press(t, m, "up").View()); !strings.Contains(view, "> K38") {
+			t.Errorf("standalone %v: up does not move to the row above:\n%s", standalone, view)
+		}
+
+		var entries []protocol.LibraryTemplateInfo
+		for i := range 30 {
+			entries = append(entries, protocol.LibraryTemplateInfo{KeyType: fmt.Sprintf("example.t%02d.v1", i), TemplateType: "generic"})
+		}
+		lib := sizedForTest(t, Model{viewState: ViewTemplateLibrary, standalone: standalone, connectionState: ConnectionConnected,
+			library: libraryState{templates: entries}}, MinWidth, MinHeight)
+		for range len(entries) - 1 {
+			lib = press(t, lib, "down")
+		}
+		lib = updateModel(t, lib, ErrorMsg{Error: errors.New(longDaemonError)})
+		view = stripANSI(lib.View())
+		checkFitsMinSize(t, view)
+		if !strings.Contains(view, "> example.t29.v1") {
+			t.Errorf("standalone %v: the selected library entry is not on screen:\n%s", standalone, view)
+		}
+	}
 }

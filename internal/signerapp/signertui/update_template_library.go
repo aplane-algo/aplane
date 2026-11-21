@@ -204,16 +204,7 @@ func (m Model) libraryActionCmd(tmpl LibraryTemplateInfo, id string) tea.Cmd {
 }
 
 func (m Model) ensureTemplateVisible() Model {
-	visible := m.templateLibraryVisibleHeight()
-	if m.library.selectedTemplate < m.library.scrollOffset {
-		m.library.scrollOffset = m.library.selectedTemplate
-	}
-	if m.library.selectedTemplate >= m.library.scrollOffset+visible {
-		m.library.scrollOffset = m.library.selectedTemplate - visible + 1
-	}
-	if m.library.scrollOffset < 0 {
-		m.library.scrollOffset = 0
-	}
+	m.library.scrollOffset = scrollToSelection(m.library.scrollOffset, m.library.selectedTemplate, len(m.library.templates), m.templateLibraryVisibleHeight())
 	return m
 }
 

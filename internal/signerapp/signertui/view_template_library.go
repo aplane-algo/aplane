@@ -53,14 +53,12 @@ func (m Model) renderTemplateLibrary() string {
 	}
 
 	visible := m.templateLibraryVisibleHeight()
-	sb.WriteString(scrollMoreAboveLine(m.library.scrollOffset))
+	start := scrollToSelection(m.library.scrollOffset, selected, len(m.library.templates), visible)
+	sb.WriteString(scrollMoreAboveLine(start))
 	sb.WriteString("\n")
-	end := m.library.scrollOffset + visible
-	if end > len(m.library.templates) {
-		end = len(m.library.templates)
-	}
+	end := min(start+visible, len(m.library.templates))
 
-	for i := m.library.scrollOffset; i < end; i++ {
+	for i := start; i < end; i++ {
 		tmpl := m.library.templates[i]
 		prefix := "  "
 		if i == selected {

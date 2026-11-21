@@ -228,7 +228,6 @@ type restoreState struct {
 	backupsLoaded       bool
 	backupsListErr      string // why the last list failed; a list that arrives clears it
 	selectedBackup      int
-	backupScrollOffset  int
 	archivePath         string
 	archiveCreatedAt    int64 // sealed creation time from the preview
 	passphrase          []byte

@@ -1128,18 +1128,14 @@ func (m *Model) selectKeyByAddress(address string) {
 		if k.Address == address {
 			m.keylist.cosignerKeys = m.isCosignerNode()
 			m.keylist.selectedKey = 0
-			for i, displayKey := range m.filteredKeys() {
+			displayKeys := m.filteredKeys()
+			for i, displayKey := range displayKeys {
 				if displayKey.Address == address {
 					m.keylist.selectedKey = i
 					break
 				}
 			}
-			visibleHeight := m.keyListVisibleHeight()
-			if m.keylist.selectedKey < m.keylist.scrollOffset {
-				m.keylist.scrollOffset = m.keylist.selectedKey
-			} else if m.keylist.selectedKey >= m.keylist.scrollOffset+visibleHeight {
-				m.keylist.scrollOffset = m.keylist.selectedKey - visibleHeight + 1
-			}
+			m.keylist.scrollOffset = m.keyListScrollOffset(len(displayKeys))
 			return
 		}
 	}
