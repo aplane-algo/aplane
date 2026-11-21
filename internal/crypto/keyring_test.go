@@ -74,7 +74,9 @@ func TestSuccessorRetiresOrdinaryAuthorityButKeepsHistoricalAccess(t *testing.T)
 	}
 }
 
-func TestSuccessorPreservesExistingAnchors(t *testing.T) {
+// A successor carries an existing anchor unchanged or, for a generation
+// pruned since, not at all; it never re-anchors a generation to another seal.
+func TestSuccessorKeepsOrDropsButNeverChangesAnAnchor(t *testing.T) {
 	current, err := NewKeyring()
 	if err != nil {
 		t.Fatal(err)
@@ -82,17 +84,21 @@ func TestSuccessorPreservesExistingAnchors(t *testing.T) {
 	defer current.Zero()
 	first, _ := NewHistoricalGenerationAnchor("gen-1787000000-cafef00d", []byte("first"))
 	current.historicalAnchors = []HistoricalGenerationAnchor{first}
-	if _, err := NewSuccessorKeyring(current, []HistoricalGenerationAnchor{}); err == nil {
-		t.Fatal("NewSuccessorKeyring dropped an existing anchor")
+	changed, _ := NewHistoricalGenerationAnchor(first.GenerationID, []byte("other seal"))
+	_, err = NewSuccessorKeyring(current, []HistoricalGenerationAnchor{changed})
+	if want := "historical anchor for generation gen-1787000000-cafef00d would be changed"; err == nil || err.Error() != want {
+		t.Fatalf("NewSuccessorKeyring(changed anchor) error = %v, want %q", err, want)
 	}
 	second, _ := NewHistoricalGenerationAnchor("gen-1787000001-deadbeef", []byte("second"))
-	successor, err := NewSuccessorKeyring(current, []HistoricalGenerationAnchor{first, second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer successor.Zero()
-	if !slices.Equal(successor.historicalAnchors, []HistoricalGenerationAnchor{first, second}) {
-		t.Fatalf("anchors = %+v", successor.historicalAnchors)
+	for _, anchors := range [][]HistoricalGenerationAnchor{{first, second}, {second}} {
+		successor, err := NewSuccessorKeyring(current, anchors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(successor.historicalAnchors, anchors) {
+			t.Fatalf("anchors = %+v, want %+v", successor.historicalAnchors, anchors)
+		}
+		successor.Zero()
 	}
 }
 

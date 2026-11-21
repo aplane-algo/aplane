@@ -589,7 +589,8 @@ Changing the passphrase also replaces the current data-encryption term:
 1. authenticate and seal the outgoing generation;
 2. retain its exact seal and manifest buffers;
 3. create a fresh random term and successor keyring;
-4. preserve historical keys and exact anchors, adding the outgoing anchor;
+4. preserve historical keys and the exact anchor of every retained
+   generation, adding the outgoing anchor;
 5. stage an empty successor;
 6. read every source member once and verify it against the retained seal;
 7. re-encrypt term envelopes and re-sign integrity sidecars under the new term:
@@ -606,6 +607,12 @@ baseline, or unlock-time completion pass.
 
 Retained generations are not rewritten during rotation. Exact historical
 anchors and anchor-gated reads preserve historical least authority.
+
+Generation pruning cannot drop a pruned generation's anchor, because prune
+holds no passphrase to rewrap the keyring. The stale anchor stays in the root,
+where it grants nothing, until the next passphrase change leaves it out of the
+successor keyring. A successor never changes the anchor of a generation it
+retains.
 
 ### Restore rollback
 
