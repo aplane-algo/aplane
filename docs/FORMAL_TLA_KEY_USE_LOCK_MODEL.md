@@ -30,9 +30,12 @@
 
 The holders of loaded key material that register a key use with
 `Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
-table worker) and mnemonic export. Ordinary `/sign`, component signing
-(bounded-base and cosigner-role) and assembly hold a decrypted key too but
-register none (see the limits below). For a rotating seed that is every load in
+table worker), mnemonic export, and a cosigner's external check step
+(`runExternalChecks`), which holds one while it makes its lookups so that a
+lock ends them and waits for it to let go. That step releases nothing to a
+caller: when its key use is canceled the request is refused as locked.
+Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
+assembly hold a decrypted key too but register none (see the limits below). For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
 approval; the stage table fill and the release restore use the same identity

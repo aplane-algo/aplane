@@ -224,21 +224,28 @@
   },
   {
     "spec": "signer_invariants",
-    "distinct_states": 33680,
+    "distinct_states": 101040,
     "depth": 2
   },
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_negative_order",
     "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
-    "distinct_states": 16846,
+    "distinct_states": 50536,
     "depth": 2
   },
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_negative_positions",
     "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
-    "distinct_states": 16854,
+    "distinct_states": 50560,
+    "depth": 2
+  },
+  {
+    "spec": "signer_invariants",
+    "cfg": "signer_invariants_negative_external",
+    "expected_invariant_violation": "SI6_NoLookupForARefusedRequest",
+    "distinct_states": 50522,
     "depth": 2
   }
 ]

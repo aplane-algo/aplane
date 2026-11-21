@@ -21,7 +21,7 @@ contracts; these models cover narrower security-critical transitions.
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
 | `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release |
 | `setting_publish.tla` | when a writable setting's change takes effect relative to its save: restrictive before, anything else after |
-| `signer_invariants.tla` | the signer invariants ahead of the policy verdict, and the positions each one judges |
+| `signer_invariants.tla` | the signer invariants ahead of the policy verdict, the positions each one judges, and a cosigner document's external checks after the verdict |
 
 The single-product runtime has no decommission state or operation lease, so the
 formal inventory contains no lifecycle model for those concepts. Runtime
@@ -916,3 +916,18 @@ runs are unchanged at 6748 states at depth 18 and, deep, 10957 at depth 19;
 `key_use_lock_negative_recovery.cfg` grows to 1366 states at depth 8, where
 the ghost and the fence's flag now differ, and still fails KU1. `make
 formal-test` now has 39 runs, twenty-three of them negative controls.
+
+Changed 2026-11-20: `signer_invariants.tla` gains a cosigner document's
+external checks, the last gate of `runCosignerGates`
+(`external_checks.go::runExternalChecks`). A second free oracle, `external`
+(none, pass or refuse), sits beside `would_sign`; none stands for a
+signer-role request and for a cosigner document without checks. The guard
+`ExternalAfterPolicy` makes a lookup only for a request the invariants and
+the policy would sign. SI5 (the external answer can refuse a signature,
+never add one) and SI6 (a request an earlier gate refuses makes no lookup)
+join SI1 to SI4, which are unchanged. The negative control
+`signer_invariants_negative_external.cfg` violates SI6 after 50522 states
+at depth 2. The positive runs grow to 101040 states and, deep, 2021040, both
+at depth 2, and the two earlier negative controls still fail on SI1, now
+after 50536 and 50560 states. `make formal-test` now has 38 runs,
+twenty-two of them negative controls.
