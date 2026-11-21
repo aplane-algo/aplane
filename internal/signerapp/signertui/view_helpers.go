@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundary"
@@ -469,20 +470,29 @@ func keyAddressWidth(rowWidth int, prefix, suffix string) int {
 	return width
 }
 
+// ellipsizeMiddle cuts s to width columns, as the terminal draws them, in
+// the middle: its start, "...", then its end, when width has room for more
+// than the dots.
 func ellipsizeMiddle(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
+	total := ansi.StringWidth(s)
+	if total <= width {
 		return s
 	}
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Truncate(s, width, "")
 	}
-	prefixLen := (width - 3) / 2
-	suffixLen := width - 3 - prefixLen
-	return string(runes[:prefixLen]) + "..." + string(runes[len(runes)-suffixLen:])
+	prefix := (width - 3) / 2
+	suffix := width - 3 - prefix
+	end := ansi.TruncateLeft(s, total-suffix, "")
+	if ansi.StringWidth(end) > suffix {
+		// The cut fell inside a two-column character, which TruncateLeft
+		// keeps whole.
+		end = ansi.TruncateLeft(s, total-suffix+1, "")
+	}
+	return ansi.Truncate(s, prefix, "") + "..." + end
 }
 
 // pagerWidth is the width a full-screen text pager draws in.

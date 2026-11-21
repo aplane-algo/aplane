@@ -85,6 +85,41 @@ func TestEllipsizeCountsColumns(t *testing.T) {
 	}
 }
 
+// ellipsizeMiddle keeps a string's start and end in columns as the terminal
+// draws them, a two-column character cut at the middle included.
+func TestEllipsizeMiddleCountsColumns(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"漢字漢字漢字", 12, "漢字漢字漢字"},
+		{"漢字のパス漢字", 9, "漢...字"},
+		{"ab漢字のパスcd", 10, "ab...スcd"},
+		{"ab漢字のパスcd", 11, "ab漢...スcd"},
+		{"漢字漢字漢字", 3, "漢"},
+		{"SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJ", 13, "SGCU7...64WGJ"},
+	} {
+		if got := ellipsizeMiddle(tc.in, tc.width); got != tc.want || lipgloss.Width(got) > tc.width {
+			t.Errorf("ellipsizeMiddle(%q, %d) = %q (%d columns), want %q", tc.in, tc.width, got, lipgloss.Width(got), tc.want)
+		}
+	}
+}
+
+// wrapPlainText fills lines to columns as the terminal draws them: a line of
+// two-column words wraps neither early nor past its width.
+func TestWrapPlainTextCountsColumns(t *testing.T) {
+	got := wrapPlainText("漢字 漢字 漢字 漢字", 9)
+	if got != "漢字 漢字\n漢字 漢字" {
+		t.Fatalf("wrapped to %q", got)
+	}
+	for _, line := range strings.Split(wrapPlainText(strings.Repeat("パス ", 30), 20), "\n") {
+		if lipgloss.Width(line) > 20 {
+			t.Errorf("line %q is %d columns", line, lipgloss.Width(line))
+		}
+	}
+}
+
 // A setting update's warning is measured against the status line as it is
 // drawn: an error that goes under the line leaves the line its room.
 func TestSettingWarningShowsBesideAnErrorUnderTheLine(t *testing.T) {

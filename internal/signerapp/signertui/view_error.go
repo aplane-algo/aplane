@@ -5,6 +5,8 @@ package tui
 
 import (
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m Model) renderErrorView() string {
@@ -25,6 +27,8 @@ func (m Model) renderErrorView() string {
 	return m.renderPopup(92, sb.String())
 }
 
+// wrapPlainText wraps each line of s at spaces to width columns, as the
+// terminal draws them. A word wider than width is left whole on its own line.
 func wrapPlainText(s string, width int) string {
 	if width <= 0 {
 		return s
@@ -36,14 +40,16 @@ func wrapPlainText(s string, width int) string {
 			out = append(out, "")
 			continue
 		}
-		line := words[0]
+		line, lineWidth := words[0], ansi.StringWidth(words[0])
 		for _, word := range words[1:] {
-			if len(line)+1+len(word) > width {
+			wordWidth := ansi.StringWidth(word)
+			if lineWidth+1+wordWidth > width {
 				out = append(out, line)
-				line = word
+				line, lineWidth = word, wordWidth
 				continue
 			}
 			line += " " + word
+			lineWidth += 1 + wordWidth
 		}
 		out = append(out, line)
 	}

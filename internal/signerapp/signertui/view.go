@@ -731,18 +731,15 @@ func wrapErrorLines(text string, width int) []string {
 	if len(lines) <= maxErrorLines {
 		return lines
 	}
+	// The end: the most of the last words one line holds. The wrap fills
+	// each line before the next, so if the rest fit in fewer lines than are
+	// kept for it, the whole error would have fit, and some of it is cut.
 	tail := len(words) - 1
 	for tail > 0 && lipgloss.Width(strings.Join(words[tail-1:], " ")) <= width {
 		tail--
 	}
-	if tail == 0 {
-		return []string{strings.Join(words, " ")}
-	}
-	head := strings.Split(wrapPlainText(strings.Join(words[:tail], " "), width), "\n")
-	if len(head) >= maxErrorLines {
-		head = head[:maxErrorLines-1]
-		head[len(head)-1] = ellipsize(head[len(head)-1]+"...", width)
-	}
+	head := strings.Split(wrapPlainText(strings.Join(words[:tail], " "), width), "\n")[:maxErrorLines-1]
+	head[len(head)-1] = ellipsize(head[len(head)-1]+"...", width)
 	return append(head, strings.Join(words[tail:], " "))
 }
 
