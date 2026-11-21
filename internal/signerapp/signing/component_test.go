@@ -52,7 +52,7 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 		TargetIndices: []int{1, 0},
 	}
 
-	plan := prepareComponentSigning(req)
+	plan := mustPrepareComponentSigning(t, req)
 	if plan.RequestID != req.RequestID || plan.ComponentKey != componentKey {
 		t.Fatalf("plan request metadata = %#v, want request_id %q component_key %q", plan, req.RequestID, componentKey)
 	}
@@ -83,7 +83,7 @@ func TestPrepareComponentSigningKeepsTheRequestID(t *testing.T) {
 	receiver := types.Address{2}.String()
 	txn := paymentTransaction(t, sender, receiver, 7)
 
-	plan := prepareComponentSigning(componentPlanRequest{
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
 		RequestID:     "req-42",
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
@@ -105,7 +105,7 @@ func TestPrepareComponentSigningUsesCosignerRoleDomain(t *testing.T) {
 		TargetIndices: []int{0},
 	}
 
-	plan := prepareComponentSigning(req)
+	plan := mustPrepareComponentSigning(t, req)
 	// The cosigner signs a domain-tagged message, never the TxID the spending
 	// key signs.
 	txID := plan.Group.Entries[0].TxID
@@ -247,7 +247,7 @@ func TestCosignerComponentPolicyIsSelectedByComponentKey(t *testing.T) {
 		HoldsCosignerKey: holdsAllCosignerKeys,
 	}
 	txn := testnetPaymentTransaction(t, source, secondDest, 1)
-	plan := prepareComponentSigning(componentPlanRequest{
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
 		RequestID:     "cmp-cosigner-per-key",
 		ComponentKey:  secondKey,
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
@@ -592,7 +592,7 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeString(signature) error = %v", err)
 	}
-	plan := prepareComponentSigning(componentPlanRequest{
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
 		RequestID:     "cmp-cosigner-policy-pass",
 		ComponentKey:  componentKey,
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
@@ -1174,12 +1174,23 @@ func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
 	return address.String()
 }
 
+// mustPrepareComponentSigning is prepareComponentSigning for a request the
+// test knows to be well formed.
+func mustPrepareComponentSigning(t *testing.T, req componentPlanRequest) *ComponentSignPlan {
+	t.Helper()
+	plan, err := prepareComponentSigning(req)
+	if err != nil {
+		t.Fatalf("prepareComponentSigning() error = %#v", err)
+	}
+	return plan
+}
+
 func preparedCosignerComponentPlan(t *testing.T, componentKey string) *ComponentSignPlan {
 	t.Helper()
 	sender := types.Address{11}.String()
 	receiver := types.Address{12}.String()
 	txn := paymentTransaction(t, sender, receiver, 12)
-	plan := prepareComponentSigning(componentPlanRequest{
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
 		RequestID:     "cmp-cosigner",
 		ComponentKey:  componentKey,
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),

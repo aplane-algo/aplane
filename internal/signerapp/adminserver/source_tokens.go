@@ -18,6 +18,18 @@ import (
 // source_token_set, as a sensitive value the handler zeroes whatever
 // happens; no result, audit entry or error carries it.
 
+// mayReadSourceTokenNames reports whether the session may read which sources
+// have a token, which source_token_list gives at policy.update. Every other
+// path that would show token names, as check_policy's missing-token
+// warnings do, gives them only then; without it the names are not known.
+// The question is not a request, so a no is not audited as a denial.
+func (s *Session) mayReadSourceTokenNames() bool {
+	if s.BoundRuntime() == nil {
+		return false
+	}
+	return s.authorizeIdentity(s.Identity(), auth.ActionPolicyUpdate, sourceTokenResource("")) == nil
+}
+
 // sourceTokenResource names a selector's tokens for authorization.
 func sourceTokenResource(selector string) auth.Resource {
 	return auth.Resource{Type: "source_tokens", ID: selector}
@@ -74,7 +86,7 @@ func (s *Session) HandleListSourceTokens(msg *protocol.SourceTokenListMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, sourceTokenResource(msg.Selector)) {
 		return
 	}
-	result := s.keyServices.ListSourceTokens(adminproto.ListSourceTokensRequest{Selector: msg.Selector})
+	result := s.keyServices.ListSourceTokens(adminproto.ListSourceTokensRequest{Selector: msg.Selector, After: msg.After})
 	_ = s.WriteJSON(ProtocolSourceTokenListResultMessage(msg.ID, result))
 }
 

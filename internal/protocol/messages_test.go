@@ -1203,24 +1203,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
-			name: "policy_document with source tokens",
-			msg: PolicyDocumentMessage{
-				BaseMessage: BaseMessage{Type: MsgTypePolicyDocument, ID: "doc-2"},
-				Success:     true, Key: "K1", Document: "{}\n", SHA256: "abc",
-				SourceTokens: []string{"screening", "treasury"}, SourceTokensKnown: true,
-			},
-			wantMap: map[string]any{
-				"type":                MsgTypePolicyDocument,
-				"id":                  "doc-2",
-				"success":             true,
-				"key":                 "K1",
-				"document":            "{}\n",
-				"sha256":              "abc",
-				"source_tokens":       []any{"screening", "treasury"},
-				"source_tokens_known": true,
-			},
-		},
-		{
 			name: "check_policy",
 			msg: CheckPolicyMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeCheckPolicy, ID: "check-1"},

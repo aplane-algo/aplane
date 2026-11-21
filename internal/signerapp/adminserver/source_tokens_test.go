@@ -5,6 +5,7 @@ package adminserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -281,5 +282,63 @@ func TestSourceTokenListResultProjection(t *testing.T) {
 	}
 	if fmt.Sprintf("%+v", msg) != fmt.Sprintf("%+v", want) {
 		t.Fatalf("projection\n got %+v\nwant %+v", msg, want)
+	}
+}
+
+// A listing of every selector pages with after, which the handler hands on.
+func TestSourceTokenListPassesAfterOn(t *testing.T) {
+	svc := &stubServices{}
+	session, _, _ := boundSourceTokenSession(svc, &mutationAudit{})
+	session.HandleListSourceTokens(&protocol.SourceTokenListMessage{
+		BaseMessage: protocol.BaseMessage{ID: "ls-page", Type: protocol.MsgTypeSourceTokenList}, After: "KEY3",
+	})
+	if got := strings.Join(svc.sourceTokenCalls, " "); got != "list:@KEY3" {
+		t.Fatalf("service calls = %q", got)
+	}
+}
+
+// actionAuthorizer allows the actions in allow and denies the rest.
+type actionAuthorizer struct{ allow map[auth.Action]bool }
+
+func (a actionAuthorizer) Authorize(_ context.Context, _ *auth.Identity, action auth.Action, _ auth.Resource) error {
+	if a.allow[action] {
+		return nil
+	}
+	return auth.ErrForbidden
+}
+
+// Token names are read at policy.update, as source_token_list reads them. A
+// check from a session with policy.view alone runs, but the service is told
+// the session may not see token names, so it gives no missing-token warning;
+// asking is not a request, so no denial is audited for it.
+func TestCheckPolicyLetsOnlyPolicyUpdateSeeTokenNames(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		allow    []auth.Action
+		readable bool
+	}{
+		{"policy.view only", []auth.Action{auth.ActionPolicyView}, false},
+		{"policy.view and policy.update", []auth.Action{auth.ActionPolicyView, auth.ActionPolicyUpdate}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			allow := map[auth.Action]bool{}
+			for _, action := range tt.allow {
+				allow[action] = true
+			}
+			svc := &stubServices{checkPolicyResult: adminproto.CheckPolicyResult{Success: true, Valid: true}}
+			audit := &recordingAuthorizationAudit{}
+			session := NewSession(&queueConn{}, SessionDeps{Product: svc, Settings: svc, Authorizer: actionAuthorizer{allow: allow}, Audit: audit}, OriginLocal)
+			session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, productruntime.New(productruntime.Config{}))
+			session.HandleCheckPolicy(&protocol.CheckPolicyMessage{
+				BaseMessage: protocol.BaseMessage{ID: "check-1", Type: protocol.MsgTypeCheckPolicy},
+				Documents:   []protocol.PolicyDocumentWire{{Key: "default", Document: "{}"}},
+			})
+			if svc.checkPolicyCalls != 1 || svc.lastCheckPolicy.SourceTokensReadable != tt.readable {
+				t.Fatalf("check calls = %d, SourceTokensReadable = %v; want 1, %v", svc.checkPolicyCalls, svc.lastCheckPolicy.SourceTokensReadable, tt.readable)
+			}
+			if audit.calls != 0 {
+				t.Fatalf("%d authorization denials audited for a permission question", audit.calls)
+			}
+		})
 	}
 }

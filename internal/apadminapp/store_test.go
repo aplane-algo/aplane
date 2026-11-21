@@ -302,6 +302,27 @@ func TestStoreChangePassphraseCopiesSecretsAndPreservesCommittedWarning(t *testi
 	}
 }
 
+// A passphrase change reports each kind of file it re-encrypted, source
+// token files beside key files, templates and policy sidecars.
+func TestStoreChangePassphraseReportsEveryMigratedCount(t *testing.T) {
+	requester := &fakeRequester{handle: func(_, result any) error {
+		*result.(*protocol.ChangeStorePassphraseResultMessage) = protocol.ChangeStorePassphraseResultMessage{
+			Success: true, KeysMigrated: 3, TemplatesMigrated: 1, PolicySidecarsMigrated: 2, SourceTokenFilesMigrated: 4,
+		}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	if err := (Store{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).ChangePassphrase([]byte("a"), []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+	out := stdout.String() + stderr.String()
+	for _, want := range []string{"3 key file(s) migrated", "1 template file(s) migrated", "2 policy sidecar(s) re-signed", "4 source token file(s) re-encrypted"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output %q lacks %q", out, want)
+		}
+	}
+}
+
 func testSHA256(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])

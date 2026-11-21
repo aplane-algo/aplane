@@ -57,10 +57,26 @@ type Env struct {
 	// built from Config, so callers that hold the node's resolver pass it
 	// and the context has one source.
 	Networks apconfig.GenesisHashNetworkResolver
-	// SourceTokens lists, by policy selector, the source names that have a
-	// token: the live token index on a live apply, the token files on a
-	// rescue. nil skips the missing-token advisory.
-	SourceTokens map[string][]string
+	// SourceTokens looks up the source names a policy selector has a token
+	// for: the live token index on a live check, for a session that may
+	// read token names (policy.update), and the token files on a rescue.
+	// nil, or a lookup that does not know, skips the missing-token
+	// advisory.
+	SourceTokens SourceTokenNames
+}
+
+// SourceTokenNames returns the source names selector has a token for, and
+// known: false when which tokens selector has is not known.
+type SourceTokenNames func(selector string) (names []string, known bool)
+
+// SourceTokenNamesOf looks names up in a map of every selector with a token:
+// a selector it does not list has none. A nil map knows nothing, and gives a
+// nil lookup.
+func SourceTokenNamesOf(names map[string][]string) SourceTokenNames {
+	if names == nil {
+		return nil
+	}
+	return func(selector string) ([]string, bool) { return names[selector], true }
 }
 
 // Error is a policy request failure with a stable result code.
@@ -328,7 +344,9 @@ func advisoryWarnings(env Env, doc adminproto.PolicyDocument) []adminproto.Polic
 	}
 	advisories := decoded.Advisories()
 	if env.SourceTokens != nil {
-		advisories = append(advisories, decoded.MissingTokenAdvisories(env.SourceTokens[doc.Key])...)
+		if names, known := env.SourceTokens(doc.Key); known {
+			advisories = append(advisories, decoded.MissingTokenAdvisories(names)...)
+		}
 	}
 	out := make([]adminproto.PolicyProblem, 0, len(advisories))
 	for _, a := range advisories {
@@ -499,19 +517,6 @@ func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumen
 		}
 	}
 	return adminproto.PolicyDocumentResult{Key: key, Code: "policy_document_not_found", Error: fmt.Sprintf("no policy of its own for key %s; it follows the node default", key)}
-}
-
-// WithSourceTokens adds to a document read the source names its selector has
-// a token for, sorted, from names (by selector). nil names, as a signer node
-// or a locked cosigner has, leave the result not knowing them.
-func WithSourceTokens(result adminproto.PolicyDocumentResult, names map[string][]string) adminproto.PolicyDocumentResult {
-	if !result.Success || names == nil {
-		return result
-	}
-	result.SourceTokens = slices.Clone(names[result.Key])
-	slices.Sort(result.SourceTokens)
-	result.SourceTokensKnown = true
-	return result
 }
 
 // HeldPolicyKeys returns the selectors among a key index's selector-to-file

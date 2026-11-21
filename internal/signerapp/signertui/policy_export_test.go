@@ -7,8 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,6 +20,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// exportFollowerKey is a cosigner key that follows the node default: it has
+// no document of its own, and may still have tokens.
+const exportFollowerKey = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
 
 // exportPoliciesModel is the policies view of a cosigner node holding docs,
 // with the context such a node sends: the built-in networks and assets.
@@ -63,9 +70,10 @@ func runExport(t *testing.T, m Model, dir string, docs map[string]string) (Model
 	return runExportWithTokens(t, m, dir, docs, nil)
 }
 
-// runExportWithTokens is runExport from a node that names, with each
-// document, the source names its selector has a token for; nil tokens is a
-// node that does not know them.
+// runExportWithTokens is runExport from a node whose token listing, which
+// the export reads after the documents a selector a page, names the sources
+// every selector in tokens has a token for; nil tokens is a node that will
+// not say.
 func runExportWithTokens(t *testing.T, m Model, dir string, docs map[string]string, tokens map[string][]string) (Model, tea.Cmd) {
 	t.Helper()
 	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
@@ -77,7 +85,31 @@ func runExportWithTokens(t *testing.T, m Model, dir string, docs map[string]stri
 	next, _ = m.handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	var cmd tea.Cmd
+	selectors := slices.Sorted(maps.Keys(tokens))
 	for m.policies.export.pendingID != "" {
+		if m.policies.export.listingTokens {
+			reply := protocol.SourceTokenListResultMessage{BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}}
+			if tokens == nil {
+				reply.Code, reply.Error = "identity_locked", "the signer is locked"
+			} else {
+				reply.Success = true
+				if len(selectors) > 0 {
+					listing := protocol.SourceTokenSelector{Selector: selectors[0]}
+					for _, source := range tokens[selectors[0]] {
+						listing.Tokens = append(listing.Tokens, protocol.SourceTokenInfo{Source: source, State: protocol.SourceTokenInUse})
+					}
+					reply.Selectors, selectors = []protocol.SourceTokenSelector{listing}, selectors[1:]
+				}
+				reply.Omitted = len(selectors)
+			}
+			var ok bool
+			next, cmd, ok = m.handlePolicyExportSourceTokens(sourceTokenListMsg(reply))
+			if !ok {
+				t.Fatal("the export did not take its token listing")
+			}
+			m = next.(Model)
+			continue
+		}
 		// The key requested is the one not yet fetched, in summary order.
 		fetched := len(m.policies.export.docs)
 		want := m.policies.policy.Documents[fetched].Key
@@ -86,7 +118,6 @@ func runExportWithTokens(t *testing.T, m Model, dir string, docs map[string]stri
 		}
 		next, cmd = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
 			BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Success: true, Key: want, Document: docs[want],
-			SourceTokens: tokens[want], SourceTokensKnown: tokens != nil,
 		}})
 		m = next.(Model)
 	}
@@ -97,12 +128,12 @@ func TestPolicyExportWritesEveryDocument(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: "{\"key\": \"default\"}\n", policyViewKeyA: "{\"key\": \"" + policyViewKeyA + "\"}\n"}
 	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
-	m, _ = runExport(t, m, dir, docs)
+	m, write := runExport(t, m, dir, docs)
 	if m.policies.export.busy != "Writing policy files..." || len(m.policies.export.docs) != 2 {
 		t.Fatalf("after fetching: busy %q, %d docs", m.policies.export.busy, len(m.policies.export.docs))
 	}
 
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	written := write().(PolicyExportWrittenMsg)
 	next, _ := m.handlePolicyExportWritten(written)
 	m = next.(Model)
 	if m.viewState != ViewPolicies || !strings.Contains(m.policies.status, "Exported 2 policy document(s) to "+dir) || !strings.Contains(m.policies.status, "appolicy check") {
@@ -120,13 +151,16 @@ func TestPolicyExportWritesEveryDocument(t *testing.T) {
 	}
 }
 
-// The export records the source names each document came with.
+// The export reads the node's whole token listing, a page at a time, and
+// records the sources every selector has a token for, a key without a
+// document of its own included.
 func TestPolicyExportRecordsSourceTokenNames(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: "{\"key\": \"default\"}\n", policyViewKeyA: "{\"key\": \"" + policyViewKeyA + "\"}\n"}
 	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
-	m, _ = runExportWithTokens(t, m, dir, docs, map[string][]string{policyViewKeyA: {"screening"}})
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	tokens := map[string][]string{policyViewKeyA: {"screening"}, exportFollowerKey: {"ops"}}
+	m, write := runExportWithTokens(t, m, dir, docs, tokens)
+	written := write().(PolicyExportWrittenMsg)
 	if written.Err != nil {
 		t.Fatal(written.Err)
 	}
@@ -134,8 +168,68 @@ func TestPolicyExportRecordsSourceTokenNames(t *testing.T) {
 	if err != nil || selected == nil {
 		t.Fatalf("Discover() = %v, %v", selected, err)
 	}
-	if got := selected.Export.SourceTokens; len(got) != 2 || len(got[policy.DefaultKey]) != 0 || len(got[policyViewKeyA]) != 1 || got[policyViewKeyA][0] != "screening" {
+	if got := fmt.Sprint(selected.Export.SourceTokens); got != fmt.Sprint(tokens) {
 		t.Fatalf("recorded names = %v", got)
+	}
+	next, _ := m.handlePolicyExportWritten(written)
+	if status := next.(Model).policies.status; strings.Contains(status, "No source token names") {
+		t.Fatalf("status = %q", status)
+	}
+}
+
+// A node that will not name its tokens, as for a session without
+// policy.update, still gets its documents exported; the export records no
+// names and says so.
+func TestPolicyExportWithoutTokenNamesSaysSo(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: "{}\n"}
+	for name, refuse := range map[string]func(m Model) (tea.Model, tea.Cmd){
+		"a refused listing": func(m Model) (tea.Model, tea.Cmd) {
+			next, cmd, ok := m.failPendingPolicyExport(m.policies.export.pendingID, errors.New("authorization denied"))
+			if !ok {
+				t.Fatal("the refusal was not the export's")
+			}
+			return next, cmd
+		},
+		"a failed listing": func(m Model) (tea.Model, tea.Cmd) {
+			next, cmd, ok := m.handlePolicyExportSourceTokens(sourceTokenListMsg{
+				BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Code: "identity_locked", Error: "locked",
+			})
+			if !ok {
+				t.Fatal("the reply was not the export's")
+			}
+			return next, cmd
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := exportPoliciesModel(t, docs, policy.DefaultKey)
+			next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+			m = next.(Model)
+			dir := filepath.Join(t.TempDir(), "export")
+			m.policies.export.path = dir
+			next, _ = m.handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
+			m = next.(Model)
+			next, _ = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+				BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Success: true, Key: policy.DefaultKey, Document: docs[policy.DefaultKey],
+			}})
+			m = next.(Model)
+			if !m.policies.export.listingTokens {
+				t.Fatal("a cosigner export did not ask for its token names")
+			}
+			next, write := refuse(m)
+			m = next.(Model)
+			written := write().(PolicyExportWrittenMsg)
+			if written.Err != nil {
+				t.Fatal(written.Err)
+			}
+			next, _ = m.handlePolicyExportWritten(written)
+			if status := next.(Model).policies.status; !strings.Contains(status, "No source token names were recorded") {
+				t.Fatalf("status = %q", status)
+			}
+			selected, err := policyexport.Discover([]string{filepath.Join(dir, policy.DefaultKey+".json")}, "")
+			if err != nil || selected == nil || selected.Export.SourceTokens != nil {
+				t.Fatalf("an export without token names = %+v, %v", selected, err)
+			}
+		})
 	}
 }
 
@@ -157,8 +251,8 @@ func TestPolicyExportRefusesAPolicyThatChanged(t *testing.T) {
 	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
 	changed := map[string]string{policy.DefaultKey: docs[policy.DefaultKey], policyViewKeyA: "{\"a\": 2}\n"}
-	m, _ = runExport(t, m, dir, changed)
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	m, write := runExport(t, m, dir, changed)
+	written := write().(PolicyExportWrittenMsg)
 	next, _ := m.handlePolicyExportWritten(written)
 	m = next.(Model)
 	if m.viewState != ViewPolicyExportForm || !strings.Contains(m.policies.export.err, "changed while it was being exported") {
@@ -186,11 +280,11 @@ func TestPolicyExportStopsOnAnUnavailableDocumentOrSendFailure(t *testing.T) {
 	if got := next.(Model); got.viewState != ViewPolicies {
 		t.Fatalf("esc during the fetch: view %v", got.viewState)
 	}
-	failed, ok := m.failPendingPolicyExport(id, errors.New("not connected"))
+	failed, _, ok := m.failPendingPolicyExport(id, errors.New("not connected"))
 	if !ok || failed.policies.export.busy != "" || !strings.Contains(failed.policies.export.err, "not connected") {
 		t.Fatalf("send failure: ok %v state %+v", ok, failed.policies.export)
 	}
-	if _, ok := m.failPendingPolicyExport("other", errors.New("x")); ok {
+	if _, _, ok := m.failPendingPolicyExport("other", errors.New("x")); ok {
 		t.Fatal("a failure for another request ended the export")
 	}
 }
@@ -239,8 +333,8 @@ func TestPolicyLoadFromAnExportComparesTheNode(t *testing.T) {
 	docs := map[string]string{policy.DefaultKey: cosignerDefaultDoc(), policyViewKeyA: policyApplyCosignerDoc(policyViewKeyA, "")}
 	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
 	dir := filepath.Join(t.TempDir(), "export")
-	m, _ = runExport(t, m, dir, docs)
-	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	m, write := runExport(t, m, dir, docs)
+	written := write().(PolicyExportWrittenMsg)
 	if written.Err != nil {
 		t.Fatal(written.Err)
 	}

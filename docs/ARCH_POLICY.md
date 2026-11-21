@@ -854,12 +854,15 @@ Consequences:
   per check ID, `answers` (one `answer` for every unit, or `by_path`, one per
   rendered request) and `failures`; both fields are optional, so the format
   keeps its name. An export of a cosigner records, beside the context and
-  outside its digests, the source names each exported document's selector
-  has a token for (`source_tokens` in `.appolicy/node.json`, taken from the
-  `get_policy_document` replies of an unlocked node). `appolicy check` then
-  reports `external_check:token_not_set` for a source that takes a token its
-  selector lacked at the export; without recorded names it reports nothing
-  about tokens. Since the names are not digested, a token set or removed
+  outside its digests, the source names every selector with a token has one
+  for, a key that follows the node default and has no document of its own
+  included (`source_tokens` in `.appolicy/node.json`, read from the node's
+  `source_token_list`, a page at a time, which needs `policy.update`). A
+  selector it does not list had none. `appolicy check` then reports
+  `external_check:token_not_set` for a source that takes a token its
+  selector lacked at the export; from an export that recorded no names (a
+  signer, a session without `policy.update`, a rescue that could not read a
+  token file) it reports nothing about tokens. Since the names are not digested, a token set or removed
   after the export does not make `apadmin policy apply` refuse the export as
   stale: tokens are not policy, and a live apply reports the advisory
   against the live token index. A file's name,
@@ -1191,9 +1194,12 @@ are set with `apadmin source token set` and kept encrypted in the store with
 the key, never in a document (see
 [ARCH_STORE.md](ARCH_STORE.md#source-token-files)). A check on a source that
 declares a token the selector has none of refuses with
-`external_check:<id>:token_not_set`, and a live check or apply, a rescue,
-and `appolicy check` against an export warn of it
-(`external_check:token_not_set`, see [Advisories](#advisories)). A node that
+`external_check:<id>:token_not_set`, and a live check or apply by a session
+with `policy.update`, a rescue, and `appolicy check` against an export that
+recorded the node's token names warn of it
+(`external_check:token_not_set`, see [Advisories](#advisories)). Which
+sources have a token is readable only at `policy.update`
+([ARCH_ADMIN.md](ARCH_ADMIN.md)). A node that
 cannot run checks at all refuses with `external_check:<id>:unavailable`.
 
 ```json
@@ -1268,7 +1274,7 @@ characters) to a source. A document has at most 8.
 | `description` | string | no | Notes for reviewers |
 | `source` | source name | yes | A source of this document |
 | `scope` | `request` \| `transaction` \| `movement` | yes | What one lookup is for |
-| `networks` | `["*"]` or network list | yes | Networks the check applies to, as on routes |
+| `networks` | `["*"]` or network list | yes | Networks the check applies to, as on routes; a listed network the node does not map is refused at admission (`admission:unknown_network`), as a route's is |
 | `movement_kinds` | list of movement kinds | no; `movement` scope only | Kinds the check applies to; absent means every kind |
 | `path` | template, at most 512 characters | yes | Appended to the source's `base_url` path; starts with `/` |
 | `query` | map of name to template, at most 16 | no | Query parameters, written in name order |
@@ -1283,11 +1289,11 @@ rule can use. A scope has its own facts and those of the scopes above it.
 
 | Fact | Scope | Value |
 |------|-------|-------|
-| `network` | request | The group's network context token |
-| `witness_key` | request | The requested Witness Key ID |
+| `network` | request | The group's network context token; absent when the node knows no network for the genesis hash |
+| `witness_key` | request | The requested Witness Key ID, canonical: the request's `component_key` with surrounding space trimmed, as the key lookup and the policy selection use it |
 | `sender` | transaction | The transaction's sender address |
 | `txid` | transaction | The transaction ID |
-| `type` | transaction | The transaction type, for example `pay` |
+| `type` | transaction | The transaction type, for example `pay`: one of the [transaction types](#transaction-types) a document names; absent for any other type |
 | `fee` | transaction | Fee in microAlgos (a number) |
 | `rekey_to` | transaction | The rekey target; absent when the transaction does not rekey |
 | `kind` | movement | `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, `clawback` |
@@ -1300,7 +1306,15 @@ rule can use. A scope has its own facts and those of the scopes above it.
 
 No fact is free text: the note, application arguments and asset names are
 never facts, so a transaction cannot put arbitrary characters into a lookup.
-A unit that lacks a fact its check uses is refused.
+Every fact is the node's own rendering of a value from a fixed vocabulary or
+a fixed encoding: an address, a transaction ID, a Witness Key ID, a decimal
+number, a movement kind, `algo` or `asa:<id>`, a network token, or a
+transaction type the document format knows. A transaction whose type is any
+other text has no `type` fact, and a network the node does not know is no
+`network` fact (a cosigner refuses an unknown genesis hash with
+`unknown_genesis_hash` before the checks run, so no request reaches them
+without one). A unit that lacks a fact its check uses is refused with
+`external_check:<id>:missing_fact`.
 
 **Templates.** A template is literal text with `{fact}` placeholders, each a
 fact of the check's scope. Braces have no other use.
@@ -1341,8 +1355,14 @@ when the answer is not already no.
 2. **Fetch** (`externalcheck.Fetcher`). At most 4 lookups are in flight per
    request and 16 per URL origin (`scheme://host:port`) across the node. Each
    lookup has its source's timeout, and all of a request's lookups share a
-   10-second deadline. Every lookup uses a fresh connection, and nothing is
-   cached.
+   10-second deadline. The audit record tells the two apart by the context's
+   cause: a lookup that ran past its source's timeout fails with `timeout
+   after 2s` (the source's `timeout_ms`), and one the shared deadline ended
+   with `the request's 10s limit for all lookups ran out`, followed by
+   `before the lookup was made` for one still waiting for its place among
+   the request's lookups, or `while waiting for a place at the source` for
+   one waiting at the origin. A lookup is never started once the deadline
+   has passed. Every lookup uses a fresh connection, and nothing is cached.
 3. **Judge** (`externalcheck.Judge`). Each check's rules, and its echo when
    it has one, are applied to the answer of its lookup. Checks that share a
    lookup are judged separately.
@@ -1361,8 +1381,13 @@ X-Aplane-Request-Id: <32 hex characters, fresh per lookup>
 ```
 
 A fact is escaped as one path segment in the path, and a query value is
-escaped whole. The method is always GET, with no body and no cookies. The
-rendered URL must still be at the source's scheme, host and port.
+escaped whole. Behind the facts' own forms, rendering refuses a lookup in
+which a fact in the path would be empty, `.` or `..`, or would escape to
+more than one segment, and one in which a fact in a query value would be
+empty: `external_check:<id>:unavailable`, "a fact would not render as one
+path segment" (or "would render empty"). The method is always GET, with no
+body and no cookies. The rendered URL must still be at the source's scheme,
+host and port.
 
 **The connection.**
 
@@ -1467,7 +1492,7 @@ would change to resolve it:
 | `external_check:fact_absent_for_covered_units` | A check uses a fact some of the units it covers never have, so it refuses every one of them: `amount` on a close-out kind, `asset_source` on a kind other than `clawback`, or `rekey_to`, which only a rekey has |
 | `external_check:network_without_route` | A check names a network no route covers, so no transfer there reaches it |
 | `external_check:plain_http_source` | A source is reached over plain `http://` on loopback; its answers and any token are not encrypted |
-| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy check` and `apply` (against the token index, while unlocked), `apadmin policy rescue` (against the token files), and `appolicy check` (against the token names an export of the node recorded) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
+| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy check` and `apply` by a session with `policy.update` (against the token index, while unlocked), `apadmin policy rescue` (against the token files, when every one can be read), and `appolicy check` (against the token names an export of the node recorded, for every selector with a token) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
 
 ## Embedded Defaults
 
@@ -1703,13 +1728,14 @@ and applied time (the default first), each held key's coverage (`own`,
 and `policy_set_sha256`, a digest over the whole document set.
 `get_policy_document` returns one document's exact bytes by key (`default` or
 a selector), optionally only while the node is still at a given composite
-snapshot; an unlocked cosigner also names the sources that selector has a
-token for, which an export records beside its context. `get_policy_context` returns the node's policy context (role,
+snapshot; it names no source token. `get_policy_context` returns the node's policy context (role,
 admission rules version, network map, effective ASA set) with
 `context_sha256` and `snapshot_sha256`, the composite digest of the context
 and `policy_set_sha256` (`internal/policycontext`; encodings pinned in
 `test/contracts/policycontext/v1/`). `check_policy` validates candidate
-documents and removals without writing and returns errors and warnings.
+documents and removals without writing and returns errors and warnings; its
+missing-token warnings are given only to a session with `policy.update`,
+the authorization that reads token names.
 `apply_policy` requires `expected_policy_set_sha256` for optimistic
 concurrency and `expected_snapshot_sha256`, the snapshot the review was built
 against, so a change to the ASA set or network map between review and commit
@@ -1778,7 +1804,8 @@ document differs, but effective permissions are unchanged".
 
 Admission (`internal/policyadmission`, run by `policyapply.Candidate` and by
 `apstore policy check`/`sign` for each document whose sidecar is missing or
-does not verify) refuses a submitted document that names a network the node does not map, an
+does not verify) refuses a submitted document that names a network the node does not map
+(in a route, a limits key, a set key or an external check's `networks`), an
 asset outside its ASA set, a direct `asa:<id>` route term over several
 networks or `*`, or a route with no asset alternative on one of its networks
 (a union over the route's sets, `algo` and `*`). It is not part of decoding or

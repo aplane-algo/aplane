@@ -173,8 +173,8 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 	if next, ok := m.failPendingSourceTokens(id, err); ok {
 		return next, nil
 	}
-	if next, ok := m.failPendingPolicyExport(id, err); ok {
-		return next, nil
+	if next, cmd, ok := m.failPendingPolicyExport(id, err); ok {
+		return next, cmd
 	}
 	if next, ok := m.failPendingBackupExport(id, err); ok {
 		return next, nil

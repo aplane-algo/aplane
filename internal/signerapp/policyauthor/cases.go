@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -195,7 +196,7 @@ func (cf *CaseFile) validate() error {
 // a named one, and no check has both. Whether the document has the check, and
 // whether its source could fail that way, is checked when the case runs.
 func (c Case) validateExternal() error {
-	for _, id := range sortedKeys(c.Answers) {
+	for _, id := range slices.Sorted(maps.Keys(c.Answers)) {
 		a := c.Answers[id]
 		switch {
 		case id == "":
@@ -205,7 +206,7 @@ func (c Case) validateExternal() error {
 		case a.ByPath != nil && len(a.ByPath) == 0:
 			return fmt.Errorf("answer for external check %s: by_path names no request", id)
 		}
-		for _, path := range sortedKeys(a.ByPath) {
+		for _, path := range slices.Sorted(maps.Keys(a.ByPath)) {
 			if !strings.HasPrefix(path, "/") {
 				return fmt.Errorf("answer for external check %s: by_path key %q is not a request path", id, path)
 			}
@@ -214,7 +215,7 @@ func (c Case) validateExternal() error {
 			return fmt.Errorf("external check %s has both an answer and a failure", id)
 		}
 	}
-	for _, id := range sortedKeys(c.Failures) {
+	for _, id := range slices.Sorted(maps.Keys(c.Failures)) {
 		if id == "" {
 			return errors.New("a failure names no check")
 		}
@@ -274,7 +275,7 @@ func compactAnswer(raw json.RawMessage) ([]byte, error) {
 // text may not survive being written into the cases file.
 func CaseOf(name, document string, f *File, txn TryTxn, answers ExternalAnswers, result TryResult) Case {
 	c := Case{Name: name, Document: document, Txn: CaseTxnOf(txn), Expect: ExpectOf(result)}
-	for _, id := range sortedKeys(answers) {
+	for _, id := range slices.Sorted(maps.Keys(answers)) {
 		a := answers[id]
 		if a.Failure != "" {
 			c.addFailure(id, a.Failure)

@@ -44,11 +44,17 @@ writes as `.appolicy/node.json` beside the policy documents
   `sha256`, sorted by key, with their `policy_set_sha256` and the composite
   `snapshot_sha256`;
 - optional `source_tokens`, on a cosigner export only: one entry per
-  baseline document, in the baseline's order, each a `key` and `sources`,
-  the names (sorted, each once, at most 8, possibly none) of the sources the
-  document's selector had a token for. It is present only when the node knew
-  its tokens for every document (it was unlocked); absent, the export says
-  nothing of tokens. `node-context-cosigner.json` pins it.
+  selector that had a token at the export, sorted by `key` and each listed
+  once, whether or not the selector had a document of its own (a key that
+  follows the node default may have tokens), each a `key` (`default` or a
+  Witness Key ID) and `sources`, the names (sorted, each once, 1 to 8) of the
+  sources it had a token for. At most 8,193 entries: every key the cosigner
+  cap allows and the default. A selector it does not list had none, so an
+  empty list says no selector had a token. It is present only when the
+  export read the node's whole token listing (`source_token_list`, which
+  needs `policy.update`); absent, the export says nothing of tokens.
+  `node-context-cosigner.json` pins it, with a key that has a document and a
+  key that follows the default.
 
 `source_tokens` is not part of `context_sha256` or `snapshot_sha256`. A token
 is not policy: setting or removing one after an export must not make an
@@ -59,9 +65,10 @@ warning.
 A reader recomputes every digest from the file's own contents and refuses a
 file whose digests do not match, an unknown field, another format or rules
 version, a network token listed twice, two network tokens naming one chain, or a
-`source_tokens` that is on a signer export, does not list exactly the
-baseline's documents in order, or lists a name that is not a source name,
-out of order, twice, or past the eighth. The file is
+`source_tokens` that is on a signer export, lists keys out of order, twice
+or past the bound, a key no cosigner document can have, a key with no
+names, or a name that is not a source name, out of order, twice, or past
+the eighth. The file is
 an offline copy, not an authority: the digests catch damage and hand edits,
 and an apply still checks the node's live snapshot. To re-record after an
 intended format change, which is a contract change:

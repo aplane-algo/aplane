@@ -206,3 +206,59 @@ func TestRunStopsWhenItsContextEnds(t *testing.T) {
 		t.Fatal("a lookup was made under an ended context")
 	}
 }
+
+// The request's shared deadline for all lookups is not a source's timeout.
+// When it runs out, the refusal says so, for a lookup in flight and for one
+// still waiting for its place, rather than blaming the source's timeout or
+// calling the request canceled.
+func TestRunNamesTheStepDeadlineWhenItEndsTheLookups(t *testing.T) {
+	src := newSource(t, map[string]string{})
+	var paths []string
+	for i := 0; i < MaxInFlightPerRequest+2; i++ {
+		path := fmt.Sprintf("/hang/%d", i)
+		src.answers[path] = "hang"
+		paths = append(paths, path)
+	}
+	var checks []string
+	for i, path := range paths {
+		checks = append(checks, fmt.Sprintf(`{"id": "c%d", "source": "s", "scope": "request", "networks": ["*"], "path": %q,
+		  "require": [{"pointer": "", "op": "present"}]}`, i, path))
+	}
+	cfg := compileChecks(t, src.sources(`, "timeout_ms": 10000`), "["+strings.Join(checks, ",")+"]")
+	runner := &Runner{Fetcher: &Fetcher{}, stepDeadline: 200 * time.Millisecond}
+	_, refusal := runner.Run(context.Background(), cfg, requestOf(payment(addr(1), addr(2), 5)))
+	want := "the request's 200ms limit for all lookups ran out"
+	if refusal == nil || refusal.Outcome != policy.ExternalCheckUnavailableOutcome || !strings.HasPrefix(refusal.Detail, want) {
+		t.Fatalf("refusal = %+v, want unavailable: %s", refusal, want)
+	}
+
+	// Each lookup's own failure, in flight or queued, names the deadline.
+	plan, planRefusal := BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, requestOf(payment(addr(1), addr(2), 5)))
+	if planRefusal != nil {
+		t.Fatal(planRefusal)
+	}
+	_, failures := runner.fetchAll(context.Background(), plan, make([]string, len(plan.Lookups)))
+	var details []string
+	queued := 0
+	for i, err := range failures {
+		detail := fmt.Sprint(err)
+		details = append(details, detail)
+		switch detail {
+		case want:
+		case want + " before the lookup was made":
+			queued++
+		default:
+			t.Fatalf("lookup %d: %q, want the request's limit", i, detail)
+		}
+	}
+	if queued != 2 {
+		t.Fatalf("%d lookups said they never started, want 2: %q", queued, details)
+	}
+
+	// A source's own timeout, inside the request's limit, is still its own.
+	cfg = compileChecks(t, src.sources(`, "timeout_ms": 100`), "["+checks[0]+"]")
+	_, refusal = (&Runner{Fetcher: &Fetcher{}, stepDeadline: 5 * time.Second}).Run(context.Background(), cfg, requestOf(payment(addr(1), addr(2), 5)))
+	if refusal == nil || refusal.Detail != "timeout after 100ms" {
+		t.Fatalf("refusal = %+v, want the source's own timeout", refusal)
+	}
+}

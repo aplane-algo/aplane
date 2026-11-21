@@ -145,8 +145,9 @@ func (s *Session) HandleCheckPolicy(msg *protocol.CheckPolicyMessage) {
 		return
 	}
 	result := s.settingsServices.CheckPolicy(adminproto.CheckPolicyRequest{
-		Documents: AdminPolicyDocuments(msg.Documents),
-		Remove:    msg.Remove,
+		Documents:            AdminPolicyDocuments(msg.Documents),
+		Remove:               msg.Remove,
+		SourceTokensReadable: s.mayReadSourceTokenNames(),
 	})
 	_ = s.WriteJSON(ProtocolCheckPolicyResultMessage(msg.ID, result))
 }

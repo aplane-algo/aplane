@@ -308,15 +308,16 @@ type ChangeStorePassphraseMessage struct {
 
 type ChangeStorePassphraseResultMessage struct {
 	BaseMessage
-	Success                bool   `json:"success"`
-	KeysMigrated           int    `json:"keys_migrated,omitempty"`
-	TemplatesMigrated      int    `json:"templates_migrated,omitempty"`
-	PolicySidecarsMigrated int    `json:"policy_sidecars_migrated,omitempty"`
-	PriorGenerations       int    `json:"prior_generations,omitempty"`
-	HelperWarning          string `json:"helper_warning,omitempty"`
-	RootCommitted          bool   `json:"root_committed,omitempty"`
-	Code                   string `json:"code,omitempty"`
-	Error                  string `json:"error,omitempty"`
+	Success                  bool   `json:"success"`
+	KeysMigrated             int    `json:"keys_migrated,omitempty"`
+	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
+	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
+	SourceTokenFilesMigrated int    `json:"source_token_files_migrated,omitempty"`
+	PriorGenerations         int    `json:"prior_generations,omitempty"`
+	HelperWarning            string `json:"helper_warning,omitempty"`
+	RootCommitted            bool   `json:"root_committed,omitempty"`
+	Code                     string `json:"code,omitempty"`
+	Error                    string `json:"error,omitempty"`
 }
 
 // BackupMessage requests signer-managed creation of a portable key backup for
@@ -1357,21 +1358,15 @@ type PolicyContextMessage struct {
 }
 
 // PolicyDocumentMessage returns one active policy document's exact bytes.
-// SourceTokens names, sorted, the sources the document's selector has a
-// token for, never a token; SourceTokensKnown is true only when the node
-// knows which tokens are set (an unlocked cosigner node), so an absent list
-// means none only when it is true.
 type PolicyDocumentMessage struct {
 	BaseMessage
-	Success           bool     `json:"success"`
-	Key               string   `json:"key,omitempty"`
-	Document          string   `json:"document,omitempty"`
-	SHA256            string   `json:"sha256,omitempty"`
-	SignedAtUnix      int64    `json:"signed_at_unix,omitempty"`
-	SourceTokens      []string `json:"source_tokens,omitempty"`
-	SourceTokensKnown bool     `json:"source_tokens_known,omitempty"`
-	Code              string   `json:"code,omitempty"`
-	Error             string   `json:"error,omitempty"`
+	Success      bool   `json:"success"`
+	Key          string `json:"key,omitempty"`
+	Document     string `json:"document,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
+	Code         string `json:"code,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // CheckPolicyMessage validates candidate documents for the node's role
@@ -1769,10 +1764,13 @@ type SourceTokenChangeResultMessage struct {
 }
 
 // SourceTokenListMessage lists token names for one selector, or for every
-// selector that has a token or needs one when Selector is empty.
+// selector that has a token or needs one when Selector is empty. After, with
+// no Selector, pages that listing: it starts after the selector named, in
+// the listing's order ("default" first, then the keys in order).
 type SourceTokenListMessage struct {
 	BaseMessage
 	Selector string `json:"selector,omitempty"`
+	After    string `json:"after,omitempty"`
 }
 
 // SourceTokenListResultMessage answers source_token_list. Omitted counts the

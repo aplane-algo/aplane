@@ -200,3 +200,106 @@ func TestRefusalWording(t *testing.T) {
 		t.Fatalf("RuleID() = %q", got)
 	}
 }
+
+// No fact is free text. A transaction type that is not one a policy knows is
+// raw text from the transaction, so it is no fact at all: a check that uses
+// {type} refuses the unit for want of it, and nothing reaches the path. A
+// network the node does not know, and a request with no Witness Key ID, are
+// absent facts too, never empty ones.
+func TestBuildPlanGivesNoFactItCannotName(t *testing.T) {
+	byType := `[{"id": "by-type", "source": "ops", "scope": "transaction", "networks": ["*"],
+	  "path": "/limits/{type}/{sender}", "require": [{"pointer": "", "op": "present"}]}]`
+	byNetwork := `[{"id": "by-network", "source": "ops", "scope": "request", "networks": ["*"],
+	  "path": "/networks/{network}", "require": [{"pointer": "", "op": "present"}]}]`
+	byKey := `[{"id": "by-key", "source": "ops", "scope": "request", "networks": ["*"],
+	  "path": "/signing/{witness_key}", "require": [{"pointer": "", "op": "present"}]}]`
+	ops := `{"ops": {"base_url": "http://127.0.0.1:8650"}}`
+
+	typed := func(txType string) types.Transaction {
+		txn := payment(addr(1), addr(2), 1)
+		txn.Type = types.TxType(txType)
+		return txn
+	}
+	for _, txType := range []string{"..", ".", "", "frobnicate", "pay/../x"} {
+		cfg := compileChecks(t, ops, byType)
+		plan, refusal := BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, requestOf(typed(txType)))
+		if refusal == nil {
+			t.Fatalf("type %q: plan %+v, want a refusal", txType, plan.Lookups)
+		}
+		if refusal.Outcome != policy.ExternalCheckMissingFactOutcome || refusal.Detail != "it has no type" {
+			t.Fatalf("type %q: refusal = %+v, want the type fact missing", txType, refusal)
+		}
+	}
+	for _, txType := range policy.TransactionTypeNames {
+		cfg := compileChecks(t, ops, byType)
+		plan, refusal := BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, requestOf(typed(txType)))
+		if refusal != nil || plan.Lookups[0].Path != "/limits/"+txType+"/"+addr(1).String() {
+			t.Fatalf("type %q: plan %+v, refusal %+v", txType, plan, refusal)
+		}
+	}
+
+	cfg := compileChecks(t, ops, byNetwork)
+	req := requestOf(payment(addr(1), addr(2), 1))
+	req.NetworkOf = func(types.Transaction) string { return "" }
+	if _, refusal := BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, req); refusal == nil ||
+		refusal.Outcome != policy.ExternalCheckMissingFactOutcome || refusal.Detail != "it has no network" {
+		t.Fatalf("unknown network: refusal = %+v, want the network fact missing", refusal)
+	}
+
+	cfg = compileChecks(t, ops, byKey)
+	req = requestOf(payment(addr(1), addr(2), 1))
+	req.WitnessKey = ""
+	if _, refusal := BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, req); refusal == nil ||
+		refusal.Outcome != policy.ExternalCheckMissingFactOutcome || refusal.Detail != "it has no witness_key" {
+		t.Fatalf("no Witness Key ID: refusal = %+v, want the witness_key fact missing", refusal)
+	}
+}
+
+// Rendering refuses a fact that would not be one path segment, whatever
+// produced it: the facts are built so this cannot happen, and this is the
+// second wall.
+func TestRenderLookupRefusesAFactThatIsNotOnePathSegment(t *testing.T) {
+	cfg := compileChecks(t, `{"ops": {"base_url": "http://127.0.0.1:8650/api"}}`, `[{"id": "each", "source": "ops", "scope": "movement",
+	  "networks": ["*"], "path": "/d/{destination}", "query": {"k": "{kind}"}, "require": [{"pointer": "", "op": "present"}]}]`)
+	check, source := cfg.ExternalChecks[0], cfg.ExternalSources["ops"]
+	for _, value := range []string{"", ".", ".."} {
+		_, err := renderLookup(check, source, Facts{"destination": value, "kind": "pay"})
+		if err == nil || err.Error() != "a fact would not render as one path segment" {
+			t.Fatalf("destination %q: error = %v, want a refusal", value, err)
+		}
+	}
+	if _, err := renderLookup(check, source, Facts{"destination": addr(2).String(), "kind": ""}); err == nil ||
+		err.Error() != "a fact would render empty" {
+		t.Fatalf("an empty query fact: error = %v, want a refusal", err)
+	}
+	lookup, err := renderLookup(check, source, Facts{"destination": "a/../b", "kind": "pay"})
+	if err != nil || lookup.Path != "/api/d/a%2F..%2Fb?k=pay" {
+		t.Fatalf("a slash is escaped inside its segment: %+v, %v", lookup, err)
+	}
+
+}
+
+// Applying names the checks BuildPlan plans for, in document order, and
+// still names them when the plan refuses.
+func TestApplyingNamesTheChecksThatApply(t *testing.T) {
+	cfg := compileChecks(t, planSources, planChecks)
+	keyreg := types.Transaction{Type: types.KeyRegistrationTx, Header: types.Header{Sender: addr(1)}}
+	if got := Applying(cfg.ExternalChecks, requestOf(keyreg)); strings.Join(got, ",") != "ops-switch,by-sender" {
+		t.Fatalf("a mainnet keyreg: %v, want the request and transaction checks only", got)
+	}
+	req := requestOf(payment(addr(1), addr(2), 5))
+	req.NetworkOf = func(types.Transaction) string { return "testnet" }
+	if got := Applying(cfg.ExternalChecks, req); strings.Join(got, ",") != "ops-switch" {
+		t.Fatalf("a testnet payment: %v, want ops-switch only", got)
+	}
+	amount := compileChecks(t, `{"ops": {"base_url": "http://127.0.0.1:8650"}}`, `[{"id": "allowance", "source": "ops", "scope": "movement",
+	  "networks": ["*"], "path": "/a", "require": [{"pointer": "/remaining", "op": "ge", "fact": "amount"}]}]`)
+	closeOut := payment(addr(1), addr(2), 5)
+	closeOut.CloseRemainderTo = addr(4)
+	if _, refusal := BuildPlan(amount.ExternalChecks, amount.ExternalSources, requestOf(closeOut)); refusal == nil {
+		t.Fatal("the close-out has no amount, so the plan refuses")
+	}
+	if got := Applying(amount.ExternalChecks, requestOf(closeOut)); strings.Join(got, ",") != "allowance" {
+		t.Fatalf("Applying() = %v, want allowance though the plan refuses", got)
+	}
+}

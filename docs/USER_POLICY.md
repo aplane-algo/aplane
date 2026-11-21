@@ -322,8 +322,11 @@ stored, into the new or empty directory `DIR`: the default as `default.json`
 and each key's own document as `<key>.json`, mode 0600. It also writes the
 node's policy context to `DIR/.appolicy/node.json`: its role, the networks it
 maps, its ASA set, and the digests of the documents it held. A cosigner
-exported while unlocked also records, per document, the names of the sources
-its key has a token for; never a token. `appolicy` uses
+export also records, for every key with a token (one that follows the
+default included) and for the default, the names of the sources it has a
+token for; never a token. It reads them with the session's `policy.update`;
+without it, or when the node will not say, the export records none and says
+so. `appolicy` uses
 that file to check the documents against this node rather than against the
 built-in tables (see [Checking policy files offline](#checking-policy-files-offline-with-appolicy)).
 The export reads every document from one state of the node and writes
@@ -541,7 +544,9 @@ no routing behind it, a rekey rule open to any target, and a route that closes
 out to any address. For [external checks](#external-checks) it also warns of
 a source on plain http, a check that uses a fact some of what it covers never
 has, a check for a network no route covers, and a source whose token the key
-has none of.
+has none of. A check's `networks` are checked as a route's are: a network the
+node does not map is an error (`admission:unknown_network`), so a misspelled
+`"mainet"` cannot leave a check that never runs.
 
 `apply` runs `check` first, prints its warnings, and stops on errors. It then
 applies the change against the `policy_set_sha256` it read at the start, so the
@@ -706,13 +711,17 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   built-in tables. appolicy never reads a signer's data directory; the
   removed `--signer-data` flag is refused with a pointer to the export.
 
-  An export of an unlocked cosigner also lists, for each document, the
-  sources its key had a token for (names only, never a token). check then
-  warns of a source that takes a token its document's key had none of
-  (`external_check:token_not_set`), since every lookup to it would refuse.
-  The default's tokens serve only the default document. Without a node
-  context, or from an export that lists no token names (a signer, or a
-  cosigner exported while locked), check says nothing about tokens. A token
+  A cosigner export also lists, for every key with a token and for the
+  default, the sources it had a token for (names only, never a token), a
+  key that has no document of its own yet included; a key it does not list
+  had none. check then warns of a source that takes a token its document's
+  key had none of (`external_check:token_not_set`), since every lookup to it
+  would refuse, so a new document written for a key from the export is
+  checked against the tokens that key already has. The default's tokens
+  serve only the default document. Without a node context, or from an export
+  that lists no token names (a signer, a session without `policy.update`, or
+  a rescue that could not read a token file), check says nothing about
+  tokens. A token
   set or removed after the export does not make the export stale: tokens are
   not policy.
 
@@ -977,6 +986,14 @@ failed apply therefore needs nothing else. On a systemd store, run rescue as
 root only while `apsigner` is stopped; a root-run `apply` or `remove` hands
 the store back to its service principal on every outcome, a failed one
 included.
+
+Rescue reads the source token files only to warn of a missing token. When a
+token file cannot be read, rescue still runs: it says in one line which
+selector's file it could not read and that `apstore source token discard
+<selector>` removes a damaged one, and then gives no missing-token warning,
+as for a locked node. An `apply` is then refused before anything is
+committed, since a new generation is admitted only with every token file
+whole: discard the damaged file, or restore it from a backup, first.
 
 Rescue commands need the store passphrase to verify the sidecars:
 
@@ -1852,7 +1869,13 @@ operand, name facts of the check's scope:
 | `movement` | Once per transfer movement of such a transaction | Those of `transaction`, and `kind`, `source`, `asset_source` (a clawback's), `destination`, `asset` (`algo` or `asa:<id>`), `asset_id`, `amount` (base units) |
 
 No fact is free text: a note, application arguments and asset names never
-reach a lookup. Requests that render the same are made once.
+reach a lookup. `type` is a transaction type a document can name; a
+transaction of any other type has no `type`, so a check that uses it refuses
+that transaction with `external_check:<id>:missing_fact`. `witness_key` is
+the requested Witness Key ID as the node holds it, with any surrounding space
+removed. A fact that would not render as one path segment (empty, `.` or
+`..`) refuses the request with `external_check:<id>:unavailable`. Requests
+that render the same are made once.
 
 **Rules.** A rule compares the value at `pointer`, a JSON Pointer into the
 answer, with one operand:
@@ -1876,7 +1899,9 @@ string, as amounts are.
 - 32 lookups per request, at most 4 at a time, and 16 at a time to one
   origin (`scheme://host:port`) across the node.
 - Each lookup waits its source's `timeout_ms`, and all of a request's
-  lookups end within 10 seconds.
+  lookups end within 10 seconds. The audit record says which ended it:
+  `timeout after 2s` for the source's own timeout, `the request's 10s limit
+  for all lookups ran out` for the shared one.
 - An answer is read only with status 200, within `max_response_bytes`, and
   as strict JSON: one value, no duplicate keys, nesting at most 64 deep.
 - A token is 1 to 1024 bytes of visible ASCII, and a selector holds at most

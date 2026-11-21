@@ -26,6 +26,7 @@ import (
 // Bounds on a document's external sources and checks.
 const (
 	MaxExternalSources        = 8
+	MaxExternalSourceName     = 64
 	MaxExternalChecks         = 8
 	MaxExternalRules          = 8
 	MaxExternalListOperand    = 64
@@ -292,7 +293,7 @@ func (d *policyV1Decoder) externalChecks() error {
 // IsExternalSourceName reports whether name is a valid source name: at most
 // 64 lowercase letters, digits, '_' or '-', starting with a letter or digit.
 func IsExternalSourceName(name string) bool {
-	return len(name) <= 64 && policyTokenPattern.MatchString(name)
+	return len(name) <= MaxExternalSourceName && policyTokenPattern.MatchString(name)
 }
 
 func decodeExternalSources(node *jsonNode) (map[string]ExternalSourceV1, error) {
@@ -484,11 +485,10 @@ func decodeExternalTLSPins(node *jsonNode) ([][32]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		decoded, decodeErr := base64.StdEncoding.Strict().DecodeString(raw)
-		if decodeErr != nil || len(decoded) != 32 || base64.StdEncoding.EncodeToString(decoded) != raw {
+		pin, ok := ParseExternalTLSPin(raw)
+		if !ok {
 			return nil, docErrorf(item.pointer, "a pin must be the padded standard base64 of a 32-byte SHA-256")
 		}
-		pin := [32]byte(decoded)
 		if slices.Contains(pins, pin) {
 			return nil, docErrorf(item.pointer, "duplicate pin")
 		}
@@ -609,6 +609,16 @@ func decodeExternalCheck(node *jsonNode) (ExternalCheckV1, error) {
 	return check, r.finish()
 }
 
+// ParseExternalTLSPin reads one tls_spki_sha256 pin: the padded standard
+// base64 of a 32-byte SHA-256, written canonically.
+func ParseExternalTLSPin(raw string) ([32]byte, bool) {
+	decoded, err := base64.StdEncoding.Strict().DecodeString(raw)
+	if err != nil || len(decoded) != 32 || base64.StdEncoding.EncodeToString(decoded) != raw {
+		return [32]byte{}, false
+	}
+	return [32]byte(decoded), true
+}
+
 func decodeExternalMovementKinds(node *jsonNode) ([]TransferMovementKind, error) {
 	items, err := jsonArrayItems(node, 1)
 	if err != nil {
@@ -622,7 +632,7 @@ func decodeExternalMovementKinds(node *jsonNode) ([]TransferMovementKind, error)
 		}
 		kind := TransferMovementKind(raw)
 		if !slices.Contains(ExternalMovementKinds, kind) {
-			return nil, docErrorf(item.pointer, "unknown movement kind %q; expected %s", raw, joinMovementKinds())
+			return nil, docErrorf(item.pointer, "unknown movement kind %q; expected %s", raw, strings.Join(ExternalMovementKindNames(), ", "))
 		}
 		if slices.Contains(kinds, kind) {
 			return nil, docErrorf(item.pointer, "duplicate movement kind %q", raw)
@@ -632,12 +642,14 @@ func decodeExternalMovementKinds(node *jsonNode) ([]TransferMovementKind, error)
 	return kinds, nil
 }
 
-func joinMovementKinds() string {
+// ExternalMovementKindNames lists the movement kinds a check can name, as
+// written in a document, in ExternalMovementKinds order.
+func ExternalMovementKindNames() []string {
 	names := make([]string, len(ExternalMovementKinds))
 	for i, kind := range ExternalMovementKinds {
 		names[i] = string(kind)
 	}
-	return strings.Join(names, ", ")
+	return names
 }
 
 // decodeExternalPath decodes a check's path template: literal URL path text

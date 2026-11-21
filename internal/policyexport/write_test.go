@@ -61,7 +61,11 @@ func contextView(t *testing.T, setSHA256 string) reported {
 }
 
 func (r reported) write(dir string, docs []Document) ([]string, error) {
-	return Write(dir, docs, r.ctx, r.set, r.snapshot, exportTime)
+	return r.writeWithTokens(dir, docs, nil)
+}
+
+func (r reported) writeWithTokens(dir string, docs []Document, tokens map[string][]string) ([]string, error) {
+	return Write(dir, docs, r.ctx, r.set, r.snapshot, tokens, exportTime)
 }
 
 func TestWriteExportsExactBytesAndTheContextLast(t *testing.T) {

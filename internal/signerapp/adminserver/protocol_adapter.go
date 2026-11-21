@@ -288,15 +288,16 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.Cha
 			Type: protocol.MsgTypeChangeStorePassResult,
 			ID:   id,
 		},
-		Success:                result.Success,
-		KeysMigrated:           result.KeysMigrated,
-		TemplatesMigrated:      result.TemplatesMigrated,
-		PolicySidecarsMigrated: result.PolicySidecarsMigrated,
-		PriorGenerations:       result.PriorGenerations,
-		HelperWarning:          result.HelperWarning,
-		RootCommitted:          result.RootCommitted,
-		Code:                   result.Code,
-		Error:                  result.Error,
+		Success:                  result.Success,
+		KeysMigrated:             result.KeysMigrated,
+		TemplatesMigrated:        result.TemplatesMigrated,
+		PolicySidecarsMigrated:   result.PolicySidecarsMigrated,
+		SourceTokenFilesMigrated: result.SourceTokenFilesMigrated,
+		PriorGenerations:         result.PriorGenerations,
+		HelperWarning:            result.HelperWarning,
+		RootCommitted:            result.RootCommitted,
+		Code:                     result.Code,
+		Error:                    result.Error,
 	}
 }
 
@@ -482,16 +483,14 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 
 func ProtocolPolicyDocumentMessage(id string, result adminproto.PolicyDocumentResult) protocol.PolicyDocumentMessage {
 	return protocol.PolicyDocumentMessage{
-		BaseMessage:       protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: id},
-		Success:           result.Success,
-		Key:               result.Key,
-		Document:          result.Document,
-		SHA256:            result.SHA256,
-		SignedAtUnix:      result.SignedAtUnix,
-		SourceTokens:      result.SourceTokens,
-		SourceTokensKnown: result.SourceTokensKnown,
-		Code:              result.Code,
-		Error:             result.Error,
+		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: id},
+		Success:      result.Success,
+		Key:          result.Key,
+		Document:     result.Document,
+		SHA256:       result.SHA256,
+		SignedAtUnix: result.SignedAtUnix,
+		Code:         result.Code,
+		Error:        result.Error,
 	}
 }
 

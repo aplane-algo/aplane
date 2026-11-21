@@ -16,7 +16,9 @@ import (
 type recordingAuthorizer struct {
 	err   error
 	calls int
-	got   struct {
+	// actions are every action asked about, in order.
+	actions []auth.Action
+	got     struct {
 		identityID string
 		action     auth.Action
 		resource   auth.Resource
@@ -26,6 +28,7 @@ type recordingAuthorizer struct {
 func (a *recordingAuthorizer) Authorize(ctx context.Context, identity *auth.Identity, action auth.Action, resource auth.Resource) error {
 	_ = ctx
 	a.calls++
+	a.actions = append(a.actions, action)
 	if identity != nil {
 		a.got.identityID = identity.ID
 	}
@@ -259,8 +262,11 @@ func TestHandleCheckPolicyAuthorizesPolicyView(t *testing.T) {
 		Remove:      []string{"K2"},
 	})
 
-	if svc.checkPolicyCalls != 1 || authorizer.got.action != auth.ActionPolicyView {
-		t.Fatalf("calls = %d, authorization = %+v", svc.checkPolicyCalls, authorizer.got)
+	// The request is authorized at policy.view; policy.update is then only
+	// asked about, for whether the check may name source tokens.
+	if svc.checkPolicyCalls != 1 || len(authorizer.actions) != 2 || authorizer.actions[0] != auth.ActionPolicyView ||
+		authorizer.actions[1] != auth.ActionPolicyUpdate {
+		t.Fatalf("calls = %d, authorizations = %v", svc.checkPolicyCalls, authorizer.actions)
 	}
 	if got := svc.lastCheckPolicy; len(got.Documents) != 1 || got.Documents[0] != (adminproto.PolicyDocument{Key: "K1", Document: "{}"}) ||
 		len(got.Remove) != 1 || got.Remove[0] != "K2" {

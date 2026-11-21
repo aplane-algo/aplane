@@ -57,10 +57,10 @@ func TestCheckWarnsOfASourceTokenTheSelectorLacks(t *testing.T) {
 		{Key: policy.DefaultKey, Document: externalChecksDocument(t, policy.DefaultKey)},
 		{Key: key, Document: externalChecksDocument(t, key)},
 	}}
-	env := Env{Role: noderole.RoleCosigner, HeldKeys: map[string]bool{key: true}, SourceTokens: map[string][]string{
+	env := Env{Role: noderole.RoleCosigner, HeldKeys: map[string]bool{key: true}, SourceTokens: SourceTokenNamesOf(map[string][]string{
 		policy.DefaultKey: {"screening", "unrelated"},
 		key:               {"treasury"},
-	}}
+	})}
 	result := Check(env, current, req)
 	if !result.Success || !result.Valid {
 		t.Fatalf("Check() = %+v", result)
@@ -75,12 +75,17 @@ func TestCheckWarnsOfASourceTokenTheSelectorLacks(t *testing.T) {
 	}
 
 	// Every token set: no warning. No token knowledge: none either.
-	env.SourceTokens = map[string][]string{policy.DefaultKey: {"screening", "treasury"}, key: {"screening", "treasury"}}
+	env.SourceTokens = SourceTokenNamesOf(map[string][]string{policy.DefaultKey: {"screening", "treasury"}, key: {"screening", "treasury"}})
 	if got := tokenWarnings(Check(env, current, req).Warnings); len(got) != 0 {
 		t.Fatalf("token warnings with every token set: %q", got)
 	}
 	env.SourceTokens = nil
 	if got := tokenWarnings(Check(env, current, req).Warnings); len(got) != 0 {
 		t.Fatalf("token warnings without token knowledge: %q", got)
+	}
+	// A lookup that does not know a selector's names says nothing of it.
+	env.SourceTokens = func(string) ([]string, bool) { return nil, false }
+	if got := tokenWarnings(Check(env, current, req).Warnings); len(got) != 0 {
+		t.Fatalf("token warnings from a lookup that does not know: %q", got)
 	}
 }

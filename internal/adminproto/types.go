@@ -218,11 +218,14 @@ type ChangeStorePassphraseResult struct {
 	KeysMigrated           int
 	TemplatesMigrated      int
 	PolicySidecarsMigrated int
-	PriorGenerations       int
-	HelperWarning          string
-	RootCommitted          bool
-	Code                   string
-	Error                  string
+	// SourceTokenFilesMigrated counts the active and archived source token
+	// files re-encrypted under the new term.
+	SourceTokenFilesMigrated int
+	PriorGenerations         int
+	HelperWarning            string
+	RootCommitted            bool
+	Code                     string
+	Error                    string
 }
 
 // RestoreKeyInfo is an archived credential the restore would admit.
@@ -560,20 +563,14 @@ type PolicyDocumentInfo struct {
 }
 
 // PolicyDocumentResult is one stored policy document's exact bytes.
-// SourceTokens names, sorted, the sources the document's selector has a
-// token for, and SourceTokensKnown says the node knows: it is set only by an
-// unlocked cosigner node or a rescue of a cosigner store, so on a signer, or
-// a locked cosigner, an empty SourceTokens says nothing.
 type PolicyDocumentResult struct {
-	Success           bool
-	Key               string
-	Document          string
-	SHA256            string
-	SignedAtUnix      int64
-	SourceTokens      []string
-	SourceTokensKnown bool
-	Code              string
-	Error             string
+	Success      bool
+	Key          string
+	Document     string
+	SHA256       string
+	SignedAtUnix int64
+	Code         string
+	Error        string
 }
 
 // Key policy coverage states.
@@ -638,9 +635,14 @@ func (v PolicyView) Wire(id string) protocol.PolicyMessage {
 
 // CheckPolicyRequest validates candidate documents without writing. Remove
 // lists keys whose own documents the candidate change would delete.
+// SourceTokensReadable is set by the server, never sent: the requesting
+// session may read source token names (policy.update), so the check may warn
+// of a missing token. Without it no token name, and no missing-token
+// warning, is given.
 type CheckPolicyRequest struct {
-	Documents []PolicyDocument
-	Remove    []string
+	Documents            []PolicyDocument
+	Remove               []string
+	SourceTokensReadable bool
 }
 
 // CheckPolicyResult reports validation problems; Valid means no errors.
@@ -1061,9 +1063,11 @@ type SourceTokenChangeResult struct {
 }
 
 // ListSourceTokensRequest names one selector, or none for every selector
-// that has a token or needs one.
+// that has a token or needs one. After pages a listing of every selector: it
+// lists the selectors that come after it.
 type ListSourceTokensRequest struct {
 	Selector string
+	After    string
 }
 
 // ListSourceTokensResult lists token names. Omitted counts the selectors a

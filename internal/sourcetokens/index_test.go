@@ -15,10 +15,12 @@ func zeroed(t *testing.T, x *Index) bool {
 	t.Helper()
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	for key, value := range x.tokens {
-		for _, c := range value {
-			if c != 0 && x.zeroed {
-				t.Fatalf("index says it is zeroed but the token of %v is not", key)
+	for selector, sources := range x.tokens {
+		for source, value := range sources {
+			for _, c := range value {
+				if c != 0 && x.zeroed {
+					t.Fatalf("index says it is zeroed but the token of %s/%s is not", selector, source)
+				}
 			}
 		}
 	}
@@ -200,22 +202,26 @@ func TestHolderIsSafeForConcurrentUse(t *testing.T) {
 }
 
 // A holder with no index, as a locked node has, does not know which tokens
-// are set; a published index with none knows there are none.
-func TestNamesTellsNoIndexFromNoTokens(t *testing.T) {
+// a selector has; a published index knows, one selector at a time, and
+// knows when a selector has none.
+func TestNamesForTellsNoIndexFromNoTokens(t *testing.T) {
 	var h Holder
-	if names := h.Names(); names != nil {
-		t.Fatalf("Names() with no index = %v, want nil", names)
+	if names, known := h.NamesFor(testKeyID); known || names != nil {
+		t.Fatalf("NamesFor() with no index = %v, %v; want not known", names, known)
 	}
 	h.Publish(NewIndex(nil))
-	if names := h.Names(); names == nil || len(names) != 0 {
-		t.Fatalf("Names() of an empty index = %v, want an empty map", names)
+	if names, known := h.NamesFor(testKeyID); !known || len(names) != 0 {
+		t.Fatalf("NamesFor() of an empty index = %v, %v; want known, none", names, known)
 	}
-	h.Publish(indexOf(t, map[string]string{"ops": "one", "screening": "two"}))
-	if names := h.Names(); len(names) != 1 || fmt.Sprint(names[testKeyID]) != "[ops screening]" {
-		t.Fatalf("Names() = %v", names)
+	h.Publish(indexOf(t, map[string]string{"screening": "two", "ops": "one"}))
+	if names, known := h.NamesFor(testKeyID); !known || fmt.Sprint(names) != "[ops screening]" {
+		t.Fatalf("NamesFor() = %v, %v", names, known)
+	}
+	if names, known := h.NamesFor(DefaultSelector); !known || len(names) != 0 {
+		t.Fatalf("NamesFor(another selector) = %v, %v; want known, none", names, known)
 	}
 	h.Clear()
-	if names := h.Names(); names != nil {
-		t.Fatalf("Names() after Clear = %v, want nil", names)
+	if names, known := h.NamesFor(testKeyID); known || names != nil {
+		t.Fatalf("NamesFor() after Clear = %v, %v; want not known", names, known)
 	}
 }

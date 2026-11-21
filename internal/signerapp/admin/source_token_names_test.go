@@ -38,45 +38,28 @@ func publishTokens(t *testing.T, svc Service, selector string, sources ...string
 	svc.Runtime.PublishSourceTokens(sourcetokens.NewIndex(files))
 }
 
-// A cosigner document read names the sources its selector has a token for,
-// and says so, only while the node knows its tokens: not while locked, and
-// never on a signer.
-func TestPolicyDocumentNamesTheSelectorsSourceTokens(t *testing.T) {
+// A document read names no source token, whatever the session may do:
+// token names are read with source_token_list, at policy.update.
+func TestPolicyDocumentNamesNoSourceToken(t *testing.T) {
 	svc, _ := setupPolicyAdmin(t, noderole.RoleCosigner)
-	read := func() adminproto.PolicyDocumentResult {
-		t.Helper()
-		doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey})
-		if !doc.Success {
-			t.Fatalf("GetPolicyDocumentAt() = %+v", doc)
-		}
-		return doc
-	}
-	if doc := read(); doc.SourceTokensKnown || doc.SourceTokens != nil {
-		t.Fatalf("a node with no token index claims to know its tokens: %+v", doc)
-	}
-	publishTokens(t, svc, policy.DefaultKey)
-	if doc := read(); !doc.SourceTokensKnown || len(doc.SourceTokens) != 0 {
-		t.Fatalf("an unlocked node with no tokens: %+v", doc)
-	}
 	publishTokens(t, svc, policy.DefaultKey, "treasury", "screening")
-	if doc := read(); !doc.SourceTokensKnown || !slices.Equal(doc.SourceTokens, []string{"screening", "treasury"}) {
-		t.Fatalf("an unlocked node with tokens: %+v", doc)
+	doc := svc.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey})
+	if !doc.Success {
+		t.Fatalf("GetPolicyDocumentAt() = %+v", doc)
 	}
-	// A lock clears the index: the names are no longer known.
-	svc.Runtime.PublishSourceTokens(nil)
-	if doc := read(); doc.SourceTokensKnown || doc.SourceTokens != nil {
-		t.Fatalf("a locked node claims to know its tokens: %+v", doc)
+	wire, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	signer, _ := setupPolicyAdmin(t, noderole.RoleSigner)
-	signer.Runtime.PublishSourceTokens(sourcetokens.NewIndex(nil))
-	if doc := signer.GetPolicyDocumentAt(adminproto.GetPolicyDocumentRequest{Key: policy.DefaultKey}); !doc.Success || doc.SourceTokensKnown {
-		t.Fatalf("a signer document claims to know source tokens: %+v", doc)
+	if strings.Contains(string(wire), "screening") || strings.Contains(string(wire), "SourceToken") {
+		t.Fatalf("a document read names source tokens: %s", wire)
 	}
 }
 
-// A check on a node that does not know its tokens, as a locked one, warns of
-// no missing token: it cannot tell.
+// A check warns of a missing token only for a session that may read token
+// names (policy.update), and only while the node knows its tokens: a locked
+// node cannot tell, and a session with policy.view alone is told nothing of
+// them.
 func TestCheckPolicyWarnsOfNoTokenWhileTokensAreUnknown(t *testing.T) {
 	svc, _ := setupPolicyAdmin(t, noderole.RoleCosigner)
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "contracts", "policy", "v1", "cosigner_key_external_checks.json"))
@@ -89,7 +72,7 @@ func TestCheckPolicyWarnsOfNoTokenWhileTokensAreUnknown(t *testing.T) {
 	}
 	doc["key"] = policy.DefaultKey
 	text, _ := json.Marshal(doc)
-	req := adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: string(text)}}}
+	req := adminproto.CheckPolicyRequest{Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: string(text)}}, SourceTokensReadable: true}
 	tokenWarnings := func() []string {
 		t.Helper()
 		result := svc.CheckPolicy(req)
@@ -110,5 +93,9 @@ func TestCheckPolicyWarnsOfNoTokenWhileTokensAreUnknown(t *testing.T) {
 	publishTokens(t, svc, policy.DefaultKey, "screening")
 	if got := tokenWarnings(); !slices.Equal(got, []string{"/external_sources/treasury/token"}) {
 		t.Fatalf("token warnings while unlocked = %v", got)
+	}
+	req.SourceTokensReadable = false
+	if got := tokenWarnings(); len(got) != 0 {
+		t.Fatalf("token warnings for a session that may not read token names: %v", got)
 	}
 }

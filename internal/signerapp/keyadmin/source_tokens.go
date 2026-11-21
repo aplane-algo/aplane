@@ -61,8 +61,11 @@ const MaxListedSourceTokenSelectors = 512
 // With a selector it lists that one, and then "default" when the selector is
 // a key that follows the node default, whose tokens serve its checks. Without
 // one it lists every selector with a token or with a source that needs one,
-// "default" first, at most MaxListedSourceTokenSelectors of them, and
-// returns how many it left out.
+// "default" first and then the keys in order, at most
+// MaxListedSourceTokenSelectors of them, and returns how many it left out.
+// after, which only a listing of every selector takes, pages it: the listing
+// starts with the first selector that comes after it in that order, so a
+// caller that passes the last selector of each page reads every selector.
 //
 // A selector's tokens serve the policy document keyed by it: a token is in
 // use when a source of that document takes a token by its name, and unused
@@ -70,7 +73,7 @@ const MaxListedSourceTokenSelectors = 512
 // needed. It reads the token files of the selected generation under the store
 // mutation lock, beside the policy the runtime published from that
 // generation, and zeroes every token it decrypts.
-func (s Service) ListSourceTokens(selector string) ([]adminproto.SourceTokenSelector, int, *Error) {
+func (s Service) ListSourceTokens(selector, after string) ([]adminproto.SourceTokenSelector, int, *Error) {
 	ir := s.Runtime
 	if ir == nil {
 		return nil, 0, &Error{Kind: ErrorInternal, Message: "product runtime is nil"}
@@ -81,6 +84,14 @@ func (s Service) ListSourceTokens(selector string) ([]adminproto.SourceTokenSele
 	if selector != "" {
 		if err := sourcetokens.ValidateSelector(selector); err != nil {
 			return nil, 0, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+		}
+	}
+	if after != "" {
+		if selector != "" {
+			return nil, 0, &Error{Kind: ErrorInvalidInput, Message: "after pages a listing of every selector; list one selector without it"}
+		}
+		if err := sourcetokens.ValidateSelector(after); err != nil {
+			return nil, 0, &Error{Kind: ErrorInvalidInput, Message: "after: " + err.Error()}
 		}
 	}
 	unlockMutation, lockErr := s.lockUnlockedMutation()
@@ -107,37 +118,59 @@ func (s Service) ListSourceTokens(selector string) ([]adminproto.SourceTokenSele
 		return nil, 0, mapGenerateError(err)
 	}
 	var listings map[string][]sourcetokens.Entry
+	omitted := 0
 	err = ir.WithKeyring(func(kr *crypto.Keyring) error {
+		read := wanted
+		if wanted == nil {
+			var pageErr error
+			if wanted, read, omitted, pageErr = sourceTokenPage(np, active, after); pageErr != nil || len(read) == 0 {
+				return pageErr
+			}
+		}
 		var readErr error
-		listings, readErr = sourcetokens.Listings(active, kr, wanted...)
+		listings, readErr = sourcetokens.Listings(active, kr, read...)
 		return readErr
 	})
 	if err != nil {
 		return nil, 0, sourceTokenError(selector, err)
 	}
-	if wanted == nil {
-		wanted = listedSelectors(np, listings)
-	}
-	out := make([]adminproto.SourceTokenSelector, 0, min(len(wanted), MaxListedSourceTokenSelectors))
+	out := make([]adminproto.SourceTokenSelector, 0, len(wanted))
 	for _, listed := range wanted {
-		listing := sourceTokenListing(np, listed, listings[listed])
-		if selector == "" && len(listing.Tokens) == 0 {
-			continue
-		}
-		out = append(out, listing)
-	}
-	omitted := 0
-	if len(out) > MaxListedSourceTokenSelectors {
-		out, omitted = out[:MaxListedSourceTokenSelectors], len(out)-MaxListedSourceTokenSelectors
+		out = append(out, sourceTokenListing(np, listed, listings[listed]))
 	}
 	return out, omitted, nil
 }
 
-// listedSelectors is every selector a listing of all might report: those
-// with a token file and those with a document of their own, "default" first.
-func listedSelectors(np *policyruntime.NodePolicy, listings map[string][]sourcetokens.Entry) []string {
-	seen := map[string]bool{sourcetokens.DefaultSelector: true}
-	for selector := range listings {
+// sourceTokenPage chooses the page of a listing of every selector that starts
+// after after, before anything is decrypted: a selector is listed when it has
+// a token file, which always holds a token, or when its document has a source
+// that takes one. read is the page's selectors with a token file, the only
+// files the listing reads.
+func sourceTokenPage(np *policyruntime.NodePolicy, active storepaths.GenPaths, after string) (page, read []string, omitted int, err error) {
+	withFiles, err := sourcetokens.Selectors(active)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	hasFile := make(map[string]bool, len(withFiles))
+	for _, s := range withFiles {
+		hasFile[s] = true
+	}
+	listed := func(s string) bool { return hasFile[s] || takesAToken(np, s) }
+	page, omitted = pageSourceTokenSelectors(listingOrder(np, withFiles), listed, after, MaxListedSourceTokenSelectors)
+	for _, s := range page {
+		if hasFile[s] {
+			read = append(read, s)
+		}
+	}
+	return page, read, omitted, nil
+}
+
+// listingOrder is every selector a listing of all might report, in its
+// order: "default" first, then those with a token file and those with a
+// document of their own, sorted.
+func listingOrder(np *policyruntime.NodePolicy, withFiles []string) []string {
+	seen := map[string]bool{}
+	for _, selector := range withFiles {
 		seen[selector] = true
 	}
 	for selector := range np.Keys {
@@ -145,6 +178,56 @@ func listedSelectors(np *policyruntime.NodePolicy, listings map[string][]sourcet
 	}
 	delete(seen, sourcetokens.DefaultSelector)
 	return append([]string{sourcetokens.DefaultSelector}, slices.Sorted(maps.Keys(seen))...)
+}
+
+// pageSourceTokenSelectors is one page of order: the first limit selectors
+// that come after after (in order's order, "default" first; "" starts at the
+// beginning) and that listed reports, with how many such selectors follow
+// the page. after need not be in order.
+func pageSourceTokenSelectors(order []string, listed func(string) bool, after string, limit int) ([]string, int) {
+	comesAfter := func(selector string) bool {
+		switch {
+		case after == "":
+			return true
+		case after == sourcetokens.DefaultSelector:
+			return selector != sourcetokens.DefaultSelector
+		case selector == sourcetokens.DefaultSelector:
+			return false
+		}
+		return selector > after
+	}
+	var page []string
+	omitted := 0
+	for _, selector := range order {
+		if !comesAfter(selector) || !listed(selector) {
+			continue
+		}
+		if len(page) < limit {
+			page = append(page, selector)
+			continue
+		}
+		omitted++
+	}
+	return page, omitted
+}
+
+// takesAToken reports whether a source of the document selector's tokens
+// serve takes a token: the node default for "default", the key's own
+// document otherwise, and none for a key that follows the node default.
+func takesAToken(np *policyruntime.NodePolicy, selector string) bool {
+	doc := np.Keys[selector]
+	if selector == sourcetokens.DefaultSelector {
+		doc = np.Default
+	}
+	if doc == nil {
+		return false
+	}
+	for _, source := range doc.ExternalSources {
+		if source.Token != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // sourceTokenListing reports selector's tokens against the document keyed by
@@ -315,7 +398,7 @@ func (s IPCService) RemoveSourceToken(req adminproto.RemoveSourceTokenRequest) a
 
 // ListSourceTokens lists source tokens by name for an admin session.
 func (s IPCService) ListSourceTokens(req adminproto.ListSourceTokensRequest) adminproto.ListSourceTokensResult {
-	selectors, omitted, err := s.Service.ListSourceTokens(req.Selector)
+	selectors, omitted, err := s.Service.ListSourceTokens(req.Selector, req.After)
 	if err != nil {
 		return adminproto.ListSourceTokensResult{Code: ipcCodeForErrorKind(err), Error: err.Message}
 	}

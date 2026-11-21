@@ -554,9 +554,13 @@ also a replaceable conflict, allowing a recovery-mode restore to repair store
 damage with `--replace-existing`; the same holds for a cosigner key's source
 token file when the archive carries tokens for that key.
 
-A source token file that no longer decrypts keeps every unlock in recovery.
-When no backup can replace it (the node default's file, or a key whose backup
-has no tokens), stop the daemon and discard the file:
+A source token file that no longer decrypts keeps every unlock in recovery:
+the unlock succeeds with signing blocked, and `apadmin` shows the store as
+recovery-blocked. `apadmin policy rescue` still reads and checks policy on
+such a store, names the selector whose file it could not read, and refuses to
+apply until the file is replaced or discarded. When no backup can replace it
+(the node default's file, or a key whose backup has no tokens), stop the
+daemon and discard the file:
 
 ```bash
 ./apstore source token discard <WitnessKeyID|default>

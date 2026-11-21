@@ -210,6 +210,10 @@ func TestTryPlanRefusesWithoutAnswers(t *testing.T) {
 			if len(x.Lookups) != 0 || len(x.Judged) != 0 || len(x.Pending) != 0 || ExpectOf(got).RuleID != tt.rule {
 				t.Fatalf("external = %+v", x)
 			}
+			// A plan that refuses still names the checks that apply.
+			if check := strings.TrimSuffix(strings.TrimPrefix(tt.rule, "external_check:"), ":missing_fact"); !slices.Contains(x.Apply, check) {
+				t.Fatalf("Apply = %v, want it to name %s", x.Apply, check)
+			}
 			if x.Lines() != nil && strings.Contains(strings.Join(x.Lines(), "\n"), "lookups") {
 				t.Fatalf("a refused plan lists lookups: %v", x.Lines())
 			}

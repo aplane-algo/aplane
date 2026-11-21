@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -31,14 +30,11 @@ const (
 )
 
 // Document is one active policy document as the node returned it, with the
-// digest its policy summary listed for it. SourceTokens names the sources its
-// selector has a token for, when SourceTokensKnown says the node knew.
+// digest its policy summary listed for it.
 type Document struct {
-	Key               string
-	Document          string
-	SHA256            string
-	SourceTokens      []string
-	SourceTokensKnown bool
+	Key      string
+	Document string
+	SHA256   string
 }
 
 // ErrPolicyChanged reports that the documents fetched for an export are not
@@ -68,14 +64,15 @@ func FileName(key string) (string, error) {
 // is written, every document must match the digest the summary listed,
 // together they must be that policy set, and with ctx they must make that
 // snapshot, so a policy or context that changed during the export is
-// refused rather than written as a mix. A cosigner export whose every
-// document came with its source token names records them in the context
-// file, beside the digests; otherwise it records none. The context
-// file is written last, after an in-progress marker and every document are
+// refused rather than written as a mix. sourceTokens, on a cosigner export,
+// names the sources every selector with a token has one for (the node's
+// source_token_list, read whole), and is recorded in the context file beside
+// the digests; nil records none, as for a signer or a cosigner whose tokens
+// could not be read. The context file is written last, after an in-progress marker and every document are
 // durable, and the marker is then removed: a failed export leaves the marker,
 // and is never mistaken for a complete one. It returns the paths of the
 // documents written, in document order.
-func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, snapshotSHA256 string, at time.Time) ([]string, error) {
+func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, snapshotSHA256 string, sourceTokens map[string][]string, at time.Time) ([]string, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("an export directory is required")
 	}
@@ -106,8 +103,8 @@ func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, s
 	if err != nil {
 		return nil, err
 	}
-	if names, ok := sourceTokenNames(ctx, docs); ok {
-		if err := export.RecordSourceTokens(names); err != nil {
+	if sourceTokens != nil {
+		if err := export.RecordSourceTokens(sourceTokens); err != nil {
 			return nil, err
 		}
 	}
@@ -147,24 +144,6 @@ func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, s
 		return paths, fmt.Errorf("finish the export: %w", err)
 	}
 	return paths, nil
-}
-
-// sourceTokenNames are the documents' source token names by key, when the
-// export is of a cosigner and the node knew them for every document. A node
-// that locked part way through knew them for some only, and then none are
-// recorded: a partial list would read as tokens missing.
-func sourceTokenNames(ctx *policycontext.Context, docs []Document) (map[string][]string, bool) {
-	if ctx.Role() != noderole.RoleCosigner {
-		return nil, false
-	}
-	names := make(map[string][]string, len(docs))
-	for _, doc := range docs {
-		if !doc.SourceTokensKnown {
-			return nil, false
-		}
-		names[doc.Key] = doc.SourceTokens
-	}
-	return names, true
 }
 
 // prepareExportDir creates dir with mode 0700, or accepts it when it is an

@@ -32,9 +32,15 @@ func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan)
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
+	// prepareComponentSigning made the plan's key canonical; every step
+	// below, the external checks and the audit record included, uses it as
+	// it stands.
 	componentKey, err := witness.NormalizeID(plan.ComponentKey)
 	if err != nil {
 		return badRequest(err.Error())
+	}
+	if componentKey != plan.ComponentKey {
+		return internal("component sign plan carries a non-canonical Witness Key ID")
 	}
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
 		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))

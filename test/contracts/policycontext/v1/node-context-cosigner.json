@@ -48,15 +48,17 @@
   },
   "source_tokens": [
     {
+      "key": "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ",
+      "sources": [
+        "ops"
+      ]
+    },
+    {
       "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
       "sources": [
         "screening",
         "treasury"
       ]
-    },
-    {
-      "key": "default",
-      "sources": []
     }
   ]
 }

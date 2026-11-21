@@ -84,6 +84,9 @@ func rescue(ctx context.Context, command Command, streams Streams, paths storepa
 	if err != nil {
 		return err
 	}
+	if backend.tokenNote != "" {
+		_, _ = fmt.Fprintln(streams.Stderr, "note: "+backend.tokenNote)
+	}
 	return run(ctx, command, streams, backend)
 }
 
@@ -107,6 +110,11 @@ func finishRescue(runErr error, normalize func() error) error {
 type offlineBackend struct {
 	env     policyapply.Env
 	current *policyruntime.NodePolicy
+	// tokenNames are the sources every selector with a token has one for,
+	// read from the token files; nil when they are not known. tokenNote
+	// says, when it is set, that a token file could not be read.
+	tokenNames map[string][]string
+	tokenNote  string
 }
 
 func newOfflineBackend(dataDir string, paths storepaths.Paths, kr *crypto.Keyring) (*offlineBackend, error) {
@@ -142,12 +150,49 @@ func (b *offlineBackend) reload() error {
 	// Rescue unlocked the store, so it reads which sources have a token from
 	// the token files themselves, for the missing-token advisory.
 	if b.env.Role == noderole.RoleCosigner {
-		if b.env.SourceTokens, err = sourcetokens.Names(active, b.env.Keyring); err != nil {
-			return fmt.Errorf("read source tokens: %w", err)
-		}
+		b.tokenNames, b.tokenNote = readSourceTokenNames(active, b.env.Keyring)
+		b.env.SourceTokens = policyapply.SourceTokenNamesOf(b.tokenNames)
 	}
 	b.env.HeldKeys, err = policyapply.HeldPolicyKeysInGeneration(b.env.Role, active)
 	return err
+}
+
+// readSourceTokenNames reads which sources have a token, by selector, for the
+// missing-token advisory. Rescue exists for damaged stores and the names only
+// feed an advisory, so this never fails a rescue: when any token file cannot
+// be read, no names are known, as on a locked node, and note says which
+// selectors' files could not be read (never what they hold) and how a
+// damaged one is removed.
+func readSourceTokenNames(active storepaths.GenPaths, kr *crypto.Keyring) (map[string][]string, string) {
+	const unknown = "so source token names are not known and no missing-token warning is given"
+	selectors, err := sourcetokens.Selectors(active)
+	if err != nil {
+		return nil, "the source token files could not be listed, " + unknown + "; run apstore verify to see why"
+	}
+	names := make(map[string][]string, len(selectors))
+	var unreadable []string
+	for _, selector := range selectors {
+		f, ok, err := sourcetokens.ReadFile(active, selector, kr)
+		if err != nil {
+			unreadable = append(unreadable, selector)
+			continue
+		}
+		if ok {
+			for _, entry := range f.Listing() {
+				names[selector] = append(names[selector], entry.Source)
+			}
+			f.Zero()
+		}
+	}
+	if len(unreadable) == 0 {
+		return names, ""
+	}
+	which := unreadable[0]
+	if more := len(unreadable) - 1; more > 0 {
+		which += fmt.Sprintf(" (and %d more)", more)
+	}
+	return nil, fmt.Sprintf("the source token file of %s could not be read, %s; "+
+		"with the daemon stopped, apstore source token discard %s removes a damaged one", which, unknown, unreadable[0])
 }
 
 func (b *offlineBackend) Get(context.Context) (adminproto.PolicyView, error) {
@@ -164,9 +209,13 @@ func (b *offlineBackend) Document(_ context.Context, key, expectedSnapshot strin
 			return adminproto.PolicyDocumentResult{Key: key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}, nil
 		}
 	}
-	// b.env.SourceTokens is read from the token files on a cosigner store
-	// only, so a signer's documents never claim to know them.
-	return policyapply.WithSourceTokens(policyapply.Document(b.current, key), b.env.SourceTokens), nil
+	return policyapply.Document(b.current, key), nil
+}
+
+// SourceTokenNames are the names read from the token files: nil, not known,
+// on a signer and when a token file could not be read.
+func (b *offlineBackend) SourceTokenNames(context.Context) (map[string][]string, error) {
+	return b.tokenNames, nil
 }
 
 func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {

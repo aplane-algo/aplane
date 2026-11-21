@@ -246,7 +246,11 @@ func (s *stubServices) RemoveSourceToken(req adminproto.RemoveSourceTokenRequest
 	return s.sourceTokenResult
 }
 func (s *stubServices) ListSourceTokens(req adminproto.ListSourceTokensRequest) adminproto.ListSourceTokensResult {
-	s.sourceTokenCalls = append(s.sourceTokenCalls, "list:"+req.Selector)
+	call := "list:" + req.Selector
+	if req.After != "" {
+		call += "@" + req.After
+	}
+	s.sourceTokenCalls = append(s.sourceTokenCalls, call)
 	return s.listSourceTokensResult
 }
 func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {

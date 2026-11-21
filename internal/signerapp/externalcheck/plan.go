@@ -13,8 +13,10 @@
 package externalcheck
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -118,29 +120,14 @@ type unit struct {
 func BuildPlan(checks []policy.ExternalCheckV1, sources map[string]policy.ExternalSourceV1, req Request) (*Plan, *Refusal) {
 	plan := &Plan{}
 	merged := make(map[string]int)
-	requestUnits, transactionUnits, movementUnits := requestUnitsOf(req)
+	units := requestUnitsOf(req)
 	for _, check := range checks {
 		source, ok := sources[check.Source]
 		if !ok {
 			return nil, &Refusal{CheckID: check.ID, Outcome: policy.ExternalCheckUnavailableOutcome, Unit: "the request",
 				Source: check.Source, Detail: "the document defines no such source"}
 		}
-		var units []unit
-		switch check.Scope {
-		case policy.ExternalScopeRequest:
-			units = requestUnits
-		case policy.ExternalScopeTransaction:
-			units = transactionUnits
-		case policy.ExternalScopeMovement:
-			units = movementUnits
-		}
-		for _, u := range units {
-			if !check.CoversNetwork(u.network) {
-				continue
-			}
-			if check.Scope == policy.ExternalScopeMovement && !check.CoversMovementKind(u.kind) {
-				continue
-			}
+		for _, u := range units.of(check) {
 			for _, name := range check.UsedFacts() {
 				if _, has := u.facts[name]; !has {
 					return nil, &Refusal{CheckID: check.ID, Outcome: policy.ExternalCheckMissingFactOutcome, Unit: u.label,
@@ -169,9 +156,72 @@ func BuildPlan(checks []policy.ExternalCheckV1, sources map[string]policy.Extern
 	return plan, nil
 }
 
+// Applying lists, in document order, the IDs of the checks that apply to a
+// unit of req: those BuildPlan plans a lookup for, whether or not it then
+// refuses the request.
+func Applying(checks []policy.ExternalCheckV1, req Request) []string {
+	units := requestUnitsOf(req)
+	var out []string
+	for _, check := range checks {
+		if len(units.of(check)) > 0 {
+			out = append(out, check.ID)
+		}
+	}
+	return out
+}
+
+// requestUnits are a request's units at each scope.
+type requestUnits struct {
+	request, transactions, movements []unit
+}
+
+// of lists the units check applies to: those of its scope on a network it
+// covers and, for a movement check, of a kind it covers.
+func (r requestUnits) of(check policy.ExternalCheckV1) []unit {
+	var scoped []unit
+	switch check.Scope {
+	case policy.ExternalScopeRequest:
+		scoped = r.request
+	case policy.ExternalScopeTransaction:
+		scoped = r.transactions
+	case policy.ExternalScopeMovement:
+		scoped = r.movements
+	}
+	var out []unit
+	for _, u := range scoped {
+		if !check.CoversNetwork(u.network) {
+			continue
+		}
+		if check.Scope == policy.ExternalScopeMovement && !check.CoversMovementKind(u.kind) {
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
+}
+
 // requestUnitsOf lists a request's units at each scope: the request itself,
 // each transaction the cosigner signs, and each transfer movement of those.
-func requestUnitsOf(req Request) (request, transactions, movements []unit) {
+//
+// No fact is free text: each is the node's own rendering of a value, from a
+// fixed vocabulary or a fixed encoding, never text a transaction carries.
+//
+//   - network: a token of the node's network map (lowercase letters, digits,
+//     '_' and '-'); absent when the network is not known.
+//   - witness_key: the canonical Witness Key ID the plan carries (52
+//     uppercase base32 characters); absent when there is none.
+//   - sender, rekey_to, source, destination, asset_source: an address,
+//     types.Address.String (58 uppercase base32 characters).
+//   - txid: crypto.GetTxID (52 uppercase base32 characters).
+//   - type: one of policy.TransactionTypeNames; a transaction of any other
+//     type, which is raw text from its msgpack, has no type fact.
+//   - fee, amount, asset_id: strconv.FormatUint, decimal digits.
+//   - kind: a policy.TransferMovementKind, a fixed set of names.
+//   - asset: "algo", or "asa:" and decimal digits.
+//
+// renderLookup still refuses a value that would not be one path segment.
+func requestUnitsOf(req Request) requestUnits {
+	var request, transactions, movements []unit
 	networkOf := req.NetworkOf
 	if networkOf == nil {
 		networkOf = func(types.Transaction) string { return "" }
@@ -182,14 +232,22 @@ func requestUnitsOf(req Request) (request, transactions, movements []unit) {
 		}
 		txn := req.Group[target]
 		network := networkOf(txn)
-		base := Facts{"network": network, "witness_key": req.WitnessKey}
+		base := Facts{}
+		if network != "" {
+			base["network"] = network
+		}
+		if req.WitnessKey != "" {
+			base["witness_key"] = req.WitnessKey
+		}
 		if request == nil {
 			request = []unit{{label: "the request", network: network, facts: base}}
 		}
 		txFacts := cloneFacts(base)
 		txFacts["sender"] = txn.Sender.String()
 		txFacts["txid"] = crypto.GetTxID(txn)
-		txFacts["type"] = string(txn.Type)
+		if slices.Contains(policy.TransactionTypeNames, string(txn.Type)) {
+			txFacts["type"] = string(txn.Type)
+		}
 		txFacts["fee"] = strconv.FormatUint(uint64(txn.Fee), 10)
 		if !txn.RekeyTo.IsZero() {
 			txFacts["rekey_to"] = txn.RekeyTo.String()
@@ -218,7 +276,7 @@ func requestUnitsOf(req Request) (request, transactions, movements []unit) {
 			})
 		}
 	}
-	return request, transactions, movements
+	return requestUnits{request: request, transactions: transactions, movements: movements}
 }
 
 func cloneFacts(in Facts) Facts {
@@ -242,7 +300,14 @@ func renderLookup(check policy.ExternalCheckV1, source policy.ExternalSourceV1, 
 	path.WriteString(strings.TrimRight(base.EscapedPath(), "/"))
 	for _, part := range check.Path.Parts {
 		if part.Fact != "" {
-			path.WriteString(url.PathEscape(facts[part.Fact]))
+			// A second wall behind the facts' own forms: a value that is
+			// empty, a dot segment, or that escapes to more than one
+			// segment would change which resource the path names.
+			segment := url.PathEscape(facts[part.Fact])
+			if segment == "" || segment == "." || segment == ".." || strings.Contains(segment, "/") {
+				return Lookup{}, errors.New("a fact would not render as one path segment")
+			}
+			path.WriteString(segment)
 			continue
 		}
 		path.WriteString(part.Literal)
@@ -252,6 +317,9 @@ func renderLookup(check policy.ExternalCheckV1, source policy.ExternalSourceV1, 
 		var value strings.Builder
 		for _, part := range param.Value.Parts {
 			if part.Fact != "" {
+				if facts[part.Fact] == "" {
+					return Lookup{}, errors.New("a fact would render empty")
+				}
 				value.WriteString(facts[part.Fact])
 				continue
 			}

@@ -133,9 +133,12 @@ func (s *Service) signComponentWithContext(ctx context.Context, req componentPla
 		return nil, canceledSignRequest(err)
 	}
 
-	plan := prepareComponentSigning(req)
+	plan, planErr := prepareComponentSigning(req)
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return nil, lockedError()
+	}
+	if planErr != nil {
+		return nil, planErr
 	}
 	if err := s.runCosignerGates(ctx, plan); err != nil {
 		return nil, err

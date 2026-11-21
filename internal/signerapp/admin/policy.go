@@ -23,9 +23,8 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 
 // GetPolicyDocumentAt returns one active policy document's exact bytes,
 // refusing when ExpectedSnapshotSHA256 is set and the node's policy or
-// context moved since that snapshot. On an unlocked cosigner node it also
-// names the sources the document's selector has a token for, so an export
-// can record them; a locked node does not know them.
+// context moved since that snapshot. It names no source token: an export
+// reads token names with source_token_list, which needs policy.update.
 func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult {
 	np, set := s.Runtime.PolicyState()
 	if req.ExpectedSnapshotSHA256 != "" && np != nil {
@@ -39,11 +38,7 @@ func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) ad
 			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}
 		}
 	}
-	var tokens map[string][]string
-	if s.Runtime.NodeRole() == noderole.RoleCosigner {
-		tokens = s.Runtime.SourceTokenNames()
-	}
-	return policyapply.WithSourceTokens(policyapply.Document(np, req.Key), tokens)
+	return policyapply.Document(np, req.Key)
 }
 
 // GetPolicyContext returns the node's policy context with its digests,
@@ -56,7 +51,11 @@ func (s Service) GetPolicyContext() adminproto.PolicyContextView {
 }
 
 // CheckPolicy validates candidate documents against the node's role and
-// reports the key coverage the change would leave, without writing.
+// reports the key coverage the change would leave, without writing. On a
+// cosigner, for a request whose session may read token names
+// (req.SourceTokensReadable), it also warns of each source a document takes
+// a token for that its selector has none of, from the live token index,
+// one selector at a time.
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	current, set := s.Runtime.PolicyState()
 	if current == nil {
@@ -64,7 +63,9 @@ func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.Check
 	}
 	env := s.policyEnv(nil)
 	env.ASASet = set
-	env.SourceTokens = s.Runtime.SourceTokenNames()
+	if req.SourceTokensReadable && s.Runtime.NodeRole() == noderole.RoleCosigner {
+		env.SourceTokens = s.Runtime.SourceTokenNamesFor
+	}
 	return policyapply.Check(env, current, req)
 }
 

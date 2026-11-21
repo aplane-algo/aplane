@@ -184,12 +184,22 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 				return fmt.Errorf("asa set verification failed for product store: %w", err)
 			}
 			// Tokens are published with the policy they serve. A damaged
-			// token file fails the reload; one on a signer node is a role
-			// conflict, which fails the node closed as a forbidden key does.
+			// token file is damage in the selected generation, as a
+			// malformed key file is: the reload fails as a generation
+			// validation failure, which the unlock paths turn into
+			// recovery, where a restore can replace the file. One on a
+			// signer node is a role conflict, which fails the node closed
+			// as a forbidden key does.
 			tokens, err := sourcetokens.LoadIndex(active, ir.NodeRole(), kr)
 			if err != nil {
-				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
-					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
+				switch {
+				case errors.Is(err, keyclass.ErrNodeRoleConflict):
+					if hooks.NodeFailClosed != nil {
+						hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
+					}
+				case errors.Is(err, sourcetokens.ErrDamaged):
+					return fmt.Errorf("%w: source token verification failed for product store: %w",
+						signertemplates.ErrGenerationValidation, err)
 				}
 				return fmt.Errorf("source token verification failed for product store: %w", err)
 			}

@@ -80,7 +80,7 @@ func TestListSourceTokensReportsInUseUnusedAndNeeded(t *testing.T) {
 		}
 	}
 
-	all, omitted, svcErr := svc.ListSourceTokens("")
+	all, omitted, svcErr := svc.ListSourceTokens("", "")
 	if svcErr != nil || omitted != 0 {
 		t.Fatalf("ListSourceTokens() = %d omitted, %#v", omitted, svcErr)
 	}
@@ -104,13 +104,13 @@ func TestListSourceTokensReportsInUseUnusedAndNeeded(t *testing.T) {
 
 	// One key that follows the default: its own listing, then the default's,
 	// whose tokens serve its checks.
-	one, _, svcErr := svc.ListSourceTokens(follower)
+	one, _, svcErr := svc.ListSourceTokens(follower, "")
 	if svcErr != nil || len(one) != 2 || one[0].Selector != follower || one[0].Policy != adminproto.SourceTokenPolicyDefault ||
 		one[1].Selector != sourcetokens.DefaultSelector {
 		t.Fatalf("ListSourceTokens(follower) = %+v, %#v", one, svcErr)
 	}
 	// A key with its own document: that listing alone.
-	one, _, svcErr = svc.ListSourceTokens(keyID)
+	one, _, svcErr = svc.ListSourceTokens(keyID, "")
 	if svcErr != nil || len(one) != 1 || listingStates(one[0]) != keyID+" own [risk] risk=needed/- screening=unused/set" {
 		t.Fatalf("ListSourceTokens(own) = %+v, %#v", one, svcErr)
 	}
@@ -126,17 +126,17 @@ func TestListSourceTokensRefusals(t *testing.T) {
 		{unheldWitnessKeyID, ErrorNotFound},
 		{"CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM", ErrorInvalidInput},
 	} {
-		if _, _, svcErr := svc.ListSourceTokens(tt.selector); svcErr == nil || svcErr.Kind != tt.want {
+		if _, _, svcErr := svc.ListSourceTokens(tt.selector, ""); svcErr == nil || svcErr.Kind != tt.want {
 			t.Fatalf("ListSourceTokens(%s) error = %#v, want %v", tt.selector, svcErr, tt.want)
 		}
 	}
 	svc.Runtime.Lock()
-	if _, _, svcErr := svc.ListSourceTokens(""); svcErr == nil || svcErr.Kind != ErrorLocked {
+	if _, _, svcErr := svc.ListSourceTokens("", ""); svcErr == nil || svcErr.Kind != ErrorLocked {
 		t.Fatalf("ListSourceTokens(locked) error = %#v", svcErr)
 	}
 
 	signer := Service{Runtime: setupProductRuntimeWithRole(t, noderole.RoleSigner)}
-	if _, _, svcErr := signer.ListSourceTokens(""); svcErr == nil || svcErr.Kind != ErrorInvalidInput {
+	if _, _, svcErr := signer.ListSourceTokens("", ""); svcErr == nil || svcErr.Kind != ErrorInvalidInput {
 		t.Fatalf("ListSourceTokens(signer) error = %#v", svcErr)
 	}
 }
@@ -151,7 +151,7 @@ func TestListSourceTokensBoundsTheListingOfEverySelector(t *testing.T) {
 	}
 	own["QUIET"] = sourcesTaking(nil, "ops")
 	publishPolicy(svc, sourcesTaking(nil, "ops"), own)
-	all, omitted, svcErr := svc.ListSourceTokens("")
+	all, omitted, svcErr := svc.ListSourceTokens("", "")
 	if svcErr != nil || len(all) != MaxListedSourceTokenSelectors || omitted != 3 {
 		t.Fatalf("ListSourceTokens() = %d listed, %d omitted, %#v", len(all), omitted, svcErr)
 	}
@@ -187,5 +187,84 @@ func TestSourceTokenChangeResultListsStatesWithoutValues(t *testing.T) {
 	list := ipc.ListSourceTokens(adminproto.ListSourceTokensRequest{})
 	if !list.Success || len(list.Selectors) != 1 || len(list.Selectors[0].Tokens) != 2 {
 		t.Fatalf("ListSourceTokens() = %+v", list)
+	}
+}
+
+// A listing of every selector pages: after names the last selector of the
+// previous page, in the listing's order ("default" first, then the keys in
+// order), and omitted counts what is left after the page.
+func TestListSourceTokensPagesAfterASelector(t *testing.T) {
+	svc, keyID := cosignerWithKey(t)
+	other, err := svc.GenerateKey(context.Background(), witness.Falcon1024V1, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(second cosigner) error = %#v", err)
+	}
+	first, second := keyID, other.Address
+	if second < first {
+		first, second = second, first
+	}
+	publishPolicy(svc, sourcesTaking([]string{"screening"}), nil)
+	for _, selector := range []string{first, second} {
+		if _, svcErr := svc.SetSourceToken(selector, "screening", []byte("tok")); svcErr != nil {
+			t.Fatalf("SetSourceToken(%s) error = %#v", selector, svcErr)
+		}
+	}
+	after := func(selector string) string {
+		var out []string
+		for _, s := range []string{first, second} {
+			if s > selector {
+				out = append(out, s)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	selectorsOf := func(listings []adminproto.SourceTokenSelector) string {
+		var out []string
+		for _, l := range listings {
+			out = append(out, l.Selector)
+		}
+		return strings.Join(out, ",")
+	}
+	for _, tt := range []struct{ after, want string }{
+		{"", "default," + first + "," + second},
+		{"default", first + "," + second},
+		{first, second},
+		{second, ""},
+		// A selector that is not listed still places the page.
+		{unheldWitnessKeyID, after(unheldWitnessKeyID)},
+	} {
+		got, omitted, svcErr := svc.ListSourceTokens("", tt.after)
+		if svcErr != nil || omitted != 0 || selectorsOf(got) != tt.want {
+			t.Fatalf("ListSourceTokens(after %q) = %s, %d omitted, %#v; want %s", tt.after, selectorsOf(got), omitted, svcErr, tt.want)
+		}
+	}
+	if _, _, svcErr := svc.ListSourceTokens(first, "default"); svcErr == nil || svcErr.Kind != ErrorInvalidInput {
+		t.Fatalf("after with a selector: error = %#v, want invalid input", svcErr)
+	}
+	if _, _, svcErr := svc.ListSourceTokens("", "not-a-selector"); svcErr == nil || svcErr.Kind != ErrorInvalidInput {
+		t.Fatalf("an invalid after: error = %#v, want invalid input", svcErr)
+	}
+}
+
+// A page holds at most the limit, and omitted counts the selectors after it
+// that a listing would show; selectors it would not show are not counted.
+func TestPageSourceTokenSelectors(t *testing.T) {
+	order := []string{"default", "A", "B", "C", "D"}
+	listed := func(s string) bool { return s != "B" }
+	for _, tt := range []struct {
+		after   string
+		page    string
+		omitted int
+	}{
+		{"", "default,A", 2},
+		{"A", "C,D", 0},
+		{"B", "C,D", 0},
+		{"default", "A,C", 1},
+		{"D", "", 0},
+	} {
+		page, omitted := pageSourceTokenSelectors(order, listed, tt.after, 2)
+		if strings.Join(page, ",") != tt.page || omitted != tt.omitted {
+			t.Fatalf("after %q: page %v, %d omitted; want %s, %d", tt.after, page, omitted, tt.page, tt.omitted)
+		}
 	}
 }

@@ -994,7 +994,7 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `templates.install` | Install a template | `template` | Yes |
 | `templates.remove` | Remove an installed template | `template` | Yes |
 | `policy.view` | View signer policy | `policy` | No |
-| `policy.update` | Update signer policy | `policy` | No |
+| `policy.update` | Update signer policy; also read which sources have a source token (`source_token_list`, and the missing-token warnings of `check_policy`) | `policy`, `source_tokens` | No |
 | `settings.view` | View admin settings | `settings` | No |
 | `settings.update` | Update admin settings | `settings` | No |
 | `clients.view` | List enrolled client keys and their live connections, and the enrollment requests waiting for approval | `clients`, `client_enrollment` | No |
@@ -2405,6 +2405,16 @@ A token's custody:
   three messages require `policy.update` and are not open to `auth_only`
   sessions. apadmin reads it from a no-echo prompt or stdin, never from the
   command line.
+- **Which sources have a token** is itself readable only at
+  `policy.update`, on every path: `source_token_list` requires it,
+  `get_policy_document` names no token source, and `check_policy`, which
+  needs only `policy.view`, gives its missing-token warnings
+  (`external_check:token_not_set`) only to a session that also has
+  `policy.update`. For any other session the names are not known: no
+  names and no missing-token warning, as on a locked node. The server asks
+  the authorizer about `policy.update` for this without making it a request,
+  so a session without it is not audited as denied. An export of a cosigner
+  records token names only when its session could read them.
 - **In backups.** A backup carries each cosigner key's tokens with the key,
   encrypted under the export passphrase the requesting session supplies
   ([ARCH_STORE.md](ARCH_STORE.md#export-and-archive-shape)); the node

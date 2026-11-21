@@ -12,7 +12,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/apadminapp"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policyexport"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,7 +24,11 @@ import (
 // installed again with apadmin policy apply. The documents are fetched one at
 // a time against the snapshot the summary and context were read at, so the
 // node refuses a fetch once either moved, and they are written only if
-// together they are still the policy set the summary listed.
+// together they are still the policy set the summary listed. A cosigner's
+// export then reads the node's source token listing, a page at a time, and
+// records which sources every selector has a token for; when the node will
+// not say (a session without policy.update), the export records none and
+// says so.
 
 // policyExportState is the export directory prompt and the fetch in progress.
 type policyExportState struct {
@@ -40,9 +46,14 @@ type policyExportState struct {
 	// composite snapshot every document is fetched against.
 	context  adminproto.PolicyContextView
 	snapshot string
-	// pendingID names the document request the export is waiting for;
-	// responses to any other request are not the export's.
+	// pendingID names the document or token listing request the export is
+	// waiting for; responses to any other request are not the export's.
 	pendingID string
+	// listingTokens is set while the token listing is read into tokens.
+	// tokenNote, when set, says why no token names were recorded.
+	listingTokens bool
+	tokens        apadminapp.SourceTokenNames
+	tokenNote     string
 }
 
 // PolicyExportWrittenMsg reports the end of an export's write.
@@ -170,18 +181,74 @@ func (m Model) handlePolicyExportDocumentLoaded(msg PolicyDocumentLoadedMsg) (te
 	}
 	export.docs = append(export.docs, policyexport.Document{
 		Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key],
-		SourceTokens: doc.SourceTokens, SourceTokensKnown: doc.SourceTokensKnown,
 	})
 	if len(export.queue) > 0 {
 		return m.fetchNextPolicyExportDocument()
 	}
-	export.busy = "Writing policy files..."
-	return m, writePolicyExportCmd(export.path, export.docs, export.context)
+	if export.context.NodeRole == string(noderole.RoleCosigner) {
+		export.tokens = apadminapp.SourceTokenNames{}
+		return m.fetchPolicyExportSourceTokens("")
+	}
+	return m.writePolicyExport(nil)
 }
 
-func writePolicyExportCmd(dir string, docs []policyexport.Document, context adminproto.PolicyContextView) tea.Cmd {
+// fetchPolicyExportSourceTokens asks for the page of the token listing that
+// starts after after.
+func (m Model) fetchPolicyExportSourceTokens(after string) (tea.Model, tea.Cmd) {
+	export := &m.policies.export
+	export.listingTokens = true
+	export.busy = "Reading source token names..."
+	export.pendingID = newRequestID("policy-export-tokens")
+	id := export.pendingID
+	return m, operationCmd(m.adminClient, id, func(c *IPCClient) error {
+		return c.sendMessage(protocol.SourceTokenListMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSourceTokenList, ID: id},
+			After:       after,
+		})
+	})
+}
+
+// handlePolicyExportSourceTokens records one page of the token listing the
+// export asked for, then asks for the next or writes the export. ok is
+// false when msg answers some other request.
+func (m Model) handlePolicyExportSourceTokens(msg sourceTokenListMsg) (tea.Model, tea.Cmd, bool) {
+	export := &m.policies.export
+	if !export.listingTokens || msg.ID == "" || msg.ID != export.pendingID {
+		return m, nil, false
+	}
+	export.pendingID = ""
+	after, done, err := export.tokens.Add(protocol.SourceTokenListResultMessage(msg))
+	switch {
+	case err != nil:
+		next, cmd := m.writePolicyExportWithoutTokens(err)
+		return next, cmd, true
+	case done:
+		next, cmd := m.writePolicyExport(export.tokens.Names())
+		return next, cmd, true
+	}
+	next, cmd := m.fetchPolicyExportSourceTokens(after)
+	return next, cmd, true
+}
+
+// writePolicyExportWithoutTokens writes the export with no token names, as
+// when the node refused the listing, and keeps why for the result.
+func (m Model) writePolicyExportWithoutTokens(err error) (tea.Model, tea.Cmd) {
+	m.policies.export.tokenNote = "No source token names were recorded (" + err.Error() + "), so appolicy check gives no missing-token warning from this export."
+	return m.writePolicyExport(nil)
+}
+
+// writePolicyExport writes the fetched documents with tokens, the token
+// names to record (nil for none).
+func (m Model) writePolicyExport(tokens map[string][]string) (tea.Model, tea.Cmd) {
+	export := &m.policies.export
+	export.listingTokens = false
+	export.busy = "Writing policy files..."
+	return m, writePolicyExportCmd(export.path, export.docs, export.context, tokens)
+}
+
+func writePolicyExportCmd(dir string, docs []policyexport.Document, context adminproto.PolicyContextView, tokens map[string][]string) tea.Cmd {
 	return func() tea.Msg {
-		paths, err := apadminapp.WritePolicyExport(dir, docs, context, time.Now())
+		paths, err := apadminapp.WritePolicyExport(dir, docs, context, tokens, time.Now())
 		return PolicyExportWrittenMsg{Dir: dir, Paths: paths, Err: err}
 	}
 }
@@ -196,22 +263,32 @@ func (m Model) handlePolicyExportWritten(msg PolicyExportWrittenMsg) (tea.Model,
 		export.err = msg.Err.Error()
 		return m, nil
 	}
+	note := export.tokenNote
 	m = m.closePolicyExport()
 	m.policies.status = fmt.Sprintf("Exported %d policy document(s) to %s. Check them offline with: appolicy check %s", len(msg.Paths), msg.Dir, msg.Dir)
+	if note != "" {
+		m.policies.status += " " + note
+	}
 	return m, nil
 }
 
-// failPendingPolicyExport ends an export whose document request could not be
-// sent. It reports false when id is not the export's request.
-func (m Model) failPendingPolicyExport(id string, err error) (Model, bool) {
+// failPendingPolicyExport ends an export whose document request failed or
+// could not be sent. A token listing that fails instead leaves the names
+// unrecorded and writes the export. It reports false when id is not the
+// export's request.
+func (m Model) failPendingPolicyExport(id string, err error) (Model, tea.Cmd, bool) {
 	export := &m.policies.export
 	if id == "" || id != export.pendingID {
-		return m, false
+		return m, nil, false
 	}
 	export.pendingID = ""
+	if export.listingTokens {
+		next, cmd := m.writePolicyExportWithoutTokens(err)
+		return next.(Model), cmd, true
+	}
 	export.busy = ""
 	export.err = "Export failed: " + err.Error()
-	return m, true
+	return m, nil, true
 }
 
 func (m Model) renderPolicyExportForm() string {

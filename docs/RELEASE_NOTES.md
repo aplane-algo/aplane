@@ -75,14 +75,18 @@ before it was renamed `enroll`.
   `token_not_set` and others) to pin the fail-closed outcomes, and may expect
   `conditional_approve`. `appolicy test` runs them through the same code as
   `try --answer`. The cases format keeps its name.
-- **An export of a cosigner records which sources have a token**, per
-  document, names only, and `appolicy check` warns of a source whose token
-  the document's key lacked at the export. A token set after the export does
-  not make the export stale.
+- **An export of a cosigner records which sources have a token**, names
+  only, for every key with a token, one that follows the default and has no
+  document of its own included, and `appolicy check` warns of a source whose
+  token the document's key lacked at the export. Token names are readable
+  only at `policy.update`: an export by a session without it records none,
+  and `apadmin policy check` gives such a session no missing-token warning.
+  A token set after the export does not make the export stale.
 - **The admin protocol gains messages; its version stays 8.** It adds `source_token_set`,
-  `source_token_remove` and `source_token_list`, the source names in a
-  `restore_preview` key and a `restore_backup_result`, and, on an unlocked
-  cosigner, the source names of a `policy_document`.
+  `source_token_remove` and `source_token_list` (whose listing of every
+  selector pages with `after`), the source names in a `restore_preview` key
+  and a `restore_backup_result`, and `source_token_files_migrated` in a
+  `change_store_passphrase_result`.
 
 ## This release is new-install only
 

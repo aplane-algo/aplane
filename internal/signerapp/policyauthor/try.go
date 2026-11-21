@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -164,7 +163,7 @@ func TryWithAnswers(f *File, txn TryTxn, answers ExternalAnswers, networks Netwo
 	}
 	if f.Role == noderole.RoleCosigner && verdict.Outcome == policyeval.Approve && len(f.Document.ExternalChecks) > 0 {
 		network, _ := networks.Resolver.NetworkForGenesisHashBytes(built.GenesisHash[:])
-		x, err := judgeExternalChecks(f.Document, cfg, built, network, f.Key, answers)
+		x, err := judgeExternalChecks(cfg, built, network, f.Key, answers)
 		if err != nil {
 			return TryResult{}, err
 		}
@@ -246,24 +245,6 @@ func buildTryTxn(t TryTxn, networks Networks) (types.Transaction, error) {
 	txn.AssetCloseTo = closeTo
 	txn.AssetSender = clawbackFrom
 	return txn, nil
-}
-
-// applicableExternalChecks lists the IDs of doc's checks that would make a
-// lookup for txn on network: those covering the network, and for a movement
-// check, covering one of txn's movements.
-func applicableExternalChecks(doc *policy.PolicyV1, network string, txn types.Transaction) []string {
-	movements := policy.ExtractTransferMovements(txn)
-	var out []string
-	for _, c := range doc.ExternalChecks {
-		if !c.CoversNetwork(network) {
-			continue
-		}
-		if c.Scope == policy.ExternalScopeMovement && !slices.ContainsFunc(movements, func(m policy.TransferMovement) bool { return c.CoversMovementKind(m.Kind) }) {
-			continue
-		}
-		out = append(out, c.ID)
-	}
-	return out
 }
 
 func trySummary(r TryResult) string {

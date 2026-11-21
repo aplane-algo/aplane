@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"time"
 
@@ -24,14 +26,19 @@ const ExportFormat = "aplane.policy-node-context.v1"
 
 // MaxExportBytes bounds a context file. Its asset table is bounded by the
 // ASA set file (1 MiB of confirmations), its manifest by the node's document
-// cap (8,192 keys and the default), and its source token names by that cap
-// and MaxSourceTokenNames per document, so even at every limit a file is
-// well under this.
+// cap (8,192 keys and the default), and its source token names by
+// MaxSourceTokenSelectors and MaxSourceTokenNames, so even at every limit a
+// file is well under this.
 const MaxExportBytes = 16 << 20
 
 // MaxSourceTokenNames is the most source names an export records for one
-// document: a selector's token file holds at most 8 tokens.
+// selector: a selector's token file holds at most 8 tokens.
 const MaxSourceTokenNames = 8
+
+// MaxSourceTokenSelectors is the most selectors an export records token
+// names for: a cosigner holds at most 8,192 keys (keys.MaxCosignerCredentials),
+// each a selector, and the node default is one more.
+const MaxSourceTokenSelectors = 8192 + 1
 
 // Export is a node's policy context as exported with its documents: when it
 // was taken, the context, and the baseline, the documents the node held then.
@@ -41,12 +48,14 @@ type Export struct {
 	ExportedAt time.Time
 	Context    *Context
 	Baseline   Baseline
-	// SourceTokens names, for every baseline document of a cosigner export,
-	// the sources its selector had a token for at export, sorted; nil when
-	// the export recorded none (a signer, or a cosigner that was locked).
-	// The names sit beside the context and the baseline and are in neither
-	// digest: a token is not policy, so one set after the export does not
-	// make the export stale.
+	// SourceTokens names, for every selector of a cosigner that had a token
+	// at export, whether or not it had a document of its own, the sources
+	// it had one for, sorted. A selector it does not list had none. It is
+	// nil when the export recorded no names (a signer, or a cosigner whose
+	// tokens the export could not read), and then nothing is known of
+	// tokens; use SourceTokenNames. The names sit beside the context and the
+	// baseline and are in neither digest: a token is not policy, so one set
+	// after the export does not make the export stale.
 	SourceTokens map[string][]string
 }
 
@@ -77,35 +86,55 @@ func NewExport(ctx *Context, docs []policy.DocumentDigest, at time.Time) (*Expor
 	return &Export{ExportedAt: at.UTC().Truncate(time.Second), Context: ctx, Baseline: baseline}, nil
 }
 
-// RecordSourceTokens records, for every baseline document, the source names
-// names (by selector) lists for it: none when it lists none. Only a cosigner
-// export records them, and names may list only baseline documents, each
-// with at most MaxSourceTokenNames valid source names.
+// RecordSourceTokens records names, the source names every selector with a
+// token has a token for, by selector: the whole of a cosigner's tokens, so a
+// selector it does not list is recorded as having none. A selector listed
+// with no names is left out. Only a cosigner export records them, and each
+// selector must be one a cosigner document can be keyed by, with at most
+// MaxSourceTokenNames valid source names.
 func (e *Export) RecordSourceTokens(names map[string][]string) error {
 	if e.Context.Role() != noderole.RoleCosigner {
 		return fmt.Errorf("only a cosigner export records source token names, not a %s one", e.Context.Role())
 	}
-	recorded := make(map[string][]string, len(e.Baseline.Documents))
-	for _, doc := range e.Baseline.Documents {
-		sorted := append([]string{}, names[doc.Key]...)
+	recorded := make(map[string][]string, len(names))
+	for selector, list := range names {
+		if len(list) == 0 {
+			continue
+		}
+		if err := policy.ValidateDocumentKey(e.Context.Role(), selector); err != nil {
+			return fmt.Errorf("source tokens: %w", err)
+		}
+		sorted := append([]string(nil), list...)
 		sort.Strings(sorted)
-		if err := validateSourceTokenNames(doc.Key, sorted); err != nil {
+		if err := validateSourceTokenNames(selector, sorted); err != nil {
 			return err
 		}
-		recorded[doc.Key] = sorted
+		recorded[selector] = sorted
 	}
-	for key := range names {
-		if _, ok := recorded[key]; !ok {
-			return fmt.Errorf("source tokens: %s is not a baseline document", key)
-		}
+	if len(recorded) > MaxSourceTokenSelectors {
+		return fmt.Errorf("source tokens: %d selectors, at most %d", len(recorded), MaxSourceTokenSelectors)
 	}
 	e.SourceTokens = recorded
 	return nil
 }
 
-// validateSourceTokenNames checks one document's recorded names: sorted,
-// distinct, valid source names, at most MaxSourceTokenNames.
+// SourceTokenNames returns the source names selector had a token for at the
+// export, and known: false when the export recorded no names, so nothing is
+// known of the selector's tokens. A selector the recorded names do not list
+// had none, known.
+func (e *Export) SourceTokenNames(selector string) (names []string, known bool) {
+	if e == nil || e.SourceTokens == nil {
+		return nil, false
+	}
+	return e.SourceTokens[selector], true
+}
+
+// validateSourceTokenNames checks one selector's recorded names: 1 to
+// MaxSourceTokenNames valid source names, sorted and distinct.
 func validateSourceTokenNames(key string, names []string) error {
+	if len(names) == 0 {
+		return fmt.Errorf("source tokens of %s: no names; a selector without tokens is not listed", key)
+	}
 	if len(names) > MaxSourceTokenNames {
 		return fmt.Errorf("source tokens of %s: %d names, at most %d", key, len(names), MaxSourceTokenNames)
 	}
@@ -154,9 +183,10 @@ type exportFileV1 struct {
 	Assets        []exportAsset   `json:"assets"`
 	ContextSHA256 string          `json:"context_sha256"`
 	Baseline      exportBaseline  `json:"baseline"`
-	// SourceTokens is absent when the export recorded none, else it has one
-	// entry per baseline document, in the baseline's order.
-	SourceTokens []exportSourceTokens `json:"source_tokens,omitempty"`
+	// SourceTokens is absent when the export recorded no names, else it has
+	// one entry per selector that had a token, sorted by key: possibly none,
+	// written as an empty list.
+	SourceTokens *[]exportSourceTokens `json:"source_tokens,omitempty"`
 }
 
 type exportSourceTokens struct {
@@ -218,9 +248,13 @@ func (e *Export) Marshal() ([]byte, error) {
 	}
 	for _, doc := range e.Baseline.Documents {
 		f.Baseline.Documents = append(f.Baseline.Documents, exportDocument{Key: doc.Key, SHA256: doc.SHA256})
-		if e.SourceTokens != nil {
-			f.SourceTokens = append(f.SourceTokens, exportSourceTokens{Key: doc.Key, Sources: append([]string{}, e.SourceTokens[doc.Key]...)})
+	}
+	if e.SourceTokens != nil {
+		entries := make([]exportSourceTokens, 0, len(e.SourceTokens))
+		for _, key := range slices.Sorted(maps.Keys(e.SourceTokens)) {
+			entries = append(entries, exportSourceTokens{Key: key, Sources: append([]string{}, e.SourceTokens[key]...)})
 		}
+		f.SourceTokens = &entries
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -317,20 +351,19 @@ func ParseExport(data []byte) (*Export, error) {
 }
 
 // parseSourceTokens reads the file's source token names, when it has them:
-// one entry per baseline document, in the baseline's order, on a cosigner
-// export only.
-func (e *Export) parseSourceTokens(entries []exportSourceTokens) error {
+// on a cosigner export only, one entry per selector that had a token, sorted
+// by key, each listed once and with at least one name.
+func (e *Export) parseSourceTokens(entries *[]exportSourceTokens) error {
 	if entries == nil {
 		return nil
 	}
-	docs := e.Baseline.Documents
-	if len(entries) != len(docs) {
-		return fmt.Errorf("source_tokens lists %d documents, the baseline %d", len(entries), len(docs))
+	if len(*entries) > MaxSourceTokenSelectors {
+		return fmt.Errorf("source_tokens lists %d selectors, at most %d", len(*entries), MaxSourceTokenSelectors)
 	}
-	names := make(map[string][]string, len(entries))
-	for i, entry := range entries {
-		if entry.Key != docs[i].Key {
-			return fmt.Errorf("source_tokens entry %d is %s, want the baseline's %s", i, entry.Key, docs[i].Key)
+	names := make(map[string][]string, len(*entries))
+	for i, entry := range *entries {
+		if i > 0 && (*entries)[i-1].Key >= entry.Key {
+			return fmt.Errorf("source_tokens must be sorted by key and list each key once (%s)", entry.Key)
 		}
 		if entry.Sources == nil {
 			return fmt.Errorf("source_tokens entry %s has no sources list", entry.Key)

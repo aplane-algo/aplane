@@ -393,7 +393,7 @@ func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transacti
 	for i, txn := range group {
 		hexes[i] = txnutil.EncodeWithPrefixHex(txn)
 	}
-	plan := prepareComponentSigning(componentPlanRequest{
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
 		RequestID:     c.Name,
 		ComponentKey:  componentKey,
 		Group:         componentTestGroup(t, hexes),

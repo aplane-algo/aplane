@@ -17,10 +17,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/policycontext"
 )
 
-func knownTokens(doc Document, names ...string) Document {
-	doc.SourceTokens, doc.SourceTokensKnown = names, true
-	return doc
-}
+// followerKey is a cosigner key with no document of its own.
+const followerKey = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
 
 // readExport reads back the context an export wrote.
 func readExport(t *testing.T, paths []string) *Selected {
@@ -32,37 +30,46 @@ func readExport(t *testing.T, paths []string) *Selected {
 	return selected
 }
 
-// A cosigner export records the source names each document's selector has a
-// token for when the node knew them for every document, and none otherwise.
-func TestWriteRecordsSourceTokenNamesOnlyWhenEveryDocumentKnew(t *testing.T) {
+// A cosigner export records the source names every selector with a token has
+// one for, a key without a document of its own included; a selector it does
+// not list had none. Without names it records none, and then nothing is
+// known of tokens.
+func TestWriteRecordsTheSourceTokenNamesOfEverySelector(t *testing.T) {
 	def, key := exportDoc(policy.DefaultKey, "{}"), exportDoc(exportTestKey, "{\"k\":1}")
 	view := contextView(t, exportSet(def, key))
 
-	paths, err := view.write(filepath.Join(t.TempDir(), "export"), []Document{knownTokens(def), knownTokens(key, "treasury", "screening")})
+	paths, err := view.writeWithTokens(filepath.Join(t.TempDir(), "export"), []Document{def, key},
+		map[string][]string{exportTestKey: {"treasury", "screening"}, followerKey: {"ops"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := readExport(t, paths).Export.SourceTokens
-	if fmt.Sprint(got) != fmt.Sprint(map[string][]string{policy.DefaultKey: {}, exportTestKey: {"screening", "treasury"}}) {
-		t.Fatalf("SourceTokens = %v", got)
+	export := readExport(t, paths).Export
+	if fmt.Sprint(export.SourceTokens) != fmt.Sprint(map[string][]string{exportTestKey: {"screening", "treasury"}, followerKey: {"ops"}}) {
+		t.Fatalf("SourceTokens = %v", export.SourceTokens)
+	}
+	for selector, want := range map[string]string{followerKey: "[ops]", policy.DefaultKey: "[]", exportTestKey: "[screening treasury]"} {
+		if names, known := export.SourceTokenNames(selector); !known || fmt.Sprint(names) != want {
+			t.Fatalf("SourceTokenNames(%s) = %v, %v; want %s, known", selector, names, known, want)
+		}
 	}
 
-	// The node locked part way through: one document came without them.
-	paths, err = view.write(filepath.Join(t.TempDir(), "export"), []Document{knownTokens(def), key})
+	paths, err = view.write(filepath.Join(t.TempDir(), "export"), []Document{def, key})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readExport(t, paths).Export.SourceTokens; got != nil {
-		t.Fatalf("a partly known export recorded %v", got)
+	if export := readExport(t, paths).Export; export.SourceTokens != nil {
+		t.Fatalf("an export without names recorded %v", export.SourceTokens)
+	} else if _, known := export.SourceTokenNames(followerKey); known {
+		t.Fatal("an export without names claims to know a selector's")
 	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(paths[0]), ContextDir, ContextFile))
 	if err != nil || strings.Contains(string(data), "source_tokens") {
-		t.Fatalf("context file of a partly known export:\n%s (%v)", data, err)
+		t.Fatalf("context file of an export without names:\n%s (%v)", data, err)
 	}
 }
 
-// A signer has no source tokens, so its export records none whatever its
-// documents claim.
+// A signer has no source tokens: its export records none, and one given
+// names is refused.
 func TestASignerExportRecordsNoSourceTokenNames(t *testing.T) {
 	ctx, err := policycontext.New(noderole.RoleSigner, apconfig.DefaultGenesisHashNetworkResolver(), asaset.Empty())
 	if err != nil {
@@ -70,13 +77,17 @@ func TestASignerExportRecordsNoSourceTokenNames(t *testing.T) {
 	}
 	def := exportDoc(policy.DefaultKey, "{}")
 	set := exportSet(def)
-	paths, err := Write(filepath.Join(t.TempDir(), "export"), []Document{knownTokens(def, "ops")}, ctx, set,
-		policycontext.SnapshotSHA256(ctx.SHA256(), set), exportTime)
+	snapshot := policycontext.SnapshotSHA256(ctx.SHA256(), set)
+	paths, err := Write(filepath.Join(t.TempDir(), "export"), []Document{def}, ctx, set, snapshot, nil, exportTime)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := readExport(t, paths).Export.SourceTokens; got != nil {
 		t.Fatalf("a signer export recorded %v", got)
+	}
+	if _, err := Write(filepath.Join(t.TempDir(), "export"), []Document{def}, ctx, set, snapshot,
+		map[string][]string{policy.DefaultKey: {"ops"}}, exportTime); err == nil {
+		t.Fatal("a signer export recorded source token names")
 	}
 }
 
@@ -86,19 +97,15 @@ func TestASignerExportRecordsNoSourceTokenNames(t *testing.T) {
 func TestSourceTokenNamesDoNotMakeAnExportStale(t *testing.T) {
 	def, key := exportDoc(policy.DefaultKey, "{}"), exportDoc(exportTestKey, "{\"k\":1}")
 	view := contextView(t, exportSet(def, key))
-	withNames, err := view.write(filepath.Join(t.TempDir(), "export"), []Document{knownTokens(def), knownTokens(key, "screening")})
-	if err != nil {
-		t.Fatal(err)
+	var exports [][]string
+	for _, tokens := range []map[string][]string{{exportTestKey: {"screening"}}, {policy.DefaultKey: {"ops"}}, {}, nil} {
+		paths, err := view.writeWithTokens(filepath.Join(t.TempDir(), "export"), []Document{def, key}, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exports = append(exports, paths)
 	}
-	withOthers, err := view.write(filepath.Join(t.TempDir(), "export"), []Document{knownTokens(def, "ops"), knownTokens(key)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	without, err := view.write(filepath.Join(t.TempDir(), "export"), []Document{def, key})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, paths := range [][]string{withNames, withOthers, without} {
+	for _, paths := range exports {
 		selected := readExport(t, paths)
 		if err := selected.Compare(view.ctx.SHA256(), view.set, view.snapshot); err != nil {
 			t.Fatalf("Compare() with the node unchanged but for its tokens: %v", err)

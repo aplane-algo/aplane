@@ -208,6 +208,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nativeMnemonicResultMsg:
 		return m.handleNativeMnemonicResult(msg)
 	case sourceTokenListMsg:
+		if next, cmd, ok := m.handlePolicyExportSourceTokens(msg); ok {
+			return next, cmd
+		}
 		return m.handleSourceTokenList(msg)
 	case sourceTokenChangeMsg:
 		return m.handleSourceTokenChange(msg)

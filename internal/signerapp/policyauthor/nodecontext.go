@@ -25,10 +25,22 @@ type NodeContext struct {
 	ExportedAt time.Time
 	// Path is the context file it was read from.
 	Path string
-	// SourceTokens names, by document key, the sources whose token the
-	// node had at the export; nil when the export recorded none, and then
-	// nothing is said of tokens.
+	// SourceTokens names, for every selector that had a token at the
+	// export, the sources it had one for: a selector it does not list had
+	// none. nil when the export recorded no names, and then nothing is said
+	// of tokens.
 	SourceTokens map[string][]string
+}
+
+// sourceTokenNames returns the source names selector had a token for at the
+// export, and known: false when the export recorded no names. A selector
+// the recorded names do not list, with or without a document at the export,
+// had none, known.
+func (n *NodeContext) sourceTokenNames(selector string) ([]string, bool) {
+	if n == nil || n.SourceTokens == nil {
+		return nil, false
+	}
+	return n.SourceTokens[selector], true
 }
 
 // Describe says where the context comes from and how old it is, for a
@@ -126,14 +138,18 @@ func (w *Workspace) checkAdmission(f *File) {
 }
 
 // checkSourceTokens warns of each source f's document declares a token for
-// that its selector had none of at the export. It says nothing without an
-// export that recorded the node's token names: which tokens are set is not
+// that its selector had none of at the export. It says nothing unless the
+// export positively knows the selector's names: which tokens are set is not
 // in the files.
 func (w *Workspace) checkSourceTokens(f *File) {
-	if w.Node == nil || w.Node.SourceTokens == nil || f.Role != w.Node.Context.Role() {
+	if w.Node == nil || f.Role != w.Node.Context.Role() {
 		return
 	}
-	for _, a := range f.Document.MissingTokenAdvisories(w.Node.SourceTokens[f.Document.Key]) {
+	names, known := w.Node.sourceTokenNames(f.Document.Key)
+	if !known {
+		return
+	}
+	for _, a := range f.Document.MissingTokenAdvisories(names) {
 		w.Problems = append(w.Problems, Problem{Path: f.Path, Pointer: a.Pointer, Severity: SeverityWarning, RuleID: a.RuleID, Message: a.Message})
 	}
 }

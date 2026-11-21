@@ -209,7 +209,10 @@ func TestATokenChangeAfterARestoreMakesRollbackRefuse(t *testing.T) {
 }
 
 // In recovery mode, restoring a key whose destination token file is damaged
-// replaces it with the archived one when replace_existing is given.
+// replaces it with the archived one when replace_existing is given. This
+// pins the restore's conflict and replacement; that a damaged token file puts
+// the node in recovery through a real unlock is
+// daemon.TestADamagedKeyTokenFileEntersRecoveryAndRestoreRepairsIt.
 func TestRecoveryRestoreRepairsADamagedTokenFileFromTheBackup(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	ir := unlockedCosignerRuntime(t, paths)

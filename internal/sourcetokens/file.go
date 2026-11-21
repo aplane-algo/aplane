@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"regexp"
 	"slices"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -37,7 +37,7 @@ const (
 	MaxTokens = 8
 	// MaxSourceNameBytes is the longest source name, as policy documents
 	// allow it.
-	MaxSourceNameBytes = 64
+	MaxSourceNameBytes = policy.MaxExternalSourceName
 	// MaxTokenBytes is the longest token.
 	MaxTokenBytes = 1024
 	// MaxFileBytes is the largest encrypted token file. It keeps token files
@@ -57,9 +57,6 @@ var (
 	// ErrInvalidToken refuses a token outside the token rules.
 	ErrInvalidToken = errors.New("invalid source token")
 )
-
-// sourceNamePattern is the policy document's rule for source names.
-var sourceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Token is one source's token and when it was set.
 type Token struct {
@@ -130,9 +127,10 @@ func ValidateSelector(selector string) error {
 	return nil
 }
 
-// ValidateSourceName reports whether name is a valid source name.
+// ValidateSourceName reports whether name is a valid source name, by the
+// policy document's own rule (policy.IsExternalSourceName).
 func ValidateSourceName(name string) error {
-	if len(name) == 0 || len(name) > MaxSourceNameBytes || !sourceNamePattern.MatchString(name) {
+	if !policy.IsExternalSourceName(name) {
 		return fmt.Errorf("source name %q must be 1 to %d lowercase letters, digits, '_' or '-', starting with a letter or digit",
 			name, MaxSourceNameBytes)
 	}

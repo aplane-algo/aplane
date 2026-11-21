@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -76,9 +78,15 @@ type fakeOnlineSession struct {
 	contextSet string
 	// context, when set, is the full context served instead of digests alone.
 	context *protocol.PolicyContextMessage
-	// tokens, when set, are the source names each selector has a token for,
-	// served with its document as an unlocked cosigner node does.
-	tokens map[string][]string
+	// tokens, when set, are the source names each selector with a token
+	// has one for, served by source_token_list as an unlocked cosigner node
+	// does, tokenPage selectors a page (all when 0); nil answers as a
+	// locked node. tokensDenied refuses the listing as a session without
+	// policy.update is refused. tokenLists counts the listing requests.
+	tokens       map[string][]string
+	tokenPage    int
+	tokensDenied bool
+	tokenLists   int
 }
 
 // builtinContext is the context of a node of role with the built-in
@@ -157,6 +165,51 @@ func newFakeSession(role string, docs ...protocol.PolicyDocumentWire) *fakeOnlin
 	return f
 }
 
+// sourceTokenList answers a listing of every selector from f.tokens, a page
+// after request.After at a time, "default" first and then the keys in order.
+func (f *fakeOnlineSession) sourceTokenList(request protocol.SourceTokenListMessage) ([]byte, error) {
+	base := protocol.BaseMessage{Type: protocol.MsgTypeSourceTokenListResult, ID: request.ID}
+	if f.tokensDenied {
+		return protocol.MarshalAdminMessage(protocol.ErrorMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: request.ID},
+			Code:        protocol.ErrCodeAuthorizationDenied, Error: "authorization denied",
+		})
+	}
+	if f.tokens == nil {
+		return protocol.MarshalAdminMessage(protocol.SourceTokenListResultMessage{BaseMessage: base, Code: "identity_locked", Error: "the signer is locked"})
+	}
+	var order []string
+	if _, ok := f.tokens[policy.DefaultKey]; ok {
+		order = append(order, policy.DefaultKey)
+	}
+	for _, key := range slices.Sorted(maps.Keys(f.tokens)) {
+		if key != policy.DefaultKey {
+			order = append(order, key)
+		}
+	}
+	if request.After != "" {
+		for i, key := range order {
+			if key == request.After {
+				order = order[i+1:]
+				break
+			}
+		}
+	}
+	reply := protocol.SourceTokenListResultMessage{BaseMessage: base, Success: true, Selectors: []protocol.SourceTokenSelector{}}
+	for i, key := range order {
+		if f.tokenPage > 0 && i == f.tokenPage {
+			reply.Omitted = len(order) - i
+			break
+		}
+		listing := protocol.SourceTokenSelector{Selector: key, Policy: protocol.SourceTokenPolicyOwn}
+		for _, source := range f.tokens[key] {
+			listing.Tokens = append(listing.Tokens, protocol.SourceTokenInfo{Source: source, SetAt: "2026-11-01T00:00:00Z", State: protocol.SourceTokenInUse})
+		}
+		reply.Selectors = append(reply.Selectors, listing)
+	}
+	return protocol.MarshalAdminMessage(reply)
+}
+
 func (f *fakeOnlineSession) Dial() error { f.dialCalls++; return nil }
 func (f *fakeOnlineSession) Close()      { f.closeCalls++ }
 func (f *fakeOnlineSession) Authenticate(passphrase []byte, _ time.Duration) error {
@@ -195,12 +248,12 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			reply = protocol.PolicyDocumentMessage{Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot"}
 		} else if body, ok := f.bodies[request.Key]; ok {
 			reply = protocol.PolicyDocumentMessage{Success: true, Key: request.Key, Document: body}
-			if f.tokens != nil {
-				reply.SourceTokens, reply.SourceTokensKnown = f.tokens[request.Key], true
-			}
 		}
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: request.ID}
 		return protocol.MarshalAdminMessage(reply)
+	case protocol.SourceTokenListMessage:
+		f.tokenLists++
+		return f.sourceTokenList(request)
 	case protocol.CheckPolicyMessage:
 		f.checks = append(f.checks, request)
 		reply := protocol.CheckPolicyResultMessage{Success: true, Valid: true}

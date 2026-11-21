@@ -4,7 +4,6 @@
 package policyauthor
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -262,24 +261,14 @@ func checkTerm(kind TermKind, term string) error {
 		if slices.Contains(policy.ExternalMovementKinds, policy.TransferMovementKind(term)) {
 			return nil
 		}
-		return fmt.Errorf("%q is not a movement kind (%s)", term, strings.Join(movementKindNames(), ", "))
+		return fmt.Errorf("%q is not a movement kind (%s)", term, strings.Join(policy.ExternalMovementKindNames(), ", "))
 	case TermTLSPin:
-		raw, err := base64.StdEncoding.Strict().DecodeString(term)
-		if err != nil || len(raw) != 32 || base64.StdEncoding.EncodeToString(raw) != term {
+		if _, ok := policy.ParseExternalTLSPin(term); !ok {
 			return fmt.Errorf("%q is not the padded base64 of a SHA-256", term)
 		}
 		return nil
 	}
 	return nil
-}
-
-// movementKindNames lists the movement kinds a check can name.
-func movementKindNames() []string {
-	names := make([]string, len(policy.ExternalMovementKinds))
-	for i, kind := range policy.ExternalMovementKinds {
-		names[i] = string(kind)
-	}
-	return names
 }
 
 func validNetworkToken(s string) bool {
@@ -485,7 +474,7 @@ func (e EditSpec) Suggestions(d *policy.Draft) []string {
 	case TermNetwork:
 		add("*", apconfig.NetworkMainnet, apconfig.NetworkTestnet, apconfig.NetworkBetanet)
 	case TermMovement:
-		add(movementKindNames()...)
+		add(policy.ExternalMovementKindNames()...)
 	}
 	// Terms the document already uses, in document order. Set references
 	// are left out: sets are offered above only when they are of the kind

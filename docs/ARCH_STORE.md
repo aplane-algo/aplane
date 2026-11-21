@@ -1692,13 +1692,20 @@ reads and writes, and the runtime index.
   `apstore rebuild` write it back ([Backup and restore](#backup-and-restore));
   the node default's file is not backed up.
 - **Damage.** A token file that does not decrypt or decode fails reload into
-  recovery. A recovery-mode restore with `replace_existing` replaces a
+  recovery (a generation-validation failure, as a malformed key file is; see
+  [Runtime reload behavior](#runtime-reload-behavior)); one on a signer node
+  is a role conflict instead, which fails the node closed. A recovery-mode restore with `replace_existing` replaces a
   damaged file of a key the backup carries tokens for. Otherwise
   `apstore source token discard <selector>`, run while the daemon is stopped,
   deletes the named file without reading it, under the exclusive store lock;
   nothing is archived and no audit record is written. The next unlock loads
   the remaining files, and the selector's sources refuse with
-  `token_not_set` until a token is set again.
+  `token_not_set` until a token is set again. `apadmin policy rescue` reads
+  token files only for its missing-token advisory, so a damaged one never
+  fails a rescue: the names are then not known, and rescue names the
+  selector whose file it could not read and the discard command. A rescue
+  apply is still refused before anything is committed, since candidate
+  validation admits a generation only with every token file whole.
 
 ### Stage address tables
 
@@ -1860,7 +1867,13 @@ snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
 undecryptable, unsupported, or unexpected entry in `keys/`, and any
 template/key-type content defect, fails reload with a generation-validation
 error: the runtime publishes an empty snapshot and enters recovery with signing
-blocked. Entries are not dropped from an otherwise published snapshot.
+blocked. Entries are not dropped from an otherwise published snapshot. A
+source token file that cannot be read, opened or decoded as its selector's,
+and an entry of `source_tokens/` that is not a token file, are damage of the
+same kind (`sourcetokens.ErrDamaged`): the reload fails with a
+generation-validation error before any key is scanned, and an unlock enters
+recovery with signing blocked. A `source_tokens/` directory that cannot be
+read at all fails the unlock instead, as an unreadable `keys/` does.
 
 Role-conflicting key inventory is not ordinary per-item invalidity. It is a
 node-level contradiction: reload must fail closed without publishing a new

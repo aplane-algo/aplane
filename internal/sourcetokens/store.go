@@ -4,6 +4,7 @@
 package sourcetokens
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,18 @@ import (
 // source_tokens/<selector>.enc, and deleted/source_tokens/<selector>.enc for
 // a deleted key's. The caller holds the store mutation lock for every write.
 
+// ErrDamaged marks a token file that cannot be read, opened or decoded as its
+// selector's, and an entry of source_tokens/ that is not a token file: damage
+// in the generation, as a malformed key file is. Reload enters recovery for
+// it. A directory that cannot be read at all is not marked.
+var ErrDamaged = errors.New("damaged source token file")
+
+// damagedError marks err as ErrDamaged without changing its words.
+type damagedError struct{ err error }
+
+func (e damagedError) Error() string   { return e.err.Error() }
+func (e damagedError) Unwrap() []error { return []error{ErrDamaged, e.err} }
+
 // Selectors lists the selectors with a token file in the generation, sorted,
 // after checking that the namespace holds only canonical <selector>.enc
 // regular files. It decrypts nothing.
@@ -34,7 +47,7 @@ func Selectors(active storepaths.GenPaths) ([]string, error) {
 		name := entry.Name()
 		selector, ok := strings.CutSuffix(name, storepaths.SourceTokenFileExtension)
 		if !ok || ValidateSelector(selector) != nil || !entry.Type().IsRegular() {
-			return nil, fmt.Errorf("source tokens contain unsupported entry %q", name)
+			return nil, damagedError{fmt.Errorf("source tokens contain unsupported entry %q", name)}
 		}
 		selectors = append(selectors, selector)
 	}
@@ -125,21 +138,6 @@ func Listings(active storepaths.GenPaths, kr *crypto.Keyring, selectors ...strin
 	return out, nil
 }
 
-// Names is Listings reduced to the source names with a token, by selector.
-func Names(active storepaths.GenPaths, kr *crypto.Keyring) (map[string][]string, error) {
-	listings, err := Listings(active, kr)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string][]string, len(listings))
-	for selector, entries := range listings {
-		for _, entry := range entries {
-			out[selector] = append(out[selector], entry.Source)
-		}
-	}
-	return out, nil
-}
-
 // VerifyArchived opens one file of the deleted archive as the token file its
 // name says it is, and zeroes what it decrypted.
 func VerifyArchived(active storepaths.GenPaths, name string, kr *crypto.Keyring) error {
@@ -155,12 +153,17 @@ func VerifyArchived(active storepaths.GenPaths, name string, kr *crypto.Keyring)
 	return nil
 }
 
+// readFile reads and opens one token file; any failure is ErrDamaged.
 func readFile(path, selector string, kr *crypto.Keyring) (*File, error) {
 	data, _, err := fsutil.ReadRegularFileLimited(path, MaxFileBytes)
 	if err != nil {
-		return nil, fmt.Errorf("source tokens of %s: %w", selector, err)
+		return nil, damagedError{fmt.Errorf("source tokens of %s: %w", selector, err)}
 	}
-	return Open(data, selector, kr)
+	f, err := Open(data, selector, kr)
+	if err != nil {
+		return nil, damagedError{err}
+	}
+	return f, nil
 }
 
 // WriteFile seals f and writes it as its selector's token file, durably:

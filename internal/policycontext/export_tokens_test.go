@@ -20,6 +20,10 @@ import (
 
 const cosignerExportKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 
+// cosignerFollowerKey is a key that follows the node default: it has no
+// document of its own, and may still have tokens.
+const cosignerFollowerKey = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
+
 var cosignerExportFixture = filepath.Join("..", "..", "test", "contracts", "policycontext", "v1", "node-context-cosigner.json")
 
 func cosignerContext(t *testing.T) *Context {
@@ -29,8 +33,8 @@ func cosignerContext(t *testing.T) *Context {
 	})
 }
 
-// sampleCosignerExport is a cosigner export that recorded names: the key's
-// selector has tokens for screening and treasury, the default for none.
+// sampleCosignerExport is a cosigner export, with names recorded when names
+// is not nil.
 func sampleCosignerExport(t *testing.T, names map[string][]string) *Export {
 	t.Helper()
 	e, err := NewExport(cosignerContext(t), []policy.DocumentDigest{
@@ -48,7 +52,9 @@ func sampleCosignerExport(t *testing.T, names map[string][]string) *Export {
 	return e
 }
 
-var sampleTokenNames = map[string][]string{cosignerExportKey: {"treasury", "screening"}}
+// sampleTokenNames: the key with a document has tokens for screening and
+// treasury, the follower, which has none, for ops, and the default for none.
+var sampleTokenNames = map[string][]string{cosignerExportKey: {"treasury", "screening"}, cosignerFollowerKey: {"ops"}}
 
 // The fixture pins the source_tokens field of a cosigner export.
 func TestExportCosignerFixture(t *testing.T) {
@@ -72,8 +78,13 @@ func TestExportCosignerFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(got.SourceTokens) != fmt.Sprint(map[string][]string{cosignerExportKey: {"screening", "treasury"}, policy.DefaultKey: {}}) {
+	if fmt.Sprint(got.SourceTokens) != fmt.Sprint(map[string][]string{cosignerExportKey: {"screening", "treasury"}, cosignerFollowerKey: {"ops"}}) {
 		t.Fatalf("SourceTokens = %v", got.SourceTokens)
+	}
+	for selector, want := range map[string]string{cosignerFollowerKey: "[ops]", policy.DefaultKey: "[]"} {
+		if names, known := got.SourceTokenNames(selector); !known || fmt.Sprint(names) != want {
+			t.Fatalf("SourceTokenNames(%s) = %v, %v; want %s, known", selector, names, known, want)
+		}
 	}
 	if again, _ := got.Marshal(); !bytes.Equal(again, want) {
 		t.Fatal("a parsed export encodes differently")
@@ -101,14 +112,20 @@ func TestSourceTokensAreNotDigested(t *testing.T) {
 	if err != nil || parsed.SourceTokens != nil {
 		t.Fatalf("ParseExport() = %+v, %v; want no names recorded", parsed, err)
 	}
-	// Recording none is still recording: every document gets its list.
-	empty := sampleCosignerExport(t, map[string][]string{})
+	if _, known := parsed.SourceTokenNames(policy.DefaultKey); known {
+		t.Fatal("an export that recorded no names claims to know the default's")
+	}
+	// Recording none is still recording: an empty list says no selector
+	// has a token.
+	empty := sampleCosignerExport(t, map[string][]string{policy.DefaultKey: {}})
 	data, _ = empty.Marshal()
-	if !strings.Contains(string(data), `"sources": []`) {
+	if !strings.Contains(string(data), `"source_tokens": []`) {
 		t.Fatalf("an export with no tokens set does not say so:\n%s", data)
 	}
-	if parsed, err := ParseExport(data); err != nil || parsed.SourceTokens == nil || len(parsed.SourceTokens[policy.DefaultKey]) != 0 {
+	if parsed, err := ParseExport(data); err != nil || parsed.SourceTokens == nil || len(parsed.SourceTokens) != 0 {
 		t.Fatalf("ParseExport() = %+v, %v", parsed, err)
+	} else if names, known := parsed.SourceTokenNames(cosignerExportKey); !known || len(names) != 0 {
+		t.Fatalf("SourceTokenNames() = %v, %v; want none, known", names, known)
 	}
 }
 
@@ -120,11 +137,11 @@ func TestRecordSourceTokensRefusesWhatNoNodeHolds(t *testing.T) {
 	long := strings.Repeat("s", 65)
 	nine := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}
 	for name, names := range map[string]map[string][]string{
-		"an unknown document": {"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": {"ops"}},
-		"a bad name":          {policy.DefaultKey: {"Ops"}},
-		"a long name":         {policy.DefaultKey: {long}},
-		"a name twice":        {policy.DefaultKey: {"ops", "ops"}},
-		"too many names":      {policy.DefaultKey: nine},
+		"not a selector": {"CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM": {"ops"}},
+		"a bad name":     {policy.DefaultKey: {"Ops"}},
+		"a long name":    {policy.DefaultKey: {long}},
+		"a name twice":   {policy.DefaultKey: {"ops", "ops"}},
+		"too many names": {policy.DefaultKey: nine},
 	} {
 		if err := sampleCosignerExport(t, nil).RecordSourceTokens(names); err == nil {
 			t.Errorf("%s: RecordSourceTokens accepted %v", name, names)
@@ -153,10 +170,7 @@ func TestParseExportRefusesMalformedSourceTokens(t *testing.T) {
 	signerData, _ := sampleExport(t).Marshal()
 	var signer map[string]any
 	_ = json.Unmarshal(signerData, &signer)
-	signer["source_tokens"] = []any{
-		map[string]any{"key": exportKey, "sources": []any{}},
-		map[string]any{"key": policy.DefaultKey, "sources": []any{}},
-	}
+	signer["source_tokens"] = []any{}
 	signerWithTokens, _ := json.Marshal(signer)
 
 	for name, tc := range map[string]struct {
@@ -164,8 +178,10 @@ func TestParseExportRefusesMalformedSourceTokens(t *testing.T) {
 		want string
 	}{
 		"a signer export":  {signerWithTokens, "only a cosigner export"},
-		"a document short": {edit(func(e []any, f map[string]any) { f["source_tokens"] = e[:1] }), "lists 1 documents"},
-		"out of order":     {edit(func(e []any, f map[string]any) { f["source_tokens"] = []any{e[1], e[0]} }), "want the baseline's"},
+		"out of order":     {edit(func(e []any, f map[string]any) { f["source_tokens"] = []any{e[1], e[0]} }), "sorted by key"},
+		"a key twice":      {edit(func(e []any, f map[string]any) { f["source_tokens"] = []any{e[0], e[0]} }), "each key once"},
+		"no names":         {edit(func(e []any, _ map[string]any) { entry(e, 0)["sources"] = []any{} }), "no names"},
+		"not a selector":   {edit(func(e []any, _ map[string]any) { entry(e, 1)["key"] = "ops" }), "source tokens"},
 		"unsorted":         {edit(func(e []any, _ map[string]any) { entry(e, 0)["sources"] = []any{"treasury", "screening"} }), "sorted"},
 		"listed twice":     {edit(func(e []any, _ map[string]any) { entry(e, 0)["sources"] = []any{"ops", "ops"} }), "listed once"},
 		"a bad name":       {edit(func(e []any, _ map[string]any) { entry(e, 0)["sources"] = []any{"Ops"} }), "not a source name"},

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -165,19 +166,20 @@ const (
 // judgeExternalChecks plans cfg's checks for txn on network, as the cosigner
 // would for a request for witnessKey that targets txn alone, and judges each
 // unit on answers.
-func judgeExternalChecks(doc *policy.PolicyV1, cfg *policy.Config, txn types.Transaction, network, witnessKey string, answers ExternalAnswers) (*TryExternalChecks, error) {
-	x := &TryExternalChecks{Apply: applicableExternalChecks(doc, network, txn), Lookups: []TryLookup{}, Judged: []TryJudgment{}, Pending: []TryUnit{}}
-	for _, id := range sortedKeys(answers) {
-		if !slices.Contains(x.Apply, id) {
-			return nil, fmt.Errorf("external check %s does not apply to this transaction (applying: %s)", id, wordsOrNone(x.Apply))
-		}
-	}
-	plan, refusal := externalcheck.BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, externalcheck.Request{
+func judgeExternalChecks(cfg *policy.Config, txn types.Transaction, network, witnessKey string, answers ExternalAnswers) (*TryExternalChecks, error) {
+	req := externalcheck.Request{
 		WitnessKey: witnessKey,
 		Group:      []types.Transaction{txn},
 		Targets:    []int{0},
 		NetworkOf:  func(types.Transaction) string { return network },
-	})
+	}
+	x := &TryExternalChecks{Apply: externalcheck.Applying(cfg.ExternalChecks, req), Lookups: []TryLookup{}, Judged: []TryJudgment{}, Pending: []TryUnit{}}
+	for _, id := range slices.Sorted(maps.Keys(answers)) {
+		if !slices.Contains(x.Apply, id) {
+			return nil, fmt.Errorf("external check %s does not apply to this transaction (applying: %s)", id, wordsOrNone(x.Apply))
+		}
+	}
+	plan, refusal := externalcheck.BuildPlan(cfg.ExternalChecks, cfg.ExternalSources, req)
 	if refusal != nil {
 		x.Refusal = refusal
 		return x, nil
@@ -256,7 +258,7 @@ func judgeUnit(j externalcheck.Judgment, lookup externalcheck.Lookup, answers Ex
 // checkAnswerPaths refuses an answer by request path that names no lookup of
 // its check: a path the cosigner would not ask is a mistake in the answer.
 func checkAnswerPaths(plan *externalcheck.Plan, answers ExternalAnswers) error {
-	for _, id := range sortedKeys(answers) {
+	for _, id := range slices.Sorted(maps.Keys(answers)) {
 		byPath := answers[id].ByPath
 		if byPath == nil {
 			continue
@@ -267,7 +269,7 @@ func checkAnswerPaths(plan *externalcheck.Plan, answers ExternalAnswers) error {
 				paths = append(paths, p)
 			}
 		}
-		for _, path := range sortedKeys(byPath) {
+		for _, path := range slices.Sorted(maps.Keys(byPath)) {
 			if !slices.Contains(paths, path) {
 				return fmt.Errorf("external check %s makes no lookup %s for this transaction (its lookups: %s)", id, path, wordsOrNone(paths))
 			}
@@ -285,7 +287,7 @@ func validateAnswers(doc *policy.PolicyV1, answers ExternalAnswers) error {
 	if len(doc.ExternalChecks) == 0 {
 		return errors.New("this document has no external checks to answer")
 	}
-	for _, id := range sortedKeys(answers) {
+	for _, id := range slices.Sorted(maps.Keys(answers)) {
 		i := slices.IndexFunc(doc.ExternalChecks, func(c policy.ExternalCheckV1) bool { return c.ID == id })
 		if i < 0 {
 			var ids []string
@@ -384,13 +386,4 @@ func wordsOrNone(words []string) string {
 		return "none"
 	}
 	return strings.Join(words, ", ")
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

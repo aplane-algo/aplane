@@ -76,7 +76,7 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	defer release()
 
 	timeout := time.Duration(lookup.Source.TimeoutMS) * time.Millisecond
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, timeoutError(timeout))
 	defer cancel()
 
 	idBytes := make([]byte, 16)
@@ -110,7 +110,7 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, describeFetchError(err, ctx, timeout)
+		return nil, describeFetchError(err, ctx)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -118,7 +118,7 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(lookup.Source.MaxResponseBytes)+1))
 	if err != nil {
-		return nil, describeFetchError(err, ctx, timeout)
+		return nil, describeFetchError(err, ctx)
 	}
 	root, err := ParseAnswer(body, lookup.Source)
 	if err != nil {
@@ -148,12 +148,45 @@ func ParseAnswer(body []byte, source policy.ExternalSourceV1) (*strictjson.Node,
 	return root, nil
 }
 
+// lookupTimeoutError is a lookup that ran past its source's own timeout.
+type lookupTimeoutError struct{ timeout time.Duration }
+
+func (e lookupTimeoutError) Error() string { return fmt.Sprintf("timeout after %s", e.timeout) }
+
 // timeoutError is a lookup that ran past its source's timeout.
-func timeoutError(timeout time.Duration) error { return fmt.Errorf("timeout after %s", timeout) }
+func timeoutError(timeout time.Duration) error { return lookupTimeoutError{timeout: timeout} }
+
+// stepDeadlineError is the request's shared limit for all its lookups
+// running out (StepDeadline), whatever each source's own timeout.
+type stepDeadlineError struct{ limit time.Duration }
+
+func (e stepDeadlineError) Error() string {
+	return fmt.Sprintf("the request's %s limit for all lookups ran out", e.limit)
+}
 
 // errCanceled is a lookup that ended because its context was canceled: the
 // request went away, the node locked, or another lookup had already failed.
 var errCanceled = errors.New("canceled")
+
+// contextEnd says why ctx ended, by its cause: the source's own timeout, or
+// the request's limit for all lookups (with where, which says what the
+// lookup was doing when it ran out), and otherwise canceled. The cause is
+// set where each deadline is made, so no text is matched.
+func contextEnd(ctx context.Context, where string) error {
+	cause := context.Cause(ctx)
+	var step stepDeadlineError
+	var own lookupTimeoutError
+	switch {
+	case errors.As(cause, &step):
+		if where == "" {
+			return step
+		}
+		return fmt.Errorf("%w%s", step, where)
+	case errors.As(cause, &own):
+		return own
+	}
+	return errCanceled
+}
 
 // errPinMismatch and its kin are the failures the audit record names plainly.
 var (
@@ -167,8 +200,9 @@ var (
 )
 
 // describeFetchError turns a transport error into the audit record's words.
-// It keeps to known causes: an error's own text can carry the URL.
-func describeFetchError(err error, ctx context.Context, timeout time.Duration) error {
+// It keeps to known causes: an error's own text can carry the URL. A lookup
+// whose context ended is described by why it ended (contextEnd).
+func describeFetchError(err error, ctx context.Context) error {
 	switch {
 	case errors.Is(err, errPinMismatch):
 		return errPinMismatch
@@ -176,10 +210,8 @@ func describeFetchError(err error, ctx context.Context, timeout time.Duration) e
 		return errNoCertificate
 	case errors.Is(err, errNotLoopback):
 		return errNotLoopback
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return timeoutError(timeout)
-	case errors.Is(ctx.Err(), context.Canceled):
-		return errCanceled
+	case ctx.Err() != nil:
+		return contextEnd(ctx, "")
 	}
 	var certErr *tls.CertificateVerificationError
 	var hostErr x509.HostnameError
@@ -210,13 +242,17 @@ func (f *Fetcher) acquire(ctx context.Context, origin string) (func(), error) {
 	f.mu.Unlock()
 	select {
 	case places <- struct{}{}:
-		return func() { <-places }, nil
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, errors.New("timeout while waiting for a place at the source")
+		// A place freed as the context ends can be taken in the same
+		// instant; it is given back then.
+		if ctx.Err() == nil {
+			return func() { <-places }, nil
 		}
-		return nil, errCanceled
+		<-places
+	case <-ctx.Done():
 	}
+	// The lookup's own timeout has not started yet, so only the request's
+	// limit for all lookups, or a cancel, ends this wait.
+	return nil, contextEnd(ctx, " while waiting for a place at the source")
 }
 
 // transport builds the transport for one lookup. Nothing is kept between

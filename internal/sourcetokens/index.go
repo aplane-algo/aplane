@@ -5,6 +5,7 @@ package sourcetokens
 
 import (
 	"bytes"
+	"maps"
 	"slices"
 	"sync"
 
@@ -20,7 +21,8 @@ import (
 // or a remove published another, or a lock cleared it) and its last reader
 // has released.
 type Index struct {
-	tokens map[indexKey][]byte
+	// tokens is by selector, then by source name.
+	tokens map[string]map[string][]byte
 
 	mu      sync.Mutex
 	readers int
@@ -28,12 +30,10 @@ type Index struct {
 	zeroed  bool
 }
 
-type indexKey struct{ selector, source string }
-
 // NewIndex builds an index from decoded token files. It copies their tokens:
 // the caller still zeroes the files.
 func NewIndex(files []*File) *Index {
-	x := &Index{tokens: map[indexKey][]byte{}}
+	x := &Index{tokens: map[string]map[string][]byte{}}
 	for _, f := range files {
 		x.put(f)
 	}
@@ -41,20 +41,27 @@ func NewIndex(files []*File) *Index {
 }
 
 func (x *Index) put(f *File) {
+	sources := make(map[string][]byte, len(f.Tokens))
 	for source, token := range f.Tokens {
-		x.tokens[indexKey{f.Selector, source}] = bytes.Clone(token.Value)
+		sources[source] = bytes.Clone(token.Value)
 	}
+	x.tokens[f.Selector] = sources
 }
 
 // withSelector returns a new index holding x's tokens with selector's
 // replaced by f's (none when f is nil). x is unchanged and must not be
 // retired meanwhile, which the Holder's lock guarantees.
 func (x *Index) withSelector(selector string, f *File) *Index {
-	next := &Index{tokens: make(map[indexKey][]byte, len(x.tokens))}
-	for key, value := range x.tokens {
-		if key.selector != selector {
-			next.tokens[key] = bytes.Clone(value)
+	next := &Index{tokens: make(map[string]map[string][]byte, len(x.tokens))}
+	for other, sources := range x.tokens {
+		if other == selector {
+			continue
 		}
+		copied := make(map[string][]byte, len(sources))
+		for source, value := range sources {
+			copied[source] = bytes.Clone(value)
+		}
+		next.tokens[other] = copied
 	}
 	if f != nil {
 		next.put(f)
@@ -71,29 +78,22 @@ func (x *Index) TokenFor(selector, source string) (string, bool) {
 	if x == nil {
 		return "", false
 	}
-	value, ok := x.tokens[indexKey{selector, source}]
+	value, ok := x.tokens[selector][source]
 	if !ok {
 		return "", false
 	}
 	return string(value), true
 }
 
-// Names returns the source names with a token, by selector, each list
-// sorted. The caller holds a reader of x. A nil index, as a locked node has,
-// does not know which tokens are set: it returns nil, which is not the empty
-// map of a published index with no tokens.
-func (x *Index) Names() map[string][]string {
+// NamesFor returns the source names selector has a token for, sorted, and
+// known: false only for a nil index, as a locked node has, which does not
+// know which tokens are set. A selector without tokens in a published index
+// has none, known. The caller holds a reader of x.
+func (x *Index) NamesFor(selector string) ([]string, bool) {
 	if x == nil {
-		return nil
+		return nil, false
 	}
-	out := map[string][]string{}
-	for key := range x.tokens {
-		out[key.selector] = append(out[key.selector], key.source)
-	}
-	for _, names := range out {
-		slices.Sort(names)
-	}
-	return out
+	return slices.Sorted(maps.Keys(x.tokens[selector])), true
 }
 
 func (x *Index) acquire() {
@@ -125,8 +125,10 @@ func (x *Index) zeroLocked() {
 	if x.zeroed {
 		return
 	}
-	for _, value := range x.tokens {
-		crypto.ZeroBytes(value)
+	for _, sources := range x.tokens {
+		for _, value := range sources {
+			crypto.ZeroBytes(value)
+		}
 	}
 	x.zeroed = true
 }
@@ -192,13 +194,13 @@ func (h *Holder) Acquire() (*Index, func()) {
 	return x, func() { once.Do(x.release) }
 }
 
-// Names reads the source names with a token from the current index, by
-// selector, holding a reader while it does. With no current index, as on a
-// locked node, it returns nil: which tokens are set is not known.
-func (h *Holder) Names() map[string][]string {
+// NamesFor reads the source names selector has a token for from the current
+// index, holding a reader while it does. known is false with no current
+// index, as on a locked node: which tokens are set is not known.
+func (h *Holder) NamesFor(selector string) (names []string, known bool) {
 	x, release := h.Acquire()
 	defer release()
-	return x.Names()
+	return x.NamesFor(selector)
 }
 
 // TokenFor reads one token from the current index, holding a reader for the

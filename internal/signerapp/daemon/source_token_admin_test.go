@@ -112,8 +112,10 @@ func TestSourceTokenMessagesThroughTheDaemon(t *testing.T) {
 	}
 }
 
-// A live check warns, against the live token index, of each source the
-// document takes a token for that its selector has none of.
+// A live check through an admin session warns, against the live token index,
+// of each source the document takes a token for that its selector has none
+// of: the session has policy.update, the authorization that reads token
+// names. The service alone, asked without that, names no token.
 func TestLivePolicyCheckWarnsOfAMissingSourceToken(t *testing.T) {
 	doc := cosignerDefaultWithSources(t)
 	server, cleanup := setupTestNode(t, noderole.RoleCosigner, doc)
@@ -122,19 +124,36 @@ func TestLivePolicyCheckWarnsOfAMissingSourceToken(t *testing.T) {
 	if result := keys.SetSourceToken(adminproto.SetSourceTokenRequest{Selector: policy.DefaultKey, Source: "screening", Token: []byte("tok-live")}); !result.Success {
 		t.Fatalf("SetSourceToken() = %+v", result)
 	}
+	recorder := &ipcJSONRecorderConn{}
+	session := newBoundTestSession(&IPCServer{signer: server}, recorder, server.productRuntime())
+	dispatchIPCMessage(t, session, protocol.CheckPolicyMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeCheckPolicy, ID: "check-1"},
+		Documents:   []protocol.PolicyDocumentWire{{Key: policy.DefaultKey, Document: doc}},
+	})
+	msgs := recorder.messages(t)
+	if len(msgs) != 1 || msgs[0]["success"] != true || msgs[0]["valid"] != true {
+		t.Fatalf("check_policy responses = %#v", msgs)
+	}
+	var pointers []string
+	warnings, _ := msgs[0]["warnings"].([]any)
+	for _, w := range warnings {
+		if pointer, _ := w.(map[string]any)["pointer"].(string); strings.HasSuffix(pointer, "/token") {
+			pointers = append(pointers, pointer)
+		}
+	}
+	if strings.Join(pointers, " ") != "/external_sources/treasury/token" {
+		t.Fatalf("token warnings at %v, want treasury's alone: %#v", pointers, warnings)
+	}
+
 	result := server.adminServices().adminApp().CheckPolicy(adminproto.CheckPolicyRequest{
 		Documents: []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: doc}},
 	})
 	if !result.Success || !result.Valid {
 		t.Fatalf("CheckPolicy() = %+v", result)
 	}
-	var pointers []string
 	for _, w := range result.Warnings {
 		if strings.HasSuffix(w.Pointer, "/token") {
-			pointers = append(pointers, w.Pointer)
+			t.Fatalf("a check not told the session may read token names warned at %s", w.Pointer)
 		}
-	}
-	if strings.Join(pointers, " ") != "/external_sources/treasury/token" {
-		t.Fatalf("token warnings at %v, want treasury's alone: %+v", pointers, result.Warnings)
 	}
 }

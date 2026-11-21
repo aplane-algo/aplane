@@ -72,7 +72,7 @@ func (g *externalGate) setAnswer(answer func(w http.ResponseWriter, r *http.Requ
 
 func (g *externalGate) plan(destination string) *ComponentSignPlan {
 	txn := testnetPaymentTransaction(g.t, g.source, destination, 1)
-	return prepareComponentSigning(componentPlanRequest{
+	return mustPrepareComponentSigning(g.t, componentPlanRequest{
 		RequestID:     "cmp-cosigner-external",
 		ComponentKey:  testFalconComponentSelector(g.t, 0xab),
 		Group:         componentTestGroup(g.t, []string{txnutil.EncodeWithPrefixHex(txn)}),
@@ -255,5 +255,74 @@ func TestCosignerExternalChecksEndWhenTheRequestIsCanceled(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the gates did not return after the cancel")
+	}
+}
+
+// A Witness Key ID sent with padding is the canonical ID to every step: the
+// key lookup and policy selection, the external check's lookup path and its
+// witness_key fact, and the audit record. The source never sees the padding.
+func TestCosignerExternalChecksUseTheCanonicalWitnessKeyID(t *testing.T) {
+	g := newExternalGate(t)
+	canonicalID := testFalconComponentSelector(t, 0xab)
+	var gotPath atomic.Value
+	g.setAnswer(func(w http.ResponseWriter, r *http.Request) {
+		gotPath.Store(r.URL.EscapedPath())
+		_, _ = w.Write([]byte(`{"key": "` + canonicalID + `"}`))
+	})
+	g.cfg.ExternalChecks = []policy.ExternalCheckV1{{
+		ID: "ops-switch", Source: "screening", Scope: policy.ExternalScopeRequest, NetworkWildcard: true,
+		Path: policy.ExternalTemplateV1{Text: "/signing/{witness_key}", Parts: []policy.ExternalTemplatePart{
+			{Literal: "/signing/"}, {Fact: "witness_key"}}},
+		Require: []policy.ExternalRuleV1{{Pointer: "/key", Op: policy.ExternalOpEq, Fact: "witness_key"}},
+	}}
+	txn := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+	plan, planErr := prepareComponentSigning(componentPlanRequest{
+		RequestID:     "cmp-cosigner-padded-key",
+		ComponentKey:  " " + canonicalID + "\n",
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+		TargetIndices: []int{0},
+	})
+	if planErr != nil {
+		t.Fatalf("prepareComponentSigning() error = %#v", planErr)
+	}
+	if plan.ComponentKey != canonicalID {
+		t.Fatalf("plan.ComponentKey = %q, want the canonical %q", plan.ComponentKey, canonicalID)
+	}
+	if err := g.svc.runCosignerGates(context.Background(), plan); err != nil {
+		t.Fatalf("runCosignerGates() error = %#v", err)
+	}
+	if gotPath.Load() != "/signing/"+canonicalID {
+		t.Fatalf("lookup path = %q, want /signing/%s", gotPath, canonicalID)
+	}
+
+	// A refusal's audit record names the canonical ID too.
+	g.cfg.ExternalChecks[0].Require[0] = policy.ExternalRuleV1{Pointer: "/key", Op: policy.ExternalOpNe, Fact: "witness_key"}
+	plan, _ = prepareComponentSigning(componentPlanRequest{
+		RequestID: "cmp-cosigner-padded-key", ComponentKey: canonicalID + " ",
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+		TargetIndices: []int{0},
+	})
+	err := g.svc.runCosignerGates(context.Background(), plan)
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("error = %#v, want the check's refusal", err)
+	}
+	if len(g.audit.limited) != 1 || g.audit.limited[0].authAddress != canonicalID {
+		t.Fatalf("audit entries = %+v, want one naming %s", g.audit.limited, canonicalID)
+	}
+}
+
+// A component key that is not a Witness Key ID at all is refused as a bad
+// request when the plan is built, before any gate runs.
+func TestComponentPlanRefusesAMalformedWitnessKeyID(t *testing.T) {
+	txn := testnetPaymentTransaction(t, types.Address{25}.String(), types.Address{26}.String(), 1)
+	for _, key := range []string{"", "  ", "not-a-witness-key", strings.ToLower(testFalconComponentSelector(t, 0xab))} {
+		_, err := prepareComponentSigning(componentPlanRequest{
+			RequestID: "cmp-cosigner-bad-key", ComponentKey: key,
+			Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+			TargetIndices: []int{0},
+		})
+		if err == nil || err.Kind != ErrorBadRequest {
+			t.Fatalf("prepareComponentSigning(%q) error = %#v, want a bad request", key, err)
+		}
 	}
 }

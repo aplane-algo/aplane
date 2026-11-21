@@ -372,7 +372,7 @@ func TestExternalEditKindsAndTerms(t *testing.T) {
 		}
 	}
 	d := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, externalFixture))).Draft
-	if got := (EditSpec{Term: TermMovement}).Suggestions(d); fmt.Sprint(got) != fmt.Sprint(movementKindNames()) {
+	if got := (EditSpec{Term: TermMovement}).Suggestions(d); fmt.Sprint(got) != fmt.Sprint(policy.ExternalMovementKindNames()) {
 		t.Errorf("movement kind suggestions = %v", got)
 	}
 	// A rule's editor starts from JSON, whatever its strings hold.
