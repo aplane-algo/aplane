@@ -152,11 +152,11 @@ buggy states in which two accepted credentials resolve to the same selector. If
 that fallback is ever hit, reload fails closed and invalidates any
 previously-published snapshot rather than selecting a winner.
 
-Recovery is operator-driven and performed while `apsigner` is stopped. For a
-legacy witness `.key`, preserve the file and use a prior build to create and
-verify an `.apb` backup before removing the stale file; restore with the current
-build to produce canonical `.cos`. Other noncanonical artifacts must be
-validated before canonical placement or removed, then the identity is reloaded.
+Recovery is operator-driven and performed while `apsigner` is stopped: a
+noncanonical artifact must be validated before canonical placement or removed,
+then the identity is reloaded. The scan reports either mismatch with one
+warning, `filename_mismatch`, whose reason names the class or selector that
+does not match.
 
 ### Auth Address Binding
 

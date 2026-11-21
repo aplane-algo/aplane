@@ -137,8 +137,7 @@ const (
 	KeyScanWarningParseLogicSigFailed     KeyScanWarningCode = "parse_logic_sig_failed"
 	KeyScanWarningLogicSigAddressInvalid  KeyScanWarningCode = "logic_sig_address_invalid"
 	KeyScanWarningAddressDerivationFailed KeyScanWarningCode = "address_derivation_failed"
-	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
-	KeyScanWarningFilenameClassMismatch   KeyScanWarningCode = "filename_class_mismatch"
+	KeyScanWarningFilenameMismatch        KeyScanWarningCode = "filename_mismatch"
 	KeyScanWarningUnexpectedEntry         KeyScanWarningCode = "unexpected_entry"
 	KeyScanWarningWitnessMetadataInvalid  KeyScanWarningCode = "witness_metadata_invalid"
 )
@@ -176,10 +175,8 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Failed to derive address from bytecode for %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningAddressDerivationFailed:
 		return fmt.Sprintf("Failed to derive address for %s: %v", w.KeyFile, w.Err)
-	case KeyScanWarningFilenameAddressMismatch:
+	case KeyScanWarningFilenameMismatch:
 		return fmt.Sprintf("Skipped key file %s: %v", w.KeyFile, w.Err)
-	case KeyScanWarningFilenameClassMismatch:
-		return fmt.Sprintf("Skipped managed credential %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningUnexpectedEntry:
 		return fmt.Sprintf("Unexpected entry in keys namespace %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningWitnessMetadataInvalid:
@@ -349,15 +346,7 @@ func scanKeysDirectory(active storepaths.GenPaths, excluded map[string]bool, dec
 		if err := ValidateManagedCredentialFilename(entry.Name(), selector, category); err != nil {
 			payload.ZeroSecrets()
 			crypto.ZeroBytes(data)
-			if errors.Is(err, ErrManagedCredentialClassMismatch) {
-				warn(KeyScanWarningFilenameClassMismatch, keyFile, managedCredentialClassMismatchError(err))
-			} else {
-				warn(
-					KeyScanWarningFilenameAddressMismatch,
-					keyFile,
-					fmt.Errorf("filename address %s does not match payload-derived address %s: %w", filenameSelector, selector, err),
-				)
-			}
+			warn(KeyScanWarningFilenameMismatch, keyFile, err)
 			continue
 		}
 		var baseArgumentBytes int
@@ -481,13 +470,6 @@ func profileFromBoundedMetadata(programBytes uint64, metadata *boundedmeta.Metad
 		return nil, err
 	}
 	return &profile, nil
-}
-
-func managedCredentialClassMismatchError(err error) error {
-	return fmt.Errorf(
-		"%w. Stop apsigner before remediation: preserve the rejected file; if no verified .apb backup exists, use the prior build to export one; verify the backup; remove the stale managed file; then restore the .apb with the current build",
-		err,
-	)
 }
 
 // IsWitnessKey classifies a key payload as a cosigner key.
