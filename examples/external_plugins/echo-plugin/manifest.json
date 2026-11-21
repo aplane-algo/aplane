@@ -3,15 +3,13 @@
   "version": "1.0.0",
   "description": "A simple echo plugin that demonstrates the external plugin system",
   "author": "APlane Shell Team",
-  "homepage": "https://github.com/apshell/echo-plugin",
   "executable": "./echo-plugin",
   "commands": [
     {
       "name": "echo",
       "description": "Echo back the provided message",
       "usage": "echo <message>",
-      "examples": ["echo hello world"],
-      "category": "utility"
+      "examples": ["echo hello world"]
     }
   ],
   "networks": ["testnet", "mainnet", "betanet"],

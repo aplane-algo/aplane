@@ -127,7 +127,6 @@ This file is the entry point for any external plugin.
   "version": "1.0.0",
   "description": "My awesome plugin.",
   "author": "Author Name",
-  "homepage": "https://github.com/author/plugin",
 
   "executable": "./my-plugin-executable",
   "args": [],
@@ -138,7 +137,6 @@ This file is the entry point for any external plugin.
       "description": "Does something awesome.",
       "usage": "my-command <action> <amount> <asset>",
       "examples": ["my-command deposit 100 algo"],
-      "category": "defi",
       "arg_specs": [
         {"type": "keyword", "values": ["deposit", "withdraw"]},
         {"type": "number"},
@@ -161,7 +159,6 @@ This file is the entry point for any external plugin.
 | `version` | Yes | - | Semantic version (e.g., "1.0.0") |
 | `description` | Yes | - | Brief description of the plugin |
 | `author` | No | - | Plugin author |
-| `homepage` | No | - | Plugin homepage URL (informational; apshell does not read it) |
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
 | `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
@@ -174,8 +171,9 @@ JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
 runtime request and response frames, and from the APlane plugin protocol
 version exchanged in the `initialize` method.
 
-Unknown manifest fields are ignored. Commands are the sole executable and
-discoverable manifest surface.
+The manifest is decoded strictly: a field the schema does not have, at any
+level, refuses the plugin, as does content after the manifest object.
+Commands are the sole executable and discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -193,8 +191,6 @@ configured algod, KMD, or indexer services they need.
 | `description` | Yes | Brief description shown in help |
 | `usage` | No | Usage string showing arguments |
 | `examples` | No | Array of example invocations |
-| `returns` | No | Human-readable description of the command result shape (informational; apshell does not read it) |
-| `category` | No | Informational; apshell does not read it, and help lists every plugin command under Plugin Commands |
 | `arg_specs` | No | Array of argument completion specs |
 
 **ArgSpec Fields (for `arg_specs` array):**

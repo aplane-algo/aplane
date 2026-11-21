@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Reti staking pool plugin",
   "author": "APlane Shell Team",
-  "homepage": "https://github.com/algorandfoundation/reti",
   "executable": "./reti",
   "args": [],
   "commands": [
@@ -23,7 +22,6 @@
         "reti balance alice",
         "reti claim alice"
       ],
-      "category": "defi",
       "arg_specs": [
         {
           "type": "keyword",
