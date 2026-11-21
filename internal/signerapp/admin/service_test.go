@@ -185,7 +185,7 @@ func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
 			svc, _, deps := setupAdminService(t)
 			deps.config.Endpoint.SSH.ListenAddress = tt.listenAddress
 			deps.config.Endpoint.AdvertiseURL = tt.advertiseURL
-			deps.sshInfo = SSHInfo{Enabled: true, Port: 64804}
+			deps.sshInfo = SSHInfo{Port: 64804}
 
 			settings := svc.BuildAdminSettings()
 			if settings.EndpointAdvertiseURL != tt.advertiseURL {

@@ -98,7 +98,6 @@ func (s Service) ListBackups() adminproto.ListBackupsResult {
 	out := make([]adminproto.BackupInfo, len(items))
 	for i, item := range items {
 		out[i] = adminproto.BackupInfo{
-			Path:      item.Path,
 			FileName:  item.FileName,
 			CreatedAt: item.CreatedAt.Unix(),
 			Size:      item.Size,

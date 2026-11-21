@@ -22,7 +22,6 @@ import (
 )
 
 type SSHInfo struct {
-	Enabled     bool
 	Port        int
 	Clients     int
 	Fingerprint string
@@ -76,7 +75,6 @@ func (s Service) BuildAdminSettings() adminproto.AdminSettings {
 		PassphraseTimeout:    timeoutStr,
 		PassphraseMethod:     passphraseMethod,
 		NodeRole:             string(ir.NodeRole()),
-		SSHEnabled:           sshInfo.Enabled,
 		SSHListenAddress:     cfg.Endpoint.SSH.ListenAddress,
 		SSHPort:              sshInfo.Port,
 		SSHFingerprint:       sshInfo.Fingerprint,
@@ -93,7 +91,7 @@ func endpointDisplayURL(cfg *serverconfig.ServerConfig, sshInfo SSHInfo) string 
 	if endpoint := strings.TrimSpace(cfg.Endpoint.AdvertiseURL); endpoint != "" {
 		return endpoint
 	}
-	if !sshInfo.Enabled || sshInfo.Port <= 0 {
+	if sshInfo.Port <= 0 {
 		return ""
 	}
 	host := endpointDisplayHost(cfg.Endpoint.SSH.ListenAddress)

@@ -340,7 +340,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				PassphraseTimeout:    "15m",
 				PassphraseMethod:     "ipc",
 				NodeRole:             "signer",
-				SSHEnabled:           true,
 				SSHListenAddress:     "127.0.0.1",
 				SSHPort:              1127,
 				SSHFingerprint:       "SHA256:host",
@@ -359,7 +358,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"passphrase_timeout":     "15m",
 				"passphrase_method":      "ipc",
 				"node_role":              "signer",
-				"ssh_enabled":            true,
 				"ssh_listen_address":     "127.0.0.1",
 				"ssh_port":               float64(1127),
 				"ssh_fingerprint":        "SHA256:host",
@@ -577,7 +575,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":            MsgTypeCommitBackupImportResult,
 				"id":              "backup-import-commit-1",
 				"success":         true,
-				"backup":          map[string]any{"path": "", "file_name": "backup.tar.gz", "size": float64(4096)},
+				"backup":          map[string]any{"file_name": "backup.tar.gz", "size": float64(4096)},
 				"skipped": []any{
 					map[string]any{"selector": "ADDR2", "reason": "failed to parse backup credential"},
 				},
@@ -588,7 +586,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: BackupsListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeBackupsList, ID: "backups-1"},
 				Backups: []BackupInfo{{
-					Path:      "/data/backups/default/backup.tar.gz",
 					FileName:  "backup.tar.gz",
 					CreatedAt: 1710000000,
 					Size:      4096,
@@ -599,7 +596,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":   "backups-1",
 				"backups": []any{
 					map[string]any{
-						"path":       "/data/backups/default/backup.tar.gz",
 						"file_name":  "backup.tar.gz",
 						"created_at": float64(1710000000),
 						"size":       float64(4096),

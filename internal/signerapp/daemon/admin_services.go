@@ -830,10 +830,7 @@ func (d signerAdminAppDeps) GenesisHashMappings() map[string]string {
 func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	cfg := d.signer.ConfigSnapshot()
 	sshServer := d.signer.currentSSHServer()
-	info := signeradmin.SSHInfo{
-		Enabled: sshServer != nil,
-		Port:    cfg.Endpoint.SSH.Port,
-	}
+	info := signeradmin.SSHInfo{Port: cfg.Endpoint.SSH.Port}
 	if sshServer != nil {
 		info.Clients = sshServer.ActiveConnectionCount()
 		info.Fingerprint = sshServer.GetHostKeyFingerprint()

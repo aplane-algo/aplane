@@ -100,8 +100,8 @@ func update(t *testing.T, m Model, msg tea.Msg) (Model, tea.Cmd) {
 
 func TestBackupsListShowsNameTimeAndSize(t *testing.T) {
 	m := backupsModel(
-		BackupInfo{FileName: "aplane-backup-20261102-070725.677012380.tar.gz", Path: "aplane-backup-20261102-070725.677012380.tar.gz", Size: 13861},
-		BackupInfo{FileName: "lab-signer.tar.gz", Path: "lab-signer.tar.gz", Size: 100, CreatedAt: time.Date(2026, 10, 30, 18, 2, 11, 0, time.UTC).Unix()},
+		BackupInfo{FileName: "aplane-backup-20261102-070725.677012380.tar.gz", Size: 13861},
+		BackupInfo{FileName: "lab-signer.tar.gz", Size: 100, CreatedAt: time.Date(2026, 10, 30, 18, 2, 11, 0, time.UTC).Unix()},
 	)
 	view := stripANSI(m.View())
 	named := time.Date(2026, 11, 2, 7, 7, 25, 0, time.UTC).Local().Format(backupTimeLayout)
@@ -120,7 +120,7 @@ func TestBackupsListShowsNameTimeAndSize(t *testing.T) {
 }
 
 func TestBackupsPageGatesCreateAndDeleteInRecovery(t *testing.T) {
-	m := backupsModel(BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"})
+	m := backupsModel(BackupInfo{FileName: "a.tar.gz"})
 	m.signerState = signerRuntimeRecovery
 	if footer := m.viewFooterText(); strings.Contains(footer, "n: New") || strings.Contains(footer, "d: Delete") {
 		t.Fatalf("recovery footer offers create or delete: %q", footer)
@@ -138,8 +138,8 @@ func TestBackupsPageGatesCreateAndDeleteInRecovery(t *testing.T) {
 }
 
 func TestBackupsListKeepsSelectionAcrossRefresh(t *testing.T) {
-	a := BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"}
-	b := BackupInfo{FileName: "b.tar.gz", Path: "b.tar.gz"}
+	a := BackupInfo{FileName: "a.tar.gz"}
+	b := BackupInfo{FileName: "b.tar.gz"}
 	m := backupsModel(a, b)
 	m.restore.selectedBackup = 1
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{{FileName: "new.tar.gz"}, a, b}})
@@ -154,7 +154,7 @@ func TestBackupsListKeepsSelectionAcrossRefresh(t *testing.T) {
 }
 
 func TestBackupDeleteConfirmsThenDeletes(t *testing.T) {
-	m := backupsModel(BackupInfo{FileName: "only.tar.gz", Path: "only.tar.gz"})
+	m := backupsModel(BackupInfo{FileName: "only.tar.gz"})
 	m, _ = pressKey(t, m, "d")
 	if m.viewState != ViewBackupDeleteConfirm || m.backups.del.focus != 0 {
 		t.Fatalf("d: view %v focus %d, want the confirm with focus on cancel", m.viewState, m.backups.del.focus)
@@ -199,7 +199,7 @@ func exportFixture(t *testing.T) (Model, []byte, string) {
 	t.Helper()
 	payload := []byte(strings.Repeat("backup bytes ", 100))
 	sum := sha256.Sum256(payload)
-	info := BackupInfo{FileName: "aplane-backup-20261102-070725.000000000.tar.gz", Path: "aplane-backup-20261102-070725.000000000.tar.gz", Size: int64(len(payload)), Checksum: hex.EncodeToString(sum[:])}
+	info := BackupInfo{FileName: "aplane-backup-20261102-070725.000000000.tar.gz", Size: int64(len(payload)), Checksum: hex.EncodeToString(sum[:])}
 	dest := filepath.Join(t.TempDir(), "usb")
 	m := backupsModel(info)
 	m, _ = pressKey(t, m, "x")
@@ -514,7 +514,7 @@ func TestBackupImportLockAbortsUploadOrLeavesCommitUnresolved(t *testing.T) {
 
 func TestBackupViewHeaderShowsSealedTimeAndWarnsOnMismatch(t *testing.T) {
 	name := "aplane-backup-20261102-070725.000000000.tar.gz"
-	m := backupsModel(BackupInfo{FileName: name, Path: name, Size: 13861, Checksum: "abcd"})
+	m := backupsModel(BackupInfo{FileName: name, Size: 13861, Checksum: "abcd"})
 	m.restore.archivePath = name
 	m.restore.archiveCreatedAt = time.Date(2026, 11, 2, 7, 7, 25, 0, time.UTC).Unix()
 	header := stripANSI(m.renderBackupViewHeader(110))
@@ -635,7 +635,7 @@ func TestBackupExportFinishRunsOffTheEventLoopAndReportsAfterLeaving(t *testing.
 }
 
 func TestBackupDeleteReplyAfterLockKeepsTheUnlockScreen(t *testing.T) {
-	m := backupsModel(BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"}, BackupInfo{FileName: "b.tar.gz", Path: "b.tar.gz"})
+	m := backupsModel(BackupInfo{FileName: "a.tar.gz"}, BackupInfo{FileName: "b.tar.gz"})
 	m, _ = pressKey(t, m, "d")
 	m, cmd := pressKey(t, m, "y")
 	id := sentRequest(cmd, "backup-delete")
@@ -735,7 +735,7 @@ func TestReconcileFailureAfterLeavingRecoveryStillBlocks(t *testing.T) {
 }
 
 func TestReconcileSuccessAfterLeavingRecoveryUnlocksInPlace(t *testing.T) {
-	m := backupsModel(BackupInfo{FileName: "a.tar.gz", Path: "a.tar.gz"})
+	m := backupsModel(BackupInfo{FileName: "a.tar.gz"})
 	m.signerState, m.signerStatusKnown = signerRuntimeRecovery, true
 	m.viewState = ViewStoreRecovery
 	// From the recovery screen the operator opens Backups before the
@@ -744,7 +744,7 @@ func TestReconcileSuccessAfterLeavingRecoveryUnlocksInPlace(t *testing.T) {
 	if m.viewState != ViewBackups || !m.restore.returnToRecovery {
 		t.Fatalf("b: view %v returnToRecovery %v", m.viewState, m.restore.returnToRecovery)
 	}
-	m.restore.backupsLoaded, m.restore.backups = true, []BackupInfo{{FileName: "a.tar.gz", Path: "a.tar.gz"}}
+	m.restore.backupsLoaded, m.restore.backups = true, []BackupInfo{{FileName: "a.tar.gz"}}
 	m, cmd := update(t, m, ReconcileStoreResultMsg{Result: protocol.ReconcileStoreResultMessage{Success: true, KeyCount: 5}})
 	if m.signerState != signerRuntimeUnlocked || m.viewState != ViewBackups || m.keyCount != 5 || m.restore.returnToRecovery {
 		t.Fatalf("reconcile success: state %v view %v keys %d returnToRecovery %v, want unlocked on the same screen",
