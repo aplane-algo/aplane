@@ -16,6 +16,9 @@ type VerifiedCredential struct {
 	// HasPolicy reports that the archive carries this key's own policy,
 	// which verified with it.
 	HasPolicy bool
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, which verified with it; never a token.
+	SourceTokens []string
 }
 
 // VerifyReport classifies every credential of an archive as a whole-archive
@@ -28,10 +31,10 @@ type VerifyReport struct {
 }
 
 // DeepVerifyBackupBytes authenticates the exact archive inventory and admits
-// every credential, with its archived policy, for the source node role, by
-// the loader restore uses. An archive-level failure is an error; a credential
-// restore would skip is listed in the report. Verification has no network or
-// template dependency.
+// every credential, with its archived policy and source tokens, for the
+// source node role, by the loader restore uses. An archive-level failure is
+// an error; a credential restore would skip is listed in the report.
+// Verification has no network or template dependency.
 func DeepVerifyBackupBytes(backupDir string, passphrase []byte) (*VerifyReport, error) {
 	archive, err := openArchive(backupDir, passphrase)
 	if err != nil {
@@ -76,6 +79,7 @@ func (a openedArchive) verify(backupDir string, passphrase []byte, role noderole
 		entry.ZeroSecrets()
 		report.Verified = append(report.Verified, VerifiedCredential{
 			Address: entry.Selector(), KeyType: entry.KeyType(), HasPolicy: entry.Policy != nil,
+			SourceTokens: entry.SourceTokenNames(),
 		})
 		return nil
 	})

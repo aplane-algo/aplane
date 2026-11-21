@@ -535,6 +535,7 @@ func buttonPair(focus int, left, right string, accent lipgloss.TerminalColor) st
 // program (keyboard quit, signal, or the console).
 func (m Model) Shutdown() {
 	m.clearMnemonicExport()
+	m.clearSourceTokens()
 	m.clearAuthPassphrase()
 	m.clearBackupPassphrases()
 	m.clearRestorePassphrase()

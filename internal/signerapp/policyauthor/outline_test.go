@@ -26,7 +26,8 @@ func outlineFixture(t *testing.T, name string) (*File, []Section) {
 // document is inside some field's pointer, so nothing in a file is hidden.
 func TestOutlineShowsEveryValue(t *testing.T) {
 	names := []string{"signer_default.json", "signer_key_full.json", "signer_key_minimal.json", "signer_uint64_max.json",
-		"cosigner_default.json", "cosigner_key_full.json", "cosigner_key_minimal.json", "cosigner_key_no_wildcard.json"}
+		"cosigner_default.json", "cosigner_key_full.json", "cosigner_key_minimal.json", "cosigner_key_no_wildcard.json",
+		"cosigner_key_external_checks.json"}
 	for _, pattern := range []string{"semantic_invalid/*.json", "invalid/*.json"} {
 		matches, _ := filepath.Glob(filepath.Join("..", "..", "..", "test", "contracts", "policy", "v1", pattern))
 		for _, m := range matches {
@@ -205,7 +206,7 @@ func TestOutlineOfAnUnparsableFile(t *testing.T) {
 // every place, so this is what keeps "nothing in a file is hidden" true for
 // objects the fixtures do not exercise.
 func TestOutlineShowsAnUnknownMemberInEveryObject(t *testing.T) {
-	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json"} {
+	for _, name := range []string{"signer_key_full.json", "cosigner_key_full.json", "cosigner_key_external_checks.json"} {
 		dec := json.NewDecoder(bytes.NewReader(fixture(t, name)))
 		dec.UseNumber()
 		var doc any

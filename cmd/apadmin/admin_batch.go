@@ -59,6 +59,18 @@ func (p *adminBatchPrompt) secret(message string, allowEnvironment bool) ([]byte
 			return []byte(value), nil
 		}
 	}
+	return p.hidden(message, "passphrase")
+}
+
+// token prompts for a source token the way secret prompts for a
+// passphrase: without echo on a terminal, else one line of stdin.
+func (p *adminBatchPrompt) token(message string) ([]byte, error) {
+	return p.hidden(message, "token")
+}
+
+// hidden reads one secret, named noun in its errors: without echo when stdin
+// is a terminal, else one line of stdin.
+func (p *adminBatchPrompt) hidden(message, noun string) ([]byte, error) {
 	var secret []byte
 	if file, ok := p.stdin.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		_, _ = fmt.Fprint(p.stderr, message)
@@ -66,17 +78,17 @@ func (p *adminBatchPrompt) secret(message string, allowEnvironment bool) ([]byte
 		secret, err = term.ReadPassword(int(file.Fd()))
 		_, _ = fmt.Fprintln(p.stderr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read passphrase: %w", err)
+			return nil, fmt.Errorf("failed to read %s: %w", noun, err)
 		}
 	} else {
 		line, err := p.reader.ReadString('\n')
 		if err != nil {
-			return nil, fmt.Errorf("failed to read passphrase: %w", err)
+			return nil, fmt.Errorf("failed to read %s: %w", noun, err)
 		}
 		secret = []byte(strings.TrimSpace(line))
 	}
 	if len(secret) == 0 {
-		return nil, fmt.Errorf("passphrase cannot be empty")
+		return nil, fmt.Errorf("%s cannot be empty", noun)
 	}
 	return secret, nil
 }
@@ -134,9 +146,10 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	defer client.Close()
 
 	err = (apadminapp.Catalog{
-		Client:  client,
-		Streams: apadminapp.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr},
-		Confirm: prompt.confirm,
+		Client:     client,
+		Streams:    apadminapp.Streams{Stdin: streams.stdin, Stdout: streams.stdout, Stderr: streams.stderr},
+		Confirm:    prompt.confirm,
+		ReadSecret: prompt.token,
 	}).Run(command, args)
 	if err != nil {
 		printBatchError(streams.stderr, err)
@@ -145,16 +158,17 @@ func runCatalogCommand(command string, args []string, globals adminBatchGlobalOp
 	return 0
 }
 
-// catalogPassphrase reads the store passphrase for a catalog command. An
-// import reading its input from stdin, with no APSIGNER_PASSPHRASE, takes the
-// passphrase from the controlling terminal so stdin stays the import's.
+// catalogPassphrase reads the store passphrase for a catalog command. A
+// command reading its input from stdin (an import from "-", a token with
+// --token-stdin), with no APSIGNER_PASSPHRASE, takes the passphrase from the
+// controlling terminal so stdin stays the command's.
 func catalogPassphrase(command string, args []string, prompt *adminBatchPrompt, stderr io.Writer) ([]byte, error) {
 	if !apadminapp.CatalogReadsStdin(command, args) || os.Getenv("APSIGNER_PASSPHRASE") != "" {
 		return prompt.passphrase()
 	}
 	tty, err := openControllingTerminal()
 	if err != nil {
-		return nil, fmt.Errorf("%s import from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", command, err)
+		return nil, fmt.Errorf("%s reading from stdin requires APSIGNER_PASSPHRASE or a controlling terminal: %w", command, err)
 	}
 	defer func() { _ = tty.Close() }()
 	return newAdminBatchPrompt(tty, stderr).secret("Enter store passphrase: ", false)

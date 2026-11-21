@@ -64,12 +64,15 @@ func FileName(key string) (string, error) {
 // is written, every document must match the digest the summary listed,
 // together they must be that policy set, and with ctx they must make that
 // snapshot, so a policy or context that changed during the export is
-// refused rather than written as a mix. The context
-// file is written last, after an in-progress marker and every document are
+// refused rather than written as a mix. sourceTokens, on a cosigner export,
+// names the sources every selector with a token has one for (the node's
+// source_token_list, read whole), and is recorded in the context file beside
+// the digests; nil records none, as for a signer or a cosigner whose tokens
+// could not be read. The context file is written last, after an in-progress marker and every document are
 // durable, and the marker is then removed: a failed export leaves the marker,
 // and is never mistaken for a complete one. It returns the paths of the
 // documents written, in document order.
-func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, snapshotSHA256 string, at time.Time) ([]string, error) {
+func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, snapshotSHA256 string, sourceTokens map[string][]string, at time.Time) ([]string, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("an export directory is required")
 	}
@@ -99,6 +102,11 @@ func Write(dir string, docs []Document, ctx *policycontext.Context, setSHA256, s
 	export, err := policycontext.NewExport(ctx, digests, at)
 	if err != nil {
 		return nil, err
+	}
+	if sourceTokens != nil {
+		if err := export.RecordSourceTokens(sourceTokens); err != nil {
+			return nil, err
+		}
 	}
 	if export.Baseline.SnapshotSHA256 != snapshotSHA256 {
 		return nil, ErrPolicyChanged

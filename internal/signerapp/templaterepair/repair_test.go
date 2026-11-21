@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -28,6 +29,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
@@ -60,19 +62,24 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureAs(t, noderole.RoleSigner)
+}
+
+func newFixtureAs(t *testing.T, role noderole.Role) *fixture {
+	t.Helper()
 	clientreg.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
 	passphrase := []byte("template-repair-test-passphrase")
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
-		DataDir: root, Paths: paths, Role: noderole.RoleSigner,
+		DataDir: root, Paths: paths, Role: role,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := serverconfig.DefaultServerConfig()
 	f := &fixture{
 		t: t, paths: paths, passphrase: passphrase, installed: map[string]string{},
-		opts: templaterepair.Options{Paths: paths, Role: noderole.RoleSigner, DataDir: root, Config: &cfg},
+		opts: templaterepair.Options{Paths: paths, Role: role, DataDir: root, Config: &cfg},
 	}
 	f.reopen()
 	return f
@@ -474,6 +481,93 @@ func TestRepairRefusalsChangeNothing(t *testing.T) {
 	}
 }
 
+// A cosigner's token files are judged as unlock and a commit judge them. A
+// token file that does not open is damage unlock refuses; one for a key the
+// node does not hold, and an archived one that does not open or is
+// misnamed, are what only a commit refuses, an archived one with the prune
+// or by-hand remedy of every deleted-archive member. The preview names each,
+// and the repair refuses it before staging.
+func TestRepairSeesSourceTokenDamage(t *testing.T) {
+	const absentKey = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	tokenFile := func(t *testing.T, f *fixture, selector string) {
+		file, err := sourcetokens.SetToken(nil, selector, "screening", []byte("tok-repair"), time.Unix(1_785_200_000, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Zero()
+		if err := sourcetokens.WriteFile(f.opts.Current, file, f.opts.Keyring); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archived := func(name string, data []byte) func(t *testing.T, f *fixture) {
+		return func(t *testing.T, f *fixture) {
+			if err := os.MkdirAll(f.opts.Current.DeletedSourceTokensDir(), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(f.opts.Current.DeletedSourceTokensDir(), name), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		damage func(t *testing.T, f *fixture)
+		want   error
+		detail string
+		member bool
+		stray  bool
+	}{
+		{name: "a damaged token file", want: templaterepair.ErrOtherDamage, detail: "source tokens",
+			damage: func(t *testing.T, f *fixture) {
+				if err := os.WriteFile(f.opts.Current.SourceTokenPath(sourcetokens.DefaultSelector), []byte("damaged"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		{name: "a token file of a key the node does not hold", want: templaterepair.ErrCommitBlocked,
+			detail: absentKey + " has tokens, but the node holds no cosigner key with that ID",
+			damage: func(t *testing.T, f *fixture) { tokenFile(t, f, absentKey) }},
+		{name: "a damaged archived token file", want: templaterepair.ErrCommitBlocked, member: true,
+			detail: "verify deleted/source_tokens/" + absentKey + ".enc", damage: archived(absentKey+".enc", []byte("damaged"))},
+		{name: "a misnamed archived token file", want: templaterepair.ErrCommitBlocked, stray: true,
+			detail: `unsupported deleted source token file "deleted/source_tokens/notes.txt"`, damage: archived("notes.txt", []byte("damaged"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixtureAs(t, noderole.RoleCosigner)
+			f.install(genericYAML("repair-edited-generic"))
+			f.editRecord(editedGeneric)
+			tc.damage(t, f)
+			preview, err := templaterepair.Inspect(f.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			damage, other := preview.CommitBlocked, preview.OtherDamage
+			if tc.want == templaterepair.ErrOtherDamage {
+				damage, other = other, damage
+			}
+			if damage == nil || other != nil || !strings.Contains(damage.Error(), tc.detail) {
+				t.Fatalf("Inspect() = damage %v, commit blocked %v; want %v naming %q",
+					preview.OtherDamage, preview.CommitBlocked, tc.want, tc.detail)
+			}
+			var member *storevalidate.DeletedArchiveMemberError
+			if errors.As(damage, &member) != tc.member || (tc.member && !reflect.DeepEqual(member.Prune, []string{member.Path})) {
+				t.Fatalf("deleted-archive member error %+v, want one: %v", member, tc.member)
+			}
+			var stray *storevalidate.DeletedArchiveStrayError
+			if errors.As(damage, &stray) != tc.stray {
+				t.Fatalf("deleted-archive stray error %+v, want one: %v", stray, tc.stray)
+			}
+			before := storeDigest(t, f)
+			_, err = templaterepair.Repair(f.opts, map[string]templaterepair.Action{editedGeneric: templaterepair.ActionRepin})
+			if !errors.Is(err, tc.want) || !strings.Contains(err.Error(), tc.detail) {
+				t.Fatalf("Repair() error = %v, want %v naming %q", err, tc.want, tc.detail)
+			}
+			if storeDigest(t, f) != before {
+				t.Fatal("a refused repair changed the store")
+			}
+		})
+	}
+}
+
 // A commit whose store root cannot be confirmed durable is reported as one
 // that may have landed, with the generation it would select.
 func TestRepairReportsAnUncertainCommit(t *testing.T) {
@@ -606,6 +700,7 @@ func TestInspectSetsCrashResidueAside(t *testing.T) {
 		{name: "keys namespace", residue: "keys/ADDR.key.tmp-456"},
 		{name: "key policies namespace", residue: "policies/K.json.tmp-789"},
 		{name: "deleted archive", residue: "deleted/keys/ADDR.key.tmp-321", commitOnly: true},
+		{name: "source tokens namespace", residue: "source_tokens/default.enc.tmp-654"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := damagedStore(t)

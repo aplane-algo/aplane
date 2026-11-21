@@ -29,10 +29,11 @@ type restoreRollbackError struct {
 func (e *restoreRollbackError) Error() string { return e.err.Error() }
 func (e *restoreRollbackError) Unwrap() error { return e.err }
 
-// RollbackRestore reconstructs active credential and key-type authority from
-// the authenticated source named by the current manifest's rollback
-// capability. It preserves the outgoing generation's deleted archive, policy,
-// and node-role authority and never selects historical ciphertext directly.
+// RollbackRestore reconstructs active credential and key-type authority, with
+// the per-key policies and source tokens, from the authenticated source named
+// by the current manifest's rollback capability. It preserves the outgoing
+// generation's deleted archive, node default policy and its source tokens, and
+// node-role authority, and never selects historical ciphertext directly.
 func (s Service) RollbackRestore(
 	req adminproto.RollbackRestoreRequest,
 ) adminproto.RollbackRestoreResult {

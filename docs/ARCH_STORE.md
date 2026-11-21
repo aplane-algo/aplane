@@ -56,12 +56,14 @@ routing, client enrollment, or approval prompts.
       deleted/keys/*.{key,cos}
       deleted/keytypes/<key_type>.template
       deleted/policies/<selector>.json[.hmac]  # policy archived with its deleted key
+      deleted/source_tokens/<witness_key_id>.enc  # source tokens archived with their deleted cosigner key
       node.yaml.hmac
       default.json          # node default policy (aplane.policy.v1), both roles
       asa_set.json[.hmac]   # optional ASA set (aplane.asa-set.v1); absent means built-ins only
       default.json.hmac
       policies/<selector>.json       # one key's own policy; address or Witness Key ID
       policies/<selector>.json.hmac
+      source_tokens/<selector>.enc   # cosigner only: one policy selector's source tokens; Witness Key ID or default
     quarantine/generations/<gen-id>/ # non-authoritative abandoned publications
     stages/<selector>.stages        # rotating accounts' stage address tables: plaintext caches, outside generations
     config.yaml
@@ -124,7 +126,8 @@ Layout notes:
 - signer-managed backup archives are written under
   `<data_dir>/backups/default/`; the archive contains `README.md`,
   `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
-  encrypted per-key policy documents, and `manifest.sealed` (see
+  encrypted per-key policy documents, `source_tokens/*.apb` encrypted
+  per-key source token files, and `manifest.sealed` (see
   [Backup and restore](#backup-and-restore)). A new archive is written and
   synced as `<name>.tar.gz.partial`, which the listing ignores, verified by
   extracting it into a `.create-validation-*` directory beside it and opening
@@ -235,6 +238,7 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
 | `apstore template repair` | Offline repair of template record defects (re-pin or drop), committed as a `template-repair` generation; its preview takes the same exclusive store lock |
+| `apstore source token discard` | Offline deletion, without reading it, of one selector's source token file that keeps reload in recovery |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |
 
 Offline mutations require a stopped daemon, exclusive store lock, no-follow
@@ -470,6 +474,7 @@ selector:
 | `account-key` | Algorand address |
 | `cosigner-credential` | Witness Key ID |
 | `keytype-template` | key type |
+| `source-tokens` | cosigner policy selector: Witness Key ID or `default` |
 
 Behavior:
 
@@ -599,8 +604,10 @@ Changing the passphrase also replaces the current data-encryption term:
 5. stage an empty successor;
 6. read every source member once and verify it against the retained seal;
 7. re-encrypt term envelopes and re-sign integrity sidecars under the new term:
-   the node-role sidecar, every policy sidecar, including the documents
-   archived under `deleted/policies/`, and the ASA set sidecar when present;
+   every key file, template and source token file, including those archived
+   under `deleted/`, with the same object context; the node-role sidecar,
+   every policy sidecar, including the documents archived under
+   `deleted/policies/`, and the ASA set sidecar when present;
 8. validate and publish the complete successor;
 9. replace `store-root.enc` with the new wrapped keyring and selector in one
    durable operation;
@@ -628,14 +635,22 @@ source generation, clean-cutover decision, and exact inventory authority.
 
 Passphrase change carries it only when the outgoing live inventory still
 matches its effective authenticated authority. Routine mutations cause that
-comparison to fail. Rollback reconstructs authorized source content into a new
+comparison to fail: the inventory covers every file in the generation's leaf
+namespaces, `source_tokens/` among them, so a source token set or removed
+after a restore fails it as a key generated or deleted does. Rollback reconstructs authorized source content into a new
 current-term successor; it never repoints the root at historical ciphertext.
 The rollback generation does not record its source again: its manifest's parent
 is the restore generation, whose capability names the source.
-Rollback restores `keys/`, `keytypes/`, and the per-key `policies/`, because
-restore installs a key's archived policy with the key on both node roles. Each
+Rollback restores `keys/`, `keytypes/`, the per-key `policies/`, and the
+per-key token files in `source_tokens/`, because restore installs a key's
+archived policy and source tokens with the key. Each
 restored policy document is checked against the source seal and written with a
-sidecar signed under the current term. The node default `default.json`, the
+sidecar signed under the current term. Each restored token file is checked
+against the source seal, opened under the term that sealed it (through the
+source's historical anchor after a passphrase change that carried the
+capability), and sealed again under the current term with the same
+`source-tokens` object context. The node default `default.json` and its
+token file `source_tokens/default.enc`, the
 ASA set (`asa_set.json`), the deleted archives, and node role authority are
 kept from the outgoing generation. Backup archives carry neither the node
 default nor the ASA set: a fresh node restored from a backup has the built-in
@@ -675,11 +690,11 @@ and refuses a successor that breaks it. A publication that a failed or
 crashed mint leaves behind therefore always fits quarantine, and the mint
 preflight's reserve of one maximum candidate covers it. The entry limit sits
 above the documented count caps (8,192 cosigner credentials with their public
-sidecars, 8,192 per-key policy documents with their sidecars, a full deleted
-archive), and the byte limit leaves as much again as a full deleted archive
-for live state. Ordinary key mutations do not mint, so a selected generation
-can grow past the limits in place; its next mint is refused until keys are
-deleted and pruned from the deleted archive. If an older root is restored, a
+sidecars, 8,192 per-key policy documents with their sidecars, 8,192 source
+token files, a full deleted archive), and the byte limit leaves as much again
+as a full deleted archive for live state. Ordinary key mutations do not mint,
+so a selected generation can grow past the limits in place; its next mint is
+refused until keys are deleted and pruned from the deleted archive. If an older root is restored, a
 formerly selected generation past the limits stays where it is, and only
 abandoned discard (below) removes it.
 
@@ -687,9 +702,11 @@ abandoned discard (below) removes it.
 policy document of its own, beside a full deleted archive: account keys on a
 signer, cosigner credentials on a cosigner (where 8,192 is also a hard cap).
 That fits the limits with room for key files of up to about 25 KB (Falcon key
-files are 11 to 24 KB) and policy documents of a few KB. Signer account keys
-have no hard cap: key generation and import add to the selected generation in
-place and do not check the limits. A store past them keeps signing, but every
+files are 11 to 24 KB) and policy documents of a few KB. On a cosigner each
+key may also have a source token file, which is at most 4 KiB, so token files
+take at most 32 MiB at 8,192 keys. Signer account keys have no hard cap: key
+generation and import add to the selected generation in place and do not
+check the limits. A store past them keeps signing, but every
 operation that commits a new generation (passphrase change, policy apply, ASA
 set changes, restore and its rollback) is refused, because its new generation
 would not fit quarantine. On a signer the byte limit binds somewhere between
@@ -747,9 +764,11 @@ newer overwritten root must also be recovered from a coherent snapshot.
 
 Product-store deletion archives live inside the selected generation under
 `deleted/`. Key deletion moves the encrypted key file from `keys/` to
-`deleted/keys/`. Template removal deletes the state record and moves the
-encrypted `.template` file from `keytypes/` to `deleted/keytypes/`. Archived
-files are outside active signing scans but remain part of the generation seal.
+`deleted/keys/`, and a cosigner key's source token file from
+`source_tokens/` to `deleted/source_tokens/`. Template removal deletes the
+state record and moves the encrypted `.template` file from `keytypes/` to
+`deleted/keytypes/`. Archived files are outside active signing scans but
+remain part of the generation seal.
 
 The selected generation's deleted archive is bounded by release-contract
 constants:
@@ -767,7 +786,10 @@ whenever the emergency reserve is consumed.
 Deletes preflight the exact append and fail before active-state mutation if the
 hard bound would be exceeded. Deleting a key that has a policy of its own
 preflights the credential together with its policy document and sidecar, which
-move into `deleted/policies/` with it, on both node roles. Mints check the parent before staging and the
+move into `deleted/policies/` with it, on both node roles. Deleting a cosigner
+key that has a source token file preflights that file with them. Key deletion
+is the only operation that archives a token file: removing a source's last
+token deletes the file. Mints check the parent before staging and the
 successor after apply. An over-limit selected generation blocks ordinary
 validation, mint, and passphrase change until pruned.
 
@@ -775,9 +797,10 @@ validation, mint, and passphrase change until pruned.
 reserve warning; it is read-only and retries while a store mutation answers
 `store_busy`. `apadmin archive prune --confirm <deleted/path>...`
 (`prune_deleted_archive`) accepts only canonical
-`deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`, and
-`deleted/policies/*.json|*.json.hmac` selections. An archived policy document
-and its sidecar must be selected together. It
+`deleted/keys/*.key|*.cos`, `deleted/keytypes/*.template`,
+`deleted/policies/*.json|*.json.hmac`, and `deleted/source_tokens/*.enc`
+selections. An archived policy document and its sidecar must be selected
+together. It
 requires `identity.archive.prune`, a recovery-capable authenticated runtime,
 and durable intent audit before mutation. It changes only the selected
 generation; retained copies disappear only with retained-generation pruning.
@@ -790,10 +813,14 @@ signing blocked. Invalid or absent root authority requires `apstore rebuild`;
 the implementation never chooses the newest-looking generation.
 
 Credential recovery restore can repair only explicitly selected credential
-damage when all destination authority outside those credentials validates.
-Damage to policy, node-role integrity, key types/templates, deleted archives,
-unselected credentials, or the selected directory itself is not repaired by
-inventing authority; restore refuses and directs the operator to rebuild.
+damage when all destination authority outside those credentials validates;
+the token file of a selected cosigner key whose archived tokens it writes
+counts as part of that key. Damage to policy, node-role integrity, key
+types/templates, deleted archives, unselected credentials, or the selected
+directory itself is not repaired by inventing authority; restore refuses and
+directs the operator to rebuild. A damaged source token file a backup cannot
+replace is removed with `apstore source token discard` (see
+[Source token files](#source-token-files)).
 Template record defects alone, an external edit or a record without its
 template file, are repaired offline by `apstore template repair`, which
 refuses a generation with any other damage in the same way.
@@ -883,9 +910,11 @@ This separation is deliberate:
 | Installed YAML template | selected generation `keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
 | Deleted key archive | selected generation `deleted/keys/` | Removed key files; outside active scans. |
 | Deleted template archive | selected generation `deleted/keytypes/` | Removed template files; outside active scans. |
+| Source token file | selected generation `source_tokens/<selector>.enc`, cosigner nodes only | The tokens a policy selector's external sources authenticate with (see [Source token files](#source-token-files)). Not signing authority, and never in a policy document. |
+| Deleted source token archive | selected generation `deleted/source_tokens/` | Token files of deleted cosigner keys; outside the runtime index. |
 | Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. Every entry requires product-store import/enablement; initialization installs none. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; product-store visibility may be default-enabled or opt-in. |
-| Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; an archive also carries each key's own per-key policy document as a separate `.apb`. Template YAML is not included. |
+| Backup payload | `.apb` inside managed backup archive | Encrypted credential unit containing key material and durable signing metadata; an archive also carries each key's own per-key policy document and, for a cosigner key, its source token file as separate `.apb` members. Template YAML, the node default policy and the node default's source tokens are not included. |
 
 Witness public sidecars are derived public metadata, not independent signing
 authority. They exist so `apadmin cosigner export` can work without
@@ -1269,10 +1298,10 @@ key is rejected during reload rather than published as a signable key.
 | Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or cosigner witness `.cos`, recording the key type's `valid_rekey_target` declaration; LogicSig generation stores final bytecode, derivation metadata, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
 | Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential, recording the key type's `valid_rekey_target` declaration. | Credential becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.cos` to `deleted/keys/`. | Credential leaves active scans. |
-| Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
-| Restore preview | Managed archive and passphrase are valid and the source role matches. | Authenticate and admit complete credential payloads without mutation. | Reports the keys a restore would admit, with key types and destination presence, and the keys it would skip, with the reason. |
-| Restore apply | The archive authenticates, no credential the request names is skipped, at least one credential is admitted, and replacement conflicts are explicitly accepted. | Mint one generation containing the admitted credentials' changes and their archived per-key policies only, replace `store-root.enc` once, then reload. | All admitted credentials become active together; skipped ones are reported and never written. A definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
-| Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credentials, key-type state, and per-key policies while keeping the outgoing `default.json`, without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
+| Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive, with each key's own policy and a cosigner key's source tokens, and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
+| Restore preview | Managed archive and passphrase are valid and the source role matches. | Authenticate and admit complete credential payloads, with their policies and source tokens, without mutation. | Reports the keys a restore would admit, with key types, destination presence and the source names each carries a token for (never a token), and the keys it would skip, with the reason. |
+| Restore apply | The archive authenticates, no credential the request names is skipped, at least one credential is admitted, and replacement conflicts are explicitly accepted. | Mint one generation containing the admitted credentials' changes and their archived per-key policies and source tokens only, replace `store-root.enc` once, then reload. | All admitted credentials become active together; skipped ones are reported and never written. A definite pre-rename failure leaves the parent active. Visible-but-unconfirmed publication or reload failure enters recovery mode without fabricating rollback authority. |
+| Restore rollback | Current generation is exactly a clean, rollback-eligible `credential-restore`. | Reconstruct the sealed parent into a fresh current-term rollback generation. | Restores the pre-restore credentials, key-type state, per-key policies and per-key source tokens while keeping the outgoing `default.json` and `source_tokens/default.enc`, without repointing at historical ciphertext; rollback generations are not rollback-eligible. |
 | Unlock/reload | The store root is open and its selected generation is bound. | Verify node role integrity, register enabled templates, scan key files, validate the scanned inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files and content defects fail reload into recovery; role conflicts also fail closed. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
@@ -1612,6 +1641,75 @@ or raw public-key hex. Cosigner keys are identified by their Witness Key ID, not
 by the raw cosigner public key. Recoverable key-scan warnings may be reported
 while still listing keys that scanned successfully.
 
+### Source token files
+
+A cosigner policy document's external sources may authenticate with a token.
+Tokens are kept in the store, never in a document: one file per policy
+selector, `source_tokens/<selector>.enc` in the selected generation, where
+the selector is a cosigner key's Witness Key ID or `default` for the node
+default document. `internal/sourcetokens` owns the format, its
+reads and writes, and the runtime index.
+
+- **Encryption.** The file is a term envelope of class `source-tokens`
+  whose selector is the policy selector, so a file renamed to another
+  selector fails to open.
+- **Plaintext.** `aplane.source-tokens.v1`, canonical compact JSON:
+  `{"format":"aplane.source-tokens.v1","selector":"<selector>","tokens":{"<source>":{"set_at":"<RFC 3339 UTC>","value":"<token>"}}}`,
+  sources sorted, with `\"` and `\\` the only escapes. A reader refuses
+  anything else, a duplicate or unknown member included. `set_at` records
+  when each token was set, to the second.
+- **Limits.** At most 8 tokens. A source name follows the policy document
+  rule (`^[a-z0-9][a-z0-9_-]*$`, at most 64 characters). A token is 1 to
+  1,024 bytes of visible ASCII (0x21 to 0x7E). The encrypted file is at most
+  4 KiB; a set that would exceed it, under the current term or any later
+  one, is refused.
+- **Role and selector.** Token files exist only on cosigner nodes; one on a
+  signer node is a role conflict. Candidate validation refuses a file whose
+  selector is neither `default` nor a cosigner key the generation holds.
+  Nothing checks whether a document uses a token.
+- **Writing.** Setting or removing a token is an in-place, durable write of
+  the selected generation (temp file, fsync, rename, directory fsync) under
+  the store mutation lock, on an unlocked cosigner node; it mints no
+  generation. Setting needs `default` or a held cosigner key. Removing the
+  last token deletes the file; nothing is archived. The admin messages
+  `source_token_set`, `source_token_remove` and `source_token_list` drive
+  them ([ARCH_ADMIN.md](ARCH_ADMIN.md)); a listing reads the files, names and
+  set times only, and zeroes what it decrypts.
+- **Runtime index.** Reload decrypts every token file into an immutable
+  index keyed by selector and source, published with the policy. A set or
+  remove publishes a new index once its write is durable; a write whose
+  durability is uncertain publishes what the file then holds. A replaced
+  index is zeroed when its last reader has released, never while one may
+  hold it. Lock cleanup zeroes the index after the key users have drained,
+  a failed unlock reload clears what it published, and so does an unlock
+  the fence refuses for a recovery entered while it ran; a locked node has
+  none. A token sent in a request header is a Go
+  string, which cannot be zeroed; zeroing covers the index.
+- **Lifecycle.** Key deletion moves the key's file to
+  `deleted/source_tokens/`; archive prune accepts it; a generation mint
+  copies token files with the generation; a passphrase change re-encrypts
+  them under the new term with the same object context. A backup carries a
+  cosigner key's file with the key, and restore, its rollback and
+  `apstore rebuild` write it back ([Backup and restore](#backup-and-restore));
+  the node default's file is not backed up.
+- **Damage.** A token file that does not decrypt or decode fails reload into
+  recovery (a generation-validation failure, as a malformed key file is; see
+  [Runtime reload behavior](#runtime-reload-behavior)); one on a signer node
+  is a role conflict instead, which fails the node closed. A recovery-mode restore with `replace_existing` replaces a
+  damaged file of a key the backup carries tokens for. Otherwise
+  `apstore source token discard <selector>`, run while the daemon is stopped,
+  deletes the named file without reading it, under the exclusive store lock;
+  nothing is archived and no audit record is written. The next unlock loads
+  the remaining files, and the selector's sources refuse with
+  `token_not_set` until a token is set again. `apadmin policy rescue` reads
+  token files only for its missing-token advisory, so a damaged one never
+  fails a rescue: the names are then not known, and rescue names the
+  selector whose file it could not read and the discard command, or an
+  entry of `source_tokens/` that is no token file, which discard cannot
+  name, to be removed by hand with the daemon stopped. A rescue
+  apply is still refused before anything is committed, since candidate
+  validation admits a generation only with every token file whole.
+
 ### Stage address tables
 
 A rotating account's stage address table lists the addresses of its first
@@ -1710,9 +1808,10 @@ The audit log independently restores released-transaction and leaf memory.
 ### Backup and restore matrix
 
 This matrix describes restoring a template-backed or library-visible key.
-Credential backups carry each key's own per-key policy when present, but no
-`default.json` or template YAML; native default-enabled keys follow the direct
-key restore path.
+Credential backups carry each key's own per-key policy when present, and a
+cosigner key's source token file when present, but no `default.json`, node
+default source tokens, or template YAML; native default-enabled keys follow
+the direct key restore path.
 
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
@@ -1752,7 +1851,9 @@ The relevant order is:
 1. open or reuse the product store keyring,
 2. load root `node.yaml` and verify the product store's `node.yaml.hmac`,
 3. load and validate product runtime config and the policy documents for the
-   node role (`default.json` and every `policies/<selector>.json`),
+   node role (`default.json` and every `policies/<selector>.json`), and
+   decrypt every source token file into the source token index, published
+   with them,
 4. apply node role to key type discovery and service dispatch,
 5. register enabled compiled/YAML key type state,
 6. register enabled installed templates,
@@ -1769,7 +1870,14 @@ snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
 undecryptable, unsupported, or unexpected entry in `keys/`, and any
 template/key-type content defect, fails reload with a generation-validation
 error: the runtime publishes an empty snapshot and enters recovery with signing
-blocked. Entries are not dropped from an otherwise published snapshot.
+blocked. Entries are not dropped from an otherwise published snapshot. A
+source token file that cannot be read, opened or decoded as its selector's,
+and an entry of `source_tokens/` that is not a token file, are damage of the
+same kind (`sourcetokens.ErrDamaged`): the reload fails with a
+generation-validation error before any key is scanned, but after the verified
+policy is published, as it is when a key file is damaged, so the recovery an
+unlock then enters, with signing blocked, shows and exports that policy. A `source_tokens/` directory that cannot be
+read at all fails the unlock instead, as an unreadable `keys/` does.
 
 Role-conflicting key inventory is not ordinary per-item invalidity. It is a
 node-level contradiction: reload must fail closed without publishing a new
@@ -1780,6 +1888,11 @@ already-valid key files from active key scans.
 
 Node role is stronger than disabled/enabled state: a role-forbidden active key
 is not published as valid runtime inventory.
+
+A source token file is checked at reload only for what it is: it decrypts as
+its own selector's, its name is canonical, and its schema and limits hold
+(admission, not load). A damaged one fails the reload. One on a signer node
+is a role conflict and fails the node closed, as a role-forbidden key does.
 
 #### Template activation and key type filtering
 
@@ -1872,6 +1985,8 @@ Watched paths:
 Mechanism:
 
 - reacts to Create, Write, Remove, and Rename on `.key`, `.cos`, and `.template` files
+- does not watch `source_tokens/`: the daemon is the only writer of token
+  files and publishes the token index itself after each write
 - a `store-root.enc` replacement is a reload candidate; reload authenticates the new
   active generation. Restore, rollback, and reconcile then re-arm the watcher on
   the new generation's directories; after a policy apply, ASA set update, or passphrase change the
@@ -1907,15 +2022,15 @@ Lifecycle:
 | `apadmin template remove` | Deletes state and archives `.template` after unused-key guard. | None. | Removed template leaves active scans. |
 | `apstore template repair` | With the signer stopped, re-pins an externally edited record's fingerprint to its stored template, or deletes a defective record and archives its `.template`, in a new `template-repair` generation. | None. | No unused-key guard: a dropped type's keys keep signing from stored metadata. |
 | Key generation | Requires discoverable/generatable key type allowed by node role. | Writes new encrypted key. | LogicSig key stores signing authority at creation time. |
-| Key deletion | None. | Archives active key file. | Archived keys are not signable. |
-| Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
+| Key deletion | None. | Archives active key file, with its own policy document and, on a cosigner, its source token file. | Archived keys are not signable. |
+| Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files, their own policy documents and a cosigner key's source token file into encrypted backup payloads. | Source store unchanged; the node default's tokens are not carried. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only: the keys a restore would admit and the ones it would skip. A node-role mismatch refuses. |
-| Restore apply | None. | Admits each selected complete credential, skipping and reporting one it cannot admit, classifies canonical-plaintext identity/conflict, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination default policy/configuration remain authoritative; reload publishes all entries, and uncertain durability enters recovery mode. |
-| Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation. | A rollback generation is not itself eligible for another rollback. |
+| Restore apply | None. | Admits each selected complete credential with its archived policy and source tokens, skipping and reporting one it cannot admit, classifies canonical-plaintext identity/conflict of each, then commits all pending entries as one generation behind one `store-root.enc` replacement. | Destination default policy, its source tokens and configuration remain authoritative; reload publishes all entries, the token index included, and uncertain durability enters recovery mode. |
+| Restore rollback | None. | Reconstructs the sealed parent of the latest clean rollback-eligible credential restore into a fresh generation, its per-key token files sealed again under the current term. | A rollback generation is not itself eligible for another rollback. |
 | Restore reconcile | None. | Validates the visible generation after interrupted or uncertain completion. | Exits recovery mode only after clean validation and reload. |
-| Rebuild absent store | Writes root `node.yaml` from explicit `--role` or the authenticated manifest source role. | Restores the selected keys it admits into a new product store, skipping and reporting the rest. | Manifest role is the default; `--role` overrides it; destination key-class gates remain authoritative. |
-| Store passphrase change | Mints a fresh term and generation, re-encrypts every term-encrypted generation member, renews integrity sidecars, and atomically replaces `store-root.enc`. | Re-encrypts keys. | Logical authority and state are unchanged; the old passphrase and term no longer authorize the current generation. |
+| Rebuild absent store | Writes root `node.yaml` from explicit `--role` or the authenticated manifest source role. | Restores the selected keys it admits, with their policies and source tokens, into a new product store, skipping and reporting the rest. | Manifest role is the default; `--role` overrides it; destination key-class gates remain authoritative. |
+| Store passphrase change | Mints a fresh term and generation, re-encrypts every term-encrypted generation member, renews integrity sidecars, and atomically replaces `store-root.enc`. | Re-encrypts keys, and active and archived source token files, each under its own object context. | Logical authority and state are unchanged; the old passphrase and term no longer authorize the current generation. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
 
@@ -1944,12 +2059,15 @@ Lifecycle:
 13. Cosigned account keys use the cosigned flow (`cosigned1`); normal `/sign`
     rejects them.
 14. Live backup restore validates the full selected credential set before one
-    generation commit. It must not change the node default policy, templates, key-type state,
-    or configuration; it writes only credentials and each restored key's own
-    archived policy document (with a current-term sidecar), and a differing
-    destination per-key policy is a conflict requiring `replace_existing`. It
-    must not replace a conflicting credential without explicit authorization, or enter
-    the signing index before commit and reload complete.
+    generation commit. It must not change the node default policy or its
+    source tokens, templates, key-type state, or configuration; it writes only
+    credentials, each restored key's own archived policy document (with a
+    current-term sidecar), and each restored cosigner key's archived source
+    tokens (sealed under the current term with the `source-tokens` object
+    context). A differing destination per-key policy or token file is a
+    conflict requiring `replace_existing`. It must not replace a conflicting
+    credential, policy or token file without explicit authorization, or enter
+    the signing or token index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
     Comparisons are exact: the fingerprint is identifier-independent, and a
@@ -1966,15 +2084,17 @@ orchestration is owned by `internal/signerapp/backupadmin`.
 
 The authority boundary is:
 
-> Backup owns credentials and each key's own policy document. The destination
-> owns its node default policy and operational configuration.
+> Backup owns credentials, each key's own policy document, and each cosigner
+> key's source tokens. The destination owns its node default policy, the node
+> default's source tokens, and operational configuration.
 
 A backup preserves complete managed credential records, not only raw private
 key bytes. This includes durable LogicSig bytecode, signing-argument contracts,
 bounded authorization, and other versioned signing metadata carried by
 `.key` and `.cos` payloads. A key's own policy document travels with it on both
-node roles; restore does not import the node default policy or operational
-configuration.
+node roles, and a cosigner key's source token file travels with it on a
+cosigner; restore does not import the node default policy, the node default's
+tokens, or operational configuration.
 
 ### Export and archive shape
 
@@ -1990,20 +2110,28 @@ Export:
 6. for each exported credential with a verified policy document of its own,
    encrypts the exact document bytes the same way and writes
    `policies/<selector>.apb`
+7. on a cosigner, for each exported credential with a source token file,
+   opens the file under its object context, checks its schema, and encrypts
+   its canonical plaintext the same way as `source_tokens/<selector>.apb`;
+   the node default's token file is not exported
 
 Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
 65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
 parameters before decoding the envelope body or invoking Argon2id; changing the
 tuple requires a new envelope version. Encoded credential envelopes are limited
-to 1 MiB, policy envelopes to 2 MiB, and the sealed manifest to 4 MiB; archive
-readers enforce each bound while reading the regular file rather than after an
-unbounded allocation. An archive holds at most 16,400 entries and 1 GiB
-extracted, enough for a credential and a policy per key at the 8,192-key cosigner
-cap; backup creation refuses to package an archive extraction would reject.
+to 1 MiB, policy envelopes to 2 MiB, source token envelopes to 8 KiB (a 4 KiB
+token file's plaintext re-encrypted under the export passphrase), and the
+sealed manifest to 8 MiB; archive readers enforce each bound while reading the
+regular file rather than after an unbounded allocation. An archive holds at
+most 24,600 entries and 1 GiB extracted: three members per key (credential,
+policy and source tokens) at the 8,192-key cosigner cap is 24,576, plus
+`README.md`, `manifest.sealed` and the three member directories. The sealed
+manifest of such an archive is about 5.5 MB. Backup creation refuses to
+package an archive extraction would reject.
 
-An all-credentials backup is fail-hard: if any selected active credential
-cannot be read, decrypted, canonicalized, or exported, no archive is
-published. It never silently reports a partial archive as a complete backup.
+An all-credentials backup is fail-hard: if any selected active credential, or
+the policy or source token file of one, cannot be read, decrypted,
+canonicalized, or exported, no archive is published. It never silently reports a partial archive as a complete backup.
 A selected-keys backup that names an address twice is refused before
 anything is written, as restore refuses a duplicate selector; it would
 otherwise export and count the key twice.
@@ -2014,6 +2142,9 @@ A managed archive contains exactly:
 - one or more `apb/<selector>.apb` files
 - zero or more `policies/<selector>.apb` files, each for a credential in the
   archive that has a policy document of its own
+- zero or more `source_tokens/<selector>.apb` files, each for a cosigner
+  credential in the archive that has a source token file; never one named
+  `default`
 - `manifest.sealed`
 
 The sealed manifest plaintext uses schema
@@ -2027,15 +2158,17 @@ identity against selected credentials, then merge candidates with source
 `backup` only after successful installation. Bad auxiliary hints are ignored;
 cache publication failure warns without reversing a successful restore.
 Archives with no hints remain readable. Hints are not current authority.
-Backups carry no node default policy, approval defaults,
-genesis-hash mappings, templates, endpoints, client enrollment, or other
-operator configuration. The manifest is encrypted under the export passphrase.
+Backups carry no node default policy, node default source tokens, approval
+defaults, genesis-hash mappings, templates, endpoints, client enrollment, or
+other operator configuration. The manifest is encrypted under the export passphrase.
 Knowing that passphrase authenticates the archive as produced or endorsed by a
 passphrase holder; it is not independent origin authentication.
 
 Every archive reader authenticates the manifest and verifies exact membership
 before trusting payload metadata. Missing, added, duplicated, non-canonical, or
-altered members are rejected. Internal pre-release manifests, bundle wrappers,
+altered members are rejected, and so are a policy or source tokens for no
+credential in the archive, and source tokens named for the node default or an
+account address. Internal pre-release manifests, bundle wrappers,
 and legacy envelope versions are unsupported; this is the first supported
 backup contract and no migration from earlier internal tags is provided.
 
@@ -2073,9 +2206,12 @@ already live.
 
 `preview_restore` and `apadmin restore preview` authenticate the archive
 before revealing addresses or key types. Preview admits every credential as a
-whole-archive restore would and reports each admitted credential's identity
-and destination presence, and each credential the restore would skip with the
-reason; it performs no store mutation. A preview with nothing left to restore
+whole-archive restore would and reports each admitted credential's identity,
+destination presence, and the source names it carries a token for, never a
+token, and each credential the restore would skip with the reason; it
+performs no store mutation. A preview lists the names of at most 4,096 tokens
+across its keys, so it fits one admin frame, and counts the names it leaves
+out per key. A preview with nothing left to restore
 still succeeds, so every reason is shown.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
 It counts only attempts that read the archive with the passphrase: a preview
@@ -2100,7 +2236,8 @@ The current admin protocol exposes a direct credential restore:
 - `restore_backup_result`: operation ID, archive SHA-256, resulting
   generation, restored/identical/conflicting credentials, the credentials it
   skipped with the reason (`skipped`), the keys whose archived policy was
-  installed (`policies_restored`), key count, stable code, and error
+  installed (`policies_restored`), the keys whose archived source tokens
+  were installed (`source_tokens_restored`), key count, stable code, and error
 - `rollback_restore`: rolls back only the latest clean, rollback-eligible
   credential restore
 - `reconcile_store`: validates/reconciles the visible generation and exits
@@ -2112,7 +2249,8 @@ identity is recovery-blocked so they can repair or resolve store damage.
 
 Restore authenticates the archive and admits each selected credential before
 any write. Admission runs per credential: one the node cannot admit is skipped
-with its archived policy and reported with the reason, and the rest restore.
+with its archived policy and source tokens and reported with the reason, and
+the rest restore.
 Nothing is skipped silently: the preview, the `restore_backup_result`, the
 restore audit record (`skipped_keys`) and apadmin's restore screens list every
 skipped credential.
@@ -2120,11 +2258,11 @@ skipped credential.
 These failures refuse the whole restore before any write:
 
 - archive authentication or decryption of the sealed manifest
-- the manifest and archive structure: exact membership, and a policy with no
-  credential in the archive
-- archive and member size bounds, and a credential or policy member that does
-  not read or decrypt under the export passphrase (the manifest sealed its
-  digest, so it is damage to the archive)
+- the manifest and archive structure: exact membership, and a policy or
+  source tokens with no credential in the archive
+- archive and member size bounds, and a credential, policy or source token
+  member that does not read or decrypt under the export passphrase (the
+  manifest sealed its digest, so it is damage to the archive)
 - source/destination node-role compatibility of the archive
 - a duplicate selector, or a selection (`addresses[]`) naming an address the
   archive lacks
@@ -2145,6 +2283,10 @@ admission:
 - whether the destination node role allows its key type
 - required destination runtime/provider support
 - its archived policy decoding as that key's document for the destination role
+- its archived source tokens decoding as that cosigner key's token file
+  (`aplane.source-tokens.v1`, its selector the credential's Witness Key ID,
+  within the token limits) small enough to seal within 4 KiB under any term;
+  only a cosigner credential, which only a cosigner node admits, has them
 
 A skipped credential repairs nothing: in recovery mode, destination damage
 that only its archived copy would have replaced still refuses the restore,
@@ -2174,8 +2316,18 @@ synced, the outgoing generation is sealed, and one durable store-root rename
 commits the operation. Archived per-key policy documents are applied in that
 same generation, on both node roles. A differing destination document is a
 conflict requiring `replace_existing`; a destination document is kept when the
-archive carries none. Restore never writes templates, key-type activation
-records, the node default policy, config, or network mappings.
+archive carries none. Archived source tokens are applied the same way on a
+cosigner: each is written as the key's `source_tokens/<selector>.enc`, sealed
+under the current term with the `source-tokens` object context. A destination
+token file whose canonical plaintext differs from the archive's, or that does
+not decrypt or decode, is a conflict requiring `replace_existing` (the
+conflict names the encrypted file's digest, never a digest of the tokens); an
+identical one is a no-op; a destination file is kept when the archive carries
+none. A recovery-mode restore counts a key whose token file it replaces among
+the selectors it repairs. The reload after the commit publishes the token
+index from the new generation. Restore never writes templates, key-type
+activation records, the node default policy or its token file, config, or
+network mappings.
 
 The generation manifest operation is exactly `credential-restore`; it records
 the archive SHA-256 and whether explicit rollback is eligible. Recovery-mode
@@ -2216,8 +2368,8 @@ identity directory or root `node.yaml`. It writes `node.yaml` before the mint an
 removes it again when the mint fails before commit; after an uncertain commit
 it keeps the file, since the root may select the new generation. It loads its
 selection with the loader restore uses, before it asks for a store passphrase,
-and applies the admitted credentials and their policies into a newly staged
-first generation. `--address` limits the rebuild to the selected credentials;
+and applies the admitted credentials, their policies and their source tokens
+into a newly staged first generation. `--address` limits the rebuild to the selected credentials;
 without it every `.apb` payload is admitted. Each credential it skips is
 printed with the reason. A rebuild that names a skipped credential, or has
 nothing left to rebuild, is refused before the store passphrase prompt and
@@ -2241,6 +2393,8 @@ Primary implementation owners:
 - LogicSig provider registry and template loading: `internal/lsigprovider`,
   `internal/signerapp/templates`
 - key generation: `internal/keygen`, `internal/signerapp/keyadmin`
+- source token files and the token index: `internal/sourcetokens`;
+  token writes: `internal/signerapp/keyadmin`
 - live key type/template admin locking and reload: `internal/signerapp/templateadmin`
 - backup/restore: `internal/backup`, `internal/signerapp/backupadmin`
 - signing execution: `internal/signerapp/signing`

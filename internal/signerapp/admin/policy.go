@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -22,7 +23,8 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 
 // GetPolicyDocumentAt returns one active policy document's exact bytes,
 // refusing when ExpectedSnapshotSHA256 is set and the node's policy or
-// context moved since that snapshot.
+// context moved since that snapshot. It names no source token: an export
+// reads token names with source_token_list, which needs policy.update.
 func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult {
 	np, set := s.Runtime.PolicyState()
 	if req.ExpectedSnapshotSHA256 != "" && np != nil {
@@ -49,7 +51,11 @@ func (s Service) GetPolicyContext() adminproto.PolicyContextView {
 }
 
 // CheckPolicy validates candidate documents against the node's role and
-// reports the key coverage the change would leave, without writing.
+// reports the key coverage the change would leave, without writing. On a
+// cosigner, for a request whose session may read token names
+// (req.SourceTokensReadable), it also warns of each source a document takes
+// a token for that its selector has none of, from the live token index,
+// one selector at a time.
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	current, set := s.Runtime.PolicyState()
 	if current == nil {
@@ -57,6 +63,9 @@ func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.Check
 	}
 	env := s.policyEnv(nil)
 	env.ASASet = set
+	if req.SourceTokensReadable && s.Runtime.NodeRole() == noderole.RoleCosigner {
+		env.SourceTokens = s.Runtime.SourceTokenNamesFor
+	}
 	return policyapply.Check(env, current, req)
 }
 

@@ -21,7 +21,8 @@ admit; the verdict model below says what the accepted rules mean.
   [Rotating Account Interaction](#rotating-account-interaction)
 - Document format: [The Boundary](#the-boundary), [Role Domains](#role-domains),
   [Parsing](#parsing), [Terms](#terms), [Fields](#fields), [Routes](#routes),
-  [Limits](#limits), [Semantic Rules](#semantic-rules),
+  [Limits](#limits), [External Sources and Checks](#external-sources-and-checks),
+  [Semantic Rules](#semantic-rules),
   [Embedded Defaults](#embedded-defaults)
 - Storage and acceptance: [Storage](#storage),
   [Storage and Acceptance](#storage-and-acceptance)
@@ -706,6 +707,18 @@ matching sender-to-target edge. A cosigner key with no document of its own is
 governed by the default like any other key; under the shipped deny-all
 default every request is rejected with `transaction_type:<type>`.
 
+An external check refuses with `external_check:<check_id>` when one of its
+rules does not hold, and with `external_check:<check_id>:<outcome>` when it
+could not be judged:
+
+- `unavailable`: the lookup failed, or the node cannot run checks;
+- `missing_fact`: the unit lacks a fact the check uses;
+- `token_not_set`: the source declares a token and the document's selector
+  has none set for it (`apadmin source token set` sets one);
+- `too_many_lookups`: the request would need more than 32 lookups.
+
+See [External Sources and Checks](#external-sources-and-checks).
+
 ## Transaction Scope
 
 For client signing, Always Deny, Always Review, and Always Approve rules
@@ -826,9 +839,33 @@ Consequences:
   what a document decides through the node's own pure evaluator
   (`policyeval`), for one direct transfer at a time: they are not a full
   transaction simulator and not an oracle for the policy a node runs now.
+  For a cosigner document with external checks they plan the lookups with
+  the cosigner's own `externalcheck.BuildPlan` and judge each check on an
+  answer the author supplies (`try --answer`, or a case's `answers`) with
+  `externalcheck.ParseAnswer` and `externalcheck.JudgeOffline`, or on a named
+  lookup failure (a case's `failures`, `externalcheck.FailureOf`). They never
+  contact a source and never see a token. Offline there is no request ID, so
+  `JudgeOffline` passes the string at a check's `echo_pointer` to `Judge` as
+  the request ID and reports the echo as unverified; `Judge`, which the
+  cosigner runs, still compares the echo with the ID it sent.
   Saved cases live in `.appolicy/cases.json` in the workspace, in their own
   format, `aplane.policy-cases.v1` (`policyauthor/cases.go`), separate from
-  the node context and from the daemon's verdict fixtures. A file's name,
+  the node context and from the daemon's verdict fixtures. A case may carry,
+  per check ID, `answers` (one `answer` for every unit, or `by_path`, one per
+  rendered request) and `failures`; both fields are optional, so the format
+  keeps its name. An export of a cosigner records, beside the context and
+  outside its digests, the source names every selector with a token has one
+  for, a key that follows the node default and has no document of its own
+  included (`source_tokens` in `.appolicy/node.json`, read from the node's
+  `source_token_list`, a page at a time, which needs `policy.update`). A
+  selector it does not list had none. `appolicy check` then reports
+  `external_check:token_not_set` for a source that takes a token its
+  selector lacked at the export; from an export that recorded no names (a
+  signer, a session without `policy.update`, a rescue that could not read a
+  token file) it reports nothing about tokens. Since the names are not digested, a token set or removed
+  after the export does not make `apadmin policy apply` refuse the export as
+  stale: tokens are not policy, and a live apply reports the advisory
+  against the live token index. A file's name,
   its strings (a JSON `\u001b` decodes to a raw ESC) and the saved cases can
   hold terminal control sequences or bidirectional controls, so the editor
   shows each as its escape, as the apadmin TUI does
@@ -863,7 +900,12 @@ the top level, named for the role and shape they exercise
 `cosigner_key_minimal.json`); schema-invalid documents in `invalid/`; and
 documents the schema accepts but the node's semantic rules reject in
 `semantic_invalid/`. The fixture test decodes each valid document against the
-role its name states.
+role its name states. The judge fixtures in
+[`test/contracts/policy/v1/external/`](../test/contracts/policy/v1/external/README.md)
+(`aplane.policy-external-judge.v1`) freeze the external check rule
+semantics: each case is a check's rules and optional `echo_pointer`, a
+unit's facts, an answer and the expected pass or fail, run through the
+decoder, the answer reader and `externalcheck.Judge`.
 
 ## Role Domains
 
@@ -1030,6 +1072,8 @@ absent is an error, and an optional field that is absent means none.
 | `asset_sets` | sets | optional | optional | Named asset sets for routes |
 | `transfer_policy` | object | required | required | Transfer routing; see below |
 | `rekey_policy` | object | rejected | optional | `allowed: [{sender, targets}]` rekey edges |
+| `external_sources` | map | rejected | optional | REST sources by name; see [External Sources and Checks](#external-sources-and-checks) |
+| `external_checks` | list | rejected | optional | Refuse-only checks over the sources' JSON answers; set with `external_sources` or not at all |
 
 `transfer_policy`:
 
@@ -1133,6 +1177,267 @@ for its asset or the strictest threshold among its matching routes. An asset a
 route covers but its `limits` does not mention has no route-level threshold;
 document-level limits still apply to it.
 
+## External Sources and Checks
+
+A cosigner document may define **external checks**: REST lookups whose JSON
+answers must satisfy rules the document states, and the **sources** those
+lookups go to. A signer document carries neither field.
+
+Checks only refuse. They judge a request the policy would sign, and every
+rule of every check that applies must hold for it to be signed. They can
+never allow what the policy rejects. Any lookup that cannot be made or read
+refuses the request.
+
+**Tokens.** A source that declares a `token` is sent the token its
+selector holds: the document's key, `default` for the node default. Tokens
+are set with `apadmin source token set` and kept encrypted in the store with
+the key, never in a document (see
+[ARCH_STORE.md](ARCH_STORE.md#source-token-files)). A check on a source that
+declares a token the selector has none of refuses with
+`external_check:<id>:token_not_set`, and a live check or apply by a session
+with `policy.update`, a rescue, and `appolicy check` against an export that
+recorded the node's token names warn of it
+(`external_check:token_not_set`, see [Advisories](#advisories)). Which
+sources have a token is readable only at `policy.update`
+([ARCH_ADMIN.md](ARCH_ADMIN.md)). A node that
+cannot run checks at all refuses with `external_check:<id>:unavailable`.
+
+```json
+"external_sources": {
+  "screening": {
+    "base_url": "https://screen.example.com/api",
+    "token": { "header": "Authorization", "prefix": "Bearer " },
+    "timeout_ms": 2000,
+    "max_response_bytes": 65536
+  },
+  "ops": { "base_url": "http://127.0.0.1:8650" }
+},
+"external_checks": [
+  {
+    "id": "screen-destination",
+    "source": "screening",
+    "scope": "movement",
+    "networks": ["mainnet"],
+    "movement_kinds": ["pay", "axfer"],
+    "path": "/v2/addresses/{destination}",
+    "query": { "chain": "algorand" },
+    "require": [
+      { "pointer": "/sanctioned", "op": "eq", "bool": false },
+      { "pointer": "/risk/score", "op": "le", "number": "30" }
+    ]
+  },
+  {
+    "id": "ops-switch",
+    "source": "ops",
+    "scope": "request",
+    "networks": ["*"],
+    "path": "/signing/{witness_key}",
+    "require": [ { "pointer": "/enabled", "op": "eq", "bool": true } ]
+  }
+]
+```
+
+### Sources
+
+`external_sources` maps a source name (`^[a-z0-9][a-z0-9_-]*$`, at most 64
+characters) to a source. A document has at most 8.
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `base_url` | URL, at most 512 characters | yes | Scheme, host, optional port and path prefix of every lookup |
+| `token` | object | no | Absent: no token is sent. Present: the key must have a token for this source |
+| `token.header` | header name, at most 64 characters | yes, in `token` | Header that carries the token |
+| `token.prefix` | printable ASCII, at most 32 characters | no | Written before the token, for example `"Bearer "` |
+| `timeout_ms` | whole number, 100 to 10000 | no | Per lookup; absent means 2000 |
+| `max_response_bytes` | whole number, 1 to 1048576 | no | Answer size cap; absent means 65536 |
+| `tls_spki_sha256` | list of 1 to 8 pins | no | Pinned server keys |
+
+- **`base_url`** is `https://` with a host, or `http://` when the host is
+  `localhost` or a loopback address literal. It has no user info, query or
+  fragment, and its path follows the literal path rule below.
+- **`token.header`** is none of the headers the cosigner sets itself: `Host`,
+  `Content-Length`, `Content-Type`, `Accept`, `Cache-Control`, `User-Agent`,
+  `X-Aplane-Request-Id`.
+- **A pin** is the padded standard base64 of the SHA-256 of an acceptable
+  server SubjectPublicKeyInfo: 32 bytes, written canonically. Pins are for
+  `https://` sources only.
+- **The token itself is never in the document.** A policy document is
+  exported and reviewed in plain text; a token is a secret kept with the key.
+
+### Checks
+
+`external_checks` lists at most 8 checks.
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `id` | `^[a-z0-9][a-z0-9_-]*$`, max 64 | yes | Unique within the document; appears in rule IDs |
+| `description` | string | no | Notes for reviewers |
+| `source` | source name | yes | A source of this document |
+| `scope` | `request` \| `transaction` \| `movement` | yes | What one lookup is for |
+| `networks` | `["*"]` or network list | yes | Networks the check applies to, as on routes; a listed network the node does not map is refused at admission (`admission:unknown_network`), as a route's is |
+| `movement_kinds` | list of movement kinds | no; `movement` scope only | Kinds the check applies to; absent means every kind |
+| `path` | template, at most 512 characters | yes | Appended to the source's `base_url` path; starts with `/` |
+| `query` | map of name to template, at most 16 | no | Query parameters, written in name order |
+| `echo_pointer` | JSON Pointer | no | The answer must hold the lookup's request ID at this pointer |
+| `require` | list of 1 to 8 rules | yes | Every rule must hold |
+
+**Scopes and facts.** A check runs once per unit of its scope: once per
+component request, once per transaction the cosigner signs, or once per
+transfer movement of such a transaction, in the movement model of
+[Transfer Routing](#transfer-routing). Facts are the values a template or a
+rule can use. A scope has its own facts and those of the scopes above it.
+
+| Fact | Scope | Value |
+|------|-------|-------|
+| `network` | request | The group's network context token; absent when the node knows no network for the genesis hash |
+| `witness_key` | request | The requested Witness Key ID, canonical: the request's `component_key` with surrounding space trimmed, as the key lookup and the policy selection use it |
+| `sender` | transaction | The transaction's sender address |
+| `txid` | transaction | The transaction ID |
+| `type` | transaction | The transaction type, for example `pay`: one of the [transaction types](#transaction-types) a document names; absent for any other type |
+| `fee` | transaction | Fee in microAlgos (a number) |
+| `rekey_to` | transaction | The rekey target; absent when the transaction does not rekey |
+| `kind` | movement | `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, `clawback` |
+| `source` | movement | The movement's source account |
+| `asset_source` | movement | The account an asset is clawed back from; `clawback` only |
+| `destination` | movement | The movement's destination |
+| `asset` | movement | `algo` or `asa:<id>` |
+| `asset_id` | movement | `0` for ALGO, else the ASA ID (a number) |
+| `amount` | movement | Amount in base units (a number); absent on a close-out |
+
+No fact is free text: the note, application arguments and asset names are
+never facts, so a transaction cannot put arbitrary characters into a lookup.
+Every fact is the node's own rendering of a value from a fixed vocabulary or
+a fixed encoding: an address, a transaction ID, a Witness Key ID, a decimal
+number, a movement kind, `algo` or `asa:<id>`, a network token, or a
+transaction type the document format knows. A transaction whose type is any
+other text has no `type` fact, and a network the node does not know is no
+`network` fact (a cosigner refuses an unknown genesis hash with
+`unknown_genesis_hash` before the checks run, so no request reaches them
+without one). A unit that lacks a fact its check uses is refused with
+`external_check:<id>:missing_fact`.
+
+**Templates.** A template is literal text with `{fact}` placeholders, each a
+fact of the check's scope. Braces have no other use.
+
+- Literal text in `path` (and in a `base_url` path) is RFC 3986 path
+  characters and `/`, with no `%`, no `?` or `#`, no `.` or `..` segment and
+  no empty segment. Percent-encoding is refused so that no encoded `..` or
+  `/` can hide in a document.
+- A query parameter name matches `^[A-Za-z0-9._~-]+$`. A query value is at
+  most 256 characters and has no control characters.
+
+**Rules.** A rule compares the value at `pointer`, an RFC 6901 JSON Pointer
+into the answer, with one operand.
+
+| `op` | Operand | The value must be |
+|------|---------|-------------------|
+| `eq`, `ne` | `number`, `string`, `bool` or `fact` | Of the operand's type |
+| `lt`, `le`, `gt`, `ge` | `number`, or a `fact` that is a number | A JSON number |
+| `in`, `not_in` | `numbers` or `strings`, 1 to 64 entries | Of the list's element type |
+| `present`, `absent` | none | Present, or absent |
+
+A `number` operand is a decimal string of at most 40 digits, without
+exponent or leading zeros, as amounts are. A `string` operand is at most
+1024 bytes.
+
+### Running the checks
+
+`runCosignerGates` runs the checks last, after the policy verdict
+(`internal/signerapp/signing/external_checks.go`). Nothing is looked up for
+a request an earlier gate refused, so transaction facts leave the node only
+when the answer is not already no.
+
+1. **Plan** (`externalcheck.BuildPlan`). For every check and every unit it
+   applies to, the request is rendered and the unit's facts are kept.
+   Identical requests are merged into one lookup. A unit that lacks a fact
+   its check uses refuses here, before any lookup. A request may need at most
+   32 lookups.
+2. **Fetch** (`externalcheck.Fetcher`). At most 4 lookups are in flight per
+   request and 16 per URL origin (`scheme://host:port`) across the node. Each
+   lookup has its source's timeout, and all of a request's lookups share a
+   10-second deadline. The audit record tells the two apart by the context's
+   cause: a lookup that ran past its source's timeout fails with `timeout
+   after 2s` (the source's `timeout_ms`), and one the shared deadline ended
+   with `the request's 10s limit for all lookups ran out`, followed by
+   `before the lookup was made` for one still waiting for its place among
+   the request's lookups, or `while waiting for a place at the source` for
+   one waiting at the origin. A lookup is never started once the deadline
+   has passed. Every lookup uses a fresh connection, and nothing is cached.
+3. **Judge** (`externalcheck.Judge`). Each check's rules, and its echo when
+   it has one, are applied to the answer of its lookup. Checks that share a
+   lookup are judged separately.
+
+The first failure refuses the request and cancels the remaining lookups.
+
+**The request.** This shape is what a source can rely on:
+
+```text
+GET <base_url path, trailing "/" removed><rendered path>?<query, in name order>
+Accept: application/json
+Cache-Control: no-store
+User-Agent: apsigner/<version>
+X-Aplane-Request-Id: <32 hex characters, fresh per lookup>
+<token.header>: <token.prefix><token>      (when the source declares a token)
+```
+
+A fact is escaped as one path segment in the path, and a query value is
+escaped whole. Behind the facts' own forms, rendering refuses a lookup in
+which a fact in the path would be empty, `.` or `..`, or would hold `/` or
+`\`, and one in which a fact in a query value would be
+empty: `external_check:<id>:unavailable`, "a fact would not render as one
+path segment" (or "would render empty"). The method is always GET, with no
+body and no cookies. The rendered URL must still be at the source's scheme,
+host and port.
+
+**The connection.**
+
+- An `https://` source honors the environment's HTTP proxy, as algod and
+  the Indexer do, and requires TLS 1.2 or later. Without pins the system
+  roots and the host name decide.
+- With `tls_spki_sha256`, chain verification is off and the server's key
+  is trusted directly, as an SSH host key is. The connection is accepted
+  only when the leaf certificate is valid for the host name, is within its
+  validity period, and has a pinned public key.
+- An `http://` source uses no proxy and connects only to a loopback
+  address. The check is made on the address actually dialed, so a
+  `localhost` that resolves elsewhere is refused.
+- A redirect is never followed.
+
+**The answer.** It is accepted only with status 200, a body within
+`max_response_bytes`, and strict JSON (`internal/strictjson`): valid UTF-8,
+one value with nothing after it, no duplicate keys, nesting at most 64 deep,
+and number literals of at most 64 characters with an exponent within ±64.
+The `Content-Type` header is not checked. Anything else is a failed lookup.
+
+**Judging.**
+
+- A rule holds only on a value of the right type. A missing value, a
+  `null` and a value of another type all fail, for `ne` and `not_in` too.
+- Numbers are compared as exact decimals, never floats: `1`, `1.0` and
+  `1e0` are equal, and `-0` equals `0`.
+- Strings are compared byte for byte.
+- An array is indexed only by `0` or a number without sign or leading
+  zeros.
+- With `echo_pointer`, the string there must equal the lookup's
+  `X-Aplane-Request-Id`.
+
+These semantics are frozen by the judge fixtures in
+[`test/contracts/policy/v1/external/`](../test/contracts/policy/v1/external/README.md).
+
+**Refusals.** A refusal is a 403 policy rejection. The requester is told the
+check, its rule ID and the unit, for example `external check
+screen-destination refused the pay movement of transaction 0
+(external_check:screen-destination)`. What the source answered is written
+only to the cosigner's audit record, with the source, the request path and
+what failed, for example `/risk/score = 72, want le 30`. A quoted string is
+cut to 64 characters with control and non-ASCII characters escaped. A signed
+request's audit record names the checks that passed and the lookup count.
+
+**Locking.** The fetch step holds a key use (`KeyUseContext`). A lock
+cancels its context, which ends every lookup at once, and waits for the
+release. A request overtaken by a lock is refused as locked, and one that
+was canceled as canceled; neither is audited as a refusal.
+
 ## Semantic Rules
 
 Checked at acceptance in addition to the schema:
@@ -1153,6 +1458,12 @@ Checked at acceptance in addition to the schema:
 8. `blocked_destinations` holds addresses only (no sets, `self`, or `*`).
 9. `rekey_policy` references only flat address sets; rekey edges are not
    network-scoped. `self` is not a `rekey_policy` sender.
+10. `external_sources` and `external_checks` appear together. Check IDs are
+    unique, every check names a source of the document, and every source is
+    used by a check.
+11. A check's templates and `fact` operands use only facts of its scope;
+    `movement_kinds` appears only with `scope: movement`; each rule's operand
+    fits its `op`.
 
 Errors report the JSON Pointer of the failing value, for example
 `/transfer_policy/routes/1/limits/mainnet/asa:31566704/reject_above`.
@@ -1178,6 +1489,10 @@ would change to resolve it:
 | `policy_scope:cosigner_type_without_routing` | A cosigner document allows a type other than `pay` or `axfer`; nothing but the type verdict stands behind it. A `"*": "allow"` is always reported, since it also covers any type a later release adds |
 | `policy_scope:rekey_policy_any_target` | A `rekey_policy` rule's targets include `*`, `reject_rekey` is false and `pay` is allowed; that sender may rekey to any address |
 | `policy_scope:route_close_to_any_address` | A route sets `allow_close` with a `*` destination, and a close-out it covers can pass (`reject_close_remainder` for ALGO, `reject_asset_close` for an ASA); any matching account may be closed out to any address, and the route's limits don't bound a close-out |
+| `external_check:fact_absent_for_covered_units` | A check uses a fact some of the units it covers never have, so it refuses every one of them: `amount` on a close-out kind, `asset_source` on a kind other than `clawback`, or `rekey_to`, which only a rekey has |
+| `external_check:network_without_route` | A check names a network no route covers, so no transfer there reaches it |
+| `external_check:plain_http_source` | A source is reached over plain `http://` on loopback; its answers and any token are not encrypted |
+| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy check` and `apply` by a session with `policy.update` (against the token index, while unlocked), `apadmin policy rescue` (against the token files, when every one can be read), and `appolicy check` (against the token names an export of the node recorded, for every selector with a token) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
 
 ## Embedded Defaults
 
@@ -1413,12 +1728,14 @@ and applied time (the default first), each held key's coverage (`own`,
 and `policy_set_sha256`, a digest over the whole document set.
 `get_policy_document` returns one document's exact bytes by key (`default` or
 a selector), optionally only while the node is still at a given composite
-snapshot. `get_policy_context` returns the node's policy context (role,
+snapshot; it names no source token. `get_policy_context` returns the node's policy context (role,
 admission rules version, network map, effective ASA set) with
 `context_sha256` and `snapshot_sha256`, the composite digest of the context
 and `policy_set_sha256` (`internal/policycontext`; encodings pinned in
 `test/contracts/policycontext/v1/`). `check_policy` validates candidate
-documents and removals without writing and returns errors and warnings.
+documents and removals without writing and returns errors and warnings; its
+missing-token warnings are given only to a session with `policy.update`,
+the authorization that reads token names.
 `apply_policy` requires `expected_policy_set_sha256` for optimistic
 concurrency and `expected_snapshot_sha256`, the snapshot the review was built
 against, so a change to the ASA set or network map between review and commit
@@ -1487,7 +1804,8 @@ document differs, but effective permissions are unchanged".
 
 Admission (`internal/policyadmission`, run by `policyapply.Candidate` and by
 `apstore policy check`/`sign` for each document whose sidecar is missing or
-does not verify) refuses a submitted document that names a network the node does not map, an
+does not verify) refuses a submitted document that names a network the node does not map
+(in a route, a limits key, a set key or an external check's `networks`), an
 asset outside its ASA set, a direct `asa:<id>` route term over several
 networks or `*`, or a route with no asset alternative on one of its networks
 (a union over the route's sets, `algo` and `*`). It is not part of decoding or
@@ -1724,6 +2042,9 @@ Implementation source of truth:
   embedded defaults that seed `default.json`.
 - `internal/policy/advisory.go`: non-blocking document advisories.
 - `internal/policy/diff_v1.go`: decoded-document differ.
+- `internal/policy/external_checks_v1.go`,
+  `internal/policy/external_checks_review.go`: a cosigner document's
+  external sources and checks, their advisories and their differences.
 - `internal/policy/store_v1.go`: policy document storage, sidecars, archive,
   and the policy-set digest.
 - `internal/signerapp/policyruntime`: `NodePolicy` load, compile, and
@@ -1756,7 +2077,12 @@ Implementation source of truth:
   set) and the context and snapshot digests.
 - `internal/policyadmission`: the admission rules for submitted documents.
 - `internal/policyexport`: `apadmin policy export --all` and the node
-  context file (`aplane.policy-node-context.v1`) appolicy reads.
+  context file (`aplane.policy-node-context.v1`) appolicy reads, with the
+  token names of a cosigner export.
+- `internal/signerapp/externalcheck`: the external check plan, fetcher,
+  judge and runner; `offline.go` holds what appolicy judges with offline
+  (`JudgeOffline`, `FailureOf`).
 - `cmd/appolicy`, `internal/signerapp/policyauthor`,
   `policyauthor/authortui`: the offline editor, check, format, explain,
-  try, and saved cases.
+  try with canned external check answers (`try_external.go`), and saved
+  cases.

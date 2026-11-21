@@ -226,15 +226,20 @@ func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 			len(classification.Conflicts),
 		)
 	}
-	if len(classification.Pending) == 0 && len(classification.Policies) == 0 {
+	if len(classification.Pending) == 0 && len(classification.Policies) == 0 && len(classification.SourceTokens) == 0 {
 		result.GenerationID = current.GenerationID()
 		result.KeyCount = ir.KeyCount()
 		return nil
 	}
 	if r.wasRecovery {
-		repaired := make(map[string]bool, len(classification.Pending))
+		// The selectors whose credential or source tokens this restore
+		// replaces: their destination copies may be the damage it repairs.
+		repaired := make(map[string]bool, len(classification.Pending)+len(classification.SourceTokens))
 		for i := range classification.Pending {
 			repaired[classification.Pending[i].Selector()] = true
+		}
+		for i := range classification.SourceTokens {
+			repaired[classification.SourceTokens[i].Selector()] = true
 		}
 		opts := storevalidate.Options{
 			Paths: s.Deps.KeyPaths(), Candidate: current, Keyring: masterKey,
@@ -360,6 +365,12 @@ func (r *restoreRun) commit(
 					return fmt.Errorf("apply restored credential %s: %w", entry.Selector(), applyErr)
 				}
 			}
+			for i := range classification.SourceTokens {
+				entry := classification.SourceTokens[i]
+				if applyErr := backup.ApplySourceTokensEntry(staged, entry, masterKey); applyErr != nil {
+					return fmt.Errorf("apply restored source tokens %s: %w", entry.Selector(), applyErr)
+				}
+			}
 			return nil
 		},
 	})
@@ -384,6 +395,9 @@ func (r *restoreRun) commit(
 	result.Restored, result.RestoredOmitted = projectCredentialEntries(classification.Pending)
 	for _, entry := range classification.Policies {
 		result.PoliciesRestored = append(result.PoliciesRestored, entry.Selector())
+	}
+	for _, entry := range classification.SourceTokens {
+		result.SourceTokensRestored = append(result.SourceTokensRestored, entry.Selector())
 	}
 
 	return nil

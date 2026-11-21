@@ -148,7 +148,7 @@ func (d *PolicyV1) Advisories() []ConfigAdvisory {
 				"this route lets any matching account be closed out to any address; a close-out moves the whole balance, and the route's limits don't bound it")
 		}
 	}
-	return out
+	return append(out, d.externalCheckAdvisories()...)
 }
 
 // routeAssetKinds reports whether a route's asset terms can cover ALGO and

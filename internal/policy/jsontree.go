@@ -4,13 +4,10 @@
 package policy
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
-	"unicode/utf8"
+
+	"github.com/aplane-algo/aplane/internal/strictjson"
 )
 
 const (
@@ -38,18 +35,17 @@ func docErrorf(pointer, format string, args ...any) error {
 
 type jsonKind int
 
+// The kinds are strictjson's, in its order.
 const (
-	nodeNull jsonKind = iota
-	nodeBool
-	nodeNumber
-	nodeString
-	nodeObject
-	nodeArray
+	nodeNull   = jsonKind(strictjson.Null)
+	nodeBool   = jsonKind(strictjson.Bool)
+	nodeNumber = jsonKind(strictjson.Number)
+	nodeString = jsonKind(strictjson.String)
+	nodeObject = jsonKind(strictjson.Object)
+	nodeArray  = jsonKind(strictjson.Array)
 )
 
-func (k jsonKind) String() string {
-	return [...]string{"null", "boolean", "number", "string", "object", "array"}[k]
-}
+func (k jsonKind) String() string { return strictjson.Kind(k).String() }
 
 // jsonNode is a parsed JSON value that keeps object member order and its JSON
 // Pointer, so decoding errors can name the exact failing value.
@@ -63,86 +59,40 @@ type jsonNode struct {
 	items   []*jsonNode
 }
 
+// policyDocumentLimits are the bounds of a policy document. Its numbers and
+// strings are bounded field by field as they are decoded.
+var policyDocumentLimits = strictjson.Limits{MaxBytes: maxPolicyDocumentBytes, MaxDepth: maxPolicyDocumentDepth}
+
 // parseJSONTree parses one strict JSON document: valid UTF-8, bounded size and
-// depth, no duplicate object keys, and nothing after the document.
+// depth, no duplicate object keys, and nothing after the document. The reading
+// is strictjson's; the tree is copied into this package's own node type.
 func parseJSONTree(data []byte) (*jsonNode, error) {
-	if len(data) > maxPolicyDocumentBytes {
-		return nil, docErrorf("", "document is %d bytes, larger than the %d-byte limit", len(data), maxPolicyDocumentBytes)
-	}
-	if !utf8.Valid(data) {
-		return nil, docErrorf("", "document is not valid UTF-8")
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	root, err := readJSONValue(dec, "", 0)
+	root, err := strictjson.Parse(data, policyDocumentLimits)
 	if err != nil {
+		var parseErr *strictjson.Error
+		if errors.As(err, &parseErr) {
+			return nil, &DocumentError{Pointer: parseErr.Pointer, Msg: parseErr.Msg}
+		}
 		return nil, err
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, docErrorf("", "unexpected data after the document")
-	}
-	return root, nil
+	return fromStrictNode(root), nil
 }
 
-func readJSONValue(dec *json.Decoder, pointer string, depth int) (*jsonNode, error) {
-	if depth > maxPolicyDocumentDepth {
-		return nil, docErrorf(pointer, "nesting deeper than %d levels", maxPolicyDocumentDepth)
-	}
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, docErrorf(pointer, "invalid JSON: %v", err)
-	}
-	node := &jsonNode{pointer: pointer}
-	switch v := tok.(type) {
-	case nil:
-		node.kind = nodeNull
-	case bool:
-		node.kind, node.boolean = nodeBool, v
-	case json.Number:
-		node.kind, node.text = nodeNumber, v.String()
-	case string:
-		node.kind, node.text = nodeString, v
-	case json.Delim:
-		switch v {
-		case '{':
-			node.kind, node.members = nodeObject, make(map[string]*jsonNode)
-			for dec.More() {
-				keyTok, err := dec.Token()
-				if err != nil {
-					return nil, docErrorf(pointer, "invalid JSON: %v", err)
-				}
-				key := keyTok.(string)
-				childPointer := pointer + "/" + escapeJSONPointer(key)
-				if _, dup := node.members[key]; dup {
-					return nil, docErrorf(childPointer, "duplicate key")
-				}
-				child, err := readJSONValue(dec, childPointer, depth+1)
-				if err != nil {
-					return nil, err
-				}
-				node.keys = append(node.keys, key)
-				node.members[key] = child
-			}
-		case '[':
-			node.kind = nodeArray
-			for i := 0; dec.More(); i++ {
-				child, err := readJSONValue(dec, fmt.Sprintf("%s/%d", pointer, i), depth+1)
-				if err != nil {
-					return nil, err
-				}
-				node.items = append(node.items, child)
-			}
-		}
-		if _, err := dec.Token(); err != nil { // closing delimiter
-			return nil, docErrorf(pointer, "invalid JSON: %v", err)
+func fromStrictNode(n *strictjson.Node) *jsonNode {
+	node := &jsonNode{pointer: n.Pointer, kind: jsonKind(n.Kind), text: n.Text, boolean: n.Bool, keys: n.Keys}
+	if n.Kind == strictjson.Object {
+		node.members = make(map[string]*jsonNode, len(n.Members))
+		for key, child := range n.Members {
+			node.members[key] = fromStrictNode(child)
 		}
 	}
-	return node, nil
+	for _, item := range n.Items {
+		node.items = append(node.items, fromStrictNode(item))
+	}
+	return node
 }
 
-func escapeJSONPointer(token string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(token, "~", "~0"), "/", "~1")
-}
+func escapeJSONPointer(token string) string { return strictjson.EscapePointerToken(token) }
 
 // jsonObjectReader decodes one object's members and reports any member the
 // decoder never asked for as an unknown field.

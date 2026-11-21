@@ -24,6 +24,7 @@ const (
 	ViewKeyDetails // Shows key metadata (parameters for generic LogicSigs)
 	ViewTEALFullDisplay
 	ViewMnemonicExport
+	ViewSourceTokens // Sets or removes a cosigner key's source tokens
 	ViewSigningPopup
 	ViewClientEnrollmentPopup // Client enrollment approval popup
 	ViewGenerateForm
@@ -525,6 +526,7 @@ type Model struct {
 	restore            restoreState
 	forms              formsState
 	mnemonicExport     mnemonicExportState
+	sourceTokens       sourceTokensState
 	cosigner           cosignerState
 	del                deleteConfirmState
 	admin              adminPanelState
@@ -848,6 +850,9 @@ type RestoreDisplayResult struct {
 	Activated   []RestoreKeyInfo
 	// ActivatedOmitted counts the restored keys the result did not list.
 	ActivatedOmitted int
+	// TokensRestored names the keys whose archived source tokens were
+	// installed.
+	TokensRestored map[string]bool
 	// Skipped lists the archived keys the node cannot admit, which were
 	// never restorable; SkippedOmitted counts those not listed.
 	Skipped        []RestoreSkipped

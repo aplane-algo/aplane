@@ -806,8 +806,9 @@ own or the operator loosens the default. Before any rule, a target whose
 genesis hash maps to no known network is rejected as `unknown_genesis_hash`
 (see [ARCH_POLICY.md](ARCH_POLICY.md#known-network-gate)). Policy is
 evaluated before the cosigner key is loaded. Decode refuses review-producing fields on a cosigner node, so every verdict
-is sign or reject. The only cosigner-specific rule ID is
-`cosigner_policy:reject_rekey`; every
+is sign or reject. The cosigner-specific rule IDs are
+`cosigner_policy:reject_rekey` and the external check refusals,
+`external_check:<id>` and `external_check:<id>:<outcome>`; every
 other verdict uses the common rule IDs in
 [ARCH_POLICY.md](ARCH_POLICY.md).
 
@@ -820,7 +821,8 @@ route `sources` are therefore the operator's only control over membership:
 or sets restrict the key to accounts the operator agreed to witness for. The verdict model is direct
 authorization:
 
-- matching deterministic allow policy signs,
+- matching deterministic allow policy signs, once the document's external
+  checks, if it has any, pass,
 - deny guards reject,
 - unmatched requests reject,
 - manual review and operator default are not valid cosigner outcomes.
@@ -851,6 +853,15 @@ spending key alone and never reaches the cosigner node, so on an account with a
 rekey-to list `reject_rekey:true` does not stop a rekey to a listed address, and
 `rekey_policy` picks only cosigned-rekey targets. The list is the owner's
 standing statement, fixed in the program.
+
+A cosigner document may also define external checks: REST lookups whose
+JSON answers must satisfy rules the document states, run only on a request
+the policy would sign. They only refuse, and any lookup that fails refuses
+the request. A source that declares a token is sent the one set for the
+document's selector with `apadmin source token set`, kept encrypted with the
+cosigner key; a check on a source whose token is not set refuses with
+`token_not_set`. See
+[ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks).
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.
@@ -922,7 +933,10 @@ Cosigner failures are fail-closed:
 - mismatched spending or cosigner signatures fail assembly,
 - stale endpoint routing cannot pass assembly or on-chain LogicSig verification
   without the embedded cosigner private key,
-- unsupported cosigner policy outcomes fail closed.
+- unsupported cosigner policy outcomes fail closed,
+- an external check whose lookup fails, whose source's token is not set, or
+  whose answer does not satisfy its rules refuses the request, after the
+  policy would have signed it.
 
 An endpoint that failed its probe may be skipped only when the completed
 sweep's remaining usable inventory uniquely resolves every required key;
@@ -948,7 +962,10 @@ the current projection:
 
 - `txn_auth` carries the Witness Key ID,
 - `txn_sender` carries the decoded target sender,
-- `policy_rule_id` carries the deterministic cosigner rule when one matched.
+- `policy_rule_id` carries the deterministic cosigner rule when one matched,
+- an external check refusal's `reason` carries the source, the request path
+  and what failed, which the requester is not told, and a signed request's
+  `txn_details` names the external checks that passed and the lookup count.
 
 This is an MVP projection. It preserves event visibility without introducing a
 separate audit event family for component signing.
@@ -1160,6 +1177,10 @@ Primary packages and files:
   selection, and the rejection and audit that act on its verdict.
 - `internal/signerapp/policyeval/cosigner.go`: the cosigner verdict: the
   known-network check and each target's rules.
+- `internal/signerapp/signing/external_checks.go`: the last cosigner gate,
+  which runs the governing document's external checks under a key use;
+  `internal/signerapp/externalcheck` plans, fetches and judges them, and
+  `internal/sourcetokens` keeps the source tokens they send.
 
 Representative tests:
 

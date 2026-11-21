@@ -36,6 +36,9 @@ const (
 	// ClassKeyTypeTemplate is an installed key-type template, selected by
 	// key type.
 	ClassKeyTypeTemplate ObjectClass = "keytype-template"
+	// ClassSourceTokens is a cosigner policy selector's external-source
+	// tokens, selected by policy selector: a Witness Key ID or "default".
+	ClassSourceTokens ObjectClass = "source-tokens"
 )
 
 // ObjectContext is an object's logical identity: stable across every move
@@ -62,9 +65,15 @@ func KeyTypeTemplateContext(keyType string) ObjectContext {
 	return ObjectContext{Class: ClassKeyTypeTemplate, Selector: keyType}
 }
 
+// SourceTokensContext identifies the source token file of one cosigner
+// policy selector: a Witness Key ID, or "default" for the node default.
+func SourceTokensContext(selector string) ObjectContext {
+	return ObjectContext{Class: ClassSourceTokens, Selector: selector}
+}
+
 func (c ObjectContext) validate() error {
 	switch c.Class {
-	case ClassAccountKey, ClassCosignerCredential, ClassKeyTypeTemplate:
+	case ClassAccountKey, ClassCosignerCredential, ClassKeyTypeTemplate, ClassSourceTokens:
 	case "":
 		return fmt.Errorf("object context requires a class")
 	default:
@@ -116,6 +125,26 @@ func InspectTermEnvelope(data []byte) (term int64, present bool, err error) {
 		return 0, true, err
 	}
 	return encrypted.Term, true, nil
+}
+
+// The sizes cipher.NewGCM uses, which every term envelope has.
+const (
+	termEnvelopeNonceBytes = 12
+	termEnvelopeTagBytes   = 16
+)
+
+// TermEnvelopeLen is the length of the envelope Keyring.Seal writes for
+// plaintextLen bytes of plaintext under term. Nothing else changes it, so a
+// caller can bound an object's encrypted size before it holds the keyring
+// that will seal it.
+func TermEnvelopeLen(plaintextLen int, term int64) int {
+	data, _ := json.MarshalIndent(encryptedDataTerm{
+		EnvelopeVersion: TermEnvelopeVersion,
+		Term:            term,
+		Nonce:           strings.Repeat("A", base64.StdEncoding.EncodedLen(termEnvelopeNonceBytes)),
+		Ciphertext:      strings.Repeat("A", base64.StdEncoding.EncodedLen(plaintextLen+termEnvelopeTagBytes)),
+	}, "", "  ")
+	return len(data)
 }
 
 func sealUnderTerm(plaintext, key []byte, term int64, ctx ObjectContext) ([]byte, error) {

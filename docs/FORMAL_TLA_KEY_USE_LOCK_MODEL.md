@@ -30,9 +30,13 @@
 
 The holders of loaded key material that register a key use with
 `Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
-table worker) and mnemonic export. Ordinary `/sign`, component signing
-(bounded-base and cosigner-role) and assembly hold a decrypted key too but
-register none (see the limits below). For a rotating seed that is every load in
+table worker), mnemonic export, and a cosigner's external check step
+(`runExternalChecks`), which holds one while it reads its source tokens and
+makes its lookups so that a lock ends them and waits for it to let go. That
+step releases nothing to a caller: when its key use is canceled the request
+is refused as locked.
+Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
+assembly hold a decrypted key too but register none (see the limits below). For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
 approval; the stage table fill and the release restore use the same identity
@@ -79,6 +83,9 @@ waits for it; KU2 and KU3 cover that case.
   `internal/signerapp/runtime/runtime.go`: the state locks and the generation
   moves under `stateMu`. `DrainBegin` and `Wipe` transcribe `drainKeyUsers` and
   `performLockCleanup` in `internal/signerapp/productruntime/runtime.go`.
+  `Wipe` also stands for zeroing the source token index there
+  (`sourceTokens.Clear`), after the drain and with the session, so KU2 covers
+  the tokens the external check step reads as it covers the session's keys.
 - `EnterRecovery` and `LeaveRecovery` transcribe `SetRecovery` and
   `TryRecovery` from the unlocked state or from recovery, and
   `PromoteRecoveryToUnlocked`, in the same file. An entry from recovery is a
@@ -193,6 +200,18 @@ for each.
   nothing, so such a request signs to completion. KU2 is about
   registered key uses only. Making those paths key uses would be an extension
   of this model.
+- The source token index counts readers of its own: an index that a reload
+  or a token change replaces is zeroed when its last reader releases
+  (`internal/sourcetokens/index.go`). The model does not represent
+  those readers. Its claim needs only that the step reads tokens inside its
+  key use, so at `Wipe` the drain has ended every reader and the index is
+  zeroed at once. A step whose key use the lock refused may still read the
+  index before the cleanup clears it: its reader keeps that index intact
+  until it releases, and its context is already cancelled, so the lookup
+  sends nothing and the request is refused as locked. An unlock that the
+  fence refuses for a later recovery (KU5) runs no cleanup and is not
+  `Wipe`, but clears the index its reload published
+  (`productruntime.clearFencedSourceTokens`, after the fence), the same way.
 - The model takes as given that every load of key material is registered; it
   cannot see a load that is not. For rotating seeds,
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign

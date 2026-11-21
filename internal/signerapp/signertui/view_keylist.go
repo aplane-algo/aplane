@@ -350,6 +350,9 @@ func (m Model) keyDetailsHeader() string {
 	if m.details.policyLabel != "" {
 		sb.WriteString(fmt.Sprintf("Policy:  %s\n", terminalSafe(m.details.policyLabel)))
 	}
+	if line := m.sourceTokensLine(); line != "" {
+		sb.WriteString(wrapText(line, m.popupBodyWidth(keyDetailsPopupWidth)) + "\n")
+	}
 	if m.details.publicKeyHex != "" {
 		label := "Public key"
 		if witness.IsKeyType(m.details.keyType) {
@@ -371,6 +374,9 @@ func (m Model) keyDetailsTrailer() string {
 	var sb strings.Builder
 	if isNativeKeyType(m.details.keyType) {
 		sb.WriteString("m: Show recovery phrase\n")
+	}
+	if len(m.sourceTokens.rows) > 0 {
+		sb.WriteString("o: Source tokens\n")
 	}
 	// Show save status if present
 	if m.details.saveStatus != "" {

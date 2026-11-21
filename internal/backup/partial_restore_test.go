@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -122,7 +123,7 @@ func checkMixedArchiveSkipsTheInadmissibleCredential(t *testing.T, paths storepa
 		t.Fatalf("DeepVerifyBackupBytes() error = %v", err)
 	}
 	wantVerified := []VerifiedCredential{{Address: archive.good, KeyType: "ed25519", HasPolicy: true}}
-	if !slices.Equal(report.Verified, wantVerified) || !slices.Equal(report.Skipped, wantSkipped) {
+	if !reflect.DeepEqual(report.Verified, wantVerified) || !slices.Equal(report.Skipped, wantSkipped) {
 		t.Fatalf("verify = %+v skipped %+v, want %+v skipped %+v", report.Verified, report.Skipped, wantVerified, wantSkipped)
 	}
 	wantIncomplete := "1 of 2 credentials would be skipped by restore; first " + archive.bad + ": " + archive.reason
@@ -153,7 +154,7 @@ func checkMixedArchiveSkipsTheInadmissibleCredential(t *testing.T, paths storepa
 		t.Fatalf("PreviewRestoreWithNodeRole() error = %v", err)
 	}
 	wantKeys := []RestoreKeyInfo{{Address: archive.good, KeyType: "ed25519", HasPolicy: true}}
-	if !slices.Equal(preview.Keys, wantKeys) || !slices.Equal(preview.Skipped, wantSkipped) {
+	if !reflect.DeepEqual(preview.Keys, wantKeys) || !slices.Equal(preview.Skipped, wantSkipped) {
 		t.Fatalf("preview = %+v skipped %+v", preview.Keys, preview.Skipped)
 	}
 }

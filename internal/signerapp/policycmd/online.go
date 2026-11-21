@@ -87,6 +87,31 @@ func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string)
 	}, err
 }
 
+// SourceTokenNames reads the node's whole source token listing, a page at a
+// time. It needs policy.update; a session without it is refused, and then
+// the names are not known.
+func (b onlineBackend) SourceTokenNames(context.Context) (map[string][]string, error) {
+	var gathered apadminapp.SourceTokenNames
+	after := ""
+	for {
+		var msg protocol.SourceTokenListResultMessage
+		if err := b.roundTrip(protocol.SourceTokenListMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSourceTokenList, ID: onlineRequestID("source-token-list")},
+			After:       after,
+		}, protocol.MsgTypeSourceTokenListResult, &msg); err != nil {
+			return nil, err
+		}
+		next, done, err := gathered.Add(msg)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			return gathered.Names(), nil
+		}
+		after = next
+	}
+}
+
 func (b onlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {
 	var msg protocol.CheckPolicyResultMessage
 	err := b.roundTrip(protocol.CheckPolicyMessage{

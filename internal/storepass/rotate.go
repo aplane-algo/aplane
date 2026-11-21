@@ -43,9 +43,12 @@ type RotateResult struct {
 	KeysMigrated           int
 	TemplatesMigrated      int
 	PolicySidecarsMigrated int
-	PriorGenerations       int
-	HelperWarning          string
-	RootCommitted          bool
+	// SourceTokenFilesMigrated counts the active and archived source token
+	// files re-encrypted under the new term.
+	SourceTokenFilesMigrated int
+	PriorGenerations         int
+	HelperWarning            string
+	RootCommitted            bool
 }
 
 func VerifyCurrentPassphrase(paths storepaths.Paths, passphrase []byte) error {
@@ -182,6 +185,7 @@ func Rotate(
 			result.KeysMigrated = counts.keys
 			result.TemplatesMigrated = counts.templates
 			result.PolicySidecarsMigrated = counts.policies
+			result.SourceTokenFilesMigrated = counts.sourceTokens
 			return nil
 		},
 	})
@@ -260,9 +264,10 @@ func collectHistoricalAnchors(
 }
 
 type migrationCounts struct {
-	keys      int
-	templates int
-	policies  int
+	keys         int
+	templates    int
+	policies     int
+	sourceTokens int
 }
 
 func reencryptSealedGeneration(
@@ -314,6 +319,8 @@ func reencryptSealedGeneration(
 				counts.keys++
 			case "template":
 				counts.templates++
+			case "source-tokens":
+				counts.sourceTokens++
 			}
 		} else if entry.Term != 0 {
 			return counts, fmt.Errorf("plaintext member %s carries term %d", entry.Path, entry.Term)
@@ -390,6 +397,12 @@ func generationMemberContext(relative string) (crypto.ObjectContext, bool, strin
 			return crypto.CosignerCredentialContext(selector), true, "key", nil
 		default:
 			return crypto.ObjectContext{}, false, "", fmt.Errorf("unsupported credential class %q", class)
+		}
+	case strings.HasPrefix(relative, "source_tokens/"), strings.HasPrefix(relative, "deleted/source_tokens/"):
+		// The same context the file was sealed with, read from its name:
+		// rotation re-encrypts it, never relabels it.
+		if selector, ok := strings.CutSuffix(base, storepaths.SourceTokenFileExtension); ok && storepaths.ValidateSourceTokenSelector(selector) == nil {
+			return crypto.SourceTokensContext(selector), true, "source-tokens", nil
 		}
 	case strings.HasPrefix(relative, "keytypes/"), strings.HasPrefix(relative, "deleted/keytypes/"):
 		if strings.HasSuffix(base, templatestore.TemplateFileExtension) {

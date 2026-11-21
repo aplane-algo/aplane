@@ -159,6 +159,15 @@ const (
 	MsgTypeRemoveASA       = "remove_asa"        // Client → server: remove an operator confirmation
 	MsgTypeRemoveASAResult = "remove_asa_result" // Server → client: remove result, or the references blocking it
 
+	// Source token message types: a cosigner node's tokens for the external
+	// sources its policy documents name. No message carries a token back.
+	MsgTypeSourceTokenSet          = "source_token_set"           // Client → server: set one source's token for a selector
+	MsgTypeSourceTokenSetResult    = "source_token_set_result"    // Server → client: set result and the selector's tokens
+	MsgTypeSourceTokenRemove       = "source_token_remove"        // Client → server: remove one source's token from a selector
+	MsgTypeSourceTokenRemoveResult = "source_token_remove_result" // Server → client: remove result and the selector's tokens
+	MsgTypeSourceTokenList         = "source_token_list"          // Client → server: list token names, optionally for one selector
+	MsgTypeSourceTokenListResult   = "source_token_list_result"   // Server → client: token names, set times and states
+
 	// Signer-owned cosigner reference and generation inventory messages.
 	MsgTypeListCosignerReferences            = "list_cosigner_references"
 	MsgTypeCosignerReferencesList            = "cosigner_references_list"
@@ -299,15 +308,16 @@ type ChangeStorePassphraseMessage struct {
 
 type ChangeStorePassphraseResultMessage struct {
 	BaseMessage
-	Success                bool   `json:"success"`
-	KeysMigrated           int    `json:"keys_migrated,omitempty"`
-	TemplatesMigrated      int    `json:"templates_migrated,omitempty"`
-	PolicySidecarsMigrated int    `json:"policy_sidecars_migrated,omitempty"`
-	PriorGenerations       int    `json:"prior_generations,omitempty"`
-	HelperWarning          string `json:"helper_warning,omitempty"`
-	RootCommitted          bool   `json:"root_committed,omitempty"`
-	Code                   string `json:"code,omitempty"`
-	Error                  string `json:"error,omitempty"`
+	Success                  bool   `json:"success"`
+	KeysMigrated             int    `json:"keys_migrated,omitempty"`
+	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
+	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
+	SourceTokenFilesMigrated int    `json:"source_token_files_migrated,omitempty"`
+	PriorGenerations         int    `json:"prior_generations,omitempty"`
+	HelperWarning            string `json:"helper_warning,omitempty"`
+	RootCommitted            bool   `json:"root_committed,omitempty"`
+	Code                     string `json:"code,omitempty"`
+	Error                    string `json:"error,omitempty"`
 }
 
 // BackupMessage requests signer-managed creation of a portable key backup for
@@ -458,6 +468,12 @@ type RestoreKeyInfo struct {
 	KeyType        string  `json:"key_type,omitempty"`
 	AlreadyExists  bool    `json:"already_exists,omitempty"`
 	HasPolicy      bool    `json:"has_policy,omitempty"`
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, never a token. A preview lists the names of at
+	// most 4,096 tokens across its keys; source_tokens_omitted counts this
+	// key's names it left out.
+	SourceTokens        []string `json:"source_tokens,omitempty"`
+	SourceTokensOmitted int      `json:"source_tokens_omitted,omitempty"`
 }
 
 // RestoreSkipped is an archived credential the restore skips because the
@@ -524,11 +540,13 @@ type RestoreBackupResultMessage struct {
 	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
 	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
 	// PoliciesRestored lists the keys whose archived policy document was
-	// installed.
-	PoliciesRestored []string `json:"policies_restored,omitempty"`
-	KeyCount         int      `json:"key_count,omitempty"`
-	Code             string   `json:"code,omitempty"`
-	Error            string   `json:"error,omitempty"`
+	// installed, and SourceTokensRestored those whose archived source
+	// tokens were.
+	PoliciesRestored     []string `json:"policies_restored,omitempty"`
+	SourceTokensRestored []string `json:"source_tokens_restored,omitempty"`
+	KeyCount             int      `json:"key_count,omitempty"`
+	Code                 string   `json:"code,omitempty"`
+	Error                string   `json:"error,omitempty"`
 }
 
 type RollbackRestoreMessage struct {
@@ -1687,4 +1705,101 @@ type RemoveASAResultMessage struct {
 	BlockingOmitted int            `json:"blocking_omitted,omitempty"`
 	Code            string         `json:"code,omitempty"`
 	Error           string         `json:"error,omitempty"`
+}
+
+// Source token states, as the source token results report them.
+const (
+	// SourceTokenInUse: a source of the selector's document takes a token,
+	// and one is set.
+	SourceTokenInUse = "in_use"
+	// SourceTokenUnused: a token is set that no source of the selector's
+	// document takes.
+	SourceTokenUnused = "unused"
+	// SourceTokenNeeded: a source of the selector's document takes a token,
+	// and none is set. Every lookup to it refuses.
+	SourceTokenNeeded = "needed"
+)
+
+// Source token selector policies: whose document the selector's tokens
+// serve.
+const (
+	// SourceTokenPolicyOwn: the node has a policy document keyed by the
+	// selector, which is always so for "default". Its sources use the
+	// selector's tokens.
+	SourceTokenPolicyOwn = "own"
+	// SourceTokenPolicyDefault: the selector is a key that follows the node
+	// default. Its checks use the tokens of "default", and none of its own.
+	SourceTokenPolicyDefault = "default"
+)
+
+// SourceTokenSetMessage sets source's token for a cosigner policy selector
+// (a Witness Key ID, or "default"), replacing any it had. Zero Token after
+// use: no message returns it.
+type SourceTokenSetMessage struct {
+	BaseMessage
+	Selector string         `json:"selector"`
+	Source   string         `json:"source"`
+	Token    SensitiveBytes `json:"token"`
+}
+
+// SourceTokenRemoveMessage removes source's token from a selector.
+type SourceTokenRemoveMessage struct {
+	BaseMessage
+	Selector string `json:"selector"`
+	Source   string `json:"source"`
+}
+
+// SourceTokenChangeResultMessage answers source_token_set (as
+// source_token_set_result) and source_token_remove (as
+// source_token_remove_result). Tokens is the selector's listing after the
+// change, without values.
+type SourceTokenChangeResultMessage struct {
+	BaseMessage
+	Success  bool              `json:"success"`
+	Selector string            `json:"selector,omitempty"`
+	Source   string            `json:"source,omitempty"`
+	Tokens   []SourceTokenInfo `json:"tokens,omitempty"`
+	Code     string            `json:"code,omitempty"`
+	Error    string            `json:"error,omitempty"`
+}
+
+// SourceTokenListMessage lists token names for one selector, or for every
+// selector that has a token or needs one when Selector is empty. After, with
+// no Selector, pages that listing: it starts after the selector named, in
+// the listing's order ("default" first, then the keys in order).
+type SourceTokenListMessage struct {
+	BaseMessage
+	Selector string `json:"selector,omitempty"`
+	After    string `json:"after,omitempty"`
+}
+
+// SourceTokenListResultMessage answers source_token_list. Omitted counts the
+// selectors left out of a listing of every selector, which lists at most a
+// bounded number; list one selector to see any of them.
+type SourceTokenListResultMessage struct {
+	BaseMessage
+	Success   bool                  `json:"success"`
+	Selectors []SourceTokenSelector `json:"selectors"`
+	Omitted   int                   `json:"omitted,omitempty"`
+	Code      string                `json:"code,omitempty"`
+	Error     string                `json:"error,omitempty"`
+}
+
+// SourceTokenSelector is one selector's listing. Policy is "own" or
+// "default" (SourceTokenPolicyOwn, SourceTokenPolicyDefault). Sources names
+// every source of the selector's own document, sorted; it is empty when the
+// selector follows the node default.
+type SourceTokenSelector struct {
+	Selector string            `json:"selector"`
+	Policy   string            `json:"policy"`
+	Sources  []string          `json:"sources,omitempty"`
+	Tokens   []SourceTokenInfo `json:"tokens"`
+}
+
+// SourceTokenInfo describes one token, or one a source needs, without its
+// value. SetAt is the RFC 3339 UTC time it was set, empty for a needed one.
+type SourceTokenInfo struct {
+	Source string `json:"source"`
+	SetAt  string `json:"set_at,omitempty"`
+	State  string `json:"state"`
 }

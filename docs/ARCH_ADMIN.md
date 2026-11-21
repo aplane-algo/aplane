@@ -290,6 +290,9 @@ Client to Server:
 - `lookup_asa`
 - `add_asa`
 - `remove_asa`
+- `source_token_set`
+- `source_token_remove`
+- `source_token_list`
 
 Server to Client:
 
@@ -304,6 +307,9 @@ Server to Client:
 - `lookup_asa_result`
 - `add_asa_result`
 - `remove_asa_result`
+- `source_token_set_result`
+- `source_token_remove_result`
+- `source_token_list_result`
 
 #### Cosigner References And Store Inventory
 
@@ -343,7 +349,7 @@ Server to Client:
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
-- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning; `code` is `invalid_passphrase` when a passphrase is missing, the new one equals the current one, or the current one does not open the store root, `passphrase_helper_error` when the unlock.yaml passphrase helper configuration cannot be loaded, and `passphrase_change_failed` when the change itself fails, including a store root or selected generation that cannot be opened (`internal/protocol` defines both result codes)
+- `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `source_token_files_migrated` (the active and archived source token files re-encrypted under the new term), optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning; `code` is `invalid_passphrase` when a passphrase is missing, the new one equals the current one, or the current one does not open the store root, `passphrase_helper_error` when the unlock.yaml passphrase helper configuration cannot be loaded, and `passphrase_change_failed` when the change itself fails, including a store root or selected generation that cannot be opened (`internal/protocol` defines both result codes)
 - `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
   signer raised on its own, currently rotating account alerts; each `status`
   message replaces the previous set, and the signer pushes a new `status`
@@ -595,8 +601,12 @@ transaction type is one more entry in `fields` and needs no client change.
   (the creation time sealed in the authenticated manifest), `keys[]`,
   `skipped[]`, `skipped_omitted`, optional `code`, `error`. It classifies the whole archive as a
   whole-archive restore would. Each key in `keys[]` is one the restore would
-  admit and reports address, key type, destination presence and
-  `has_policy`; each entry of `skipped[]` is one it would skip, with
+  admit and reports address, key type, destination presence,
+  `has_policy`, and, for a cosigner key whose archive carries source tokens,
+  `source_tokens[]`: the source names it has a token for, sorted, never a
+  token. A preview lists the names of at most 4,096 tokens across its keys;
+  a key whose names it leaves out reports how many in
+  `source_tokens_omitted` instead. Each entry of `skipped[]` is one it would skip, with
   `selector` and `reason`. A preview whose keys are all skipped still
   succeeds, so every reason is shown; restore refuses it. Preview never
   mutates the store and, like `list_backups`, is available in unlocked or
@@ -606,12 +616,15 @@ transaction type is one more entry in `fields` and needs no client change.
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
   generation ID, `restored[]`, `restored_omitted`, `identical[]`,
   `identical_omitted`, `conflicts[]`, `conflicts_omitted`, `skipped[]`,
-  `skipped_omitted`, `key_count`, optional `policies_restored[]`, `code`,
-  `error`. The server
+  `skipped_omitted`, `key_count`, optional `policies_restored[]`, optional
+  `source_tokens_restored[]` (the cosigner keys whose archived source tokens
+  were installed), `code`, `error`. The server
   admits each selected credential, skips one it cannot admit (with its
-  archived policy) and lists it in `skipped[]` with `selector` and
-  `reason`, then publishes the admitted ones as one `credential-restore`
-  generation. A selection in `addresses[]` that names a skipped credential
+  archived policy and source tokens) and lists it in `skipped[]` with
+  `selector` and `reason`, then publishes the admitted ones as one
+  `credential-restore` generation. A destination token file that differs
+  from the archive's, or does not decrypt, is listed in `conflicts[]` and
+  needs `replace_existing`, as a differing per-key policy does. A selection in `addresses[]` that names a skipped credential
   is refused, never narrowed, and so is a restore with nothing left to
   restore (`restore_failed`); `skipped[]` then lists what was or would have
   been skipped. Archive-level failures (authentication, manifest and
@@ -625,8 +638,9 @@ transaction type is one more entry in `fields` and needs no client change.
   the rest. A skipped `selector` is cut at 128 bytes, and a skip or conflict
   `reason`, and the skip reason a refusal quotes, at 1 KiB; an archive entry
   name a refusal quotes is cut at 512 bytes. A cut ends `…(N bytes)`. A
-  preview's `keys[]` and `policies_restored[]` are not cut; they hold at
-  most one short entry per archived key. A failure's text names an archive
+  preview's `keys[]`, `policies_restored[]` and `source_tokens_restored[]`
+  are not cut; they hold at most one short entry per archived key, and a
+  preview's source names are bounded as above. A failure's text names an archive
   member by its path in the archive, never by where the daemon extracted
   it, on preview, restore and import alike.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
@@ -677,9 +691,9 @@ Shared shapes:
 Messages:
 
 - `get_policy` -> `policy`: `success`, `node_role`, `documents[]` (document summaries without bytes: the default first, then per-key documents sorted by key), `keys[]` (one entry per held key and per stored document for a key not held, sorted by key; the default is not a key and is not listed), `policy_set_sha256`, optional `generation_id`, optional `code`, optional `error`. `policy_set_sha256` is the lowercase hex SHA-256 over the sorted lines `<key> <document sha256>\n`, one per document, where `<key>` is `default` or the selector. Returns `policy_unavailable` when no policy is loaded.
-- `get_policy_document`: `key` (`default` or a selector), optional `expected_snapshot_sha256` -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default). With `expected_snapshot_sha256`, the read is refused with `policy_snapshot_changed` unless the node's composite snapshot (below) still equals it, so documents fetched one at a time for a review or an export all come from the state the review or export started from.
+- `get_policy_document`: `key` (`default` or a selector), optional `expected_snapshot_sha256` -> `policy_document`: `success`, `key`, `document` (exact bytes), `sha256`, optional `signed_at_unix`, optional `code`, optional `error`. Returns `policy_document_not_found` when `key` is empty or names a key with no document of its own (it follows the node default). With `expected_snapshot_sha256`, the read is refused with `policy_snapshot_changed` unless the node's composite snapshot (below) still equals it, so documents fetched one at a time for a review or an export all come from the state the review or export started from. The reply names no source token: an export reads token names with `source_token_list`, below.
 - `get_policy_context` -> `policy_context`: `success`, `node_role`, `rules_version`, `networks[]` (`network`, `genesis_hash`: every token the node resolves, built-in and custom), `assets[]` (the effective ASA set: asset info as for `asa_set`, without shadowed confirmations), `context_sha256`, `policy_set_sha256`, `snapshot_sha256`, optional `code`, optional `error`. The policy and the ASA set are read under one lock, so the three digests describe one state. `context_sha256` digests the role, the admission rules version, every network with its chain, and every asset with its origin, decimals, unit name and name; `snapshot_sha256` digests it with `policy_set_sha256`. Both encodings are pinned by `test/contracts/policycontext/v1/`. A client pairs this reply with a `get_policy` summary and uses the snapshot only when the two name the same `policy_set_sha256`. Returns `policy_unavailable` when no policy is loaded. With the ASA set file at its 1 MiB bound the reply stays far inside one admin frame.
-- `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap), documents in the resulting state for keys the node does not hold (`key_not_held`). Errors include the admission problems of each submitted document against the node's networks and ASA set: a network the node does not know, an asset outside the set, a direct `asa:<id>` route term over several networks or `*`, and a route with no asset on one of its networks. Only submitted documents are checked for admission: a stored document the change leaves alone is never checked and never blocks the change, a document submitted again must pass even when unchanged, and a removal needs no repair; `apply_policy` checks the same rules, against the verified ASA set its snapshot check read. A response carries at most 256 errors and warnings together, errors first, with a final warning counting the ones left out, and each message and pointer is cut at 512 bytes, so it always fits one admin frame. A key on the default is covered, not a gap.
+- `check_policy`: `documents[]`, optional `remove[]` (keys whose own documents the candidate change would delete) -> `check_policy_result`: `success`, `valid`, optional `errors[]`, optional `warnings[]`, optional `code`, optional `error`. Validates the candidate change for the node role without writing. `valid` is true when `errors` is empty. Warnings never block an apply; they report document advisories (such as a `reject_*` setting that overrides a route's `allow_close` or `allow_clawback`, a route for a transaction type the document rejects, or a cosigner document with routes but no fee cap), documents in the resulting state for keys the node does not hold (`key_not_held`), and, on an unlocked cosigner and only for a session with `policy.update`, each source a document takes a token for that its selector has none of (`external_check:token_not_set`, from the live token index); a session with `policy.view` alone gets no such warning, since it would name which sources have a token. Errors include the admission problems of each submitted document against the node's networks and ASA set: a network the node does not know, an asset outside the set, a direct `asa:<id>` route term over several networks or `*`, and a route with no asset on one of its networks. Only submitted documents are checked for admission: a stored document the change leaves alone is never checked and never blocks the change, a document submitted again must pass even when unchanged, and a removal needs no repair; `apply_policy` checks the same rules, against the verified ASA set its snapshot check read. A response carries at most 256 errors and warnings together, errors first, with a final warning counting the ones left out, and each message and pointer is cut at 512 bytes, so it always fits one admin frame. A key on the default is covered, not a gap.
 - `apply_policy`: `documents[]`, optional `remove[]`, `expected_policy_set_sha256`, `expected_snapshot_sha256` -> `apply_policy_result`: `success`, optional `errors[]`, optional `policy` (the new `policy` view, including the committed `generation_id`), optional `commit_uncertain`, optional `code`, optional `error`.
 
 Apply rules, the same on both node roles:
@@ -693,7 +707,7 @@ Apply rules, the same on both node roles:
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
 - Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring before it publishes unlocked, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
-- `apply_policy`, `add_asa`, and `remove_asa` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
+- `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, and `source_token_remove` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.
 
@@ -704,7 +718,10 @@ Result codes include `expected_policy_set_sha256_required`,
 `policy_reload_failed`, and `policy_save_failed`.
 
 `get_policy`, `get_policy_document`, `get_policy_context`, and `check_policy` require `policy.view`; `apply_policy` requires
-`policy.update`. Policy messages are not exposed through apshell or MCP.
+`policy.update`. Which sources have a token is readable only at `policy.update`: `source_token_list` requires it, no
+policy message names a token source to a session without it, and `check_policy` gives such a session no missing-token
+warning (the server asks the authorizer whether the session has `policy.update` without treating a no as a refused
+request, so it is not audited as a denial). Policy messages are not exposed through apshell or MCP.
 
 ASA set messages. The ASA set is the built-in asset table plus the assets the
 operator confirmed; it labels assets and decides which specific assets
@@ -755,6 +772,61 @@ ASA set result codes include `policy_unavailable`, `unknown_network`,
 `asa_builtin`, `asa_already_confirmed`, `lookup_failed`,
 `confirmation_stale`, `asa_referenced`, `not_found`, `identity_locked`,
 `recovery_blocked`, `asa_commit_uncertain`, and `asa_reload_failed`.
+
+Source token messages. A cosigner node keeps the tokens of the external
+sources its policy documents name, one encrypted file per policy selector (a
+Witness Key ID, or `default`), as [ARCH_STORE.md](ARCH_STORE.md) describes. A
+selector's tokens serve the document keyed by it: a key with a document of
+its own uses its own tokens, and a key that follows the node default uses the
+tokens of `default`. The three messages require `policy.update`, the
+authorization of `apply_policy`, reading as well as changing, and none is
+open to `auth_only` sessions. No message returns a token: an admin session
+can replace a token but never read one.
+
+- token info: `source`, optional `set_at` (RFC 3339 UTC; absent for a needed
+  token), and `state`: `in_use` (a source of the selector's document takes a
+  token, and one is set), `unused` (a token is set that no source of the
+  selector's document takes), or `needed` (a source takes a token, and none
+  is set; every lookup to it refuses with `token_not_set`).
+- `source_token_set`: `selector`, `source`, `token` ->
+  `source_token_set_result`: `success`, `selector`, `source`, `tokens[]` (the
+  selector's token info after the change), optional `code`, optional
+  `error`. The token is 1 to 1024 bytes of visible ASCII and replaces any the
+  source had; the selector must be `default` or a cosigner key the node
+  holds. The request carries the token as a sensitive value: the server
+  zeroes its copy once the service has taken it, whether or not the change
+  runs, and puts it in no response, audit entry, log line or error.
+- `source_token_remove`: `selector`, `source` -> `source_token_remove_result`:
+  the same fields. Removing the last token deletes the selector's file;
+  nothing is archived. Generations minted while the token was set keep their
+  copy until they are pruned, and backups made while it was set keep theirs,
+  so a removed token is revoked at the service, not here.
+- `source_token_list`: optional `selector`, optional `after` -> `source_token_list_result`:
+  `success`, `selectors[]`, optional `omitted`, optional `code`, optional
+  `error`. Each selector carries `selector`, `policy` (`own` when the node has
+  a document keyed by it, always so for `default`, or `default` when it is a
+  key that follows the node default), `sources[]` (the source names of its
+  own document) and `tokens[]`. With a `selector`, the list holds it, and then
+  `default` when it follows the node default. Without one, it holds every
+  selector with a token or with a source that needs one, `default` first and
+  then the keys in order, at most 512, and `omitted` counts the rest.
+  `after`, which only a listing without a `selector` takes, pages it: the
+  list starts with the first selector that comes after `after` in that order
+  (it need not be listed itself), so a client that passes the last selector
+  of each page until `omitted` is absent reads every selector, at most 17
+  pages at the 8,192-key cap. A page's selectors are chosen before anything
+  is decrypted, and only their token files are read. `apadmin source token
+  list` without a selector reads the whole listing this way, and so does an
+  export of a cosigner, to record which sources every selector, a key with
+  no document of its own included, has a token for.
+
+Set and remove are in-place writes of the selected generation under the
+store mutation lock, as key generation is; they mint nothing, and the runtime
+token index is published once the write is durable. List reads the token
+files under the same lock and zeroes every token it decrypts. All three
+need an unlocked cosigner node: a signer node refuses them with
+`invalid_request`, a locked node with `signer_locked`, and a key the node
+does not hold, or a source with no token to remove, with `key_not_found`.
 
 Policy selection semantics:
 
@@ -1017,6 +1089,7 @@ signer; the session cannot resume administrative work in-process.
 | Enrolled-client list, revocation, and import | yes | yes (`clients`) | no | no | no |
 | Key-type, template, cosigner-reference, generation, and endpoint administration | yes | yes (`keytype`, `template`, `cosigner`, `generations`, `endpoint`) | no | no | no |
 | Policy view and apply | yes | yes (`policy`) | no | no | no |
+| Source tokens | yes (Key Details) | yes (`source token`) | no | no | no |
 | Admin settings | yes | no | no | no | no |
 | Async notifications | yes | no | limited | limited | no |
 
@@ -1353,7 +1426,17 @@ place, and any other change of view closes it.
 identifies the current screen. The enum has families for:
 
 - Authentication and unlock (`ViewAuth`, `ViewUnlock`)
-- Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
+- Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`).
+  On a cosigner node, Key Details for a cosigner key asks `source_token_list`
+  for the key and shows one `Sources:` line: each source of the document that
+  governs the key (its own, or the node default it follows) with `token
+  set`, `token needed` or `no token`. `o` opens `ViewSourceTokens`, which
+  sets the selected source's token (typed masked, Enter) or removes it
+  (`ctrl+r`) on that document's selector. Every printable key is part of the
+  token, so the form's commands are Enter, `ctrl+r`, the arrows, Tab and
+  `Esc`; the typed token is zeroed on every way out of the form, on lock and
+  on disconnect, and after a remove the form says that earlier generations
+  and backups keep a copy.
 - Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
 - Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
   list): the enrollment requests waiting for approval (`a` approve, `x`
@@ -1624,9 +1707,18 @@ uses. That writer checks the context against its own digests, then
 writes each document's exact bytes as `default.json` or `<key>.json` (the key
 checked as a policy selector) and the node's context as
 `.appolicy/node.json` (`aplane.policy-node-context.v1`), files mode 0600 and
-directories 0700. It writes nothing unless every fetched document matches the
-digest the summary listed, together they are the summary's
-`policy_set_sha256`, and with the context they make the snapshot, so an
+directories 0700. When the node is a cosigner, the export then reads the
+whole `source_token_list`, a page at a time (`apadminapp.SourceTokenNames`),
+and the context file records, beside its digests, the sources every
+selector with a token has one for, a key without a document of its own
+included, for appolicy's missing-token warning. When the listing is refused
+(a session without `policy.update`) or fails, the context file records none
+and the export says so. No reply tells a client its actions, so the export
+asks regardless, and a refused listing is audited as one authorization
+denial; the product authorizer grants `policy.update` to every session that
+can read a policy, so only another authorizer leads there. It writes
+nothing unless every fetched document matches the digest the summary listed,
+together they are the summary's `policy_set_sha256`, and with the context they make the snapshot, so an
 apply that lands during the export is refused rather than written as a mix.
 An in-progress marker in `.appolicy` is written first and removed only after
 the documents and then the context are durable, so an export that stops part

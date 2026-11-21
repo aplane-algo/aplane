@@ -25,9 +25,11 @@
 | Client data directory layout, endpoint registry, client caches | [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md#client-data-model) |
 | Policy document format and storage | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary), [`test/contracts/policy/v1/`](../test/contracts/policy/v1/) |
 | Approval and policy verdicts | [ARCH_POLICY.md](ARCH_POLICY.md#verdict-model) |
-| Policy context and snapshot digests, the node context file (`aplane.policy-node-context.v1`) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [`test/contracts/policycontext/v1/`](../test/contracts/policycontext/v1/README.md) |
+| External check request (what a cosigner sends a source, and the answer it accepts) | [ARCH_POLICY.md](ARCH_POLICY.md#running-the-checks) |
+| External check rule semantics (judge fixtures, `aplane.policy-external-judge.v1`) | [ARCH_POLICY.md](ARCH_POLICY.md#running-the-checks), [`test/contracts/policy/v1/external/`](../test/contracts/policy/v1/external/README.md); source `internal/signerapp/externalcheck/judge.go` |
+| Policy context and snapshot digests, the node context file (`aplane.policy-node-context.v1`, with a cosigner export's token names beside the digests) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [`test/contracts/policycontext/v1/`](../test/contracts/policycontext/v1/README.md) |
 | ASA set file (`aplane.asa-set.v1`, `asa_set.json` in a generation) | [ARCH_POLICY.md](ARCH_POLICY.md#storage-and-acceptance), [ARCH_STORE.md](ARCH_STORE.md), [`test/contracts/asaset/v1/`](../test/contracts/asaset/v1/); source `internal/asaset`, `internal/asasetstore` |
-| Saved policy cases (`aplane.policy-cases.v1`, `.appolicy/cases.json`) | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary), [USER_POLICY.md](USER_POLICY.md#checking-policy-files-offline-with-appolicy); source `internal/signerapp/policyauthor/cases.go` |
+| Saved policy cases (`aplane.policy-cases.v1`, `.appolicy/cases.json`, with external check `answers` and `failures`) | [ARCH_POLICY.md](ARCH_POLICY.md#the-boundary), [USER_POLICY.md](USER_POLICY.md#checking-policy-files-offline-with-appolicy); source `internal/signerapp/policyauthor/cases.go` |
 | Approval waits and cancellation | [ARCH_SIGNING.md](ARCH_SIGNING.md#approval-waits-and-cancellation) |
 | Native Falcon authorization and consensus resources | [ARCH_SIGNING.md](ARCH_SIGNING.md) |
 | Authentication, SSH, client enrollment, revocation | [ARCH_SECURITY.md](ARCH_SECURITY.md#ssh-tunnel-transport-layer) |

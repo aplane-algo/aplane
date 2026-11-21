@@ -170,8 +170,11 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 		m.mnemonicExport.error = err.Error()
 		return m, nil
 	}
-	if next, ok := m.failPendingPolicyExport(id, err); ok {
+	if next, ok := m.failPendingSourceTokens(id, err); ok {
 		return next, nil
+	}
+	if next, cmd, ok := m.failPendingPolicyExport(id, err); ok {
+		return next, cmd
 	}
 	if next, ok := m.failPendingBackupExport(id, err); ok {
 		return next, nil
@@ -312,14 +315,24 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 	for _, key := range msg.Result.PoliciesRestored {
 		withPolicy[key] = true
 	}
-	restored := make([]RestoreKeyInfo, 0, len(msg.Result.Restored)+len(withPolicy))
+	withTokens := make(map[string]bool, len(msg.Result.SourceTokensRestored))
+	for _, key := range msg.Result.SourceTokensRestored {
+		withTokens[key] = true
+	}
+	restored := make([]RestoreKeyInfo, 0, len(msg.Result.Restored)+len(withPolicy)+len(withTokens))
+	listed := make(map[string]bool, cap(restored))
 	for _, entry := range msg.Result.Restored {
 		restored = append(restored, RestoreKeyInfo{Address: entry.Selector, KeyType: entry.KeyType, HasPolicy: withPolicy[entry.Selector]})
-		delete(withPolicy, entry.Selector)
+		listed[entry.Selector] = true
 	}
-	for _, key := range msg.Result.PoliciesRestored {
-		if withPolicy[key] {
-			restored = append(restored, RestoreKeyInfo{Address: key, HasPolicy: true})
+	// A key whose credential was already identical is listed for what the
+	// restore installed with it.
+	for _, keys := range [][]string{msg.Result.PoliciesRestored, msg.Result.SourceTokensRestored} {
+		for _, key := range keys {
+			if !listed[key] {
+				restored = append(restored, RestoreKeyInfo{Address: key, HasPolicy: withPolicy[key]})
+				listed[key] = true
+			}
 		}
 	}
 	m.restore.result = RestoreDisplayResult{
@@ -328,6 +341,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 		Activated:   restored,
 		// Restored is bounded, so some restored keys may not be listed.
 		ActivatedOmitted: msg.Result.RestoredOmitted,
+		TokensRestored:   withTokens,
 		Skipped:          restoreSkippedUnion(m.restore.previewSkipped, msg.Result.Skipped),
 		// Each list is bounded on its own; their omitted counts add.
 		SkippedOmitted: m.restore.previewSkipOmitted + msg.Result.SkippedOmitted,
@@ -533,9 +547,9 @@ func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
 		m.details.policyLabel = msg.PolicyLabel
 		m.details.scrollOffset = 0 // Reset scroll on open
 		m.viewState = ViewKeyDetails
-	} else {
-		m.lastError = msg.Error
+		return m, m.requestSourceTokens()
 	}
+	m.lastError = msg.Error
 	return m, nil
 }
 

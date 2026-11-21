@@ -31,6 +31,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollqueue"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/stagetable"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -53,6 +54,8 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	reloadLock() ->  lsigprovider.registerMu
 //	keyUseMu     ->  signerruntime stateMu (read)
 //	signerruntime stateMu (read)  ->  rotatingStatusMu
+//	signerruntime stateMu (read)  ->  sourceTokens
+//	passphraseLock                ->  sourceTokens
 //
 // Per-lock scope:
 //
@@ -72,6 +75,10 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	rotatingStatusMu guards the published rotating status. PublishRotatingStatus
 //	                takes it inside WhileGeneration, under the state lock's
 //	                read side; every other holder takes it alone.
+//	sourceTokens    the source token index holder's own lock, a leaf.
+//	                ReplaceSourceTokens takes it inside WhileGeneration;
+//	                reload publication and lock cleanup take it under
+//	                passphraseLock.
 //
 // Atomics:
 //
@@ -144,6 +151,14 @@ type Runtime struct {
 	// problems of the stored documents, computed when they load.
 	asaSet       *asaset.Set
 	policyAlerts []string
+
+	// sourceTokens holds the source token index a reload decrypted, which
+	// the cosigner's external checks read tokens from. The index is
+	// immutable; a reload, a token set or a token remove publishes a new
+	// one, and the old one is zeroed once its last reader releases. Lock
+	// cleanup clears it after the key users have drained, and a locked
+	// runtime holds none.
+	sourceTokens sourcetokens.Holder
 
 	// Enrolled client keys for this identity: the validated view of the
 	// authorized_keys registry. The daemon is its only writer; see
@@ -342,6 +357,51 @@ func (ir *Runtime) SetVerifiedPolicyState(p *policyruntime.NodePolicy, set *asas
 	ir.nodePolicy, ir.asaSet, ir.policyAlerts = p, set, slices.Clone(alerts)
 }
 
+// PublishSourceTokens installs the source token index a reload decrypted
+// from the generation it just verified, and retires the one it replaces. It
+// is called from the reload, which holds passphraseLock, so a lock cleanup,
+// which clears the index under the same lock, lands wholly before or after
+// it; a reload after the cleanup has no keyring to decrypt with.
+func (ir *Runtime) PublishSourceTokens(next *sourcetokens.Index) {
+	ir.sourceTokens.Publish(next)
+}
+
+// ReplaceSourceTokens publishes the index with one selector's tokens replaced
+// by f's, nil for none, after a token set or remove has written the file. It
+// publishes only while the signer is unlocked in generation, the session the
+// write began in, and reports whether it did: a lock that came first has
+// cleared the index, and the next unlock's reload reads the file. f is
+// copied; the caller still zeroes it.
+func (ir *Runtime) ReplaceSourceTokens(generation uint64, selector string, f *sourcetokens.File) bool {
+	return ir.lockRuntime.WhileGeneration(generation, func() {
+		ir.sourceTokens.Replace(selector, f)
+	})
+}
+
+// SourceTokenFor returns the token set for source under a cosigner policy
+// selector (a Witness Key ID, or "default"), and false when none is set or
+// the signer is locked. It reads the index published at the time of the
+// call, holding a reader for the lookup, and is safe for concurrent use. The
+// external check step calls it inside its key use, so a lock cannot clear
+// the index while a lookup reads it. It has the shape of
+// externalcheck.TokenFor.
+//
+// The token comes back as a Go string, which cannot be zeroed: the check
+// puts it in a request header, and that copy lasts until the request is
+// garbage collected. Zeroing at lock covers the index, not those copies.
+func (ir *Runtime) SourceTokenFor(selector, source string) (string, bool) {
+	return ir.sourceTokens.TokenFor(selector, source)
+}
+
+// SourceTokenNamesFor returns the source names one cosigner policy selector
+// has a token for, from the index published at the time of the call: the
+// live tokens a policy check's missing-token advisory checks a document
+// against. known is false on a locked signer: it has no index, so which
+// tokens are set is not known.
+func (ir *Runtime) SourceTokenNamesFor(selector string) (names []string, known bool) {
+	return ir.sourceTokens.NamesFor(selector)
+}
+
 // StatusAlerts are every alert a status report carries for this identity:
 // rotating account alerts, then policy admission alerts.
 func (ir *Runtime) StatusAlerts() []string {
@@ -483,7 +543,28 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
 	}
+	if !ok && errMsg == signerruntime.RecoveryDuringUnlockMessage {
+		ir.clearFencedSourceTokens()
+	}
 	return ok, keyCount, errMsg
+}
+
+// clearFencedSourceTokens clears the source token index an unlock's reload
+// published before the fence refused the unlock for a recovery entered after
+// it began: the unlock published nothing, and, as a failed unlock reload
+// does, leaves no tokens. The fence runs no lock cleanup, since recovery
+// administration needs the keyring; it needs no tokens. A reconcile reloads
+// and lifts a recovery under the store mutation lock, which this holds, so
+// an index is kept only when one has: the signer is then unlocked with the
+// tokens of the generation that reconcile followed.
+func (ir *Runtime) clearFencedSourceTokens() {
+	defer ir.lockStoreMutation()()
+	if ir.IsUnlocked() {
+		return
+	}
+	ir.passphraseLock.Lock()
+	ir.sourceTokens.Clear()
+	ir.passphraseLock.Unlock()
 }
 
 // --- Approval ---
@@ -1372,10 +1453,18 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 
 // ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
 // Caller must NOT hold passphraseLock.
+//
+// When it fails, the reload has already closed the keyring it opened, and the
+// source token index goes with it: a reload can publish the index before a
+// later step fails, and a failed unlock must leave no tokens in memory.
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
-	return ir.reloadLocked(passphrase)
+	report, err := ir.reloadLocked(passphrase)
+	if err != nil {
+		ir.sourceTokens.Clear()
+	}
+	return report, err
 }
 
 func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadReport, error) {
@@ -1479,17 +1568,24 @@ func (ir *Runtime) reconcileDirty() {
 }
 
 func (ir *Runtime) reloadFromWatcher() error {
+	defer ir.lockStoreMutation()()
+	_, err := ir.Reload()
+	return err
+}
+
+// lockStoreMutation takes the process store mutation lock (reloadLock), when
+// one is wired, and returns its release.
+func (ir *Runtime) lockStoreMutation() (unlock func()) {
 	ir.watcherMu.Lock()
 	lockFn := ir.reloadLock
 	ir.watcherMu.Unlock()
 	if lockFn != nil {
 		if lock := lockFn(); lock != nil {
 			lock.Lock()
-			defer lock.Unlock()
+			return lock.Unlock
 		}
 	}
-	_, err := ir.Reload()
-	return err
+	return func() {}
 }
 
 // StopKeyWatcher stops the file watcher if running.
@@ -1570,7 +1666,9 @@ func (ir *Runtime) refuseKeyUses() {
 // (WithKeyring), both of which ClearKeys and the session's Destroy wait for,
 // so it keeps working on that copy, and any load
 // it starts afterward fails as locked. Its copy is zeroed when it releases,
-// or reclaimed by the operating system at the process exit that follows.
+// or reclaimed by the operating system at the process exit that follows. The
+// source token index is retired the same way: a lookup still reading it keeps
+// it intact until it releases, and it is zeroed then.
 func (ir *Runtime) Destroy() {
 	ir.refuseKeyUses()
 	// As drainKeyUsers does first, without waiting for them.
@@ -1583,6 +1681,7 @@ func (ir *Runtime) Destroy() {
 	if ir.keyStore != nil {
 		ir.keyStore.ClearKeys()
 	}
+	ir.sourceTokens.Clear()
 }
 
 // --- Internal ---
@@ -1611,6 +1710,9 @@ func (ir *Runtime) performLockCleanup() {
 	if ir.keyStore != nil {
 		ir.keyStore.ClearKeys()
 	}
+	// The drain above has ended every external check lookup, so nothing
+	// reads the index and it is zeroed now. While locked there is none.
+	ir.sourceTokens.Clear()
 	ir.passphraseLock.Unlock()
 
 	ir.keysLock.Lock()

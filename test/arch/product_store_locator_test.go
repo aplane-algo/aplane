@@ -31,6 +31,7 @@ var productStoreLocatorRoots = []string{
 	"internal/policy",
 	"internal/cosigner/cosignerrefs",
 	"internal/signerapp",
+	"internal/sourcetokens",
 	"internal/storeinit",
 	"internal/storepass",
 	"internal/storepaths",

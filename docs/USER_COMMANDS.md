@@ -1289,6 +1289,64 @@ apadmin does not configure or verify client routes.
 
 ---
 
+### apadmin source token
+
+Keep the tokens a cosigner node sends to the external sources its policy
+documents name:
+
+```text
+apadmin source token set <selector> <source>
+apadmin source token set <selector> <source> --token-stdin
+apadmin source token remove <selector> <source>
+apadmin source token list [<selector>]
+```
+
+Run these against a cosigner node; each takes an unlocked session. The
+selector is the policy document the token serves: `default` for the node
+default, or a cosigner key's Witness Key ID for a key with a document of its
+own. A key that follows the node default uses the tokens of `default`.
+
+`set` prompts for the token on the terminal without echoing it, and replaces
+any token the source had. With `--token-stdin` it reads the token from stdin
+instead, with one trailing line break removed; the store passphrase then
+comes from `APSIGNER_PASSPHRASE` or a controlling terminal, as with
+`cosigner import -`. A token is never a command-line argument. It is 1 to
+1024 bytes of visible ASCII, and a selector holds at most eight. `set` warns
+when no source of the selector's document takes a token by that name.
+
+```bash
+printf '%s' "$SCREENING_TOKEN" | \
+  APSIGNER_PASSPHRASE="$APSIGNER_PASSPHRASE" \
+  apadmin -d "$COSIGNER_DATA" source token set default screening --token-stdin
+```
+
+`remove` deletes the source's token. Removing a token does not revoke it:
+generations made while it was set keep a copy until they are pruned, and
+backups made while it was set keep one, so revoke the token at the service
+as well.
+
+`list` prints one row per token, and one per token a source needs:
+
+```text
+SELECTOR  SOURCE     SET                   STATE
+default   screening  2026-11-21T01:12:46Z  in use
+default   treasury   -                     needed
+```
+
+`in use` is a token a source of the selector's document takes; `unused` is a
+token no source of it takes; `needed` is a source that takes a token none is
+set for, so every lookup to it refuses with `token_not_set`. With a selector
+that follows the node default, the list also shows the rows of `default`.
+No command shows a token's value.
+
+Exit status is 0 on success, 2 for a usage error, and 1 or higher when the
+signer refuses or the command fails.
+
+In the apadmin TUI, Key Details for a cosigner key shows its sources with
+their token state, and `o` sets or removes a token.
+
+---
+
 ### app
 
 Read application state, deploy applications, and submit application calls.

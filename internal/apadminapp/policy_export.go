@@ -17,13 +17,86 @@ import (
 )
 
 // WritePolicyExport writes an export of the documents a node returned, in
-// the context view it sent with them (policyexport.Write).
-func WritePolicyExport(dir string, docs []policyexport.Document, view adminproto.PolicyContextView, at time.Time) ([]string, error) {
+// the context view it sent with them, recording sourceTokens, the token
+// names a SourceTokenNames read gathered; nil records none
+// (policyexport.Write).
+func WritePolicyExport(dir string, docs []policyexport.Document, view adminproto.PolicyContextView, sourceTokens map[string][]string, at time.Time) ([]string, error) {
 	ctx, err := PolicyContextFromView(view)
 	if err != nil {
 		return nil, err
 	}
-	return policyexport.Write(dir, docs, ctx, view.PolicySetSHA256, view.SnapshotSHA256, at)
+	return policyexport.Write(dir, docs, ctx, view.PolicySetSHA256, view.SnapshotSHA256, sourceTokens, at)
+}
+
+// SourceTokenNames gathers, a page at a time, which sources every selector
+// of a cosigner node has a token for, from its replies to source_token_list
+// with no selector: the names an export records. Each reply names the
+// selector the next request starts after, until a reply leaves none out.
+// The listing needs policy.update, as every read of token names does.
+type SourceTokenNames struct {
+	names map[string][]string
+	pages sourceTokenPages
+}
+
+// Add records one reply. It returns the after of the next request, and done
+// once the listing is whole. A failed reply, or one that does not move the
+// listing on, is an error, and then nothing gathered should be recorded.
+func (c *SourceTokenNames) Add(msg protocol.SourceTokenListResultMessage) (after string, done bool, err error) {
+	if after, done, err = c.pages.next(msg); err != nil {
+		return "", false, err
+	}
+	if c.names == nil {
+		c.names = map[string][]string{}
+	}
+	for _, listing := range msg.Selectors {
+		for _, token := range listing.Tokens {
+			if token.State != protocol.SourceTokenNeeded {
+				c.names[listing.Selector] = append(c.names[listing.Selector], token.Source)
+			}
+		}
+	}
+	return after, done, nil
+}
+
+// sourceTokenPages follows a source_token_list read a page at a time: each
+// reply names the selector the next request starts after, until a reply
+// leaves none out.
+type sourceTokenPages struct {
+	after string
+	pages int
+}
+
+// next takes one reply and returns the after of the next request, and done
+// once the listing is whole. A failed reply, or one that does not move the
+// listing on, is an error.
+func (p *sourceTokenPages) next(msg protocol.SourceTokenListResultMessage) (after string, done bool, err error) {
+	if !msg.Success {
+		return "", false, protocol.WithCode(msg.Code, fmt.Errorf("source token list: %s", msg.Error))
+	}
+	if msg.Omitted == 0 {
+		return "", true, nil
+	}
+	// A page lists at least one selector, so a whole listing takes at most
+	// one page per selector a cosigner can have.
+	p.pages++
+	if len(msg.Selectors) == 0 || p.pages > policycontext.MaxSourceTokenSelectors {
+		return "", false, errors.New("source token list: the node's listing does not move on")
+	}
+	after = msg.Selectors[len(msg.Selectors)-1].Selector
+	if after == p.after {
+		return "", false, errors.New("source token list: the node's listing does not move on")
+	}
+	p.after = after
+	return after, false, nil
+}
+
+// Names is every selector with a token and the sources it has one for, as
+// gathered so far.
+func (c *SourceTokenNames) Names() map[string][]string {
+	if c.names == nil {
+		return map[string][]string{}
+	}
+	return c.names
 }
 
 // PolicyContextFromView is the context a node described, checked against the

@@ -16,6 +16,7 @@ const (
 	endpointSubcommand    = "endpoint"
 	generationsSubcommand = "generations"
 	archiveSubcommand     = "archive"
+	sourceSubcommand      = "source"
 
 	testModeListCommand     = "list"
 	testModeGenerateCommand = "generate"
@@ -47,6 +48,7 @@ var productionSubcommands = map[string]productionCommandKind{
 	endpointSubcommand:    productionCatalog,
 	generationsSubcommand: productionCatalog,
 	archiveSubcommand:     productionCatalog,
+	sourceSubcommand:      productionCatalog,
 }
 
 // classifyProductionSubcommand returns the kind of the production command

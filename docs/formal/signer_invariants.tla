@@ -1,6 +1,7 @@
 -------------------------- MODULE signer_invariants --------------------------
 (*
-The signer invariants and where they stand in the gate sequence.
+The signer invariants and where they stand in the gate sequence, and a
+cosigner document's external checks after them.
 
 internal/signerapp/signing/gate.go::runApprovalGates and
 cosigner_policy.go::runCosignerGates call
@@ -18,6 +19,13 @@ Two kinds of invariant differ in the positions they judge:
   - the rotating rekey and nonparticipation invariants judge the positions
     this signer signs.
 
+On a cosigner, runCosignerGates ends with
+external_checks.go::runExternalChecks: once the invariants have passed and
+the policy verdict is sign, the document's external checks run, and they can
+only refuse. Nothing is looked up for a request the invariants or the policy
+refused. A signer-role request and a cosigner document without checks have
+no external checks and make no lookup.
+
 Invariants:
 
   - SI1 : no signature is released for a group in which any position rekeys
@@ -28,11 +36,17 @@ Invariants:
           nor the operator.
   - SI4 : a refusal by the valid-target invariant names the first position
           that breaks it.
+  - SI5 : no signature is released for a request unless the policy would
+          sign it and its external checks, if it has any, pass. The external
+          answer can remove a signature, never add one.
+  - SI6 : a request the invariants or the policy refuse makes no external
+          lookup.
 
 `policy_precedence.tla` derives the policy verdict and `sign_boundary.tla`
 the output per slot class; here the policy and the operator are one free
 oracle (would_sign), since the claim is that the invariants hold whatever
-they answer.
+they answer. The external checks are a second free oracle (external): none,
+pass or refuse, where none stands for a request with no external checks.
 
 The model intentionally omits:
 
@@ -43,7 +57,14 @@ The model intentionally omits:
     invariant refuses such a rekey first, and the rotating check is a second
     line folded into the signed-position flag here,
   - the cosigner's key lookup, which runs before the invariants there, and
-    transaction bounds validation, which runs before both.
+    transaction bounds validation, which runs before both,
+  - what the external checks look up, how many lookups a request makes, and
+    the order the checks run in (the runner stops at the first refusal); a
+    lookup that fails, a node that cannot run its document's checks, a lock
+    and a canceled request all end the step without a signature, so each is
+    the answer refuse here,
+  - the key use the external step holds while it runs, which is
+    key_use_lock.tla's subject.
 
 See FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md for the prose companion.
 *)
@@ -52,11 +73,13 @@ EXTENDS Naturals, Sequences, TLC
 CONSTANTS
     MaxPositions,               \* upper bound on the group's length (TLC bound)
     InvariantsBeforePolicy,     \* the invariants run before the policy verdict
-    TargetJudgesEveryPosition   \* the valid-target invariant reads every position
+    TargetJudgesEveryPosition,  \* the valid-target invariant reads every position
+    ExternalAfterPolicy         \* external lookups follow a sign verdict only
 
 ASSUME MaxPositions \in Nat /\ MaxPositions >= 1
 ASSUME InvariantsBeforePolicy \in BOOLEAN
 ASSUME TargetJudgesEveryPosition \in BOOLEAN
+ASSUME ExternalAfterPolicy \in BOOLEAN
 
 \* A position of the group as it will go on chain. "sign" is a position this
 \* signer signs; the others are not its signatures.
@@ -72,16 +95,23 @@ Position == [
 
 Groups == UNION {[1..n -> Position] : n \in 1..MaxPositions}
 
+\* What the request's external checks would answer. "none": it has none (a
+\* signer-role request, or a cosigner document without checks).
+ExternalAnswer == {"none", "pass", "refuse"}
+
 VARIABLES
     group,          \* the whole group
     would_sign,     \* what policy and the operator would answer, if asked
+    external,       \* what the external checks would answer, if asked
     decided,        \* the gate sequence has run
     refused_by,     \* "none", "target" or "signed": the invariant that refused
     refused_at,     \* the position a refusal names, 0 when none
     asked,          \* the policy verdict (and so the operator) was consulted
+    looked_up,      \* an external lookup was made
     released        \* the signer released its signatures
 
-vars == <<group, would_sign, decided, refused_by, refused_at, asked, released>>
+vars == <<group, would_sign, external, decided, refused_by, refused_at, asked,
+          looked_up, released>>
 
 ----------------------------------------------------------------------------
 \* The positions the valid-target invariant reads.
@@ -107,31 +137,43 @@ RefusedAt(g) ==
     ELSE IF SignedBreaches(g) # {} THEN Min(SignedBreaches(g))
     ELSE 0
 
+\* The invariants or the policy refuse the request.
+GatesRefuse == RefusedBy(group) # "none" \/ ~would_sign
+
 Init ==
     /\ group \in Groups
     /\ would_sign \in BOOLEAN
+    /\ external \in ExternalAnswer
     /\ decided = FALSE
     /\ refused_by = "none"
     /\ refused_at = 0
     /\ asked = FALSE
+    /\ looked_up = FALSE
     /\ released = FALSE
 
-\* One request's gate decision.
+\* One request's gate decision. signs is the answer of the invariants and the
+\* policy; the external checks come last and can only refuse.
 Decide ==
+    LET signs == IF InvariantsBeforePolicy
+                    THEN RefusedBy(group) = "none" /\ would_sign
+                    ELSE would_sign
+    IN
     /\ ~decided
     /\ decided' = TRUE
     /\ IF InvariantsBeforePolicy
           THEN /\ refused_by' = RefusedBy(group)
                /\ refused_at' = RefusedAt(group)
                /\ asked' = (RefusedBy(group) = "none")
-               /\ released' = (RefusedBy(group) = "none" /\ would_sign)
-          \* The mutation: the policy verdict first, and an approval ends
-          \* the gate sequence.
+          \* The mutation: the policy verdict first, and an approval skips
+          \* the invariants.
           ELSE /\ asked' = TRUE
-               /\ released' = would_sign
                /\ refused_by' = IF would_sign THEN "none" ELSE RefusedBy(group)
                /\ refused_at' = IF would_sign THEN 0 ELSE RefusedAt(group)
-    /\ UNCHANGED <<group, would_sign>>
+    \* runExternalChecks: a request with checks is looked up once the
+    \* earlier gates say sign. The mutation looks it up whatever they say.
+    /\ looked_up' = (external # "none" /\ (signs \/ ~ExternalAfterPolicy))
+    /\ released' = (signs /\ external # "refuse")
+    /\ UNCHANGED <<group, would_sign, external>>
 
 Next == Decide \/ (decided /\ UNCHANGED vars)
 
@@ -141,10 +183,12 @@ Spec == Init /\ [][Next]_vars
 TypeOK ==
     /\ group \in Groups
     /\ would_sign \in BOOLEAN
+    /\ external \in ExternalAnswer
     /\ decided \in BOOLEAN
     /\ refused_by \in {"none", "target", "signed"}
     /\ refused_at \in 0..MaxPositions
     /\ asked \in BOOLEAN
+    /\ looked_up \in BOOLEAN
     /\ released \in BOOLEAN
 
 \* SI1: every position, whatever its class.
@@ -167,11 +211,21 @@ SI4_RefusalNamesFirstPosition ==
         /\ group[refused_at].invalid_target
         /\ \A j \in 1..(refused_at - 1) : ~group[j].invalid_target
 
+\* SI5: the external checks can refuse a signature, never add one.
+SI5_ExternalChecksOnlyRefuse ==
+    released => (would_sign /\ external # "refuse")
+
+\* SI6: nothing is looked up for a request an earlier gate refuses.
+SI6_NoLookupForARefusedRequest ==
+    GatesRefuse => ~looked_up
+
 Safety ==
     /\ TypeOK
     /\ SI1_NoReleaseWithInvalidRekeyTarget
     /\ SI2_NoReleaseWithSignedBreach
     /\ SI3_RefusalBeforePolicy
     /\ SI4_RefusalNamesFirstPosition
+    /\ SI5_ExternalChecksOnlyRefuse
+    /\ SI6_NoLookupForARefusedRequest
 
 =============================================================================

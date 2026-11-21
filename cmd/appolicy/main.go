@@ -84,7 +84,7 @@ func usage(w io.Writer) {
   appolicy try FILE --from ADDR --to ADDR|self [--amount N] [--asset ID]
                [--network NAME] [--fee N] [--close-to ADDR]
                [--clawback-from ADDR] [--rekey-to ADDR [--rekey-held]]
-               [--node-context FILE] [--json]
+               [--answer CHECK-ID=FILE]... [--node-context FILE] [--json]
   appolicy test [--node-context FILE] [DIR]
 
 PATH is a policy file, or a directory whose *.json files are policy files.
@@ -111,12 +111,19 @@ damaged export, or files from two exports, is an error.
   try      ask what one valid document decides for one transaction, through
            the signer's own policy evaluator: rejects, requires review,
            approves, or leaves it to the operator default. A cosigner
-           document permits or rejects. It answers for the document only and
-           lists what it assumed; the network mapping is the node's, else
-           the built-in networks. Exit 0 whatever the verdict, 2 for bad
-           input.
+           document permits or rejects; when it has external checks, a permit
+           lists the lookups the cosigner would make, and the checks decide
+           next. --answer CHECK-ID=FILE judges a check on the answer in FILE,
+           read as the cosigner reads a source's answer; repeat it for more
+           checks. Every check that applies passing approves, one refusing
+           rejects, and a check with no answer leaves conditional_approve.
+           No source is asked. It answers for the document only and lists
+           what it assumed; the network mapping is the node's, else the
+           built-in networks. Exit 0 whatever the verdict, 2 for bad input,
+           including an answer for a check that does not apply.
   test     run the saved cases in DIR/.appolicy/cases.json (DIR defaults to
-           the current directory): each is a try with the answer expected.
+           the current directory): each is a try with the answer expected,
+           and may give its external checks answers or named failures.
            Exit 0 when every case passes, 1 when one fails, 2 when the cases
            file is bad or a case cannot run.
 

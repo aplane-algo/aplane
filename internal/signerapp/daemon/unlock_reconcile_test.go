@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -334,12 +335,18 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // recovery does; a plain success once a reconcile on a third connection has
 // lifted it; and a lost race once a lock has come in. The answer once said
 // recovery_blocked whatever the state.
+//
+// The unlock's reload published a source token index before the fence; an
+// unlock that publishes nothing leaves no tokens, as a failed unlock reload
+// does, unless a reconcile has lifted the recovery and the signer is
+// unlocked with them.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		after func(*productruntime.Runtime)
-		want  func(t *testing.T, success bool, keyCount int, errMsg, code string)
-		state signerruntime.SignerState
+		name   string
+		after  func(*productruntime.Runtime)
+		want   func(t *testing.T, success bool, keyCount int, errMsg, code string)
+		state  signerruntime.SignerState
+		tokens bool
 	}{
 		{
 			name:  "still in recovery",
@@ -359,7 +366,8 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want a plain success", success, keyCount, errMsg, code)
 				}
 			},
-			state: signerruntime.SignerStateUnlocked,
+			state:  signerruntime.SignerStateUnlocked,
+			tokens: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -367,10 +375,17 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			defer cleanup()
 			ir := server.productRuntime()
 			ir.SetUnlocked()
+			file, err := sourcetokens.SetToken(nil, sourcetokens.DefaultSelector, "screening", []byte("tok-fenced"), time.Unix(1_785_200_000, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := sourcetokens.NewIndex([]*sourcetokens.File{file})
+			file.Zero()
 			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 				if passphrase != nil {
 					ir.SetRecovery() // the store change, while the unlock reloads
 					tc.after(ir)
+					ir.PublishSourceTokens(index)
 				}
 				return &signertemplates.ReloadReport{}, nil
 			})
@@ -379,6 +394,13 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			tc.want(t, success, keyCount, errMsg, code)
 			if got := ir.GetState(); got != tc.state {
 				t.Fatalf("state = %v, want %v", got, tc.state)
+			}
+			got, known := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening")
+			if known != tc.tokens || (tc.tokens && got != "tok-fenced") {
+				t.Fatalf("SourceTokenFor() = %q, %v; want the index kept: %v", got, known, tc.tokens)
+			}
+			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); !tc.tokens && strings.Trim(kept, "\x00") != "" {
+				t.Fatalf("the fenced unlock's index still holds %q, want it zeroed", kept)
 			}
 		})
 	}

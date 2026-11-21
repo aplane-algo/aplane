@@ -4,6 +4,8 @@
 package policyadmission
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -205,5 +207,48 @@ func TestAReconfiguredTokenDoesNotCarryItsConfirmations(t *testing.T) {
 	}
 	if got := rules(Check(doc, moved)); got != RuleAssetNotInSet+"@/limits/private-dev/asa:9" {
 		t.Fatalf("after remapping private-dev: %q", got)
+	}
+}
+
+// A check's networks are admitted as a route's are. A misspelled network on a
+// check never matches a transaction, so the check would silently never run;
+// admission names it, even when a wildcard route keeps the
+// network_without_route advisory quiet.
+func TestAdmissionNamesAnUnknownNetworkOnAnExternalCheck(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "test", "contracts", "policy", "v1", "cosigner_key_external_checks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const key = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	cosigner := func(t *testing.T) *policycontext.Context {
+		t.Helper()
+		ctx, err := policycontext.New(noderole.RoleCosigner, apconfig.DefaultGenesisHashNetworkResolver(), asaset.Empty())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ctx
+	}
+	doc, err := policy.DecodePolicyV1(data, key, noderole.RoleCosigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rules(Check(doc, cosigner(t))); got != "" {
+		t.Fatalf("the fixture as written: %q", got)
+	}
+
+	// The first "mainnet" in the fixture is screen-destination's, the second
+	// check.
+	typo := []byte(strings.Replace(string(data), `"mainnet"`, `"mainet"`, 1))
+	doc, err = policy.DecodePolicyV1(typo, key, noderole.RoleCosigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rules(Check(doc, cosigner(t))); got != RuleUnknownNetwork+"@/external_checks/1/networks/0" {
+		t.Fatalf("problems = %q, want the check's unknown network", got)
+	}
+	for _, a := range doc.Advisories() {
+		if a.RuleID == policy.ConfigAdvisoryExternalNetworkWithoutRoute {
+			t.Fatalf("the wildcard route covers every network, so no advisory: %+v", a)
+		}
 	}
 }

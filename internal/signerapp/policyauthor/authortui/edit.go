@@ -169,6 +169,12 @@ func editHint(e policyauthor.EditSpec, decimals uint64, known bool, lookup polic
 		return "comma-separated " + termHint(e.Term) + " · enter: set · esc: cancel"
 	case policyauthor.EditTerm:
 		return termHint(e.Term) + " · enter: set · esc: cancel"
+	case policyauthor.EditInteger:
+		return "a whole number · enter: set · esc: cancel"
+	case policyauthor.EditVerbatim:
+		return "spaces are kept as typed · enter: set · esc: cancel"
+	case policyauthor.EditJSON:
+		return "a JSON value · enter: set · esc: cancel"
 	}
 	return "enter: set · esc: cancel"
 }
@@ -191,6 +197,10 @@ func termHint(t policyauthor.TermKind) string {
 		return `an address, "*" or @set`
 	case policyauthor.TermRekeyTarget:
 		return `addresses, "*", "self" or @sets`
+	case policyauthor.TermMovement:
+		return "movement kinds"
+	case policyauthor.TermTLSPin:
+		return "base64 SHA-256 pins"
 	}
 	return "values"
 }

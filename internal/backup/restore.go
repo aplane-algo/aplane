@@ -56,6 +56,9 @@ type RestoreKeyInfo struct {
 	AlreadyExists bool
 	// HasPolicy reports that the archive carries this key's own policy.
 	HasPolicy bool
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, sorted; never a token.
+	SourceTokens []string
 }
 
 // ResolveBackupKeysDir returns the credential directory in an extracted
@@ -250,6 +253,7 @@ func PreviewRestoreWithNodeRole(
 		preview.Keys = append(preview.Keys, RestoreKeyInfo{
 			Address: entry.Selector(), KeyType: entry.KeyType(), StageHint: entry.StageHint,
 			AlreadyExists: exists || destinationErr != nil, HasPolicy: entry.Policy != nil,
+			SourceTokens: entry.SourceTokenNames(),
 		})
 		return nil
 	})
@@ -259,8 +263,8 @@ func PreviewRestoreWithNodeRole(
 	return preview, nil
 }
 
-// ApplyRebuildSet installs every entry of set, with its archived policy, into
-// the staged first generation of a fresh store of role. It is the offline
+// ApplyRebuildSet installs every entry of set, with its archived policy and
+// source tokens, into the staged first generation of a fresh store of role. It is the offline
 // rebuild's apply step; a live restore classifies its set against the
 // destination and applies it inside a generation mint.
 func ApplyRebuildSet(staged storepaths.GenPaths, role noderole.Role, set *RestoreSet, kr *crypto.Keyring) error {
@@ -272,6 +276,11 @@ func ApplyRebuildSet(staged storepaths.GenPaths, role noderole.Role, set *Restor
 		if entry.Policy != nil {
 			if err := ApplyPolicyEntry(staged, role, entry, kr); err != nil {
 				return fmt.Errorf("restore policy for %s: %w", entry.Selector(), err)
+			}
+		}
+		if entry.sourceTokensPlaintext() != nil {
+			if err := ApplySourceTokensEntry(staged, entry, kr); err != nil {
+				return fmt.Errorf("restore source tokens for %s: %w", entry.Selector(), err)
 			}
 		}
 	}

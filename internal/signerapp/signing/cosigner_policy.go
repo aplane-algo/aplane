@@ -4,6 +4,7 @@
 package signing
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 
@@ -24,14 +25,22 @@ import (
 // refused as such and never audited, and before the policy, so no policy can
 // allow what they refuse. A cosigner has no operator, so every verdict is sign
 // or reject: a review verdict, which the document format cannot express on a
-// cosigner node, is treated as a rejection.
-func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
+// cosigner node, is treated as a rejection. Last come the document's external
+// checks, which run only for a request the policy would sign and can only
+// refuse it.
+func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
+	// prepareComponentSigning made the plan's key canonical; every step
+	// below, the external checks and the audit record included, uses it as
+	// it stands.
 	componentKey, err := witness.NormalizeID(plan.ComponentKey)
 	if err != nil {
 		return badRequest(err.Error())
+	}
+	if componentKey != plan.ComponentKey {
+		return internal("component sign plan carries a non-canonical Witness Key ID")
 	}
 	if s.HoldsCosignerKey == nil || !s.HoldsCosignerKey(componentKey) {
 		return badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKey))
@@ -86,7 +95,7 @@ func (s *Service) runCosignerGates(plan *ComponentSignPlan) *ServiceError {
 	if len(violations) > 0 {
 		return s.rejectCosignerComponentPolicy(plan, violations)
 	}
-	return nil
+	return s.runExternalChecks(ctx, plan, cfg, group, targets)
 }
 
 func (s *Service) rejectCosignerComponentPolicy(plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
@@ -145,7 +154,7 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 		s.AuditLog.LogSignApproved(group.inGroup(SignedRecord{
 			AuthAddress: componentKey,
 			TxnSender:   target.Sender,
-			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex),
+			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex) + externalChecksNote(plan.ExternalChecks),
 			TxID:        txIDString(target.TxID),
 			Fee:         target.Fee,
 		}))

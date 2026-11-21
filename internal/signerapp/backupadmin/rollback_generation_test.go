@@ -211,3 +211,117 @@ func TestRollbackKeepsTheOutgoingASASet(t *testing.T) {
 		t.Fatalf("rolled-back set = %+v, want the outgoing generation's", e)
 	}
 }
+
+// Rollback brings back the source's per-key token files, opened from the
+// seal-verified source and sealed again, drops those the restore added, and
+// keeps the outgoing node default's token file with the node default policy.
+func TestRollbackRestoresPerKeySourceTokensAndKeepsTheDefaults(t *testing.T) {
+	const (
+		genA     = "gen-1785300000-cafef00d"
+		genB     = "gen-1785300001-deadbeef"
+		genC     = "gen-1785300002-feedface"
+		restored = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+		added    = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
+	)
+	paths := storepaths.NewPaths(t.TempDir())
+	kr, err := crypto.NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	write := func(staged storepaths.GenPaths, selector, content string) error {
+		sealed, err := kr.Seal([]byte(content), crypto.SourceTokensContext(selector))
+		if err != nil {
+			return err
+		}
+		return fsutil.WriteFileDurable(staged.SourceTokenPath(selector), sealed)
+	}
+	first, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genA, FirstGeneration: true,
+		InitialPassphrase: []byte("rollback-tokens-passphrase"), Integrity: kr, Operation: "test-init",
+		OperationID: "init-a", CreatedAt: time.Unix(1_785_300_000, 0),
+		Apply: func(staged storepaths.GenPaths) error {
+			if err := genstoretest.ApplyAuthorityPlaceholders(staged); err != nil {
+				return err
+			}
+			if err := write(staged, restored, "source key tokens"); err != nil {
+				return err
+			}
+			return write(staged, "default", "source default tokens")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genB, Parent: first.GenerationID(),
+		Operation: genstore.OperationCredentialRestore, OperationID: "restore-b",
+		CreatedAt: time.Unix(1_785_300_001, 0), Integrity: kr,
+		Apply: func(staged storepaths.GenPaths) error {
+			for selector, content := range map[string]string{restored: "restored key tokens", added: "added key tokens", "default": "outgoing default tokens"} {
+				if err := write(staged, selector, content); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := loadRollbackGenerationSource(first, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := genstore.Mint(paths, genstore.MintRequest{
+		SkipCandidateValidation: true,
+		GenerationID:            genC, Parent: second.GenerationID(),
+		Operation: genstore.OperationCredentialRestoreRollback, OperationID: "rollback-c",
+		CreatedAt: time.Unix(1_785_300_002, 0), Integrity: kr,
+		Apply: func(staged storepaths.GenPaths) error {
+			return populateRollbackGeneration(source, noderole.RoleCosigner, staged, kr)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for selector, want := range map[string]string{restored: "source key tokens", "default": "outgoing default tokens"} {
+		sealed, _, err := fsutil.ReadRegularFile(third.SourceTokenPath(selector))
+		if err != nil {
+			t.Fatal(err)
+		}
+		plaintext, err := kr.Open(sealed, crypto.SourceTokensContext(selector))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(plaintext) != want {
+			t.Fatalf("rolled-back tokens of %s = %q, want %q", selector, plaintext, want)
+		}
+		crypto.ZeroBytes(plaintext)
+	}
+	if _, err := os.Stat(third.SourceTokenPath(added)); !os.IsNotExist(err) {
+		t.Fatalf("rollback kept the tokens of a key the restore added: %v", err)
+	}
+}
+
+// Rollback reconstructs a cosigner key's token file and nothing else in
+// source_tokens/: the node default's is kept from the outgoing generation.
+func TestRollbackMemberContextAcceptsOnlyAKeysTokenFile(t *testing.T) {
+	const key = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	ctx, sealed, err := rollbackMemberContext(genstore.InventoryEntry{Path: "source_tokens/" + key + ".enc", Term: 1})
+	if err != nil || !sealed || ctx != crypto.SourceTokensContext(key) {
+		t.Fatalf("rollbackMemberContext(key tokens) = %v, %v, %v", ctx, sealed, err)
+	}
+	for _, entry := range []genstore.InventoryEntry{
+		{Path: "source_tokens/default.enc", Term: 1},
+		{Path: "source_tokens/" + key + ".enc"},
+		{Path: "source_tokens/" + key + ".json", Term: 1},
+		{Path: "source_tokens/CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM.enc", Term: 1},
+	} {
+		if _, _, err := rollbackMemberContext(entry); err == nil {
+			t.Fatalf("rollbackMemberContext(%+v) accepted it", entry)
+		}
+	}
+}

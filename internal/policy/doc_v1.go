@@ -163,6 +163,9 @@ type PolicyV1 struct {
 	// Cosigner only.
 	RejectRekey bool
 	RekeyPolicy []RekeyRuleV1
+	// ExternalSources and ExternalChecks are set together or not at all.
+	ExternalSources map[string]ExternalSourceV1
+	ExternalChecks  []ExternalCheckV1
 }
 
 // IsDefault reports whether the document is a node default.
@@ -219,6 +222,7 @@ func DecodePolicyV1(data []byte, key string, role noderole.Role) (*PolicyV1, err
 		d.feeTypesLimitsAndSets,
 		d.transferPolicy,
 		d.rekeyPolicy,
+		d.externalChecks,
 	} {
 		if err := step(); err != nil {
 			return nil, err
@@ -1053,7 +1057,7 @@ func (d *PolicyV1) validate() error {
 			}
 		}
 	}
-	return nil
+	return d.validateExternalChecks()
 }
 
 func validateRoutesV1(pointer string, routes []RouteV1, addressSets map[string]AddressSetV1, assetSets map[string]AssetSetV1) error {

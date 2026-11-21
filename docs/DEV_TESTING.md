@@ -879,6 +879,30 @@ Ed25519-cosigned programs only against a mock cosigner. A release whose
 cosigner node doesn't offer the key type skips this part, and a local build
 that doesn't offer it fails.
 
+Before the first plain host closes out, its cosigner key's document gains
+external checks against a stub source on the cosigner container's loopback:
+a few lines of the Python standard library the image already has, which
+answers 401 to a request without its token, answers each path with JSON the
+script writes, can hang, and echoes `X-Aplane-Request-Id` for a check's
+`echo_pointer`. The token is set with `apadmin source token set
+--token-stdin`. The plain host's 0 ALGO self-send then:
+
+- passes, and confirms on chain;
+- is refused by a rule: apshell's error names `external_check:<id>` and not
+  what the source answered, which only the cosigner's audit log holds;
+- is refused with `external_check:<id>:unavailable` when the stub hangs,
+  within about the source's one-second `timeout_ms`;
+- is refused with `external_check:<id>:token_not_set` after
+  `apadmin source token remove`, and the stub receives no request.
+
+`apadmin source token list` shows the token `needed` and `in use`, `apadmin
+policy apply` warns while it is missing, and the token is in no file of the
+cosigner's data directory or `/tmp` (the audit, daemon and approver logs among
+them) and in neither policy export. This is the only test of external checks
+against a real cosigner node; the LocalNet integration environment has no
+cosigner node. A release whose `apadmin` has no `source token` skips this
+part, and a local build that lacks it fails.
+
 The test image is Ubuntu 24.04 with Node.js 22 copied from the official Node.js
 image, since the TypeScript SDK and `algosdk` require Node.js 22 and Ubuntu
 24.04 packages 18. The script stops if the image's Node.js is older.

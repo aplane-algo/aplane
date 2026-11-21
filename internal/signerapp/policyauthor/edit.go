@@ -6,6 +6,7 @@ package policyauthor
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,8 +28,14 @@ const (
 	// EditAmount takes an amount in display units when the asset's decimals
 	// are known, and in base units otherwise; the document stores base units.
 	EditAmount EditKind = "amount"
-	// EditText takes any string.
+	// EditText takes any string, without leading or trailing spaces.
 	EditText EditKind = "text"
+	// EditVerbatim takes any string as typed, spaces included.
+	EditVerbatim EditKind = "verbatim"
+	// EditInteger takes a whole number, stored as a JSON number.
+	EditInteger EditKind = "integer"
+	// EditJSON takes any JSON value, stored as typed.
+	EditJSON EditKind = "json"
 	// EditTerms takes a comma-separated list of terms (EditTerm one term),
 	// each checked as TermKind.
 	EditTerms EditKind = "terms"
@@ -47,6 +54,8 @@ const (
 	TermNetwork     TermKind = "network"      // a network token, or "*"
 	TermRekeySender TermKind = "rekey_sender" // an address, "*" or a flat "@set"
 	TermRekeyTarget TermKind = "rekey_target" // an address, "*", "self" or a flat "@set"
+	TermMovement    TermKind = "movement"     // a transfer movement kind, e.g. "pay"
+	TermTLSPin      TermKind = "tls_pin"      // the padded base64 of a SHA-256
 )
 
 // EditSpec says how a field is edited: what it takes and where the value is
@@ -85,6 +94,8 @@ func (e EditSpec) Input(n policy.DraftNode, decimals uint64, known bool) string 
 	switch {
 	case !n.Exists():
 		return ""
+	case e.Kind == EditJSON:
+		return compactJSON(n)
 	case e.Kind == EditAmount && n.Kind() == "string":
 		raw, err := strconv.ParseUint(n.Text(), 10, 64)
 		if err == nil && known {
@@ -109,6 +120,7 @@ func (e EditSpec) Input(n policy.DraftNode, decimals uint64, known bool) string 
 // Value turns input into the JSON the field stores, or explains why it is
 // not acceptable. decimals and known are those fixed when editing started.
 func (e EditSpec) Value(input string, decimals uint64, known bool) ([]byte, error) {
+	typed := input
 	input = strings.TrimSpace(input)
 	switch e.Kind {
 	case EditBool:
@@ -134,6 +146,19 @@ func (e EditSpec) Value(input string, decimals uint64, known bool) ([]byte, erro
 		return json.Marshal(strconv.FormatUint(raw, 10))
 	case EditText:
 		return json.Marshal(input)
+	case EditVerbatim:
+		return json.Marshal(typed)
+	case EditInteger:
+		n, err := strconv.ParseUint(strings.ReplaceAll(input, ",", ""), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("enter a whole number")
+		}
+		return []byte(strconv.FormatUint(n, 10)), nil
+	case EditJSON:
+		if _, err := policy.ParseDraft([]byte(input)); err != nil {
+			return nil, fmt.Errorf("not a JSON value: %v", err)
+		}
+		return []byte(input), nil
 	case EditTerm:
 		term, err := normalizeTerm(e.Term, input)
 		if err != nil {
@@ -232,6 +257,16 @@ func checkTerm(kind TermKind, term string) error {
 			return nil
 		}
 		return fmt.Errorf("%q is not a network token (lowercase letters, digits, '_' or '-')", term)
+	case TermMovement:
+		if slices.Contains(policy.ExternalMovementKinds, policy.TransferMovementKind(term)) {
+			return nil
+		}
+		return fmt.Errorf("%q is not a movement kind (%s)", term, strings.Join(policy.ExternalMovementKindNames(), ", "))
+	case TermTLSPin:
+		if _, ok := policy.ParseExternalTLSPin(term); !ok {
+			return fmt.Errorf("%q is not the padded base64 of a SHA-256", term)
+		}
+		return nil
 	}
 	return nil
 }
@@ -289,7 +324,7 @@ func replaceWith(label, pointer, value string) AddAction {
 // duplicateItem inserts a copy of item, the index-th of the list at list,
 // right after it, to be edited from there.
 func duplicateItem(label, list string, index int, item policy.DraftNode) *AddAction {
-	value := compact(item)
+	value := compactJSON(item)
 	return &AddAction{Label: label, apply: func(d *policy.Draft, _ string) (*policy.Draft, error) {
 		return d.Insert(fmt.Sprintf("%s/%d", list, index+1), []byte(value))
 	}}
@@ -297,7 +332,7 @@ func duplicateItem(label, list string, index int, item policy.DraftNode) *AddAct
 
 // copyRoute inserts a copy of route i after it, under a new id.
 func copyRoute(i int, route policy.DraftNode) *AddAction {
-	value := compact(route)
+	value := compactJSON(route)
 	return &AddAction{Label: "Copy the route", Prompt: "id for the copy", apply: func(d *policy.Draft, input string) (*policy.Draft, error) {
 		if !validNetworkToken(input) {
 			return nil, fmt.Errorf("a route id is lowercase letters, digits, '_' or '-'")
@@ -323,7 +358,7 @@ func copySet(kind, base string) AddAction {
 		if !src.Exists() {
 			return nil, fmt.Errorf("there is no %s set %q", kind, parts[0])
 		}
-		return ensure(d, base+"/"+escapeToken(parts[1]), compact(src))
+		return ensure(d, base+"/"+escapeToken(parts[1]), compactJSON(src))
 	}}
 }
 
@@ -438,6 +473,8 @@ func (e EditSpec) Suggestions(d *policy.Draft) []string {
 		add("algo")
 	case TermNetwork:
 		add("*", apconfig.NetworkMainnet, apconfig.NetworkTestnet, apconfig.NetworkBetanet)
+	case TermMovement:
+		add(policy.ExternalMovementKindNames()...)
 	}
 	// Terms the document already uses, in document order. Set references
 	// are left out: sets are offered above only when they are of the kind

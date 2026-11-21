@@ -1,0 +1,58 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "description": "Cosigner with external checks",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "5000",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "any",
+        "networks": [
+          "*"
+        ],
+        "sources": [
+          "*"
+        ],
+        "assets": [
+          "*"
+        ],
+        "destinations": [
+          "*"
+        ]
+      }
+    ]
+  },
+  "external_sources": {
+    "screening": {
+      "base_url": "https://screen.example.com/api",
+      "token": {
+        "header": "Authorization",
+        "prefix": "Bearer "
+      },
+      "timeout_ms": 2000,
+      "max_response_bytes": 65536
+    },
+    "ops": {
+      "base_url": "http://127.0.0.1:8650"
+    },
+    "treasury": {
+      "base_url": "https://treasury.internal.example:8443",
+      "token": {
+        "header": "X-Api-Key"
+      },
+      "tls_spki_sha256": [
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      ]
+    }
+  }
+}

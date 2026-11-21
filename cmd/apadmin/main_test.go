@@ -88,6 +88,8 @@ func TestCatalogPassphraseReservesStdinForEveryImportSpelling(t *testing.T) {
 		{name: "clients label equals first", command: "clients", args: []string{"import", "--label=ops", "-"}, wantReserved: true},
 		{name: "clients after double dash", command: "clients", args: []string{"import", "--", "-"}, wantReserved: true},
 		{name: "cosigner", command: "cosigner", args: []string{"import", "-", "lab"}, wantReserved: true},
+		{name: "source token from stdin", command: "source", args: []string{"token", "set", "default", "screening", "--token-stdin"}, wantReserved: true},
+		{name: "source token prompted", command: "source", args: []string{"token", "set", "default", "screening"}},
 		{name: "clients from file", command: "clients", args: []string{"import", "--label", "ops", "client.pub"}},
 		{name: "cosigner named dash", command: "cosigner", args: []string{"import", "cosigner.json", "-"}},
 	}
@@ -282,5 +284,45 @@ func TestPrintBatchErrorEscapesDaemonText(t *testing.T) {
 	printBatchError(&buf, errors.New("archive entry escapes destination: ../\x1b[2J\nfake line"))
 	if got, want := buf.String(), `apadmin: archive entry escapes destination: ../\x1b[2J\nfake line`+"\n"; got != want {
 		t.Fatalf("printBatchError() = %q, want %q", got, want)
+	}
+}
+
+// A malformed source token command is a usage error, refused before any
+// passphrase prompt or connection; a token on the command line is refused.
+func TestSourceTokenUsageErrorsExitTwoBeforeAnyPrompt(t *testing.T) {
+	for _, args := range [][]string{
+		{"token", "set", "default"},
+		{"token", "set", "default", "screening", "tok-on-the-command-line"},
+		{"token", "set", "default", "screening", "--token=tok-on-the-command-line"},
+		{"token", "list", "a", "b"},
+		{"tokens"},
+	} {
+		var stderr bytes.Buffer
+		stdin := strings.NewReader("would-be-passphrase\n")
+		code := runCatalogCommand("source", args, adminBatchGlobalOptions{}, adminBatchStreams{stdin: stdin, stdout: io.Discard, stderr: &stderr})
+		if code != 2 || !strings.Contains(stderr.String(), "usage: apadmin source token") || stdin.Len() != len("would-be-passphrase\n") {
+			t.Fatalf("source %v: code %d, stderr %q, %d stdin bytes read", args, code, stderr.String(), len("would-be-passphrase\n")-stdin.Len())
+		}
+		if strings.Contains(stderr.String(), "tok-on-the-command-line") {
+			t.Fatalf("source %v: the usage error echoes the token: %q", args, stderr.String())
+		}
+	}
+}
+
+// The token prompt reads the line after the passphrase from the same reader,
+// and names a token, not a passphrase, in its errors.
+func TestAdminBatchPromptReadsTheTokenAfterThePassphrase(t *testing.T) {
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	prompt := newAdminBatchPrompt(strings.NewReader("store-secret\ntok-123\n\n"), io.Discard)
+	passphrase, err := prompt.passphrase()
+	if err != nil || string(passphrase) != "store-secret" {
+		t.Fatalf("passphrase = %q, %v", passphrase, err)
+	}
+	token, err := prompt.token("Enter the token for source screening: ")
+	if err != nil || string(token) != "tok-123" {
+		t.Fatalf("token = %q, %v", token, err)
+	}
+	if _, err := prompt.token("Enter the token for source screening: "); err == nil || err.Error() != "token cannot be empty" {
+		t.Fatalf("an empty token: %v", err)
 	}
 }

@@ -1,0 +1,126 @@
+{
+  "format": "aplane.policy.v1",
+  "role": "signer",
+  "key": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+  "rekeys": "reject_foreign_rekey",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "always_review_warnings": false,
+  "auto_approve_self_noop_transfer": false,
+  "max_fee_microalgos": "0",
+  "transaction_types": {
+    "*": "reject",
+    "pay": "allow",
+    "axfer": "allow"
+  },
+  "transfer_policy": {
+    "on_no_route": "reject",
+    "close_on_no_route": "reject",
+    "clawback_on_no_route": "reject",
+    "routes": []
+  },
+  "external_sources": {
+    "screening": {
+      "base_url": "https://screen.example.com/api",
+      "token": {
+        "header": "Authorization",
+        "prefix": "Bearer "
+      },
+      "timeout_ms": 2000,
+      "max_response_bytes": 65536
+    },
+    "ops": {
+      "base_url": "http://127.0.0.1:8650"
+    },
+    "treasury": {
+      "base_url": "https://treasury.internal.example:8443",
+      "token": {
+        "header": "X-Api-Key"
+      },
+      "tls_spki_sha256": [
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      ]
+    }
+  },
+  "external_checks": [
+    {
+      "id": "ops-switch",
+      "source": "ops",
+      "scope": "request",
+      "networks": [
+        "*"
+      ],
+      "path": "/signing/{witness_key}",
+      "require": [
+        {
+          "pointer": "/enabled",
+          "op": "eq",
+          "bool": true
+        }
+      ]
+    },
+    {
+      "id": "screen-destination",
+      "description": "Screening for every payment out on mainnet",
+      "source": "screening",
+      "scope": "movement",
+      "networks": [
+        "mainnet"
+      ],
+      "movement_kinds": [
+        "pay",
+        "axfer"
+      ],
+      "path": "/v2/addresses/{destination}",
+      "query": {
+        "chain": "algorand"
+      },
+      "require": [
+        {
+          "pointer": "/sanctioned",
+          "op": "eq",
+          "bool": false
+        },
+        {
+          "pointer": "/risk/score",
+          "op": "le",
+          "number": "30"
+        },
+        {
+          "pointer": "/risk/level",
+          "op": "in",
+          "strings": [
+            "low",
+            "medium"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "daily-allowance",
+      "source": "treasury",
+      "scope": "movement",
+      "networks": [
+        "mainnet"
+      ],
+      "movement_kinds": [
+        "pay",
+        "axfer"
+      ],
+      "path": "/allowance/{source}/{asset}",
+      "echo_pointer": "/request_id",
+      "require": [
+        {
+          "pointer": "/remaining",
+          "op": "ge",
+          "fact": "amount"
+        },
+        {
+          "pointer": "/frozen",
+          "op": "absent"
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ package signing
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -380,13 +381,13 @@ func TestCosignerGatesRefuseATransactionTheNetworkNeverAccepts(t *testing.T) {
 		t.Helper()
 		audit := &limitedCosignerAuditLogger{}
 		svc := &Service{Planner: cosignerTestPlanner, PolicyFor: fixedPolicy(wildcardCosignerPolicy(t)), HoldsCosignerKey: holds, AuditLog: audit}
-		plan := prepareComponentSigning(componentPlanRequest{
+		plan := mustPrepareComponentSigning(t, componentPlanRequest{
 			RequestID:     "cmp-cosigner-bounds",
 			ComponentKey:  componentKey,
 			Group:         componentTestGroup(t, regroupedHex(t, txns)),
 			TargetIndices: []int{0},
 		})
-		return svc.runCosignerGates(plan), audit
+		return svc.runCosignerGates(context.Background(), plan), audit
 	}
 	unaudited := func(t *testing.T, audit *limitedCosignerAuditLogger) {
 		t.Helper()

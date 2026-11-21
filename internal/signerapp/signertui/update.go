@@ -207,6 +207,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case nativeMnemonicResultMsg:
 		return m.handleNativeMnemonicResult(msg)
+	case sourceTokenListMsg:
+		return m.routeSourceTokenList(msg)
+	case sourceTokenChangeMsg:
+		return m.handleSourceTokenChange(msg)
 	case mnemonicExpiredMsg:
 		if msg.Serial == m.mnemonicExport.serial {
 			m.clearMnemonicExport()
@@ -486,6 +490,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" || (msg.String() == "q" && isOperationInProgressView(m.viewState)) {
 		m.clearMnemonicExport()
+		m.clearSourceTokens()
 		return m, tea.Quit
 	}
 	if m.usesSharedPopupViewport() {
@@ -613,6 +618,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDisplaceConfirmKeys(msg)
 	case ViewKeyDetails:
 		return m.handleKeyDetailsKeys(msg)
+	case ViewSourceTokens:
+		return m.handleSourceTokensKeys(msg)
 	case ViewTEALFullDisplay:
 		return m.handleTEALFullDisplayKeys(msg)
 	case ViewAdminPanel:
@@ -682,6 +689,7 @@ func (m Model) usesSharedPopupViewport() bool {
 		ViewGenerateReview,
 		ViewGenerateReviewDetails,
 		ViewMnemonicExport,
+		ViewSourceTokens,
 		ViewImportForm,
 		ViewImportParams,
 		ViewImporting,

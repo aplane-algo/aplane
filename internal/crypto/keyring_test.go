@@ -35,6 +35,40 @@ func TestKeyringSealOpenBindsContext(t *testing.T) {
 	}
 }
 
+// A source token file opens only as the source tokens of its own selector:
+// not as another selector's, and not as another class with the same
+// selector.
+func TestSourceTokensContextBindsClassAndSelector(t *testing.T) {
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	const selector = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	sealed, err := kr.Seal([]byte("tokens"), SourceTokensContext(selector))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := kr.Open(sealed, SourceTokensContext(selector))
+	if err != nil {
+		t.Fatalf("Open(own context) error = %v", err)
+	}
+	ZeroBytes(opened)
+	for name, ctx := range map[string]ObjectContext{
+		"another selector":           SourceTokensContext("default"),
+		"a cosigner credential":      CosignerCredentialContext(selector),
+		"an account key":             AccountKeyContext(selector),
+		"a template":                 KeyTypeTemplateContext(selector),
+		"no selector":                {Class: ClassSourceTokens},
+		"an unknown class":           {Class: "source-token", Selector: selector},
+		"a selector with a NUL byte": SourceTokensContext(selector + "\x00"),
+	} {
+		if _, err := kr.Open(sealed, ctx); err == nil {
+			t.Fatalf("Open(%s) accepted a source token file", name)
+		}
+	}
+}
+
 func TestSuccessorRetiresOrdinaryAuthorityButKeepsHistoricalAccess(t *testing.T) {
 	current, err := NewKeyring()
 	if err != nil {
@@ -151,5 +185,27 @@ func TestInspectTermEnvelopeTermIsZeroUnlessPresentAndValid(t *testing.T) {
 		if present && err == nil {
 			t.Fatalf("InspectTermEnvelope(%s) accepted a malformed envelope", data)
 		}
+	}
+}
+
+// TermEnvelopeLen is exactly what Seal writes, whatever the plaintext length
+// and however many digits the term has.
+func TestTermEnvelopeLenMatchesSeal(t *testing.T) {
+	key := bytes.Repeat([]byte{7}, 32)
+	for _, term := range []int64{1, 42, 1 << 40, 1<<63 - 1} {
+		kr, err := NewKeyringFromTermKey(term, slices.Clone(key))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []int{0, 1, 2, 3, 100, 2899, 4096} {
+			sealed, err := kr.Seal(make([]byte, n), SourceTokensContext("default"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := TermEnvelopeLen(n, term); got != len(sealed) {
+				t.Fatalf("TermEnvelopeLen(%d, %d) = %d, Seal wrote %d", n, term, got, len(sealed))
+			}
+		}
+		kr.Zero()
 	}
 }

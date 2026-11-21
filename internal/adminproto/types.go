@@ -5,6 +5,8 @@ package adminproto
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -216,11 +218,14 @@ type ChangeStorePassphraseResult struct {
 	KeysMigrated           int
 	TemplatesMigrated      int
 	PolicySidecarsMigrated int
-	PriorGenerations       int
-	HelperWarning          string
-	RootCommitted          bool
-	Code                   string
-	Error                  string
+	// SourceTokenFilesMigrated counts the active and archived source token
+	// files re-encrypted under the new term.
+	SourceTokenFilesMigrated int
+	PriorGenerations         int
+	HelperWarning            string
+	RootCommitted            bool
+	Code                     string
+	Error                    string
 }
 
 // RestoreKeyInfo is an archived credential the restore would admit.
@@ -231,6 +236,12 @@ type RestoreKeyInfo struct {
 	KeyType        string
 	AlreadyExists  bool
 	HasPolicy      bool
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, never a token. A preview lists the names of at
+	// most 4,096 tokens across its keys, so it fits one admin frame;
+	// SourceTokensOmitted counts this key's names it left out.
+	SourceTokens        []string
+	SourceTokensOmitted int
 }
 
 type PreviewRestoreRequest struct {
@@ -312,11 +323,13 @@ type RestoreBackupResult struct {
 	Skipped        []RestoreSkipped
 	SkippedOmitted int
 	// PoliciesRestored lists the keys whose archived policy document was
-	// installed.
-	PoliciesRestored []string
-	KeyCount         int
-	Code             string
-	Error            string
+	// installed, and SourceTokensRestored those whose archived source
+	// tokens were.
+	PoliciesRestored     []string
+	SourceTokensRestored []string
+	KeyCount             int
+	Code                 string
+	Error                string
 }
 
 // RollbackRestoreRequest identifies an authenticated request to reconstruct
@@ -622,9 +635,14 @@ func (v PolicyView) Wire(id string) protocol.PolicyMessage {
 
 // CheckPolicyRequest validates candidate documents without writing. Remove
 // lists keys whose own documents the candidate change would delete.
+// SourceTokensReadable is set by the server, never sent: the requesting
+// session may read source token names (policy.update), so the check may warn
+// of a missing token. Without it no token name, and no missing-token
+// warning, is given.
 type CheckPolicyRequest struct {
-	Documents []PolicyDocument
-	Remove    []string
+	Documents            []PolicyDocument
+	Remove               []string
+	SourceTokensReadable bool
 }
 
 // CheckPolicyResult reports validation problems; Valid means no errors.
@@ -1017,6 +1035,78 @@ type RemoveASAResult struct {
 	BlockingOmitted int
 	Code            string
 	Error           string
+}
+
+// SetSourceTokenRequest sets Source's token for a cosigner policy selector.
+// The service copies Token; the caller zeroes it.
+type SetSourceTokenRequest struct {
+	Selector string
+	Source   string
+	Token    []byte
+}
+
+// RemoveSourceTokenRequest removes Source's token from a selector.
+type RemoveSourceTokenRequest struct {
+	Selector string
+	Source   string
+}
+
+// SourceTokenChangeResult is the result of a token set or remove: the
+// selector's tokens after the change, without values.
+type SourceTokenChangeResult struct {
+	Success  bool
+	Selector string
+	Source   string
+	Tokens   []SourceTokenInfo
+	Code     string
+	Error    string
+}
+
+// ListSourceTokensRequest names one selector, or none for every selector
+// that has a token or needs one. After pages a listing of every selector: it
+// lists the selectors that come after it.
+type ListSourceTokensRequest struct {
+	Selector string
+	After    string
+}
+
+// ListSourceTokensResult lists token names. Omitted counts the selectors a
+// listing of every selector left out.
+type ListSourceTokensResult struct {
+	Success   bool
+	Selectors []SourceTokenSelector
+	Omitted   int
+	Code      string
+	Error     string
+}
+
+// SourceTokenSelector is one selector's tokens. Policy is
+// SourceTokenPolicyOwn or SourceTokenPolicyDefault, and Sources names the
+// sources of the selector's own document.
+type SourceTokenSelector struct {
+	Selector string
+	Policy   string
+	Sources  []string
+	Tokens   []SourceTokenInfo
+}
+
+// Source token states and selector policies: the wire values, named here for
+// the services that produce them.
+const (
+	SourceTokenInUse         = protocol.SourceTokenInUse
+	SourceTokenUnused        = protocol.SourceTokenUnused
+	SourceTokenNeeded        = protocol.SourceTokenNeeded
+	SourceTokenPolicyOwn     = protocol.SourceTokenPolicyOwn
+	SourceTokenPolicyDefault = protocol.SourceTokenPolicyDefault
+)
+
+// SourceTokenInfo is one token, or one a source needs, without its value.
+// SetAt is zero for a needed one. State is SourceTokenInUse,
+// SourceTokenUnused or SourceTokenNeeded.
+type SourceTokenInfo struct {
+	Source string
+	SetAt  time.Time
+	State  string
 }
 
 // PolicyNetwork is one network token and the chain it names on the node.

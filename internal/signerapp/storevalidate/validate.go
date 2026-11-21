@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -68,7 +69,67 @@ func Candidate(opts Options) error {
 	if err != nil {
 		return fmt.Errorf("credentials: %w", err)
 	}
-	return validateCredentialReport(opts.ExpectedRole, scan)
+	if err := validateCredentialReport(opts.ExpectedRole, scan); err != nil {
+		return err
+	}
+	return validateSourceTokens(opts, scan)
+}
+
+// validateSourceTokens checks every active source token file: what unlock
+// refuses (validateLoadableSourceTokens), and that its selector is the node
+// default or a cosigner key the candidate holds, so the store never keeps
+// tokens for a key it does not hold (validateSourceTokenSelectors). Whether
+// a policy document uses a token is not checked.
+func validateSourceTokens(opts Options, scan *keys.KeyScanReport) error {
+	if err := validateLoadableSourceTokens(opts); err != nil {
+		return err
+	}
+	return validateSourceTokenSelectors(opts, scan)
+}
+
+// validateLoadableSourceTokens refuses what reload refuses in the token
+// files: an entry that is no token file, a file that does not open under its
+// own selector's object context or breaks the schema or limits, and any
+// token file on a node that is no cosigner (a role conflict).
+func validateLoadableSourceTokens(opts Options) error {
+	files, err := sourcetokens.LoadFiles(opts.Candidate, opts.ExpectedRole, opts.Keyring)
+	for _, f := range files {
+		f.Zero()
+	}
+	if err != nil {
+		return fmt.Errorf("source tokens: %w", err)
+	}
+	return nil
+}
+
+// validateSourceTokenSelectors is the commit-time rule that every token
+// file's selector is the node default or a cosigner key the generation
+// holds; reload does not apply it. It decrypts nothing.
+func validateSourceTokenSelectors(opts Options, scan *keys.KeyScanReport) error {
+	selectors, err := sourcetokens.Selectors(opts.Candidate)
+	if err != nil {
+		return fmt.Errorf("source tokens: %w", err)
+	}
+	for _, selector := range selectors {
+		if selector == sourcetokens.DefaultSelector {
+			continue
+		}
+		if info, held := scan.Keys[selector]; !held || info.Category != keys.CategoryWitness {
+			return fmt.Errorf("source tokens: %w", &UnheldSourceTokensError{Selector: selector})
+		}
+	}
+	return nil
+}
+
+// UnheldSourceTokensError is a source token file whose selector is neither
+// the node default nor a cosigner key the generation holds. Every commit
+// refuses it and unlock does not; `apstore source token discard` removes it.
+type UnheldSourceTokensError struct {
+	Selector string
+}
+
+func (e *UnheldSourceTokensError) Error() string {
+	return fmt.Sprintf("%s has tokens, but the node holds no cosigner key with that ID", e.Selector)
 }
 
 // DeletedArchiveMemberError is a deleted-archive member that does not
@@ -155,8 +216,8 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 // TemplateRepairDestination refuses what unlock would still refuse after a
 // template repair: the generation's structure and archive limits, its node
 // role, policy, ASA set and templates with only the template record defects
-// of the repaired key types excluded, and every credential's content and the
-// node role's key classes. It returns the credential scan it made, nil when
+// of the repaired key types excluded, every credential's content and the
+// node role's key classes, and every source token file's. It returns the credential scan it made, nil when
 // the structure check stopped it first, so the caller need not scan again.
 // What only a commit refuses is CommitOnlyDamage; the completed staged
 // candidate is subsequently passed through Candidate with no exclusions.
@@ -177,13 +238,18 @@ func TemplateRepairDestination(opts Options, repairedKeyTypes map[string]bool) (
 	if err := validateDestinationAuthority(opts, repairedKeyTypes); err != nil {
 		return scan, err
 	}
-	return scan, validateLoadableCredentials(opts.ExpectedRole, scan)
+	if err := validateLoadableCredentials(opts.ExpectedRole, scan); err != nil {
+		return scan, err
+	}
+	return scan, validateLoadableSourceTokens(opts)
 }
 
 // CommitOnlyDamage is what every generation commit refuses (Candidate) and
-// unlock never reads: a deleted-archive member that does not verify (a
-// DeletedArchiveMemberError), and more cosigner credentials than a store
-// holds. scan is the generation's credential scan.
+// unlock never reads or never refuses: a deleted-archive member that does
+// not verify (a DeletedArchiveMemberError) or a file there that is no member
+// (a DeletedArchiveStrayError), more cosigner credentials than a store
+// holds, and a source token file for a key the generation does not hold.
+// scan is the generation's credential scan.
 func CommitOnlyDamage(opts Options, scan *keys.KeyScanReport) error {
 	if err := requireKeyring(opts); err != nil {
 		return err
@@ -191,7 +257,10 @@ func CommitOnlyDamage(opts Options, scan *keys.KeyScanReport) error {
 	if err := validateDeletedArchive(opts); err != nil {
 		return err
 	}
-	return validateCosignerCredentialLimit(scan)
+	if err := validateCosignerCredentialLimit(scan); err != nil {
+		return err
+	}
+	return validateSourceTokenSelectors(opts, scan)
 }
 
 func requireKeyring(opts Options) error {
@@ -284,6 +353,15 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 		case "deleted/policies":
 			if err := verifyArchivedPolicy(candidate, entry.Path, kr); err != nil {
 				return err
+			}
+			continue
+		case "deleted/source_tokens":
+			selector, ok := strings.CutSuffix(base, storepaths.SourceTokenFileExtension)
+			if !ok || sourcetokens.ValidateSelector(selector) != nil {
+				return &DeletedArchiveStrayError{Path: entry.Path, Reason: "unsupported deleted source token file"}
+			}
+			if err := sourcetokens.VerifyArchived(candidate, base, kr); err != nil {
+				return &DeletedArchiveMemberError{Path: entry.Path, Prune: []string{entry.Path}, Err: err}
 			}
 			continue
 		default:

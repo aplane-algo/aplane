@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -205,6 +206,9 @@ func cmdRebuildFromBackup(source string, addresses []string, explicitRole nodero
 		label := fmt.Sprintf("rebuilt: %s (%s)", entry.Selector(), entry.KeyType())
 		if entry.Policy != nil {
 			label += " with its policy"
+		}
+		if names := entry.SourceTokenNames(); len(names) > 0 {
+			label += " with source tokens for " + strings.Join(names, ", ")
 		}
 		logInfof("%s", label)
 	}

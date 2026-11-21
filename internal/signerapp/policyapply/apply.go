@@ -57,6 +57,26 @@ type Env struct {
 	// built from Config, so callers that hold the node's resolver pass it
 	// and the context has one source.
 	Networks apconfig.GenesisHashNetworkResolver
+	// SourceTokens looks up the source names a policy selector has a token
+	// for: the live token index on a live check, for a session that may
+	// read token names (policy.update), and the token files on a rescue.
+	// nil, or a lookup that does not know, skips the missing-token
+	// advisory.
+	SourceTokens SourceTokenNames
+}
+
+// SourceTokenNames returns the source names selector has a token for, and
+// known: false when which tokens selector has is not known.
+type SourceTokenNames func(selector string) (names []string, known bool)
+
+// SourceTokenNamesOf looks names up in a map of every selector with a token:
+// a selector it does not list has none. A nil map knows nothing, and gives a
+// nil lookup.
+func SourceTokenNamesOf(names map[string][]string) SourceTokenNames {
+	if names == nil {
+		return nil
+	}
+	return func(selector string) ([]string, bool) { return names[selector], true }
 }
 
 // Error is a policy request failure with a stable result code.
@@ -175,7 +195,7 @@ func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolic
 	result := adminproto.CheckPolicyResult{Success: true, Valid: len(problems) == 0, Errors: problems}
 	if candidate != nil {
 		for _, doc := range req.Documents {
-			result.Warnings = append(result.Warnings, advisoryWarnings(env.Role, doc)...)
+			result.Warnings = append(result.Warnings, advisoryWarnings(env, doc)...)
 		}
 		result.Warnings = append(result.Warnings, CoverageWarnings(KeyStatus(env.HeldKeys, candidate))...)
 	}
@@ -315,13 +335,19 @@ func ContextView(env Env, np *policyruntime.NodePolicy) adminproto.PolicyContext
 	return view
 }
 
-// advisoryWarnings reports a valid document's surprising shapes.
-func advisoryWarnings(role noderole.Role, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
-	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, role)
+// advisoryWarnings reports a valid document's surprising shapes, and each
+// source it declares a token for that its selector has none of.
+func advisoryWarnings(env Env, doc adminproto.PolicyDocument) []adminproto.PolicyProblem {
+	decoded, err := policy.DecodePolicyV1([]byte(doc.Document), doc.Key, env.Role)
 	if err != nil {
 		return nil
 	}
 	advisories := decoded.Advisories()
+	if env.SourceTokens != nil {
+		if names, known := env.SourceTokens(doc.Key); known {
+			advisories = append(advisories, decoded.MissingTokenAdvisories(names)...)
+		}
+	}
 	out := make([]adminproto.PolicyProblem, 0, len(advisories))
 	for _, a := range advisories {
 		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: a.Pointer, Message: a.Message})

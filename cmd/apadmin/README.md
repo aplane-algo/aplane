@@ -74,6 +74,8 @@ Batch commands use the same local IPC transport as the TUI:
 ./apadmin clients import id_ed25519.pub
 ./apadmin endpoint export --out endpoint.json
 ./apadmin generations list
+./apadmin source token set default screening
+./apadmin source token list
 ```
 
 Online policy commands use the same local IPC transport as the main TUI.

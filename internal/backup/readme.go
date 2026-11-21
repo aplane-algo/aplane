@@ -15,7 +15,8 @@ const ReadmeContent = `# Signer Key Backup
 This backup contains encrypted private keys backed up from Signer.
 
 Backups are normally packaged as a .tar.gz archive containing this README, an
-apb/ directory, and manifest.sealed. If you extracted the archive first, the
+apb/ directory, policies/ and source_tokens/ directories when keys have them,
+and manifest.sealed. If you extracted the archive first, the
 same instructions apply to the extracted directory.
 
 manifest.sealed describes the archive: it lists every other member with its
@@ -34,8 +35,12 @@ including durable signing metadata.
 
 A key's own policy travels with it: policies/<key>.apb holds the
 key's exact v1 policy document in the same encryption envelope, and restore
-installs it with the key. Backups do not contain the node's default policy,
-approval settings, network mappings, templates, endpoints, tokens, or
+installs it with the key. A cosigner key's source tokens travel the same
+way: source_tokens/<key>.apb holds the tokens its policy's external sources
+authenticate with (aplane.source-tokens.v1), and restore writes them with the
+key. Anyone with this backup and its export passphrase can read them. Backups
+do not contain the node's default policy or the node default's source tokens,
+approval settings, network mappings, templates, endpoints, algod tokens, or
 operator config.
 
 ## Encryption Format (envelope_version 2)
@@ -84,8 +89,8 @@ apadmin restore apply this-backup.tar.gz --address <ADDRESS>
 
 You will be prompted for the export passphrase used to encrypt the backup.
 A key the destination cannot use, such as one of a key type it does not
-support, is listed by the preview and skipped by the restore with its policy;
-the other keys restore. Naming a skipped key with ` + "`--address`" + ` refuses the
+support, is listed by the preview and skipped by the restore with its policy
+and source tokens; the other keys restore. Naming a skipped key with ` + "`--address`" + ` refuses the
 restore.
 The running signer daemon encrypts restored keys into the target keystore. For
 normal restore, credentials immediately operate under the destination's
@@ -102,7 +107,8 @@ If you need to decrypt manually, use the Argon2id and AES-256-GCM parameters doc
 
 ## Security Notes
 
-- **Keep this backup secure**: These files contain your private keys
+- **Keep this backup secure**: These files contain your private keys and,
+  for a cosigner, the tokens of its external sources
 - **Remember your export passphrase**: Without it, the keys cannot be decrypted
 - **Store offline**: Consider keeping backups on offline media (USB drives, etc.)
 - **Multiple copies**: Keep backups in multiple secure locations

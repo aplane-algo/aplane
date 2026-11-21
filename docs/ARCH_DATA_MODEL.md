@@ -98,7 +98,8 @@ Important vocabulary:
 
 - the fixed product keystore and key files,
 - product runtime config, policy documents (`default.json` and
-  `policies/<selector>.json`), the ASA set (`asa_set.json`), the
+  `policies/<selector>.json`), a cosigner's encrypted source token files
+  (`source_tokens/<selector>.enc`), the ASA set (`asa_set.json`), the
   enrolled-client registry, the persisted
   enrollment queue (`.ssh/pending_enrollments.json`), and key type state,
 - encrypted installed templates,
@@ -161,6 +162,7 @@ DTOs and contract fixtures.
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Policy | Signer identity | `default.json` plus `default.json.hmac`, and `policies/<selector>.json` plus `.json.hmac` per key with a policy of its own, on both node roles | `policyruntime.NodePolicy` (`Default` plus `Keys`), resolved per signing key by `PolicyFor(selector)` | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
+| Source tokens | Selected generation, cosigner nodes only | `generations/<gen-id>/source_tokens/<selector>.enc` (`aplane.source-tokens.v1` in a `source-tokens` term envelope), one per policy selector with tokens: a held cosigner key's Witness Key ID or `default`; archived with a deleted key under `deleted/source_tokens/`; a key's file travels with the key in a backup as `source_tokens/<selector>.apb` | immutable `sourcetokens.Index` keyed by selector and source, published at reload and after each token write, zeroed at lock; the external checks read it through `productruntime.Runtime.SourceTokenFor` | admin `source_token_set` (the token, in), `source_token_remove`, and `source_token_list` (names, set times and states); no message returns a token | `internal/sourcetokens`, `internal/signerapp/keyadmin`, `internal/signerapp/productruntime` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | Enrolled client registry | Product signer | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` published into the product runtime | SSH auth, HTTP principal resolution, enrollment, revocation | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` |
 | Pending enrollment queue | Product signer | `identities/default/.ssh/pending_enrollments.json` | bounded waiting requests, distinct from signing approvals | pending list and enrollment notifications | `internal/signerapp/enrollqueue`, `internal/signerapp/productruntime`, `internal/signerapp/enrollment` |
@@ -175,7 +177,7 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/default/*.tar.gz` containing `README.md`, credential `apb/<selector>.apb` files, per-key policy `policies/<selector>.apb` files, and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/default/*.tar.gz` containing `README.md`, credential `apb/<selector>.apb` files, per-key policy `policies/<selector>.apb` files, per-key source token `source_tokens/<selector>.apb` files (cosigner keys only), and `manifest.sealed` | restore preview/direct restore input | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
 | Backup manifest | Backup archive | `manifest.sealed` schema `aplane.credential-backup.manifest.v1`, sealed under the export passphrase | exact member inventory plus source node role default for rebuild | preview/direct restore | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 | Rotating stage table | Signer identity, outside generations | `identities/default/stages/<address>.stages`, a rebuildable cache derived from the rotating key's seed | sparse stage address lookup and untrusted recovery observations | optional sealed backup hint | `internal/stagetable`, `internal/storepaths`, `internal/signerapp/productruntime`, `internal/signerapp/daemon` |
@@ -275,8 +277,9 @@ identities/default/
     asa_set.json.hmac
     policies/<selector>.json           # per-key policy, both roles: address on signer nodes, Witness Key ID on cosigner nodes
     policies/<selector>.json.hmac
+    source_tokens/<selector>.enc       # cosigner only: a policy selector's source tokens (Witness Key ID or default)
     node.yaml.hmac
-    deleted/{keys,keytypes,policies}/
+    deleted/{keys,keytypes,policies,source_tokens}/
   generations/.staging-<id>/   # transient during mint/restore; never selectable
   quarantine/generations/<gen-id>/
   config.yaml
@@ -303,6 +306,7 @@ generation and commits it with one durable `store-root.enc` replacement.
 - effective product runtime config,
 - effective node policy: the default plus every per-key document for the node
   role, resolved per signing key,
+- the source token index a cosigner's external checks read, zeroed at lock,
 - watcher and shutdown lifecycle.
 
 The process owns one product runtime over the fixed `identities/default/`
@@ -1088,7 +1092,10 @@ and audits `CLIENT_KEY_REVOKED`; the client must enroll again.
 Managed backup archives live under `backups/default/`. Each archive contains
 encrypted canonical credential `.apb` payloads, a `policies/<selector>.apb`
 for each key that has a policy document of its own (the key's v1 policy
-document, encrypted under the export passphrase), and `manifest.sealed`, the
+document, encrypted under the export passphrase), a
+`source_tokens/<selector>.apb` for each cosigner key with a source token file
+(the file's canonical plaintext, encrypted the same way; never the node
+default's), and `manifest.sealed`, the
 archive's authenticated description, carrying the member inventory and source
 node role. Opening an archive
 verifies every member against that inventory. The manifest role is a rebuild
@@ -1111,7 +1118,11 @@ Live restore is generation-transaction oriented:
   reconciliation,
 - a restored key's own policy document is installed with a destination-signed
   sidecar; a differing destination document requires `replace_existing`, and
-  an existing document is kept when the archive carries none; the node `default.json`, templates, network mappings, approval
+  an existing document is kept when the archive carries none,
+- a restored cosigner key's source tokens are written as its token file under
+  the destination term, by the same rule; the reload publishes them in the
+  token index, and preview and results name sources, never tokens; the node
+  `default.json`, its source tokens, templates, network mappings, approval
   defaults, and other configuration are absent from the backup and remain
   destination-owned.
 
@@ -1451,8 +1462,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Admin settings messages | wire contract | settings get/update messages | process/product runtime config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
 | Policy get/check/apply messages | wire/runtime projection | active policy documents (default plus per-key) or candidate documents and removals | `apadmin policy` online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyapply` | Exact document bytes; each document names its key (`default` or a selector); `get_policy_document` takes a key and optionally the snapshot it must still match; key status is `own`, `default`, or `key_not_held`; `remove` refuses `default`; `apply_policy` requires `expected_policy_set_sha256` and `expected_snapshot_sha256` and mints one generation per change. |
 | Policy context message | wire/runtime projection | the node's verified policy and ASA set (read under one lock) and its network mapping | `get_policy_context` -> `policy_context`, paired by clients with a `get_policy` summary | `internal/policycontext`, `internal/signerapp/policyapply`, `internal/signerapp/admin` | `context_sha256` over role, rules version, networks and effective assets; `snapshot_sha256` over it and `policy_set_sha256`; encodings pinned in `test/contracts/policycontext/v1/`. |
-| Policy export directory | operator files (offline copy, not an authority) | an export of the node's documents and its policy context | `DIR/default.json`, `DIR/<selector>.json`, `DIR/.appolicy/node.json` (`aplane.policy-node-context.v1`), `.appolicy/export-in-progress` while it is written; appolicy's saved cases share `.appolicy/` as `cases.json` | `internal/policyexport`, `internal/policycontext`, `internal/apadminapp` | Written by `apadmin policy export --all` and the signer TUI from one snapshot, context last; readers recompute every digest, refuse an unfinished or damaged export, and `check`/`diff`/`apply` refuse files from a stale one. |
-| Saved policy cases | operator files (workspace data, not an authority) | try cases an operator saved for the workspace's documents | `.appolicy/cases.json` (`aplane.policy-cases.v1`) beside the documents, distinct from the node context `.appolicy/node.json`; each case names a document, one transfer, and the expected outcome and rule | `internal/signerapp/policyauthor` (`cases.go`), `cmd/appolicy`, `policyauthor/authortui` | Written by appolicy (`ctrl+s` on a try) or by hand; `appolicy test` and the TUI re-run them through the node's own evaluator. Never read by the node, never signing state, and separate from the daemon's verdict fixtures. |
+| Policy export directory | operator files (offline copy, not an authority) | an export of the node's documents and its policy context; a cosigner's also names, for every selector with a token (a key without a document of its own included), the sources it had a token for (never a token), outside the digests, when the exporting session could read them (`policy.update`) | `DIR/default.json`, `DIR/<selector>.json`, `DIR/.appolicy/node.json` (`aplane.policy-node-context.v1`), `.appolicy/export-in-progress` while it is written; appolicy's saved cases share `.appolicy/` as `cases.json` | `internal/policyexport`, `internal/policycontext`, `internal/apadminapp` | Written by `apadmin policy export --all` and the signer TUI from one snapshot, context last; readers recompute every digest, refuse an unfinished or damaged export, and `check`/`diff`/`apply` refuse files from a stale one. |
+| Saved policy cases | operator files (workspace data, not an authority) | try cases an operator saved for the workspace's documents | `.appolicy/cases.json` (`aplane.policy-cases.v1`) beside the documents, distinct from the node context `.appolicy/node.json`; each case names a document, one transfer, optional canned answers or named lookup failures for its external checks, and the expected outcome and rule | `internal/signerapp/policyauthor` (`cases.go`), `cmd/appolicy`, `policyauthor/authortui` | Written by appolicy (`ctrl+s` on a try) or by hand; `appolicy test` and the TUI re-run them through the node's own evaluator. Never read by the node, never signing state, and separate from the daemon's verdict fixtures. |
 
 ### Transaction And Signing Runtime Models
 

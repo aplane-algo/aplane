@@ -32,8 +32,8 @@ func TestClassifyQuarantineCandidateRecordsExactAtMintMatch(t *testing.T) {
 	if !candidate.AtMintInventoryMatch {
 		t.Fatal("exact at-mint publication classified as diverged")
 	}
-	// The manifest, five members, and the seven namespace directories.
-	if candidate.EntryCount != 13 {
+	// The manifest, five members, and the nine namespace directories.
+	if candidate.EntryCount != 15 {
 		t.Fatalf("EntryCount = %d, want every path in the generation tree", candidate.EntryCount)
 	}
 	if candidate.ManifestSHA256 == "" || candidate.LiveInventorySHA256 == "" {
@@ -132,6 +132,37 @@ func TestClassifyQuarantineCandidateRecordsKnownTermVerification(t *testing.T) {
 	}
 	if candidate.TermValidation.Verified != 1 || candidate.TermValidation.Failed != 0 {
 		t.Fatalf("term validation = %+v", candidate.TermValidation)
+	}
+}
+
+// Source token files, active and archived, are term envelopes bound to the
+// selector their name gives: one that opens as its own verifies, one renamed
+// to another selector fails, and plaintext there fails too.
+func TestClassifyQuarantineCandidateVerifiesSourceTokenFiles(t *testing.T) {
+	const selector = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, nil)
+	kr := testKeyring(t)
+	sealed, err := kr.Seal([]byte("tokens"), crypto.SourceTokensContext(selector))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string][]byte{
+		gen.SourceTokenPath(selector):         sealed,
+		gen.DeletedSourceTokenPath(selector):  sealed,
+		gen.SourceTokenPath("default"):        sealed,
+		gen.DeletedSourceTokenPath("default"): []byte("{}"),
+	} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidate, err := classifyQuarantineCandidate(gen, kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.TermValidation.Verified != 2 || candidate.TermValidation.Failed != 2 {
+		t.Fatalf("term validation = %+v, want 2 verified and 2 failed", candidate.TermValidation)
 	}
 }
 

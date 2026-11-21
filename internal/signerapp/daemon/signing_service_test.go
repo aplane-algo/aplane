@@ -16,8 +16,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/policycontext"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 )
 
 // A signing service resolves every key against the policy snapshot captured
@@ -189,5 +191,35 @@ func TestSigningServiceBegunInRecoveryIsRefused(t *testing.T) {
 	}
 	if !signer.newSigningServiceWithAudit(ir, nil).IsUnlocked() {
 		t.Fatal("a request begun after the reconcile cannot sign")
+	}
+}
+
+// The external checks read tokens from the runtime's source token index: the
+// index published when the lookup runs, and none once the signer locks.
+func TestSigningServiceReadsSourceTokensFromTheRuntimeIndex(t *testing.T) {
+	const keyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	signer := &Signer{config: &serverconfig.ServerConfig{}}
+	ir := productruntime.New(productruntime.Config{NodeRole: noderole.RoleCosigner})
+	ir.SetUnlocked()
+	svc := signer.newSigningServiceWithAudit(ir, nil)
+	runner, ok := svc.ExternalChecks.(*externalcheck.Runner)
+	if !ok || runner.Tokens == nil {
+		t.Fatalf("ExternalChecks = %#v, want a runner that reads tokens", svc.ExternalChecks)
+	}
+	if _, ok := runner.Tokens(keyID, "screening"); ok {
+		t.Fatal("a token was found before any was published")
+	}
+	f, err := sourcetokens.SetToken(nil, keyID, "screening", []byte("token-value"), time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Zero()
+	ir.PublishSourceTokens(sourcetokens.NewIndex([]*sourcetokens.File{f}))
+	if got, ok := runner.Tokens(keyID, "screening"); !ok || got != "token-value" {
+		t.Fatalf("Tokens() = %q, %v; want the token published after the service was built", got, ok)
+	}
+	ir.Lock()
+	if _, ok := runner.Tokens(keyID, "screening"); ok {
+		t.Fatal("a token was found after the signer locked")
 	}
 }

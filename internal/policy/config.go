@@ -30,13 +30,22 @@ type Config struct {
 	MaxFeeMicroAlgos            uint64
 	// TransactionTypes is the per-type verdict map. A nil map rejects every
 	// type: a Config that was never given one fails closed.
-	TransactionTypes    TransactionTypesV1
-	ReviewAlgoPayments  map[string]uint64
-	MaxAlgoPayments     map[string]uint64
-	ReviewASAAmounts    map[string]map[uint64]uint64
-	MaxASAAmounts       map[string]map[uint64]uint64
-	TransferPolicy      *TransferPolicy
-	RekeyPolicy         *RekeyPolicy
+	TransactionTypes   TransactionTypesV1
+	ReviewAlgoPayments map[string]uint64
+	MaxAlgoPayments    map[string]uint64
+	ReviewASAAmounts   map[string]map[uint64]uint64
+	MaxASAAmounts      map[string]map[uint64]uint64
+	TransferPolicy     *TransferPolicy
+	RekeyPolicy        *RekeyPolicy
+	// DocumentKey is the key of the document this Config was compiled from:
+	// DefaultKey, or the selector of the one key it governs. A source's
+	// token is looked up under it.
+	DocumentKey string
+	// ExternalSources and ExternalChecks are a cosigner document's refuse-only
+	// checks. They are read-only once compiled, so clones share them. A
+	// Config with checks signs nothing unless they run and pass.
+	ExternalSources     map[string]ExternalSourceV1
+	ExternalChecks      []ExternalCheckV1
 	GenesisHashResolver apconfig.GenesisHashNetworkResolver
 	FormatASAAmount     func(network string, assetID uint64, raw uint64) (string, bool)
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type ComponentSignPlan struct {
@@ -15,6 +17,9 @@ type ComponentSignPlan struct {
 	ComponentKey string
 	Group        *canonical.Group
 	Targets      []ComponentSignTarget
+	// ExternalChecks is what the external check step ran for this request;
+	// nil when the governing document has no checks.
+	ExternalChecks *externalcheck.Summary
 }
 
 type ComponentSignTarget struct {
@@ -37,8 +42,17 @@ type componentPlanRequest struct {
 }
 
 // prepareComponentSigning lists the request's targets in group order, each
-// with the cosigner-role component message the cosigner signs for it.
-func prepareComponentSigning(req componentPlanRequest) *ComponentSignPlan {
+// with the cosigner-role component message the cosigner signs for it. The
+// plan carries the canonical Witness Key ID (witness.NormalizeID: surrounding
+// space trimmed, then exactly 52 uppercase base32 characters), so the key
+// lookup, the policy selection, the external checks' facts and the audit
+// record all name the key as the node holds it. A component key that is not
+// a Witness Key ID is a bad request.
+func prepareComponentSigning(req componentPlanRequest) (*ComponentSignPlan, *ServiceError) {
+	componentKey, err := witness.NormalizeID(req.ComponentKey)
+	if err != nil {
+		return nil, badRequest(err.Error())
+	}
 	targetIndices := append([]int(nil), req.TargetIndices...)
 	sort.Ints(targetIndices)
 
@@ -60,8 +74,8 @@ func prepareComponentSigning(req componentPlanRequest) *ComponentSignPlan {
 
 	return &ComponentSignPlan{
 		RequestID:    req.RequestID,
-		ComponentKey: req.ComponentKey,
+		ComponentKey: componentKey,
 		Group:        req.Group,
 		Targets:      targets,
-	}
+	}, nil
 }

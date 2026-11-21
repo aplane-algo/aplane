@@ -23,7 +23,8 @@ import (
 // Trying a transaction: t opens a form on the open document, as edited;
 // enter asks what it decides and ctrl+s keeps the answer as a saved case.
 // The saved cases run again after every key, against the documents as
-// edited, and T lists them.
+// edited, and T lists them. On a document with external checks the form
+// ends with the answers to judge them on, as check-id=FILE pairs.
 
 const (
 	tryNetwork = iota
@@ -36,12 +37,13 @@ const (
 	tryClawbackFrom
 	tryRekeyTo
 	tryRekeyHeld
+	tryAnswers
 	tryFieldCount
 )
 
 var tryLabels = [tryFieldCount]string{
 	"Network", "From", "To (or self)", "Amount (base units)", "Asset ID (blank: ALGO)", "Fee (microAlgos)",
-	"Close to", "Clawback from", "Rekey to", "Node holds the rekey target",
+	"Close to", "Clawback from", "Rekey to", "Node holds the rekey target", "Answers (check-id=FILE ...)",
 }
 
 // tryLabelWidth is the width of the form's label column.
@@ -51,12 +53,16 @@ type tryForm struct {
 	inputs [tryFieldCount]textinput.Model
 	held   bool
 	cursor int
-	// file is the document tried, by index; result is the last answer and
-	// txn what it was asked of.
-	file   int
-	result *policyauthor.TryResult
-	txn    policyauthor.TryTxn
-	err    string
+	// count is how many fields the form shows: every one on a document
+	// with external checks, all but the answers otherwise.
+	count int
+	// file is the document tried, by index; result is the last answer, and
+	// txn and answers what it was asked of.
+	file    int
+	result  *policyauthor.TryResult
+	txn     policyauthor.TryTxn
+	answers policyauthor.ExternalAnswers
+	err     string
 	// naming is set while the case's name is entered; offset scrolls the
 	// result.
 	naming bool
@@ -89,6 +95,10 @@ func (m Model) startTry() Model {
 		form.inputs[i] = in
 	}
 	form.file = m.current
+	form.count = tryAnswers
+	if f.Document != nil && len(f.Document.ExternalChecks) > 0 {
+		form.count = tryFieldCount
+	}
 	form.cursor = tryFrom
 	form.inputs[tryFrom].Focus()
 	m.try = form
@@ -100,7 +110,7 @@ func (t *tryForm) focus(i int) {
 	if t.cursor != tryRekeyHeld {
 		t.inputs[t.cursor].Blur()
 	}
-	t.cursor = (i + tryFieldCount) % tryFieldCount
+	t.cursor = (i + t.count) % t.count
 	if t.cursor != tryRekeyHeld {
 		t.inputs[t.cursor].Focus()
 	}
@@ -215,12 +225,19 @@ func (m Model) runTry() Model {
 		t.err = err.Error()
 		return m
 	}
-	result, err := policyauthor.Try(m.shownFile(t.file), txn, m.networks)
+	var answers policyauthor.ExternalAnswers
+	if t.count > tryAnswers {
+		if answers, err = policyauthor.ParseAnswerArgs(strings.Fields(t.inputs[tryAnswers].Value())); err != nil {
+			t.err = err.Error()
+			return m
+		}
+	}
+	result, err := policyauthor.TryWithAnswers(m.shownFile(t.file), txn, answers, m.networks)
 	if err != nil {
 		t.err = err.Error()
 		return m
 	}
-	t.result, t.txn = &result, txn
+	t.result, t.txn, t.answers = &result, txn, answers
 	return m
 }
 
@@ -238,12 +255,7 @@ func (m Model) saveCase(name string) Model {
 		t.err = err.Error()
 		return m
 	}
-	c := policyauthor.Case{
-		Name:     name,
-		Document: m.caseDocument(t.file),
-		Txn:      policyauthor.CaseTxnOf(t.txn),
-		Expect:   policyauthor.ExpectOf(*t.result),
-	}
+	c := policyauthor.CaseOf(name, m.caseDocument(t.file), m.shownFile(t.file), t.txn, t.answers, *t.result)
 	if err := cases.Add(c); err != nil {
 		t.err = err.Error()
 		return m
@@ -277,7 +289,7 @@ func (m Model) tryFormLines() []string {
 		m.styles.title.Render("Try a transaction") + "  " + m.styles.subtle.Render(fmt.Sprintf("against %s (%s document %q, as edited)", termsafe.Line(m.caseDocument(t.file)), f.Role, f.Key)),
 		"",
 	}
-	for i := 0; i < tryFieldCount; i++ {
+	for i := 0; i < t.count; i++ {
 		label := fmt.Sprintf("%-*s", tryLabelWidth, tryLabels[i])
 		value := ""
 		if i == tryRekeyHeld {
@@ -318,6 +330,14 @@ func (m Model) tryResultLines() []string {
 		add(m.styles.label, "", r.Summary)
 		for _, v := range r.Violations {
 			add(m.styles.err, "  ", "["+v.RuleID+"] "+v.Message)
+		}
+		for _, l := range r.ExternalChecks.Lines() {
+			text := strings.TrimLeft(l, " ")
+			if text == l {
+				add(m.styles.label, "", text)
+				continue
+			}
+			add(lipgloss.NewStyle(), l[:len(l)-len(text)], text)
 		}
 		lines = append(lines, m.styles.subtle.Render("assumed:"))
 		for _, a := range r.Assumes {

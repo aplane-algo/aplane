@@ -102,6 +102,10 @@ const (
 	AuditASASetUpdateSucceeded            AuditEventType = "ASA_SET_UPDATE_SUCCEEDED"
 	AuditASASetUpdateFailed               AuditEventType = "ASA_SET_UPDATE_FAILED"
 	AuditASASetUpdateUncertain            AuditEventType = "ASA_SET_UPDATE_COMMIT_UNCERTAIN"
+	AuditSourceTokenChangeIntent          AuditEventType = "SOURCE_TOKEN_CHANGE_INTENT"
+	AuditSourceTokenSet                   AuditEventType = "SOURCE_TOKEN_SET"
+	AuditSourceTokenRemoved               AuditEventType = "SOURCE_TOKEN_REMOVED"
+	AuditSourceTokenChangeFailed          AuditEventType = "SOURCE_TOKEN_CHANGE_FAILED"
 )
 
 // AuditEntry represents a single audit log entry
@@ -194,6 +198,10 @@ type AuditEntry struct {
 	Network                 string   `json:"network,omitempty"`
 	GenesisHash             string   `json:"genesis_hash,omitempty"`
 	AssetID                 uint64   `json:"asset_id,omitempty"`
+	// SOURCE_TOKEN_*: see source_token_audit.go. Never a token value.
+	SourceTokenAction string `json:"source_token_action,omitempty"`
+	PolicySelector    string `json:"policy_selector,omitempty"`
+	ExternalSource    string `json:"external_source,omitempty"`
 }
 
 // auditFile is the audit log's open file. *os.File is the only one in
@@ -299,6 +307,7 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
 		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
 		&entry.Network, &entry.GenesisHash, &entry.GroupID,
+		&entry.SourceTokenAction, &entry.PolicySelector, &entry.ExternalSource,
 	} {
 		*field = boundText(*field, maxAuditField)
 	}

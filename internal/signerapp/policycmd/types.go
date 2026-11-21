@@ -228,6 +228,10 @@ type Backend interface {
 	Document(ctx context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error)
 	Check(context.Context, adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error)
 	Apply(context.Context, adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error)
+	// SourceTokenNames is, on a cosigner, every selector with a token and
+	// the sources it has one for, for an export to record. nil names with
+	// no error means they are not known.
+	SourceTokenNames(context.Context) (map[string][]string, error)
 }
 
 type OnlineSession interface {

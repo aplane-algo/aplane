@@ -113,6 +113,19 @@ func TestGenerationOwnedPathMatrix(t *testing.T) {
 			filepath.Join(generationDir, "policies", "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM.json"),
 		},
 		{"deleted key policies", gen.DeletedPoliciesDir(), filepath.Join(generationDir, "deleted", "policies")},
+		{"source tokens", gen.SourceTokensDir(), filepath.Join(generationDir, "source_tokens")},
+		{
+			"key source tokens",
+			gen.SourceTokenPath("MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"),
+			filepath.Join(generationDir, "source_tokens", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc"),
+		},
+		{"default source tokens", gen.SourceTokenPath("default"), filepath.Join(generationDir, "source_tokens", "default.enc")},
+		{"deleted source tokens", gen.DeletedSourceTokensDir(), filepath.Join(generationDir, "deleted", "source_tokens")},
+		{
+			"deleted key source tokens",
+			gen.DeletedSourceTokenPath("MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"),
+			filepath.Join(generationDir, "deleted", "source_tokens", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc"),
+		},
 		{"node role sidecar", gen.NodeRoleIntegritySidecar(), filepath.Join(generationDir, "node.yaml.hmac")},
 	}
 	for _, tt := range tests {
@@ -184,6 +197,41 @@ func TestKeyTypePathsRejectUnsafeComponents(t *testing.T) {
 			}()
 			_ = active.KeyTypeRecord(keyType)
 		}()
+	}
+}
+
+// A source token file is named by "default" or a Witness Key ID; an
+// Algorand address (a signer key's policy selector) and anything that is not
+// a selector are refused.
+func TestSourceTokenPathsRejectOtherSelectors(t *testing.T) {
+	active := NewPaths("/tmp/test-keystore").GenerationPaths("gen-1-0123abcd")
+	for _, selector := range []string{"default", "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"} {
+		if err := ValidateSourceTokenSelector(selector); err != nil {
+			t.Errorf("ValidateSourceTokenSelector(%q) = %v", selector, err)
+		}
+	}
+	invalid := []string{
+		"", "Default", "store-root", "../default",
+		"CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+		"myjze3uf7g4jxr5stmqk5tsl5fne7pe224bsklz2h4ajwjipbebq",
+		"MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc",
+	}
+	for _, selector := range invalid {
+		if err := ValidateSourceTokenSelector(selector); err == nil {
+			t.Errorf("ValidateSourceTokenSelector(%q) accepted it", selector)
+		}
+		for name, path := range map[string]func(string) string{
+			"SourceTokenPath": active.SourceTokenPath, "DeletedSourceTokenPath": active.DeletedSourceTokenPath,
+		} {
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("%s(%q) did not panic", name, selector)
+					}
+				}()
+				_ = path(selector)
+			}()
+		}
 	}
 }
 

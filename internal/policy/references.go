@@ -15,8 +15,9 @@ import (
 // networks and ASA set; editors label them.
 type References struct {
 	// Networks is every network token the document names: route networks,
-	// limits keys (top-level and per route), asset set keys and network-keyed
-	// address set keys.
+	// limits keys (top-level and per route), asset set keys, network-keyed
+	// address set keys and external check networks. A "*" is not a token and
+	// is never listed.
 	Networks []NetworkRef
 	// Assets is every explicit network/ASA pair: limits keys, asset set
 	// members, and direct route terms in a route that lists one network.
@@ -146,6 +147,14 @@ func (d *PolicyV1) References() References {
 			}
 		}
 		refs.Routes = append(refs.Routes, ra)
+	}
+	// A check's networks are admitted as a route's are: a network the node
+	// does not know would never match a transaction, so the check would
+	// never run.
+	for i, check := range d.ExternalChecks {
+		for j, net := range check.Networks {
+			network(net, "/external_checks/"+strconv.Itoa(i)+"/networks/"+strconv.Itoa(j))
+		}
 	}
 
 	sort.Slice(refs.Networks, func(i, j int) bool { return refs.Networks[i].Pointer < refs.Networks[j].Pointer })

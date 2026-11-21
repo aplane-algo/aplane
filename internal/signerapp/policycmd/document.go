@@ -301,7 +301,8 @@ func exportAll(ctx context.Context, backend Backend, streams Streams, dir string
 		}
 		docs = append(docs, policyexport.Document{Key: info.Key, Document: doc.Document, SHA256: info.SHA256})
 	}
-	paths, err := apadminapp.WritePolicyExport(dir, docs, pctx, time.Now())
+	tokens := exportSourceTokenNames(ctx, backend, pctx, streams)
+	paths, err := apadminapp.WritePolicyExport(dir, docs, pctx, tokens, time.Now())
 	if err != nil {
 		if len(paths) > 0 {
 			return fmt.Errorf("%w; the unfinished export is left in %s", err, dir)
@@ -310,6 +311,22 @@ func exportAll(ctx context.Context, backend Backend, streams Streams, dir string
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "exported %d policy document(s) and the node context to %s\n", len(paths), dir)
 	return nil
+}
+
+// exportSourceTokenNames reads, on a cosigner, the source names every
+// selector with a token has one for, for the export to record. When the node
+// cannot say, the export records none and says so in one line: appolicy
+// check then gives no missing-token warning for it.
+func exportSourceTokenNames(ctx context.Context, backend Backend, pctx adminproto.PolicyContextView, streams Streams) map[string][]string {
+	if pctx.NodeRole != string(noderole.RoleCosigner) {
+		return nil
+	}
+	names, err := backend.SourceTokenNames(ctx)
+	if err != nil {
+		_, _ = fmt.Fprintf(streams.Stderr, "note: the export records no source token names, so appolicy check gives no missing-token warning from it: %v\n", err)
+		return nil
+	}
+	return names
 }
 
 // selectExport finds the export context the files come from, unless the

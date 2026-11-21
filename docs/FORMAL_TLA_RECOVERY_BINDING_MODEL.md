@@ -38,7 +38,11 @@ The transitions transcribe the post-commit reload and the recovery paths:
   confirm/remove mint in `internal/signerapp/admin/asaset.go`
   (`mutateASASet`), the restore and rollback paths in
   `internal/signerapp/backupadmin`, and the recovery reconcile in
-  `internal/signerapp/daemon/admin_services.go`.
+  `internal/signerapp/daemon/admin_services.go`. Restore and rollback write a
+  restored cosigner key's source token file inside their mint, beside its
+  credential and per-key policy, so the token file is one more member of the
+  generation they commit and the reload that follows publishes it; the
+  transition and its guard order are unchanged.
 - The offline template repair (`internal/signerapp/templaterepair`, run by
   `apstore template repair`) is outside `Next`: it commits with no runtime.
   apstore's exclusive store lock refuses a running signer, so no binding or
@@ -73,9 +77,14 @@ The transitions transcribe the post-commit reload and the recovery paths:
   generation, which every entry into recovery moves (KU5 in
   [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)).
 - `Serve` is a signing request or key write, gated by the runtime state
-  (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
-  is deleted-archive list or prune through `authenticatedSelection`, which
-  reads and authenticates the root itself. Its `~lockHeld` guard is the store
+  (`IsUnlocked`; recovery is a distinct state that refuses both). A key write
+  is an in-place write of the selected generation that mints nothing: key
+  generation, key deletion, and a source token set or remove
+  (`internal/signerapp/keyadmin/source_tokens.go`), each of which rechecks
+  `IsUnlocked` under the store mutation lock (`lockUnlockedMutation`). None
+  of them is a store-commit caller. `Maintain` is deleted-archive list or
+  prune through `authenticatedSelection`, which reads and authenticates the
+  root itself. Its `~lockHeld` guard is the store
   mutation lock both take: prune through `withStoreMutation`, list through
   `withStoreInspection`, whose `TryLock` answers `store_busy` instead of
   reading the archive while a mutation holds the lock.
@@ -126,6 +135,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   recovery does, so RB2 and RB3 hold for it in substance. The same holds for
   a lock that lands during any mutation: `SetRecovery` does nothing on a
   locked signer, whose keys the lock cleared, and it stays locked.
+- The offline `apstore` tools (`rebuild`, `policy sign`, `generations
+  prune`, `source token discard`) run only with the daemon stopped, under the
+  exclusive store lock, so there is no runtime key cache for them to leave
+  behind the root; they are outside the model. `rebuild`'s first-generation
+  commit is `store_root_commit.tla`'s.
 - Recovery exit (`PromoteRecoveryToUnlocked`, the lock fence) is modeled as
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.

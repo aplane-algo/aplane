@@ -152,6 +152,15 @@ func TestProtocolChangeStorePassphraseResultPreservesFailureRecoveryState(t *tes
 	}
 }
 
+func TestProtocolChangeStorePassphraseResultCarriesEveryMigratedCount(t *testing.T) {
+	msg := ProtocolChangeStorePassphraseResultMessage("change-2", adminproto.ChangeStorePassphraseResult{
+		Success: true, KeysMigrated: 3, TemplatesMigrated: 1, PolicySidecarsMigrated: 2, SourceTokenFilesMigrated: 4,
+	})
+	if msg.KeysMigrated != 3 || msg.TemplatesMigrated != 1 || msg.PolicySidecarsMigrated != 2 || msg.SourceTokenFilesMigrated != 4 {
+		t.Fatalf("counts = %#v", msg)
+	}
+}
+
 func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 	created := ProtocolBackupResultMessage("backup-1", adminproto.BackupIdentityResult{
 		Success: true, ArchivePath: "/var/lib/apsigner/backups/default/created.tar.gz",

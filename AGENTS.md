@@ -288,15 +288,15 @@ so a PR that changes modeled code keeps the correspondence itself.
 | `internal/signerapp/approval/` | `approval_coordinator.tla`, `approval_composition.tla` |
 | `internal/signerapp/daemon/ipc.go`, `internal/signerapp/adminserver/session.go`, `displacement.go` | `session_ownership.tla` |
 | `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go`, `internal/signerapp/templaterepair/repair.go`, `internal/signerapp/policycmd/rescue.go`, `internal/signerapp/storevalidate/validate.go` | `store_root_commit.tla` |
-| store-commit callers (`internal/signerapp/admin/`, `backupadmin/`, `templaterepair/`, `policycmd/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
+| store-commit callers (`internal/signerapp/admin/`, `backupadmin/`, `templaterepair/`, `policycmd/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `internal/signerapp/keyadmin/source_tokens.go` (`changeSourceTokens`), `daemon/admin_services.go` | `recovery_binding.tla` |
 | `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
 | `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/cosigned/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go`, `internal/engine/accounts.go` (`CurrentKeys`, `RekeyTargetsFromKeys`) | `plugin_signing.tla` |
 | `internal/signerapp/signing/planner.go`, `execution.go`, `service.go`, `gate.go`, `internal/signerapp/policyeval/`, `pkg/signerapi/` | `sign_boundary.tla`, `policy_precedence.tla`, `composition.tla` |
 | `internal/signerapp/signing/rotating_release.go`, `rotating_flow.go` (leaf choice), `rotating_tables.go`, `internal/signerapp/daemon/stage_table_worker.go`, `internal/signerapp/audit/rotating.go` | `rotating_leaf_release.tla` |
-| `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`, `SetRecovery`, `TryRecovery`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
+| `internal/signerapp/productruntime/runtime.go` (`KeyUseContext`, `drainKeyUsers`, `performLockCleanup`), `internal/signerapp/runtime/runtime.go` (`Lock`, `BeginMaintenance`, `SetRecovery`, `TryRecovery`), `internal/signerapp/signing/rotating_flow.go` (key use, `releaseRefused`), `rotating_session.go`, `external_checks.go` (key use around the lookups), `internal/signerapp/keyadmin/export.go` | `key_use_lock.tla` |
 | `internal/signerapp/admin/service.go` (`updateAdminSettingLocked`, `restricts`), `internal/signerapp/productruntime/config.go` (`SetUnsaved`, `IsUnsaved`) | `setting_publish.tla` |
-| `internal/signerapp/signing/invariant_gate.go`, `rotating_gate.go`, `cosigner_policy.go` (`runCosignerGates`), `gate.go` (`runApprovalGates`) | `signer_invariants.tla` |
+| `internal/signerapp/signing/invariant_gate.go`, `rotating_gate.go`, `cosigner_policy.go` (`runCosignerGates`), `external_checks.go` (`runExternalChecks`), `gate.go` (`runApprovalGates`) | `signer_invariants.tla` |
 
 When a PR touches these paths:
 - Renaming, moving, or deleting a function or test: grep
