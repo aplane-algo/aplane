@@ -244,8 +244,11 @@ installer-owned `install/` metadata artifacts.
 
 Root-run `apadmin policy rescue apply` and `remove` hold one exclusive lock
 across the policy generation commit and managed-store ownership normalization,
-so a daemon cannot start between publication and repair. They commit through
-the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
+so a daemon cannot start between publication and repair, and they normalize on
+every outcome, a mint that failed after publication included. Like
+`apstore template repair`, they reconcile the generation store first
+(`genstore.ReconcileStoreRoot`), since no unlock precedes them. They commit
+through the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
 (`status`, `export`, `check`, `diff`, `template`) hold the shared store lock.
 
 #### External-file-only operations

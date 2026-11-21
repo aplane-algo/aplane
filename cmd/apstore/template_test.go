@@ -261,7 +261,7 @@ func TestTemplateRepairReconcilesFirst(t *testing.T) {
 		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair"); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(log.String(), "reconciliation is pending: 0 uncommitted generation(s) to quarantine and 1 staging residue(s) to discard") {
+		if !strings.Contains(log.String(), "reconciliation is pending: 0 uncommitted generation(s) to quarantine and 1 crash residue(s) to discard") {
 			t.Fatalf("preview log = %q, want the pending reconciliation", log.String())
 		}
 		log.Reset()
@@ -269,7 +269,7 @@ func TestTemplateRepairReconcilesFirst(t *testing.T) {
 			"repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"); err != nil {
 			t.Fatalf("template repair --confirm error = %v", err)
 		}
-		for _, want := range []string{"reconciled: discarded staging residue " + residue, "template repair committed generation"} {
+		for _, want := range []string{"reconciled: discarded crash residue " + residue, "template repair committed generation"} {
 			if !strings.Contains(log.String(), want) {
 				t.Fatalf("repair log = %q, want %q", log.String(), want)
 			}
@@ -402,7 +402,7 @@ func TestTemplateRepairPreviewSetsWriteResidueAside(t *testing.T) {
 		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan); err != nil {
 			t.Fatalf("dry run error = %v, want the repair planned", err)
 		}
-		if strings.Contains(log.String(), "refused") || !strings.Contains(log.String(), "1 staging residue(s) to discard") {
+		if strings.Contains(log.String(), "refused") || !strings.Contains(log.String(), "1 crash residue(s) to discard") {
 			t.Fatalf("preview log = %q, want the residue pending and no refusal", log.String())
 		}
 		log.Reset()

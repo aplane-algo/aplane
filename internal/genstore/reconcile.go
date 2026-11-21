@@ -38,6 +38,20 @@ type ReconcileReport struct {
 	RetainedUnsealedParent string
 }
 
+// Moved describes, one line each, what a reconciliation quarantined or
+// discarded: what an offline mint, which no unlock precedes, reports after
+// it reconciles.
+func (r ReconcileReport) Moved() []string {
+	moved := make([]string, 0, len(r.Quarantined)+len(r.DiscardedStaging))
+	for _, quarantined := range r.Quarantined {
+		moved = append(moved, "quarantined uncommitted generation "+quarantined.GenerationID)
+	}
+	for _, residue := range r.DiscardedStaging {
+		moved = append(moved, "discarded crash residue "+residue)
+	}
+	return moved
+}
+
 // InspectStoreRoot authenticates a fresh root read and classifies generation
 // residue without changing it.
 func InspectStoreRoot(paths storepaths.Paths, kr *crypto.Keyring) (ReconcileReport, error) {

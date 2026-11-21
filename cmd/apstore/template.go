@@ -139,11 +139,8 @@ func parseTemplateRepairArgs(args []string) (map[string]templaterepair.Action, b
 func runTemplateRepair(opts templaterepair.Options, actions map[string]templaterepair.Action) error {
 	logWarnf("template repair runs without apsigner: no authorization or audit log; capture terminal output externally if needed")
 	result, err := templaterepair.Repair(opts, actions)
-	for _, quarantined := range result.Reconciled.Quarantined {
-		logInfof("reconciled: quarantined uncommitted generation %s", quarantined.GenerationID)
-	}
-	for _, staging := range result.Reconciled.DiscardedStaging {
-		logInfof("reconciled: discarded staging residue %s", staging)
+	for _, moved := range result.Reconciled.Moved() {
+		logInfof("reconciled: %s", moved)
 	}
 	if genstore.RootCommitUncertain(err) {
 		return fmt.Errorf("%w; start apsigner and unlock it to check which generation it selects", err)
@@ -217,7 +214,7 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 		logInfof("otherwise drop the record, start apsigner, and import the template again from a file you trust with `apadmin template import`")
 	}
 	if preview.ReconcilePending() {
-		logInfof("reconciliation is pending: %d uncommitted generation(s) to quarantine and %d staging residue(s) to discard; a repair with --confirm reconciles first, as an unlock does",
+		logInfof("reconciliation is pending: %d uncommitted generation(s) to quarantine and %d crash residue(s) to discard; a repair with --confirm reconciles first, as an unlock does",
 			len(preview.Reconcile.Quarantined), len(preview.Reconcile.DiscardedStaging))
 	}
 	if preview.OtherDamage != nil {

@@ -55,8 +55,10 @@ The transitions transcribe the commit protocol in `internal/genstore`:
   outside the model.) `ReconcileOldRoot` stands for each caller of
   `genstore.ReconcileStoreRoot`: every unlock and the recovery reconcile in
   the daemon, `apstore generations prune` (`CollectGarbageStoreRoot`), and
-  the offline template repair (`internal/signerapp/templaterepair`), which
-  reconciles before it mints because no signer runs to do it. `RestoreAuthenticOldRoot`
+  the two offline mints, the template repair
+  (`internal/signerapp/templaterepair`) and `apadmin policy rescue apply` and
+  `remove` (`internal/signerapp/policycmd/rescue.go`), which reconcile before
+  they mint because no signer runs to do it. `RestoreAuthenticOldRoot`
   additionally models an operator restoring an older authentic root file
   after a successor committed; the newer complete directory then has the
   same shape as a crashed-mint publication and must be quarantined.
