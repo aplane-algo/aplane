@@ -57,7 +57,7 @@ func TestListManagedBackupsSortsArchivesAndIgnoresSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 || items[0].Path != newer || items[1].Path != older {
+	if len(items) != 2 || items[0].FileName != filepath.Base(newer) || items[1].FileName != filepath.Base(older) {
 		t.Fatalf("backups = %+v", items)
 	}
 }

@@ -5,6 +5,7 @@ package backup
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -49,7 +50,7 @@ func TestListManagedBackupsOrdersByNameTimeOverFileTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 || items[0].Path != newer || items[1].Path != older {
+	if len(items) != 2 || items[0].FileName != filepath.Base(newer) || items[1].FileName != filepath.Base(older) {
 		t.Fatalf("order = %v; want the newer name first", items)
 	}
 	if want := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC); !items[0].BestCreatedAt().Equal(want) {

@@ -90,7 +90,7 @@ func TestBackupIsPublishedDurablyAndWhole(t *testing.T) {
 		t.Fatalf("backup directory holds %v, want only the archive", names)
 	}
 	listed, err := ListManagedBackups(paths)
-	if err != nil || len(listed) != 1 || listed[0].Path != archivePath {
+	if err != nil || len(listed) != 1 || listed[0].FileName != filepath.Base(archivePath) {
 		t.Fatalf("ListManagedBackups() = %+v, %v", listed, err)
 	}
 	if listed[0].Checksum != result.ArchiveChecksum || listed[0].Size != result.ArchiveSize || result.Warning != "" {
