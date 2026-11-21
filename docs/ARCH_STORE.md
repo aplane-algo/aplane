@@ -589,7 +589,8 @@ Changing the passphrase also replaces the current data-encryption term:
 1. authenticate and seal the outgoing generation;
 2. retain its exact seal and manifest buffers;
 3. create a fresh random term and successor keyring;
-4. preserve historical keys and exact anchors, adding the outgoing anchor;
+4. preserve historical keys and the exact anchor of every retained
+   generation, adding the outgoing anchor;
 5. stage an empty successor;
 6. read every source member once and verify it against the retained seal;
 7. re-encrypt term envelopes and re-sign integrity sidecars under the new term:
@@ -606,6 +607,13 @@ baseline, or unlock-time completion pass.
 
 Retained generations are not rewritten during rotation. Exact historical
 anchors and anchor-gated reads preserve historical least authority.
+
+Generation pruning does not drop a pruned generation's anchor: prune deletes
+generation directories and does not rewrite `store-root.enc`, and an ordinary
+root commit keeps the wrapped keyring exactly as it read it. The stale anchor
+stays in the root, where it grants nothing, until the next passphrase change
+leaves it out of the successor keyring. A successor never changes the anchor of a generation it
+retains.
 
 ### Restore rollback
 
@@ -862,7 +870,7 @@ This separation is deliberate:
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | selected generation `node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
-| Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
+| Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected, and so is a file with no YAML document; an absent file means no overrides. |
 | Key type state record | selected generation `keytypes/<key_type>.json` | Product-store discovery/generation state. |
 | Installed YAML template | selected generation `keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
 | Deleted key archive | selected generation `deleted/keys/` | Removed key files; outside active scans. |
@@ -2051,6 +2059,9 @@ and destination presence, and each credential the restore would skip with the
 reason; it performs no store mutation. A preview with nothing left to restore
 still succeeds, so every reason is shown.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
+It counts only attempts that read the archive with the passphrase: a preview
+or restore refused before that, for the signer's state or a keyring a lock
+closed, is not charged.
 Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
 requests are accepted while the identity is either unlocked or
 recovery-blocked, allowing an operator to select, export, and inspect repair

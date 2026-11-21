@@ -4,7 +4,9 @@
 package policy
 
 import (
+	"cmp"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1095,20 +1097,33 @@ func validateRoutesV1(pointer string, routes []RouteV1, addressSets map[string]A
 }
 
 // validateRouteLimitsCoverage requires each route limit to name a network the
-// route covers and an asset the route covers on that network.
+// route covers and an asset the route covers on that network. It walks the
+// limits in sorted order, so a route with several uncovered ones always
+// names the same one.
 func validateRouteLimitsCoverage(pointer string, route RouteV1, assetSets map[string]AssetSetV1) error {
-	for network, assets := range route.Limits {
+	for _, network := range slices.Sorted(maps.Keys(route.Limits)) {
 		np := pointer + "/" + network
 		if !route.NetworkWildcard && !slices.Contains(route.Networks, network) {
 			return docErrorf(np, "route does not cover network %q", network)
 		}
-		for asset := range assets {
+		for _, asset := range slices.SortedFunc(maps.Keys(route.Limits[network]), compareAssetRefs) {
 			if !routeCoversAsset(route, assetSets, network, asset) {
 				return docErrorf(np+"/"+escapeJSONPointer(assetRefString(asset)), "route does not cover %s on %s", assetRefString(asset), network)
 			}
 		}
 	}
 	return nil
+}
+
+// compareAssetRefs orders algo first, then ASAs by ID.
+func compareAssetRefs(a, b TransferAssetRef) int {
+	if a.Algo != b.Algo {
+		if a.Algo {
+			return -1
+		}
+		return 1
+	}
+	return cmp.Compare(a.ASAID, b.ASAID)
 }
 
 func routeCoversAsset(route RouteV1, assetSets map[string]AssetSetV1, network string, asset TransferAssetRef) bool {
