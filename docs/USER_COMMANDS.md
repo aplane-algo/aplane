@@ -1125,7 +1125,8 @@ from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
 admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
-Re-importing with the same alias replaces that alias's endpoint data. The
+Re-importing with the same alias replaces that alias's role and URL; its
+`identity_file` and `known_hosts_path` are kept. The
 signer endpoint keeps `role: signer`: importing or creating its alias as a
 cosigner is refused.
 

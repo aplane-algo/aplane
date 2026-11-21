@@ -283,3 +283,41 @@ func TestSaveStoredClientEndpointRegistrySchemaVersion(t *testing.T) {
 		}
 	}
 }
+
+// An upsert writes routing: role and URL. The SSH paths are the client's own
+// settings, which no import or create supplies, so an upsert over an existing
+// alias keeps them unless it names new ones.
+func TestPlanStoredClientEndpointUpsertKeepsSSHPaths(t *testing.T) {
+	dataDir := writeTestEndpointRegistry(t, `schema_version: 2
+endpoints:
+  main:
+    role: signer
+    url: ssh://old.example
+    identity_file: keys/id
+    known_hosts_path: keys/known_hosts
+`)
+	same, err := PlanStoredClientEndpointUpsert(dataDir, "main", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://old.example"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.Created || same.Updated {
+		t.Fatalf("same-route plan = %+v, want unchanged", same)
+	}
+	moved, err := PlanStoredClientEndpointUpsert(dataDir, "main", ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://new.example"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ClientEndpointConfig{Role: ClientEndpointRoleSigner, URL: "ssh://new.example", IdentityFile: "keys/id", KnownHostsPath: "keys/known_hosts"}
+	if moved.Endpoint != want || moved.Registry.Endpoints["main"] != want {
+		t.Fatalf("moved plan endpoint = %+v, registry = %+v, want %+v", moved.Endpoint, moved.Registry.Endpoints["main"], want)
+	}
+	named, err := PlanStoredClientEndpointUpsert(dataDir, "main", ClientEndpointConfig{
+		Role: ClientEndpointRoleSigner, URL: "ssh://old.example", IdentityFile: "other/id", KnownHostsPath: "other/known_hosts",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named.Endpoint.IdentityFile != "other/id" || named.Endpoint.KnownHostsPath != "other/known_hosts" || !named.Updated {
+		t.Fatalf("named-paths plan = %+v, want the new paths", named)
+	}
+}
