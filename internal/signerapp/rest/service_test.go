@@ -464,7 +464,9 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
 	}
 	info := infos[0]
-	if info.SigningFlow != signerapi.SigningFlowBounded1 || info.BoundedAuthorization == nil {
+	// Without a cosigner a bounded key type signs through ordinary /sign and
+	// advertises no flow.
+	if info.SigningFlow != "" || info.BoundedAuthorization == nil {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
 	bounded := info.BoundedAuthorization

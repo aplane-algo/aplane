@@ -178,9 +178,10 @@ in their place. Anchors are in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
   Conflicting inventory fails closed for the whole node.
 - **A15, clients route on versioned signing-flow metadata.** The cosigned
   choreography is `cosigned1`, frozen: a change mints a new label. Clients take
-  `""` and `bounded1` down the plain `/sign` path, `cosigned1` through component
-  orchestration and `rotating1` through the rotating flow, and refuse any other
-  label, `cosigner1` included, before any component request.
+  `""` down the plain `/sign` path, a bounded account without a cosigner
+  included, `cosigned1` through component orchestration and `rotating1` through
+  the rotating flow, and refuse any other label, `cosigner1` and `bounded1`
+  included, before any component request.
 
 ## How to check
 

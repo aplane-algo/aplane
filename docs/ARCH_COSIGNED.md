@@ -180,8 +180,8 @@ Cosigned accounts and cosigner keys are never signed through raw `/sign`:
   account, listed rekeys included.
 
 An account with the overlays but no cosigner (a plain host or bounded account
-without one) signs through ordinary `/sign` (`signing_flow: bounded1`), and the
-plain program with no overlays signs there as any LogicSig does.
+without one) signs through ordinary `/sign` and advertises no `signing_flow`, and
+the plain program with no overlays signs there as any LogicSig does.
 
 This preserves the two-party invariant: a cosigned account requires both a
 spending signature and, on every path but a listed rekey, a cosigner component

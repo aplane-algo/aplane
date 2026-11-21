@@ -2253,18 +2253,18 @@ warning does not establish that no leaf was reused.
   (JavaScript `sign()`, a transaction file, a plugin's default group,
   presign-plan managed slots, cosigned contextual positions) reads no kind and
   leaves authorization to the signer.
-- optional `signing_flow`: explicit signing choreography label. `bounded1`
-  selects bounded routing without an online cosigner (a bounded or plain host
-  without a cosigner), `cosigned1` selects the user-first bounded
+- optional `signing_flow`: explicit signing choreography label. `cosigned1`
+  selects the user-first bounded
   component/cosigner/assembly flow for a cosigned account's spends and rekeys,
   on a plain or bounded host, `rotating1` selects the rotating account
-  prepare and sign flow, and empty means ordinary `/sign`. Clients
+  prepare and sign flow, and empty means ordinary `/sign`, the path of a
+  bounded or plain host account without a cosigner too. Clients
   dispatch these cases explicitly and fail closed on labels they do not
-  implement, the retired `cosigner1` included.
+  implement, the retired `cosigner1` and `bounded1` included.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
   this key's `signing_flow` (for `cosigned1`)
-- optional `bounded_authorization`: present for `signing_flow: bounded1` and
-  `cosigned1`.
+- optional `bounded_authorization`: present for a bounded or plain host
+  account, with an empty `signing_flow` or `cosigned1`.
   It contains `contract` (`bounded2`, or `plain1` for a plain host account without bounds),
   `base_signature_arg_layout`, `spend_effects` (empty on `plain1`), `max_fee`
   (present on `bounded2`, absent on `plain1`, which has no fee ceiling; clients

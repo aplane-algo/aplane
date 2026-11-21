@@ -351,13 +351,8 @@ type StatusResponse struct {
 // Signing flow labels name a frozen client choreography: any change to one mints
 // a new label, and unrelated mechanisms get their own label family. Clients route
 // on signing_flow and must fail fast on labels they do not implement; an empty
-// signing_flow means the ordinary /sign path.
-
-// SigningFlowBounded1 names the transaction-aware LogicSig choreography. The
-// signer remains authoritative for classification and assembly; clients use
-// this label only to select the frozen bounded1 request flow and must reject
-// unknown labels.
-const SigningFlowBounded1 = "bounded1"
+// signing_flow means the ordinary /sign path, which a bounded account without a
+// cosigner takes too.
 
 // SigningFlowCosigned1 names the cosigned account choreography: signer-owned
 // base component release, cosigner-role component signing, and source-aware

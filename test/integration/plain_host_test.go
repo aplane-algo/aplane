@@ -711,7 +711,7 @@ func TestPlainHostThroughSigner(t *testing.T) {
 		}, signerapi.SigningFlowCosigned1, true},
 		{"plain host without a cosigner", plainFalconKeyType, map[string]string{
 			plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: algocrypto.GenerateAccount().Address.String(),
-		}, signerapi.SigningFlowBounded1, false},
+		}, "", false},
 		{"the plain program", plainFalconKeyType, nil, "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

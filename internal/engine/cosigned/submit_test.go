@@ -148,11 +148,12 @@ func TestCosignedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
 func TestCosignedTargetsDispatchBoundedOutsideCosignerFlow(t *testing.T) {
 	sender := testAddress(1).String()
 	s, sc := newCosignedTestSigner(t, sender, 1500, testCosignerPublicKeyHex(0xd6))
-	sc.SetSigningFlowForAddress(sender, signerapi.SigningFlowBounded1)
+	// A bounded account without a cosigner advertises no flow.
+	sc.SetSigningFlowForAddress(sender, "")
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
 
 	if s.HasCosignedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("HasCosignedEffectiveSigner() = true for bounded1")
+		t.Fatal("HasCosignedEffectiveSigner() = true for a bounded account without a cosigner")
 	}
 	targets, err := s.cosignedTargets([]types.Transaction{txn})
 	if err != nil {
