@@ -384,7 +384,8 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 This bootstrap script:
 - Detects architecture (`amd64`/`arm64`)
 - Downloads the matching GitHub release tarball
-- Verifies checksums (and minisign signature if `minisign` is installed)
+- Verifies checksums, refuses a release without its minisign signature, and
+  verifies that signature if `minisign` is installed
 - Runs the bundled `install.sh`, which first shows the release's
   `install_readme.txt` when it carries one (see
   [Install from Release Tarball](#install-from-release-tarball))

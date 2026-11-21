@@ -13,8 +13,9 @@ The bootstrap defaults to a local install; pass `--systemd` only for a managed s
 
 The installer will:
 - Download the latest release for your platform
-- Verify the release checksum, and verify the minisign signature when the
-  release provides one and `minisign` is installed on your machine
+- Verify the release checksum, refuse a release without its minisign
+  signature, and verify that signature when `minisign` is installed on your
+  machine
 - Install to `~/aplane` (you'll be asked to confirm)
 - Prompt you to set a keystore passphrase
 - Write MCP configs to `~/aplane/apclient/.mcp.json` and
