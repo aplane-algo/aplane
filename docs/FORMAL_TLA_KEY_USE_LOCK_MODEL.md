@@ -210,8 +210,8 @@ for each.
   until it releases, and its context is already cancelled, so the lookup
   sends nothing and the request is refused as locked. An unlock that the
   fence refuses for a later recovery (KU5) runs no cleanup and is not
-  `Wipe`, but clears the index its reload published
-  (`productruntime.clearFencedSourceTokens`, after the fence), the same way.
+  `Wipe`: it leaves the index its reload published, as recovery leaves the
+  keyring, and the next lock's `Wipe` clears both.
 - The model takes as given that every load of key material is registered; it
   cannot see a load that is not. For rotating seeds,
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign

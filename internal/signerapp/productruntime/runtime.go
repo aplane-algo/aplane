@@ -380,7 +380,10 @@ func (ir *Runtime) ReplaceSourceTokens(generation uint64, selector string, f *so
 
 // SourceTokenFor returns the token set for source under a cosigner policy
 // selector (a Witness Key ID, or "default"), and false when none is set or
-// the signer is locked. It reads the index published at the time of the
+// the signer is locked. It is not gated on the signer's state: its one
+// caller, the external check step, holds a key use, which only an unlocked
+// signer grants, and a step a lock or a recovery overtakes must end as
+// locked, not as a missing token. It reads the index published at the time of the
 // call, holding a reader for the lookup, and is safe for concurrent use. The
 // external check step calls it inside its key use, so a lock cannot clear
 // the index while a lookup reads it. It has the shape of
@@ -396,9 +399,13 @@ func (ir *Runtime) SourceTokenFor(selector, source string) (string, bool) {
 // SourceTokenNamesFor returns the source names one cosigner policy selector
 // has a token for, from the index published at the time of the call: the
 // live tokens a policy check's missing-token advisory checks a document
-// against. known is false on a locked signer: it has no index, so which
-// tokens are set is not known.
+// against. known is false unless the signer is unlocked: a locked signer has
+// no index, and one in recovery may hold an index of a generation the store
+// has since left, so which tokens are set is not known.
 func (ir *Runtime) SourceTokenNamesFor(selector string) (names []string, known bool) {
+	if !ir.IsUnlocked() {
+		return nil, false
+	}
 	return ir.sourceTokens.NamesFor(selector)
 }
 
@@ -456,7 +463,9 @@ func (ir *Runtime) SetUnlocked() {
 // unlocked session: the generation advances, and the contexts of the key uses
 // and passes handed out in that session are cancelled, so a stage table pass
 // stops and leaves the worker free to restore for the session a reconcile
-// opens. Nothing is drained or cleared; recovery keeps the keyring.
+// opens. Nothing is drained or cleared; recovery keeps the keyring, and with
+// it the source token index, which the next reload that publishes one
+// replaces.
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 	ir.cancelKeyUses()
@@ -543,28 +552,16 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
 	}
-	if !ok && errMsg == signerruntime.RecoveryDuringUnlockMessage {
-		ir.clearFencedSourceTokens()
-	}
+	// An attempt the fence refused for a recovery entered after it began
+	// leaves what its reload published, the source token index included.
+	// Recovery keeps the keyring, which decrypts every token file, so
+	// clearing the index would hide nothing; and a clear here could land
+	// after a second unlock's reload had published its index and before
+	// that unlock published, leaving the signer unlocked with no tokens. A
+	// lock clears the index. No lookup uses it until the signer is unlocked,
+	// since the external check step reads tokens inside a key use, and
+	// SourceTokenNamesFor answers only while the signer is unlocked.
 	return ok, keyCount, errMsg
-}
-
-// clearFencedSourceTokens clears the source token index an unlock's reload
-// published before the fence refused the unlock for a recovery entered after
-// it began: the unlock published nothing, and, as a failed unlock reload
-// does, leaves no tokens. The fence runs no lock cleanup, since recovery
-// administration needs the keyring; it needs no tokens. A reconcile reloads
-// and lifts a recovery under the store mutation lock, which this holds, so
-// an index is kept only when one has: the signer is then unlocked with the
-// tokens of the generation that reconcile followed.
-func (ir *Runtime) clearFencedSourceTokens() {
-	defer ir.lockStoreMutation()()
-	if ir.IsUnlocked() {
-		return
-	}
-	ir.passphraseLock.Lock()
-	ir.sourceTokens.Clear()
-	ir.passphraseLock.Unlock()
 }
 
 // --- Approval ---
@@ -1454,17 +1451,28 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
 // Caller must NOT hold passphraseLock.
 //
-// When it fails, the reload has already closed the keyring it opened, and the
-// source token index goes with it: a reload can publish the index before a
-// later step fails, and a failed unlock must leave no tokens in memory.
+// When it fails, the source token index goes only if the keyring went: a
+// reload that fails after it opened the keyring closes it again, and tokens
+// must not outlive the keyring that decrypts them. A reload that fails
+// without touching the keyring leaves the index alone. That is a second
+// unlock on an unlocked signer whose passphrase no longer opens the store (a
+// passphrase change landed after performUnlock verified it), or whose store
+// root could not be read: the session in service keeps its keyring, and so
+// keeps its tokens. An unlock the fence refuses did not fail, and keeps its
+// index too (TryUnlock).
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
 	report, err := ir.reloadLocked(passphrase)
-	if err != nil {
+	if err != nil && !ir.keyringOpen() {
 		ir.sourceTokens.Clear()
 	}
 	return report, err
+}
+
+// keyringOpen reports whether the keystore holds an open keyring.
+func (ir *Runtime) keyringOpen() bool {
+	return ir.keyStore != nil && ir.keyStore.WithKeyring(func(*crypto.Keyring) error { return nil }) == nil
 }
 
 func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadReport, error) {
@@ -1568,24 +1576,17 @@ func (ir *Runtime) reconcileDirty() {
 }
 
 func (ir *Runtime) reloadFromWatcher() error {
-	defer ir.lockStoreMutation()()
-	_, err := ir.Reload()
-	return err
-}
-
-// lockStoreMutation takes the process store mutation lock (reloadLock), when
-// one is wired, and returns its release.
-func (ir *Runtime) lockStoreMutation() (unlock func()) {
 	ir.watcherMu.Lock()
 	lockFn := ir.reloadLock
 	ir.watcherMu.Unlock()
 	if lockFn != nil {
 		if lock := lockFn(); lock != nil {
 			lock.Lock()
-			return lock.Unlock
+			defer lock.Unlock()
 		}
 	}
-	return func() {}
+	_, err := ir.Reload()
+	return err
 }
 
 // StopKeyWatcher stops the file watcher if running.
