@@ -105,7 +105,7 @@ func runTry(args []string, stdout, stderr io.Writer) int {
 		File:    f.Path,
 		Role:    string(result.Role),
 		Key:     f.Key,
-		Outcome: result.Outcome.String(),
+		Outcome: result.OutcomeWord(),
 		RuleID:  result.RuleID,
 		Summary: result.Summary,
 		Assumes: result.Assumes,

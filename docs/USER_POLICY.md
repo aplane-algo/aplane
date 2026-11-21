@@ -812,7 +812,10 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   workspace directory (the default is the current directory), which is never
   read as a policy document. Each case names a document by its path in the
   workspace, the transaction, and the outcome (`reject`, `review`, `approve`
-  or `default`, the words try prints) with its rule:
+  or `default`, the words try prints) with its rule. A cosigner document
+  with external checks has a fifth outcome, `conditional_approve`: the policy
+  approves and at least one check applies, so the cosigner signs only if its
+  checks pass. A try asks no source, so it cannot say which way they go:
 
   ```json
   {

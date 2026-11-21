@@ -107,7 +107,7 @@ func TestExternalChecksTry(t *testing.T) {
 		t.Fatalf("try --json output: %v\n%s", err, out)
 	}
 	x := report.ExternalChecks
-	if report.Outcome != "approve" || x == nil || strings.Join(x.Apply, ",") != "ops-switch,screen-destination,daily-allowance" ||
+	if report.Outcome != "conditional_approve" || x == nil || strings.Join(x.Apply, ",") != "ops-switch,screen-destination,daily-allowance" ||
 		!strings.Contains(report.Summary, "then external checks") || strings.Contains(out, `"refusal"`) {
 		t.Fatalf("report = %+v, external %+v\n%s", report, x, out)
 	}

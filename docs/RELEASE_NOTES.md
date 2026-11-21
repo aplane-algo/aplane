@@ -15,6 +15,10 @@ before it was renamed `enroll`.
   signs. Checks only refuse; they never allow what the policy rejects.
   `apadmin policy`, `appolicy` and the schema accept, check, explain and
   compare the two fields.
+- **`appolicy try` says `conditional_approve`** when a cosigner policy
+  approves a transaction and at least one check applies to it. A try asks
+  no source, so the outcome is no longer a plain `approve`; saved cases
+  record the same word.
 - **The cosigner makes the lookups** for a request its policy would sign,
   and signs only if every check passes. A lookup that times out, is
   redirected, answers anything but 200, or answers something that is not

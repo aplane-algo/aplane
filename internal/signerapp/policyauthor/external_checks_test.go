@@ -464,3 +464,26 @@ func TestTryExternalChecksDecideAfterThePolicy(t *testing.T) {
 		t.Fatalf("Try(no checks) = %+v, %v", got, err)
 	}
 }
+
+// A try the policy approves is a conditional approve when a check applies,
+// and a plain approve when none does. A saved case records the same word and
+// is accepted back.
+func TestTryOutcomeWordWithExternalChecks(t *testing.T) {
+	f := LoadFile(writeFile(t, t.TempDir(), "c.json", fixture(t, externalFixture)))
+	got, err := Try(f, TryTxn{Network: "mainnet", Sender: tryAddr(1), Receiver: tryAddr(2), Amount: 5, Fee: 1000}, BuiltinNetworks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != policyeval.Approve || got.OutcomeWord() != OutcomeConditionalApprove || ExpectOf(got).Outcome != "conditional_approve" {
+		t.Fatalf("outcome = %s, word %q, case %q; want approve, conditional_approve", got.Outcome, got.OutcomeWord(), ExpectOf(got).Outcome)
+	}
+	for _, r := range []TryResult{
+		{Outcome: policyeval.Approve},
+		{Outcome: policyeval.Approve, ExternalChecks: &TryExternalChecks{}},
+		{Outcome: policyeval.Reject, ExternalChecks: &TryExternalChecks{Apply: []string{"c"}}},
+	} {
+		if word := r.OutcomeWord(); word != r.Outcome.String() {
+			t.Errorf("OutcomeWord() = %q for %+v, want %q", word, r, r.Outcome)
+		}
+	}
+}

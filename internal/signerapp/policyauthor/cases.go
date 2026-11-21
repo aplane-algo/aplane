@@ -114,7 +114,7 @@ func CaseTxnOf(t TryTxn) CaseTxn {
 
 // ExpectOf is the answer a try gave, as a case would expect it.
 func ExpectOf(r TryResult) CaseExpect {
-	e := CaseExpect{Outcome: r.Outcome.String(), RuleID: r.RuleID}
+	e := CaseExpect{Outcome: r.OutcomeWord(), RuleID: r.RuleID}
 	if r.Outcome == policyeval.Reject && len(r.Violations) > 0 {
 		e.RuleID = r.Violations[0].RuleID
 	}
@@ -162,8 +162,8 @@ func (cf *CaseFile) validate() error {
 		case !filepath.IsLocal(c.Document):
 			return fmt.Errorf("case %q: document %q must be a path inside the workspace directory", c.Name, c.Document)
 		}
-		if _, ok := policyeval.ParseOutcome(c.Expect.Outcome); !ok {
-			return fmt.Errorf("case %q: expected outcome %q is not reject, review, approve or default", c.Name, c.Expect.Outcome)
+		if _, ok := policyeval.ParseOutcome(c.Expect.Outcome); !ok && c.Expect.Outcome != OutcomeConditionalApprove {
+			return fmt.Errorf("case %q: expected outcome %q is not reject, review, approve, %s or default", c.Name, c.Expect.Outcome, OutcomeConditionalApprove)
 		}
 		seen[c.Name] = true
 	}

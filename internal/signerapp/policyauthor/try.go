@@ -93,6 +93,22 @@ type TryResult struct {
 	Assumes        []string
 }
 
+// OutcomeConditionalApprove is the outcome word of a try the policy approves
+// and at least one external check applies to: the cosigner signs only if its
+// checks pass, and a try asks no source.
+const OutcomeConditionalApprove = "conditional_approve"
+
+// OutcomeWord is the result's outcome as a report and a saved case write it:
+// the policy outcome's word, or OutcomeConditionalApprove when the policy
+// approves and external checks then decide. An approval with no check that
+// applies is a plain approve.
+func (r TryResult) OutcomeWord() string {
+	if r.Outcome == policyeval.Approve && r.ExternalChecks != nil && len(r.ExternalChecks.Apply) > 0 {
+		return OutcomeConditionalApprove
+	}
+	return r.Outcome.String()
+}
+
 // TryExternalChecks is what follows a cosigner policy that would sign under a
 // document with external checks. Nothing is looked up.
 type TryExternalChecks struct {
