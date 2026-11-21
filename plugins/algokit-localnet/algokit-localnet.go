@@ -693,20 +693,14 @@ func parseAlgo(value string) (uint64, error) {
 
 // resolveAddress returns an address, in either case, as itself before it
 // consults the alias map, so no alias, whatever its name, can redirect it.
-// Any other input is looked up as an alias, ignoring case.
+// Any other input is looked up as an alias by its lowercase form, the one
+// form apshell stores, so a differently cased entry planted in the map can
+// neither shadow a real alias nor make the result depend on map order.
 func resolveAddress(value string, addressMap map[string]string) (string, error) {
 	if decoded, err := types.DecodeAddress(strings.ToUpper(value)); err == nil {
 		return decoded.String(), nil
 	}
-	resolved, ok := addressMap[value]
-	if !ok {
-		for alias, address := range addressMap {
-			if strings.EqualFold(alias, value) {
-				resolved, ok = address, true
-				break
-			}
-		}
-	}
+	resolved, ok := addressMap[strings.ToLower(value)]
 	if !ok {
 		return "", fmt.Errorf("%q is neither an Algorand address nor a known alias", value)
 	}

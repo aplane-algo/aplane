@@ -73,12 +73,16 @@ func TestExecuteRunsOnLocalNetOnly(t *testing.T) {
 // fund B. Other input still resolves as an alias, ignoring case.
 func TestResolveAddressNeverRedirectsAnAddress(t *testing.T) {
 	a, b, c := testAddress(1), testAddress(2), testAddress(3)
-	aliases := map[string]string{strings.ToLower(a): b, "alice": c}
+	// "ALICE" and the Kelvin-sign "\u212Aate" are planted entries in a case
+	// apshell never stores; neither may shadow the lowercase alias.
+	aliases := map[string]string{strings.ToLower(a): b, "alice": c, "ALICE": b, "kate": c, "\u212Aate": b}
 	for _, tc := range []struct{ input, want string }{
 		{a, a},
 		{strings.ToLower(a), a},
 		{"alice", c},
 		{"ALICE", c},
+		{"Alice", c},
+		{"Kate", c},
 	} {
 		got, err := parseFundArgs([]string{tc.input, "from", tc.input}, aliases)
 		if err != nil || got.to != tc.want || got.from != tc.want {
