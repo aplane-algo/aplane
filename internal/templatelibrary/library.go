@@ -37,7 +37,6 @@ type TemplateRef struct {
 }
 
 const TemplateTypeCompiledProvider = "compiled_provider"
-const MinImportSchemaVersion = 1
 
 type LibraryTemplate struct {
 	KeyType      string
@@ -191,7 +190,7 @@ func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("YAML parse error: %w", err)
 	}
-	if err := validateBaseImportableSchema(header.BaseTemplateSpec, header.TemplateMode); err != nil {
+	if err := validateImportHeader(header.BaseTemplateSpec, header.TemplateMode); err != nil {
 		return ParsedTemplate{SourcePath: path}, err
 	}
 
@@ -205,14 +204,13 @@ func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 	}
 }
 
-func validateBaseImportableSchema(base templatestore.BaseTemplateSpec, templateMode string) error {
-	schemaVersion := base.SchemaVersion
-	if schemaVersion == 0 {
-		schemaVersion = 1
-	}
-	if schemaVersion < MinImportSchemaVersion {
-		return fmt.Errorf("schema_version %d is no longer supported for template import; migrate to schema_version %d",
-			schemaVersion, MinImportSchemaVersion)
+// validateImportHeader holds what every template must declare to be
+// installed. Requiring schema_version is an admission check: a store's own
+// templates load through the providers' parsers, which read a missing one as
+// schema version 1, so a template an earlier build installed keeps loading.
+func validateImportHeader(base templatestore.BaseTemplateSpec, templateMode string) error {
+	if base.SchemaVersion < 1 {
+		return fmt.Errorf("schema_version is required and must be an integer >= 1")
 	}
 	if strings.TrimSpace(templateMode) == "" {
 		return fmt.Errorf("template_mode is required")
