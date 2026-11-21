@@ -115,7 +115,6 @@ const (
 // Type aliases for protocol message types (wire format types)
 type (
 	BaseMessage                          = protocol.BaseMessage
-	ProtocolVersion                      = protocol.ProtocolVersion
 	AuthRequiredMessage                  = protocol.AuthRequiredMessage
 	AuthMessage                          = protocol.AuthMessage
 	AuthResultMessage                    = protocol.AuthResultMessage
@@ -215,7 +214,3 @@ type (
 	CheckPolicyResultMessage             = protocol.CheckPolicyResultMessage
 	ApplyPolicyResultMessage             = protocol.ApplyPolicyResultMessage
 )
-
-func CurrentAdminProtocolVersion() ProtocolVersion {
-	return protocol.CurrentAdminProtocolVersion()
-}

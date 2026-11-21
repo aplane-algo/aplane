@@ -250,3 +250,36 @@ func upsertStoredClientEndpoint(dataDir, alias string, endpoint ClientEndpointCo
 	}
 	return plan.Registry, nil
 }
+
+// TestSaveStoredClientEndpointRegistrySchemaVersion pins that a save, like a
+// load, takes only the current schema_version; there is no default for an
+// unset one.
+func TestSaveStoredClientEndpointRegistrySchemaVersion(t *testing.T) {
+	for _, tt := range []struct {
+		version int
+		wantErr string
+	}{
+		{version: 0, wantErr: "endpoints.yaml schema_version = 0, want 2"},
+		{version: ClientEndpointSchemaVersion},
+		{version: 3, wantErr: "endpoints.yaml schema_version = 3, want 2"},
+	} {
+		dataDir := t.TempDir()
+		err := SaveStoredClientEndpointRegistry(dataDir, ClientEndpointRegistry{SchemaVersion: tt.version})
+		if tt.wantErr != "" {
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("version %d: SaveStoredClientEndpointRegistry error = %v, want %q", tt.version, err, tt.wantErr)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("version %d: SaveStoredClientEndpointRegistry error = %v", tt.version, err)
+		}
+		data, err := os.ReadFile(GetClientEndpointsPath(dataDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "schema_version: 2\n" {
+			t.Errorf("version %d: endpoints.yaml = %q, want schema_version 2 only", tt.version, data)
+		}
+	}
+}

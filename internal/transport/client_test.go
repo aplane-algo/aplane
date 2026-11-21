@@ -205,8 +205,8 @@ func TestIPCAuthenticateHappyPath(t *testing.T) {
 			errCh <- errors.New("unexpected auth request payload")
 			return
 		}
-		if auth.ProtocolVersion == nil || *auth.ProtocolVersion != protocol.CurrentAdminProtocolVersion() {
-			errCh <- fmt.Errorf("auth protocol_version = %+v, want %+v", auth.ProtocolVersion, protocol.CurrentAdminProtocolVersion())
+		if auth.ProtocolVersion != protocol.AdminProtocolVersion {
+			errCh <- fmt.Errorf("auth protocol_version = %d, want %d", auth.ProtocolVersion, protocol.AdminProtocolVersion)
 			return
 		}
 

@@ -290,13 +290,7 @@ func TestTestRunsSavedCases(t *testing.T) {
 	}
 }
 
-func TestRetiredAndUnknownInvocations(t *testing.T) {
-	for _, args := range [][]string{{"-online"}, {"--check", "x.json"}, {"-yaml"}, {"-save"}, {"-to-sentry"}} {
-		code, _, errOut := appolicy(args...)
-		if code != exitUsage || !strings.Contains(errOut, "retired appolicy") {
-			t.Fatalf("%v: exit %d: %s", args, code, errOut)
-		}
-	}
+func TestUnknownInvocations(t *testing.T) {
 	if code, _, errOut := appolicy("missing.json"); code != exitUsage || !strings.Contains(errOut, "is not a command or a file") {
 		t.Fatalf("missing bare file: exit %d: %s", code, errOut)
 	}
@@ -355,5 +349,40 @@ func TestOpenRunsTheTUIOnTheWorkspace(t *testing.T) {
 	}
 	if code, _, _ := appolicy("open"); code != exitUsage {
 		t.Fatalf("open with no path: exit %d", code)
+	}
+}
+
+// TestUnknownFlagsAreUsageErrors pins what an unknown flag does in each
+// position: a command's flag parsing refuses it, and in place of a command
+// it is neither a command nor a file. --signer-data and the flags of an
+// earlier appolicy are unknown flags like any other.
+func TestUnknownFlagsAreUsageErrors(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"check", "--bogus", "x", "f.json"}, "flag provided but not defined: -bogus"},
+		{[]string{"open", "--bogus=x", "f.json"}, "flag provided but not defined: -bogus"},
+		{[]string{"try", "f.json", "-bogus", "x"}, "flag provided but not defined: -bogus"},
+		{[]string{"explain", "--bogus", "", "f.json"}, "flag provided but not defined: -bogus"},
+		{[]string{"fmt", "--bogus", "f.json"}, "flag provided but not defined: -bogus"},
+		{[]string{"test", "--bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"-bogus"}, `"-bogus" is not a command or a file`},
+		{[]string{"--bogus", "x.json"}, `"--bogus" is not a command or a file`},
+		{[]string{"check", "--signer-data", "x", "f.json"}, "flag provided but not defined: -signer-data"},
+		{[]string{"open", "--signer-data=x", "f.json"}, "flag provided but not defined: -signer-data"},
+		{[]string{"try", "f.json", "-signer-data", "x"}, "flag provided but not defined: -signer-data"},
+		{[]string{"explain", "--signer-data", "", "f.json"}, "flag provided but not defined: -signer-data"},
+		{[]string{"--signer-data", "x"}, `"--signer-data" is not a command or a file`},
+		{[]string{"-online"}, `"-online" is not a command or a file`},
+		{[]string{"--check", "x.json"}, `"--check" is not a command or a file`},
+		{[]string{"-yaml"}, `"-yaml" is not a command or a file`},
+		{[]string{"-save"}, `"-save" is not a command or a file`},
+		{[]string{"-to-sentry"}, `"-to-sentry" is not a command or a file`},
+	} {
+		code, _, errOut := appolicy(tt.args...)
+		if code != exitUsage || !strings.Contains(errOut, tt.want) {
+			t.Errorf("%v: exit %d, want %d and %q: %s", tt.args, code, exitUsage, tt.want, errOut)
+		}
 	}
 }

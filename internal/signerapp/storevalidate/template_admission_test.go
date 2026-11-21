@@ -95,6 +95,33 @@ teal: |
   int 1
   assert
 `
+	// Templates that declare no schema_version.
+	admissionGenericNoSchemaVersionYAML = `derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: admission-generic-no-schema-version
+version: 1
+display_name: "Admission Generic No Schema Version"
+valid_rekey_target: false
+max_opcode_cost: 20000
+teal: |
+  int 1
+  return
+`
+	admissionComposedNoSchemaVersionYAML = `template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: test
+family: admission-composed-no-schema-version
+version: 1
+display_name: "Admission Composed No Schema Version"
+valid_rekey_target: true
+max_opcode_cost: 20000
+teal: |
+  int 1
+  assert
+`
 	// A display name and an argument label that print as control sequences.
 	admissionGenericControlTextYAML = `schema_version: 1
 derivation_version: 3
@@ -242,6 +269,16 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 			name: "bounded argument label with a right-to-left override", keyType: "test.admission-bounded-control-text.v1",
 			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedControlTextYAML,
 			wantInstall: `invalid composed template: runtime_arg blob label holds a character that does not print, shown escaped: Blob \u202e`,
+		},
+		{
+			name: "generic without a schema_version", keyType: "test.admission-generic-no-schema-version.v1",
+			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericNoSchemaVersionYAML,
+			wantInstall: "schema_version is required and must be an integer >= 1",
+		},
+		{
+			name: "composed without a schema_version", keyType: "test.admission-composed-no-schema-version.v1",
+			templateType: templatestore.TemplateTypeComposed, yaml: admissionComposedNoSchemaVersionYAML,
+			wantInstall: "schema_version is required and must be an integer >= 1",
 		},
 		{
 			name: "bounded parameter with the reserved prefix", keyType: "test.admission-bounded-reserved.v1",

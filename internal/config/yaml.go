@@ -5,13 +5,13 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 
 	"gopkg.in/yaml.v3"
 )
-
-const ConfigSchemaVersion = 1
 
 var yamlUnknownFieldRE = regexp.MustCompile(`field ([^ ]+) not found`)
 
@@ -21,24 +21,17 @@ func UnmarshalKnownFields(data []byte, out interface{}) error {
 	return decoder.Decode(out)
 }
 
-func UnmarshalKnownConfigFields(data []byte, out interface{}) error {
+// DecodeConfigFile strictly decodes the config.yaml read from path. A file
+// that holds no YAML document, being empty, blank or only comments, is
+// refused with its own message rather than read as the defaults: a signer
+// config truncated to nothing would otherwise start without the settings it
+// held. An operator who wants the defaults deletes the file or writes {}.
+func DecodeConfigFile(path string, data []byte, out any) error {
 	if err := UnmarshalKnownFields(data, out); err != nil {
-		return wrapUnknownConfigFieldError(err)
-	}
-	return nil
-}
-
-func NormalizeConfigSchemaVersion(version int) int {
-	if version == 0 {
-		return ConfigSchemaVersion
-	}
-	return version
-}
-
-func ValidateConfigSchemaVersion(label string, version int) error {
-	version = NormalizeConfigSchemaVersion(version)
-	if version != ConfigSchemaVersion {
-		return fmt.Errorf("%s schema_version = %d, want %d", label, version, ConfigSchemaVersion)
+		if errors.Is(err, io.EOF) {
+			return fmt.Errorf("config file %s is empty", path)
+		}
+		return fmt.Errorf("failed to parse config file %s: %w", path, wrapUnknownConfigFieldError(err))
 	}
 	return nil
 }

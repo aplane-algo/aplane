@@ -1,9 +1,6 @@
 # Auto-unlocked apsigner configuration
 # See docs/USER_CONFIG.md for full documentation.
 
-# Config schema version. Omit means v1 for existing configs.
-schema_version: 1
-
 # Auto-unlock is not set here. Run appass to choose a passphrase helper; it
 # writes identities/default/unlock.yaml for the store it unlocks.
 # See docs/USER_CONFIG.md.

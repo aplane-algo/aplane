@@ -396,11 +396,6 @@ func (s *stubServices) backupDeps() SessionDeps {
 	}
 }
 
-func currentAdminProtocolVersion() *protocol.ProtocolVersion {
-	version := protocol.CurrentAdminProtocolVersion()
-	return &version
-}
-
 func TestSessionAuthenticateSuccess(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
@@ -408,7 +403,7 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	authMsg, err := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -463,9 +458,6 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if authReq.Type != protocol.MsgTypeAuthRequired {
 		t.Fatalf("first write type = %q, want %q", authReq.Type, protocol.MsgTypeAuthRequired)
 	}
-	if authReq.ProtocolVersion != protocol.CurrentAdminProtocolVersion() {
-		t.Fatalf("auth_required protocol_version = %+v, want %+v", authReq.ProtocolVersion, protocol.CurrentAdminProtocolVersion())
-	}
 
 	var result protocol.AuthResultMessage
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
@@ -481,7 +473,7 @@ func TestSessionAuthenticateOnlyKeepsLockedRuntimeLocked(t *testing.T) {
 	authMsg, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthOnly},
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -699,7 +691,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 	authMsg, err := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -724,7 +716,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":{"major":8,"minor":0}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":8}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -761,7 +753,7 @@ func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"alice","protocol_version":{"major":4,"minor":5}}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"alice","protocol_version":4}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -784,7 +776,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol major version mismatch: client=4 server=8" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=8" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }
@@ -796,12 +788,12 @@ func TestSessionAuthenticateRetriesInvalidPassphrase(t *testing.T) {
 	msg1, _ := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes("wrong"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	msg2, _ := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes("right"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 
 	conn := &queueConn{reads: [][]byte{msg1, msg2}}
@@ -878,7 +870,7 @@ func TestSessionAuthenticateMissingProductRuntimeIsGeneric(t *testing.T) {
 	authMsg, err := json.Marshal(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes("secret"),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -900,93 +892,6 @@ func TestSessionAuthenticateMissingProductRuntimeIsGeneric(t *testing.T) {
 	}
 	if result.Success || result.Error != "authentication failed" || result.Code != protocol.ErrCodeAuthenticationFailed {
 		t.Fatalf("auth result = %+v, want generic authentication failure", result)
-	}
-}
-
-func TestSessionAuthenticateRejectsAdminProtocolMajorMismatch(t *testing.T) {
-	currentMajor := protocol.CurrentAdminProtocolVersion().Major
-	tests := []struct {
-		name  string
-		major int
-	}{
-		{name: "older", major: currentMajor - 1},
-		{name: "newer", major: currentMajor + 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clientVersion := protocol.ProtocolVersion{Major: tt.major}
-			authMsg, err := json.Marshal(protocol.AuthMessage{
-				BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-				Passphrase:      protocol.NewSensitiveBytes("secret"),
-				ProtocolVersion: &clientVersion,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			conn := &queueConn{reads: [][]byte{authMsg}}
-			session := NewSession(conn, stubServices{}.deps(), OriginLocal)
-
-			if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
-				t.Fatal("authenticated = true, want false")
-			}
-			if len(conn.writes) != 2 {
-				t.Fatalf("write count = %d, want 2", len(conn.writes))
-			}
-
-			var result protocol.AuthResultMessage
-			if err := json.Unmarshal(conn.writes[1], &result); err != nil {
-				t.Fatal(err)
-			}
-			if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage {
-				t.Fatalf("auth result = %+v, want invalid auth protocol failure", result)
-			}
-			if !strings.Contains(result.Error, "admin protocol major version mismatch") {
-				t.Fatalf("auth result error = %q, want major version mismatch", result.Error)
-			}
-		})
-	}
-}
-
-func TestSessionAuthenticateRejectsMissingAdminProtocolVersion(t *testing.T) {
-	authMsg, err := json.Marshal(protocol.AuthMessage{
-		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
-		Passphrase:  protocol.NewSensitiveBytes("secret"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	conn := &queueConn{reads: [][]byte{authMsg}}
-	session := NewSession(conn, stubServices{}.deps(), OriginLocal)
-
-	if session.AuthenticateOutcome() == AuthOutcomeAuthenticated {
-		t.Fatal("authenticated = true, want false")
-	}
-
-	var result protocol.AuthResultMessage
-	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage {
-		t.Fatalf("auth result = %+v, want invalid auth protocol failure", result)
-	}
-	if !strings.Contains(result.Error, "admin protocol version is required") {
-		t.Fatalf("auth result error = %q, want required-version failure", result.Error)
-	}
-}
-
-func TestValidateAdminProtocolVersionAcceptsCurrentAndMinorSkew(t *testing.T) {
-	current := protocol.CurrentAdminProtocolVersion()
-	if ok, errMsg := validateAdminProtocolVersion(&current); !ok || errMsg != "" {
-		t.Fatalf("current version rejected: ok=%v error=%q", ok, errMsg)
-	}
-
-	newerMinor := current
-	newerMinor.Minor++
-	if ok, errMsg := validateAdminProtocolVersion(&newerMinor); !ok || errMsg != "" {
-		t.Fatalf("minor skew rejected: ok=%v error=%q", ok, errMsg)
 	}
 }
 
@@ -1123,7 +1028,7 @@ func mustAuthFrame(t *testing.T, passphrase string, extra string) []byte {
 	frame, err := protocol.MarshalAdminMessage(protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
 		Passphrase:      protocol.NewSensitiveBytes(passphrase),
-		ProtocolVersion: currentAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1249,5 +1154,61 @@ func TestDecodeRequestZeroesPartialDecodeOnError(t *testing.T) {
 	var refusal protocol.ErrorMessage
 	if len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &refusal) != nil || refusal.Code != protocol.ErrCodeInvalidRequest {
 		t.Fatalf("malformed unlock answered with %q", conn.writes)
+	}
+}
+
+// TestSessionAuthenticateAdminProtocolVersionRule pins what each
+// protocol_version an auth frame carries leads to, and the auth_required
+// frame the server sends first.
+func TestSessionAuthenticateAdminProtocolVersionRule(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string // the auth frame's protocol_version, or "" for none
+		wantErr string // "" when the frame authenticates
+	}{
+		{name: "current", version: `8`},
+		{name: "older", version: `7`, wantErr: "admin protocol version mismatch: client=7 server=8"},
+		{name: "newer", version: `9`, wantErr: "admin protocol version mismatch: client=9 server=8"},
+		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=8"},
+		{name: "major and minor", version: `{"major":8,"minor":0}`, wantErr: "invalid auth message format"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ir := productruntime.New(productruntime.Config{})
+			ir.SetUnlocked()
+			frame := `{"kind":"request","type":"auth","passphrase":"secret"`
+			if tt.version != "" {
+				frame += `,"protocol_version":` + tt.version
+			}
+			frame += `}`
+			conn := &queueConn{reads: [][]byte{[]byte(frame)}}
+			svc := stubServices{
+				runtime:     ir,
+				unlockOK:    true,
+				newIdentity: auth.NewProductIdentity("ipc-passphrase"),
+			}
+			session := NewSession(conn, svc.deps(), OriginLocal)
+
+			authenticated := session.AuthenticateOutcome() == AuthOutcomeAuthenticated
+			if len(conn.writes) != 2 {
+				t.Fatalf("write count = %d, want 2", len(conn.writes))
+			}
+			if got := string(conn.writes[0]); got != `{"type":"auth_required","id":"","kind":"notification"}` {
+				t.Fatalf("auth_required = %s", got)
+			}
+			var result protocol.AuthResultMessage
+			if err := json.Unmarshal(conn.writes[1], &result); err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantErr == "" {
+				if !authenticated || !result.Success {
+					t.Fatalf("authenticated = %v, result = %+v, want success", authenticated, result)
+				}
+				return
+			}
+			if authenticated || result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != tt.wantErr {
+				t.Fatalf("authenticated = %v, result = %+v, want %q", authenticated, result, tt.wantErr)
+			}
+		})
 	}
 }

@@ -277,7 +277,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy witness key extension is rejected", func(t *testing.T) {
+	t.Run("cosigner credential with the account extension is rejected", func(t *testing.T) {
 		masterKey := testMasterKey(t)
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)
@@ -292,7 +292,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("MarshalPayload() error = %v", err)
 		}
-		legacyPath := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
+		path := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
 		if err != nil {
@@ -302,13 +302,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			t.Fatalf("report = %#v, want one rejection", report)
 		}
 		warning := report.Warnings[0]
-		if warning.Code != KeyScanWarningFilenameClassMismatch {
-			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameClassMismatch)
-		}
-		for _, want := range []string{legacyPath, CosignerCredentialExtension, "Stop apsigner", ".apb", "prior build"} {
-			if !contains(warning.Message(), want) {
-				t.Fatalf("warning message = %q, want %q", warning.Message(), want)
-			}
+		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "witness" requires .cos, got .key`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -317,14 +313,19 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)
 		keyJSON, address := testEd25519Key(t)
-		writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
+		path := writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
 		if err != nil {
 			t.Fatalf("ScanKeysDirectory() error = %v", err)
 		}
-		if len(report.Keys) != 0 || len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningFilenameClassMismatch {
-			t.Fatalf("report = %#v, want filename class rejection", report)
+		if len(report.Keys) != 0 || len(report.Warnings) != 1 {
+			t.Fatalf("report = %#v, want one rejection", report)
+		}
+		warning := report.Warnings[0]
+		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "ed25519" requires .key, got .cos`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -470,14 +471,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			t.Fatalf("warnings = %d, want 1 filename mismatch warning", len(report.Warnings))
 		}
 		warning := report.Warnings[0]
-		if warning.Code != KeyScanWarningFilenameAddressMismatch {
-			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameAddressMismatch)
-		}
-		msg := warning.Message()
-		for _, want := range []string{duplicatePath, "duplicate", address} {
-			if !contains(msg, want) {
-				t.Fatalf("warning message = %q, want %q", msg, want)
-			}
+		want := "Skipped key file " + duplicatePath + `: managed credential filename selector mismatch: filename selector "duplicate" does not match payload-derived selector "` + address + `"`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -738,10 +734,10 @@ func TestScanKeysDirectoryWithKeyringRejectsGenericFilenameAddressMismatch(t *te
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
 	warning := report.Warnings[0]
-	if warning.Code != KeyScanWarningFilenameAddressMismatch {
-		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameAddressMismatch)
+	if warning.Code != KeyScanWarningFilenameMismatch {
+		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameMismatch)
 	}
-	if !contains(warning.Reason(), "does not match payload-derived address") {
+	if !contains(warning.Reason(), "does not match payload-derived selector") {
 		t.Fatalf("warning reason = %q, want filename mismatch", warning.Reason())
 	}
 }

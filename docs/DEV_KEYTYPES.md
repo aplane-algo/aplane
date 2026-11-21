@@ -814,7 +814,7 @@ See any existing `.yaml` file in `library/templates/` for the full
 schema. The core fields are:
 
 ```yaml
-schema_version: 1
+schema_version: 1            # required at install; 2 for a bounded composed template
 derivation_version: 3
 max_opcode_cost: 20000  # optional absolute override; omission defaults to 20000
 template_type: <type>        # generic | composed; optional for generic templates

@@ -889,11 +889,10 @@ func clockRequestID(prefix string) string {
 func (m Model) sendAuthCmd(passphrase []byte) tea.Cmd {
 	return secretCmd(passphrase, func(p []byte) tea.Cmd {
 		return ipcCmd(m.adminClient, func(c *IPCClient) error {
-			protocolVersion := CurrentAdminProtocolVersion()
 			return c.sendMessage(AuthMessage{
 				BaseMessage:     BaseMessage{Type: MsgTypeAuth, ID: clockRequestID("auth")},
 				Passphrase:      SensitiveBytes(p),
-				ProtocolVersion: &protocolVersion,
+				ProtocolVersion: protocol.AdminProtocolVersion,
 			})
 		})
 	})

@@ -1309,3 +1309,36 @@ func TestParseAcceptsABlockScalarDescription(t *testing.T) {
 		t.Fatalf("runtime argument description = %q", got)
 	}
 }
+
+// TestParseYAMLSchemaVersion pins what an install does with each
+// schema_version a template declares, or with none: there is no default.
+func TestParseYAMLSchemaVersion(t *testing.T) {
+	const body = `template_type: generic
+template_mode: generated
+publisher: test
+family: schema-version
+version: 1
+display_name: Schema Version
+valid_rekey_target: false
+teal: |
+  int 1
+`
+	for _, tt := range []struct {
+		line    string
+		wantErr string
+	}{
+		{line: "schema_version: 1\n"},
+		{line: "", wantErr: "schema_version is required and must be an integer >= 1"},
+		{line: "schema_version: 0\n", wantErr: "schema_version is required and must be an integer >= 1"},
+		{line: "schema_version: -1\n", wantErr: "schema_version is required and must be an integer >= 1"},
+		{line: "schema_version: 2\n", wantErr: "invalid generic template: schema_version 2 is newer than supported version 1"},
+	} {
+		_, err := ParseYAML("schema-version.yaml", []byte(tt.line+body))
+		if tt.wantErr == "" && err != nil {
+			t.Errorf("%q: ParseYAML() error = %v, want nil", tt.line, err)
+		}
+		if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
+			t.Errorf("%q: ParseYAML() error = %v, want %q", tt.line, err, tt.wantErr)
+		}
+	}
+}

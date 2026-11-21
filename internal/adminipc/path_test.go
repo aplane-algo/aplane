@@ -64,7 +64,7 @@ func TestRelativeDataDirectoryResolvesTheSameSocketWithAndWithoutConfig(t *testi
 	want := filepath.Join(dataDir, "aplane.sock")
 	for _, withConfig := range []bool{false, true} {
 		if withConfig {
-			if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("schema_version: 1\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("{}\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,55 +37,6 @@ networks:
 	if got := cfg.SignerStatusPollIntervalDuration(); got != 30*time.Second {
 		t.Fatalf("SignerStatusPollIntervalDuration() = %s, want 30s", got)
 	}
-}
-
-func TestLoadConfigSchemaVersion(t *testing.T) {
-	t.Run("explicit v1 accepted", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "config.yaml")
-		if err := os.WriteFile(path, []byte(`
-schema_version: 1
-network: testnet
-networks:
-  testnet:
-    algod:
-      server: http://localhost:4001
-`), 0o600); err != nil {
-			t.Fatalf("write config: %v", err)
-		}
-
-		cfg, err := LoadConfigFromPath(path)
-		if err != nil {
-			t.Fatalf("LoadConfigFromPath: %v", err)
-		}
-		if cfg.SchemaVersion != ConfigSchemaVersion {
-			t.Fatalf("SchemaVersion = %d, want %d", cfg.SchemaVersion, ConfigSchemaVersion)
-		}
-	})
-
-	t.Run("absent means v1", func(t *testing.T) {
-		cfg := DefaultConfig()
-		if cfg.SchemaVersion != ConfigSchemaVersion {
-			t.Fatalf("DefaultConfig().SchemaVersion = %d, want %d", cfg.SchemaVersion, ConfigSchemaVersion)
-		}
-	})
-
-	t.Run("newer version rejected", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "config.yaml")
-		if err := os.WriteFile(path, []byte(`
-schema_version: 2
-network: testnet
-`), 0o600); err != nil {
-			t.Fatalf("write config: %v", err)
-		}
-
-		_, err := LoadConfigFromPath(path)
-		if err == nil {
-			t.Fatal("LoadConfigFromPath error = nil, want schema_version rejection")
-		}
-		if !strings.Contains(err.Error(), "schema_version = 2, want 1") {
-			t.Fatalf("LoadConfigFromPath error = %q, want schema_version mismatch", err)
-		}
-	})
 }
 
 func TestLoadConfigSignerStatusPollIntervalDisabled(t *testing.T) {
@@ -464,4 +416,59 @@ func decodeClientEndpointRegistryKnownFields(data []byte) error {
 
 func cosignerEndpointTestHex(prefix string) string {
 	return prefix + strings.Repeat("00", 32-1)
+}
+
+// TestConfigSchemaVersionField pins that the client config.yaml has no
+// schema_version: the strict decode refuses it as an unknown field.
+func TestConfigSchemaVersionField(t *testing.T) {
+	const unknown = ": config field \"schema_version\" is unknown or no longer supported; " +
+		"remove it from the file: yaml: unmarshal errors:\n  line 1: field schema_version not found in type config.Config"
+	for _, tt := range []struct {
+		line    string
+		wantErr string
+	}{
+		{line: ""},
+		{line: "schema_version: 0\n", wantErr: unknown},
+		{line: "schema_version: 1\n", wantErr: unknown},
+		{line: "schema_version: 2\n", wantErr: unknown},
+	} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(tt.line+"network: testnet\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadConfigFromPath(path)
+		if tt.wantErr == "" && err != nil {
+			t.Errorf("%q: LoadConfigFromPath error = %v, want nil", tt.line, err)
+		}
+		if want := "failed to parse config file " + path + tt.wantErr; tt.wantErr != "" && (err == nil || err.Error() != want) {
+			t.Errorf("%q: LoadConfigFromPath error = %v, want %q", tt.line, err, want)
+		}
+	}
+}
+
+// TestEmptyConfigFileIsRefused pins that a client config.yaml with no YAML
+// document is refused with its own message, and that an explicit empty
+// mapping is the defaults.
+func TestEmptyConfigFileIsRefused(t *testing.T) {
+	for _, body := range []string{"", "\n", "  \n\n", "# only a comment\n"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := "config file " + path + " is empty"
+		if _, err := LoadConfigFromPath(path); err == nil || err.Error() != want {
+			t.Errorf("%q: LoadConfigFromPath error = %v, want %q", body, err, want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("{}: LoadConfigFromPath error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg, DefaultConfig()) {
+		t.Fatalf("{}: config = %+v, want the defaults", cfg)
+	}
 }

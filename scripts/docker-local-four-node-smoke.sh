@@ -1313,9 +1313,6 @@ write_sdk_data_dir() {
         cp /home/$TEST_USER/aplane/apclient/.ssh/known_hosts '$data_dir/.ssh/known_hosts' && \
         chmod 700 '$data_dir/.ssh' && \
         chmod 600 '$data_dir/.ssh/id_ed25519' '$data_dir/.ssh/known_hosts' && \
-        cat > '$data_dir/config.yaml' <<YAML
-schema_version: 1
-YAML
         cat > '$data_dir/endpoints.yaml' <<YAML
 schema_version: 2
 endpoints:

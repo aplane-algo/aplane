@@ -96,7 +96,7 @@ func TestValidateManagedCredentialFilename(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ValidateManagedCredentialFilename(witnessID+AccountKeyExtension, witnessID, CategoryWitness); !errors.Is(err, ErrManagedCredentialClassMismatch) {
-		t.Fatalf("legacy witness .key error = %v", err)
+		t.Fatalf("witness .key error = %v", err)
 	}
 	if err := ValidateManagedCredentialFilename(account+CosignerCredentialExtension, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassMismatch) {
 		t.Fatalf("account .cos error = %v", err)

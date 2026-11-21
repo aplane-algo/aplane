@@ -33,9 +33,13 @@ SDK configuration is documented in the separate
 
 Config files are located at `<data_dir>/config.yaml`.
 Unknown YAML fields are rejected at startup. This is intentional: misspelled
-settings should fail visibly instead of being silently ignored.
-Both client and signer `config.yaml` files support optional `schema_version: 1`;
-omitting it is treated as v1 for existing configs.
+settings should fail visibly instead of being silently ignored. Neither
+`config.yaml` carries a version: its field set is its format. A `config.yaml`
+that is empty or holds only comments is refused as well (`config file <path>
+is empty`), so a file truncated to nothing is not read as the defaults. Only
+the first YAML document is read; a file that is just `---` or `null` reads as
+`{}`. What an empty mapping means depends on the tool: the signer runs on its
+defaults, while apshell still needs its network entries.
 
 See [USER_INSTALL.md](USER_INSTALL.md) for the installation directory layout and what each install mode creates.
 
@@ -50,7 +54,6 @@ routing lives in `$APCLIENT_DATA/endpoints.yaml`. See
 ### Example config.yaml
 
 ```yaml
-schema_version: 1
 network: testnet
 signer_status_poll_interval: "10s"
 ```
@@ -106,7 +109,6 @@ starting with a letter or digit. Built-in Algorand tokens are `mainnet`,
 are also valid.
 
 ```yaml
-schema_version: 1
 network: testnet
 networks_allowed:
   - mainnet
@@ -164,7 +166,6 @@ ssh-keygen -t ed25519 -f "$APCLIENT_DATA/.ssh/id_ed25519" -N ""
 
 # Create config.yaml (or start from examples/config/apclient/config.yaml)
 cat > "$APCLIENT_DATA/config.yaml" << 'EOF'
-schema_version: 1
 network: testnet
 signer_status_poll_interval: "10s"
 EOF

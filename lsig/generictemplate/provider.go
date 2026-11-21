@@ -480,6 +480,9 @@ func inspectTemplateSchema(data []byte) (int, error) {
 		return 0, fmt.Errorf("YAML parse error: %w", err)
 	}
 
+	// An install requires schema_version (templatelibrary); a store's own
+	// template without one reads as version 1, so reload never refuses what
+	// an earlier build installed.
 	schemaVersion := 1
 	for i := 0; i < len(root.Content); i += 2 {
 		key, value := root.Content[i], root.Content[i+1]

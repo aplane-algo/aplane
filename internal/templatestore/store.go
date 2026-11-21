@@ -87,12 +87,8 @@ func (s *BaseTemplateSpec) KeyType() string {
 
 // ValidateBase validates the common fields.
 func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
-	schemaVersion := s.SchemaVersion
-	if schemaVersion == 0 {
-		schemaVersion = 1
-	}
-	if schemaVersion > maxSchemaVersion {
-		return fmt.Errorf("schema_version %d is newer than supported version %d", schemaVersion, maxSchemaVersion)
+	if s.SchemaVersion > maxSchemaVersion {
+		return fmt.Errorf("schema_version %d is newer than supported version %d", s.SchemaVersion, maxSchemaVersion)
 	}
 	if s.DerivationVersion != nil {
 		switch *s.DerivationVersion {

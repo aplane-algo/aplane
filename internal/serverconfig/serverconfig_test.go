@@ -18,7 +18,7 @@ func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\n"), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("{}\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -100,53 +100,6 @@ func TestLoadServerConfigRejectsInvalidPassphraseTimeout(t *testing.T) {
 			t.Fatalf("LoadServerConfig(passphrase_timeout: %s) error = %v, want invalid passphrase_timeout", value, err)
 		}
 	}
-}
-
-func TestLoadServerConfigSchemaVersion(t *testing.T) {
-	t.Parallel()
-
-	t.Run("explicit v1 accepted", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\napproval_wait: 60s\n"), 0o640); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
-
-		cfg, err := LoadServerConfig(dir)
-		if err != nil {
-			t.Fatalf("LoadServerConfig: %v", err)
-		}
-		if cfg.SchemaVersion != apconfig.ConfigSchemaVersion {
-			t.Fatalf("SchemaVersion = %d, want %d", cfg.SchemaVersion, apconfig.ConfigSchemaVersion)
-		}
-	})
-
-	t.Run("absent means v1", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := DefaultServerConfig()
-		if cfg.SchemaVersion != apconfig.ConfigSchemaVersion {
-			t.Fatalf("DefaultServerConfig().SchemaVersion = %d, want %d", cfg.SchemaVersion, apconfig.ConfigSchemaVersion)
-		}
-	})
-
-	t.Run("newer version rejected", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 2\n"), 0o640); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
-
-		_, err := LoadServerConfig(dir)
-		if err == nil {
-			t.Fatal("LoadServerConfig error = nil, want schema_version rejection")
-		}
-		if !strings.Contains(err.Error(), "schema_version = 2, want 1") {
-			t.Fatalf("LoadServerConfig error = %q, want schema_version mismatch", err)
-		}
-	})
 }
 
 func TestLoadServerConfigRejectsUnknownFields(t *testing.T) {
@@ -615,7 +568,7 @@ func TestServerConfigRotatingStageHorizonDefaultsAndOverrides(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\n"), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("{}\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg, err := LoadServerConfig(dir)
@@ -653,5 +606,33 @@ func TestServerConfigRotatingStageHorizonDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.Rotating.RecoveryMaxStages != 0 || cfg.Rotating.RecoveryTimeout != 90*time.Second || cfg.Rotating.StageHorizon != DefaultStageHorizon {
 		t.Fatalf("recovery overrides = %+v", cfg.Rotating)
+	}
+}
+
+// TestServerConfigSchemaVersionField pins that the signer config.yaml has no
+// schema_version: the strict decode refuses it as an unknown field.
+func TestServerConfigSchemaVersionField(t *testing.T) {
+	const unknown = "config field \"schema_version\" is unknown or no longer supported; " +
+		"remove it from the file: yaml: unmarshal errors:\n  line 1: field schema_version not found in type serverconfig.ServerConfig"
+	for _, tt := range []struct {
+		line    string
+		wantErr string
+	}{
+		{line: ""},
+		{line: "schema_version: 0\n", wantErr: unknown},
+		{line: "schema_version: 1\n", wantErr: unknown},
+		{line: "schema_version: 2\n", wantErr: unknown},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.line+"approval_wait: 60s\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadServerConfig(dir)
+		if tt.wantErr == "" && err != nil {
+			t.Errorf("%q: LoadServerConfig error = %v, want nil", tt.line, err)
+		}
+		if tt.wantErr != "" && (err == nil || !strings.HasSuffix(err.Error(), ": "+tt.wantErr)) {
+			t.Errorf("%q: LoadServerConfig error = %v, want %q", tt.line, err, tt.wantErr)
+		}
 	}
 }

@@ -833,33 +833,6 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   where the asset's decimals are known, in display units: from the node's
   ASA set in the export, else from the built-in asset table.
 
-This `appolicy` is not the retired binary of the same name: it edits and
-checks files only, and never contacts a node or opens a store. The retired
-flags (`-online`, `-check`, `-yaml`, `-sha256`, `-save`) are refused with a
-pointer to `apadmin policy`.
-
-#### Commands of the retired policy binary
-
-The earlier `appolicy` edited a node's policy. Its command shapes map to
-`apadmin` as follows:
-
-| Former command | Current command |
-|---|---|
-| `appolicy --online` | `apadmin policy export`, edit the file, then `apadmin policy check FILE` and `apadmin policy apply FILE` |
-| `appolicy --online --check FILE` | `apadmin policy check FILE` |
-| `appolicy --online --yaml FILE` | `apadmin policy export` |
-| `appolicy --online --sha256 FILE` | `apadmin policy status` |
-| `appolicy --online --save` | `apadmin policy apply -` |
-| `appolicy FILE` | `apadmin policy rescue check FILE`, then `apadmin policy rescue apply FILE` |
-| `appolicy --check FILE` | `apadmin policy rescue check FILE` |
-| `appolicy --yaml FILE` | `apadmin policy rescue export` |
-| `appolicy --sha256 FILE` | `apadmin policy rescue status` |
-| `appolicy --save` | `apadmin policy rescue apply -` |
-
-There is no wrapper or automatic online-to-rescue fallback. A former command
-line that names a file now opens that file in the editor described above,
-which writes nothing until you save.
-
 `apadmin policy rescue` is the stopped-service rescue command family. It takes
 the same verbs, reads the store named by `APSIGNER_DATA` or `-d` directly, and
 follows the node role recorded in the store. Reads (`status`, `export`,
@@ -1524,7 +1497,6 @@ Before relying on a policy:
 | `check` rejects a file with "is not accepted in a cosigner document" | The file carries a signer-only field (`rekeys`, `always_review_warnings`, `auto_approve_self_noop_transfer`, the `*_on_no_route` family, `review_above`, or a `review` type verdict). |
 | `export --key K` fails with `policy_document_not_found` | The key has no policy of its own; it follows the default, which `export` without `--key` returns. |
 | `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and copy your edited files into it, or run `diff --no-node-context FILE` to review against the live node and `apply --no-node-context FILE` when the diff shows only your edits (in the TUI, load a copy from outside the export). See [Exporting the whole policy](#exporting-the-whole-policy). |
-| `appolicy` refuses `--signer-data` | appolicy no longer reads a signer's data directory. Export with `apadmin policy export --all DIR` and open the files in `DIR`. |
 | A cosigner key rejects every request | It has no file and follows the deny-all default; give it one with `apadmin policy template --key <WitnessKeyID>`, edited and applied. |
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
 | A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
