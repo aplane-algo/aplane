@@ -1519,7 +1519,7 @@ name a test inline:
 
 - HTTP DTO and contract fixtures: `pkg/signerapi/types_contract_test.go`,
   `pkg/signerapi/cosigner_test.go`, `test/contracts/signerapi/*.json`.
-- HTTP method/shape enforcement: `internal/signerapp/daemon/method_compat_test.go`,
+- HTTP method/shape enforcement: `internal/signerapp/daemon/method_test.go`,
   `internal/signerapp/daemon/rest_shape_test.go`, `internal/signerclient/client_test.go`.
 - Endpoint registry and endpoint writes:
   `internal/config/client_endpoints.go`,

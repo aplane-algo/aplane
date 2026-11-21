@@ -1402,13 +1402,8 @@ request state and principals without a runtime ID.
 | `DELETE` | `/admin/keys` | yes | yes |
 | `POST` | `/admin/rotating/recover` | yes | to start; a cancel answers while locked |
 
-Method enforcement:
-
-- `/sign`, `/sign/component`, `/sign/assemble`,
-  `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
-  `/status`, `/admin/generate`, `/admin/keys`, and `/admin/rotating/recover`
-  enforce their HTTP method.
-- `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
+Method enforcement: every endpoint answers only the method in the table above.
+Any other method, `HEAD` included, returns `405` with `code:"bad_request"`.
 
 Transport behavior:
 
