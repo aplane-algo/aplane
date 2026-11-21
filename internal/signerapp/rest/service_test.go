@@ -1160,6 +1160,11 @@ func TestServiceHealthDegradedWithoutIdentity(t *testing.T) {
 	if resp.Status != "degraded" {
 		t.Fatalf("Status = %q, want degraded", resp.Status)
 	}
+	// A signer without a runtime cannot sign, so it answers locked, as
+	// Status does.
+	if !resp.SignerLocked {
+		t.Fatal("SignerLocked = false, want true")
+	}
 }
 
 func TestServiceLockedAndInternalErrors(t *testing.T) {

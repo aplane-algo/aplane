@@ -16,7 +16,7 @@ import (
 
 func (s Service) Health(ir *productruntime.Runtime) *signerapi.HealthResponse {
 	status := "healthy"
-	locked := false
+	locked := true
 	if ir == nil {
 		status = "degraded"
 	} else {
