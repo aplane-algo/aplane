@@ -145,14 +145,12 @@ func (c Catalog) listClients() error {
 		c.info("%d enrollment request(s) waiting for approval", len(pending.Requests))
 		for _, req := range pending.Requests {
 			line := fmt.Sprintf("  pending   %s  %s", req.Fingerprint, req.KeyType)
-			if req.Label != "" {
-				line += "  " + req.Label
-			}
 			if req.RemoteAddr != "" {
 				line += "  from " + req.RemoteAddr
 			}
 			line += "  " + time.Unix(req.RequestedAt, 0).UTC().Format(time.RFC3339)
 			_, _ = fmt.Fprintln(out, termsafe.Line(line))
+			printClientLabel(out, req.Label)
 		}
 	}
 	if len(enrolled.Keys) == 0 {
@@ -162,15 +160,27 @@ func (c Catalog) listClients() error {
 	c.info("%d enrolled client key(s)", len(enrolled.Keys))
 	for _, key := range enrolled.Keys {
 		line := fmt.Sprintf("  enrolled  %s  %s", key.Fingerprint, key.KeyType)
-		if key.Label != "" {
-			line += "  " + key.Label
-		}
 		if key.Connected {
 			line += "  (connected)"
 		}
 		_, _ = fmt.Fprintln(out, termsafe.Line(line))
+		printClientLabel(out, key.Label)
 	}
 	return nil
+}
+
+// clientLabelWidth is the width a client's label line fits: the narrowest
+// terminal apadmin is laid out for.
+const clientLabelWidth = 80
+
+// printClientLabel prints a client's label on a line of its own under its
+// key's row: quoted in ASCII and cut to fit an 80-column terminal
+// (termsafe.QuotedField). A key's row is wider than that and wraps, so a
+// label on it could start a line that reads like another key's row.
+func printClientLabel(out io.Writer, label string) {
+	if label != "" {
+		_, _ = fmt.Fprintln(out, termsafe.QuotedField("            label ", label, clientLabelWidth))
+	}
 }
 
 func (c Catalog) approveClient(fingerprint, label string) error {

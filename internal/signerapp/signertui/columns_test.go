@@ -87,8 +87,10 @@ func TestRowsPadUserTextInColumns(t *testing.T) {
 		view := stripANSI(m.View())
 		name := fmt.Sprintf("clients at %d columns", width)
 		checkColumnAligned(t, name, view, "  "+clientConnectedFlag, 2, width)
-		if !strings.Contains(view, "田中のノートPC  ") {
-			t.Errorf("%s: the label is cut though it fits:\n%s", name, view)
+		// A label is quoted in ASCII, so one stored before labels were
+		// ASCII shows as escapes, whole where its column has room.
+		if width == 120 && !strings.Contains(view, `"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC"  `) {
+			t.Errorf("%s: the label is not shown whole, escaped:\n%s", name, view)
 		}
 	}
 

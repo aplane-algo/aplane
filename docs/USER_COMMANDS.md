@@ -1178,9 +1178,10 @@ apadmin clients revoke <fingerprint>
 apadmin clients import <public-key-file|-> [--label <text>]
 ```
 
-`list` prints the requests waiting for approval (fingerprint, key type, label,
-origin, and time) followed by the enrolled keys; it needs only a read-only
-session. The other verbs take an unlocked session. `approve` enrolls the key
+`list` prints the requests waiting for approval (fingerprint, key type,
+origin, and time) followed by the enrolled keys, each key's label on a line of
+its own under it, quoted in ASCII and cut to fit 80 columns; it needs only a
+read-only session. The other verbs take an unlocked session. `approve` enrolls the key
 of a waiting request, with `--label` replacing the label the client asked for;
 `reject` drops a waiting request; `revoke` removes an enrolled key and closes
 its connections. `import` pre-enrolls a client's key from a file holding one

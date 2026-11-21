@@ -4,8 +4,11 @@
 package apadminapp
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // The documented forms put --label after the positional argument; the
@@ -76,5 +79,54 @@ func TestClientsImportArgsAcceptLabelInEitherPosition(t *testing.T) {
 		if _, _, err := parseClientsImportArgs(args); err == nil || !strings.HasPrefix(err.Error(), "usage: apadmin clients import") {
 			t.Errorf("import %q error = %v, want usage", args, err)
 		}
+	}
+}
+
+// clients list prints a client's label on a line of its own under its key's
+// row, quoted in ASCII and cut to 80 columns: a key's row is wider than that
+// and wraps, so a label on it could start a line reading like another key.
+func TestClientsListPutsTheLabelOnItsOwnQuotedLine(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	labels := []string{
+		"x                  pending   SHA256:FakeFakeFakeFakeFakeFakeFake",
+		"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC",
+		`quote " and backslash \ ` + strings.Repeat(`\`, 40),
+	}
+	requester := &fakeRequester{handle: func(message, result any) error {
+		switch result := result.(type) {
+		case *protocol.PendingEnrollmentsListMessage:
+			for _, label := range labels {
+				result.Requests = append(result.Requests, protocol.PendingEnrollmentInfo{Fingerprint: fingerprint, Label: label,
+					KeyType: "ssh-ed25519", RemoteAddr: "203.0.113.9:51234", RequestedAt: 1790000000})
+			}
+		case *protocol.EnrolledKeysListMessage:
+			for _, label := range labels {
+				result.Keys = append(result.Keys, protocol.EnrolledKeyInfo{Fingerprint: fingerprint, Label: label, KeyType: "ssh-ed25519"})
+			}
+		}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	if err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run("clients", []string{"list"}); err != nil {
+		t.Fatalf("clients list: %v", err)
+	}
+	labelLines := 0
+	for _, line := range strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n") {
+		if strings.HasPrefix(line, `            label "`) {
+			labelLines++
+			if len(line) > 80 || !strings.HasSuffix(line, `"`) || strings.ContainsFunc(line, func(r rune) bool { return r < 0x20 || r > 0x7e }) {
+				t.Errorf("label line not one quoted ASCII line of 80 columns: %q", line)
+			}
+			continue
+		}
+		if strings.Contains(line, "Fake") || strings.Contains(line, "\u7530") {
+			t.Errorf("a label is on a key's row: %q", line)
+		}
+	}
+	if labelLines != 2*len(labels) {
+		t.Errorf("%d label lines, want %d:\n%s", labelLines, 2*len(labels), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `label "\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC"`) {
+		t.Errorf("a stored non-ASCII label is not shown as escapes:\n%s", stdout.String())
 	}
 }

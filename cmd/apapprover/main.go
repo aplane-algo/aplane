@@ -15,7 +15,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -619,7 +618,7 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 func displayRequest(req approvalRequest, queueLen int) {
 	switch req.kind {
 	case approvalKindClientEnrollment:
-		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen)
+		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen, terminalWidth())
 	default:
 		displaySignRequest(req.signRequest, queueLen)
 	}
@@ -746,8 +745,9 @@ func violationLine(v protocol.PolicyViolation) string {
 	return line
 }
 
-// displayClientEnrollmentRequest shows a client enrollment request to the user.
-func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage, queueLen int) {
+// displayClientEnrollmentRequest shows a client enrollment request to the user
+// on a terminal width columns wide.
+func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage, queueLen, width int) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if queueLen > 1 {
 		fmt.Printf("🔑 CLIENT ENROLLMENT REQUEST (1 of %d pending)\n", queueLen)
@@ -755,16 +755,15 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 		fmt.Println("🔑 CLIENT ENROLLMENT REQUEST")
 	}
 	fmt.Println(strings.Repeat("=", 60))
-	// The label is the client's own text: quoted and escaped, it can neither
-	// drive the terminal nor end its quotes early, and at its bounded length
-	// its line fits the terminal, so it cannot run onto a line of its own
-	// that reads like a field.
-	fmt.Printf("SSH Key:     %s\n", termsafe.Line(req.SSHFingerprint))
+	// Each field is one row its value cannot leave (termsafe.Field): the
+	// label is the client's own text, quoted in ASCII, and no value can wrap
+	// onto a line of its own that reads like a field.
+	fmt.Println(termsafe.Field("SSH Key:     ", req.SSHFingerprint, width))
 	if req.Label != "" {
-		printConfined("Label:       "+strconv.Quote(req.Label), terminalWidth())
+		fmt.Println(termsafe.QuotedField("Label:       ", req.Label, width))
 	}
-	fmt.Printf("Remote Addr: %s\n", termsafe.Line(req.RemoteAddr))
-	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Println(termsafe.Field("Remote Addr: ", req.RemoteAddr, width))
+	fmt.Println(termsafe.Field("Requested:   ", time.Unix(req.Timestamp, 0).Format(time.RFC3339), width))
 	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))
 }

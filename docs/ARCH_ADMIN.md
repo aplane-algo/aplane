@@ -1364,11 +1364,18 @@ identifies the current screen. The enum has families for:
   when each request comes into view, the next queued one included, and each
   request opens with Reject focused whatever the focus was on the request
   before it. Text the client sent can never draw a line that reads like a
-  field: the popup's fingerprint and address fit their lines at 80 columns
-  under names the client cannot write, and the label is drawn quoted and
-  escaped (`strconv.Quote`) on one line of its own, cut in the middle when
-  long; the Enrolled Clients details draw it the same way, and `apapprover`
-  quotes it too. In the signing review a value that wraps, an asset's URL or
+  field: every field row of the popup, the Enrolled Clients details, the
+  revoke dialog and `apapprover`'s enrollment output is drawn by
+  `termsafe.Field` or `termsafe.QuotedField`, exactly one line of printable
+  ASCII no wider than the screen, every other character escaped as Go
+  escapes it and a row too long cut with `...`, so its width is exact on
+  every terminal and no value can wrap onto a line of its own. The label is
+  an ASCII Go string literal (`strconv.QuoteToASCII`), cut in the middle by
+  cutting the text and quoting each part (`"head"..."tail"`), so a cut never
+  splits an escape; a label stored before labels were ASCII shows as `\u`
+  escapes. The client list quotes it the same way in its column, a status
+  line names it quoted and cut to 32 columns, and `apadmin clients list`
+  prints it quoted on a line of its own under its key. In the signing review a value that wraps, an asset's URL or
   a note, marks each line it continues onto with `| ` (`reviewWrap`), and
   `apapprover` cuts a request line longer than its terminal into pieces
   marked the same way, so no value can start a line of its own. `apapprover` reads whole lines, which the

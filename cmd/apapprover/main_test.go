@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -630,30 +631,47 @@ func TestConfinedLinesMarkEveryContinuation(t *testing.T) {
 	}
 }
 
-// A client's label is shown quoted and escaped on its own field's line: it
-// can neither drive the terminal nor draw a line that reads like the key's
-// fingerprint or address.
+// A client's label is shown quoted in ASCII on its own field's row, and
+// each field is one row at every width: no label can drive the terminal or
+// draw a line that reads like the key's fingerprint or address.
 func TestEnrollmentRequestLabelCannotImitateAField(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
 	for _, label := range []string{
 		"laptop-of-ops SHA256:FakeFakeFakeFakeFakeFakeFakeFakeFakeFake123",
 		"x Remote Addr: 10.0.0.5:22",
 		"bidi \u202e and C1 \u0085 and \xff",
+		strings.Repeat(`\`, 33) + " SHA256:FakeFakeFake",
+		"a SHA256:ExpectedLaptopKeyA\\\u2e3bpKeyAbCdEfGhIjKlMnOpQrStUvWxYz012",
+		"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC",
 	} {
-		rendered := captureStdout(t, func() {
-			displayClientEnrollmentRequest(&protocol.ClientEnrollmentRequestMessage{
-				SSHFingerprint: "SHA256:RealRealRealRealRealRealRealRealRealReal123", Label: label, RemoteAddr: "203.0.113.9:51234",
-			}, 1)
-		})
-		if !strings.Contains(rendered, "Label:       "+strconv.Quote(label)+"\n") {
-			t.Errorf("label %q not quoted on its line:\n%s", label, rendered)
-		}
-		for _, line := range strings.Split(rendered, "\n") {
-			if (strings.Contains(line, "SHA256:") && !strings.HasPrefix(line, "SSH Key:") && !strings.HasPrefix(line, "Label:")) ||
-				(strings.Contains(line, "Remote Addr:") && !strings.HasPrefix(line, "Remote Addr:") && !strings.HasPrefix(line, "Label:")) {
-				t.Errorf("label %q draws a field's line: %q", label, line)
+		for _, width := range []int{80, 81, 120, 200} {
+			rendered := captureStdout(t, func() {
+				displayClientEnrollmentRequest(&protocol.ClientEnrollmentRequestMessage{
+					SSHFingerprint: fingerprint, Label: label, RemoteAddr: "203.0.113.9:51234",
+				}, 1, width)
+			})
+			name := fmt.Sprintf("label %q width %d", label, width)
+			labelRows := 0
+			for _, line := range strings.Split(rendered, "\n") {
+				if len(line) > width && !strings.HasPrefix(line, "\U0001f511") {
+					t.Errorf("%s: line wider than the terminal: %q", name, line)
+				}
+				switch {
+				case strings.HasPrefix(line, `Label:       "`):
+					labelRows++
+					if !strings.HasSuffix(line, `"`) || strings.ContainsFunc(line, func(r rune) bool { return r < 0x20 || r > 0x7e }) {
+						t.Errorf("%s: the label row is not one ASCII quoted row: %q", name, line)
+					}
+				case strings.Contains(line, "SHA256:") && line != "SSH Key:     "+fingerprint,
+					strings.Contains(line, "Remote Addr:") && line != "Remote Addr: 203.0.113.9:51234":
+					t.Errorf("%s: a line that reads like a field: %q", name, line)
+				}
 			}
-			if strings.ContainsAny(line, "\u202e\u0085") {
-				t.Errorf("label %q reaches the terminal unescaped: %q", label, line)
+			if labelRows != 1 {
+				t.Errorf("%s: %d label rows:\n%s", name, labelRows, rendered)
+			}
+			if fits := len(strconv.QuoteToASCII(label)) <= width-13; fits && !strings.Contains(rendered, "Label:       "+strconv.QuoteToASCII(label)+"\n") {
+				t.Errorf("%s: the label is not quoted in ASCII:\n%s", name, rendered)
 			}
 		}
 	}

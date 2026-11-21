@@ -311,7 +311,7 @@ func TestEnrollmentSuccessFromPopupIsANoticeThatFits(t *testing.T) {
 	if m.lastWarning != "" {
 		t.Fatalf("lastWarning = %q, want none for a success", m.lastWarning)
 	}
-	if want := "Enrolled SHA256:AbCdEfGhI… (laptop)."; m.lastNotice != want {
+	if want := `Enrolled SHA256:AbCdEfGhI… ("laptop").`; m.lastNotice != want {
 		t.Fatalf("lastNotice = %q, want %q", m.lastNotice, want)
 	}
 	bar := m.renderStatusBar()
@@ -338,7 +338,7 @@ func TestEnrollmentSuccessFromPopupIsANoticeThatFits(t *testing.T) {
 	// The Enrolled Clients screen has the width for the whole fingerprint.
 	m = approvalTestModel(ViewEnrolledClients)
 	m = updateModel(t, m, ApproveEnrollmentResultMsg{Success: true, Fingerprint: fingerprint, Label: "laptop"})
-	if want := "Enrolled " + fingerprint + " (laptop)."; m.clients.status != want || m.lastNotice != "" {
+	if want := "Enrolled " + fingerprint + ` ("laptop").`; m.clients.status != want || m.lastNotice != "" {
 		t.Fatalf("status = %q, notice = %q, want status %q", m.clients.status, m.lastNotice, want)
 	}
 }
