@@ -187,6 +187,18 @@ func TestCloseConnectionsForFingerprintClosesOnlyThatKey(t *testing.T) {
 	set := newEnrolledSet()
 	srv.SetProductHooks(set.hooks())
 	srv.SetAPIHandoff(func(conn *APIConn) error { _ = conn.Close(); return nil })
+	// The server drops a closed connection from its table when the
+	// connection's handler ends, which can be after the client has seen the
+	// close; the handler reports the disconnect after that.
+	ended := make(chan string, 4)
+	srv.SetSessionCallback(func(event SessionEvent) {
+		if !event.Connected {
+			select {
+			case ended <- event.Fingerprint:
+			default:
+			}
+		}
+	})
 	host, port, known := startServer(t, srv, tmpDir)
 	revokedClient, revokedFP := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
 	keptClient, _ := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
@@ -214,6 +226,14 @@ func TestCloseConnectionsForFingerprintClosesOnlyThatKey(t *testing.T) {
 	}
 	if err := revokedClient.ConnectWithKey(context.Background()); err == nil || !strings.Contains(err.Error(), "unable to authenticate") {
 		t.Fatalf("reconnect after revocation error = %v, want authentication failure", err)
+	}
+	select {
+	case fingerprint := <-ended:
+		if fingerprint != revokedFP {
+			t.Fatalf("the server ended %s's connection, want the revoked %s", fingerprint, revokedFP)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the server did not end the revoked connection")
 	}
 	if srv.ActiveConnectionCount() != 1 {
 		t.Fatalf("ActiveConnectionCount() = %d, want 1", srv.ActiveConnectionCount())
