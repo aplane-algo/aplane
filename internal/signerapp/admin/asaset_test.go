@@ -20,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/asasetstore"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -181,9 +180,9 @@ func TestAddASAMintsAndReloads(t *testing.T) {
 }
 
 // An ASA set change during an unlock in flight on another connection is
-// refused, as a policy apply is: the unlock opens the keyring before it
-// publishes unlocked, outside the store mutation lock, and a change that
-// committed in between and failed its reload once left the unlock to
+// refused, as a policy apply is: the unlock opens the keyring under the store
+// mutation lock and publishes unlocked only after releasing it, and a change
+// that committed in between and failed its reload once left the unlock to
 // publish unlocked over it.
 func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	svc, ir, _, _ := setupUnpublishedASAAdmin(t)
@@ -214,10 +213,11 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	}
 }
 
-// An uncertain ASA set commit during a second unlock in flight ends in
-// recovery too. The ASA set calls SetRecovery once, before its best-effort
-// reload, which waits behind the unlock's reload; the unlock once published
-// unlocked during it.
+// An uncertain ASA set commit between a second unlock's read of its session
+// generations and its state check ends in recovery too, as a policy commit
+// does (TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery). The ASA
+// set calls SetRecovery once, before its best-effort reload; the unlock then
+// loads in recovery and once published unlocked over it.
 func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	svc, ir, _, reload := setupUnpublishedASAAdmin(t)
 	ir.SetUnlocked()
@@ -225,28 +225,21 @@ func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	if !looked.Success {
 		t.Fatalf("LookupASA() = %+v", looked)
 	}
-	release, unlockOutcome := secondUnlockInFlight(t, ir, reload)
 
-	identityDir := svc.Deps.KeyPaths().ProductDir()
-	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
-		if op == fsutil.OpDirSync && path == identityDir {
-			return errors.New("simulated identity-directory sync failure")
-		}
-		return nil
-	}
-	defer func() { fsutil.TestHook = nil }()
-	added := make(chan adminproto.AddASAResult, 1)
-	go func() { added <- svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset}) }()
-	awaitRecovery(t, ir)
-	release()
-	result := <-added
-	fsutil.TestHook = nil
+	var result adminproto.AddASAResult
+	outcome, loads := secondUnlockMeeting(t, svc, ir, reload, func() {
+		defer failIdentityDirSync(svc)()
+		result = svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
+	})
 
 	if result.Success || !result.CommitUncertain || result.Code != "asa_commit_uncertain" {
 		t.Fatalf("AddASA(durability unknown) = %+v", result)
 	}
-	if got := unlockOutcome(); got != signerruntime.RecoveryDuringUnlockMessage {
-		t.Fatalf("the second unlock = %q, want %q", got, signerruntime.RecoveryDuringUnlockMessage)
+	if outcome != signerruntime.RecoveryDuringUnlockMessage {
+		t.Fatalf("the second unlock = %q, want %q", outcome, signerruntime.RecoveryDuringUnlockMessage)
+	}
+	if loads != 1 {
+		t.Fatalf("the second unlock loaded %d time(s), want once: it found the signer in recovery", loads)
 	}
 	if !ir.IsRecovery() {
 		t.Fatalf("state after an uncertain ASA set commit during a second unlock = %s, want recovery", ir.GetState())

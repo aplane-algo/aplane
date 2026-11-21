@@ -1218,7 +1218,7 @@ apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.r
 ```
 
 With no signer running, nothing else reconciles the generation store, so a
-repair with `--confirm` first does what every unlock does: it quarantines a
+repair with `--confirm` first does what an unlock of a locked signer does: it quarantines a
 generation an earlier mint published but never committed, and discards
 staging residue, such as what an interrupted repair leaves, and says what it
 moved. The preview says when that is pending. It reads the generation as it

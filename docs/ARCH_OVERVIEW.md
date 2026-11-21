@@ -1452,6 +1452,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
+| `productruntime.Runtime.unlockMu` | Unlock attempts (`TryUnlock`), run one at a time from the state check to the publish |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
 | `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |
@@ -1465,6 +1466,16 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `AuditLogger.mu` | Audit file writes |
 | SSH server locks | Product hooks, client connections by fingerprint, enrollment claims, listener |
 
+An unlock takes these in one order. `productruntime.Runtime.TryUnlock` takes
+`unlockMu` first, with nothing else held, and holds it across the attempt.
+Its unlock function then takes `Signer.storeMutationLock` (the runtime's
+reload mutation lock), reads `Runtime.stateMu` to check the state, and, when
+the signer is not unlocked, takes `passphraseLock` for the reload, which
+takes `keysLock`; the fence takes `Runtime.stateMu` after the unlock function
+has released the others. A lock, an entry into recovery, the lock cleanup and
+store maintenance never wait for `unlockMu`, and nothing that holds
+`storeMutationLock` or `passphraseLock` waits for it.
+
 Goroutines:
 
 - HTTP server plus per-request handler goroutines,
@@ -1474,7 +1485,10 @@ Goroutines:
 
 ### Lock/Unlock Lifecycle
 
-Unlocking must:
+An unlock of a signer that is already unlocked verifies the passphrase and
+answers with the session's key count; it reloads nothing, so the session in
+service keeps its keyring, policy, key indexes and source token index.
+Unlocking from locked or recovery must:
 
 - open and authenticate `store-root.enc` with the passphrase,
 - hold the unsealed term keys,
@@ -1507,7 +1521,7 @@ transition:
 
 - when the runtime is unlocked, the watcher reloads immediately on qualifying filesystem changes,
 - when the runtime is locked, the watcher remains active and marks the runtime dirty,
-- the next unlock reconciles dirty state by reloading,
+- the next unlock that publishes reconciles dirty state by reloading,
 - watchers are stopped on runtime shutdown, not on every ordinary lock.
 
 Watcher-triggered reloads acquire the same process-wide mutation lock used by

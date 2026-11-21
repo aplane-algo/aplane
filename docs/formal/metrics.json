@@ -130,77 +130,105 @@
   },
   {
     "spec": "key_use_lock",
-    "distinct_states": 6748,
-    "depth": 18
+    "distinct_states": 25296,
+    "depth": 22
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_recheck",
     "expected_invariant_violation": "KU1_NoSignatureAfterLock",
-    "distinct_states": 606,
+    "distinct_states": 1314,
     "depth": 7
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_generation",
     "expected_invariant_violation": "KU1_NoSignatureAfterLock",
-    "distinct_states": 1198,
+    "distinct_states": 2888,
     "depth": 8
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_recovery",
     "expected_invariant_violation": "KU1_NoSignatureAfterLock",
-    "distinct_states": 1366,
+    "distinct_states": 2857,
     "depth": 8
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_drain",
     "expected_invariant_violation": "KU2_NoKeyMaterialAtWipe",
-    "distinct_states": 312,
+    "distinct_states": 588,
     "depth": 6
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_register",
     "expected_invariant_violation": "KU2_NoKeyMaterialAtWipe",
-    "distinct_states": 437,
+    "distinct_states": 831,
     "depth": 6
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_register_export",
     "expected_invariant_violation": "KU3_NoExportAfterWipe",
-    "distinct_states": 2464,
+    "distinct_states": 6118,
     "depth": 8
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_unlock",
     "expected_invariant_violation": "KU4_NoWipeWhileUnlocked",
-    "distinct_states": 747,
-    "depth": 6
+    "distinct_states": 3874,
+    "depth": 7
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_loser",
     "expected_invariant_violation": "KU4_NoWipeWhileUnlocked",
-    "distinct_states": 4701,
-    "depth": 10
+    "distinct_states": 18449,
+    "depth": 11
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_publish",
     "expected_invariant_violation": "KU5_NoUnlockOverLaterRecovery",
-    "distinct_states": 88,
-    "depth": 4
+    "distinct_states": 1238,
+    "depth": 6
   },
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_reentry",
     "expected_invariant_violation": "KU5_NoUnlockOverLaterRecovery",
-    "distinct_states": 243,
+    "distinct_states": 3032,
+    "depth": 7
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_answer",
+    "expected_invariant_violation": "KU6_NoLoadUnderSession",
+    "distinct_states": 35,
+    "depth": 3
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_answer_fence",
+    "expected_invariant_violation": "KU7_AnsweredUnlockLeavesSession",
+    "distinct_states": 498,
+    "depth": 5
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_serial",
+    "expected_invariant_violation": "KU6_NoLoadUnderSession",
+    "distinct_states": 6247,
+    "depth": 8
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_storelock",
+    "expected_invariant_violation": "KU6_NoLoadUnderSession",
+    "distinct_states": 423,
     "depth": 5
   },
   {

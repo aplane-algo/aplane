@@ -5,10 +5,11 @@ package daemon
 
 import (
 	"errors"
-	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -328,28 +330,81 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 	}
 }
 
-// An unlock in flight when a store change on another connection ends in
-// doubt does not publish over the recovery that change entered. It publishes
-// nothing and answers from the state the signer is then in: recovery_blocked
-// while the recovery lasts, as an unlock that finds the store needing
-// recovery does; a plain success once a reconcile on a third connection has
-// lifted it; and a lost race once a lock has come in. The answer once said
-// recovery_blocked whatever the state.
+// gatedMutationLock is the store mutation lock as the product runtime takes
+// it (SetReloadMutationLock), with hooks that run on the goroutine taking it:
+// before[n] ahead of the nth acquisition through the runtime, after[n] once
+// that acquisition is released. An unlock request takes it first to check
+// whether the signer is already unlocked (AnswerIfUnlocked), and then, in
+// TryUnlock, after it has read its session generations, to check again and
+// load, releasing it before its fence. The hooks land another connection's
+// transition in those gaps without a sleep. Other holders of the same mutex
+// (withStoreMutation) take it directly and run no hook.
+type gatedMutationLock struct {
+	mu      *sync.Mutex
+	taken   atomic.Int32
+	holding int32 // the acquisition holding mu, read and written under it
+	before  map[int32]func()
+	after   map[int32]func()
+}
+
+func (g *gatedMutationLock) Lock() {
+	n := g.taken.Add(1)
+	if hook := g.before[n]; hook != nil {
+		hook()
+	}
+	g.mu.Lock()
+	g.holding = n
+}
+
+func (g *gatedMutationLock) Unlock() {
+	n := g.holding
+	g.mu.Unlock()
+	if hook := g.after[n]; hook != nil {
+		hook()
+	}
+}
+
+// gateStoreMutation installs g over the signer's store mutation lock.
+func gateStoreMutation(server *Signer, g *gatedMutationLock) {
+	g.mu = &server.storeMutationLock
+	server.productRuntime().SetReloadMutationLock(func() sync.Locker { return g })
+}
+
+// The acquisitions an unlock request of a signer not yet unlocked makes
+// through the runtime: AnswerIfUnlocked's check, then TryUnlock's check and
+// load.
+const (
+	unlockAnswerCheck int32 = 1
+	unlockLoadCheck   int32 = 2
+)
+
+// An unlock begun in recovery, when a store change on another connection
+// ends in doubt after the unlock read its session generations, does not
+// publish over the recovery that change entered again. It loads, since the
+// signer is not unlocked, then publishes nothing and answers from the state
+// the signer is then in: recovery_blocked while the recovery lasts, as an
+// unlock that finds the store needing recovery does, and a plain success once
+// a reconcile on a third connection has lifted it before the fence. The
+// answer once said recovery_blocked whatever the state.
 //
-// The unlock's reload published a source token index before the fence. The
-// fence leaves it: recovery keeps the keyring that decrypts the token files,
-// and a clear there could wipe the index a second unlock had just published.
+// The store change is a reconcile that fails, which enters recovery again
+// under the store mutation lock: it lands between the unlock's generation
+// read and its check. The lifting reconcile lands between the end of the
+// unlock's load and its fence. Neither can land during the load, which holds
+// the store mutation lock.
+//
+// The unlock's load published a source token index before the fence. The
+// fence leaves it: recovery keeps the keyring that decrypts the token files.
 // No lookup uses it until the signer is unlocked, and a lock zeroes it.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		after func(*productruntime.Runtime)
-		want  func(t *testing.T, success bool, keyCount int, errMsg, code string)
-		state signerruntime.SignerState
+		name   string
+		lifted bool
+		want   func(t *testing.T, success bool, keyCount int, errMsg, code string)
+		state  signerruntime.SignerState
 	}{
 		{
-			name:  "still in recovery",
-			after: func(*productruntime.Runtime) {},
+			name: "still in recovery",
 			want: func(t *testing.T, success bool, keyCount int, errMsg, code string) {
 				if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
@@ -358,8 +413,8 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			state: signerruntime.SignerStateRecovery,
 		},
 		{
-			name:  "a reconcile lifted it",
-			after: func(ir *productruntime.Runtime) { ir.PromoteRecoveryToUnlocked() },
+			name:   "a reconcile lifted it",
+			lifted: true,
 			want: func(t *testing.T, success bool, keyCount int, errMsg, code string) {
 				if !success || errMsg != "" || code != "" {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want a plain success", success, keyCount, errMsg, code)
@@ -372,28 +427,54 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			server, cleanup := setupTestSigner(t)
 			defer cleanup()
 			ir := server.productRuntime()
-			ir.SetUnlocked()
+			ir.SetRecovery() // the unlock begins in recovery
 			file, err := sourcetokens.SetToken(nil, sourcetokens.DefaultSelector, "screening", []byte("tok-fenced"), time.Unix(1_785_200_000, 0))
 			if err != nil {
 				t.Fatal(err)
 			}
 			index := sourcetokens.NewIndex([]*sourcetokens.File{file})
 			file.Zero()
+			loads := 0
+			failReconcile := false
 			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 				if passphrase != nil {
-					ir.SetRecovery() // the store change, while the unlock reloads
-					tc.after(ir)
+					loads++
 					ir.PublishSourceTokens(index)
+					return &signertemplates.ReloadReport{}, nil
+				}
+				if failReconcile {
+					return nil, errors.New("simulated reconcile reload failure")
 				}
 				return &signertemplates.ReloadReport{}, nil
 			})
+			reconcile := func(fail bool) {
+				failReconcile = fail
+				_, err := server.adminServices().reconcileReloadAndPromote(ir, true)
+				if (err != nil) != fail {
+					t.Errorf("reconcile(fail %v) = %v", fail, err)
+				}
+			}
+			gate := &gatedMutationLock{
+				before: map[int32]func(){unlockLoadCheck: func() {
+					reconcile(true) // the store change: recovery entered again
+				}},
+				after: map[int32]func(){unlockLoadCheck: func() {
+					if tc.lifted {
+						reconcile(false) // a third connection lifts it
+					}
+				}},
+			}
+			gateStoreMutation(server, gate)
 
 			success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
 			tc.want(t, success, keyCount, errMsg, code)
 			if got := ir.GetState(); got != tc.state {
 				t.Fatalf("state = %v, want %v", got, tc.state)
 			}
-			// The fence left the index the reload published intact.
+			if loads != 1 {
+				t.Fatalf("the unlock loaded %d time(s), want once: it found the signer in recovery", loads)
+			}
+			// The fence left the index the load published intact.
 			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); kept != "tok-fenced" {
 				t.Fatalf("the index holds %q after the fenced unlock, want it kept", kept)
 			}
@@ -403,7 +484,7 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			if _, known := ir.SourceTokenNamesFor(sourcetokens.DefaultSelector); known != unlocked {
 				t.Fatalf("SourceTokenNamesFor() known = %v, want %v", known, unlocked)
 			}
-			// A lock ends it: the index the reload published is zeroed.
+			// A lock ends it: the index the load published is zeroed.
 			ir.Lock()
 			if _, known := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); known {
 				t.Fatal("a locked signer still serves a source token")
@@ -427,18 +508,18 @@ func TestAFencedUnlockAnswersALockThatCameAfter(t *testing.T) {
 	}
 }
 
-// A second unlock whose reload fails without touching the keyring, as when a
-// passphrase change landed after the passphrase was verified, leaves the
-// session in service its tokens: it still has its keyring. The reload once
-// cleared the index on every failure, leaving the signer unlocked with no
-// tokens.
+// An unlock begun in recovery whose load fails without touching the keyring
+// leaves recovery the keyring and the source token index it had: tokens go
+// only with the keyring that decrypts them. The real load fails that way when
+// the store root does not open at its start, after the passphrase check
+// passed (a read failure); the reload here fails as that one does. A load
+// with a passphrase no longer runs under a session in service: an unlock of
+// an unlocked signer loads nothing. Under one, the index was once cleared on
+// every failure, leaving the signer unlocked with no tokens.
 func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.productRuntime()
-	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
-		t.Fatalf("UnlockIdentity() failed: %s", errMsg)
-	}
 	file, err := sourcetokens.SetToken(nil, sourcetokens.DefaultSelector, "screening", []byte("tok-live"), time.Unix(1_785_200_000, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -446,17 +527,142 @@ func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
 	index := sourcetokens.NewIndex([]*sourcetokens.File{file})
 	file.Zero()
 	ir.PublishSourceTokens(index)
+	ir.SetRecovery()
 
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	loads := 0
+	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil {
+			loads++
+		}
 		return nil, errors.New("failed to unlock the keystore: injected")
 	})
-	if _, err := ir.ReloadWithPassphrase(testPassphrase); err == nil {
-		t.Fatal("ReloadWithPassphrase() succeeded")
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); success || !strings.Contains(errMsg, "injected") {
+		t.Fatalf("UnlockIdentity() = (%v, %q), want the load's failure", success, errMsg)
+	}
+	if loads != 1 {
+		t.Fatalf("the unlock loaded %d time(s), want once", loads)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v after a failed load in recovery, want recovery", ir.GetState())
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("recovery's keyring is closed: %v", err)
+	}
+	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-live" {
+		t.Fatalf("SourceTokenFor() = %q, %v after a failed load that kept the keyring; want the tokens kept", got, ok)
+	}
+}
+
+// An unlock request on a signer that is already unlocked verifies the
+// passphrase and answers, and reloads nothing: the session in service keeps
+// the keyring, policy, keys and tokens it has. A reload there once replaced
+// the keyring under the session, and one that failed afterwards closed it.
+func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
+		t.Fatalf("first UnlockIdentity() failed: %s", errMsg)
+	}
+	generation, unlocked := ir.UnlockedGeneration()
+	if !unlocked {
+		t.Fatal("the signer is not unlocked after its first unlock")
+	}
+	reloads := 0
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		reloads++
+		return nil, errors.New("injected reload failure")
+	})
+
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	if !success || errMsg != "" || code != "" || keyCount != ir.KeyCount() {
+		t.Fatalf("second UnlockIdentity() = (%v, %d, %q, %q), want a plain success with the session's key count", success, keyCount, errMsg, code)
+	}
+	if reloads != 0 {
+		t.Fatalf("the second unlock ran %d reload(s), want none", reloads)
+	}
+	if !ir.IsUnlockedIn(generation) {
+		t.Fatal("the second unlock ended the session in service")
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
 		t.Fatalf("the session's keyring is closed: %v", err)
 	}
-	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-live" {
-		t.Fatalf("SourceTokenFor() = %q, %v after a failed reload that kept the keyring; want the tokens kept", got, ok)
+
+	// A wrong passphrase is refused, and leaves the session as it was.
+	wrong := []byte("not-the-passphrase")
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(wrong); success || errMsg == "" {
+		t.Fatalf("UnlockIdentity(wrong passphrase) on an unlocked signer = (%v, %q), want a refusal", success, errMsg)
+	}
+	if reloads != 0 || !ir.IsUnlockedIn(generation) {
+		t.Fatalf("a refused unlock ran %d reload(s) or ended the session", reloads)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("a refused unlock closed the session's keyring: %v", err)
+	}
+}
+
+// Two unlocks of a locked signer at once load once. The second begins after
+// the first has loaded and before it publishes, finds the signer not yet
+// unlocked at its first check, and waits for the first to publish (TryUnlock
+// runs attempts one at a time); it then finds the signer unlocked at its
+// second check and answers from the session.
+func TestTwoUnlocksAtOnceReloadOnce(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	// The test signer starts unlocked; these unlocks begin from locked.
+	ir.Lock()
+	if ir.IsUnlocked() {
+		t.Fatal("the signer is still unlocked after a lock")
+	}
+	var loads atomic.Int32
+	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil {
+			loads.Add(1)
+		}
+		return &signertemplates.ReloadReport{}, nil
+	})
+	type outcome struct {
+		success  bool
+		keyCount int
+		errMsg   string
+	}
+	unlock := func(results chan<- outcome) {
+		success, keyCount, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)
+		results <- outcome{success, keyCount, errMsg}
+	}
+	second := make(chan outcome, 1)
+	secondChecked := make(chan bool, 1)
+	secondSawUnlocked := true
+	// The first unlock makes acquisitions 1 and 2. Once its load has
+	// released the lock, and before its fence, the second begins, and its
+	// first check is acquisition 3: no other holder takes the lock through
+	// the runtime before the first unlock publishes and starts the watcher.
+	gate := &gatedMutationLock{after: map[int32]func(){
+		unlockLoadCheck: func() {
+			go unlock(second)
+			secondSawUnlocked = <-secondChecked
+		},
+		unlockLoadCheck + unlockAnswerCheck: func() {
+			secondChecked <- ir.IsUnlocked()
+		},
+	}}
+	gateStoreMutation(server, gate)
+
+	first := make(chan outcome, 1)
+	unlock(first)
+	for name, results := range map[string]chan outcome{"first": first, "second": second} {
+		if got := <-results; !got.success || got.errMsg != "" {
+			t.Fatalf("the %s unlock = %+v, want a success", name, got)
+		}
+	}
+	if secondSawUnlocked {
+		t.Fatal("the second unlock began after the first had published; want it to begin before")
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("%d loads for two unlocks at once, want 1", got)
+	}
+	if !ir.IsUnlocked() {
+		t.Fatal("the signer is not unlocked")
 	}
 }

@@ -979,7 +979,7 @@ follows the node role recorded in the store. Reads (`status`, `export`,
 hold the exclusive store lock and require a stopped daemon. Rescue applies use
 the same check and commit rules as the daemon and also commit a new
 generation. With no signer running, nothing else reconciles the generation
-store, so `apply` and `remove` first do what every unlock does: they
+store, so `apply` and `remove` first do what an unlock of a locked signer does: they
 quarantine a generation an earlier mint published but never committed, and
 discard crash residue, and say what they moved. A retry after an interrupted or
 failed apply therefore needs nothing else. On a systemd store, run rescue as

@@ -104,6 +104,15 @@ func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
 	ir := s.ProductRuntime()
+	// A signer already unlocked answers from the session in service: the
+	// passphrase is checked, and nothing is reconciled, loaded or published.
+	// A reconcile that failed here would enter recovery and end that session.
+	if answered, keyCount, errMsg := ir.AnswerIfUnlocked(passphrase); answered {
+		if errMsg != "" {
+			return failedUnlock(errMsg)
+		}
+		return true, keyCount, "", ""
+	}
 	// Reconciliation authenticates the sole store root before it relocates or
 	// deletes residue. A valid root with damaged selected content still opens
 	// the keyring and enters recovery; no generation is selected heuristically.

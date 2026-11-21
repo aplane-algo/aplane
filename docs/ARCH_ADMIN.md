@@ -358,8 +358,8 @@ Server to Client:
 - `signer_locked`: `reason`
 - `displaced`: `reason`
 
-The pre-auth `auth` request verifies the passphrase and may also unlock and
-reload the bound runtime. Therefore `auth_result{success:false}` does not
+The pre-auth `auth` request verifies the passphrase and, when the bound
+runtime is not yet unlocked, also unlocks and reloads it. Therefore `auth_result{success:false}` does not
 always mean a bad passphrase. Only a passphrase that does not open the store
 root (`crypto.ErrInvalidPassphrase`: empty, or the sealed keyring fails
 authentication under it) is `code:"invalid_passphrase"`, and only then does
@@ -381,12 +381,25 @@ after passphrase verification, through
 `invalid_passphrase` again means only a passphrase that does not open the
 root.
 
+An `unlock` request on a signer that is already unlocked verifies the
+passphrase and answers `unlock_result{success:true}` with the session's
+current `key_count`. It reloads nothing: it does not reconcile generations,
+reopen the keyring, or republish the policy, the key maps or the source
+token index, so the session in service keeps all of them. A wrong passphrase
+is refused with `invalid_passphrase` and leaves the session as it is. Unlock
+requests run one at a time, and the check, the passphrase verification and
+the load run under the store mutation lock, so a request that arrives while
+another is loading waits for it and then answers from the session that one
+published.
+
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails,
 or when a store change on another connection ends in doubt and enters
-recovery while the unlock is still running (its passphrase checks and reload
-run outside the store mutation lock), the result reports `success:true` with
-a zero key count and `code:"recovery_blocked"`. The unlock then publishes
+recovery while the unlock is still running (the unlock reads its session
+generations before it takes the store mutation lock to check the state and
+load, and publishes after releasing it, so the change lands in one of those
+gaps), the result reports `success:true` with a zero key count and
+`code:"recovery_blocked"`. The unlock then publishes
 nothing, so it never lifts a recovery entered after it began, and it answers
 from the state it finds: if a reconcile on another connection has lifted that
 recovery meanwhile, it answers as an ordinary unlock, and if a lock has come
@@ -706,7 +719,7 @@ Apply rules, the same on both node roles:
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
-- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring before it publishes unlocked, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
+- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring under the store mutation lock and publishes unlocked only after releasing it, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
 - `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, and `source_token_remove` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.

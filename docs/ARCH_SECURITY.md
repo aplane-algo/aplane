@@ -1721,7 +1721,8 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 **Benefits:**
 - Single Argon2id derivation at unlock time instead of per-file
 - One KDF operation to open the keyring; full unlock also validates and scans
-  the selected generation, so its cost grows with store contents
+  the selected generation, so its cost grows with store contents. An unlock
+  request on a signer already unlocked only verifies the passphrase
 - Term keys held in signer memory during session and covered by process memory
   locking when that protection is enabled successfully
 - The KEK never outlives the unwrap, so a memory disclosure yields term keys but
@@ -1859,7 +1860,9 @@ then zeroes it. A new `WithKeyring` meanwhile is refused with
 passphrase): they wait for the callback. A store mutation that a lock
 overtakes leaves the signer locked: `SetRecovery` does nothing on a locked
 signer, whose next unlock reconciles the store. `Unlock` of a store already unlocked
-publishes the new keyring at once and zeroes the old one the same way. This
+publishes the new keyring at once and zeroes the old one the same way; an
+unlock request on an unlocked signer does not reach it, since it verifies the
+passphrase and answers from the session in service without reloading. This
 prevents term-key use after zeroing. Decrypted request-owned `KeyMaterial`
 can continue beyond key retrieval and is separately zeroed by the signing
 executor.
@@ -2395,7 +2398,9 @@ A token's custody:
   re-encrypted with the store on a passphrase change, and sealed again under
   the current term when restore, rollback or rebuild writes it.
 - **In memory.** Only while the keyring is open, in an immutable token
-  index a reload decrypts. The node holds it while it is unlocked. A node
+  index a reload decrypts. The node holds it while it is unlocked; an unlock
+  request on a node already unlocked reloads nothing, so it neither replaces
+  nor clears the index. A node
   that goes from unlocked to recovery keeps the index in memory until a
   lock removes it or a reload replaces it: the keyring that decrypts the
   token files stays open there too, no lookup runs, and no token name is

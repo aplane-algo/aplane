@@ -7,6 +7,29 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## An unlock of an unlocked signer no longer reloads
+
+- **An unlock request on a signer that is already unlocked checks the
+  passphrase and answers with the session's key count.** It no longer
+  reconciles the generations, reopens the keyring, or republishes the
+  policy, the key indexes or the source token index. A wrong passphrase is
+  refused and changes nothing. Unlocks from locked and from recovery work as
+  before, and an apadmin login to an unlocked signer already skipped the
+  unlock.
+- **Why.** The reload replaced the keyring under the session in service, and
+  one that then failed closed it again: the unlock answered `unlock_failed`,
+  nothing locked or entered recovery, and the signer said unlocked and
+  refused to sign. The reload also republished state it had read before a
+  concurrent change, so a source token removed on another connection during
+  a second unlock could stay in memory and go on being sent, and one just
+  set could go missing.
+- **Unlocks run one at a time, and an unlock's state check and reload hold
+  the store mutation lock.** A second unlock that arrives while the first
+  is loading waits for it and then answers from the session it published.
+  No reconcile, policy apply, ASA set change, token change or passphrase
+  change lands during an unlock's reload. An unlock still never publishes
+  over a recovery that a store change entered after it began.
+
 ## Cosigner policy documents can describe external checks
 
 - **A cosigner document can name REST sources and checks over their

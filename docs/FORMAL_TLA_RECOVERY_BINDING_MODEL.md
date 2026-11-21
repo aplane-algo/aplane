@@ -69,13 +69,16 @@ The transitions transcribe the post-commit reload and the recovery paths:
   Policy apply and the ASA set change commit only on an unlocked signer,
   and restore and rollback only on one unlocked or in recovery, each
   checked under the lock: an unlock in flight on another connection, which
-  the model does not have, opens the keyring before it publishes unlocked,
-  and would otherwise publish over a commit whose reload failed, where
-  `SetRecovery` did nothing on the still-locked signer. A second unlock of
-  an unlocked signer, or one begun in recovery, does not publish over a
-  recovery entered after it began: `TryUnlock` compares the session
-  generation, which every entry into recovery moves (KU5 in
-  [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)).
+  the model does not have, opens the keyring under the lock and publishes
+  unlocked only after releasing it, and would otherwise publish over a
+  commit whose reload failed, where `SetRecovery` did nothing on the
+  still-locked signer. A second unlock of an unlocked signer answers from
+  the session and loads nothing (KU6 in
+  [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)), so it rebinds
+  nothing. One that found the signer not unlocked at its check, or that
+  began in recovery, does not publish over a recovery entered after it
+  began: `TryUnlock` compares the session generation, which every entry
+  into recovery moves (KU5).
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). A key write
   is an in-place write of the selected generation that mints nothing: key
@@ -144,10 +147,12 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.
 - An unlock that begins in recovery is a second way out of it, not modeled
-  here: it reconciles under the store mutation lock, then reloads and
-  publishes outside it. It cannot publish over a recovery entered after it
-  began (KU5), but which generation its own reload bound when it publishes
-  is not checked by any model; it is a model-extension candidate.
+  here: it reconciles under the store mutation lock, releases it, takes it
+  again to check the state and reload, and publishes after releasing it.
+  No commit lands during its reload, and it cannot publish over a recovery
+  entered after it began (KU5), but a commit can land between its reload
+  and its publish, and which generation its own reload bound when it
+  publishes is not checked by any model; it is a model-extension candidate.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.
