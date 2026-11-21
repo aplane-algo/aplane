@@ -588,9 +588,12 @@ func removeInstalledActive(active storepaths.GenPaths, keyType string, rec keyty
 
 // StoredTemplateFingerprintActive returns the compatibility fingerprint of
 // keyType's installed template in active, as an install computes it. The
-// template's envelope is opened as keyType's: it authenticates the key type
-// it was sealed for and the current term, so one key type's template never
-// yields another's fingerprint.
+// template's envelope is opened as keyType's under the current term, so
+// another key type's template never yields keyType's fingerprint. The
+// envelope binds the key type and the term, not the generation or the
+// definition: any template sealed for keyType in the current term opens, an
+// earlier definition's from a prior generation or the deleted archive
+// included.
 func StoredTemplateFingerprintActive(active storepaths.GenPaths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (string, error) {
 	data, err := templatestore.LoadTemplateFromPath(templatestore.GetTemplateFilePathActive(active, keyType), kr)
 	if err != nil {

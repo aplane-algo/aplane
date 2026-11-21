@@ -1177,24 +1177,37 @@ Stop `apsigner`, then preview the defects:
 apstore -d $APSIGNER_DATA template repair
 ```
 
-The preview lists each defective key type with its defect, the default action,
-the number of keys of that type, and, for an external edit, how many of those
-keys would read `conflict` after a re-pin. It also shows the fingerprint the
-record pins and the one its stored template computes. Healthy templates are
-not listed and cannot be named.
+The preview lists each defective key type with its defect, the actions it
+allows, and the number of keys of that type. For an external edit it also
+shows the fingerprint the record pins and the one its stored template
+computes, and states how many of the keys were created from the stored
+template and how many from another definition. Healthy templates are not
+listed and cannot be named.
 
-Each defect takes one of two actions:
+Each defect takes one of two actions, and the preview recommends neither for
+an external edit:
 
-- **`repin`**, for an external edit only, and its default: rewrite the
-  record's fingerprint to the one the stored template computes, keeping its
-  state and activation time. The stored template is encrypted and
-  authenticated for its own key type, so only that key type's template can be
-  pinned. Keys whose recorded fingerprint differs read `conflict`.
-- **`drop`**, the default for an orphaned record: delete the record. An
-  externally edited template is also moved to `deleted/keytypes/`, as
-  `apadmin template remove` moves it. Keys of the type keep signing from their
-  stored metadata, but no new key of the type can be created until the
-  template is imported again.
+- **`repin`**, for an external edit only: rewrite the record's fingerprint to
+  the one the stored template computes, keeping its state and activation time.
+  The stored template is encrypted for its key type under the current
+  passphrase term, so another key type's template does not open in its place.
+  That binding is to the key type and the term, not to the generation or the
+  definition: an earlier definition of the same key type, from a prior
+  generation or the deleted archive, opens as well, and a repin would pin it.
+  Keys whose recorded fingerprint differs read `conflict` afterwards.
+- **`drop`**, for any defect and the only action for an orphaned record:
+  delete the record. An externally edited template is also moved to
+  `deleted/keytypes/`, as `apadmin template remove` moves it. Keys of the type
+  keep signing from their stored metadata, but no new key of the type can be
+  created until the template is imported again.
+
+The key files are authenticated and the record is not, so the keys are the
+evidence. Keys created from the stored template point at the record as what
+changed; keys created from another definition point at the template. Repin
+only if you know why the record and the template differ, for example after a
+fingerprint-format change. Otherwise drop the record, start `apsigner`, and
+import the template again from a file you trust with `apadmin template
+import`, which pins only the definition that file holds.
 
 Name every defect in one run, each under one verb. Without `--confirm` the
 command previews the repair and changes nothing:
@@ -1205,8 +1218,8 @@ apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.r
 ```
 
 The repair commits a new generation (operation `template-repair`) whose parent
-is the damaged generation, which is kept as the rollback target. Key files are
-never touched. Start and unlock `apsigner` afterwards; it unlocks normally.
+is the damaged generation, which is kept, sealed, until generation pruning;
+`apadmin restore rollback` does not return to it. Key files are never touched. Start and unlock `apsigner` afterwards; it unlocks normally.
 
 The repair is refused, and changes nothing, for a key type that is not a
 template record defect, a re-pin of a record with no template file, a defect

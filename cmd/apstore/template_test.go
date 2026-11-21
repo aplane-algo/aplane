@@ -108,15 +108,13 @@ func TestTemplateRepairPreview(t *testing.T) {
 		if len(lines) != 3 {
 			t.Fatalf("preview output = %q, want a header and two defects", out)
 		}
-		for i, want := range [][]string{
-			{"KEY TYPE", "DEFECT", "DEFAULT", "KEYS", "CONFLICT AFTER REPIN"},
-			{repairOrphan, "orphaned record (generic)", "drop", "0", "-"},
-			{repairEdited, "external edit (generic)", "repin", "2", "1"},
+		for i, want := range []string{
+			"KEY TYPE DEFECT ACTIONS KEYS",
+			repairOrphan + " orphaned record (generic) drop 0",
+			repairEdited + " external edit (generic) repin or drop 2",
 		} {
-			for _, field := range want {
-				if !strings.Contains(lines[i], field) {
-					t.Fatalf("preview line %d = %q, want %q", i, lines[i], field)
-				}
+			if got := strings.Join(strings.Fields(lines[i]), " "); got != want {
+				t.Fatalf("preview line %d = %q, want %q", i, got, want)
 			}
 		}
 		if strings.Contains(out, repairHealthy) {
@@ -126,6 +124,10 @@ func TestTemplateRepairPreview(t *testing.T) {
 			"has 2 template record defect(s)",
 			repairEdited + ": the record pins 1:bbbb",
 			"its stored template computes " + installed,
+			repairEdited + ": 1 of its 2 key(s) were created from a definition other than the stored template; a repin leaves them reading conflict",
+			repairEdited + ": 1 of its 2 key(s) were created from the stored template",
+			"repin keeps the stored template as it is now: use it only if you know why the record and the template differ",
+			"otherwise drop the record, start apsigner, and import the template again from a file you trust with `apadmin template import`",
 			"repair every defect in one run",
 		} {
 			if !strings.Contains(log.String(), want) {
@@ -197,7 +199,7 @@ func TestTemplateRepairRefusalsChangeNothing(t *testing.T) {
 		{name: "a healthy key type", args: []string{"repair", "repin", repairEdited, "drop", repairOrphan, repairHealthy, "--confirm"},
 			want: "key type is not a template record defect: " + repairHealthy, wantExit: apstoreExitFailure},
 		{name: "a re-pin of an orphaned record", args: []string{"repair", "repin", repairEdited, repairOrphan, "--confirm"},
-			want: "only an external edit can be re-pinned: " + repairOrphan + " is an orphaned record", wantExit: apstoreExitFailure},
+			want: "only an external edit can be re-pinned: " + repairOrphan + " has no template file to pin (orphaned record)", wantExit: apstoreExitFailure},
 		{name: "a defect left out", args: []string{"repair", "repin", repairEdited, "--confirm"},
 			want: "every template record defect must be repaired together: " + repairOrphan, wantExit: apstoreExitFailure},
 		{name: "other damage", args: []string{"repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"},

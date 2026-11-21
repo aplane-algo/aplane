@@ -165,16 +165,18 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 	}
 	logInfof("generation %s has %d template record defect(s)", preview.GenerationID, len(preview.Defects))
 	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(table, "KEY TYPE\tDEFECT\tDEFAULT\tKEYS\tCONFLICT AFTER REPIN"); err != nil {
+	if _, err := fmt.Fprintln(table, "KEY TYPE\tDEFECT\tACTIONS\tKEYS"); err != nil {
 		return err
 	}
+	edits := false
 	for _, defect := range preview.Defects {
-		conflict := "-"
+		actions := string(templaterepair.ActionDrop)
 		if defect.Allows(templaterepair.ActionRepin) {
-			conflict = strconv.Itoa(defect.ConflictAfterRepin)
+			actions = string(templaterepair.ActionRepin) + " or " + string(templaterepair.ActionDrop)
+			edits = true
 		}
-		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%d\t%s\n",
-			defect.KeyType, defectLabel(defect), defect.DefaultAction, defect.Keys, conflict); err != nil {
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%d\n",
+			defect.KeyType, defectLabel(defect), actions, defect.Keys); err != nil {
 			return err
 		}
 	}
@@ -183,9 +185,12 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 	}
 	for _, defect := range preview.Defects {
 		if defect.Allows(templaterepair.ActionRepin) {
-			logInfof("%s: the record pins %s; its stored template computes %s",
-				defect.KeyType, displayValue(defect.RecordedFingerprint), defect.TemplateFingerprint)
+			printExternalEditEvidence(defect)
 		}
+	}
+	if edits {
+		logInfof("repin keeps the stored template as it is now: use it only if you know why the record and the template differ, for example after a fingerprint-format change")
+		logInfof("otherwise drop the record, start apsigner, and import the template again from a file you trust with `apadmin template import`")
 	}
 	if preview.OtherDamage != nil {
 		logWarnf("a repair is refused while the generation has other damage: %v", preview.OtherDamage)
@@ -194,6 +199,23 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 	}
 	logInfof("repair every defect in one run: apstore template repair repin <key_type>... drop <key_type>... --confirm")
 	return nil
+}
+
+// printExternalEditEvidence states what the store shows about an external
+// edit. The key files are authenticated and the record is not, so keys that
+// agree with the stored template point at the record, and keys that do not
+// point at the template.
+func printExternalEditEvidence(defect templaterepair.Defect) {
+	logInfof("%s: the record pins %s; its stored template computes %s",
+		defect.KeyType, displayValue(defect.RecordedFingerprint), defect.TemplateFingerprint)
+	if defect.ConflictAfterRepin > 0 {
+		logWarnf("%s: %d of its %d key(s) were created from a definition other than the stored template; a repin leaves them reading conflict",
+			defect.KeyType, defect.ConflictAfterRepin, defect.Keys)
+	}
+	if defect.KeysFromStoredTemplate > 0 {
+		logInfof("%s: %d of its %d key(s) were created from the stored template",
+			defect.KeyType, defect.KeysFromStoredTemplate, defect.Keys)
+	}
 }
 
 func defectLabel(defect templaterepair.Defect) string {

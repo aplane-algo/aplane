@@ -76,19 +76,27 @@ type Options struct {
 	Config  *serverconfig.ServerConfig
 }
 
-// Defect is one template record defect and what a repair would do to it.
+// Defect is one template record defect and the evidence the store holds
+// about it. A repair offers no default for an external edit: the record is
+// unauthenticated, and the stored template authenticates only as one sealed
+// for its key type in the current term, which an earlier definition of the
+// key type also is. The key files, which are authenticated, are the
+// evidence of which definition the keys came from.
 type Defect struct {
 	KeyType string
 	Kind    signertemplates.RecordDefectKind
 	// TemplateType is the record's template type; it is empty for a
 	// disabled record without template file.
-	TemplateType  templatestore.TemplateType
-	DefaultAction Action
+	TemplateType templatestore.TemplateType
 	// Keys counts the aplane keys of this key type.
 	Keys int
-	// ConflictAfterRepin counts the keys whose recorded template fingerprint
-	// would read conflict after a re-pin: an external edit's only.
-	ConflictAfterRepin int
+	// For an external edit, KeysFromStoredTemplate counts the keys whose
+	// recorded template fingerprint is the stored template's, and
+	// ConflictAfterRepin those whose recorded one is another definition's:
+	// they read conflict after a re-pin. Keys that record none are in
+	// neither.
+	KeysFromStoredTemplate int
+	ConflictAfterRepin     int
 	// RecordedFingerprint is the record's; TemplateFingerprint, for an
 	// external edit, is the one its stored template computes.
 	RecordedFingerprint string
@@ -149,10 +157,9 @@ func Inspect(opts Options) (Preview, error) {
 
 func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *keys.KeyScanReport) (Defect, error) {
 	defect := Defect{
-		KeyType:       recordDefect.KeyType,
-		Kind:          recordDefect.Kind,
-		TemplateType:  recordDefect.TemplateType,
-		DefaultAction: ActionDrop,
+		KeyType:      recordDefect.KeyType,
+		Kind:         recordDefect.Kind,
+		TemplateType: recordDefect.TemplateType,
 	}
 	rec, ok, err := keytypestate.GetActive(opts.Current, defect.KeyType)
 	if err != nil {
@@ -163,7 +170,6 @@ func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *key
 	}
 	defect.RecordedFingerprint = rec.Fingerprint
 	if defect.Kind == signertemplates.RecordExternalEdit {
-		defect.DefaultAction = ActionRepin
 		defect.TemplateFingerprint, err = templatelibrary.StoredTemplateFingerprintActive(
 			opts.Current, defect.KeyType, defect.TemplateType, opts.Keyring,
 		)
@@ -176,9 +182,14 @@ func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *key
 			continue
 		}
 		defect.Keys++
+		if defect.TemplateFingerprint == "" || info.TemplateFingerprint == "" {
+			continue
+		}
 		// Key provenance reads conflict when it names a fingerprint other
 		// than the registered template's (lsigprovider.CompareTemplateFingerprint).
-		if defect.TemplateFingerprint != "" && info.TemplateFingerprint != "" && info.TemplateFingerprint != defect.TemplateFingerprint {
+		if info.TemplateFingerprint == defect.TemplateFingerprint {
+			defect.KeysFromStoredTemplate++
+		} else {
 			defect.ConflictAfterRepin++
 		}
 	}
@@ -285,7 +296,7 @@ func (preview Preview) plan(actions map[string]Action) ([]Entry, error) {
 		}
 		if action := actions[keyType]; !defect.Allows(action) {
 			if action == ActionRepin {
-				return nil, fmt.Errorf("%w: %s is an %s", ErrRepinRefused, keyType, defect.Kind)
+				return nil, fmt.Errorf("%w: %s has no template file to pin (%s)", ErrRepinRefused, keyType, defect.Kind)
 			}
 			return nil, fmt.Errorf("unknown template repair action %q for %s", action, keyType)
 		}

@@ -200,20 +200,68 @@ func TestInspectClassifiesEveryRecordDefect(t *testing.T) {
 	}
 	want := []templaterepair.Defect{
 		{KeyType: orphanGeneric, Kind: signertemplates.RecordOrphaned, TemplateType: templatestore.TemplateTypeGeneric,
-			DefaultAction: templaterepair.ActionDrop, RecordedFingerprint: f.installed[orphanGeneric]},
+			RecordedFingerprint: f.installed[orphanGeneric]},
 		{KeyType: orphanComposed, Kind: signertemplates.RecordOrphaned, TemplateType: templatestore.TemplateTypeComposed,
-			DefaultAction: templaterepair.ActionDrop, RecordedFingerprint: f.installed[orphanComposed]},
+			RecordedFingerprint: f.installed[orphanComposed]},
 		{KeyType: editedGeneric, Kind: signertemplates.RecordExternalEdit, TemplateType: templatestore.TemplateTypeGeneric,
-			DefaultAction: templaterepair.ActionRepin, Keys: 3, ConflictAfterRepin: 1,
+			Keys: 3, KeysFromStoredTemplate: 1, ConflictAfterRepin: 1,
 			RecordedFingerprint: editedFingerprint, TemplateFingerprint: f.installed[editedGeneric]},
 		{KeyType: editedComposed, Kind: signertemplates.RecordExternalEdit, TemplateType: templatestore.TemplateTypeComposed,
-			DefaultAction:       templaterepair.ActionRepin,
 			RecordedFingerprint: editedFingerprint, TemplateFingerprint: f.installed[editedComposed]},
 		{KeyType: orphanDisabled, Kind: signertemplates.RecordDisabledOrphaned,
-			DefaultAction: templaterepair.ActionDrop, RecordedFingerprint: f.installed[orphanDisabled]},
+			RecordedFingerprint: f.installed[orphanDisabled]},
 	}
 	if !reflect.DeepEqual(preview.Defects, want) {
 		t.Fatalf("Inspect().Defects =\n%+v\nwant\n%+v", preview.Defects, want)
+	}
+	for _, defect := range preview.Defects {
+		repin := defect.Kind == signertemplates.RecordExternalEdit
+		if defect.Allows(templaterepair.ActionRepin) != repin || !defect.Allows(templaterepair.ActionDrop) {
+			t.Fatalf("%s (%s) allows repin %v, drop %v; want repin only for an external edit, drop always",
+				defect.KeyType, defect.Kind, defect.Allows(templaterepair.ActionRepin), defect.Allows(templaterepair.ActionDrop))
+		}
+	}
+}
+
+// The stored template authenticates as one sealed for its key type in the
+// current term, which an earlier definition of the key type also is. Copied
+// back over the installed one, it reads as an external edit like any other;
+// only the keys, created from the later definition, show it.
+func TestInspectShowsTheKeysOfASwappedTemplate(t *testing.T) {
+	f := newFixture(t)
+	const keyType = "test.repair-swap.v1"
+	earlier := []byte(strings.Replace(string(genericYAML("repair-swap")), "int 1\n  return", "int 2\n  return", 1))
+	f.install(earlier)
+	earlierFingerprint := f.installed[keyType]
+	bound := genstoretest.BindActive(t, f.paths, f.opts.Current)
+	if _, err := templatelibrary.RemoveInstalledTemplate(bound, keyType, templatestore.TemplateTypeGeneric, f.opts.Keyring); err != nil {
+		t.Fatal(err)
+	}
+	f.install(genericYAML("repair-swap"))
+	if f.installed[keyType] == earlierFingerprint {
+		t.Fatal("the two definitions have one fingerprint")
+	}
+	f.addKey(keyType, f.installed[keyType])
+	f.addKey(keyType, f.installed[keyType])
+	archived, err := os.ReadFile(f.opts.Current.DeletedKeyTypeTemplate(keyType))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.opts.Current.KeyTypeTemplate(keyType), archived, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := templaterepair.Inspect(f.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Defects) != 1 {
+		t.Fatalf("Inspect().Defects = %+v, want the one swapped template", preview.Defects)
+	}
+	defect := preview.Defects[0]
+	if defect.Kind != signertemplates.RecordExternalEdit || defect.TemplateFingerprint != earlierFingerprint ||
+		defect.Keys != 2 || defect.ConflictAfterRepin != 2 || defect.KeysFromStoredTemplate != 0 {
+		t.Fatalf("swapped template defect = %+v, want an external edit whose 2 keys came from another definition", defect)
 	}
 }
 
