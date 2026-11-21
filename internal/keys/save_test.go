@@ -103,7 +103,7 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 		t.Fatal("saved cosigner credential should be encrypted")
 	}
 	if _, err := os.Stat(accountKeyFileForTest(t, paths, componentKey)); !os.IsNotExist(err) {
-		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
+		t.Fatalf("witness .key stat error = %v, want not exist", err)
 	}
 
 	path := WitnessPublicMetadataPathActive(mustResolveActiveForTest(t, paths), componentKey)

@@ -292,7 +292,7 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("MarshalPayload() error = %v", err)
 		}
-		legacyPath := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
+		path := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
 		if err != nil {
@@ -302,13 +302,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			t.Fatalf("report = %#v, want one rejection", report)
 		}
 		warning := report.Warnings[0]
-		if warning.Code != KeyScanWarningFilenameMismatch {
-			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameMismatch)
-		}
-		for _, want := range []string{legacyPath, CosignerCredentialExtension, "class mismatch"} {
-			if !contains(warning.Message(), want) {
-				t.Fatalf("warning message = %q, want %q", warning.Message(), want)
-			}
+		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "witness" requires .cos, got .key`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -317,14 +313,19 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 		paths = genstoretest.MintFirst(t, paths)
 		keyJSON, address := testEd25519Key(t)
-		writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
+		path := writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
 
 		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
 		if err != nil {
 			t.Fatalf("ScanKeysDirectory() error = %v", err)
 		}
-		if len(report.Keys) != 0 || len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningFilenameMismatch {
-			t.Fatalf("report = %#v, want filename class rejection", report)
+		if len(report.Keys) != 0 || len(report.Warnings) != 1 {
+			t.Fatalf("report = %#v, want one rejection", report)
+		}
+		warning := report.Warnings[0]
+		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "ed25519" requires .key, got .cos`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -470,14 +471,9 @@ func TestScanKeysDirectoryWithKeyring(t *testing.T) {
 			t.Fatalf("warnings = %d, want 1 filename mismatch warning", len(report.Warnings))
 		}
 		warning := report.Warnings[0]
-		if warning.Code != KeyScanWarningFilenameMismatch {
-			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameMismatch)
-		}
-		msg := warning.Message()
-		for _, want := range []string{duplicatePath, "duplicate", address} {
-			if !contains(msg, want) {
-				t.Fatalf("warning message = %q, want %q", msg, want)
-			}
+		want := "Skipped key file " + duplicatePath + `: managed credential filename selector mismatch: filename selector "duplicate" does not match payload-derived selector "` + address + `"`
+		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
+			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
 		}
 	})
 
@@ -1040,66 +1036,4 @@ func TestCredentialDoesNotOpenUnderAnotherAddress(t *testing.T) {
 	if _, err := ReadDecryptedKeyJSONWithKeyring(original, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("original credential no longer opens: %v", err)
 	}
-}
-
-// TestScanKeysDirectoryFilenameMismatchWarnings pins the one warning a scan
-// gives for a managed credential whose file name does not match its
-// payload: the wrong class of file, or another selector.
-func TestScanKeysDirectoryFilenameMismatchWarnings(t *testing.T) {
-	scanOne := func(t *testing.T, paths storepaths.Paths, masterKey []byte) KeyScanWarning {
-		t.Helper()
-		report, err := ScanKeysDirectory(mustResolveActiveForTest(t, paths), cryptotest.Keyring(t, masterKey), nil)
-		if err != nil {
-			t.Fatalf("ScanKeysDirectory() error = %v", err)
-		}
-		if len(report.Keys) != 0 || len(report.Warnings) != 1 {
-			t.Fatalf("report = %#v, want one rejection", report)
-		}
-		return report.Warnings[0]
-	}
-	t.Run("cosigner credential in an account file", func(t *testing.T) {
-		masterKey := testMasterKey(t)
-		paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
-		publicKey, privateKey := canonicalFalconComponentPair(t, 0x53)
-		payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
-		defer payload.ZeroSecrets()
-		selector, err := payload.Selector()
-		if err != nil {
-			t.Fatal(err)
-		}
-		keyJSON, err := MarshalPayload(payload)
-		if err != nil {
-			t.Fatal(err)
-		}
-		path := writeManagedCredentialFile(t, paths, selector+AccountKeyExtension, keyJSON, masterKey)
-		warning := scanOne(t, paths, masterKey)
-		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "witness" requires .cos, got .key`
-		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
-			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
-		}
-	})
-
-	t.Run("account key in a cosigner file", func(t *testing.T) {
-		masterKey := testMasterKey(t)
-		paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
-		keyJSON, address := testEd25519Key(t)
-		path := writeManagedCredentialFile(t, paths, address+CosignerCredentialExtension, keyJSON, masterKey)
-		warning := scanOne(t, paths, masterKey)
-		want := "Skipped key file " + path + `: managed credential filename class mismatch: payload category "ed25519" requires .key, got .cos`
-		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
-			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
-		}
-	})
-
-	t.Run("account key under another name", func(t *testing.T) {
-		masterKey := testMasterKey(t)
-		paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
-		keyJSON, address := testEd25519Key(t)
-		path := writeManagedCredentialFile(t, paths, "duplicate"+AccountKeyExtension, keyJSON, masterKey)
-		warning := scanOne(t, paths, masterKey)
-		want := "Skipped key file " + path + `: managed credential filename selector mismatch: filename selector "duplicate" does not match payload-derived selector "` + address + `"`
-		if warning.Code != KeyScanWarningFilenameMismatch || warning.Message() != want {
-			t.Fatalf("warning = %q %q, want %q %q", warning.Code, warning.Message(), KeyScanWarningFilenameMismatch, want)
-		}
-	})
 }

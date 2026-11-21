@@ -138,14 +138,22 @@ Canonical filename binding is a store invariant, not a selection preference.
 A scan accepts a managed credential only when its name is
 `Selector(payload) || ExtensionForCategory(payload.category)`: account
 categories use `<AlgorandAddress>.key`, while witness category uses
-`<WitnessKeyID>.cos`. A selector mismatch or category/extension mismatch is
-skipped as invalid authority; it does not install a runtime entry. See S13.
+`<WitnessKeyID>.cos`. See S13.
 
-The model intentionally chooses skip-and-warn for misnamed files rather than
-strictly failing the entire reload. Canonical filename binding removes the
-selection ambiguity by construction: each valid payload has exactly one
-category-selected canonical name. A noncanonical artifact is diagnostic evidence of operator or
-tooling error, but it does not make the canonical file ambiguous.
+At scan, a selector mismatch or category/extension mismatch is skipped as
+invalid authority rather than failing the scan: the file installs no runtime
+entry, the other files are still scanned, and the scan reports it with one
+`filename_mismatch` warning whose reason names the class or selector that does
+not match (`internal/keys/keys.go`). Reload then fails closed on any scan
+warning (`internal/signerapp/templates/reload.go`): it clears the key cache and
+the published snapshot and fails the selected generation's validation, which
+holds the identity in recovery with signing blocked. The store-commit gate
+(`internal/signerapp/storevalidate`) refuses a candidate generation with any
+scan warning the same way. Canonical filename binding removes the selection
+ambiguity by construction: each valid payload has exactly one
+category-selected canonical name. A noncanonical artifact is diagnostic
+evidence of operator or tooling error; it never shadows the canonical file,
+but its presence blocks signing until it is removed or replaced.
 
 Selector-collision rejection remains a defensive fallback for impossible or
 buggy states in which two accepted credentials resolve to the same selector. If
@@ -154,9 +162,7 @@ previously-published snapshot rather than selecting a winner.
 
 Recovery is operator-driven and performed while `apsigner` is stopped: a
 noncanonical artifact must be validated before canonical placement or removed,
-then the identity is reloaded. The scan reports either mismatch with one
-warning, `filename_mismatch`, whose reason names the class or selector that
-does not match.
+then the identity is reloaded.
 
 ### Auth Address Binding
 
