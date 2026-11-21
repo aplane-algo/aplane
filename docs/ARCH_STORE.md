@@ -2059,6 +2059,9 @@ and destination presence, and each credential the restore would skip with the
 reason; it performs no store mutation. A preview with nothing left to restore
 still succeeds, so every reason is shown.
 Wrong-passphrase and unauthenticated failures share the restore rate limiter.
+It counts only attempts that read the archive with the passphrase: a preview
+or restore refused before that, for the signer's state or a keyring a lock
+closed, is not charged.
 Authenticated `list_backups`, `read_backup_chunk`, and `preview_restore`
 requests are accepted while the identity is either unlocked or
 recovery-blocked, allowing an operator to select, export, and inspect repair

@@ -155,3 +155,65 @@ func TestRestoreAndRollbackOnASignerNotYetUnlockedAreRefused(t *testing.T) {
 		}
 	})
 }
+
+// The restore limiter guards the archive passphrase against guessing, so it
+// counts only attempts that tried the passphrase. A restore or preview
+// refused for the signer's state, or for a keyring a lock closed, tried
+// nothing; it once charged the limiter all the same, and the correct
+// restore that followed was refused with restore_rate_limited.
+func TestARefusalBeforeThePassphraseIsTriedDoesNotChargeTheRestoreLimiter(t *testing.T) {
+	request := func(id, passphrase string) adminproto.RestoreBackupRequest {
+		return adminproto.RestoreBackupRequest{OperationID: id, ExportPassphrase: []byte(passphrase)}
+	}
+	restore := func(t *testing.T, service Service, archivePath string, req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
+		t.Helper()
+		req.ArchivePath = archivePath
+		return service.RestoreBackup(req)
+	}
+
+	t.Run("a restore refused for the signer's state", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		initializeAtomicTestStore(t, paths, backupAdminTestPassphrase)
+		ir := testUnpublishedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		service := directRestoreTestService(paths, ir)
+
+		if refused := restore(t, service, archivePath, request("refused", "export-passphrase")); refused.Success || refused.Code != protocol.ResultCodeRestoreFailed {
+			t.Fatalf("RestoreBackup() before the unlock = %+v, want a refusal", refused)
+		}
+		ir.SetUnlocked()
+		if restored := restore(t, service, archivePath, request("restored", "export-passphrase")); !restored.Success {
+			t.Fatalf("RestoreBackup() once unlocked = %+v, want success", restored)
+		}
+		// A wrong passphrase is a guess and still counts.
+		if wrong := restore(t, service, archivePath, request("wrong", "wrong-passphrase")); wrong.Success {
+			t.Fatalf("RestoreBackup(wrong passphrase) = %+v", wrong)
+		}
+		if limited := restore(t, service, archivePath, request("after-wrong", "export-passphrase")); limited.Code != protocol.ResultCodeRestoreRateLimited {
+			t.Fatalf("RestoreBackup() after a wrong passphrase = %+v, want restore_rate_limited", limited)
+		}
+	})
+
+	t.Run("a restore and a preview refused for a closed keyring", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		service := directRestoreTestService(paths, ir)
+
+		ir.KeyStore().ClearKeys() // a lock's cleanup, ahead of the state change
+		if refused := restore(t, service, archivePath, request("closed", "export-passphrase")); refused.Success || refused.Code != protocol.ResultCodeRestoreFailed {
+			t.Fatalf("RestoreBackup() with the keyring closed = %+v, want a refusal", refused)
+		}
+		if preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase")}); preview.Code != protocol.ResultCodeRestorePreviewFailed {
+			t.Fatalf("PreviewRestore() with the keyring closed = %+v, want a refusal", preview)
+		}
+		if err := ir.KeyStore().Unlock(backupAdminTestPassphrase); err != nil {
+			t.Fatal(err)
+		}
+		if restored := restore(t, service, archivePath, request("reopened", "export-passphrase")); !restored.Success {
+			t.Fatalf("RestoreBackup() with the keyring open again = %+v, want success", restored)
+		}
+	})
+}

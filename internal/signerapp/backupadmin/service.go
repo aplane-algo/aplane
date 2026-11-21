@@ -147,6 +147,7 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 	}
 
 	var preview *backup.RestorePreview
+	tried := false
 	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		active, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
 		if resolveErr != nil {
@@ -157,13 +158,17 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 			return bindErr
 		}
 		var previewErr error
+		tried = true
 		preview, previewErr = backup.PreviewRestoreWithNodeRole(bound, archivePath, passphraseBytes, ir.NodeRole())
 		return previewErr
 	})
 	if err != nil {
-		if backup.ArchiveAuthenticated(err) {
+		// As for a restore, only an attempt that read the archive with the
+		// passphrase counts.
+		switch {
+		case backup.ArchiveAuthenticated(err):
 			limiter.RecordSuccess(archivePath)
-		} else {
+		case tried:
 			limiter.RecordFailure(archivePath)
 		}
 		return adminproto.RestorePreviewResult{

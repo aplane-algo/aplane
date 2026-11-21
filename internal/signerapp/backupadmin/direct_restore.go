@@ -60,7 +60,10 @@ func (s Service) RestoreBackup(
 	}
 	err = s.Deps.WithStoreMutation(run.mutate)
 	if err != nil {
-		if !run.archiveAuthenticated {
+		// The limiter guards the archive passphrase, so only an attempt
+		// that tried it counts: a refusal for the signer's state, or a
+		// keyring a lock closed, came before the archive was read.
+		if run.archiveTried && !run.archiveAuthenticated {
 			limiter.RecordFailure(archivePath)
 		}
 		var restoreErr *restoreRollbackError
@@ -92,8 +95,10 @@ type restoreRun struct {
 	// wasRecovery is whether the identity was recovery-blocked when the
 	// restore began.
 	wasRecovery bool
-	// archiveAuthenticated is set once the archive's passphrase is proven,
-	// after which a failure is not counted against the rate limit.
+	// archiveTried is set once the archive is read with the passphrase, and
+	// archiveAuthenticated once the passphrase is proven: only a failure
+	// between the two counts against the rate limit.
+	archiveTried         bool
 	archiveAuthenticated bool
 	// committedGeneration is the generation the restore published, or empty
 	// while nothing has been.
@@ -176,6 +181,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 // nothing committed when the archive holds nothing new.
 func (r *restoreRun) loadAndCommit(masterKey *crypto.Keyring) error {
 	s, ir, result, req := r.s, r.s.Runtime, r.result, r.req
+	r.archiveTried = true
 	set, loadErr := backup.LoadManagedRestoreSet(
 		s.Deps.KeyPaths(),
 
