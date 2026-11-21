@@ -298,7 +298,7 @@ func TestRepairCommitsAGenerationThatValidates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Repair() error = %v", err)
 			}
-			if result.Parent != damaged.GenerationID() || result.GenerationID == damaged.GenerationID() || result.CommitUncertain {
+			if result.Parent != damaged.GenerationID() || result.GenerationID == damaged.GenerationID() {
 				t.Fatalf("Repair() = %+v, want a new generation over %s", result, damaged.GenerationID())
 			}
 			f.reopen()
@@ -486,7 +486,7 @@ func TestRepairReportsAnUncertainCommit(t *testing.T) {
 		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
 	})
 	fsutil.TestHook = nil
-	if !genstore.RootCommitUncertain(err) || !result.CommitUncertain || result.Parent != parent ||
+	if !genstore.RootCommitUncertain(err) || result.GenerationID == "" || result.Parent != parent ||
 		!strings.Contains(err.Error(), "template repair may have committed as generation "+result.GenerationID) {
 		t.Fatalf("Repair() = %+v, %v; want an uncertain commit", result, err)
 	}
@@ -497,9 +497,11 @@ func TestRepairReportsAnUncertainCommit(t *testing.T) {
 }
 
 // A mint that fails before the root moves leaves the damaged generation
-// selected and says nothing was committed.
-func TestRepairFailureBeforeTheRootMovesCommitsNothing(t *testing.T) {
+// selected. What it published is left for reconciliation, and a retry runs
+// it first, as an unlock would, then commits.
+func TestRepairRetriesAfterAFailureBeforeTheRootMoves(t *testing.T) {
 	f := damagedStore(t)
+	parent := f.opts.Current.GenerationID()
 	before, err := crypto.ReadStoreRootExact(f.paths.ProductDir())
 	if err != nil {
 		t.Fatal(err)
@@ -511,18 +513,103 @@ func TestRepairFailureBeforeTheRootMovesCommitsNothing(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { fsutil.TestHook = nil })
-	result, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{
+	actions := map[string]templaterepair.Action{
 		editedGeneric: templaterepair.ActionDrop, editedComposed: templaterepair.ActionDrop,
 		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
-	})
+	}
+	result, err := templaterepair.Repair(f.opts, actions)
 	fsutil.TestHook = nil
-	if err == nil || genstore.RootCommitUncertain(err) || result.CommitUncertain ||
-		!strings.Contains(err.Error(), "nothing was committed") {
-		t.Fatalf("Repair() = %+v, %v; want a failure before commit", result, err)
+	if err == nil || genstore.RootCommitUncertain(err) || result.GenerationID != "" ||
+		!strings.Contains(err.Error(), "template repair failed before the store root moved") {
+		t.Fatalf("Repair() = %+v, %v; want a failure before the root moved", result, err)
 	}
 	after, err := crypto.ReadStoreRootExact(f.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("store root after a failed repair changed (%v)", err)
+	}
+
+	f.reopen()
+	preview, err := templaterepair.Inspect(f.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.ReconcilePending() || len(preview.Reconcile.Quarantined) != 1 || preview.CommitBlocked != nil {
+		t.Fatalf("preview after the failure: reconcile %+v, commit blocked %v; want one generation to quarantine", preview.Reconcile, preview.CommitBlocked)
+	}
+	published := preview.Reconcile.Quarantined[0].GenerationID
+	result, err = templaterepair.Repair(f.opts, actions)
+	if err != nil {
+		t.Fatalf("retried Repair() error = %v", err)
+	}
+	if len(result.Reconciled.Quarantined) != 1 || result.Reconciled.Quarantined[0].GenerationID != published ||
+		result.Parent != parent {
+		t.Fatalf("retried Repair() = %+v, want %s quarantined first and a commit over %s", result, published, parent)
+	}
+	f.reopen()
+	if f.opts.Current.GenerationID() != result.GenerationID {
+		t.Fatalf("store root selects %s, want %s", f.opts.Current.GenerationID(), result.GenerationID)
+	}
+}
+
+// Staging residue, which a repair interrupted mid-mint leaves, is reported by
+// the preview and discarded by the next repair before it mints.
+func TestRepairDiscardsStagingResidueFirst(t *testing.T) {
+	f := damagedStore(t)
+	residue := storepaths.GenerationStagingPrefix + "gen-1700000000-deadbeef"
+	if err := os.Mkdir(filepath.Join(f.paths.GenerationsDir(), residue), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := templaterepair.Inspect(f.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.ReconcilePending() || !reflect.DeepEqual(preview.Reconcile.DiscardedStaging, []string{residue}) {
+		t.Fatalf("preview reconcile = %+v, want %s to discard", preview.Reconcile, residue)
+	}
+	result, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{
+		editedGeneric: templaterepair.ActionRepin, editedComposed: templaterepair.ActionRepin,
+		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
+	})
+	if err != nil {
+		t.Fatalf("Repair() error = %v", err)
+	}
+	if !reflect.DeepEqual(result.Reconciled.DiscardedStaging, []string{residue}) {
+		t.Fatalf("Repair().Reconciled = %+v, want %s discarded", result.Reconciled, residue)
+	}
+	if _, err := os.Stat(filepath.Join(f.paths.GenerationsDir(), residue)); !os.IsNotExist(err) {
+		t.Fatalf("staging residue after the repair: %v, want gone", err)
+	}
+}
+
+// A parent whose seal is gone is kept by reconciliation and refuses every
+// mint, so the preview names it and the repair refuses before staging.
+func TestRepairRefusesWhatNoCommitCanSupersede(t *testing.T) {
+	f := damagedStore(t)
+	result, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{
+		editedGeneric: templaterepair.ActionRepin, editedComposed: templaterepair.ActionRepin,
+		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	f.editRecord(healthy)
+	if err := os.Remove(filepath.Join(f.paths.GenerationDir(result.Parent), storepaths.GenerationSealName)); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := templaterepair.Inspect(f.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.CommitBlocked == nil || !strings.Contains(preview.CommitBlocked.Error(), result.Parent+" has lost its seal") {
+		t.Fatalf("Inspect().CommitBlocked = %v, want the unsealed parent %s", preview.CommitBlocked, result.Parent)
+	}
+	before := storeDigest(t, f)
+	if _, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{healthy: templaterepair.ActionRepin}); !errors.Is(err, templaterepair.ErrCommitBlocked) {
+		t.Fatalf("Repair() error = %v, want ErrCommitBlocked", err)
+	}
+	if storeDigest(t, f) != before {
+		t.Fatal("a refused repair changed the store")
 	}
 }
 

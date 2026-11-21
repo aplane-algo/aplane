@@ -242,6 +242,34 @@ func TestTemplateRepairRefusalsChangeNothing(t *testing.T) {
 	}
 }
 
+// A staging directory an interrupted repair left does not block the next
+// one: the preview says reconciliation is pending, and --confirm reconciles
+// first, as an unlock would, and says what it discarded.
+func TestTemplateRepairReconcilesFirst(t *testing.T) {
+	withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+		residue := storepaths.GenerationStagingPrefix + "gen-1700000000-deadbeef"
+		if err := os.Mkdir(filepath.Join(keystorePaths().GenerationsDir(), residue), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair"); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(log.String(), "reconciliation is pending: 0 uncommitted generation(s) to quarantine and 1 staging residue(s) to discard") {
+			t.Fatalf("preview log = %q, want the pending reconciliation", log.String())
+		}
+		log.Reset()
+		if _, err := runTemplateCommand(t, string(passphrase)+"\n",
+			"repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"); err != nil {
+			t.Fatalf("template repair --confirm error = %v", err)
+		}
+		for _, want := range []string{"reconciled: discarded staging residue " + residue, "template repair committed generation"} {
+			if !strings.Contains(log.String(), want) {
+				t.Fatalf("repair log = %q, want %q", log.String(), want)
+			}
+		}
+	})
+}
+
 func TestTemplateRepairReportsAnUncertainCommit(t *testing.T) {
 	withDamagedTemplateStore(t, func(passphrase []byte, _ string, _ *bytes.Buffer) {
 		paths := keystorePaths()

@@ -9,7 +9,8 @@
 //
 // The caller holds the exclusive store lock for the whole repair, so no
 // signer runs and nothing can race it (docs/ARCH_STORE.md, "Offline bootstrap
-// and rescue").
+// and rescue"). With no signer running, nothing else reconciles the
+// generation store, so a repair reconciles it first, as every unlock does.
 package templaterepair
 
 import (
@@ -60,7 +61,12 @@ var (
 	// ErrOtherDamage refuses a repair while anything it does not repair is
 	// damaged.
 	ErrOtherDamage = errors.New("the generation has damage a template repair does not cover")
-	// ErrNothingNamed refuses a repair that names no key type.
+	// ErrCommitBlocked refuses a repair that no generation commit could
+	// complete over the current generation.
+	ErrCommitBlocked = errors.New("no generation can be committed over the current one")
+	// ErrNothingNamed refuses a repair that names no key type. apstore
+	// refuses such a command line first; this guard is what keeps Repair
+	// from committing a generation that changes nothing.
 	ErrNothingNamed = errors.New("template repair names no key type")
 )
 
@@ -122,6 +128,19 @@ type Preview struct {
 	// OtherDamage is the first damage outside the defects, which refuses
 	// any repair; nil when there is none, or no defect to repair.
 	OtherDamage error
+	// CommitBlocked is what refuses every generation commit over the
+	// current generation, which a repair cannot clear; nil when nothing
+	// does, or there is no defect to repair.
+	CommitBlocked error
+	// Reconcile is what a repair's reconciliation would quarantine or
+	// discard first: residue an earlier mint left.
+	Reconcile genstore.ReconcileReport
+}
+
+// ReconcilePending reports whether a repair would quarantine or discard
+// anything before it mints.
+func (preview Preview) ReconcilePending() bool {
+	return len(preview.Reconcile.Quarantined) > 0 || len(preview.Reconcile.DiscardedStaging) > 0
 }
 
 // Inspect classifies every template record defect in the selected
@@ -152,7 +171,24 @@ func Inspect(opts Options) (Preview, error) {
 		defective[defect.KeyType] = true
 	}
 	preview.OtherDamage = storevalidate.TemplateRepairDestination(validateOptions(opts, opts.Current), defective)
+	if preview.Reconcile, err = genstore.InspectStoreRoot(opts.Paths, opts.Keyring); err != nil {
+		// Reconciliation refuses this store, and so does unlock.
+		if preview.OtherDamage == nil {
+			preview.OtherDamage = err
+		}
+		return preview, nil
+	}
+	preview.CommitBlocked = commitBlocked(opts, preview.Reconcile)
 	return preview, nil
+}
+
+// commitBlocked is what refuses a mint over the current generation after
+// reconciliation, which a repair does not clear.
+func commitBlocked(opts Options, reconcile genstore.ReconcileReport) error {
+	if parent := reconcile.RetainedUnsealedParent; parent != "" {
+		return fmt.Errorf("the current generation's parent %s has lost its seal, which reconciliation keeps and every mint refuses; restore it from the same snapshot as the rest of the store, or remove it", parent)
+	}
+	return genstore.RequireSuccessorFits(opts.Current)
 }
 
 func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *keys.KeyScanReport) (Defect, error) {
@@ -205,36 +241,45 @@ type Entry struct {
 	Archived string
 }
 
-// Result is a template repair that committed, or whose commit is uncertain.
+// Result is a template repair that committed, or whose commit is uncertain
+// (genstore.RootCommitUncertain), in which case GenerationID is the
+// generation the store root may select.
 type Result struct {
 	GenerationID string
 	Parent       string
 	Entries      []Entry
-	// CommitUncertain is set when the store root may select GenerationID
-	// although Repair returned an error.
-	CommitUncertain bool
+	// Reconciled is what the reconciliation before the repair quarantined
+	// or discarded, reported whether or not the repair then ran.
+	Reconciled genstore.ReconcileReport
 }
 
-// Repair applies actions, keyed by canonical key type, to the selected
-// generation's template record defects and commits the result as a new
-// generation. It refuses, changing nothing, a key type that is not a
-// defect, a re-pin of a record with no template file, a defect left out,
-// and a generation with any other damage.
+// Repair reconciles the generation store, as unlock does, then applies
+// actions, keyed by canonical key type, to the selected generation's
+// template record defects and commits the result as a new generation. It
+// refuses, changing nothing but what reconciliation moved, a key type that
+// is not a defect, a re-pin of a record with no template file, a defect left
+// out, a generation with any other damage, and one no commit can supersede.
 func Repair(opts Options, actions map[string]Action) (Result, error) {
+	var result Result
+	reconciled, err := genstore.ReconcileStoreRoot(opts.Paths, opts.Keyring)
+	result.Reconciled = reconciled
+	if err != nil {
+		return result, fmt.Errorf("template repair refused: %w: %w", ErrOtherDamage, err)
+	}
 	preview, err := Inspect(opts)
 	if err != nil {
-		return Result{}, err
+		return result, err
 	}
 	entries, err := preview.Plan(actions)
 	if err != nil {
-		return Result{}, err
+		return result, err
 	}
 	now := time.Now()
 	generationID, err := genstore.NewGenerationID(now)
 	if err != nil {
-		return Result{}, err
+		return result, err
 	}
-	result := Result{GenerationID: generationID, Parent: preview.GenerationID}
+	result.GenerationID, result.Parent = generationID, preview.GenerationID
 	_, mintErr := genstore.Mint(opts.Paths, genstore.MintRequest{
 		GenerationID: generationID,
 		Parent:       preview.GenerationID,
@@ -256,10 +301,13 @@ func Repair(opts Options, actions map[string]Action) (Result, error) {
 	})
 	if mintErr != nil {
 		if genstore.RootCommitUncertain(mintErr) {
-			result.CommitUncertain = true
 			return result, fmt.Errorf("template repair may have committed as generation %s: %w", generationID, mintErr)
 		}
-		return Result{}, fmt.Errorf("template repair failed; nothing was committed: %w", mintErr)
+		// The root still selects the damaged generation. A failure after
+		// publication leaves the successor for the next repair's or
+		// unlock's reconciliation to quarantine.
+		result.GenerationID = ""
+		return result, fmt.Errorf("template repair failed before the store root moved: %w", mintErr)
 	}
 	published := opts.Paths.GenerationPaths(generationID)
 	for i := range entries {
@@ -311,6 +359,9 @@ func (preview Preview) plan(actions map[string]Action) ([]Entry, error) {
 	}
 	if preview.OtherDamage != nil {
 		return nil, fmt.Errorf("%w: %w", ErrOtherDamage, preview.OtherDamage)
+	}
+	if preview.CommitBlocked != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCommitBlocked, preview.CommitBlocked)
 	}
 	return entries, nil
 }

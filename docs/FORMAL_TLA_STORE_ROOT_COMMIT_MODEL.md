@@ -52,7 +52,11 @@ The transitions transcribe the commit protocol in `internal/genstore`:
   complete non-current, unsealed publication is quarantined intact — never
   deleted, resumed, or adopted. (The current generation's declared parent is
   retained instead: it was committed once, so a missing seal on it is damage
-  outside the model.) `RestoreAuthenticOldRoot`
+  outside the model.) `ReconcileOldRoot` stands for each caller of
+  `genstore.ReconcileStoreRoot`: every unlock and the recovery reconcile in
+  the daemon, `apstore generations prune` (`CollectGarbageStoreRoot`), and
+  the offline template repair (`internal/signerapp/templaterepair`), which
+  reconciles before it mints because no signer runs to do it. `RestoreAuthenticOldRoot`
   additionally models an operator restoring an older authentic root file
   after a successor committed; the newer complete directory then has the
   same shape as a crashed-mint publication and must be quarantined.

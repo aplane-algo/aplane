@@ -1217,6 +1217,13 @@ apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.r
 apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.retired.v1 --confirm
 ```
 
+With no signer running, nothing else reconciles the generation store, so a
+repair with `--confirm` first does what every unlock does: it quarantines a
+generation an earlier mint published but never committed, and discards
+staging residue, such as what an interrupted repair leaves, and says what it
+moved. The preview says when that is pending. A retry after a failed or
+interrupted repair therefore needs nothing else.
+
 The repair commits a new generation (operation `template-repair`) whose parent
 is the damaged generation, which is kept, sealed, until generation pruning;
 `apadmin restore rollback` does not return to it. Key files are never touched. Start and unlock `apsigner` afterwards; it unlocks normally.

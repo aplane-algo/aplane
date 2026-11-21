@@ -122,6 +122,12 @@ func parseTemplateRepairArgs(args []string) (map[string]templaterepair.Action, b
 func runTemplateRepair(opts templaterepair.Options, actions map[string]templaterepair.Action) error {
 	logWarnf("template repair runs without apsigner: no authorization or audit log; capture terminal output externally if needed")
 	result, err := templaterepair.Repair(opts, actions)
+	for _, quarantined := range result.Reconciled.Quarantined {
+		logInfof("reconciled: quarantined uncommitted generation %s", quarantined.GenerationID)
+	}
+	for _, staging := range result.Reconciled.DiscardedStaging {
+		logInfof("reconciled: discarded staging residue %s", staging)
+	}
 	if genstore.RootCommitUncertain(err) {
 		return fmt.Errorf("%w; start apsigner and unlock it to check which generation it selects", err)
 	}
@@ -192,9 +198,17 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 		logInfof("repin keeps the stored template as it is now: use it only if you know why the record and the template differ, for example after a fingerprint-format change")
 		logInfof("otherwise drop the record, start apsigner, and import the template again from a file you trust with `apadmin template import`")
 	}
+	if preview.ReconcilePending() {
+		logInfof("reconciliation is pending: %d uncommitted generation(s) to quarantine and %d staging residue(s) to discard; a repair with --confirm reconciles first, as an unlock does",
+			len(preview.Reconcile.Quarantined), len(preview.Reconcile.DiscardedStaging))
+	}
 	if preview.OtherDamage != nil {
 		logWarnf("a repair is refused while the generation has other damage: %v", preview.OtherDamage)
 		logWarnf("rebuild the store from a backup instead (apstore rebuild)")
+		return nil
+	}
+	if preview.CommitBlocked != nil {
+		logWarnf("a repair is refused: %v", preview.CommitBlocked)
 		return nil
 	}
 	logInfof("repair every defect in one run: apstore template repair repin <key_type>... drop <key_type>... --confirm")
