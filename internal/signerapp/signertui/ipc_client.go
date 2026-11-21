@@ -1199,7 +1199,7 @@ func (m Model) sendUpdateAdminSettingCmd(key, value string) tea.Cmd {
 
 // sendGetKeyDetailsCmd returns a tea.Cmd that sends a get key details request
 func (m Model) sendGetKeyDetailsCmd(address, id string) tea.Cmd {
-	return ipcCmd(m.adminClient, func(c *IPCClient) error {
+	return operationCmd(m.adminClient, id, func(c *IPCClient) error {
 		return c.sendMessage(GetKeyDetailsMessage{
 			BaseMessage: BaseMessage{Type: MsgTypeGetKeyDetails, ID: id},
 			Address:     address,

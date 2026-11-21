@@ -202,6 +202,11 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 	if id != "" && id == m.restore.pendingID {
 		return m.failRestoreRequest(err), nil
 	}
+	// A failed key details read is reported in the status line like any
+	// other failure; the key list stops waiting on it.
+	if id != "" && id == m.details.requestID {
+		m.details.requestID = ""
+	}
 	m.lastError = err.Error()
 	return m, nil
 }
