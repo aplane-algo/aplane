@@ -80,3 +80,21 @@ func TestResultLabelIsShortAndQuoted(t *testing.T) {
 		t.Errorf("ResultLabel(laptop) = %q", got)
 	}
 }
+
+// A cut gives the head two thirds of the room, and a label whose first
+// character escapes wider than that still shows it.
+func TestQuotedFieldHeadGetsMostOfTheRoom(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		width int
+		want  string
+	}{
+		{"operations-laptop-2", 15, `"opera"..."p-2"`},
+		{"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC", 15, `"\u7530"..."PC"`},
+		{"\U0001f600\u7530\u4e2d\u306e", 17, `"\U0001f600"...""`},
+	} {
+		if got := QuotedField("", tc.value, tc.width); got != tc.want {
+			t.Errorf("QuotedField(%q, %d) = %q, want %q", tc.value, tc.width, got, tc.want)
+		}
+	}
+}

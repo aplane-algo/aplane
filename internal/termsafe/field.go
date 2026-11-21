@@ -38,7 +38,9 @@ func Field(name, value string, width int) string {
 // string literal (strconv.QuoteToASCII), for text the client chose, such as
 // a label. A value too long is cut in the middle by cutting the text and
 // quoting each part, "head"..."tail", so a cut never splits an escape or
-// drops a closing quote.
+// drops a closing quote. The head, which names the text, gets two thirds of
+// the room, and at least its first character, an escape however wide,
+// where the room holds it.
 func QuotedField(name, value string, width int) string {
 	pieces := asciiPieces(value)
 	room := width - len(name)
@@ -47,7 +49,10 @@ func QuotedField(name, value string, width int) string {
 	}
 	// Two quoted parts and the mark between them.
 	text := room - 2*len(`""`) - len(fieldCut)
-	head, used := fitPieces(pieces, text/2)
+	head, used := fitPieces(pieces, text*2/3)
+	if len(head) == 0 && len(pieces) > 0 && len(pieces[0]) <= text {
+		head, used = pieces[:1], len(pieces[0])
+	}
 	var tail []string
 	left := text - used
 	for i := len(pieces) - 1; i >= len(head) && len(pieces[i]) <= left; i-- {
