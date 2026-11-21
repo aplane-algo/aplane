@@ -151,7 +151,7 @@
     "spec": "key_use_lock",
     "cfg": "key_use_lock_negative_recovery",
     "expected_invariant_violation": "KU1_NoSignatureAfterLock",
-    "distinct_states": 767,
+    "distinct_states": 1366,
     "depth": 8
   },
   {
@@ -195,6 +195,13 @@
     "expected_invariant_violation": "KU5_NoUnlockOverLaterRecovery",
     "distinct_states": 88,
     "depth": 4
+  },
+  {
+    "spec": "key_use_lock",
+    "cfg": "key_use_lock_negative_reentry",
+    "expected_invariant_violation": "KU5_NoUnlockOverLaterRecovery",
+    "distinct_states": 243,
+    "depth": 5
   },
   {
     "spec": "setting_publish",

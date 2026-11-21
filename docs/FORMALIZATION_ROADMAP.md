@@ -903,3 +903,16 @@ still fails on its own property (counts in `metrics.json`).
 that begins in recovery reconciles under the store mutation lock, then
 reloads and publishes outside it, a way out of recovery no model has.
 `make formal-test` now has 38 runs, twenty-two of them negative controls.
+
+Changed 2026-11-21: KU5's ghost read the flag its guard reads, so a mutation
+of `EnterRecovery` that moved the session only from the unlocked state (the
+old `enterRecoveryLocked`) still passed `Safety` at the same 6748 states.
+`key_use_lock.tla` now gives KU5 its own history, `ulSawRecov` (recovery was
+entered since the attempt began, whatever moved), splits the guard into
+`UnlockFencesRecovery` (the fence) and `RecoveryReentryMovesSession` (an
+entry from recovery moves the session), and gains the negative control
+`key_use_lock_negative_reentry.cfg` (243 states at depth 5). The positive
+runs are unchanged at 6748 states at depth 18 and, deep, 10957 at depth 19;
+`key_use_lock_negative_recovery.cfg` grows to 1366 states at depth 8, where
+the ghost and the fence's flag now differ, and still fails KU1. `make
+formal-test` now has 39 runs, twenty-three of them negative controls.

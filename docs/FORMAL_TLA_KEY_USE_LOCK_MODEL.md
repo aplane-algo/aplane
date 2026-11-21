@@ -5,14 +5,14 @@
 > overlap, at most two lock or recovery transitions); the recorded positive
 > run generated 6748 distinct states at depth 18 with no counterexamples, and
 > the deep configuration (three transitions) 10957 distinct states at depth 19.
-> Nine expected-failure negative controls must keep producing their exact
+> Ten expected-failure negative controls must keep producing their exact
 > counterexamples:
 > `key_use_lock_negative_recheck.cfg` (`FinalRecheck = FALSE`, violates
 > `KU1_NoSignatureAfterLock`, 606 distinct states at depth 7),
 > `key_use_lock_negative_generation.cfg` (`GenerationCheck = FALSE`, violates
 > `KU1_NoSignatureAfterLock`, 1198 distinct states at depth 8),
 > `key_use_lock_negative_recovery.cfg` (`RecoveryEndsSession = FALSE`,
-> violates `KU1_NoSignatureAfterLock`, 767 distinct states at depth 8),
+> violates `KU1_NoSignatureAfterLock`, 1366 distinct states at depth 8),
 > `key_use_lock_negative_drain.cfg` (`DrainWaits = FALSE`, violates
 > `KU2_NoKeyMaterialAtWipe`, 312 distinct states at depth 6),
 > `key_use_lock_negative_register.cfg` (`RegisterChecksLock = FALSE`, violates
@@ -24,7 +24,9 @@
 > `key_use_lock_negative_loser.cfg` (`LoserLocks = FALSE`, violates
 > `KU4_NoWipeWhileUnlocked`, 4701 distinct states at depth 10) and
 > `key_use_lock_negative_publish.cfg` (`UnlockFencesRecovery = FALSE`,
-> violates `KU5_NoUnlockOverLaterRecovery`, 88 distinct states at depth 4).
+> violates `KU5_NoUnlockOverLaterRecovery`, 88 distinct states at depth 4) and
+> `key_use_lock_negative_reentry.cfg` (`RecoveryReentryMovesSession = FALSE`,
+> violates `KU5_NoUnlockOverLaterRecovery`, 243 distinct states at depth 5).
 
 The holders of loaded key material that register a key use with
 `Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
@@ -142,7 +144,8 @@ The guards are constants:
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 | `UnlockWaitsForCleanup` | TRUE: `TryUnlock` and `TryRecovery` wait (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then read the lock generation; `FinishMaintenance` waits the same way before it compares the generation its token recorded | Without it an unlock that begins between a lock's state change and its session clear passes the unlock fence, and the cleanup clears the session it published |
 | `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
-| `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `RecoveryDuringUnlockMessage` without publishing or cleaning up; `enterRecoveryLocked` moves the session on every entry, one from recovery included | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
+| `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `RecoveryDuringUnlockMessage` without publishing or cleaning up | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
+| `RecoveryReentryMovesSession` | TRUE: `enterRecoveryLocked` moves the session on every entry, one from recovery included | Without it an unlock begun in recovery misses a restore, rollback or reconcile that entered recovery again, and publishes over it |
 
 The negative controls:
 
@@ -157,6 +160,12 @@ The negative controls:
 | `UnlockWaitsForCleanup = FALSE` | KU4 fails: the signer locks, an unlock lands before the lock's cleanup has cleared the session, and the cleanup then clears the session of the unlocked signer |
 | `LoserLocks = FALSE` | KU4 fails: an unlock starts on the locked signer, a lock on the locked signer moves `lockGen`, a second unlock starts with no cleanup to wait for, the first loses and starts its cleanup, the second publishes, and the cleanup clears its session |
 | `UnlockFencesRecovery = FALSE` | KU5 fails in three steps: a second unlock starts on the unlocked signer, a store change enters recovery, and the unlock publishes unlocked over it |
+| `RecoveryReentryMovesSession = FALSE` | KU5 fails in four steps: the signer enters recovery, an unlock starts in it, a restore enters recovery again without moving the session, and the unlock publishes unlocked over it |
+
+KU5's history is its own: `ulSawRecov` records every entry into recovery
+while an attempt runs, whatever moved, and is not the flag the fence reads
+(`ulRecov`, the session moving). So a mutation of either half of the guard,
+the fence or the session move, is caught.
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
 for each.
