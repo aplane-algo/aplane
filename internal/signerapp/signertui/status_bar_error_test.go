@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -321,5 +322,52 @@ func TestFailedCosignerListShowsOnceOnTheManager(t *testing.T) {
 		if view := stripANSI(m.View()); m.viewState != ViewCosignerReferences || strings.Count(view, "the store is full") != 1 {
 			t.Errorf("standalone %v: the reopened manager shows the error %d times:\n%s", standalone, strings.Count(view, "the store is full"), view)
 		}
+	}
+}
+
+// A list at its top or bottom shows a row where the marker it does not need
+// would be, so no screen keeps an empty row for it: in the middle the list
+// shows a row fewer than at either end.
+func TestListWindowShowsARowForAMarkerItDoesNotNeed(t *testing.T) {
+	var keys []protocol.PolicyKeyStatusWire
+	for i := range 30 {
+		keys = append(keys, protocol.PolicyKeyStatusWire{Key: fmt.Sprintf("P%057d", i), Status: adminproto.PolicyKeyOwn})
+	}
+	shown := func(selected int) (rows int, above, below bool) {
+		m := sizedForTest(t, Model{viewState: ViewPolicies, policies: policiesState{selected: selected,
+			policy: protocol.PolicyMessage{NodeRole: "signer", Keys: keys, PolicySetSHA256: strings.Repeat("ab", 32)}}}, MinWidth, MinHeight)
+		view := stripANSI(m.View())
+		return strings.Count(view, "  P0") + strings.Count(view, "> P0"), strings.Contains(view, "▲"), strings.Contains(view, "▼")
+	}
+	middle, _, _ := shown(15)
+	if rows, above, below := shown(0); rows != middle+1 || above || !below {
+		t.Errorf("at the top: %d rows (middle %d), above %v, below %v", rows, middle, above, below)
+	}
+	if rows, above, below := shown(29); rows != middle+1 || !above || below {
+		t.Errorf("at the bottom: %d rows (middle %d), above %v, below %v", rows, middle, above, below)
+	}
+
+	// Standalone the settings scroll; in a pane they all fit. The gap under
+	// the title is the same either way.
+	gap := func(standalone bool) int {
+		m := sizedForTest(t, Model{viewState: ViewAdminPanel, standalone: standalone, connectionState: ConnectionConnected,
+			admin: adminPanelState{editingRow: -1, settings: &AdminSettings{PassphraseMethod: "none", Theme: "auto"}}}, MinWidth, MinHeight)
+		view := stripANSI(m.View())
+		if scrolls := strings.Contains(view, "▼"); scrolls != standalone {
+			t.Fatalf("standalone %v: the settings scroll: %v:\n%s", standalone, scrolls, view)
+		}
+		title, first := -1, -1
+		for i, line := range strings.Split(view, "\n") {
+			switch strings.TrimSpace(line) {
+			case "Settings":
+				title = i
+			case "User-Editable":
+				first = i
+			}
+		}
+		return first - title
+	}
+	if pane, standalone := gap(false), gap(true); standalone != pane {
+		t.Errorf("the settings start %d rows under the title when they scroll, %d when they fit", standalone, pane)
 	}
 }
