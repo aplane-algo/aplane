@@ -268,10 +268,12 @@ type approver struct {
 	// for the first request must not approve the second. Each shown request
 	// gets a fresh code, so an approval names the request it was meant for.
 	headCode string
-	// headShownNarrow reports that the request at the head of the queue was
-	// shown on a terminal too narrow to review it, so its identity only: it
-	// is shown whole, with a fresh code, before an answer is taken.
-	headShownNarrow bool
+	// headShownWidth is the terminal's width when the request at the head of
+	// the queue was shown. Below minReviewWidth it was shown by its identity
+	// only; on a terminal narrower than it was shown at, its rows re-wrap.
+	// Either way it is shown again, at the terminal's width and with a fresh
+	// code, before an answer is taken.
+	headShownWidth int
 	// newCode makes approval codes; tests replace it.
 	newCode func() string
 }
@@ -296,18 +298,17 @@ func (a *approver) showHead() {
 		code = gen()
 	}
 	a.headCode = code
-	width := terminalWidth()
-	a.headShownNarrow = width < minReviewWidth
-	if a.headShownNarrow {
+	a.headShownWidth = terminalWidth()
+	if a.headShownWidth < minReviewWidth {
 		displayNarrow(a.queue[0])
 	} else {
-		displayRequest(a.queue[0], len(a.queue), width)
+		displayRequest(a.queue[0], len(a.queue), a.headShownWidth)
 	}
 	a.prompt()
 }
 
 func (a *approver) prompt() {
-	if a.headShownNarrow {
+	if a.headShownWidth < minReviewWidth {
 		fmt.Print("Widen the terminal to 80 columns, then press Enter: ")
 		return
 	}
@@ -330,14 +331,20 @@ func (a *approver) handleInput(input string) {
 		return
 	}
 	// No answer is taken on a terminal too narrow to review the request,
-	// and none for a request shown only narrow: it is shown whole first.
-	if terminalWidth() < minReviewWidth {
+	// and none for a request shown at another width than the terminal's
+	// now: shown narrow, it was not shown whole, and on a narrower terminal
+	// its rows re-wrap, so it is shown again first.
+	switch width := terminalWidth(); {
+	case width < minReviewWidth:
 		fmt.Println(terminalTooNarrow)
-		a.headShownNarrow = true
+		a.headShownWidth = min(a.headShownWidth, width)
 		a.prompt()
 		return
-	}
-	if a.headShownNarrow {
+	case a.headShownWidth < minReviewWidth:
+		a.showHead()
+		return
+	case width < a.headShownWidth:
+		fmt.Println("\nThe terminal is narrower than when this request was shown; review it again.")
 		a.showHead()
 		return
 	}
@@ -654,7 +661,7 @@ func displayRequest(req approvalRequest, queueLen, width int) {
 	case approvalKindClientEnrollment:
 		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen, width)
 	default:
-		displaySignRequest(req.signRequest, queueLen)
+		displaySignRequest(req.signRequest, queueLen, width)
 	}
 }
 
@@ -679,8 +686,9 @@ func displayNarrow(req approvalRequest) {
 	fmt.Println(terminalTooNarrow)
 }
 
-// displaySignRequest shows a signing request to the user.
-func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
+// displaySignRequest shows a signing request to the user on a terminal width
+// columns wide.
+func displaySignRequest(req *protocol.SignRequestMessage, queueLen, width int) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if queueLen > 1 {
 		fmt.Printf("🔐 SIGNING REQUEST (1 of %d pending)\n", queueLen)
@@ -705,7 +713,7 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 
 	if req.Description != "" {
 		fmt.Println()
-		printConfined(req.Description, terminalWidth())
+		printConfined(req.Description, width)
 	}
 	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
 		fmt.Printf("\n%s\n", line)
@@ -729,7 +737,7 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 		}
 		fmt.Printf("\n%s (%d):\n", list.heading, len(list.items))
 		for _, v := range list.items {
-			printConfined(violationLine(v), terminalWidth())
+			printConfined(violationLine(v), width)
 		}
 	}
 

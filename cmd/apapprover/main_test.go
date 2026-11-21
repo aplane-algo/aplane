@@ -95,7 +95,7 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 		}},
 	}
 
-	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1, 80) })
 	if !strings.Contains(rendered, "Policy warnings (1)") {
 		t.Fatalf("displaySignRequest() output missing violations header:\n%s", rendered)
 	}
@@ -115,7 +115,7 @@ func TestDisplaySignRequestListsNoticesApart(t *testing.T) {
 			{Field: "RekeyTo", Value: "HELD", Severity: protocol.ViolationSeverityNotice, Message: "This signer holds the aplane key for the new address."},
 		},
 	}
-	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1, 80) })
 	warnings, notes := strings.Index(rendered, "Policy warnings (1):"), strings.Index(rendered, "Notes (1):")
 	if warnings < 0 || notes < warnings || !strings.Contains(rendered, "[NOTICE] This signer holds the aplane key") {
 		t.Fatalf("displaySignRequest() does not list the notice after the warnings:\n%s", rendered)
@@ -145,13 +145,13 @@ func captureStdout(t *testing.T, fn func()) string {
 // does, and nothing when the signer sent none.
 func TestDisplaySignRequestShowsValidityWindow(t *testing.T) {
 	rendered := captureStdout(t, func() {
-		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1)
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1, 80)
 	})
 	if !strings.Contains(rendered, "Valid Rounds: 100 - 1100 (window: 1000 blocks)") {
 		t.Fatalf("displaySignRequest() output missing the validity window:\n%s", rendered)
 	}
 	rendered = captureStdout(t, func() {
-		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1)
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1, 80)
 	})
 	if strings.Contains(rendered, "Valid Rounds") {
 		t.Fatalf("displaySignRequest() shows a window the signer did not send:\n%s", rendered)
@@ -753,5 +753,48 @@ func TestEnrollmentOutcomeQuotesAndCutsTheLabel(t *testing.T) {
 		if want := "✓ Client key SHA256:one enrolled (" + termsafe.ResultLabel(label) + ")"; line != want {
 			t.Errorf("outcome for %+q = %q, want %q", label, line, want)
 		}
+	}
+}
+
+// A request is answered only on a terminal at least as wide as the one it
+// was shown on: narrowed since, the terminal re-wraps its rows, and a cut row
+// could start a line of its own, so the answer is refused and the request
+// shown again with a fresh code. A wider terminal changes nothing.
+func TestApproverShowsARequestAgainOnANarrowerTerminal(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	label := strings.Repeat(`\`, 33) + "Remote Addr: 10.9.8.7:51234"
+	request := approvalRequest{kind: approvalKindClientEnrollment, enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{
+		BaseMessage: protocol.BaseMessage{ID: "e"}, SSHFingerprint: fingerprint, Label: label, RemoteAddr: "203.0.113.9:51234"}}
+
+	columns := 120
+	useTerminalWidth(t, &columns)
+	var sent []any
+	a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+	a.answer = enrollmentReply(t, &sent, "")
+	_ = captureStdout(t, func() { a.enqueue(request) })
+	code := a.headCode
+	columns = 80
+	reshown := captureStdout(t, func() { a.handleInput("y " + code) })
+	if len(sent) != 0 || a.headCode == code || a.headShownWidth != 80 || !strings.Contains(reshown, "review it again") {
+		t.Fatalf("answered at 80 after being shown at 120: sent %v, code %s -> %s:\n%s", sent, code, a.headCode, reshown)
+	}
+	for _, line := range strings.Split(reshown, "\n") {
+		if len(line) > 80 && !strings.ContainsFunc(line, func(r rune) bool { return r > 0x7e }) {
+			t.Errorf("a line wider than the terminal it was shown again on: %q", line)
+		}
+	}
+	_ = captureStdout(t, func() { a.handleInput("y " + a.headCode) })
+	if len(sent) != 1 {
+		t.Fatalf("the approval was not taken once shown at the terminal's width: sent %v", sent)
+	}
+
+	// Widened after it was shown, the request is answered as it stands.
+	columns = 80
+	sent = nil
+	_ = captureStdout(t, func() { a.enqueue(request) })
+	columns = 200
+	_ = captureStdout(t, func() { a.handleInput("y " + a.headCode) })
+	if len(sent) != 1 {
+		t.Fatalf("a wider terminal refused the answer: sent %v", sent)
 	}
 }
