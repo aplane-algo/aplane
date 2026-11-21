@@ -456,7 +456,8 @@ func (ir *Runtime) SetUnlocked() {
 // unlocked session: the generation advances, and the contexts of the key uses
 // and passes handed out in that session are cancelled, so a stage table pass
 // stops and leaves the worker free to restore for the session a reconcile
-// opens. Nothing is drained or cleared; recovery keeps the keyring.
+// opens. Nothing is drained or cleared; recovery keeps the keyring, and with
+// it the source token index, which a reconcile's reload replaces.
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 	ir.cancelKeyUses()
@@ -543,28 +544,15 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
 	}
-	if !ok && errMsg == signerruntime.RecoveryDuringUnlockMessage {
-		ir.clearFencedSourceTokens()
-	}
+	// An attempt the fence refused for a recovery entered after it began
+	// leaves what its reload published, the source token index included.
+	// Recovery keeps the keyring, which decrypts every token file, so
+	// clearing the index would hide nothing; and a clear here could land
+	// after a second unlock's reload had published its index and before
+	// that unlock published, leaving the signer unlocked with no tokens. A
+	// lock clears the index, and nothing reads it until the signer is
+	// unlocked: the external check step reads it inside a key use.
 	return ok, keyCount, errMsg
-}
-
-// clearFencedSourceTokens clears the source token index an unlock's reload
-// published before the fence refused the unlock for a recovery entered after
-// it began: the unlock published nothing, and, as a failed unlock reload
-// does, leaves no tokens. The fence runs no lock cleanup, since recovery
-// administration needs the keyring; it needs no tokens. A reconcile reloads
-// and lifts a recovery under the store mutation lock, which this holds, so
-// an index is kept only when one has: the signer is then unlocked with the
-// tokens of the generation that reconcile followed.
-func (ir *Runtime) clearFencedSourceTokens() {
-	defer ir.lockStoreMutation()()
-	if ir.IsUnlocked() {
-		return
-	}
-	ir.passphraseLock.Lock()
-	ir.sourceTokens.Clear()
-	ir.passphraseLock.Unlock()
 }
 
 // --- Approval ---

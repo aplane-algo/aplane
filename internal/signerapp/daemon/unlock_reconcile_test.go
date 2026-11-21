@@ -336,10 +336,10 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // lifted it; and a lost race once a lock has come in. The answer once said
 // recovery_blocked whatever the state.
 //
-// The unlock's reload published a source token index before the fence; an
-// unlock that publishes nothing leaves no tokens, as a failed unlock reload
-// does, unless a reconcile has lifted the recovery and the signer is
-// unlocked with them.
+// The unlock's reload published a source token index before the fence. The
+// fence leaves it: recovery keeps the keyring that decrypts the token files,
+// and a clear there could wipe the index a second unlock had just published.
+// Nothing reads it until the signer is unlocked, and a lock zeroes it.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -356,7 +356,8 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
 				}
 			},
-			state: signerruntime.SignerStateRecovery,
+			state:  signerruntime.SignerStateRecovery,
+			tokens: true,
 		},
 		{
 			name:  "a reconcile lifted it",
@@ -399,8 +400,13 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			if known != tc.tokens || (tc.tokens && got != "tok-fenced") {
 				t.Fatalf("SourceTokenFor() = %q, %v; want the index kept: %v", got, known, tc.tokens)
 			}
-			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); !tc.tokens && strings.Trim(kept, "\x00") != "" {
-				t.Fatalf("the fenced unlock's index still holds %q, want it zeroed", kept)
+			// A lock ends it: the index the reload published is zeroed.
+			ir.Lock()
+			if _, known := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); known {
+				t.Fatal("a locked signer still serves a source token")
+			}
+			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); strings.Trim(kept, "\x00") != "" {
+				t.Fatalf("the index still holds %q after a lock, want it zeroed", kept)
 			}
 		})
 	}
