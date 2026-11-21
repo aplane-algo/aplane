@@ -43,7 +43,7 @@ func TestEnrollmentRequestDisplaysFullClientFingerprintAndLabel(t *testing.T) {
 	if !strings.Contains(rendered, fingerprint) {
 		t.Fatalf("fingerprint lost: %s", rendered)
 	}
-	if !strings.Contains(rendered, "Requested label: laptop") || !strings.Contains(rendered, "No credential is issued") {
+	if !strings.Contains(rendered, `Label: "laptop"`) || !strings.Contains(rendered, "No credential is issued") {
 		t.Fatalf("label or no-credential notice missing: %s", rendered)
 	}
 }

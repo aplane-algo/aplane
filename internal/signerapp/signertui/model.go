@@ -228,7 +228,6 @@ type restoreState struct {
 	backupsLoaded       bool
 	backupsListErr      string // why the last list failed; a list that arrives clears it
 	selectedBackup      int
-	backupScrollOffset  int
 	archivePath         string
 	archiveCreatedAt    int64 // sealed creation time from the preview
 	passphrase          []byte
@@ -558,6 +557,9 @@ type Model struct {
 	// Notice (shown in status bar): a completed action, not a problem.
 	lastNotice           string
 	lastNoticeGeneration uint64
+	// lastNoticeArming reports that the notice says why an approval was not
+	// taken yet (setApprovalArmingNotice).
+	lastNoticeArming bool
 
 	// Screen dimensions. sizeKnown is set by the first size message, so a
 	// zero dimension it carried (a one-row standalone terminal leaves height
@@ -792,6 +794,9 @@ type ImportClientKeyResultMsg struct {
 	Fingerprint string
 	Label       string
 	Added       bool
+	// CommentRefused reports that the key's comment was left out as its
+	// label: it is not a label the signer admits.
+	CommentRefused bool
 }
 
 // RevokeEnrolledKeyResultMsg is sent when a client key revocation completes.

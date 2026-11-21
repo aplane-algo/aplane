@@ -567,8 +567,10 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if _, ok := parseEnrollmentCommand(enrollmentCommandLine(label)); !ok {
-		return none, fmt.Errorf("enrollment label must be printable, single-line, and at most %d bytes", maxEnrollmentLabelBytes)
+	// The label is checked as it is sent, so a client refuses what the
+	// server would.
+	if !validEnrollmentLabel(label) {
+		return none, errInvalidEnrollmentLabel
 	}
 	var clientFingerprint string
 	authMethod, agentConn, err := c.authMethod(func(fingerprint string) { clientFingerprint = fingerprint })

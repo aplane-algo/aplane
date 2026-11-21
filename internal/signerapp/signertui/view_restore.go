@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m Model) renderRestorePassphrase() string {
@@ -158,9 +158,9 @@ func listedCountText(label string, listed, omitted int) string {
 	return fmt.Sprintf("%s: %d (%d listed)", label, listed+omitted, listed)
 }
 
-// restoreSkippedReasonRunes bounds the reason the preview footer shows for
+// restoreSkippedReasonWidth bounds the reason the preview footer shows for
 // the highlighted skipped key, so the footer cannot crowd out the list.
-const restoreSkippedReasonRunes = 200
+const restoreSkippedReasonWidth = 200
 
 func (m Model) restorePreviewFooter() string {
 	var sb strings.Builder
@@ -168,7 +168,7 @@ func (m Model) restorePreviewFooter() string {
 		width := m.popupBodyWidth(restorePreviewPopupWidth)
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render(wrapPlainText(
-			"Skipped: "+ellipsize(terminalSafe(skipped.Reason), restoreSkippedReasonRunes), width)))
+			"Skipped: "+ellipsize(terminalSafe(skipped.Reason), restoreSkippedReasonWidth), width)))
 		sb.WriteString("\n")
 	}
 
@@ -390,7 +390,7 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWi
 	room := rowWidth - restoreRowLeadWidth - addressWidth - restoreColumnGap - len(flags)
 	keyType := "[" + ellipsizeMiddle(displayKeyType(key.KeyType), max(room-2, 0)) + "]"
 	address := restorePreviewAddress(key, addressWidth)
-	addressPad := max(addressWidth-utf8.RuneCountInString(ellipsizeMiddle(terminalSafe(key.Address), addressWidth)), 0)
+	addressPad := max(addressWidth-ansi.StringWidth(ellipsizeMiddle(terminalSafe(key.Address), addressWidth)), 0)
 	flagPad := max(room-len(keyType), 0)
 
 	return prefix + restoreSelectionMark(m, key) + address + strings.Repeat(" ", addressPad) +
@@ -402,8 +402,8 @@ func restorePreviewKeyLine(m Model, key RestoreKeyInfo, prefix string, addressWi
 // columns.
 func restoreSkippedLine(skipped RestoreSkipped, lead string, addressWidth, rowWidth int) string {
 	address := ellipsizeMiddle(terminalSafe(skipped.Selector), addressWidth)
-	addressPad := max(addressWidth-utf8.RuneCountInString(address), 0)
-	room := max(rowWidth-utf8.RuneCountInString(lead)-addressWidth-restoreColumnGap, 0)
+	addressPad := max(addressWidth-ansi.StringWidth(address), 0)
+	room := max(rowWidth-ansi.StringWidth(lead)-addressWidth-restoreColumnGap, 0)
 	return lead + address + strings.Repeat(" ", addressPad) + "  " + ellipsize("skipped: "+terminalSafe(skipped.Reason), room)
 }
 

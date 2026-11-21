@@ -149,12 +149,37 @@ func (m *Model) refreshReview() {
 			out = append(out, line.fixed)
 			continue
 		}
-		for _, part := range strings.Split(wrapText(line.text, width), "\n") {
+		for _, part := range reviewWrap(line.text, width) {
 			out = append(out, line.style.Render(part))
 		}
 	}
 	m.signing.viewport = viewport.New(width, detailHeight)
 	m.signing.viewport.SetContent(strings.Join(out, "\n"))
+}
+
+// reviewContinuation marks a review line that continues the one above it.
+const reviewContinuation = "| "
+
+// reviewWrap wraps a line of the review's detail pane to width, every line
+// after the first marked as a continuation where wrapText indents it. Much
+// of a review comes from the request or the chain, an asset's URL or a
+// note, so a value that wraps could otherwise start a line that reads like
+// a field of its own; a field's line never starts with the mark.
+func reviewWrap(text string, width int) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		parts := strings.Split(wrapText(line, width), "\n")
+		// wrapText indents a continuation two columns past its line, and
+		// the mark takes those two columns.
+		indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+		for i := 1; i < len(parts); i++ {
+			if rest, ok := strings.CutPrefix(parts[i], indent+"  "); ok {
+				parts[i] = indent + reviewContinuation + rest
+			}
+		}
+		out = append(out, parts...)
+	}
+	return out
 }
 
 // handleReviewKeys handles the keys a drawn review adds to the approval

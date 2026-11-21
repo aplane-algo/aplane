@@ -11,11 +11,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m Model) sortedCosignerReferences() []CosignerReferenceInfo {
@@ -173,8 +173,8 @@ func (m *Model) clampCosignerManagerScroll(count int) {
 func (m Model) cosignerManagerVisibleRows() int {
 	// The title block and the two scroll lines are around the list, and 5
 	// more lines are kept for a list error and the status. A longer one takes
-	// rows from the list, so the window does not cut it off, until the list
-	// is down to its last 3 rows.
+	// rows from the list, so the window does not cut it off, down to the
+	// list's last row: the selected one.
 	extra := renderedBlockHeight(m.cosignerListErrorBlock())
 	if status := m.cosignerManagerStatusBlock(); status != "" {
 		extra += 1 + renderedBlockHeight(status)
@@ -183,10 +183,7 @@ func (m Model) cosignerManagerVisibleRows() int {
 	if len(m.cosigner.invalid) > 0 {
 		rows -= 2 // the invalid-file note and the blank line above it
 	}
-	if rows < 3 {
-		return 3
-	}
-	return rows
+	return max(rows, 1)
 }
 
 // cosignerManagerTitle is the block above the list: the title, its margin
@@ -201,7 +198,7 @@ func (m Model) cosignerListErrorBlock() string {
 	if m.cosigner.listErr == "" {
 		return ""
 	}
-	block := errorStyle.Render(wrapPlainText("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth())) + "\n"
+	block := errorStyle.Render(strings.Join(wrapCutLines("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth(), maxErrorLines), "\n")) + "\n"
 	if m.cosignerManagerRows() > 0 {
 		block += subtitleStyle.Render("Showing the last list read.") + "\n"
 	}
@@ -225,8 +222,8 @@ func (m Model) cosignerManagerStatusBlock() string {
 	return strings.Join(lines, "\n")
 }
 
-// wrapPath breaks path into lines of at most width runes, after a "/" where
-// it can and inside a name wider than a line.
+// wrapPath breaks path into lines of at most width columns, as the terminal
+// draws them, after a "/" where it can and inside a name wider than a line.
 func wrapPath(path string, width int) string {
 	if width <= 0 {
 		return path
@@ -234,16 +231,16 @@ func wrapPath(path string, width int) string {
 	var lines []string
 	line := ""
 	for _, part := range strings.SplitAfter(path, "/") {
-		for utf8.RuneCountInString(part) > width {
+		if ansi.StringWidth(part) > width {
 			if line != "" {
 				lines = append(lines, line)
 				line = ""
 			}
-			runes := []rune(part)
-			lines = append(lines, string(runes[:width]))
-			part = string(runes[width:])
+			pieces := breakWideWords([]string{part}, width)
+			lines = append(lines, pieces[:len(pieces)-1]...)
+			part = pieces[len(pieces)-1]
 		}
-		if utf8.RuneCountInString(line)+utf8.RuneCountInString(part) > width {
+		if ansi.StringWidth(line)+ansi.StringWidth(part) > width {
 			lines = append(lines, line)
 			line = ""
 		}
@@ -467,12 +464,8 @@ func (m Model) renderCosignerReferences() string {
 			var row string
 			if index < len(references) {
 				reference := references[index]
-				row = fmt.Sprintf("%s%-*s  %-*s  %s",
-					prefix,
-					nameWidth, ellipsizeMiddle(reference.Name, nameWidth),
-					idWidth, apadminapp.CompactWitnessKeyID(reference.ComponentKey),
-					displayKeyType(reference.KeyType),
-				)
+				row = prefix + padRight(ellipsizeMiddle(reference.Name, nameWidth), nameWidth) + "  " +
+					padRight(apadminapp.CompactWitnessKeyID(reference.ComponentKey), idWidth) + "  " + displayKeyType(reference.KeyType)
 			} else {
 				bad := m.cosigner.invalid[index-len(references)]
 				row = ellipsize(terminalSafe(prefix+filepath.Base(bad.Path)+": "+bad.Reason), m.tableWidth())
@@ -508,7 +501,7 @@ func (m Model) cosignerReferenceColumns(references []CosignerReferenceInfo) (nam
 	const cursorAndGaps, nameMinWidth = 2 + 2 + 2, 8
 	keyType := 0
 	for _, reference := range references {
-		name = max(name, utf8.RuneCountInString(reference.Name))
+		name = max(name, ansi.StringWidth(reference.Name))
 		id = max(id, len(apadminapp.CompactWitnessKeyID(reference.ComponentKey)))
 		keyType = max(keyType, len(displayKeyType(reference.KeyType)))
 	}

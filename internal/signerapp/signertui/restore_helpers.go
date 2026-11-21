@@ -117,9 +117,6 @@ func (m *Model) clampRestoreSelection() {
 	if m.restore.selectedBackup < 0 {
 		m.restore.selectedBackup = 0
 	}
-	if m.restore.backupScrollOffset > m.restore.selectedBackup {
-		m.restore.backupScrollOffset = m.restore.selectedBackup
-	}
 	if m.restore.selectedKey >= m.restorePreviewRowCount() {
 		m.restore.selectedKey = m.restorePreviewRowCount() - 1
 	}

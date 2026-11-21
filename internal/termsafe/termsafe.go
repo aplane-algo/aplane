@@ -20,6 +20,18 @@ import (
 	"unicode/utf8"
 )
 
+// PrintableASCII reports whether every byte of s is printable ASCII, 0x20 to
+// 0x7E: text that prints as itself and whose width is its length on every
+// terminal.
+func PrintableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // Line escapes s for printing on one line.
 func Line(s string) string { return escapeNonPrinting(s, false, false) }
 

@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // Entry is one enrolled key.
@@ -55,21 +57,25 @@ var ErrNotEnrolled = errors.New("key is not enrolled")
 // the same bound and character rule on client-supplied labels.
 const MaxLabelBytes = 64
 
-// NormalizeLabel trims label and checks that it is a bounded, printable,
-// single-line display text, the only form the registry writes: a label is
-// emitted verbatim after the key on its authorized_keys line, so a line
-// break would become a key line of its own.
+// NormalizeLabel trims label and checks that it is a bounded, single-line
+// display text of printable ASCII (termsafe.PrintableASCII), the only form
+// the registry writes: a label is emitted verbatim after the key on its
+// authorized_keys line, so a line break would become a key line of its own,
+// and an operator reads it on an approval screen, where only ASCII has a
+// width exact on every terminal. An empty label is none; one that is only
+// whitespace is refused, as the SSH server refuses it.
 func NormalizeLabel(label string) (string, error) {
-	label = strings.TrimSpace(label)
-	if len(label) > MaxLabelBytes {
+	if label == "" {
+		return "", nil
+	}
+	trimmed := strings.TrimSpace(label)
+	if len(trimmed) > MaxLabelBytes {
 		return "", fmt.Errorf("label exceeds %d bytes", MaxLabelBytes)
 	}
-	for _, r := range label {
-		if r < 0x20 || r == 0x7f {
-			return "", errors.New("label must be printable single-line text")
-		}
+	if trimmed == "" || !termsafe.PrintableASCII(trimmed) {
+		return "", errors.New("label must be printable ASCII text")
 	}
-	return label, nil
+	return trimmed, nil
 }
 
 // Parse validates data as a complete registry. Blank lines and "#" comment

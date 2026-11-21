@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/boundary"
@@ -469,20 +470,37 @@ func keyAddressWidth(rowWidth int, prefix, suffix string) int {
 	return width
 }
 
+// padRight pads s with spaces to width columns, as the terminal draws them,
+// and leaves a string as wide or wider as it is: "%-*s" counted in columns.
+func padRight(s string, width int) string {
+	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
+}
+
+// ellipsizeMiddle cuts s to width columns, as the terminal draws them, in
+// the middle: its start, "...", then its end, when width has room for more
+// than the dots.
 func ellipsizeMiddle(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
+	total := ansi.StringWidth(s)
+	if total <= width {
 		return s
 	}
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Truncate(s, width, "")
 	}
-	prefixLen := (width - 3) / 2
-	suffixLen := width - 3 - prefixLen
-	return string(runes[:prefixLen]) + "..." + string(runes[len(runes)-suffixLen:])
+	prefix := (width - 3) / 2
+	suffix := width - 3 - prefix
+	// TruncateLeft keeps whole a cluster the cut falls inside, however many
+	// columns it takes, so the cut moves right until the end fits.
+	cut := total - suffix
+	end := ansi.TruncateLeft(s, cut, "")
+	for ansi.StringWidth(end) > suffix {
+		cut++
+		end = ansi.TruncateLeft(s, cut, "")
+	}
+	return ansi.Truncate(s, prefix, "") + "..." + end
 }
 
 // pagerWidth is the width a full-screen text pager draws in.
@@ -493,22 +511,29 @@ func (m Model) pagerWidth() int {
 	return m.width
 }
 
+// pagerScrollKeys names a text pager's scroll keys, which its footer adds
+// when its text does not fit.
+const pagerScrollKeys = "up/down/pgup/pgdown: Scroll"
+
 // pagerScrollFooter is a full-screen text pager's footer when its text does
 // not fit.
-const pagerScrollFooter = "Esc/q close | up/down/pgup/pgdown: Scroll"
+const pagerScrollFooter = "Esc/q close | " + pagerScrollKeys
 
 // pagerVisibleLines is how many lines of text a full-screen pager shows: the
-// window body under the pager's footer at its tallest (the footer names the
-// scroll keys only when the text does not fit, so the fit cannot be measured
-// under the footer it decides), less the rows of header drawn above the text
-// and a row for each scroll marker. The renderer and the key handler both
-// use it, so the furthest the keys scroll is the end of the text in view.
-func (m Model) pagerVisibleLines(header string) int {
+// window body under the pager's footer at its tallest, scrollFooter (the
+// footer names the scroll keys only when the text does not fit, so the fit
+// cannot be measured under the footer it decides), less the rows of chrome
+// drawn above and below the text, each ending in a newline, and a row for
+// each scroll marker. The body is measured under the status bar as drawn, so
+// a long error takes its rows from the text. The renderer and the key
+// handler both use it, so the furthest the keys scroll is the end of the
+// text in view.
+func (m Model) pagerVisibleLines(chrome, scrollFooter string) int {
 	if m.height <= 0 {
 		return 20
 	}
-	body := m.windowBodyHeightUnder(renderedBlockHeight(m.renderFooterText(pagerScrollFooter)))
-	if visible := body - strings.Count(header, "\n") - 2; visible > 1 {
+	body := m.windowBodyHeightUnder(renderedBlockHeight(m.renderFooterText(scrollFooter)))
+	if visible := body - strings.Count(chrome, "\n") - 2; visible > 1 {
 		return visible
 	}
 	return 1

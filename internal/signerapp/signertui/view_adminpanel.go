@@ -152,36 +152,33 @@ func (m Model) settingUnsaved(key string) bool {
 	return m.admin.settings != nil && slices.Contains(m.admin.settings.UnsavedSettings, key)
 }
 
-// renderAdminPanel renders the admin control panel view.
+// renderAdminPanel renders the admin control panel view. Settings that do
+// not fit the window scroll around the selected one.
 func (m Model) renderAdminPanel() string {
-	var sb strings.Builder
-
+	var header strings.Builder
 	if warning := m.unsavedSettingsWarning(); warning != "" {
 		// The warning takes the title's margin line and is cut to the
 		// panel's width, so the panel is no taller with it than without.
-		sb.WriteString(titleStyle.MarginBottom(0).Render("Settings"))
-		sb.WriteString("\n")
-		sb.WriteString(warningStyle.Render(ellipsize(warning, m.tableWidth())))
-		sb.WriteString("\n\n")
+		header.WriteString(titleStyle.MarginBottom(0).Render("Settings"))
+		header.WriteString("\n")
+		header.WriteString(warningStyle.Render(ellipsize(warning, m.tableWidth())))
+		header.WriteString("\n\n")
 	} else {
-		sb.WriteString(titleStyle.Render("Settings"))
-		sb.WriteString("\n\n")
+		header.WriteString(titleStyle.Render("Settings"))
+		header.WriteString("\n\n")
 	}
 
 	rows := m.adminRows()
 	if len(rows) == 0 {
-		sb.WriteString(subtitleStyle.Render("  Loading settings..."))
-		sb.WriteString("\n")
-	} else {
-		m.writeSettingRows(&sb, rows)
+		return header.String() + subtitleStyle.Render("  Loading settings...") + "\n"
 	}
-
-	return sb.String()
+	lines, selected := m.settingLines(rows)
+	return header.String() + m.listWindow(lines, selected, strings.Count(header.String(), "\n"))
 }
 
-// writeSettingRows writes the settings, one line each under its section's
-// heading, with the selected row marked.
-func (m Model) writeSettingRows(sb *strings.Builder, rows []adminRow) {
+// settingLines is the settings, one line each under its section's heading,
+// with the selected row marked, and the line the selected row is on.
+func (m Model) settingLines(rows []adminRow) (lines []string, selected int) {
 	// Find max label width for alignment
 	maxLabel := 0
 	for _, r := range rows {
@@ -194,11 +191,10 @@ func (m Model) writeSettingRows(sb *strings.Builder, rows []adminRow) {
 	for i, r := range rows {
 		if r.section != section {
 			if section != "" {
-				sb.WriteString("\n")
+				lines = append(lines, "")
 			}
 			section = r.section
-			sb.WriteString(subtitleStyle.Render(section))
-			sb.WriteString("\n")
+			lines = append(lines, subtitleStyle.Render(section))
 		}
 
 		prefix := "  "
@@ -230,12 +226,13 @@ func (m Model) writeSettingRows(sb *strings.Builder, rows []adminRow) {
 		line := fmt.Sprintf("%s%-*s  %s", prefix, maxLabel, r.label, valueStr)
 
 		if i == m.admin.selectedRow {
-			sb.WriteString(selectedStyle.Render(line))
+			selected = len(lines)
+			lines = append(lines, selectedStyle.Render(line))
 		} else if r.isBool && r.value == "true" {
-			sb.WriteString(statusUnlockedStyle.Render(line))
+			lines = append(lines, statusUnlockedStyle.Render(line))
 		} else {
-			sb.WriteString(normalStyle.Render(line))
+			lines = append(lines, normalStyle.Render(line))
 		}
-		sb.WriteString("\n")
 	}
+	return lines, selected
 }

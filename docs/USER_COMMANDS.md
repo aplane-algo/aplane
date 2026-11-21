@@ -1178,14 +1178,17 @@ apadmin clients revoke <fingerprint>
 apadmin clients import <public-key-file|-> [--label <text>]
 ```
 
-`list` prints the requests waiting for approval (fingerprint, key type, label,
-origin, and time) followed by the enrolled keys; it needs only a read-only
-session. The other verbs take an unlocked session. `approve` enrolls the key
+`list` prints the requests waiting for approval (fingerprint, key type,
+origin, and time) followed by the enrolled keys, each key's label on a line of
+its own under it, quoted in ASCII and cut to fit 80 columns; it needs only a
+read-only session. The other verbs take an unlocked session. `approve` enrolls the key
 of a waiting request, with `--label` replacing the label the client asked for;
 `reject` drops a waiting request; `revoke` removes an enrolled key and closes
 its connections. `import` pre-enrolls a client's key from a file holding one
 OpenSSH public-key line (such as `id_ed25519.pub`); the line's comment is the
-label unless `--label` is given. A line carrying authorized_keys options
+label unless `--label` is given, and a comment that is not printable ASCII of
+at most 64 bytes is left out, the key enrolled without a label. A label is
+printable ASCII of at most 64 bytes. A line carrying authorized_keys options
 (`from=`, `restrict`, ...) is refused: the signer implements none, so import
 the bare key instead. With `-` the line is read from stdin, which
 then requires `APSIGNER_PASSPHRASE` or a controlling terminal for the

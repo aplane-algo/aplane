@@ -65,8 +65,8 @@ func (s *Session) HandleImportClientKey(msg *protocol.ImportClientKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionClientsEnroll, auth.Resource{Type: "client"}) {
 		return
 	}
-	fingerprint, label, added, err := s.productServices.ImportClientKey(s.SessionContext(), msg.PublicKey, msg.Label)
-	_ = s.WriteJSON(ProtocolImportClientKeyResultMessage(msg.ID, fingerprint, label, added, err))
+	imported, err := s.productServices.ImportClientKey(s.SessionContext(), msg.PublicKey, msg.Label)
+	_ = s.WriteJSON(ProtocolImportClientKeyResultMessage(msg.ID, imported, err))
 }
 
 func (s *Session) HandleRevokeEnrolledKey(msg *protocol.RevokeEnrolledKeyMessage) {

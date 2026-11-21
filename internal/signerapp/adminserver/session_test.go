@@ -187,8 +187,8 @@ func (s *stubServices) ApproveEnrollment(SessionContext, string, string) (string
 	return "", nil
 }
 func (s *stubServices) RejectEnrollment(SessionContext, string) error { return nil }
-func (s *stubServices) ImportClientKey(SessionContext, string, string) (string, string, bool, error) {
-	return "", "", false, nil
+func (s *stubServices) ImportClientKey(SessionContext, string, string) (ImportedClientKey, error) {
+	return ImportedClientKey{}, nil
 }
 func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 	return adminproto.AdminSettings{}

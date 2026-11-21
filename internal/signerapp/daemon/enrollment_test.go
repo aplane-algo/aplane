@@ -131,17 +131,17 @@ func TestEnrollmentRejectAndImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported))) + " ops-laptop"
-	fingerprint, label, added, err := server.ImportClientKey(adminserver.SessionContext{}, line, "")
-	if err != nil || !added || fingerprint != ssh.FingerprintSHA256(imported) || label != "ops-laptop" {
-		t.Fatalf("ImportClientKey() = %q, %q, %v, %v", fingerprint, label, added, err)
+	result, err := server.ImportClientKey(adminserver.SessionContext{}, line, "")
+	if err != nil || !result.Added || result.Fingerprint != ssh.FingerprintSHA256(imported) || result.Label != "ops-laptop" || result.CommentRefused {
+		t.Fatalf("ImportClientKey() = %+v, %v", result, err)
 	}
 	if !ir.HasAuthorizedKey(imported) || len(ir.PendingEnrollments()) != 0 {
 		t.Fatal("imported key is not enrolled or its request was left pending")
 	}
-	if _, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, line, "other"); err != nil || added {
-		t.Fatalf("repeat ImportClientKey() added = %v, err = %v, want no change", added, err)
+	if result, err := server.ImportClientKey(adminserver.SessionContext{}, line, "other"); err != nil || result.Added {
+		t.Fatalf("repeat ImportClientKey() added = %v, err = %v, want no change", result.Added, err)
 	}
-	if _, _, _, err := server.ImportClientKey(adminserver.SessionContext{}, "not a key", ""); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+	if _, err := server.ImportClientKey(adminserver.SessionContext{}, "not a key", ""); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
 		t.Fatalf("invalid import error = %v, want invalid_request", err)
 	}
 	var coded interface{ Code() string }
@@ -169,16 +169,16 @@ func TestImportClientKeyRefusesOptionsAndExtraLines(t *testing.T) {
 		"aplane-future " + line,
 		line + "\n" + other,
 	} {
-		_, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, input, "")
-		if err == nil || added || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
-			t.Fatalf("ImportClientKey(%q) = added %v, err %v, want invalid_request", input, added, err)
+		result, err := server.ImportClientKey(adminserver.SessionContext{}, input, "")
+		if err == nil || result.Added || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+			t.Fatalf("ImportClientKey(%q) = added %v, err %v, want invalid_request", input, result.Added, err)
 		}
 	}
 	if ir.HasAuthorizedKey(key) || len(ir.EnrolledKeys()) != 0 {
 		t.Fatalf("a refused line enrolled a key: enrolled = %d", len(ir.EnrolledKeys()))
 	}
-	if _, _, added, err := server.ImportClientKey(adminserver.SessionContext{}, line+" laptop\n", ""); err != nil || !added {
-		t.Fatalf("ImportClientKey(plain line) = added %v, err %v", added, err)
+	if result, err := server.ImportClientKey(adminserver.SessionContext{}, line+" laptop\n", ""); err != nil || !result.Added {
+		t.Fatalf("ImportClientKey(plain line) = added %v, err %v", result.Added, err)
 	}
 }
 
@@ -214,17 +214,30 @@ func TestAdminEnrollmentLabelsAreValidated(t *testing.T) {
 
 	imported := testClientKey(t)
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported)))
-	if _, _, _, err := server.ImportClientKey(adminserver.SessionContext{}, line, "lab\nssh-ed25519 AAAA evil"); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
-		t.Fatalf("ImportClientKey(label with line break) error = %v, want invalid_request", err)
-	}
-	if _, _, _, err := server.ImportClientKey(adminserver.SessionContext{}, line+" "+strings.Repeat("x", clientregistry.MaxLabelBytes+1), ""); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
-		t.Fatalf("ImportClientKey(over-long comment) error = %v, want invalid_request", err)
+	for _, label := range []string{"lab\nssh-ed25519 AAAA evil", "\u7530\u4e2d"} {
+		if _, err := server.ImportClientKey(adminserver.SessionContext{}, line, label); err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
+			t.Fatalf("ImportClientKey(label %q) error = %v, want invalid_request", label, err)
+		}
 	}
 	if ir.HasAuthorizedKey(imported) {
 		t.Fatal("a refused label enrolled the key")
 	}
-	if reg, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil || len(reg.Entries()) != 1 {
-		t.Fatalf("registry on disk: err = %v, len = %d, want exactly the approved key", err, len(reg.Entries()))
+	// A comment that is not a label the registry admits is not the label:
+	// the operator typed none, so the key is enrolled without one, and the
+	// result says the comment was left out.
+	for _, comment := range []string{strings.Repeat("x", clientregistry.MaxLabelBytes+1), "\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC"} {
+		key := testClientKey(t)
+		keyLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))) + " " + comment
+		result, err := server.ImportClientKey(adminserver.SessionContext{}, keyLine, "")
+		if err != nil || !result.Added || result.Label != "" || !result.CommentRefused {
+			t.Fatalf("ImportClientKey(comment %q) = %+v, %v, want enrolled without a label, the comment refused", comment, result, err)
+		}
+		if entry, ok := ir.EnrolledKey(ssh.FingerprintSHA256(key)); !ok || entry.Label != "" {
+			t.Fatalf("enrolled entry = %+v, %v, want no label", entry, ok)
+		}
+	}
+	if reg, err := clientregistry.Load(ir.AuthorizedKeysPath()); err != nil || len(reg.Entries()) != 3 {
+		t.Fatalf("registry on disk: err = %v, len = %d, want the approved key and the two imported without a label", err, len(reg.Entries()))
 	}
 }
 
@@ -317,8 +330,8 @@ func TestEnrollmentRetriesAnnounceQueueChanges(t *testing.T) {
 	}
 	fsutil.TestHook = nil
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported)))
-	if _, _, added, err := server.ImportClientKey(ctx, line, ""); err != nil || added {
-		t.Fatalf("ImportClientKey() of an enrolled key = added %v, err %v", added, err)
+	if result, err := server.ImportClientKey(ctx, line, ""); err != nil || result.Added {
+		t.Fatalf("ImportClientKey() of an enrolled key = added %v, err %v", result.Added, err)
 	}
 	if len(ir.PendingEnrollments()) != 0 {
 		t.Fatal("import did not clear the request")
@@ -392,12 +405,12 @@ func TestEnrollmentChangesAreNotified(t *testing.T) {
 	imported := testClientKey(t)
 	importedFP := ssh.FingerprintSHA256(imported)
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(imported))) + " ops"
-	if _, _, _, err := server.ImportClientKey(ctx, line, ""); err != nil {
+	if _, err := server.ImportClientKey(ctx, line, ""); err != nil {
 		t.Fatal(err)
 	}
 	expect("import", protocol.EnrollmentChangeImported, importedFP)
-	if _, _, added, err := server.ImportClientKey(ctx, line, ""); err != nil || added {
-		t.Fatalf("repeat import = added %v, err %v", added, err)
+	if result, err := server.ImportClientKey(ctx, line, ""); err != nil || result.Added {
+		t.Fatalf("repeat import = added %v, err %v", result.Added, err)
 	}
 	if len(hub.enrollmentChanges) != len(want) {
 		t.Fatalf("an import that changed nothing was announced: %+v", hub.enrollmentChanges)

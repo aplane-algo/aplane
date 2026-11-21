@@ -320,7 +320,7 @@ func (s signerAdminServices) RejectEnrollment(ctx adminserver.SessionContext, fi
 	return s.signer.RejectClientEnrollment(ctx, fingerprint)
 }
 
-func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (string, string, bool, error) {
+func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (adminserver.ImportedClientKey, error) {
 	return s.signer.ImportClientKey(ctx, publicKey, label)
 }
 

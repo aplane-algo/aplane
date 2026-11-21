@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -943,26 +944,33 @@ func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh
 }
 
 // parseEnrollmentCommand accepts "enroll" or "enroll <label>" and returns the
-// label. A label is bounded, printable, and single-line; anything else is
-// not an enrollment command.
+// label as sent, "" for none; anything else is not an enrollment command. The
+// label is checked when the request is admitted (validEnrollmentLabel).
 func parseEnrollmentCommand(command string) (label string, ok bool) {
 	if command == enrollmentCommand {
 		return "", true
 	}
-	rest, found := strings.CutPrefix(command, enrollmentCommand+" ")
+	label, found := strings.CutPrefix(command, enrollmentCommand+" ")
 	if !found {
 		return "", false
 	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" || len(rest) > maxEnrollmentLabelBytes {
-		return "", false
-	}
-	for _, r := range rest {
-		if r < 0x20 || r == 0x7f {
-			return "", false
-		}
-	}
-	return rest, true
+	return label, true
+}
+
+// errInvalidEnrollmentLabel refuses an enrollment request whose label is not
+// one validEnrollmentLabel admits.
+var errInvalidEnrollmentLabel = fmt.Errorf("enrollment label must be printable ASCII text of 1 to %d bytes", maxEnrollmentLabelBytes)
+
+// validEnrollmentLabel reports whether label, as sent, is one an enrollment
+// request may carry: none, or, once trimmed, 1 to maxEnrollmentLabelBytes
+// bytes of printable ASCII (termsafe.PrintableASCII), the rule
+// clientregistry.NormalizeLabel applies to the labels an admin session gives.
+// An unenrolled client chooses this text and the operator reads it on an
+// approval screen, so its width must be exact on every terminal, which only
+// ASCII is.
+func validEnrollmentLabel(label string) bool {
+	trimmed := strings.TrimSpace(label)
+	return label == "" || trimmed != "" && len(trimmed) <= maxEnrollmentLabelBytes && termsafe.PrintableASCII(trimmed)
 }
 
 // requestEnrollment runs the connection's single enrollment request and
@@ -974,6 +982,12 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: only one enrollment request is allowed per connection\n", 1)
 		return false
 	}
+	if !validEnrollmentLabel(label) {
+		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v: %s\n", remoteAddr, fingerprint, errInvalidEnrollmentLabel, quoteClientText(label))
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+errInvalidEnrollmentLabel.Error()+"\n", 1)
+		return true
+	}
+	label = strings.TrimSpace(label)
 
 	key, ok := enrollmentPublicKey(sshConn.Permissions)
 	if !ok {
@@ -1052,13 +1066,15 @@ func (s *Server) respondEnrollment(sshConn ssh.Conn, channel ssh.Channel, msg st
 	return sendExitStatus(channel, status)
 }
 
-// quoteClientText renders unauthenticated client text for a log line: quoted
-// so control characters and terminal escapes print as escapes, and truncated.
+// quoteClientText renders unauthenticated client text for a log line, which
+// may reach a terminal: quoted in ASCII, so control characters, terminal
+// escapes and every other character beyond ASCII print as escapes, and
+// truncated.
 func quoteClientText(text string) string {
 	if len(text) > maxLoggedClientTextBytes {
-		return strconv.Quote(text[:maxLoggedClientTextBytes]) + "..."
+		return strconv.QuoteToASCII(text[:maxLoggedClientTextBytes]) + "..."
 	}
-	return strconv.Quote(text)
+	return strconv.QuoteToASCII(text)
 }
 
 func parseExecCommand(payload []byte) (string, bool) {

@@ -148,9 +148,9 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, finger
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
 		}
 		if err != nil {
-			logWarnf("client key enrolled: %s (label %q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
+			logWarnf("client key enrolled: %s (label %+q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
 		} else {
-			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
+			logInfof("client key enrolled: %s (label %+q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 		}
 	}
 	// A retry after a failed queue write enrolls nothing but clears the
@@ -194,33 +194,36 @@ func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, fingerp
 }
 
 // ImportClientKey enrolls an OpenSSH public-key line the operator supplied,
-// the pre-enrollment path. The line's comment is the label unless one is
-// given. A waiting request for the same key is cleared.
+// the pre-enrollment path. A label the operator gives must meet the label
+// rule (clientregistry.NormalizeLabel); without one, the line's comment is
+// the label when it meets the rule, and the key is enrolled without a label,
+// the result saying so, when it does not: the operator typed no label to
+// refuse. A waiting request for the same key is cleared.
 //
 // The line follows the registry's rule: this version implements no
 // authorized_keys options, so an option-bearing line (from=, restrict, ...)
 // is refused rather than enrolled without the restriction it asks for.
-func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (string, string, bool, error) {
+func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, label string) (adminserver.ImportedClientKey, error) {
+	var imported adminserver.ImportedClientKey
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(publicKey)))
 	if err != nil {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
+		return imported, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: %w", err))
 	}
 	if len(options) != 0 {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: option %q is not implemented by this version; import the key without options", options[0]))
+		return imported, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid public key: option %q is not implemented by this version; import the key without options", options[0]))
 	}
 	if len(bytes.TrimSpace(rest)) != 0 {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, errors.New("invalid public key: expected one OpenSSH public-key line"))
+		return imported, protocol.WithCode(protocol.ErrCodeInvalidRequest, errors.New("invalid public key: expected one OpenSSH public-key line"))
 	}
 	if err := sshtunnel.CheckClientKey(key); err != nil {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, err)
+		return imported, protocol.WithCode(protocol.ErrCodeInvalidRequest, err)
 	}
-	label = strings.TrimSpace(label)
-	if label == "" {
-		label = comment
-	}
-	label, err = clientregistry.NormalizeLabel(label)
-	if err != nil {
-		return "", "", false, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
+	if strings.TrimSpace(label) != "" {
+		if label, err = clientregistry.NormalizeLabel(label); err != nil {
+			return imported, protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("invalid label: %w", err))
+		}
+	} else if label, err = clientregistry.NormalizeLabel(comment); err != nil {
+		label, imported.CommentRefused = "", true
 	}
 	fingerprint := ssh.FingerprintSHA256(key)
 	added, cleared, err := fs.productRuntime().ImportClientKey(key, label)
@@ -229,9 +232,9 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, lab
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
 		}
 		if err != nil {
-			logWarnf("client key imported: %s (label %q) but the import did not complete: %v", fingerprint, label, err)
+			logWarnf("client key imported: %s (label %+q) but the import did not complete: %v", fingerprint, label, err)
 		} else {
-			logInfof("client key imported: %s (label %q)", fingerprint, label)
+			logInfof("client key imported: %s (label %+q)", fingerprint, label)
 		}
 	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)
@@ -241,7 +244,8 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, lab
 	if added || cleared {
 		fs.notifyEnrollmentChanged(protocol.EnrollmentChangeImported, fingerprint)
 	}
-	return fingerprint, label, added, err
+	imported.Fingerprint, imported.Label, imported.Added = fingerprint, label, added
+	return imported, err
 }
 
 // RevokeAllClientKeys removes every enrolled client key and closes every

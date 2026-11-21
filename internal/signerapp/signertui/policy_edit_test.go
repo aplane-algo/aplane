@@ -110,10 +110,10 @@ func openEditorForKeyOnDefault(t *testing.T, m Model) Model {
 	if m.viewState != ViewPolicyEdit || !edit.loading || edit.templateFor != policyViewKeyA || edit.pendingDocumentID == "" || cmd == nil {
 		t.Fatalf("e on a key on the default: view %v edit %+v cmd %v, want the default requested", m.viewState, edit, cmd)
 	}
-	next, _ := m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
+	// Through Update, as the program delivers it, which fits the editor.
+	m = updateModel(t, m, PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
 		BaseMessage: protocol.BaseMessage{ID: edit.pendingDocumentID}, Success: true, Key: policy.DefaultKey, Document: cosignerDefaultDoc(),
 	}})
-	m = next.(Model)
 	if m.viewState != ViewPolicyEdit || m.policies.apply.edit.loading || !m.policies.apply.edit.isNew || m.policies.apply.edit.key != policyViewKeyA {
 		t.Fatalf("default delivered: view %v edit %+v", m.viewState, m.policies.apply.edit)
 	}

@@ -5,11 +5,16 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/transport"
 )
 
@@ -90,7 +95,7 @@ func TestDisplaySignRequestShowsViolations(t *testing.T) {
 		}},
 	}
 
-	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1, 80) })
 	if !strings.Contains(rendered, "Policy warnings (1)") {
 		t.Fatalf("displaySignRequest() output missing violations header:\n%s", rendered)
 	}
@@ -110,7 +115,7 @@ func TestDisplaySignRequestListsNoticesApart(t *testing.T) {
 			{Field: "RekeyTo", Value: "HELD", Severity: protocol.ViolationSeverityNotice, Message: "This signer holds the aplane key for the new address."},
 		},
 	}
-	rendered := captureStdout(t, func() { displaySignRequest(req, 1) })
+	rendered := captureStdout(t, func() { displaySignRequest(req, 1, 80) })
 	warnings, notes := strings.Index(rendered, "Policy warnings (1):"), strings.Index(rendered, "Notes (1):")
 	if warnings < 0 || notes < warnings || !strings.Contains(rendered, "[NOTICE] This signer holds the aplane key") {
 		t.Fatalf("displaySignRequest() does not list the notice after the warnings:\n%s", rendered)
@@ -140,13 +145,13 @@ func captureStdout(t *testing.T, fn func()) string {
 // does, and nothing when the signer sent none.
 func TestDisplaySignRequestShowsValidityWindow(t *testing.T) {
 	rendered := captureStdout(t, func() {
-		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1)
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc", FirstValid: 100, LastValid: 1100}, 1, 80)
 	})
 	if !strings.Contains(rendered, "Valid Rounds: 100 - 1100 (window: 1000 blocks)") {
 		t.Fatalf("displaySignRequest() output missing the validity window:\n%s", rendered)
 	}
 	rendered = captureStdout(t, func() {
-		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1)
+		displaySignRequest(&protocol.SignRequestMessage{Address: "ADDR", Description: "desc"}, 1, 80)
 	})
 	if strings.Contains(rendered, "Valid Rounds") {
 		t.Fatalf("displaySignRequest() shows a window the signer did not send:\n%s", rendered)
@@ -598,5 +603,198 @@ func TestViolationLineNamesOnlyAValue(t *testing.T) {
 		if got := violationLine(tc.v); got != tc.want {
 			t.Errorf("violationLine(%+v) = %q, want %q", tc.v, got, tc.want)
 		}
+	}
+}
+
+// A request's text longer than the terminal is wide is cut into pieces each
+// marked as a continuation, so no value from the request can wrap onto a
+// line it starts, and read like a field of its own.
+func TestConfinedLinesMarkEveryContinuation(t *testing.T) {
+	line := "  URL: " + strings.Repeat("a", 70) + "To:      EVILADDRESS"
+	pieces := confinedLines(line, 80)
+	if len(pieces) != 2 || pieces[1] != continuationMark+"      EVILADDRESS" {
+		t.Fatalf("confinedLines = %q", pieces)
+	}
+	wide := strings.Repeat("漢字", 50)
+	pieces = confinedLines(wide, 21)
+	var joined strings.Builder
+	for i, piece := range pieces {
+		if ansi.StringWidth(piece) > 21 {
+			t.Errorf("piece %q is %d columns", piece, ansi.StringWidth(piece))
+		}
+		if i > 0 && !strings.HasPrefix(piece, continuationMark) {
+			t.Errorf("piece %d %q is not marked", i, piece)
+		}
+		joined.WriteString(strings.TrimPrefix(piece, continuationMark))
+	}
+	if joined.String() != wide {
+		t.Errorf("the pieces do not make up the line")
+	}
+}
+
+// A client's label is shown quoted in ASCII on its own field's row, and
+// each field is one row at every width: no label can drive the terminal or
+// draw a line that reads like the key's fingerprint or address.
+func TestEnrollmentRequestLabelCannotImitateAField(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	for _, label := range []string{
+		"laptop-of-ops SHA256:FakeFakeFakeFakeFakeFakeFakeFakeFakeFake123",
+		"x Remote Addr: 10.0.0.5:22",
+		"bidi \u202e and C1 \u0085 and \xff",
+		strings.Repeat(`\`, 33) + " SHA256:FakeFakeFake",
+		"a SHA256:ExpectedLaptopKeyA\\\u2e3bpKeyAbCdEfGhIjKlMnOpQrStUvWxYz012",
+		"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC",
+	} {
+		for _, width := range []int{80, 81, 120, 200} {
+			rendered := captureStdout(t, func() {
+				displayClientEnrollmentRequest(&protocol.ClientEnrollmentRequestMessage{
+					SSHFingerprint: fingerprint, Label: label, RemoteAddr: "203.0.113.9:51234",
+				}, 1, width)
+			})
+			name := fmt.Sprintf("label %q width %d", label, width)
+			labelRows := 0
+			for _, line := range strings.Split(rendered, "\n") {
+				if len(line) > width && !strings.HasPrefix(line, "\U0001f511") {
+					t.Errorf("%s: line wider than the terminal: %q", name, line)
+				}
+				switch {
+				case strings.HasPrefix(line, `Label:       "`):
+					labelRows++
+					if !strings.HasSuffix(line, `"`) || strings.ContainsFunc(line, func(r rune) bool { return r < 0x20 || r > 0x7e }) {
+						t.Errorf("%s: the label row is not one ASCII quoted row: %q", name, line)
+					}
+				case strings.Contains(line, "SHA256:") && line != "SSH Key:     "+fingerprint,
+					strings.Contains(line, "Remote Addr:") && line != "Remote Addr: 203.0.113.9:51234":
+					t.Errorf("%s: a line that reads like a field: %q", name, line)
+				}
+			}
+			if labelRows != 1 {
+				t.Errorf("%s: %d label rows:\n%s", name, labelRows, rendered)
+			}
+			if fits := len(strconv.QuoteToASCII(label)) <= width-13; fits && !strings.Contains(rendered, "Label:       "+strconv.QuoteToASCII(label)+"\n") {
+				t.Errorf("%s: the label is not quoted in ASCII:\n%s", name, rendered)
+			}
+		}
+	}
+}
+
+// useTerminalWidth makes the terminal width columns for the test.
+func useTerminalWidth(t *testing.T, columns *int) {
+	t.Helper()
+	saved := terminalWidth
+	terminalWidth = func() int { return *columns }
+	t.Cleanup(func() { terminalWidth = saved })
+}
+
+// On a terminal narrower than 80 columns apapprover shows which request
+// waits, its identity whole, and takes no answer, approval or rejection,
+// since a field row would be cut short of what the operator must check. A
+// request shown that way is shown whole, with a fresh code, once the
+// terminal is wide enough, before any answer is taken.
+func TestApproverTakesNoAnswerOnANarrowTerminal(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	requests := map[string]approvalRequest{
+		"enrollment": {kind: approvalKindClientEnrollment, enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{
+			BaseMessage: protocol.BaseMessage{ID: "token-1"}, SSHFingerprint: fingerprint, Label: "laptop", RemoteAddr: "[2001:db8::1]:51234"}},
+		"signing": {kind: approvalKindSign, signRequest: &protocol.SignRequestMessage{
+			BaseMessage: protocol.BaseMessage{ID: "sign-1"}, Address: "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ", Description: "Payment"}},
+	}
+	for name, req := range requests {
+		for _, width := range []int{20, 60, 79, 80} {
+			columns := width
+			useTerminalWidth(t, &columns)
+			var sent []any
+			a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+			a.answer = enrollmentReply(t, &sent, "")
+			shown := captureStdout(t, func() { a.enqueue(req) })
+			code := a.headCode
+			out := captureStdout(t, func() {
+				a.handleInput("y " + code)
+				a.handleInput("n")
+			})
+			if width < minReviewWidth {
+				identity := fingerprint
+				if req.signRequest != nil {
+					identity = req.signRequest.Address
+				}
+				if !strings.Contains(shown, identity+"\n") || !strings.Contains(shown, terminalTooNarrow) || strings.Contains(shown, "Approve current request?") {
+					t.Errorf("%s at %d columns: shown as:\n%s", name, width, shown)
+				}
+				if len(sent) != 0 || len(a.queue) != 1 || strings.Count(out, terminalTooNarrow) != 2 {
+					t.Errorf("%s at %d columns: an answer was taken: sent %v, output:\n%s", name, width, sent, out)
+				}
+				// Widened, the first line shows the request whole with a
+				// fresh code; only then is an answer taken.
+				columns = minReviewWidth
+				reshown := captureStdout(t, func() { a.handleInput("y " + code) })
+				if len(sent) != 0 || a.headCode == code || !strings.Contains(reshown, "Approve current request?") {
+					t.Errorf("%s widened: answered or not shown whole: sent %v:\n%s", name, sent, reshown)
+				}
+				code = a.headCode
+				_ = captureStdout(t, func() { a.handleInput("y " + code) })
+			}
+			if len(sent) != 1 || len(a.queue) != 0 {
+				t.Errorf("%s at %d columns: the approval was not taken once wide enough: sent %v", name, width, sent)
+			}
+		}
+	}
+}
+
+// The line reporting an enrollment names the label quoted in ASCII and cut
+// to 32 columns: whole, it runs on past 80 columns and could start a line
+// reading like the next request's key, and a label queued before labels were
+// ASCII could reach the terminal with its controls.
+func TestEnrollmentOutcomeQuotesAndCutsTheLabel(t *testing.T) {
+	for _, label := range []string{
+		"x SSH Key:     SHA256:ExpectedLaptopKeyAbCdEfGhIjKlMnOpQrStUv",
+		"laptop\u202e\u0085\u7530",
+	} {
+		line := enrollmentOutcome{approved: true, success: true, fingerprint: "SHA256:one", label: label}.String()
+		if want := "✓ Client key SHA256:one enrolled (" + termsafe.ResultLabel(label) + ")"; line != want {
+			t.Errorf("outcome for %+q = %q, want %q", label, line, want)
+		}
+	}
+}
+
+// A request is answered only on a terminal at least as wide as the one it
+// was shown on: narrowed since, the terminal re-wraps its rows, and a cut row
+// could start a line of its own, so the answer is refused and the request
+// shown again with a fresh code. A wider terminal changes nothing.
+func TestApproverShowsARequestAgainOnANarrowerTerminal(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	label := strings.Repeat(`\`, 33) + "Remote Addr: 10.9.8.7:51234"
+	request := approvalRequest{kind: approvalKindClientEnrollment, enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{
+		BaseMessage: protocol.BaseMessage{ID: "e"}, SSHFingerprint: fingerprint, Label: label, RemoteAddr: "203.0.113.9:51234"}}
+
+	columns := 120
+	useTerminalWidth(t, &columns)
+	var sent []any
+	a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+	a.answer = enrollmentReply(t, &sent, "")
+	_ = captureStdout(t, func() { a.enqueue(request) })
+	code := a.headCode
+	columns = 80
+	reshown := captureStdout(t, func() { a.handleInput("y " + code) })
+	if len(sent) != 0 || a.headCode == code || a.headShownWidth != 80 || !strings.Contains(reshown, "review it again") {
+		t.Fatalf("answered at 80 after being shown at 120: sent %v, code %s -> %s:\n%s", sent, code, a.headCode, reshown)
+	}
+	for _, line := range strings.Split(reshown, "\n") {
+		if len(line) > 80 && !strings.ContainsFunc(line, func(r rune) bool { return r > 0x7e }) {
+			t.Errorf("a line wider than the terminal it was shown again on: %q", line)
+		}
+	}
+	_ = captureStdout(t, func() { a.handleInput("y " + a.headCode) })
+	if len(sent) != 1 {
+		t.Fatalf("the approval was not taken once shown at the terminal's width: sent %v", sent)
+	}
+
+	// Widened after it was shown, the request is answered as it stands.
+	columns = 80
+	sent = nil
+	_ = captureStdout(t, func() { a.enqueue(request) })
+	columns = 200
+	_ = captureStdout(t, func() { a.handleInput("y " + a.headCode) })
+	if len(sent) != 1 {
+		t.Fatalf("a wider terminal refused the answer: sent %v", sent)
 	}
 }

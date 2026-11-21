@@ -397,31 +397,38 @@ func (m Model) policyEditMessages() []policyApplyReviewLine {
 	return out
 }
 
-// sizedPolicyEditor returns the editor fitted to the space left by the header
-// and the messages under it.
+// sizedPolicyEditor returns the editor fitted to the window body the header
+// above it and the messages under it leave.
 func (m Model) sizedPolicyEditor() textarea.Model {
 	input := m.policies.apply.edit.input
 	height := 20
 	if m.height > 0 {
-		height = m.height - 9 - len(m.policyEditMessages())
+		height = m.windowBodyHeight() - strings.Count(m.policyEditHeader(m.policyApplyReviewWidth()), "\n") - len(m.policyEditMessages())
 	}
 	input.SetWidth(m.policyApplyReviewWidth())
 	input.SetHeight(max(height, 5))
 	return input
 }
 
-func (m Model) renderPolicyEdit() string {
-	edit := m.policies.apply.edit
-	width := m.policyApplyReviewWidth()
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Edit Policy"))
-	sb.WriteString("\n")
-	if edit.loading {
-		sb.WriteString(subtitleStyle.Render("Loading document..."))
-		return sb.String()
+// fitPolicyEditor keeps the open editor at its size and the cursor's line in
+// view. Update runs it after every message, as it keeps an approval on top,
+// since what a message changes, a status bar that grows above all, can take
+// rows from the editor, and the text area moves its view to the cursor only
+// when it is updated. Drawing then reads the fitted editor.
+func (m Model) fitPolicyEditor() Model {
+	edit := &m.policies.apply.edit
+	if m.viewState != ViewPolicyEdit || edit.loading {
+		return m
 	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(policyTargetLabel(m.policies.apply.edit.key), width)))
-	sb.WriteString("\n")
+	// An update scrolls the text area to its cursor; the editor is focused
+	// from the moment it opens.
+	edit.input, _ = m.sizedPolicyEditor().Update(nil)
+	return m
+}
+
+// policyEditHeader is what the editor draws above the text.
+func (m Model) policyEditHeader(width int) string {
+	edit := m.policies.apply.edit
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
 	switch {
 	case edit.preset != "" && edit.isNew:
@@ -431,9 +438,22 @@ func (m Model) renderPolicyEdit() string {
 	case edit.isNew:
 		hint = "No policy of its own yet: this is the node default with the key filled in. Applying it gives the key its own policy; comments are removed on apply."
 	}
-	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
-	sb.WriteString("\n\n")
-	sb.WriteString(m.sizedPolicyEditor().View())
+	return titleStyle.Render("Edit Policy") + "\n" +
+		subtitleStyle.Render(ellipsize(policyTargetLabel(edit.key), width)) + "\n" +
+		helpStyle.Render(ellipsize(hint, width)) + "\n\n"
+}
+
+func (m Model) renderPolicyEdit() string {
+	width := m.policyApplyReviewWidth()
+	var sb strings.Builder
+	if m.policies.apply.edit.loading {
+		sb.WriteString(titleStyle.Render("Edit Policy"))
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Loading document..."))
+		return sb.String()
+	}
+	sb.WriteString(m.policyEditHeader(width))
+	sb.WriteString(m.policies.apply.edit.input.View())
 	sb.WriteString("\n")
 	for _, line := range m.policyEditMessages() {
 		if line.attention {

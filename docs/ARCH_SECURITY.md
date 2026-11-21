@@ -504,9 +504,20 @@ with operator import of a public key (below), this is the whole bootstrap.
 1. client connects as `enroll` with any supported key
 2. server rejects every other username before SSH auth succeeds
 3. the exec request `enroll` or `enroll <label>` is accepted on that
-   connection; the label is at most 64 bytes of printable single-line text,
-   and any other command is refused: the exec request is answered false and
-   `ERROR: unknown command` is written, with no exit status
+   connection, and any other command is refused: the exec request is
+   answered false and `ERROR: unknown command` is written, with no exit
+   status. The label is optional; a label given must be, once trimmed, 1 to
+   64 bytes of printable ASCII, 0x20 to 0x7E (`termsafe.PrintableASCII`).
+   An unenrolled client chooses this text and the operator reads it on an
+   approval screen, so its width has to be exact on every terminal, which
+   only ASCII is. A request with any other label, whitespace alone included,
+   is answered
+   `ERROR: enrollment label must be printable ASCII text of 1 to 64 bytes`
+   with exit 1, and nothing is queued; `apshell enroll --label` refuses it the
+   same way before it sends it. The same rule holds for a label an admin
+   session gives (`approve_enrollment`, `import_client_key`). Every screen
+   shows a label as an ASCII Go string literal, so one stored or queued
+   before the rule shows its other characters as `\u` escapes
 4. a key the registry already holds is answered `enrolled <fingerprint>`
    with exit 0 and nothing is queued; like every success answer read from
    the registry, it is given only once the registry is durable (a registry
@@ -541,8 +552,10 @@ with operator import of a public key (below), this is the whole bootstrap.
    such a request is refused so the queue and the registry never disagree
    about the key), and a request dropped by a write that is not yet durable
    is audited as rejected. Labels written by the admin protocol follow the
-   same rule as client-supplied ones: printable single-line text of at most
-   64 bytes. Every
+   same rule as client-supplied ones: printable ASCII text of 1 to 64 bytes
+   once trimmed. An import with no label given takes the key line's comment
+   when it meets the rule and enrolls the key without a label, saying so,
+   when it does not. Every
    waiting request is announced again when an admin session authenticates
 8. the client learns the outcome by connecting: an enrolled key is accepted,
    anything else is refused at the handshake
