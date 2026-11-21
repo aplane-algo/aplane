@@ -108,7 +108,8 @@ waits for it; KU2 and KU3 cover that case.
   connection ended in doubt while the attempt ran its passphrase checks and
   reload, outside the store mutation lock. It publishes nothing and runs no
   cleanup, so the signer stays in recovery with the keyring recovery
-  administration needs, and `UnlockIdentity` answers `recovery_blocked`.
+  administration needs, and `UnlockIdentity` answers from the state it then
+  finds, `recovery_blocked` while the recovery lasts.
   Both attempts are modeled as `TryUnlock`; a `TryRecovery` that wins enters
   recovery instead, which clears nothing.
 - `LockState` from the locked state is `BeginMaintenance`, which runs a
