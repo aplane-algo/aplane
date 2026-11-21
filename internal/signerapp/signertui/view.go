@@ -685,5 +685,43 @@ func (m Model) renderStatusBar() string {
 		}
 	}
 
-	return helpStyle.Render(strings.Join(parts, " | "))
+	line := strings.Join(parts, " | ")
+	if m.lastError == "" || lipgloss.Width(line) <= m.tableWidth() {
+		return helpStyle.Render(line)
+	}
+	// An error too long for the line goes under it, wrapped to the window, so
+	// no screen grows wider than the window; the error is the last part.
+	errorLines := wrapErrorLines("Error: "+terminalSafe(m.lastError), m.tableWidth())
+	return helpStyle.Render(strings.Join(parts[:len(parts)-1], " | ") + "\n" + errorStyle.Render(strings.Join(errorLines, "\n")))
+}
+
+// maxErrorLines bounds a daemon error shown in the status bar or a screen, so
+// a long one leaves the rest of the window its room.
+const maxErrorLines = 3
+
+// wrapErrorLines wraps an error to width, breaking a word wider than a line,
+// such as a path, and cuts it after maxErrorLines lines, ending in an
+// ellipsis.
+func wrapErrorLines(text string, width int) []string {
+	var words []string
+	for _, word := range strings.Fields(text) {
+		for lipgloss.Width(word) > width {
+			cut := 0
+			for i := range word {
+				if lipgloss.Width(word[:i]) > width {
+					break
+				}
+				cut = i
+			}
+			words = append(words, word[:cut])
+			word = word[cut:]
+		}
+		words = append(words, word)
+	}
+	lines := strings.Split(wrapPlainText(strings.Join(words, " "), width), "\n")
+	if len(lines) > maxErrorLines {
+		lines = lines[:maxErrorLines]
+		lines[len(lines)-1] = ellipsize(lines[len(lines)-1]+"...", width)
+	}
+	return lines
 }

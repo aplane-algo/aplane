@@ -1290,7 +1290,10 @@ only a "Window too small" screen, which says when an approval request is
 waiting, and ignores every key but `ctrl+c`, so no key acts on a screen the
 operator cannot see. A selection list that cannot show every row scrolls
 around the selection and keeps the text and buttons below it on screen
-(`fitSelectionList`).
+(`fitSelectionList`). A daemon error too long for the status bar's line goes
+under it, wrapped to the window with a word wider than a line, such as a
+path, broken, and cut after three lines with an ellipsis
+(`wrapErrorLines`); the screen above gives up the rows it takes.
 
 Every field that names a file on the machine running `apadmin` can also be
 filled from a file browser (`internal/signerapp/signertui/file_browser.go`):

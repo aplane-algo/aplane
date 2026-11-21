@@ -450,3 +450,39 @@ func TestRestorePreviewFitsAtMinSize(t *testing.T) {
 		}
 	}
 }
+
+// longDaemonError is a daemon error longer than the window, with a path wider
+// than a line in it.
+const longDaemonError = "cosigner reference directory could not be read: open " +
+	"/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners: permission denied"
+
+// A long error wraps in the status bar to the window's width, so no screen
+// grows wider than the window, and the screen above gives the bar its rows:
+// the key list keeps its selected row, and all of the error is on screen.
+func TestStatusBarWrapsALongErrorAtMinSize(t *testing.T) {
+	const address = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+	for _, standalone := range []bool{false, true} {
+		m := sizedForTest(t, Model{viewState: ViewKeyList, standalone: standalone, connectionState: ConnectionConnected,
+			signerState: signerRuntimeUnlocked, signerStatusKnown: true, lastError: longDaemonError,
+			keylist: keyListState{keys: []KeyInfo{{Address: address, KeyType: "ed25519"}}}}, MinWidth, MinHeight)
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		flat := strings.Join(strings.Fields(view), "")
+		if !strings.Contains(flat, strings.Join(strings.Fields("Error: "+longDaemonError), "")) || !strings.Contains(view, "> SGCU7MLRXQ") {
+			t.Errorf("standalone %v: the error or the selected key is not all on screen:\n%s", standalone, view)
+		}
+	}
+}
+
+// An error too long for the status bar's rows is cut after them, ending in an
+// ellipsis, so the screen above keeps its room.
+func TestStatusBarCutsAnErrorTooLongForItsRows(t *testing.T) {
+	m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: ConnectionConnected,
+		lastError: strings.Repeat("the signer refused the request because ", 20) + "END"}, MinWidth, MinHeight)
+	bar := stripANSI(m.renderStatusBar())
+	lines := strings.Split(bar, "\n")
+	if len(lines) > 1+maxErrorLines || !strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), "...") || strings.Contains(bar, "END") {
+		t.Fatalf("status bar of %d lines:\n%s", len(lines), bar)
+	}
+	checkFitsMinSize(t, stripANSI(m.View()))
+}

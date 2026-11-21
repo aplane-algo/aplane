@@ -632,10 +632,9 @@ func fullInvalidCosignerReferencesModel(t *testing.T, dir, name string, standalo
 // path and the selected row stay on screen, in a pane and standalone.
 func TestCosignerManagerGivesUpRowsForALongStatus(t *testing.T) {
 	const (
-		deepDir = "/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/"
-		spaced  = "copy of the west cosigner reference from the old machine before the move"
-		// Short, so the status bar's copy of it fits the window too.
-		listError = "store busy; try again"
+		deepDir   = "/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/"
+		spaced    = "copy of the west cosigner reference from the old machine before the move"
+		listError = "cosigner reference directory could not be read: open " + deepDir + ": permission denied"
 	)
 	long := strings.Repeat("x", 100)
 	for _, tc := range []struct {
