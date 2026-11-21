@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -164,6 +163,9 @@ func answerFromSession(answer productruntime.SessionAnswer) (bool, int, string, 
 // so a publish between them is still ended; that gap is accepted.
 func enterRecoveryUnlessUnlocked(ir *productruntime.Runtime, passphrase []byte, cause string) (bool, int, string, string) {
 	if answer := ir.AnswerFromSession(passphrase); answer.Answered {
+		// The session in service stands, but what this request found is
+		// not dropped: the operator is told the store needs a look.
+		logWarnf("an unlock request found the store needing recovery and left the session in service: %s", cause)
 		return answerFromSession(answer)
 	}
 	success, errMsg := ir.TryRecoveryUnlock(passphrase)
@@ -399,11 +401,19 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	report, err := s.daemon.reconcileReloadAndPromote(ir, true)
 	if err != nil {
-		// A reconcile that failed entered recovery before it released the
-		// store mutation lock; one refused for a locked signer entered none,
-		// and State says which.
-		result.Code = protocol.ResultCodeRecoveryBlocked
 		result.Error = err.Error()
+		if errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery) {
+			// Refused under the lock for a locked signer: nothing was
+			// reconciled and no recovery was entered. The answer is the
+			// handler's own for a locked signer, and names the state the
+			// refusal found, whatever an unlock has published since.
+			result.Code = protocol.ErrCodeSignerLocked
+			result.State = signerruntime.SignerStateLocked.String()
+			return result
+		}
+		// A reconcile that failed entered recovery before it released the
+		// store mutation lock.
+		result.Code = protocol.ResultCodeRecoveryBlocked
 		result.State = ir.GetState().String()
 		return result
 	}
@@ -457,8 +467,8 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 // unlocked: a reload there that failed would call SetRecovery on a locked
 // signer, which does nothing, and the unlock would then publish over it.
 func (s signerAdminServices) reconcileLocked(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (report *signertemplates.ReloadReport, err error) {
-	if state := ir.GetState(); state != signerruntime.SignerStateUnlocked && state != signerruntime.SignerStateRecovery {
-		return nil, fmt.Errorf("signer is locked: %w", keystore.ErrStoreLocked)
+	if err := ir.RequireUnlockedOrRecovery(); err != nil {
+		return nil, err
 	}
 	defer func() {
 		if err != nil && enterRecoveryOnFailure && !errors.Is(err, errReconcileStateChanged) {
@@ -496,6 +506,10 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
 	report, err := s.reconcileReloadAndPromote(ir, false)
+	if errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery) {
+		logInfof("reconciliation rescan skipped: %v", err)
+		return nil, false
+	}
 	if err != nil {
 		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
 		return nil, false

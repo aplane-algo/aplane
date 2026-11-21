@@ -33,11 +33,11 @@ before it was renamed `enroll`.
   unlocked through its passphrase check.** One that a lock overtakes during
   the check goes on as an unlock of a locked signer. An unlock whose
   reconcile fails after another unlock published answers from that session
-  instead of putting it into recovery.
+  instead of putting it into recovery, and logs what the reconcile found.
 - **A reconcile that finds the signer locked once it holds the store
-  mutation lock is refused** and reloads nothing, as restore and rollback
-  already were. It once reloaded, and an unlock still in flight could then
-  publish over a reload that had failed.
+  mutation lock is refused** with `signer_locked` and reloads nothing, as
+  restore and rollback already were. It once reloaded, and an unlock still
+  in flight could then publish over a reload that had failed.
 
 ## Cosigner policy documents can describe external checks
 

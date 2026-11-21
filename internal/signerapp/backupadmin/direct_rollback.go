@@ -46,7 +46,7 @@ func (s Service) RollbackRestore(
 	}
 	mutated := false
 	err := s.Deps.WithStoreMutation(func() error {
-		if err := requireUnlockedOrRecovery(ir); err != nil {
+		if err := ir.RequireUnlockedOrRecovery(); err != nil {
 			return err
 		}
 		paths := s.Deps.KeyPaths()

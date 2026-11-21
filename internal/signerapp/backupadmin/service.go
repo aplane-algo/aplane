@@ -4,18 +4,15 @@
 package backupadmin
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -218,20 +215,4 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 		}
 	}
 	return out
-}
-
-// requireUnlockedOrRecovery refuses a restore or rollback that reached the
-// store mutation lock on a signer neither unlocked nor in recovery. The
-// handler's gate ran before the request queued on the lock, and a lock and a
-// new unlock since can leave the keyring open on a signer not yet published
-// unlocked: a commit there whose reload failed would call SetRecovery on a
-// locked signer, which does nothing, and the unlock would then publish
-// unlocked over a generation the runtime had not followed. The caller holds
-// the store mutation lock.
-func requireUnlockedOrRecovery(ir *productruntime.Runtime) error {
-	switch ir.GetState() {
-	case signerruntime.SignerStateUnlocked, signerruntime.SignerStateRecovery:
-		return nil
-	}
-	return fmt.Errorf("signer is locked: %w", keystore.ErrStoreLocked)
 }

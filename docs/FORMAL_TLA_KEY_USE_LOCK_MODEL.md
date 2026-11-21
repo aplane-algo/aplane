@@ -147,7 +147,8 @@ waits for it; KU2 and KU3 cover that case.
   records the session's key count and returns `errAnsweredFromSession`,
   which ends the attempt before the fence (`runtime.Runtime.TryUnlock`
   returns on an unlock function's error without touching the state);
-  `TryUnlock` answers success from the record. Otherwise the attempt
+  `TryUnlock` answers from the record: a success with the session's key
+  count, or the refusal of a wrong passphrase. Otherwise the attempt
   verifies the passphrase and loads (`ReloadWithPassphrase`), and
   `UnlockLoaded` is the end of the load, where the store mutation lock is
   released. `UnlockFinish` is the fence after the unlock function. An

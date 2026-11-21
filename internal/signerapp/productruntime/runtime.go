@@ -440,6 +440,26 @@ func (ir *Runtime) GetState() signerruntime.SignerState {
 	return ir.lockRuntime.GetState()
 }
 
+// ErrNeitherUnlockedNorRecovery is RequireUnlockedOrRecovery's refusal. It
+// wraps keystore.ErrStoreLocked.
+var ErrNeitherUnlockedNorRecovery = fmt.Errorf("signer is locked: %w", keystore.ErrStoreLocked)
+
+// RequireUnlockedOrRecovery refuses a store change that reached the store
+// mutation lock on a signer neither unlocked nor in recovery. A handler's
+// gate ran before the request queued on the lock, and a lock and a new unlock
+// since can leave the keyring open on a signer not yet published unlocked: a
+// change there whose reload failed would call SetRecovery on a locked signer,
+// which does nothing, and the unlock would then publish unlocked over a
+// generation the runtime had not followed. The caller holds the store
+// mutation lock. Restore, rollback and reconcile use it.
+func (ir *Runtime) RequireUnlockedOrRecovery() error {
+	switch ir.GetState() {
+	case signerruntime.SignerStateUnlocked, signerruntime.SignerStateRecovery:
+		return nil
+	}
+	return ErrNeitherUnlockedNorRecovery
+}
+
 // IsUnlocked reports whether this identity is currently unlocked.
 func (ir *Runtime) IsUnlocked() bool {
 	return ir.lockRuntime.IsUnlocked()

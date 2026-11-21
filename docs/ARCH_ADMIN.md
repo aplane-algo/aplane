@@ -686,8 +686,9 @@ transaction type is one more entry in `fields` and needs no client change.
   unlock is still in flight included, is refused with `signer is locked:
   keystore is locked`, and nothing is committed, reloaded or put into
   recovery. A restore answers `restore_failed` and a rollback
-  `restore_rollback_refused`; a reconcile's result carries the `state` it
-  found.
+  `restore_rollback_refused`; a reconcile answers `signer_locked` with
+  `state: locked`, the state the refusal found, as the handler answers a
+  locked session.
 
 #### Admin and Policy Settings
 

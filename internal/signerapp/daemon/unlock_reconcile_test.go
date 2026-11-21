@@ -786,3 +786,20 @@ func TestAReconcileOfALockedSignerIsRefusedUnderTheLock(t *testing.T) {
 		t.Fatalf("state = %v, want the unlock published", ir.GetState())
 	}
 }
+
+// A reconcile refused under the lock because the signer is locked answers
+// as locked, not as recovery: nothing was reconciled and no recovery was
+// entered, so a client must not show a recovery screen for it.
+func TestAReconcileRefusedForALockedSignerAnswersLocked(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ir.Lock()
+	result := server.adminServices().backupServices().ReconcileStore()
+	if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.State != signerruntime.SignerStateLocked.String() {
+		t.Fatalf("ReconcileStore() on a locked signer = %+v, want signer_locked and state locked", result)
+	}
+	if ir.IsRecovery() {
+		t.Fatal("a refused reconcile entered recovery")
+	}
+}
