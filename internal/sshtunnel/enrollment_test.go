@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -57,12 +58,14 @@ func TestParseEnrollmentCommand(t *testing.T) {
 	}{
 		{"enroll", "", true},
 		{"enroll laptop", "laptop", true},
-		{"enroll  padded label ", "padded label", true},
-		{"enroll ", "", false},
+		// The label is returned as sent; it is checked, and trimmed, when the
+		// request is admitted, which refuses it with a reason
+		// (validEnrollmentLabel).
+		{"enroll  padded label ", " padded label ", true},
+		{"enroll ", "", true},
+		{"enroll    ", "   ", true},
 		{"enrollx", "", false},
 		{"provision", "", false},
-		// A label is checked when the request is admitted, which refuses
-		// it with a reason (validEnrollmentLabel).
 		{"enroll bad\x1bescape", "bad\x1bescape", true},
 		{"enroll " + strings.Repeat("a", maxEnrollmentLabelBytes+1), strings.Repeat("a", maxEnrollmentLabelBytes+1), true},
 	}
@@ -74,19 +77,22 @@ func TestParseEnrollmentCommand(t *testing.T) {
 	}
 }
 
-// An enrollment request carries a label only of bounded, valid UTF-8 that
-// prints as itself on one line, so the operator reads what the client sent:
-// printable Unicode, CJK included, is admitted, and control, format and
-// other non-printing characters and invalid bytes are not.
+// An enrollment request carries no label or, once trimmed, 1 to 64 bytes of
+// printable ASCII: an unenrolled client chooses it and the operator reads it
+// on an approval screen, so its width must be exact on every terminal. A
+// label of whitespace alone is refused, not taken for none.
 func TestValidEnrollmentLabel(t *testing.T) {
 	for _, tc := range []struct {
 		label string
 		ok    bool
 	}{
-		{"", true}, {"laptop", true}, {"田中のノートPC", true}, {"phone 😀", true},
+		{"", true}, {"laptop", true}, {"  padded label ", true}, {` ops "laptop" \ #1 ~`, true},
 		{strings.Repeat("a", maxEnrollmentLabelBytes), true},
+		{" " + strings.Repeat("a", maxEnrollmentLabelBytes) + " ", true},
 		{strings.Repeat("a", maxEnrollmentLabelBytes+1), false},
-		{"bad\x1bescape", false}, {"bad\x7f", false}, {"bad\xff", false},
+		{" ", false}, {"   ", false},
+		{"\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC", false}, {"phone \U0001f600", false}, {"a\u2e3bb", false}, {"e\u0301", false},
+		{"bad\x1bescape", false}, {"bad\x7f", false}, {"bad\xff", false}, {"bad\ttab", false},
 		{"bad\u0085c1", false}, {"bad\u202ebidi", false}, {"bad\u200bzero-width", false}, {"bad\u00a0space", false},
 	} {
 		if got := validEnrollmentLabel(tc.label); got != tc.ok {
@@ -95,10 +101,11 @@ func TestValidEnrollmentLabel(t *testing.T) {
 	}
 }
 
-// A request whose label is not one an approver can read as sent is refused
-// with the reason, and nothing is recorded.
-func TestEnrollment_RefusesAnUnprintableLabel(t *testing.T) {
-	for _, label := range []string{"laptop\u202ebidi", "laptop\xff", "lap\u0085top"} {
+// A request whose label is not printable ASCII, or is whitespace alone, is
+// refused with the reason, and nothing is recorded; the client refuses it
+// with the same reason before it sends it.
+func TestEnrollment_RefusesALabelThatIsNotPrintableASCII(t *testing.T) {
+	for _, label := range []string{"laptop\u202ebidi", "laptop\xff", "lap\u0085top", "\u7530\u4e2d", "a\u2e3bb", "   "} {
 		srv, _ := testServer(t)
 		var requests []string
 		setEnrollmentHooks(srv, EnrollmentHooks{Request: pendingHook(&requests)})
@@ -112,6 +119,10 @@ func TestEnrollment_RefusesAnUnprintableLabel(t *testing.T) {
 		}
 		if len(requests) != 0 {
 			t.Errorf("label %q: recorded %q", label, requests)
+		}
+		client := &Client{}
+		if _, err := client.RequestEnrollment(t.Context(), label); !errors.Is(err, errInvalidEnrollmentLabel) {
+			t.Errorf("label %q: the client sends it, error %v", label, err)
 		}
 	}
 }

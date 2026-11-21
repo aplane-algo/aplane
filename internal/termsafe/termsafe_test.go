@@ -3,10 +3,7 @@
 
 package termsafe
 
-import (
-	"testing"
-	"unicode/utf8"
-)
+import "testing"
 
 func TestEscaping(t *testing.T) {
 	tests := []struct {
@@ -60,23 +57,20 @@ func TestScreenKeepsStylingOnly(t *testing.T) {
 	}
 }
 
-// Printable holds exactly for text Line leaves as it is: printable Unicode,
-// CJK included, and no control, format or other non-printing character or
-// invalid byte.
-func TestPrintable(t *testing.T) {
+// PrintableASCII holds for printable ASCII only: no control, no character
+// beyond ASCII however printable, and no invalid byte.
+func TestPrintableASCII(t *testing.T) {
 	for _, tc := range []struct {
 		s    string
 		want bool
 	}{
-		{"", true}, {"ops laptop", true}, {"田中のノートPC", true}, {"phone 😀", true},
+		{"", true}, {"ops laptop", true}, {` !"#~`, true},
+		{"\u7530\u4e2d", false}, {"phone \U0001f600", false}, {"a\u2e3bb", false}, {"e\u0301", false},
 		{"a\nb", false}, {"a\tb", false}, {"a\x1b[2Jb", false}, {"a\x7fb", false},
-		{"a\u0085b", false}, {"a\u202eb", false}, {"a\u200bb", false}, {"a\u00a0b", false}, {"a\xffb", false},
+		{"a\u0085b", false}, {"a\u202eb", false}, {"a\u00a0b", false}, {"a\xffb", false},
 	} {
-		if got := Printable(tc.s); got != tc.want {
-			t.Errorf("Printable(%q) = %v, want %v", tc.s, got, tc.want)
-		}
-		if got := Line(tc.s) == tc.s && utf8.ValidString(tc.s); got != tc.want {
-			t.Errorf("Line(%q) leaves it as it is: %v, want %v", tc.s, got, tc.want)
+		if got := PrintableASCII(tc.s); got != tc.want {
+			t.Errorf("PrintableASCII(%q) = %v, want %v", tc.s, got, tc.want)
 		}
 	}
 }

@@ -944,34 +944,33 @@ func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh
 }
 
 // parseEnrollmentCommand accepts "enroll" or "enroll <label>" and returns the
-// label, trimmed; anything else is not an enrollment command. The label is
-// checked when the request is admitted (validEnrollmentLabel).
+// label as sent, "" for none; anything else is not an enrollment command. The
+// label is checked when the request is admitted (validEnrollmentLabel).
 func parseEnrollmentCommand(command string) (label string, ok bool) {
 	if command == enrollmentCommand {
 		return "", true
 	}
-	rest, found := strings.CutPrefix(command, enrollmentCommand+" ")
+	label, found := strings.CutPrefix(command, enrollmentCommand+" ")
 	if !found {
 		return "", false
 	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" {
-		return "", false
-	}
-	return rest, true
+	return label, true
 }
 
 // errInvalidEnrollmentLabel refuses an enrollment request whose label is not
 // one validEnrollmentLabel admits.
-var errInvalidEnrollmentLabel = fmt.Errorf("enrollment label must be printable single-line text of at most %d bytes", maxEnrollmentLabelBytes)
+var errInvalidEnrollmentLabel = fmt.Errorf("enrollment label must be printable ASCII text of 1 to %d bytes", maxEnrollmentLabelBytes)
 
-// validEnrollmentLabel reports whether label is one an enrollment request may
-// carry: at most maxEnrollmentLabelBytes bytes of valid UTF-8 that prints as
-// itself on one line (termsafe.Printable), with no control, format or other
-// non-printing character, so the operator reads it as the client sent it.
-// Printable Unicode, such as CJK, is allowed.
+// validEnrollmentLabel reports whether label, as sent, is one an enrollment
+// request may carry: none, or, once trimmed, 1 to maxEnrollmentLabelBytes
+// bytes of printable ASCII (termsafe.PrintableASCII), the rule
+// clientregistry.NormalizeLabel applies to the labels an admin session gives.
+// An unenrolled client chooses this text and the operator reads it on an
+// approval screen, so its width must be exact on every terminal, which only
+// ASCII is.
 func validEnrollmentLabel(label string) bool {
-	return len(label) <= maxEnrollmentLabelBytes && termsafe.Printable(label)
+	trimmed := strings.TrimSpace(label)
+	return label == "" || trimmed != "" && len(trimmed) <= maxEnrollmentLabelBytes && termsafe.PrintableASCII(trimmed)
 }
 
 // requestEnrollment runs the connection's single enrollment request and
@@ -988,6 +987,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+errInvalidEnrollmentLabel.Error()+"\n", 1)
 		return true
 	}
+	label = strings.TrimSpace(label)
 
 	key, ok := enrollmentPublicKey(sshConn.Permissions)
 	if !ok {

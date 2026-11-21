@@ -567,7 +567,9 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !validEnrollmentLabel(strings.TrimSpace(label)) {
+	// The label is checked as it is sent, so a client refuses what the
+	// server would.
+	if !validEnrollmentLabel(label) {
 		return none, errInvalidEnrollmentLabel
 	}
 	var clientFingerprint string

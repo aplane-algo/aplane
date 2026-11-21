@@ -506,16 +506,18 @@ with operator import of a public key (below), this is the whole bootstrap.
 3. the exec request `enroll` or `enroll <label>` is accepted on that
    connection, and any other command is refused: the exec request is
    answered false and `ERROR: unknown command` is written, with no exit
-   status. The label, trimmed, must be at most 64 bytes of printable
-   single-line text: valid UTF-8 that prints as itself, with no control,
-   format or other non-printing character (`termsafe.Printable`), so the
-   operator reads it as the client sent it; printable Unicode such as CJK is
-   allowed. A request with any other label is answered
-   `ERROR: enrollment label must be printable single-line text of at most 64 bytes`
-   with exit 1, and nothing is queued. The same rule holds for a label an
-   admin session gives (`approve_enrollment`, `import_client_key`). A request
-   queued before the rule, whose label breaks it, still shows escaped and
-   quoted on one line
+   status. The label is optional; a label given must be, once trimmed, 1 to
+   64 bytes of printable ASCII, 0x20 to 0x7E (`termsafe.PrintableASCII`).
+   An unenrolled client chooses this text and the operator reads it on an
+   approval screen, so its width has to be exact on every terminal, which
+   only ASCII is. A request with any other label, whitespace alone included,
+   is answered
+   `ERROR: enrollment label must be printable ASCII text of 1 to 64 bytes`
+   with exit 1, and nothing is queued; `apshell enroll --label` refuses it the
+   same way before it sends it. The same rule holds for a label an admin
+   session gives (`approve_enrollment`, `import_client_key`). Every screen
+   shows a label as an ASCII Go string literal, so one stored or queued
+   before the rule shows its other characters as `\u` escapes
 4. a key the registry already holds is answered `enrolled <fingerprint>`
    with exit 0 and nothing is queued; like every success answer read from
    the registry, it is given only once the registry is durable (a registry

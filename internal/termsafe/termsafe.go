@@ -20,16 +20,12 @@ import (
 	"unicode/utf8"
 )
 
-// Printable reports whether s is valid UTF-8 and every character in it
-// prints as itself on one line, so Line leaves it as it is: no control,
-// format or other non-printing character, and no invalid byte. Printable
-// Unicode, such as CJK, is printable.
-func Printable(s string) bool {
-	if !utf8.ValidString(s) {
-		return false
-	}
-	for _, r := range s {
-		if !printsAs(r, false) {
+// PrintableASCII reports whether every byte of s is printable ASCII, 0x20 to
+// 0x7E: text that prints as itself and whose width is its length on every
+// terminal.
+func PrintableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
 			return false
 		}
 	}
