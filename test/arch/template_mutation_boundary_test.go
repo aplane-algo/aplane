@@ -8,8 +8,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,9 +30,21 @@ var templateLeafMutationAPIs = map[string]map[string]bool{
 		"SaveTemplateActive": true,
 	},
 	keyTypeStatePackage: {
-		"Put":       true,
-		"PutActive": true,
-		"Delete":    true,
+		"Put":          true,
+		"PutActive":    true,
+		"Delete":       true,
+		"DeleteActive": true,
+	},
+}
+
+// templateLeafCallers confines a mutation API to the templatelibrary
+// functions named here. DeleteActive deletes a record from any generation,
+// staged or active, without the in-use check a removal applies, so only the
+// removal's shared helper and the template repair's drop may call it.
+var templateLeafCallers = map[string]map[string]bool{
+	keyTypeStatePackage + ".DeleteActive": {
+		"removeInstalledActive":    true,
+		"DropTemplateRecordActive": true,
 	},
 }
 
@@ -38,7 +52,6 @@ var retiredTemplatePersistenceAPIs = map[string]map[string]bool{
 	"internal/keytypestate/state.go": {
 		"SetState":            true,
 		"SetStateActive":      true,
-		"DeleteActive":        true,
 		"ListEnabledActive":   true,
 		"RequireUnusedActive": true,
 	},
@@ -50,7 +63,10 @@ var retiredTemplatePersistenceAPIs = map[string]map[string]bool{
 type templateLeafCall struct {
 	packagePath string
 	api         string
-	position    token.Position
+	// function is the name of the function declaration the call is in, or
+	// "" outside one.
+	function string
+	position token.Position
 }
 
 // TestTemplateMutationCallsStayInLibrary makes templatelibrary the sole
@@ -93,6 +109,9 @@ func TestTemplateMutationCallsStayInLibrary(t *testing.T) {
 			key := call.packagePath + "." + call.api
 			if packagePath == templateLibraryPackage {
 				ownerCalls[key] = true
+				if callers := templateLeafCallers[key]; callers != nil && !callers[call.function] {
+					t.Errorf("%s:%d calls %s from %q: only %v may call it", filepath.ToSlash(relative), call.position.Line, key, call.function, slices.Sorted(maps.Keys(callers)))
+				}
 				continue
 			}
 			t.Errorf("%s:%d calls %s: production template/key-type mutation must route through internal/templatelibrary", filepath.ToSlash(relative), call.position.Line, key)
@@ -182,26 +201,33 @@ func templateLeafCallsInFile(path string) ([]templateLeafCall, []string, error) 
 	}
 
 	var calls []templateLeafCall
-	ast.Inspect(file, func(node ast.Node) bool {
-		selector, ok := node.(*ast.SelectorExpr)
-		if !ok {
-			return true
+	for _, declaration := range file.Decls {
+		function := ""
+		if decl, ok := declaration.(*ast.FuncDecl); ok {
+			function = decl.Name.Name
 		}
-		ident, ok := selector.X.(*ast.Ident)
-		if !ok {
+		ast.Inspect(declaration, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := selector.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			packagePath := aliases[ident.Name]
+			if packagePath == "" || !templateLeafMutationAPIs[packagePath][selector.Sel.Name] {
+				return true
+			}
+			calls = append(calls, templateLeafCall{
+				packagePath: packagePath,
+				api:         selector.Sel.Name,
+				function:    function,
+				position:    fileset.Position(selector.Pos()),
+			})
 			return true
-		}
-		packagePath := aliases[ident.Name]
-		if packagePath == "" || !templateLeafMutationAPIs[packagePath][selector.Sel.Name] {
-			return true
-		}
-		calls = append(calls, templateLeafCall{
-			packagePath: packagePath,
-			api:         selector.Sel.Name,
-			position:    fileset.Position(selector.Pos()),
 		})
-		return true
-	})
+	}
 	return calls, dotImports, nil
 }
 
@@ -220,7 +246,8 @@ func mutate() {
   _ = stateleaf.Put
   _ = stateleaf.Delete
   _ = storeleaf.SaveTemplateActive
-}`
+}
+var _ = stateleaf.DeleteActive`
 	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -231,15 +258,19 @@ func mutate() {
 	if len(dotImports) != 0 {
 		t.Fatalf("dot imports = %v, want none", dotImports)
 	}
-	want := map[string]bool{
-		keyTypeStatePackage + ".Put":                 true,
-		keyTypeStatePackage + ".Delete":              true,
-		templateStorePackage + ".SaveTemplateActive": true,
+	want := map[string]string{
+		keyTypeStatePackage + ".Put":                 "mutate",
+		keyTypeStatePackage + ".Delete":              "mutate",
+		templateStorePackage + ".SaveTemplateActive": "mutate",
+		keyTypeStatePackage + ".DeleteActive":        "",
 	}
 	for _, call := range calls {
-		delete(want, call.packagePath+"."+call.api)
+		key := call.packagePath + "." + call.api
+		if function, ok := want[key]; ok && function == call.function {
+			delete(want, key)
+		}
 	}
 	if len(want) != 0 {
-		t.Fatalf("alias-aware calls missing: %v", want)
+		t.Fatalf("alias-aware calls missing or in the wrong function: %v", want)
 	}
 }
