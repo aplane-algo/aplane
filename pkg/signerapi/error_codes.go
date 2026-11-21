@@ -21,8 +21,6 @@ const (
 	ErrCodeLocked = "locked"
 	// ErrCodeNotFound covers unknown keys or resources.
 	ErrCodeNotFound = "not_found"
-	// ErrCodeInvalidPassphrase covers passphrase verification failures.
-	ErrCodeInvalidPassphrase = "invalid_passphrase"
 	// ErrCodeUnavailable covers temporary inability to serve the request.
 	ErrCodeUnavailable = "unavailable"
 	// ErrCodeCacheRefresh indicates the operation mutated the store but the
