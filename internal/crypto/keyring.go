@@ -75,7 +75,11 @@ func NewKeyring() (*Keyring, error) {
 }
 
 // NewSuccessorKeyring adds exactly one fresh term and replaces the complete
-// historical-anchor set without mutating current.
+// historical-anchor set without mutating current. anchors covers the
+// generations the store still retains: the anchor of a generation pruned
+// since the last change is left out, and so dropped. Prune does not rewrite
+// store-root.enc, and an ordinary root commit keeps the wrapped keyring as it
+// read it, so a passphrase change is the first commit that can drop it.
 func NewSuccessorKeyring(current *Keyring, anchors []HistoricalGenerationAnchor) (*Keyring, error) {
 	if current == nil || len(current.terms) == 0 {
 		return nil, ErrKeyringNotOpen
@@ -86,7 +90,7 @@ func NewSuccessorKeyring(current *Keyring, anchors []HistoricalGenerationAnchor)
 	if current.currentTerm == math.MaxInt64 {
 		return nil, fmt.Errorf("key term is exhausted")
 	}
-	if err := requirePreservedHistoricalAnchors(current.historicalAnchors, anchors); err != nil {
+	if err := requireUnchangedHistoricalAnchors(current.historicalAnchors, anchors); err != nil {
 		return nil, err
 	}
 	successor, err := cloneKeyring(current)
@@ -293,14 +297,18 @@ func cloneKeyring(kr *Keyring) (*Keyring, error) {
 	return cloned, nil
 }
 
-func requirePreservedHistoricalAnchors(existing, replacement []HistoricalGenerationAnchor) error {
+// requireUnchangedHistoricalAnchors refuses a successor that re-anchors a
+// generation to another seal. The caller carries each retained generation's
+// existing anchor after validating it; this is a deliberately layered check
+// of that, since a changed anchor would grant a retired term to other bytes.
+func requireUnchangedHistoricalAnchors(existing, replacement []HistoricalGenerationAnchor) error {
 	for _, anchor := range existing {
 		index, found := slices.BinarySearchFunc(replacement, anchor.GenerationID,
 			func(candidate HistoricalGenerationAnchor, generationID string) int {
 				return strings.Compare(candidate.GenerationID, generationID)
 			})
-		if !found || replacement[index] != anchor {
-			return fmt.Errorf("historical anchor for generation %s would be dropped or changed", anchor.GenerationID)
+		if found && replacement[index] != anchor {
+			return fmt.Errorf("historical anchor for generation %s would be changed", anchor.GenerationID)
 		}
 	}
 	return nil

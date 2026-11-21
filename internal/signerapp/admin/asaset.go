@@ -217,6 +217,11 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 		if ir.IsRecovery() {
 			return asaError{protocol.ResultCodeRecoveryBlocked, "the store is in recovery mode; reconcile, roll back, or restore it before changing the ASA set"}
 		}
+		// An open keyring does not mean an unlocked signer: see
+		// commitAndReload.
+		if !ir.IsUnlocked() {
+			return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
+		}
 		err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 			active, err := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), kr)
 			if err != nil {

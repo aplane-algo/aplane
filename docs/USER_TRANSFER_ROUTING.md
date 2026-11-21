@@ -1109,7 +1109,9 @@ Common validation failures:
 - empty address sets or asset sets,
 - unresolved `@address_set` or `@asset_set` references,
 - `reject_above < review_above`,
-- route `limits` naming a network or asset the route does not cover,
+- route `limits` naming a network or asset the route does not cover (with
+  several, the error names the first by network name, then `algo` before
+  ASAs by ID),
 - `asset_sources` without `"allow_clawback": true`,
 - `"allow_clawback": true` without `asset_sources`,
 - `self` in clawback routes.

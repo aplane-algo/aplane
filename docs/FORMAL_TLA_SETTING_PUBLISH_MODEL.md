@@ -73,6 +73,12 @@ confirmed by mutation:
   `passphrase_timeout` come before the rule and are not modeled.
 - A hand edit of the file while the signer runs is outside the model. It
   takes effect at the next start, and the signer makes no check for one.
+- `Restart` loads the old value or the new one because the file always
+  holds one: the save replaces it by rename. A file that holds no YAML
+  document, which no save writes, is refused by the load and by the next
+  save (`productruntime.LoadStoredConfig`, `SaveStoredSetting`), so a file
+  truncated to nothing never starts the signer on the defaults or is
+  written back with one key.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

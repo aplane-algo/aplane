@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asasetstore"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -32,6 +33,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -79,6 +81,16 @@ func (c *fakeASAChain) ReadAsset(_ context.Context, genesisHash []byte, assetID 
 // set together, as the daemon does, with private-dev mapped in its config.
 func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChain) {
 	t.Helper()
+	svc, ir, chain, _ := setupUnpublishedASAAdmin(t)
+	ir.SetUnlocked()
+	return svc, ir, chain
+}
+
+// setupUnpublishedASAAdmin is setupASAAdmin with the keyring open and policy
+// loaded but the runtime not yet published unlocked, as an unlock in flight
+// leaves it. It also returns the reload it installed.
+func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChain, policyReload) {
+	t.Helper()
 	clientreg.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
@@ -95,7 +107,6 @@ func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChai
 	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetUnlocked()
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, ir.KeyStore().WithKeyring(func(kr *crypto.Keyring) error {
 			active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
@@ -127,7 +138,7 @@ func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChai
 		ASAChain: chain,
 		Now:      func() time.Time { return time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC) },
 	}
-	return svc, ir, chain
+	return svc, ir, chain, reload
 }
 
 func confirmASA9(t *testing.T, svc Service) adminproto.AddASAResult {
@@ -166,6 +177,79 @@ func TestAddASAMintsAndReloads(t *testing.T) {
 	again := confirmASA9Again(t, svc)
 	if again.Code != "asa_already_confirmed" || currentGeneration(t, svc, ir) != added.GenerationID {
 		t.Fatalf("second add = %+v", again)
+	}
+}
+
+// An ASA set change during an unlock in flight on another connection is
+// refused, as a policy apply is: the unlock opens the keyring before it
+// publishes unlocked, outside the store mutation lock, and a change that
+// committed in between and failed its reload once left the unlock to
+// publish unlocked over it.
+func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
+	svc, ir, _, _ := setupUnpublishedASAAdmin(t)
+	before := currentGeneration(t, svc, ir)
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
+	}
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, errors.New("reload failed")
+	})
+
+	added := confirmASA9(t, svc)
+	removed := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
+	ir.SetUnlocked() // the unlock in flight publishes
+
+	if after := currentGeneration(t, svc, ir); after != before && ir.IsUnlocked() {
+		t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (add answered %s)", after, added.Code)
+	}
+	const want = "identity is locked; unlock the signer before changing the ASA set"
+	if added.Success || added.Code != "identity_locked" || added.Error != want || added.CommitUncertain || added.GenerationID != "" {
+		t.Fatalf("AddASA() during an unlock = %+v, want identity_locked: %s", added, want)
+	}
+	if removed.Success || removed.Code != "identity_locked" || removed.Error != want || removed.CommitUncertain || removed.GenerationID != "" {
+		t.Fatalf("RemoveASA() during an unlock = %+v, want identity_locked: %s", removed, want)
+	}
+	if after := currentGeneration(t, svc, ir); after != before {
+		t.Fatalf("an ASA set change during an unlock committed %s -> %s", before, after)
+	}
+}
+
+// An uncertain ASA set commit during a second unlock in flight ends in
+// recovery too. The ASA set calls SetRecovery once, before its best-effort
+// reload, which waits behind the unlock's reload; the unlock once published
+// unlocked during it.
+func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
+	svc, ir, _, reload := setupUnpublishedASAAdmin(t)
+	ir.SetUnlocked()
+	looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
+	if !looked.Success {
+		t.Fatalf("LookupASA() = %+v", looked)
+	}
+	release, unlockOutcome := secondUnlockInFlight(t, ir, reload)
+
+	identityDir := svc.Deps.KeyPaths().ProductDir()
+	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+		if op == fsutil.OpDirSync && path == identityDir {
+			return errors.New("simulated identity-directory sync failure")
+		}
+		return nil
+	}
+	defer func() { fsutil.TestHook = nil }()
+	added := make(chan adminproto.AddASAResult, 1)
+	go func() { added <- svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset}) }()
+	awaitRecovery(t, ir)
+	release()
+	result := <-added
+	fsutil.TestHook = nil
+
+	if result.Success || !result.CommitUncertain || result.Code != "asa_commit_uncertain" {
+		t.Fatalf("AddASA(durability unknown) = %+v", result)
+	}
+	if got := unlockOutcome(); got != signerruntime.RecoveryDuringUnlockMessage {
+		t.Fatalf("the second unlock = %q, want %q", got, signerruntime.RecoveryDuringUnlockMessage)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state after an uncertain ASA set commit during a second unlock = %s, want recovery", ir.GetState())
 	}
 }
 

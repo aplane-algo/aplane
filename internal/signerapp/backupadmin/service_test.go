@@ -157,6 +157,16 @@ func TestPreviewRestoreDoesNotRateLimitAuthenticatedCredentialFailure(t *testing
 func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
 	initializeAtomicTestStore(t, paths, backupAdminTestPassphrase)
+	ir := testUnpublishedBackupIdentityRuntime(t, paths, reloads)
+	ir.SetUnlocked()
+	return ir
+}
+
+// testUnpublishedBackupIdentityRuntime is a runtime over an initialized store
+// with its keyring open but not yet published unlocked, as an unlock in
+// flight leaves it.
+func testUnpublishedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
+	t.Helper()
 	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
 	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
@@ -171,7 +181,6 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 		reloads.Add(1)
 		return &signertemplates.ReloadReport{}, nil
 	})
-	ir.SetUnlocked()
 	return ir
 }
 

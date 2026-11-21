@@ -1354,7 +1354,11 @@ decision.
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`.
 - Online changes require an unlocked signer store and reload the runtime
-  from the committed generation.
+  from the committed generation. The unlocked state is checked under the
+  store mutation lock, so a change made while an unlock is still in flight
+  on another connection is refused with `identity_locked` rather than
+  committed before the unlock publishes. Offline rescue works on a stopped
+  store and does not take this path.
 - Every digest covers the exact stored bytes; there is no canonical
   re-serialization. `policy_set_sha256` is the lowercase hex SHA-256 over the
   sorted lines `<key> <document sha256>\n`, one per document, where `<key>`

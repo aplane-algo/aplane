@@ -1670,6 +1670,12 @@ A generic LogicSig has no keypair, so `GenerateGenericLSig` replaces steps 7 to 
 normalizes and validates, compiles with `CompileWithSalt` using the configured
 `teal_compile_network`, resolves the opcode profile, and saves through `SaveGenericLSig`.
 
+Both compiles run on algod under the mutation lock taken in step 1, which admin
+mutations, watcher reloads and the unlock reconcile also take. `GenerateReviewedKey`
+bounds them at 15 seconds (`tealCompileTimeout`): an algod that does not answer in time
+fails the generation with `key generation failed: algod did not answer the TEAL compile
+within 15s` and releases the lock.
+
 Three boundaries matter when changing this path:
 
 - **Definition versus instance.** `CreationParams`, `RuntimeArgs` and

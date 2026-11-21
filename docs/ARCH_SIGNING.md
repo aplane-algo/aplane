@@ -2071,8 +2071,8 @@ does a recovery followed by a reconcile: recovery ends the unlocked session,
 and the grants, allowances and suppressions of that session go with it.
 Session ownership is one rule, enforced in one place: the session is the
 lock runtime's generation, which every lock and maintenance transition, and
-every entry into recovery from the unlocked state, advances under the
-runtime's own mutex and an unlock leaves unchanged; an
+every entry into recovery, advances under the runtime's own mutex and an
+unlock leaves unchanged; an
 operation captures it once when it starts (the worker pass together with
 the context a lock cancels, an operator request at entry) and carries it
 into every call; and the recovery memory, which holds a live reader of the

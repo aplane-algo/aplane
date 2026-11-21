@@ -62,10 +62,16 @@ The transitions transcribe the post-commit reload and the recovery paths:
   `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
-  On an uncertain commit `commitAndReload` calls `SetRecovery` again after
-  its best-effort reload: `SetRecovery` does nothing on a locked signer, and
-  an unlock in flight on another connection, which the model does not have,
-  can publish unlocked during that reload.
+  Policy apply and the ASA set change commit only on an unlocked signer,
+  and restore and rollback only on one unlocked or in recovery, each
+  checked under the lock: an unlock in flight on another connection, which
+  the model does not have, opens the keyring before it publishes unlocked,
+  and would otherwise publish over a commit whose reload failed, where
+  `SetRecovery` did nothing on the still-locked signer. A second unlock of
+  an unlocked signer, or one begun in recovery, does not publish over a
+  recovery entered after it began: `TryUnlock` compares the session
+  generation, which every entry into recovery moves (KU5 in
+  [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)).
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
   is deleted-archive list or prune through `authenticatedSelection`, which
@@ -108,11 +114,13 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   but not confirmed durable, or the root cannot be read back or matches
   neither the old record nor the candidate (`genstore.RootCommitUncertain`). The caller
   cannot tell whether the root moved, so it takes the path of a commit that
-  did, and its reload or recovery follows. Policy apply is
-  refused while the runtime is in recovery (`admin/policy.go::commitAndReload`),
-  so only restore and rollback commit from recovery; the offline template
+  did, and its reload or recovery follows. Policy apply and the ASA set
+  change are refused unless the runtime is unlocked
+  (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
+  only restore and rollback commit from recovery; the offline template
   repair, outside `Next`, commits a store whose unlock enters recovery, and
-  an uncertain one is settled by the next unlock. A passphrase change
+  an uncertain one is settled by the next unlock. A refused mutation never
+  takes `CommitRoot`, a run the model already has. A passphrase change
   withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
   the runtime locked rather than in recovery; locked refuses signing as
   recovery does, so RB2 and RB3 hold for it in substance. The same holds for
@@ -121,6 +129,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Recovery exit (`PromoteRecoveryToUnlocked`, the lock fence) is modeled as
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.
+- An unlock that begins in recovery is a second way out of it, not modeled
+  here: it reconciles under the store mutation lock, then reloads and
+  publishes outside it. It cannot publish over a recovery entered after it
+  began (KU5), but which generation its own reload bound when it publishes
+  is not checked by any model; it is a model-extension candidate.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

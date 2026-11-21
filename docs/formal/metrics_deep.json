@@ -56,7 +56,7 @@
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_deep",
-    "distinct_states": 5588,
+    "distinct_states": 10957,
     "depth": 19
   },
   {
