@@ -151,6 +151,10 @@ func validateDeletedArchiveRelativePath(relative string) (string, error) {
 		if !strings.HasSuffix(base, ".json") && !strings.HasSuffix(base, ".json.hmac") {
 			return "", fmt.Errorf("invalid deleted policy entry %q", relative)
 		}
+	case "deleted/source_tokens":
+		if !strings.HasSuffix(base, storepaths.SourceTokenFileExtension) {
+			return "", fmt.Errorf("invalid deleted source token entry %q", relative)
+		}
 	default:
 		return "", fmt.Errorf("archive entry is outside the closed deleted namespaces: %q", relative)
 	}

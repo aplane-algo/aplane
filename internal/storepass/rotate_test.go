@@ -301,6 +301,70 @@ func TestRotatePublishesCompleteFreshTermSuccessor(t *testing.T) {
 	}
 }
 
+// Source token files, active and archived, are re-encrypted under the new
+// term with the same object context: each opens as its own selector's under
+// the successor keyring, and not as another selector's.
+func TestRotateReencryptsSourceTokenFiles(t *testing.T) {
+	const keyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	const deletedKeyID = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
+	fixture := newRotateFixture(t)
+	active, oldKeyring, err := genstore.ResolveStoreRoot(fixture.paths, fixture.oldPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []struct {
+		path     string
+		relative string
+		selector string
+		text     string
+	}{
+		{active.SourceTokenPath(keyID), "source_tokens/" + keyID + ".enc", keyID, "key-tokens"},
+		{active.SourceTokenPath("default"), "source_tokens/default.enc", "default", "default-tokens"},
+		{active.DeletedSourceTokenPath(deletedKeyID), "deleted/source_tokens/" + deletedKeyID + ".enc", deletedKeyID, "deleted-key-tokens"},
+	}
+	for _, f := range files {
+		sealed, err := oldKeyring.Seal([]byte(f.text), crypto.SourceTokensContext(f.selector))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f.path, sealed, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldKeyring.Zero()
+
+	newPassphrase := []byte("new-store-passphrase")
+	result, err := Rotate(fixture.paths, fixture.oldPassphrase, newPassphrase, RotateOptions{ValidateCandidate: acceptCandidate})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if result.SourceTokenFilesMigrated != len(files) {
+		t.Fatalf("SourceTokenFilesMigrated = %d, want %d", result.SourceTokenFilesMigrated, len(files))
+	}
+	successor, kr, err := genstore.ResolveStoreRoot(fixture.paths, newPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	for _, f := range files {
+		encoded, err := os.ReadFile(filepath.Join(successor.Dir(), filepath.FromSlash(f.relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if term, present, err := crypto.InspectTermEnvelope(encoded); err != nil || !present || term != kr.CurrentTerm() {
+			t.Fatalf("%s term = %d, %v, %v; want the successor term %d", f.relative, term, present, err, kr.CurrentTerm())
+		}
+		plaintext, err := kr.Open(encoded, crypto.SourceTokensContext(f.selector))
+		if err != nil || string(plaintext) != f.text {
+			t.Fatalf("open %s = %q, %v", f.relative, plaintext, err)
+		}
+		crypto.ZeroBytes(plaintext)
+		if _, err := kr.Open(encoded, crypto.SourceTokensContext("default")); err == nil && f.selector != "default" {
+			t.Fatalf("%s opened as the default's tokens after rotation", f.relative)
+		}
+	}
+}
+
 func TestRotatePreRootFailureLeavesOldAuthorityAndQuarantinableSuccessor(t *testing.T) {
 	fixture := newRotateFixture(t)
 	newPassphrase := []byte("new-store-passphrase")

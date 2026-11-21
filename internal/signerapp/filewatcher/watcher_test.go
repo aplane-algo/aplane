@@ -15,6 +15,12 @@ func TestIsReloadCandidate(t *testing.T) {
 		{"policy.template", true},
 		{"cosigner.cos.json", false},
 		{"notes.json", false},
+		{"store-root.enc", true},
+		// Source token files are the daemon's own writes, never a reason to
+		// reload.
+		{"source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc", false},
+		{"source_tokens/default.enc", false},
+		{"deleted/source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc", false},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

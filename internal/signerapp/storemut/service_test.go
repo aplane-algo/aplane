@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -252,5 +253,105 @@ func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsPolicy(t *testing.T) {
 	}
 	if usage, err := genstore.InspectDeletedArchive(active); err != nil || usage.Entries != genstore.DeletedArchiveMaxEntries-2 {
 		t.Fatalf("archive after refused deletion = %+v, %v", usage, err)
+	}
+}
+
+func writeTestSourceTokens(t *testing.T, active utilkeys.GenPaths, kr *crypto.Keyring, selector string) {
+	t.Helper()
+	f, err := sourcetokens.SetToken(nil, selector, "screening", []byte("token-value"), time.Unix(1700000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Zero()
+	if err := sourcetokens.WriteFile(active, f, kr); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Deleting a cosigner key moves its source token file into the deleted
+// archive with the credential and its policy; another key's file and the
+// default's stay.
+func TestDeleteCosignerKeyArchivesItsSourceTokens(t *testing.T) {
+	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	const otherKeyID = "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQTCQKRMFYYDENBWHA5DYPQ"
+	paths, kr, cleanup := setupKeystore(t)
+	defer cleanup()
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(active.KeysDir(), witnessKeyID+keys.CosignerCredentialExtension)
+	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := []byte(policytest.MustDocument(noderole.RoleCosigner, witnessKeyID, ""))
+	if err := policy.WriteKeyPolicy(active, noderole.RoleCosigner, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, selector := range []string{witnessKeyID, otherKeyID, sourcetokens.DefaultSelector} {
+		writeTestSourceTokens(t, active, kr, selector)
+	}
+	sealed, err := os.ReadFile(active.SourceTokenPath(witnessKeyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err != nil {
+		t.Fatalf("DeleteKey() error = %v", err)
+	}
+	if _, err := os.Stat(active.SourceTokenPath(witnessKeyID)); !os.IsNotExist(err) {
+		t.Fatalf("live source tokens still present after key deletion: %v", err)
+	}
+	archived, err := os.ReadFile(active.DeletedSourceTokenPath(witnessKeyID))
+	if err != nil || string(archived) != string(sealed) {
+		t.Fatalf("archived source tokens = %d bytes, %v; want the file moved unchanged", len(archived), err)
+	}
+	if err := sourcetokens.VerifyArchived(active, witnessKeyID+utilkeys.SourceTokenFileExtension, kr); err != nil {
+		t.Fatalf("archived source tokens do not open: %v", err)
+	}
+	for _, selector := range []string{otherKeyID, sourcetokens.DefaultSelector} {
+		if _, err := os.Stat(active.SourceTokenPath(selector)); err != nil {
+			t.Fatalf("deleting one key moved the source tokens of %s: %v", selector, err)
+		}
+	}
+	// Pruning accepts the archived file.
+	pruned, err := genstore.PruneDeletedArchive(active, []string{"deleted/source_tokens/" + witnessKeyID + ".enc"})
+	if err != nil || len(pruned) != 1 || pruned[0].AlreadyAbsent {
+		t.Fatalf("PruneDeletedArchive(archived source tokens) = %+v, %v", pruned, err)
+	}
+}
+
+func TestDeleteCosignerKeyRefusesWhenArchiveCannotHoldItsSourceTokens(t *testing.T) {
+	const witnessKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	paths, kr, cleanup := setupKeystore(t)
+	defer cleanup()
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for the credential, its policy and sidecar, not for its token
+	// file too.
+	for i := range genstore.DeletedArchiveMaxEntries - 3 {
+		if err := os.WriteFile(filepath.Join(active.DeletedKeysDir(), fmt.Sprintf("K%d.key", i)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keyPath := filepath.Join(active.KeysDir(), witnessKeyID+keys.CosignerCredentialExtension)
+	if err := os.WriteFile(keyPath, []byte("cosigner-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := []byte(policytest.MustDocument(noderole.RoleCosigner, witnessKeyID, ""))
+	if err := policy.WriteKeyPolicy(active, noderole.RoleCosigner, witnessKeyID, doc, kr, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	writeTestSourceTokens(t, active, kr, witnessKeyID)
+
+	if _, err := New(paths).DeleteKey(witnessKeyID, keyPath); err == nil {
+		t.Fatal("DeleteKey() succeeded past the archive limit")
+	}
+	for _, path := range []string{keyPath, active.PolicyPath(witnessKeyID), active.SourceTokenPath(witnessKeyID)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("refused deletion moved %s: %v", path, err)
+		}
 	}
 }

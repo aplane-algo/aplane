@@ -474,10 +474,12 @@ func makeGenerationDirectories(gen storepaths.GenPaths) error {
 		gen.KeysDir(),
 		gen.KeyTypeRecordsDir(),
 		gen.PoliciesDir(),
+		gen.SourceTokensDir(),
 		gen.DeletedDir(),
 		gen.DeletedKeysDir(),
 		gen.DeletedKeyTypeRecordsDir(),
 		gen.DeletedPoliciesDir(),
+		gen.DeletedSourceTokensDir(),
 	} {
 		if err := makeNamespaceDir(dir); err != nil {
 			return err

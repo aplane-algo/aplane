@@ -33,6 +33,7 @@ var storeOwningPackages = []string{
 	"internal/signerapp/backupadmin",
 	"internal/signerapp/templaterepair",
 	"internal/signerapp/productruntime",
+	"internal/signerapp/sourcetokens",
 	"internal/signerapp/daemon",
 	"cmd/apstore",
 }

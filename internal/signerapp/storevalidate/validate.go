@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -68,7 +69,37 @@ func Candidate(opts Options) error {
 	if err != nil {
 		return fmt.Errorf("credentials: %w", err)
 	}
-	return validateCredentialReport(opts.ExpectedRole, scan)
+	if err := validateCredentialReport(opts.ExpectedRole, scan); err != nil {
+		return err
+	}
+	return validateSourceTokens(opts, scan)
+}
+
+// validateSourceTokens checks every active source token file: it opens under
+// its own selector's object context, its name is canonical, its schema and
+// limits hold, the node is a cosigner (a token file on any other node is a
+// role conflict), and its selector is the node default or a cosigner key the
+// candidate holds, so the store never keeps tokens for a key it does not
+// hold. Whether a policy document uses a token is not checked.
+func validateSourceTokens(opts Options, scan *keys.KeyScanReport) error {
+	files, err := sourcetokens.LoadFiles(opts.Candidate, opts.ExpectedRole, opts.Keyring)
+	if err != nil {
+		return fmt.Errorf("source tokens: %w", err)
+	}
+	defer func() {
+		for _, f := range files {
+			f.Zero()
+		}
+	}()
+	for _, f := range files {
+		if f.Selector == sourcetokens.DefaultSelector {
+			continue
+		}
+		if info, held := scan.Keys[f.Selector]; !held || info.Category != keys.CategoryWitness {
+			return fmt.Errorf("source tokens: %s has tokens, but the node holds no cosigner key with that ID", f.Selector)
+		}
+	}
+	return nil
 }
 
 // DeletedArchiveMemberError is a deleted-archive member that does not
@@ -284,6 +315,11 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 		case "deleted/policies":
 			if err := verifyArchivedPolicy(candidate, entry.Path, kr); err != nil {
 				return err
+			}
+			continue
+		case "deleted/source_tokens":
+			if err := sourcetokens.VerifyArchived(candidate, base, kr); err != nil {
+				return fmt.Errorf("verify %s: %w", entry.Path, err)
 			}
 			continue
 		default:

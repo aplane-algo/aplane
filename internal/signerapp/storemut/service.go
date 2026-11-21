@@ -7,8 +7,10 @@ package storemut
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -18,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -33,14 +36,17 @@ func New(keyPaths storepaths.Paths) *Service {
 
 // DeleteKey moves a key file out of the active key set into the identity
 // archive. Deleting a key also archives its own policy document, if it has
-// one, so a re-imported key starts on the node default.
+// one, so a re-imported key starts on the node default, and a cosigner key's
+// source token file, if it has one, so the store keeps no tokens for a key
+// it does not hold.
 func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, error) {
 	active, err := genstore.Resolve(s.keyPaths)
 	if err != nil {
 		return nil, err
 	}
-	// The key and its policy pair are archived by one deletion, so the
-	// archive must have room for all of them before anything moves.
+	// The key, its policy pair and its token file are archived by one
+	// deletion, so the archive must have room for all of them before
+	// anything moves.
 	var policyPair []string
 	if storepaths.ValidatePolicySelector(address) == nil {
 		policyPath := active.PolicyPath(address)
@@ -50,14 +56,33 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 			return nil, err
 		}
 	}
-	result, err := keymgmt.DeleteKeyActive(active, address, keyFile, policyPair...)
+	tokenFile, hasTokens, err := sourcetokens.ArchivePath(active, address)
 	if err != nil {
 		return nil, err
 	}
+	archivedWith := policyPair
+	if hasTokens {
+		archivedWith = append(slices.Clone(policyPair), tokenFile)
+	}
+	result, err := keymgmt.DeleteKeyActive(active, address, keyFile, archivedWith...)
+	if err != nil {
+		return nil, err
+	}
+	// Each archive is tried whatever became of the other, so one failure
+	// leaves as little behind as it can.
+	var failures []error
 	if policyPair != nil {
 		if err := policy.ArchiveKeyPolicy(active, address); err != nil {
-			return nil, fmt.Errorf("key deleted, but archiving its policy failed: %w", err)
+			failures = append(failures, fmt.Errorf("archiving its policy failed: %w", err))
 		}
+	}
+	if hasTokens {
+		if err := sourcetokens.Archive(active, address); err != nil {
+			failures = append(failures, fmt.Errorf("archiving its source tokens failed: %w", err))
+		}
+	}
+	if len(failures) > 0 {
+		return nil, fmt.Errorf("key deleted, but %w", errors.Join(failures...))
 	}
 	return result, nil
 }

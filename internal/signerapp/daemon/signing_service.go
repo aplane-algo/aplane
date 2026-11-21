@@ -62,9 +62,11 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 			return err == nil
 		},
 		Rotating: fs.rotatingDeps(ir),
-		// No token store yet: a source that declares a token has none, and
-		// its checks refuse.
-		ExternalChecks: &externalcheck.Runner{Fetcher: &fs.externalFetcher},
+		// Tokens are read from the index published at the time of the
+		// lookup, inside the step's key use: a lock waits for the step
+		// before it zeroes the index. A token read here becomes a request
+		// header, a Go string that cannot be zeroed (see SourceTokenFor).
+		ExternalChecks: &externalcheck.Runner{Fetcher: &fs.externalFetcher, Tokens: ir.SourceTokenFor},
 		KeyUse:         ir.KeyUseContext,
 	}
 }

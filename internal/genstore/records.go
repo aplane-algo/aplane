@@ -48,17 +48,19 @@ var generationLeafNamespaces = []string{
 	"keys",
 	"keytypes",
 	"policies",
+	"source_tokens",
 	"deleted/keys",
 	"deleted/keytypes",
 	"deleted/policies",
+	"deleted/source_tokens",
 }
 
 // generationRootDirs are the generation-root directories that hold the leaf
 // namespaces.
-var generationRootDirs = []string{"keys", "keytypes", "policies", "deleted"}
+var generationRootDirs = []string{"keys", "keytypes", "policies", "source_tokens", "deleted"}
 
 // deletedArchiveNamespaces are the leaf namespaces inside deleted/.
-var deletedArchiveNamespaces = []string{"keys", "keytypes", "policies"}
+var deletedArchiveNamespaces = []string{"keys", "keytypes", "policies", "source_tokens"}
 
 // generationAuthorityFiles are generation-root files whose exact bytes are
 // part of the selected authority state and which every generation carries.

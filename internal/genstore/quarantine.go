@@ -699,7 +699,17 @@ func quarantineMemberContext(relative string) (crypto.ObjectContext, bool) {
 		return crypto.CosignerCredentialContext(strings.TrimSuffix(base, ".cos")), true
 	case strings.HasSuffix(base, ".template"):
 		return crypto.KeyTypeTemplateContext(strings.TrimSuffix(base, ".template")), true
+	case isSourceTokenMember(relative):
+		return crypto.SourceTokensContext(strings.TrimSuffix(base, storepaths.SourceTokenFileExtension)), true
 	default:
 		return crypto.ObjectContext{}, false
 	}
+}
+
+// isSourceTokenMember reports whether relative names a file in the active or
+// archived source token namespace. Every member there is a term envelope.
+func isSourceTokenMember(relative string) bool {
+	dir := filepath.ToSlash(filepath.Dir(relative))
+	return (dir == "source_tokens" || dir == "deleted/source_tokens") &&
+		strings.HasSuffix(relative, storepaths.SourceTokenFileExtension)
 }

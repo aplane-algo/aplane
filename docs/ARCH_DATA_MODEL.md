@@ -98,7 +98,8 @@ Important vocabulary:
 
 - the fixed product keystore and key files,
 - product runtime config, policy documents (`default.json` and
-  `policies/<selector>.json`), the ASA set (`asa_set.json`), the
+  `policies/<selector>.json`), a cosigner's encrypted source token files
+  (`source_tokens/<selector>.enc`), the ASA set (`asa_set.json`), the
   enrolled-client registry, the persisted
   enrollment queue (`.ssh/pending_enrollments.json`), and key type state,
 - encrypted installed templates,
@@ -161,6 +162,7 @@ DTOs and contract fixtures.
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Policy | Signer identity | `default.json` plus `default.json.hmac`, and `policies/<selector>.json` plus `.json.hmac` per key with a policy of its own, on both node roles | `policyruntime.NodePolicy` (`Default` plus `Keys`), resolved per signing key by `PolicyFor(selector)` | live admin and offline rescue policy flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/policyapply`, `internal/signerapp/admin`, `internal/signerapp/policycmd`, `cmd/apadmin` |
+| Source tokens | Selected generation, cosigner nodes only | `generations/<gen-id>/source_tokens/<selector>.enc` (`aplane.source-tokens.v1` in a `source-tokens` term envelope), one per policy selector with tokens: a held cosigner key's Witness Key ID or `default`; archived with a deleted key under `deleted/source_tokens/` | immutable `sourcetokens.Index` keyed by selector and source, published at reload and after each token write, zeroed at lock; the external checks read it through `productruntime.Runtime.SourceTokenFor` | none: no message returns a token | `internal/signerapp/sourcetokens`, `internal/signerapp/keyadmin`, `internal/signerapp/productruntime` |
 | Product authorization | Product single-operator model | reserved `system:product-admin` principal plus the source-defined known-action vocabulary and closed product allowlist | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | Enrolled client registry | Product signer | `identities/default/.ssh/authorized_keys` | `clientregistry.Registry` published into the product runtime | SSH auth, HTTP principal resolution, enrollment, revocation | `internal/signerapp/clientregistry`, `internal/signerapp/productruntime`, `internal/sshtunnel`, `internal/signerapp/enrollment` |
 | Pending enrollment queue | Product signer | `identities/default/.ssh/pending_enrollments.json` | bounded waiting requests, distinct from signing approvals | pending list and enrollment notifications | `internal/signerapp/enrollqueue`, `internal/signerapp/productruntime`, `internal/signerapp/enrollment` |
@@ -275,8 +277,9 @@ identities/default/
     asa_set.json.hmac
     policies/<selector>.json           # per-key policy, both roles: address on signer nodes, Witness Key ID on cosigner nodes
     policies/<selector>.json.hmac
+    source_tokens/<selector>.enc       # cosigner only: a policy selector's source tokens (Witness Key ID or default)
     node.yaml.hmac
-    deleted/{keys,keytypes,policies}/
+    deleted/{keys,keytypes,policies,source_tokens}/
   generations/.staging-<id>/   # transient during mint/restore; never selectable
   quarantine/generations/<gen-id>/
   config.yaml
@@ -303,6 +306,7 @@ generation and commits it with one durable `store-root.enc` replacement.
 - effective product runtime config,
 - effective node policy: the default plus every per-key document for the node
   role, resolved per signing key,
+- the source token index a cosigner's external checks read, zeroed at lock,
 - watcher and shutdown lifecycle.
 
 The process owns one product runtime over the fixed `identities/default/`

@@ -160,6 +160,11 @@ func (l *reloadLoop) watchIfPending(event fsnotify.Event) {
 	}
 }
 
+// isReloadCandidate reports whether a change to path should reload keys:
+// managed credentials, templates, and the store root. Source token files
+// (source_tokens/*.enc) are deliberately not candidates, and their directory
+// is not watched: the daemon is their only writer and publishes the token
+// index itself after each write.
 func isReloadCandidate(path string) bool {
 	// Store-root replacement commits a new generation of the active
 	// namespaces; the reload it triggers re-resolves the layout.

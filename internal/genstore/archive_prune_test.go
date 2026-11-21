@@ -74,8 +74,33 @@ func TestPruneDeletedArchiveKeepsPolicyPairsTogether(t *testing.T) {
 	}
 }
 
+// An archived source token file is pruned alone: it has no partner. A name
+// in that namespace without the token file extension is refused.
+func TestPruneDeletedArchiveAcceptsArchivedSourceTokens(t *testing.T) {
+	const tokens = "deleted/source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc"
+	paths := storepaths.NewPaths(t.TempDir())
+	gen := mintTestGeneration(t, paths, testGenA, map[string]string{tokens: "sealed"})
+	for _, invalid := range []string{
+		"deleted/source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json",
+		"source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc",
+		"deleted/source_tokens/../keys/A.key",
+	} {
+		if _, err := PruneDeletedArchive(gen, []string{invalid}); err == nil {
+			t.Fatalf("PruneDeletedArchive(%q) accepted it", invalid)
+		}
+	}
+	results, err := PruneDeletedArchive(gen, []string{tokens})
+	if err != nil || len(results) != 1 || results[0].EncodedBytes != int64(len("sealed")) {
+		t.Fatalf("PruneDeletedArchive(source tokens) = (%+v, %v)", results, err)
+	}
+	if _, err := os.Stat(filepath.Join(gen.Dir(), tokens)); !os.IsNotExist(err) {
+		t.Fatalf("pruned source token file survived: %v", err)
+	}
+}
+
 func TestListDeletedArchiveReportsEveryNamespaceSorted(t *testing.T) {
 	const policy = "deleted/policies/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json"
+	const tokens = "deleted/source_tokens/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.enc"
 	paths := storepaths.NewPaths(t.TempDir())
 	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
 		"deleted/keys/B.cos":             "bb",
@@ -83,6 +108,7 @@ func TestListDeletedArchiveReportsEveryNamespaceSorted(t *testing.T) {
 		"deleted/keytypes/x.template":    "template",
 		policy:                           "{}",
 		policy + ".hmac":                 "hmac!",
+		tokens:                           "tokens",
 		"deleted/keytypes/a.v1.template": "t",
 		"deleted/keys/C.key":             "ccc",
 	})
@@ -98,6 +124,7 @@ func TestListDeletedArchiveReportsEveryNamespaceSorted(t *testing.T) {
 		{"deleted/keytypes/x.template", 8},
 		{policy, 2},
 		{policy + ".hmac", 5},
+		{tokens, 6},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("items = %+v", items)
@@ -107,7 +134,7 @@ func TestListDeletedArchiveReportsEveryNamespaceSorted(t *testing.T) {
 			t.Fatalf("items[%d] = %+v, want %+v", i, items[i], want[i])
 		}
 	}
-	if usage != (DeletedArchiveUsage{Entries: 7, EncodedBytes: 22}) {
+	if usage != (DeletedArchiveUsage{Entries: 8, EncodedBytes: 28}) {
 		t.Fatalf("usage = %+v", usage)
 	}
 

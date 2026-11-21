@@ -73,9 +73,14 @@ The transitions transcribe the post-commit reload and the recovery paths:
   generation, which every entry into recovery moves (KU5 in
   [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)).
 - `Serve` is a signing request or key write, gated by the runtime state
-  (`IsUnlocked`; recovery is a distinct state that refuses both). `Maintain`
-  is deleted-archive list or prune through `authenticatedSelection`, which
-  reads and authenticates the root itself. Its `~lockHeld` guard is the store
+  (`IsUnlocked`; recovery is a distinct state that refuses both). A key write
+  is an in-place write of the selected generation that mints nothing: key
+  generation, key deletion, and a source token set or remove
+  (`internal/signerapp/keyadmin/source_tokens.go`), each of which rechecks
+  `IsUnlocked` under the store mutation lock (`lockUnlockedMutation`). None
+  of them is a store-commit caller. `Maintain` is deleted-archive list or
+  prune through `authenticatedSelection`, which reads and authenticates the
+  root itself. Its `~lockHeld` guard is the store
   mutation lock both take: prune through `withStoreMutation`, list through
   `withStoreInspection`, whose `TryLock` answers `store_busy` instead of
   reading the archive while a mutation holds the lock.

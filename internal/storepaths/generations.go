@@ -215,6 +215,29 @@ func (g GenPaths) DeletedPoliciesDir() string {
 	return filepath.Join(g.DeletedDir(), "policies")
 }
 
+// SourceTokensDir is the generation's source token namespace: one
+// encrypted file per cosigner policy selector that has tokens.
+func (g GenPaths) SourceTokensDir() string {
+	return filepath.Join(g.root, "source_tokens")
+}
+
+// SourceTokenPath is one policy selector's source token file.
+func (g GenPaths) SourceTokenPath(selector string) string {
+	validateSourceTokenSelector(selector)
+	return filepath.Join(g.SourceTokensDir(), selector+SourceTokenFileExtension)
+}
+
+// DeletedSourceTokensDir archives the source token files of deleted keys.
+func (g GenPaths) DeletedSourceTokensDir() string {
+	return filepath.Join(g.DeletedDir(), "source_tokens")
+}
+
+// DeletedSourceTokenPath is a deleted key's archived source token file.
+func (g GenPaths) DeletedSourceTokenPath(selector string) string {
+	validateSourceTokenSelector(selector)
+	return filepath.Join(g.DeletedSourceTokensDir(), selector+SourceTokenFileExtension)
+}
+
 // NodeRoleIntegritySidecar is the generation-owned integrity record for the
 // immutable data-root node role document.
 func (g GenPaths) NodeRoleIntegritySidecar() string {

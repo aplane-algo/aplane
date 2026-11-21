@@ -35,6 +35,40 @@ func TestKeyringSealOpenBindsContext(t *testing.T) {
 	}
 }
 
+// A source token file opens only as the source tokens of its own selector:
+// not as another selector's, and not as another class with the same
+// selector.
+func TestSourceTokensContextBindsClassAndSelector(t *testing.T) {
+	kr, err := NewKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+	const selector = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+	sealed, err := kr.Seal([]byte("tokens"), SourceTokensContext(selector))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := kr.Open(sealed, SourceTokensContext(selector))
+	if err != nil {
+		t.Fatalf("Open(own context) error = %v", err)
+	}
+	ZeroBytes(opened)
+	for name, ctx := range map[string]ObjectContext{
+		"another selector":           SourceTokensContext("default"),
+		"a cosigner credential":      CosignerCredentialContext(selector),
+		"an account key":             AccountKeyContext(selector),
+		"a template":                 KeyTypeTemplateContext(selector),
+		"no selector":                {Class: ClassSourceTokens},
+		"an unknown class":           {Class: "source-token", Selector: selector},
+		"a selector with a NUL byte": SourceTokensContext(selector + "\x00"),
+	} {
+		if _, err := kr.Open(sealed, ctx); err == nil {
+			t.Fatalf("Open(%s) accepted a source token file", name)
+		}
+	}
+}
+
 func TestSuccessorRetiresOrdinaryAuthorityButKeepsHistoricalAccess(t *testing.T) {
 	current, err := NewKeyring()
 	if err != nil {

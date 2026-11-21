@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -182,7 +183,18 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 			if err != nil {
 				return fmt.Errorf("asa set verification failed for product store: %w", err)
 			}
+			// Tokens are published with the policy they serve. A damaged
+			// token file fails the reload; one on a signer node is a role
+			// conflict, which fails the node closed as a forbidden key does.
+			tokens, err := sourcetokens.LoadIndex(active, ir.NodeRole(), kr)
+			if err != nil {
+				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
+					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
+				}
+				return fmt.Errorf("source token verification failed for product store: %w", err)
+			}
 			ir.SetVerifiedPolicyState(nodePolicy, set, storedAdmissionAlerts(ir.NodeRole(), opts.Config, set, nodePolicy))
+			ir.PublishSourceTokens(tokens)
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {

@@ -137,6 +137,31 @@ func validatePolicySelector(selector string) {
 	}
 }
 
+// SourceTokensDefaultSelector names the source token file of the node
+// default policy document.
+const SourceTokensDefaultSelector = "default"
+
+// SourceTokenFileExtension ends a source token file's name.
+const SourceTokenFileExtension = ".enc"
+
+// ValidateSourceTokenSelector reports whether selector may name a source
+// token file: "default", or a Witness Key ID by shape. Source token files
+// exist only on cosigner nodes, so an Algorand address never names one. The
+// token file reader checks the Witness Key ID's encoding; this guards the
+// file name.
+func ValidateSourceTokenSelector(selector string) error {
+	if selector != SourceTokensDefaultSelector && !witnessKeyIDPattern.MatchString(selector) {
+		return fmt.Errorf("invalid source token selector %q", selector)
+	}
+	return nil
+}
+
+func validateSourceTokenSelector(selector string) {
+	if err := ValidateSourceTokenSelector(selector); err != nil {
+		panic(err.Error())
+	}
+}
+
 func validateKeyTypeComponent(keyType string) {
 	if err := ValidateKeyTypeComponent(keyType); err != nil {
 		panic(err.Error())
