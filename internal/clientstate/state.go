@@ -10,7 +10,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientdata"
-	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -164,14 +163,10 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 		if keyInfo.CosignerComponentKeyType != "" {
 			s.SignerCache.SetCosignerComponentKeyTypeForAddress(keyInfo.Address, keyInfo.CosignerComponentKeyType)
 		}
-		cosignerPublicKey := keyInfo.Parameters[keytypes.ParameterCosignerPublicKey]
-		if cosignerPublicKey == "" && keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.Cosigner != nil {
-			cosignerPublicKey = keyInfo.BoundedAuthorization.Cosigner.PublicKeyHex
-		}
-		if cosignerPublicKey != "" {
-			s.SignerCache.SetCosignerPublicKeyForAddress(keyInfo.Address, cosignerPublicKey)
-		}
 		if keyInfo.BoundedAuthorization != nil {
+			if cosigner := keyInfo.BoundedAuthorization.Cosigner; cosigner != nil {
+				s.SignerCache.SetCosignerPublicKeyForAddress(keyInfo.Address, cosigner.PublicKeyHex)
+			}
 			// A plain host has no fee ceiling; its contract says so.
 			s.SignerCache.SetBoundedContractForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.Contract)
 			if keyInfo.BoundedAuthorization.MaxFee != nil {
