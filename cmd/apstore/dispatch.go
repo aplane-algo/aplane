@@ -6,11 +6,17 @@ package main
 import (
 	"flag"
 	"os"
-	"slices"
 )
 
 func dispatchApstoreCommand(args []string) {
 	command := args[0]
+	var templateRequest templateRepairRequest
+	if command == "template" {
+		var err error
+		if templateRequest, err = parseTemplateCommand(args[1:]); err != nil {
+			exitWithError(err)
+		}
+	}
 	if err := enforceApstoreExecutionMode(dataDirectory, args); err != nil {
 		exitWithError(err)
 	}
@@ -74,9 +80,9 @@ func dispatchApstoreCommand(args []string) {
 
 	case "template":
 		run := func() error {
-			return cmdTemplate(args[1:])
+			return cmdTemplateRepair(templateRequest)
 		}
-		if slices.Contains(args[1:], "--confirm") {
+		if templateRequest.confirm {
 			if err := runStoreMutatingCommand(command, run); err != nil {
 				exitWithError(err)
 			}

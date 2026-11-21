@@ -93,7 +93,11 @@ func runTemplateCommand(t *testing.T, input string, args ...string) (string, err
 	t.Helper()
 	return withCapturedStdout(func() error {
 		return withTestStdin(input, func() error {
-			return cmdTemplate(args)
+			req, err := parseTemplateCommand(args)
+			if err != nil {
+				return err
+			}
+			return cmdTemplateRepair(req)
 		})
 	})
 }
@@ -373,10 +377,28 @@ func TestTemplateRepairUsage(t *testing.T) {
 		"unknown option":          {"repair", "drop", repairOrphan, "--yes"},
 		"malformed key type name": {"repair", "drop", "bad/key"},
 	} {
-		err := cmdTemplate(args)
+		_, err := parseTemplateCommand(args)
 		if got := exitCodeForError(err); got != apstoreExitUsage {
-			t.Fatalf("%s: cmdTemplate(%v) = %v (exit %d), want a usage error", name, args, err, got)
+			t.Fatalf("%s: parseTemplateCommand(%v) = %v (exit %d), want a usage error", name, args, err, got)
 		}
+	}
+}
+
+// A malformed command line is a usage error even while a running signer
+// holds the store: dispatch parses it before the execution-mode check and
+// the store lock.
+func TestTemplateRepairUsageErrorBeforeTheStoreLock(t *testing.T) {
+	oldDataDirectory := dataDirectory
+	t.Cleanup(func() { dataDirectory = oldDataDirectory })
+	dataDirectory = t.TempDir()
+	guard, err := storelock.AcquireShared(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = guard.Close() }()
+	code, logged := dispatchUntilExit(t, []string{"template", "bogus"})
+	if code != apstoreExitUsage || !strings.Contains(logged, templateRepairUsage) {
+		t.Fatalf("dispatch(template bogus) = exit %d, logged %q; want the usage error", code, logged)
 	}
 }
 

@@ -20,21 +20,33 @@ import (
 
 const templateRepairUsage = "usage: apstore template repair [repin <key_type>...] [drop <key_type>...] [--confirm]"
 
-// cmdTemplate repairs the template record defects that put a store into
-// recovery at unlock, with apsigner stopped (docs/USER_KEYTYPES.md,
+// templateRepairRequest is a parsed apstore template repair command line:
+// the action for each canonical key type, and whether to commit.
+type templateRepairRequest struct {
+	actions map[string]templaterepair.Action
+	confirm bool
+}
+
+// parseTemplateCommand reads the arguments after "template". Dispatch runs
+// it before it takes the store lock, so a malformed command line is a usage
+// error even while a signer holds the store.
+func parseTemplateCommand(args []string) (templateRepairRequest, error) {
+	if len(args) == 0 || args[0] != "repair" {
+		return templateRepairRequest{}, usageErrorf("%s", templateRepairUsage)
+	}
+	actions, confirm, err := parseTemplateRepairArgs(args[1:])
+	return templateRepairRequest{actions: actions, confirm: confirm}, err
+}
+
+// cmdTemplateRepair repairs the template record defects that put a store
+// into recovery at unlock, with apsigner stopped (docs/USER_KEYTYPES.md,
 // "Repairing a template record").
 //
 //	apstore template repair                                   preview the defects
 //	apstore template repair repin <kt>... drop <kt>...        preview the repair
 //	apstore template repair repin <kt>... drop <kt>... --confirm
-func cmdTemplate(args []string) error {
-	if len(args) == 0 || args[0] != "repair" {
-		return usageErrorf("%s", templateRepairUsage)
-	}
-	actions, confirm, err := parseTemplateRepairArgs(args[1:])
-	if err != nil {
-		return err
-	}
+func cmdTemplateRepair(req templateRepairRequest) error {
+	actions, confirm := req.actions, req.confirm
 	current, kr, err := readStore()
 	if err != nil {
 		return err
