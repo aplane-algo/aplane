@@ -158,9 +158,9 @@ func listedCountText(label string, listed, omitted int) string {
 	return fmt.Sprintf("%s: %d (%d listed)", label, listed+omitted, listed)
 }
 
-// restoreSkippedReasonRunes bounds the reason the preview footer shows for
+// restoreSkippedReasonWidth bounds the reason the preview footer shows for
 // the highlighted skipped key, so the footer cannot crowd out the list.
-const restoreSkippedReasonRunes = 200
+const restoreSkippedReasonWidth = 200
 
 func (m Model) restorePreviewFooter() string {
 	var sb strings.Builder
@@ -168,7 +168,7 @@ func (m Model) restorePreviewFooter() string {
 		width := m.popupBodyWidth(restorePreviewPopupWidth)
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render(wrapPlainText(
-			"Skipped: "+ellipsize(terminalSafe(skipped.Reason), restoreSkippedReasonRunes), width)))
+			"Skipped: "+ellipsize(terminalSafe(skipped.Reason), restoreSkippedReasonWidth), width)))
 		sb.WriteString("\n")
 	}
 

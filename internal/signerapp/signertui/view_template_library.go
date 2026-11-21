@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 )
 
@@ -134,18 +136,16 @@ func (m Model) renderTemplateDetails(tmpl LibraryTemplateInfo) string {
 	return sb.String()
 }
 
+// ellipsize cuts s to width columns, as the terminal draws them, ending the
+// cut in "..." when width has room for more than that.
 func ellipsize(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
-	}
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Truncate(s, width, "")
 	}
-	return string(runes[:width-3]) + "..."
+	return ansi.Truncate(s, width, "...")
 }
 
 // templateDetailsBoxLines lists a template's creation parameters and signing

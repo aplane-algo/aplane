@@ -456,6 +456,10 @@ func TestRestorePreviewFitsAtMinSize(t *testing.T) {
 const longDaemonError = "cosigner reference directory could not be read: open " +
 	"/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners: permission denied"
 
+// veryLongDaemonError is longer than the status bar's rows hold, and ends in
+// its cause.
+var veryLongDaemonError = strings.Repeat("the signer refused the request because ", 20) + "the store is full"
+
 // A long error wraps in the status bar to the window's width, so no screen
 // grows wider than the window, and the screen above gives the bar its rows:
 // the key list keeps its selected row, and all of the error is on screen.
@@ -474,14 +478,17 @@ func TestStatusBarWrapsALongErrorAtMinSize(t *testing.T) {
 	}
 }
 
-// An error too long for the status bar's rows is cut after them, ending in an
-// ellipsis, so the screen above keeps its room.
+// An error too long for the status bar's rows is cut in the middle, so the
+// screen above keeps its room: it keeps its start, marks the cut with an
+// ellipsis, and ends with the error's end.
 func TestStatusBarCutsAnErrorTooLongForItsRows(t *testing.T) {
 	m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: ConnectionConnected,
-		lastError: strings.Repeat("the signer refused the request because ", 20) + "END"}, MinWidth, MinHeight)
+		lastError: veryLongDaemonError}, MinWidth, MinHeight)
 	bar := stripANSI(m.renderStatusBar())
 	lines := strings.Split(bar, "\n")
-	if len(lines) > 1+maxErrorLines || !strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), "...") || strings.Contains(bar, "END") {
+	if len(lines) != 1+maxErrorLines || !strings.HasPrefix(lines[1], "Error: the signer refused") ||
+		!strings.HasSuffix(strings.TrimRight(lines[len(lines)-2], " "), "...") ||
+		!strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), "the store is full") {
 		t.Fatalf("status bar of %d lines:\n%s", len(lines), bar)
 	}
 	checkFitsMinSize(t, stripANSI(m.View()))

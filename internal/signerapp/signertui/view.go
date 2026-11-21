@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -666,15 +667,23 @@ func (m Model) renderStatusBar() string {
 	}
 	settingAt := len(parts)
 
-	// Error if any
-	if m.lastError != "" {
-		parts = append(parts, errorStyle.Render("Error: "+terminalSafe(m.lastError)))
+	// An error too long for the line goes under it, wrapped to the window,
+	// so no screen grows wider than the window.
+	errorText := m.lastError
+	errorUnder := false
+	if errorText != "" {
+		part := errorStyle.Render("Error: " + terminalSafe(errorText))
+		if lipgloss.Width(strings.Join(append(slices.Clone(parts), part), " | ")) <= m.tableWidth() {
+			parts = append(parts, part)
+		} else {
+			errorUnder = true
+		}
 	}
 
 	// A setting update's in-effect warning belongs to the admin panel. It is
-	// cut to the room the rest of the line leaves, so the line stays one row
-	// and takes none from the panel, and dropped when that room cannot hold
-	// even the setting's name; the panel's own unsaved warning still shows.
+	// cut to the room the line leaves, so the line stays one row and takes
+	// none from the panel, and dropped when that room cannot hold even the
+	// setting's name; the panel's own unsaved warning still shows.
 	if w := m.admin.settingWarning.text; m.viewState == ViewAdminPanel && w != "" {
 		room := m.tableWidth() - lipgloss.Width(strings.Join(parts, " | "))
 		if len(parts) > 0 {
@@ -686,13 +695,14 @@ func (m Model) renderStatusBar() string {
 	}
 
 	line := strings.Join(parts, " | ")
-	if m.lastError == "" || lipgloss.Width(line) <= m.tableWidth() {
+	if !errorUnder {
 		return helpStyle.Render(line)
 	}
-	// An error too long for the line goes under it, wrapped to the window, so
-	// no screen grows wider than the window; the error is the last part.
-	errorLines := wrapErrorLines("Error: "+terminalSafe(m.lastError), m.tableWidth())
-	return helpStyle.Render(strings.Join(parts[:len(parts)-1], " | ") + "\n" + errorStyle.Render(strings.Join(errorLines, "\n")))
+	errorBlock := errorStyle.Render(strings.Join(wrapErrorLines("Error: "+terminalSafe(errorText), m.tableWidth()), "\n"))
+	if line == "" {
+		return helpStyle.Render(errorBlock)
+	}
+	return helpStyle.Render(line + "\n" + errorBlock)
 }
 
 // maxErrorLines bounds a daemon error shown in the status bar or a screen, so
@@ -700,11 +710,38 @@ func (m Model) renderStatusBar() string {
 const maxErrorLines = 3
 
 // wrapErrorLines wraps an error to width, breaking a word wider than a line,
-// such as a path, and cuts it after maxErrorLines lines, ending in an
-// ellipsis.
+// such as a path. An error longer than maxErrorLines lines is cut in the
+// middle, since a Go error ends in its cause ("no space left on device"): its
+// first lines, the last of them ending in "..." where the text is cut, then
+// as much of its end as one line holds.
 func wrapErrorLines(text string, width int) []string {
-	var words []string
-	for _, word := range strings.Fields(text) {
+	width = max(width, 1)
+	words := breakWideWords(strings.Fields(text), width)
+	lines := strings.Split(wrapPlainText(strings.Join(words, " "), width), "\n")
+	if len(lines) <= maxErrorLines {
+		return lines
+	}
+	tail := len(words) - 1
+	for tail > 0 && lipgloss.Width(strings.Join(words[tail-1:], " ")) <= width {
+		tail--
+	}
+	if tail == 0 {
+		return []string{strings.Join(words, " ")}
+	}
+	head := strings.Split(wrapPlainText(strings.Join(words[:tail], " "), width), "\n")
+	if len(head) >= maxErrorLines {
+		head = head[:maxErrorLines-1]
+		head[len(head)-1] = ellipsize(head[len(head)-1]+"...", width)
+	}
+	return append(head, strings.Join(words[tail:], " "))
+}
+
+// breakWideWords breaks each word wider than width into pieces that fit. A
+// piece takes at least one character, so a character wider than width, such
+// as a two-column one at width 1, is a piece of its own.
+func breakWideWords(words []string, width int) []string {
+	var out []string
+	for _, word := range words {
 		for lipgloss.Width(word) > width {
 			cut := 0
 			for i := range word {
@@ -713,15 +750,15 @@ func wrapErrorLines(text string, width int) []string {
 				}
 				cut = i
 			}
-			words = append(words, word[:cut])
+			if cut == 0 {
+				_, cut = utf8.DecodeRuneInString(word)
+			}
+			out = append(out, word[:cut])
 			word = word[cut:]
 		}
-		words = append(words, word)
+		if word != "" {
+			out = append(out, word)
+		}
 	}
-	lines := strings.Split(wrapPlainText(strings.Join(words, " "), width), "\n")
-	if len(lines) > maxErrorLines {
-		lines = lines[:maxErrorLines]
-		lines[len(lines)-1] = ellipsize(lines[len(lines)-1]+"...", width)
-	}
-	return lines
+	return out
 }
