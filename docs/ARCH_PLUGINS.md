@@ -579,7 +579,7 @@ should not depend on those values unless the runtime explicitly populates them.
 |-------|------|-------------|
 | `accounts` | `[]string` | List of all available account addresses (addresses that can sign) |
 | `assets` | `[]object` | Structured known ASA metadata: `assetId`, `name`, `unitName`, `decimals` |
-| `addressMap` | `map[string]string` | Alias → address mapping |
+| `addressMap` | `map[string]string` | Alias → address mapping, passed unfiltered; see [Address Resolution](#address-resolution) |
 | `network` | `string` | Current network context token |
 | `round` | `uint64` | Reserved; omitted unless explicitly populated by the runtime |
 | `genesisId` | `string` | Reserved; omitted unless explicitly populated by the runtime |
@@ -594,6 +594,9 @@ should not depend on those values unless the runtime explicitly populates them.
 
 2. **Aliases → Addresses**: Plugin receives `addressMap` with alias → address mappings
    - Example: `{"alice": "ALICE_ADDRESS...", "bob": "BOB_ADDRESS..."}`
+   - The map is passed unfiltered. Try the input as an Algorand address first,
+     case-insensitively, and consult `addressMap` only when it isn't one (see
+     [Address Resolution](#address-resolution)).
 
 ### Transaction Intents
 
@@ -1169,7 +1172,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 
 **Parameter Resolution:**
 1. Prefer `assets` for ASA metadata and resolve symbols case-insensitively against `unitName` or `name`
-2. Check `addressMap` for alias → address resolution
+2. Try the input as an Algorand address first, case-insensitively; check `addressMap` only when it isn't one
 3. Validate addresses before use
 4. Return clear error messages for unknown aliases/assets
 
@@ -1523,16 +1526,24 @@ function resolveAssetId(assetIdentifier, assets) {
 
 ### Address Resolution
 
-The `context.addressMap` provides alias → address mappings. Always resolve aliases before using addresses:
+The `context.addressMap` provides alias → address mappings, and APlane passes
+it unfiltered: a plugin must not assume every key is a valid alias name. Try the
+input as an Algorand address first, case-insensitively, and consult
+`addressMap` only when the input isn't one. An address then always means
+itself, so no entry in the map, whatever its name, can redirect it. The bundled
+`algokit-localnet` plugin (`resolveAddress` in
+`plugins/algokit-localnet/algokit-localnet.go`, which decodes the address with
+its checksum) and the reti example (`resolveAddress` in
+`examples/external_plugins/reti/src/reti-plugin.ts`) show the pattern:
 
 ```javascript
 function resolveAddress(input, addressMap) {
-    // Check if it's already an address (58-char base32)
-    if (/^[A-Z2-7]{58}$/.test(input)) {
-        return input;
+    // An address, in either case, means itself; aliases come second.
+    const normalized = input.toUpperCase();
+    if (/^[A-Z2-7]{58}$/.test(normalized)) {
+        return normalized;
     }
 
-    // Try alias lookup
     if (addressMap && addressMap[input]) {
         return addressMap[input];
     }
