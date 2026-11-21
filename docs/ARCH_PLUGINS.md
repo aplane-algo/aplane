@@ -127,7 +127,6 @@ This file is the entry point for any external plugin.
   "version": "1.0.0",
   "description": "My awesome plugin.",
   "author": "Author Name",
-  "homepage": "https://github.com/author/plugin",
 
   "executable": "./my-plugin-executable",
   "args": [],
@@ -138,7 +137,6 @@ This file is the entry point for any external plugin.
       "description": "Does something awesome.",
       "usage": "my-command <action> <amount> <asset>",
       "examples": ["my-command deposit 100 algo"],
-      "category": "defi",
       "arg_specs": [
         {"type": "keyword", "values": ["deposit", "withdraw"]},
         {"type": "number"},
@@ -161,7 +159,6 @@ This file is the entry point for any external plugin.
 | `version` | Yes | - | Semantic version (e.g., "1.0.0") |
 | `description` | Yes | - | Brief description of the plugin |
 | `author` | No | - | Plugin author |
-| `homepage` | No | - | Plugin homepage URL (informational; apshell does not read it) |
 | `executable` | Yes | - | Path to executable (relative to plugin dir, or system command) |
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
 | `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
@@ -174,8 +171,9 @@ JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
 runtime request and response frames, and from the APlane plugin protocol
 version exchanged in the `initialize` method.
 
-Unknown manifest fields are ignored. Commands are the sole executable and
-discoverable manifest surface.
+The manifest is decoded strictly: a field the schema does not have, at any
+level, refuses the plugin, as does content after the manifest object.
+Commands are the sole executable and discoverable manifest surface.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -193,8 +191,6 @@ configured algod, KMD, or indexer services they need.
 | `description` | Yes | Brief description shown in help |
 | `usage` | No | Usage string showing arguments |
 | `examples` | No | Array of example invocations |
-| `returns` | No | Human-readable description of the command result shape (informational; apshell does not read it) |
-| `category` | No | Informational; apshell does not read it, and help lists every plugin command under Plugin Commands |
 | `arg_specs` | No | Array of argument completion specs |
 
 **ArgSpec Fields (for `arg_specs` array):**
@@ -583,7 +579,7 @@ should not depend on those values unless the runtime explicitly populates them.
 |-------|------|-------------|
 | `accounts` | `[]string` | List of all available account addresses (addresses that can sign) |
 | `assets` | `[]object` | Structured known ASA metadata: `assetId`, `name`, `unitName`, `decimals` |
-| `addressMap` | `map[string]string` | Alias → address mapping |
+| `addressMap` | `map[string]string` | Alias → address mapping, passed unfiltered; see [Address Resolution](#address-resolution) |
 | `network` | `string` | Current network context token |
 | `round` | `uint64` | Reserved; omitted unless explicitly populated by the runtime |
 | `genesisId` | `string` | Reserved; omitted unless explicitly populated by the runtime |
@@ -598,6 +594,9 @@ should not depend on those values unless the runtime explicitly populates them.
 
 2. **Aliases → Addresses**: Plugin receives `addressMap` with alias → address mappings
    - Example: `{"alice": "ALICE_ADDRESS...", "bob": "BOB_ADDRESS..."}`
+   - The map is passed unfiltered. Try the input as an Algorand address first,
+     case-insensitively, and consult `addressMap` only when it isn't one (see
+     [Address Resolution](#address-resolution)).
 
 ### Transaction Intents
 
@@ -1173,7 +1172,7 @@ using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 
 **Parameter Resolution:**
 1. Prefer `assets` for ASA metadata and resolve symbols case-insensitively against `unitName` or `name`
-2. Check `addressMap` for alias → address resolution
+2. Try the input as an Algorand address first, case-insensitively; check `addressMap` only when it isn't one
 3. Validate addresses before use
 4. Return clear error messages for unknown aliases/assets
 
@@ -1527,16 +1526,24 @@ function resolveAssetId(assetIdentifier, assets) {
 
 ### Address Resolution
 
-The `context.addressMap` provides alias → address mappings. Always resolve aliases before using addresses:
+The `context.addressMap` provides alias → address mappings, and APlane passes
+it unfiltered: a plugin must not assume every key is a valid alias name. Try the
+input as an Algorand address first, case-insensitively, and consult
+`addressMap` only when the input isn't one. An address then always means
+itself, so no entry in the map, whatever its name, can redirect it. The bundled
+`algokit-localnet` plugin (`resolveAddress` in
+`plugins/algokit-localnet/algokit-localnet.go`, which decodes the address with
+its checksum) and the reti example (`resolveAddress` in
+`examples/external_plugins/reti/src/reti-plugin.ts`) show the pattern:
 
 ```javascript
 function resolveAddress(input, addressMap) {
-    // Check if it's already an address (58-char base32)
-    if (/^[A-Z2-7]{58}$/.test(input)) {
-        return input;
+    // An address, in either case, means itself; aliases come second.
+    const normalized = input.toUpperCase();
+    if (/^[A-Z2-7]{58}$/.test(normalized)) {
+        return normalized;
     }
 
-    // Try alias lookup
     if (addressMap && addressMap[input]) {
         return addressMap[input];
     }

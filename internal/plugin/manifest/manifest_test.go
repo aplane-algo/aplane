@@ -505,27 +505,33 @@ func TestCommandFields(t *testing.T) {
 	}
 }
 
-// Manifest decoding is not strict: a field the schema does not have is
-// ignored, and the manifest loads with the fields it does have.
-func TestLoadIgnoresUnknownFields(t *testing.T) {
-	dir := t.TempDir()
-	content := `{
-		"name": "p",
-		"version": "1.0.0",
-		"description": "Plugin with an extra field",
-		"executable": "p",
-		"commands": [{"name": "c", "description": "Command"}],
-		"extra": {"nested": [1, 2]}
-	}`
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	m, err := LoadFromDir(dir)
-	if err != nil {
-		t.Fatalf("LoadFromDir() error = %v", err)
-	}
-	if m.Name != "p" || len(m.Commands) != 1 || m.Commands[0].Name != "c" {
-		t.Fatalf("manifest = %+v, want name p and command c", m)
+// Manifest decoding is strict at every level: a field the schema does not
+// have is refused, as is content after the manifest object.
+func TestLoadRefusesUnknownFieldsAndTrailingContent(t *testing.T) {
+	for name, tt := range map[string]struct{ content, want string }{
+		"top level": {`{"name": "p", "version": "1", "description": "d", "executable": "p", "homepage": "https://x",
+			"commands": [{"name": "c", "description": "c"}]}`, `failed to parse manifest: json: unknown field "homepage"`},
+		"command": {`{"name": "p", "version": "1", "description": "d", "executable": "p",
+			"commands": [{"name": "c", "description": "c", "category": "defi"}]}`, `failed to parse manifest: json: unknown field "category"`},
+		"arg spec": {`{"name": "p", "version": "1", "description": "d", "executable": "p",
+			"commands": [{"name": "c", "description": "c", "arg_specs": [{"type": "number", "hint": "x"}]}]}`, `failed to parse manifest: json: unknown field "hint"`},
+		"branch condition": {`{"name": "p", "version": "1", "description": "d", "executable": "p",
+			"commands": [{"name": "c", "description": "c", "arg_specs": [{"branches": [{"when": {"arg": 0, "matches": "", "not": true}, "specs": [{"type": "number"}]}]}]}]}`, `failed to parse manifest: json: unknown field "not"`},
+		"second object": {`{"name": "p", "version": "1", "description": "d", "executable": "p",
+			"commands": [{"name": "c", "description": "c"}]} {}`, "failed to parse manifest: unexpected content after the manifest object"},
+		"garbage after the object": {`{"name": "p", "version": "1", "description": "d", "executable": "p",
+			"commands": [{"name": "c", "description": "c"}]} x`, "failed to parse manifest: unexpected content after the manifest object"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(tt.content+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadFromDir(dir)
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("LoadFromDir() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 

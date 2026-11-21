@@ -5,7 +5,10 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func execute(t *testing.T, params ExecuteParams) *Response {
@@ -63,4 +66,43 @@ func TestExecuteRunsOnLocalNetOnly(t *testing.T) {
 	if cfg.network != "localnet" {
 		t.Fatalf("network = %q, want localnet", cfg.network)
 	}
+}
+
+// An address means itself, in either case, before any alias is consulted:
+// an alias named after address A that points to B does not make `fund A`
+// fund B. Other input still resolves as an alias, ignoring case.
+func TestResolveAddressNeverRedirectsAnAddress(t *testing.T) {
+	a, b, c := testAddress(1), testAddress(2), testAddress(3)
+	// "ALICE" and the Kelvin-sign "\u212Aate" are planted entries in a case
+	// apshell never stores; neither may shadow the lowercase alias.
+	aliases := map[string]string{strings.ToLower(a): b, "alice": c, "ALICE": b, "kate": c, "\u212Aate": b}
+	for _, tc := range []struct{ input, want string }{
+		{a, a},
+		{strings.ToLower(a), a},
+		{"alice", c},
+		{"ALICE", c},
+		{"Alice", c},
+		{"Kate", c},
+	} {
+		got, err := parseFundArgs([]string{tc.input, "from", tc.input}, aliases)
+		if err != nil || got.to != tc.want || got.from != tc.want {
+			t.Fatalf("parseFundArgs(%q) = %+v, %v; want to and from %s", tc.input, got, err, tc.want)
+		}
+	}
+	for _, tc := range []struct{ input, want string }{
+		{"bob", `"bob" is neither an Algorand address nor a known alias`},
+		{"broken", `alias "broken": `},
+	} {
+		_, err := resolveAddress(tc.input, map[string]string{"broken": "not-an-address"})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("resolveAddress(%q) error = %v, want %q", tc.input, err, tc.want)
+		}
+	}
+}
+
+func testAddress(i byte) string {
+	var addr types.Address
+	addr[0] = i
+	addr[31] = i + 1
+	return addr.String()
 }

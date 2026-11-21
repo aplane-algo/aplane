@@ -99,8 +99,8 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			result.Accounts = append(result.Accounts, row)
 			continue
 		}
-		publicKey := key.Parameters["cosigner_public_key"]
-		if publicKey == "" && key.BoundedAuthorization != nil && key.BoundedAuthorization.Cosigner != nil {
+		var publicKey string
+		if key.BoundedAuthorization != nil && key.BoundedAuthorization.Cosigner != nil {
 			publicKey = key.BoundedAuthorization.Cosigner.PublicKeyHex
 		}
 		canonical, err := normalizeCosignerPublicKeyHex(publicKey)

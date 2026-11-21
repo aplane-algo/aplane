@@ -5,8 +5,11 @@
 package manifest
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,8 +59,13 @@ func load(path string) (*Manifest, error) {
 	}
 
 	var m Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("failed to parse manifest: unexpected content after the manifest object")
 	}
 	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid manifest: %w", err)

@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	setServiceFile(filepath.Join(os.TempDir(), "aplane-appass-test-missing.service"))
+	serviceFile = filepath.Join(os.TempDir(), "aplane-appass-test-missing.service")
 	os.Exit(m.Run())
 }
 
@@ -210,9 +210,9 @@ func otherStoreUnit(t *testing.T) (string, string) {
 	if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	original := currentServiceFile()
-	setServiceFile(path)
-	t.Cleanup(func() { setServiceFile(original) })
+	original := serviceFile
+	serviceFile = path
+	t.Cleanup(func() { serviceFile = original })
 	return path, unit
 }
 

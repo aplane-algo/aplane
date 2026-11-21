@@ -243,8 +243,9 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 			ListedRekey:   &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 		},
-		Parameters: map[string]string{
-			"cosigner_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Contract: "plain1",
+			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -623,5 +624,26 @@ func TestAddAliasRefusesAnAddressAsAName(t *testing.T) {
 	state.ReloadAliasCache()
 	if len(state.AliasCache.Aliases) != 0 {
 		t.Fatalf("aliases = %v, want none", state.AliasCache.Aliases)
+	}
+}
+
+// The cosigner key comes from bounded_authorization, the structured field
+// the signer always sends for a cosigned account. The creation parameter of
+// the same name is not read.
+func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testing.T) {
+	state := New("testnet")
+	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "PARAMS", KeyType: "k", Parameters: map[string]string{"cosigner_public_key": "aa"}},
+		{Address: "BOTH", KeyType: "k", Parameters: map[string]string{"cosigner_public_key": "aa"},
+			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Contract: "plain1", Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "bb"}}},
+		{Address: "STRUCT", KeyType: "k",
+			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Contract: "plain1", Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "cc"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for address, want := range map[string]string{"PARAMS": "", "BOTH": "bb", "STRUCT": "cc"} {
+		if got, ok := state.SignerCache.CosignerPublicKeyForAddress(address); ok != (want != "") || got != want {
+			t.Fatalf("%s cosigner key = %q/%v, want %q", address, got, ok, want)
+		}
 	}
 }

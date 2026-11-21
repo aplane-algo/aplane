@@ -148,8 +148,8 @@ public networks.
 
 Optional environment overrides:
 
-- `RETI_APP_ID` or `RETI_APPID`: override the Réti validator registry app ID
-- `RETI_NFD_API_URL` or `ALGO_NFD_URL`: override the NFD API base URL
+- `RETI_APP_ID`: override the Réti validator registry app ID
+- `RETI_NFD_API_URL`: override the NFD API base URL
 
 For `localnet` / `sandbox`, you should set `RETI_APP_ID` explicitly.
 

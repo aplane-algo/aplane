@@ -13,10 +13,7 @@
 # Environment overrides:
 #   APLANE_INSTALL_ROOT, APLANE_BINDIR, APLANE_VERSION
 #   APLANE_ENABLE_SERVICE (1|0), APLANE_START_SERVICE (1|0)
-#   APLANE_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
-# Legacy aliases still accepted: APSIGNER_LOCAL, APSIGNER_BINDIR,
-#   APSIGNER_VERSION, APSIGNER_ENABLE_SERVICE, APSIGNER_START_SERVICE,
-#   APSIGNER_REQUIRE_MINISIGN.
+#   APLANE_REQUIRE_MINISIGN (1|0) - require the minisign binary
 
 # Refuse to run when sourced. Do not compare BASH_SOURCE[0] with $0 here:
 # BASH_SOURCE[0] is empty when the supported `curl ... | bash` form is used.
@@ -30,19 +27,11 @@ set -euo pipefail
 REPO="aplane-algo/aplane"
 MINISIGN_PUBKEY="RWSTA8cMsOQuE+UHxDpCoqg0D8/lFCciIOWZcBgJTMMwXpqa0ovdJvYF"
 
-BINDIR="${APLANE_BINDIR:-${APSIGNER_BINDIR:-/usr/local/bin}}"
-REQUESTED_VERSION="${APLANE_VERSION:-${APSIGNER_VERSION:-latest}}"
-ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-${APSIGNER_ENABLE_SERVICE:-1}}"
-START_SERVICE="${APLANE_START_SERVICE:-${APSIGNER_START_SERVICE:-1}}"
-REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-${APSIGNER_REQUIRE_MINISIGN:-0}}"
-if [ -n "${APLANE_INSTALL_ROOT:-}" ]; then
-    INSTALL_ROOT_ENV="$APLANE_INSTALL_ROOT"
-elif [ "${APSIGNER_LOCAL:-}" = "1" ]; then
-    INSTALL_ROOT_ENV="$PWD"
-else
-    INSTALL_ROOT_ENV="${APSIGNER_LOCAL:-}"
-fi
-LOCAL_MODE="$INSTALL_ROOT_ENV"
+BINDIR="${APLANE_BINDIR:-/usr/local/bin}"
+REQUESTED_VERSION="${APLANE_VERSION:-latest}"
+ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-1}"
+START_SERVICE="${APLANE_START_SERVICE:-1}"
+REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-0}"
 CLIENT_MODE=""
 PROD_MODE=""
 INSTALL_ROOT_ARG=""
@@ -73,7 +62,7 @@ EOF
 EOF
     fi
     cat <<'EOF'
-  --require-minisign  Fail if minisign is unavailable or signature file is missing
+  --require-minisign  Fail if minisign is unavailable
   -h, --help          Show this help
 
 Environment:
@@ -306,8 +295,8 @@ main() {
     fi
     if [ "${#POSITIONAL[@]}" -eq 1 ]; then
         INSTALL_ROOT_ARG="${POSITIONAL[0]}"
-    elif [ -n "$INSTALL_ROOT_ENV" ]; then
-        INSTALL_ROOT_ARG="$INSTALL_ROOT_ENV"
+    else
+        INSTALL_ROOT_ARG="${APLANE_INSTALL_ROOT:-}"
     fi
 
     local is_client=0
@@ -317,17 +306,6 @@ main() {
     local is_prod=0
     if [ -n "$PROD_MODE" ]; then
         is_prod=1
-    fi
-
-    # Default to local mode unless --systemd or --client
-    local is_local=0
-    if [ "$is_prod" = "0" ] && [ "$is_client" = "0" ]; then
-        is_local=1
-        if [ -n "$INSTALL_ROOT_ARG" ]; then
-            LOCAL_MODE="$INSTALL_ROOT_ARG"
-        elif [ -z "$LOCAL_MODE" ]; then
-            LOCAL_MODE="1"
-        fi
     fi
 
     # --client is incompatible with systemd/signer options
@@ -368,25 +346,17 @@ main() {
     local tarball_path="${TMPDIR_CREATED}/${tarball_name}"
     local checksums_path="${TMPDIR_CREATED}/checksums.txt"
     local minisig_path="${TMPDIR_CREATED}/checksums.txt.minisig"
-    local minisig_available="0"
 
     log "Downloading release ${tag} (${arch})..."
     download "${base_url}/${tarball_name}" "$tarball_path"
     download "${base_url}/checksums.txt" "$checksums_path"
-    if download "${base_url}/checksums.txt.minisig" "$minisig_path"; then
-        minisig_available="1"
-    else
-        if [ "$REQUIRE_MINISIGN" = "1" ]; then
-            die "checksums.txt.minisig is missing for ${tag} and minisign is required"
-        fi
-        warn "checksums.txt.minisig not found for ${tag}; skipping signature verification"
-    fi
+    # Every release signs checksums.txt, so a missing signature is refused.
+    download "${base_url}/checksums.txt.minisig" "$minisig_path" || \
+        die "checksums.txt.minisig is missing for ${tag}"
 
     log "Verifying checksums..."
     verify_checksum "$checksums_path" "$tarball_path" "$tarball_name"
-    if [ "$minisig_available" = "1" ]; then
-        verify_signature "$checksums_path" "$minisig_path"
-    fi
+    verify_signature "$checksums_path" "$minisig_path"
 
     log "Extracting archive..."
     tar -xzf "$tarball_path" -C "$TMPDIR_CREATED"
@@ -412,13 +382,11 @@ main() {
             install_args+=(--no-start)
         fi
         run_root "${TMPDIR_CREATED}/aplane/install.sh" "${install_args[@]}"
+    # A local install, the default without --client or --systemd.
+    elif [ -n "$INSTALL_ROOT_ARG" ]; then
+        "${TMPDIR_CREATED}/aplane/install.sh" "$INSTALL_ROOT_ARG"
     else
-        # Local mode: "1" means $PWD, otherwise use the specified path
-        if [ "$LOCAL_MODE" = "1" ]; then
-            "${TMPDIR_CREATED}/aplane/install.sh"
-        else
-            "${TMPDIR_CREATED}/aplane/install.sh" "$LOCAL_MODE"
-        fi
+        "${TMPDIR_CREATED}/aplane/install.sh"
     fi
 
     # Post-install summary (systemd mode only)

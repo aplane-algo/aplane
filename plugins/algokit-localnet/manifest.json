@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "AlgoKit LocalNet operations for status, KMD account listing, and local funding",
   "author": "APlane Shell Team",
-  "homepage": "https://github.com/aplane-algo/aplane",
   "executable": "./algokit-localnet",
   "args": [],
   "commands": [
@@ -18,7 +17,6 @@
         "localnet fund alice 100 algo",
         "localnet fund alice 2500000 microalgo from LPB4KVPDCWWU6RHQARBAVVFCZRQKV7BXTKDGRZAPRS7STX6DQMPQKMWALQ"
       ],
-      "category": "development",
       "arg_specs": [
         {
           "type": "keyword",

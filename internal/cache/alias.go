@@ -19,22 +19,7 @@ func LoadAliasCacheFromStore(store *Store) AliasCache {
 	if err := loadSignedCacheWithKey(store, store.path("alias_cache.json"), &cache); err != nil {
 		warnCacheLoadError("alias cache", err)
 	}
-	cache.dropAddressNamedAliases()
 	return cache
-}
-
-// dropAddressNamedAliases ignores any alias whose name is itself an address.
-// Creating one is refused, so one in the cache was written by an older
-// version or planted to redirect that address; it could never resolve, since
-// an address always resolves as itself, and listing it would show one address
-// labelled as another. The next save drops it from the file.
-func (cache *AliasCache) dropAddressNamedAliases() {
-	for name, address := range cache.Aliases {
-		if refname.IsAddress(name) {
-			warnf("alias cache: ignoring alias %q, which points to %s: its name is an Algorand address, so it would redirect that address", name, address)
-			delete(cache.Aliases, name)
-		}
-	}
 }
 
 // SaveCacheLocked saves the alias cache while the caller already holds the

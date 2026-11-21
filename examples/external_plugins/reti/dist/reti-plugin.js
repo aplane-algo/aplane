@@ -109,21 +109,17 @@ function makeRewardTokenOptInTxn(userAddr, rewardTokenId, suggestedParams) {
 function makeKeyValueItems(items) {
     return items.filter((item) => Boolean(item));
 }
-function getEnvBigInt(...names) {
-    for (const name of names) {
-        const value = process.env[name];
-        if (value && /^\d+$/.test(value)) {
-            return BigInt(value);
-        }
+function getEnvBigInt(name) {
+    const value = process.env[name];
+    if (value && /^\d+$/.test(value)) {
+        return BigInt(value);
     }
     return undefined;
 }
-function getEnvString(...names) {
-    for (const name of names) {
-        const value = process.env[name];
-        if (value && value.trim() !== '') {
-            return value.trim();
-        }
+function getEnvString(name) {
+    const value = process.env[name];
+    if (value && value.trim() !== '') {
+        return value.trim();
     }
     return undefined;
 }
@@ -146,9 +142,9 @@ async function configurePlugin(options) {
     const defaults = getNetworkDefaults(network);
     const algodUrl = options.algodUrl || defaults.algodUrl || pluginState.algodUrl;
     const algodToken = options.algodToken ?? pluginState.algodToken ?? '';
-    const retiAppId = getEnvBigInt('RETI_APP_ID', 'RETI_APPID') || defaults.retiAppId || 0n;
+    const retiAppId = getEnvBigInt('RETI_APP_ID') || defaults.retiAppId || 0n;
     const feeSink = defaults.feeSink || pluginState.feeSink;
-    const nfdApiUrl = getEnvString('RETI_NFD_API_URL', 'ALGO_NFD_URL') || defaults.nfdApiUrl || pluginState.nfdApiUrl;
+    const nfdApiUrl = getEnvString('RETI_NFD_API_URL') || defaults.nfdApiUrl || pluginState.nfdApiUrl;
     pluginState.network = network;
     pluginState.algodUrl = algodUrl;
     pluginState.algodToken = algodToken;
@@ -170,7 +166,7 @@ function ensureInitialized() {
 }
 function ensureRetiAppConfigured() {
     if (pluginState.retiAppId === 0n) {
-        throw new Error(`Reti app ID is not configured for network ${pluginState.network}; set RETI_APP_ID or RETI_APPID`);
+        throw new Error(`Reti app ID is not configured for network ${pluginState.network}; set RETI_APP_ID`);
     }
 }
 async function handleInitialize(params) {
