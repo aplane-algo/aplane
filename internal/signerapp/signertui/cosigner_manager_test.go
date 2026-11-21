@@ -452,7 +452,7 @@ func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T
 	}
 	view := stripANSI(m.View())
 	checkFitsMinSize(t, view)
-	want := "Remove does not reach my ref.json; delete /var/lib/apsigner/identities/default/cosigners/my ref.json to clear it."
+	want := "Remove does not reach my ref.json; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
 	if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, want) {
 		t.Errorf("%q missing from:\n%s", want, view)
 	}
@@ -516,5 +516,63 @@ func TestCosignerRemoveConfirmationDropsATargetNoLongerListed(t *testing.T) {
 	next, cmd := m.handleKeyPress(browserKey("y"))
 	if got := next.(Model); got.viewState != ViewCosignerReferences || cmd != nil {
 		t.Fatalf("y = view %v cmd nil=%v, want the list and no request", got.viewState, cmd == nil)
+	}
+}
+
+// The hint for a reference file remove does not reach keeps all of its path on
+// screen at the minimum window size, with a full list and a deep data
+// directory, a long file name with spaces included. The list gives up rows
+// for it, and the selected row stays in view.
+func TestCosignerDeleteHintKeepsItsPathOnScreenAtMinSize(t *testing.T) {
+	for _, tc := range []struct{ dir, name string }{
+		{"/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/", "a-really-long-file-name-for-a-cosigner-reference"},
+		{"/home/operator/.aplane/apsigner/identities/default/cosigners/", "copy of the west cosigner reference from the old machine before the move"},
+	} {
+		var references []CosignerReferenceInfo
+		for i := 0; i < 12; i++ {
+			references = append(references, CosignerReferenceInfo{Name: fmt.Sprintf("ref-%02d", i), ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"})
+		}
+		var invalid []InvalidCosignerReferenceInfo
+		for _, name := range []string{"bad", "Lab", "my ref", "._lab", tc.name} {
+			invalid = append(invalid, InvalidCosignerReferenceInfo{Path: tc.dir + name + ".json", Name: name, Reason: `unsupported schema "wrong"`})
+		}
+		m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
+		for range len(references) + len(invalid) - 1 {
+			m = press(t, m, "down")
+		}
+		m = press(t, m, "enter")
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		flat := strings.Join(strings.Fields(view), "")
+		path := strings.Join(strings.Fields(tc.dir+tc.name+".json"), "")
+		if !strings.Contains(flat, path) || !strings.Contains(flat, "deleteittoclearit:") || !strings.Contains(view, "> "+tc.name[:8]) {
+			t.Errorf("%s: the hint's path or the selected row is not all on screen:\n%s", tc.name, view)
+		}
+	}
+}
+
+// The hint is about the selected row, so moving to another row clears it.
+func TestCosignerDeleteHintClearsWhenTheCursorMoves(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "down", "down", "enter")
+	if !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+		t.Fatalf("no hint after enter:\n%s", stripANSI(m.View()))
+	}
+	if m = press(t, m, "down"); !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+		t.Fatalf("the hint went though the cursor stayed on the last row:\n%s", stripANSI(m.View()))
+	}
+	if m = press(t, m, "up"); strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+		t.Fatalf("the hint stayed after the cursor moved:\n%s", stripANSI(m.View()))
+	}
+}
+
+// After a failed list the rows shown are the last list read, and the manager
+// says so whenever it shows any, reference files included.
+func TestCosignerManagerMarksAStaleListOfReferenceFilesOnly(t *testing.T) {
+	m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, listErr: "store busy",
+		invalid: []InvalidCosignerReferenceInfo{{Path: "/data/cosigners/bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true}},
+	}}, MinWidth, MinHeight)
+	if view := stripANSI(m.View()); !strings.Contains(view, "Showing the last list read.") {
+		t.Fatalf("a stale list of reference files is not marked:\n%s", view)
 	}
 }

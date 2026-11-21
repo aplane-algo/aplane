@@ -362,7 +362,10 @@ type cosignerState struct {
 	managerSelected int
 	managerScroll   int
 	managerStatus   string
-	removeFocus     int
+	// deleteHint is the path of the selected reference file that remove
+	// does not reach, which the manager says to delete.
+	deleteHint  string
+	removeFocus int
 	// removeName is what the remove confirmation removes, fixed when it
 	// opens, so a list that arrives meanwhile cannot move it to another
 	// row; removeInvalid says it is a reference file that is not a valid

@@ -65,6 +65,7 @@ func (m Model) openCosignerReferenceManager() (tea.Model, tea.Cmd) {
 	m.cosigner.managerSelected = 0
 	m.cosigner.managerScroll = 0
 	m.cosigner.managerStatus = ""
+	m.cosigner.deleteHint = ""
 	m.viewState = ViewCosignerReferences
 	return m, m.sendListCosignerReferencesCmd()
 }
@@ -79,10 +80,12 @@ func (m Model) beginManagerCosignerImport() Model {
 }
 
 func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	selected := m.cosigner.managerSelected
 	switch msg.String() {
 	case "esc", "q":
 		m.viewState = ViewKeyList
 		m.cosigner.managerStatus = ""
+		m.cosigner.deleteHint = ""
 		return m, nil
 	case "i":
 		return m.beginManagerCosignerImport(), nil
@@ -109,6 +112,10 @@ func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m = m.beginInvalidCosignerReferenceClear(bad)
 		}
 	}
+	// The hint is about the row it was given for.
+	if m.cosigner.managerSelected != selected {
+		m.cosigner.deleteHint = ""
+	}
 	m.clampCosignerManagerScroll(m.cosignerManagerRows())
 	return m, nil
 }
@@ -117,7 +124,7 @@ func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 // remove clears, as for a reference; of any other it says to delete it.
 func (m Model) beginInvalidCosignerReferenceClear(bad InvalidCosignerReferenceInfo) Model {
 	if !bad.Removable {
-		m.cosigner.managerStatus = terminalSafe(fmt.Sprintf("Remove does not reach %s; delete %s to clear it.", filepath.Base(bad.Path), bad.Path))
+		m.cosigner.deleteHint = bad.Path
 		return m
 	}
 	return m.beginCosignerRemoval(bad.Name, true)
@@ -163,7 +170,14 @@ func (m *Model) clampCosignerManagerScroll(count int) {
 }
 
 func (m Model) cosignerManagerVisibleRows() int {
-	rows := m.windowBodyHeight() - 10
+	// The title, the blank line under it and the two scroll lines take 4
+	// lines, and 6 more are kept for a list error and the status. A longer
+	// one takes rows from the list, so the window never cuts it off.
+	extra := renderedBlockHeight(m.cosignerListErrorBlock())
+	if status := m.cosignerManagerStatusBlock(); status != "" {
+		extra += 1 + renderedBlockHeight(status)
+	}
+	rows := m.windowBodyHeight() - 4 - max(6, extra)
 	if len(m.cosigner.invalid) > 0 {
 		rows -= 2 // the invalid-file note and the blank line above it
 	}
@@ -171,6 +185,66 @@ func (m Model) cosignerManagerVisibleRows() int {
 		return 3
 	}
 	return rows
+}
+
+// cosignerListErrorBlock is what the manager shows above the list when the
+// last list failed.
+func (m Model) cosignerListErrorBlock() string {
+	if m.cosigner.listErr == "" {
+		return ""
+	}
+	block := errorStyle.Render(wrapPlainText("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth())) + "\n"
+	if m.cosignerManagerRows() > 0 {
+		block += subtitleStyle.Render("Showing the last list read.") + "\n"
+	}
+	return block
+}
+
+// cosignerManagerStatusBlock is what the manager shows below the list: its
+// status, then the hint for a reference file remove does not reach, with
+// the file's path broken across lines so all of it stays on screen.
+func (m Model) cosignerManagerStatusBlock() string {
+	var lines []string
+	if m.cosigner.managerStatus != "" {
+		lines = append(lines, subtitleStyle.Render(wrapPlainText(m.cosigner.managerStatus, m.tableWidth())))
+	}
+	if m.cosigner.deleteHint != "" {
+		path := terminalSafe(m.cosigner.deleteHint)
+		lines = append(lines, subtitleStyle.Render(
+			wrapPlainText("Remove does not reach "+filepath.Base(path)+"; delete it to clear it:", m.tableWidth())+"\n"+
+				wrapPath(path, m.tableWidth())))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapPath breaks path into lines of at most width runes, after a "/" where
+// it can and inside a name wider than a line.
+func wrapPath(path string, width int) string {
+	if width <= 0 {
+		return path
+	}
+	var lines []string
+	line := ""
+	for _, part := range strings.SplitAfter(path, "/") {
+		for utf8.RuneCountInString(part) > width {
+			if line != "" {
+				lines = append(lines, line)
+				line = ""
+			}
+			runes := []rune(part)
+			lines = append(lines, string(runes[:width]))
+			part = string(runes[width:])
+		}
+		if utf8.RuneCountInString(line)+utf8.RuneCountInString(part) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		line += part
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -349,17 +423,15 @@ func (m Model) cosignerRemovalFile() (InvalidCosignerReferenceInfo, bool) {
 
 func (m Model) renderCosignerReferences() string {
 	references := m.sortedCosignerReferences()
+	rows := m.cosignerManagerRows()
+	// A list error or status that arrived after the last clamp can take
+	// rows from the list; the selected row stays on screen.
+	m.clampCosignerManagerScroll(rows)
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("Cosigner References"))
 	body.WriteString("\n\n")
 	// A failed list says so: it is not an empty one.
-	if m.cosigner.listErr != "" {
-		body.WriteString(errorStyle.Render(wrapPlainText("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth())) + "\n")
-		if len(references) > 0 {
-			body.WriteString(subtitleStyle.Render("Showing the last list read.") + "\n")
-		}
-	}
-	rows := m.cosignerManagerRows()
+	body.WriteString(m.cosignerListErrorBlock())
 	if rows == 0 && m.cosigner.listErr != "" {
 		body.WriteString(wrapPlainText("r lists them again.", m.tableWidth()) + "\n")
 	} else if rows == 0 {
@@ -406,10 +478,8 @@ func (m Model) renderCosignerReferences() string {
 		note := fmt.Sprintf("%d reference file(s) are not valid references; select one to clear it.", count)
 		body.WriteString(errorStyle.Render(ellipsize(note, m.tableWidth())) + "\n")
 	}
-	if m.cosigner.managerStatus != "" {
-		body.WriteString("\n")
-		body.WriteString(subtitleStyle.Render(wrapPlainText(m.cosigner.managerStatus, m.tableWidth())))
-		body.WriteString("\n")
+	if status := m.cosignerManagerStatusBlock(); status != "" {
+		body.WriteString("\n" + status + "\n")
 	}
 	return body.String()
 }
