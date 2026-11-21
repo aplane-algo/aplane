@@ -115,7 +115,7 @@ func newLsigArgsEngine(t *testing.T, keys []signerapi.KeyInfo, authAddrs map[str
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 			return
 		case r.Method == http.MethodPost && (r.URL.Path == "/sign" || r.URL.Path == "/plan"):
 			var req signerapi.GroupSignRequest

@@ -122,7 +122,7 @@ func newArgsFixture(t *testing.T) *argsFixture {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
 			keys := argsTestKeys()
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 			return
 		case r.Method == http.MethodPost:
 			f.signerPosts.Add(1)

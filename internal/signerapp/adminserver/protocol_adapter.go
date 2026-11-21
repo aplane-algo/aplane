@@ -211,7 +211,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 			ID:   id,
 		},
 		Success:         result.Success,
-		ArchivePath:     publicArchiveName(result.ArchivePath, ""),
+		ArchivePath:     publicArchiveName(result.ArchivePath),
 		ArchiveChecksum: result.ArchiveChecksum,
 		ArchiveSize:     result.ArchiveSize,
 		KeyCount:        result.KeyCount,
@@ -410,20 +410,15 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 
 // protocolBackupInfo names an archive by its base name only.
 func protocolBackupInfo(item adminproto.BackupInfo) protocol.BackupInfo {
-	name := publicArchiveName(item.Path, item.FileName)
 	return protocol.BackupInfo{
-		Path:      name,
-		FileName:  name,
+		FileName:  publicArchiveName(item.FileName),
 		CreatedAt: item.CreatedAt,
 		Size:      item.Size,
 		Checksum:  item.Checksum,
 	}
 }
 
-func publicArchiveName(path, fileName string) string {
-	if fileName != "" {
-		return filepath.Base(fileName)
-	}
+func publicArchiveName(path string) string {
 	if path == "" {
 		return ""
 	}
@@ -468,7 +463,6 @@ func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSet
 		PassphraseTimeout:    settings.PassphraseTimeout,
 		PassphraseMethod:     settings.PassphraseMethod,
 		NodeRole:             settings.NodeRole,
-		SSHEnabled:           settings.SSHEnabled,
 		SSHListenAddress:     settings.SSHListenAddress,
 		SSHPort:              settings.SSHPort,
 		SSHFingerprint:       settings.SSHFingerprint,

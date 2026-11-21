@@ -33,7 +33,7 @@ func TestConnectOpensNoLocalListener(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: "A"}}})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A"}}})
 	}))
 	before := listeningSockets(t)
 
@@ -94,7 +94,7 @@ func listeningSockets(t *testing.T) map[string]bool {
 // connected ends, and with it its context, while the connection stays.
 func TestConnectionOutlivesTheContextItWasMadeUnder(t *testing.T) {
 	node := sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: "A"}}})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A"}}})
 	}))
 	state := NewState()
 	ctx, cancel := context.WithCancel(context.Background())

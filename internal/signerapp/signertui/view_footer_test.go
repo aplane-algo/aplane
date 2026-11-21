@@ -114,7 +114,6 @@ func TestStandaloneAdminHeaderShowsEndpointWithoutRESTPort(t *testing.T) {
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:             "cosigner",
-			SSHEnabled:           true,
 			SSHPort:              1127,
 			SignerPort:           11270,
 			EndpointAdvertiseURL: "ssh://cosigner.example.test:1127",
@@ -142,7 +141,6 @@ func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) 
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:         "signer",
-			SSHEnabled:       true,
 			SSHListenAddress: "192.0.2.10",
 			SSHPort:          1127,
 			SignerPort:       11270,
@@ -165,7 +163,6 @@ func TestStandaloneAdminHeaderDefaultsEndpointHostForOlderSettings(t *testing.T)
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:   "signer",
-			SSHEnabled: true,
 			SSHPort:    1127,
 			SignerPort: 11270,
 		}},
@@ -182,7 +179,6 @@ func TestStandaloneAdminHeaderUsesServerDerivedEndpointForWildcardBind(t *testin
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:           "signer",
-			SSHEnabled:         true,
 			SSHListenAddress:   "0.0.0.0",
 			SSHPort:            64804,
 			SignerPort:         11270,
@@ -204,7 +200,6 @@ func TestStandaloneAdminHeaderUsesLoopbackEndpointForOlderWildcardSettings(t *te
 		width: 120,
 		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:         "signer",
-			SSHEnabled:       true,
 			SSHListenAddress: "0.0.0.0",
 			SSHPort:          64804,
 			SignerPort:       11270,

@@ -89,7 +89,6 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-				Count: 1,
 				Keys: []signerapi.KeyInfo{
 					{Address: addr, KeyType: "ed25519", PublicKeyHex: "PUB"},
 				},
@@ -130,8 +129,7 @@ func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-				Count: 0,
-				Keys:  []signerapi.KeyInfo{},
+				Keys: []signerapi.KeyInfo{},
 			}, req), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)

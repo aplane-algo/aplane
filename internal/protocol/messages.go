@@ -351,7 +351,6 @@ type ListBackupsMessage struct {
 }
 
 type BackupInfo struct {
-	Path      string `json:"path"`
 	FileName  string `json:"file_name"`
 	CreatedAt int64  `json:"created_at,omitempty"`
 	Size      int64  `json:"size,omitempty"`
@@ -1225,7 +1224,6 @@ type AdminSettingsMessage struct {
 	PassphraseTimeout    string `json:"passphrase_timeout"`
 	PassphraseMethod     string `json:"passphrase_method"`
 	NodeRole             string `json:"node_role,omitempty"`
-	SSHEnabled           bool   `json:"ssh_enabled"`
 	SSHListenAddress     string `json:"ssh_listen_address,omitempty"`
 	SSHPort              int    `json:"ssh_port,omitempty"`
 	SSHFingerprint       string `json:"ssh_fingerprint,omitempty"`

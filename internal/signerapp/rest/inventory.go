@@ -71,9 +71,11 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 		}
 		if summary.BoundedAuthorization != nil {
 			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
-			keyInfo.SigningFlow = boundedSigningFlow(summary.BoundedAuthorization)
-			if summary.BoundedAuthorization.Cosigner != nil {
-				keyInfo.CosignerComponentKeyType = summary.BoundedAuthorization.Cosigner.ComponentKeyType
+			// Without a cosigner a bounded account signs through ordinary
+			// /sign, so it advertises no flow.
+			if cosigner := summary.BoundedAuthorization.Cosigner; cosigner != nil {
+				keyInfo.SigningFlow = signerapi.SigningFlowCosigned1
+				keyInfo.CosignerComponentKeyType = cosigner.ComponentKeyType
 			}
 			keyInfo.BoundedAuthorization = boundedInfo(summary.BoundedAuthorization)
 		}
@@ -167,10 +169,7 @@ func keysAnswer(ir *productruntime.Runtime, lockGen uint64, keyList []signerapi.
 	if !ir.IsUnlocked() || ir.LockGeneration() != lockGen {
 		return nil, lockedError()
 	}
-	return &signerapi.KeysResponse{
-		Count: len(keyList),
-		Keys:  keyList,
-	}, nil
+	return &signerapi.KeysResponse{Keys: keyList}, nil
 }
 
 // BuildKeyTypes lists the key types the node offers for its role. While the
@@ -298,8 +297,8 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 	info.Description = lsigprovider.DescriptionText(provider.Description())
 	if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
 		if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
-			info.SigningFlow = boundedSigningFlow(metadata)
 			if metadata.Cosigner != nil {
+				info.SigningFlow = signerapi.SigningFlowCosigned1
 				info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
 			}
 			info.BoundedAuthorization = boundedInfo(metadata)
@@ -328,13 +327,6 @@ type boundaryGrammarProvider interface {
 
 type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
-}
-
-func boundedSigningFlow(metadata *boundedmeta.Metadata) string {
-	if metadata != nil && metadata.Cosigner != nil {
-		return signerapi.SigningFlowCosigned1
-	}
-	return signerapi.SigningFlowBounded1
 }
 
 func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorizationInfo {

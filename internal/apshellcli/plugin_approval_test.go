@@ -400,7 +400,7 @@ func newRekeyReviewFixture(t *testing.T) rekeyReviewFixture {
 		}
 		f.keyFetches.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 	}))
 	t.Cleanup(signer.Close)
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)

@@ -617,15 +617,10 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	})
 	defer stopCancel()
 
-	// Set up pipes for output
+	// The server writes every reply, an ERROR line included, to stdout.
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		return none, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		return none, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := session.Start(enrollmentCommandLine(label)); err != nil {
@@ -641,16 +636,6 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		onEnrollmentStart(clientFingerprint)
 	}
 
-	// Drain stdout (the acknowledgement on success) and stderr (error detail)
-	// concurrently: reading them sequentially can deadlock if the remote
-	// command fills the unread pipe's window before closing the other.
-	var errOutput []byte
-	stderrDone := make(chan struct{})
-	go func() {
-		defer close(stderrDone)
-		errOutput, _ = io.ReadAll(stderr)
-	}()
-
 	output, err := io.ReadAll(stdout)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -658,7 +643,6 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		}
 		return none, fmt.Errorf("failed to read response: %w", err)
 	}
-	<-stderrDone
 	if ctx.Err() != nil {
 		return none, ctx.Err()
 	}
@@ -668,11 +652,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		if ctx.Err() != nil {
 			return none, ctx.Err()
 		}
-		errMsg := strings.TrimSpace(string(errOutput))
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(string(output))
-		}
-		if errMsg != "" {
+		if errMsg := strings.TrimSpace(string(output)); errMsg != "" {
 			return none, fmt.Errorf("%s", errMsg)
 		}
 		return none, fmt.Errorf("enrollment failed: %w", err)

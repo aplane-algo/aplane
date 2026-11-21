@@ -372,7 +372,7 @@ func (s Store) findBackup(name string) (protocol.BackupInfo, error) {
 	}
 	var checksumMatch *protocol.BackupInfo
 	for _, item := range result.Backups {
-		if item.FileName == name || item.Path == name {
+		if item.FileName == name {
 			return item, nil
 		}
 		if item.Checksum != "" && item.Checksum == name {

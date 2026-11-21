@@ -293,7 +293,7 @@ func newCLICosignerNode(t *testing.T, reference witness.PublicReference) *sshtes
 		case "/status":
 			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{NodeRole: "cosigner", State: "unlocked"})
 		case "/keys":
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{
 				Address: reference.WitnessKeyID, PublicKeyHex: reference.PublicKeyHex,
 				KeyType: reference.KeyType, IsWitnessKey: true,
 			}}})

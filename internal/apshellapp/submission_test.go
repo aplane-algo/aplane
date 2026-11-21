@@ -146,7 +146,7 @@ func newPluginRekeyFixture(t *testing.T, keys []signerapi.KeyInfo) *pluginRekeyF
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 			return
 		}
 		f.signerCalls.Add(1)

@@ -520,7 +520,7 @@ func classifyCosignerDiscoveryQueryCode(code string, err error) error {
 		return nil
 	case signerapi.ErrCodeLocked:
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryLocked, err)
-	case signerapi.ErrCodeUnauthorized, signerapi.ErrCodeForbidden, signerapi.ErrCodeInvalidPassphrase:
+	case signerapi.ErrCodeUnauthorized, signerapi.ErrCodeForbidden:
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryAuth, err)
 	case signerapi.ErrCodeUnavailable, signerapi.ErrCodeCacheRefresh, signerapi.ErrCodeInternal:
 		return fmt.Errorf("%w: %w", ErrCosignerDiscoveryUnavailable, err)

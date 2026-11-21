@@ -5,8 +5,12 @@ package daemon
 
 import "net/http"
 
-func (fs *Signer) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productRuntime(), fs.currentSSHServer() != nil, fs.ipcServer != nil))
+func (fs *Signer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productRuntime()))
 }
 
 func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -18,12 +22,10 @@ func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *Signer) handleKeys(w http.ResponseWriter, r *http.Request) {
-	ir, status, errMsg := fs.productRuntimeFromRequest(r)
-	if errMsg != "" {
-		writeErrorJSON(w, status, errMsg)
+	ir, ok := requireMethodAndRuntime(fs, w, r, http.MethodGet)
+	if !ok {
 		return
 	}
-
 	result, err := fs.restService().Keys(ir)
 	if err != nil {
 		writeServiceErrorJSON(w, err)
@@ -33,12 +35,10 @@ func (fs *Signer) handleKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fs *Signer) handleKeyTypes(w http.ResponseWriter, r *http.Request) {
-	ir, status, errMsg := fs.productRuntimeFromRequest(r)
-	if errMsg != "" {
-		writeErrorJSON(w, status, errMsg)
+	ir, ok := requireMethodAndRuntime(fs, w, r, http.MethodGet)
+	if !ok {
 		return
 	}
-
 	result, err := fs.restService().KeyTypes(ir)
 	if err != nil {
 		writeServiceErrorJSON(w, err)

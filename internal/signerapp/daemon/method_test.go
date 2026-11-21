@@ -10,7 +10,8 @@ import (
 	"testing"
 )
 
-func TestHandlerMethodCompatibilitySurface(t *testing.T) {
+// Every route answers only its documented method; any other is 405.
+func TestHandlersEnforceTheirMethod(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -85,28 +86,36 @@ func TestHandlerMethodCompatibilitySurface(t *testing.T) {
 			wantBody:   "Method not allowed",
 		},
 		{
-			name: "keys does not enforce GET today",
+			name: "keys requires GET",
 			call: func(w *httptest.ResponseRecorder) {
 				server.handleKeys(w, requestWithIdentity(http.MethodPost, "/keys", nil))
 			},
-			wantStatus: http.StatusOK,
-			wantBody:   "\"keys\":",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
 		},
 		{
-			name: "keytypes does not enforce GET today",
+			name: "keytypes requires GET",
 			call: func(w *httptest.ResponseRecorder) {
 				server.handleKeyTypes(w, requestWithIdentity(http.MethodPost, "/keytypes", nil))
 			},
-			wantStatus: http.StatusOK,
-			wantBody:   "\"key_types\":",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
 		},
 		{
-			name: "health is method-agnostic today",
+			name: "health requires GET",
 			call: func(w *httptest.ResponseRecorder) {
-				server.handleHealth(w, requestWithIdentity(http.MethodPost, "/health", nil))
+				server.handleHealth(w, httptest.NewRequest(http.MethodPost, "/health", nil))
 			},
-			wantStatus: http.StatusOK,
-			wantBody:   "\"service\":\"Signer\"",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
+		},
+		{
+			name: "health refuses HEAD",
+			call: func(w *httptest.ResponseRecorder) {
+				server.handleHealth(w, httptest.NewRequest(http.MethodHead, "/health", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
 		},
 	}
 

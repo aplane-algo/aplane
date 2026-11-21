@@ -20,7 +20,6 @@ import (
 )
 
 type ManagedBackupInfo struct {
-	Path     string
 	FileName string
 	// CreatedAt is the archive file's modification time.
 	CreatedAt time.Time
@@ -165,7 +164,7 @@ func ListManagedBackups(paths storepaths.Paths) ([]ManagedBackupInfo, error) {
 			return nil, fmt.Errorf("checksum backup archive %s: %w", entry.Name(), err)
 		}
 		backups = append(backups, ManagedBackupInfo{
-			Path: path, FileName: entry.Name(), CreatedAt: info.ModTime().UTC(),
+			FileName: entry.Name(), CreatedAt: info.ModTime().UTC(),
 			Size: size, Checksum: checksum,
 		})
 	}

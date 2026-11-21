@@ -340,7 +340,7 @@ func (m Model) adminEndpointDisplayURL() string {
 	if endpoint := strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL); endpoint != "" {
 		return endpoint
 	}
-	if !m.admin.settings.SSHEnabled || m.admin.settings.SSHPort <= 0 {
+	if m.admin.settings.SSHPort <= 0 {
 		return ""
 	}
 	host := strings.TrimSpace(m.admin.settings.SSHListenAddress)

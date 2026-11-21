@@ -97,9 +97,9 @@ func newSubmitFixture(t *testing.T, mode string) *submitFixture {
 			for _, account := range []crypto.Account{f.a, f.b, f.c} {
 				infos = append(infos, signerapi.KeyInfo{Address: account.Address.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true})
 			}
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(infos), Keys: infos})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: infos})
 		case r.Method == http.MethodGet && r.URL.Path == "/status":
-			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{State: "unlocked", ReadyForSigning: true, KeyCount: 3})
+			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{State: "unlocked", KeyCount: 3})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
 			var req signerapi.GroupSignRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

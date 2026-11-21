@@ -178,8 +178,7 @@ signature algorithm.
 
 | Flow | What must happen |
 |---|---|
-| Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. |
-| `bounded1` | An account with the overlays but no cosigner: a bounded host's program enforces the compiled `bounded2` transaction envelope, a plain host's (`plain1`) only its rekey setting. A spending-key rekey, or a rekey to an address on the account's rekey-to list, when the account declares one, uses the ordinary signing path. |
+| Ordinary, empty label | `/sign` produces native signatures or assembles the held LogicSig's bytecode and arguments. Native keys, DSA-backed LogicSigs, and generic LogicSigs have different cryptographic behavior within this path. An account with the overlays but no cosigner takes it too: a bounded host's program enforces the compiled `bounded2` transaction envelope, a plain host's (`plain1`) only its rekey setting, and a spending-key rekey or a rekey to an address on the account's rekey-to list is signed here as well. |
 | `cosigned1` | A cosigned account, on a bounded or plain host: the program additionally requires a cosigner for spending and for a cosigned rekey. A rekey to an address on the account's rekey-to list takes the spending key alone; the client asks the cosigner for every other target. Plain `/sign` refuses these accounts. |
 | `rotating1` | Each accepted spend also hands authorization to the next deterministically derived stage. Preparation and signing use dedicated rotating endpoints. |
 
@@ -422,7 +421,7 @@ bounded-cosigner profile.
 
 Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing composer-owned transaction
 authorization, bounded schema v2, effect
-classification, or the `bounded1` signing flow.
+classification, or how a bounded account signs through `/sign`.
 
 Read [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) and the applicable
 `FORMAL_*_MODEL.md` document before changing behavior that has formalized

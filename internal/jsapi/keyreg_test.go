@@ -77,7 +77,7 @@ func newKeyregFixture(t *testing.T) *keyregFixture {
 				keys = append(keys, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 			return
 		}
 		if r.Method == http.MethodPost && (r.URL.Path == "/sign" || r.URL.Path == "/plan") {

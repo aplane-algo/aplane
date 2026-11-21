@@ -57,8 +57,7 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-				Count: 1,
-				Keys:  []signerapi.KeyInfo{{Address: newKey, KeyType: "test.generic-policy.v1"}},
+				Keys: []signerapi.KeyInfo{{Address: newKey, KeyType: "test.generic-policy.v1"}},
 			}, req), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)

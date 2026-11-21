@@ -200,7 +200,7 @@ func (s Service) CommitBackupImport(req adminproto.CommitBackupImportRequest) ad
 			return fmt.Errorf("claimed backup upload changed during validation")
 		}
 		info = adminproto.BackupInfo{
-			Path: destination, FileName: fileName, CreatedAt: claimInfo.ModTime().UTC().Unix(), Size: size, Checksum: checksum,
+			FileName: fileName, CreatedAt: claimInfo.ModTime().UTC().Unix(), Size: size, Checksum: checksum,
 		}
 		if err := os.Rename(claimPath, destination); err != nil {
 			return err

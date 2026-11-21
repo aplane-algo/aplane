@@ -285,9 +285,9 @@ bounded assembly, for spends and rekeys, on a plain or bounded host. Each bounde
 path; the client asks the cosigner for every target but a `listed_rekey` one,
 sends no cosigner request when no target needs one, and budgets each cosigned
 position in a mixed group on its component's path. It rejects unknown labels,
-`bounded-cosigner1` and the retired `cosigner1` among them. Accounts with the
-overlays but no online cosigner advertise `bounded1` and continue through
-ordinary signing. A `plain1` account has no fee ceiling: the client caches each
+`bounded-cosigner1` and the retired `cosigner1` and `bounded1` among them.
+Accounts with the overlays but no online cosigner advertise no flow and
+continue through ordinary signing. A `plain1` account has no fee ceiling: the client caches each
 account's contract and checks a planned fee only against a `bounded2` account's
 `max_fee`.
 

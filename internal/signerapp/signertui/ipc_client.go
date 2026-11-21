@@ -704,7 +704,6 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 				PassphraseTimeout:    settings.PassphraseTimeout,
 				PassphraseMethod:     settings.PassphraseMethod,
 				NodeRole:             settings.NodeRole,
-				SSHEnabled:           settings.SSHEnabled,
 				SSHListenAddress:     settings.SSHListenAddress,
 				SSHPort:              settings.SSHPort,
 				SSHFingerprint:       settings.SSHFingerprint,

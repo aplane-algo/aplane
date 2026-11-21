@@ -320,48 +320,25 @@ type ErrorResponse struct {
 	Code  string `json:"code,omitempty"`
 }
 
-const (
-	ProtocolVersionMajor = 2
-	ProtocolVersionMinor = 0
-)
-
-// ProtocolVersion is the signer HTTP API protocol version shape surfaced by
-// /health and /status. It is diagnostic, not capability negotiation.
-type ProtocolVersion struct {
-	Major int `json:"major"`
-	Minor int `json:"minor"`
-}
-
-// CurrentProtocolVersion returns the current signer HTTP API protocol version.
-func CurrentProtocolVersion() ProtocolVersion {
-	return ProtocolVersion{Major: ProtocolVersionMajor, Minor: ProtocolVersionMinor}
-}
-
 // HealthResponse is the response from the /health endpoint.
 type HealthResponse struct {
-	Status          string          `json:"status"`
-	Service         string          `json:"service"`
-	ProtocolVersion ProtocolVersion `json:"protocol_version"`
-	BuildVersion    string          `json:"build_version"`
-	SignerLocked    bool            `json:"signer_locked"`
-	ReadyForSigning bool            `json:"ready_for_signing"`
-	SSHEnabled      bool            `json:"ssh_enabled"`
-	IPCEnabled      bool            `json:"ipc_enabled"`
-	Warnings        []string        `json:"warnings,omitempty"`
+	Status       string   `json:"status"`
+	Service      string   `json:"service"`
+	BuildVersion string   `json:"build_version"`
+	SignerLocked bool     `json:"signer_locked"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 // StatusResponse is the response from the /status endpoint.
 type StatusResponse struct {
-	NodeRole            string          `json:"node_role,omitempty"`
-	ProtocolVersion     ProtocolVersion `json:"protocol_version"`
-	BuildVersion        string          `json:"build_version"`
-	State               string          `json:"state"`
-	SignerLocked        bool            `json:"signer_locked"`
-	ReadyForSigning     bool            `json:"ready_for_signing"`
-	KeyCount            int             `json:"key_count"`
-	KeysetRevision      uint64          `json:"keyset_revision"`
-	ApprovalWaitSeconds int64           `json:"approval_wait_seconds,omitempty"`
-	Warnings            []string        `json:"warnings,omitempty"`
+	NodeRole            string   `json:"node_role,omitempty"`
+	BuildVersion        string   `json:"build_version"`
+	State               string   `json:"state"`
+	SignerLocked        bool     `json:"signer_locked"`
+	KeyCount            int      `json:"key_count"`
+	KeysetRevision      uint64   `json:"keyset_revision"`
+	ApprovalWaitSeconds int64    `json:"approval_wait_seconds,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
 	// Notes are informational status lines that need no action, such as a
 	// rotating account's release that is still in flight.
 	Notes []string `json:"notes,omitempty"`
@@ -374,13 +351,8 @@ type StatusResponse struct {
 // Signing flow labels name a frozen client choreography: any change to one mints
 // a new label, and unrelated mechanisms get their own label family. Clients route
 // on signing_flow and must fail fast on labels they do not implement; an empty
-// signing_flow means the ordinary /sign path.
-
-// SigningFlowBounded1 names the transaction-aware LogicSig choreography. The
-// signer remains authoritative for classification and assembly; clients use
-// this label only to select the frozen bounded1 request flow and must reject
-// unknown labels.
-const SigningFlowBounded1 = "bounded1"
+// signing_flow means the ordinary /sign path, which a bounded account without a
+// cosigner takes too.
 
 // SigningFlowCosigned1 names the cosigned account choreography: signer-owned
 // base component release, cosigner-role component signing, and source-aware
@@ -586,8 +558,7 @@ type KeyInfo struct {
 
 // KeysResponse is the response from the /keys endpoint.
 type KeysResponse struct {
-	Count int       `json:"count"`
-	Keys  []KeyInfo `json:"keys"`
+	Keys []KeyInfo `json:"keys"`
 }
 
 // AdminGenerateRequest is the request payload for POST /admin/generate.

@@ -284,7 +284,7 @@ func TestSeveralUnsavedSettingsShareOneWarningLine(t *testing.T) {
 // exactly MinWidth), so that is the width tested.
 func TestUnsavedSettingWarningAddsNoRowAtMinSize(t *testing.T) {
 	base := AdminSettings{
-		PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHEnabled: true, SSHPort: 2222,
+		PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHPort: 2222,
 		SSHFingerprint: "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
 	}
 	plain := base
@@ -490,7 +490,7 @@ func TestPopulatedSettingsPanelFitsAtMinSize(t *testing.T) {
 		m := sizedForTest(t, Model{viewState: ViewAdminPanel, standalone: standalone, connectionState: ConnectionConnected,
 			signerStatusKnown: true, signerState: signerRuntimeUnlocked, keyCount: 12,
 			admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
-				PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHEnabled: true, SSHPort: 2222,
+				PassphraseMethod: "none", Theme: "auto", NodeRole: "signer", SSHPort: 2222,
 				SSHFingerprint:  "SHA256:Abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
 				UnsavedSettings: []string{adminproto.AdminSettingLockOnDisconnect},
 			}}}, MinWidth, MinHeight)

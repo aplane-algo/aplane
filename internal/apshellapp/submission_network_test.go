@@ -201,7 +201,7 @@ func TestSubmitPluginTransactionsRefusesARekeyingGroupForAnotherNetwork(t *testi
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+				_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 			}))
 			t.Cleanup(signer.Close)
 			client, err := algod.MakeClient(algodServer.URL, "")

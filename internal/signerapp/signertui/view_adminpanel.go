@@ -54,19 +54,10 @@ func (m Model) adminRows() []adminRow {
 		adminRow{section: "Runtime", label: "Policies", key: "", value: "view active policy", editable: false, action: "open_policies"},
 	)
 
-	if s.SSHEnabled {
-		rows = append(rows,
-			adminRow{section: "Runtime", label: "SSH port", key: "", value: fmt.Sprintf("%d", s.SSHPort), editable: false},
-			adminRow{section: "Runtime", label: "SSH fingerprint", key: "", value: s.SSHFingerprint, editable: false},
-			adminRow{section: "Runtime", label: "SSH clients connected", key: "", value: fmt.Sprintf("%d", s.SSHClients), editable: false},
-		)
-	} else {
-		rows = append(rows,
-			adminRow{section: "Runtime", label: "SSH", key: "", value: "disabled", editable: false},
-		)
-	}
-
 	rows = append(rows,
+		adminRow{section: "Runtime", label: "SSH port", key: "", value: fmt.Sprintf("%d", s.SSHPort), editable: false},
+		adminRow{section: "Runtime", label: "SSH fingerprint", key: "", value: s.SSHFingerprint, editable: false},
+		adminRow{section: "Runtime", label: "SSH clients connected", key: "", value: fmt.Sprintf("%d", s.SSHClients), editable: false},
 		adminRow{section: "Runtime", label: "Build", key: "", value: version.Short(), editable: false},
 	)
 

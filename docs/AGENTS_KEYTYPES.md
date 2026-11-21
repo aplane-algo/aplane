@@ -229,11 +229,11 @@ For bounded (`bounded2`) work, read
   stay in the key's stored parameters and are never projected to `/keys`, and
   its salts derive from the spending key, so only the account's own signer can
   build the `listed_rekey` proof;
-- `/keys` and `/keytypes` advertise `signing_flow: bounded1` or
-  `cosigned1` from durable metadata; every client must dispatch empty,
-  `bounded1`, `cosigned1`, and `rotating1` explicitly
-  and reject unknown flows, `bounded-cosigner1` and the retired `cosigner1`
-  among them;
+- `/keys` and `/keytypes` advertise `signing_flow: cosigned1` from durable
+  metadata for a cosigned account and no flow for a bounded account without a
+  cosigner, which signs through ordinary `/sign`; every client must dispatch
+  empty, `cosigned1`, and `rotating1` explicitly and reject unknown flows,
+  `bounded-cosigner1` and the retired `cosigner1` and `bounded1` among them;
 - the signer classifies each bounded target through `txeffects.ClassifyFor`
   against the path declaration projected from stored metadata, and every
   decision names a rule;

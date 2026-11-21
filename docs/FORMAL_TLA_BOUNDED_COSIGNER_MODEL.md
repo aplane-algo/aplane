@@ -10,7 +10,7 @@ final acceptance boundary of the `cosigned1` choreography, and the passthrough
 binding (A8) it took over from the retired cosigned assembly model. First-party
 orchestration releases an ordinary bounded base signature, requests the
 cosigner only after signer policy and operator approval, and then uses the
-shared `/sign/assemble` route with the distinct `bounded-cosigner` target kind
+shared `/sign/assemble` route, whose targets are all bounded-cosigner targets,
 to derive and place the declared arguments.
 
 A cosigned account's target takes one of three paths. A spend and a cosigned
@@ -178,9 +178,10 @@ in their place. Anchors are in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
   Conflicting inventory fails closed for the whole node.
 - **A15, clients route on versioned signing-flow metadata.** The cosigned
   choreography is `cosigned1`, frozen: a change mints a new label. Clients take
-  `""` and `bounded1` down the plain `/sign` path, `cosigned1` through component
-  orchestration and `rotating1` through the rotating flow, and refuse any other
-  label, `cosigner1` included, before any component request.
+  `""` down the plain `/sign` path, a bounded account without a cosigner
+  included, `cosigned1` through component orchestration and `rotating1` through
+  the rotating flow, and refuse any other label, `cosigner1` and `bounded1`
+  included, before any component request.
 
 ## How to check
 
