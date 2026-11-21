@@ -6,6 +6,7 @@ package tui
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -133,4 +134,32 @@ func TestKeyDetailsOpenOnlyOnTheirOwnReply(t *testing.T) {
 			t.Fatalf("view %v address %q, want %s's details", m.viewState, m.details.address, addressB)
 		}
 	})
+}
+
+// A key details read that ends in a failed send or a daemon error, such as a
+// lock, reports it in the status line, and the key list stops waiting on it.
+func TestFailedKeyDetailsReadEndsTheWait(t *testing.T) {
+	const address = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+	m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+		keylist: keyListState{keys: []KeyInfo{{Address: address, KeyType: "ed25519"}}}}, MinWidth, MinHeight)
+	for _, tc := range []struct {
+		name    string
+		failure func(id string, cmd tea.Cmd) tea.Msg
+		want    string
+	}{
+		{"failed send", func(_ string, cmd tea.Cmd) tea.Msg { return cmd() }, "not connected"},
+		{"daemon error", func(id string, _ tea.Cmd) tea.Msg { return ErrorMsg{ID: id, Error: errors.New("signer is locked")} }, "signer is locked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next, cmd := m.handleKeyPress(browserKey("enter"))
+			got := next.(Model)
+			if got.details.requestID == "" || cmd == nil {
+				t.Fatalf("enter sent no read: id %q", got.details.requestID)
+			}
+			got = updateModel(t, got, tc.failure(got.details.requestID, cmd))
+			if got.details.requestID != "" || got.lastError != tc.want {
+				t.Fatalf("after the failure: waiting on %q, error %q; want no wait and %q", got.details.requestID, got.lastError, tc.want)
+			}
+		})
+	}
 }

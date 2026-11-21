@@ -128,6 +128,9 @@ func (m Model) viewFooterText() string {
 		}
 		return "up/down: Select | enter: Details | i: Import file | p: Paste JSON | r: Refresh | esc/q: Back"
 	case ViewCosignerReferenceDetails:
+		if _, ok := m.detailsCosignerReference(); !ok {
+			return "esc/q: Back"
+		}
 		return "g: Generate account | d: Remove alias | esc/q: Back"
 	case ViewCosignerRemoveConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Remove | n/esc: Cancel"

@@ -255,7 +255,7 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 		}}},
 	}
 
-	nextModel, _ := m.beginDetailsCosignerGeneration()
+	nextModel, _ := m.handleCosignerReferenceDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	next := nextModel.(Model)
 	if next.viewState != ViewCosignerGenerateType {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerGenerateType)
@@ -452,7 +452,7 @@ func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T
 	}
 	view := stripANSI(m.View())
 	checkFitsMinSize(t, view)
-	want := "Remove does not reach my ref.json; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
+	want := "Remove does not reach this file; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
 	if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, want) {
 		t.Errorf("%q missing from:\n%s", want, view)
 	}
@@ -601,5 +601,134 @@ func TestCosignerReferenceDetailsKeepTheirReferenceAcrossAList(t *testing.T) {
 	m = updateModel(t, m, CosignerReferencesMsg{References: references[:1], Invalid: m.cosigner.invalid})
 	if view := stripANSI(m.View()); !strings.Contains(view, "Cosigner reference is no longer available") {
 		t.Fatalf("details after their reference went:\n%s", view)
+	}
+}
+
+// fullInvalidCosignerReferencesModel is the manager at the minimum window
+// size with 12 references and 5 reference files in dir that remove does not
+// reach, the last named name, with the cursor on that last row.
+func fullInvalidCosignerReferencesModel(t *testing.T, dir, name string, standalone bool) Model {
+	t.Helper()
+	var references []CosignerReferenceInfo
+	for i := 0; i < 12; i++ {
+		references = append(references, CosignerReferenceInfo{Name: fmt.Sprintf("ref-%02d", i), ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"})
+	}
+	var invalid []InvalidCosignerReferenceInfo
+	for _, file := range []string{"bad", "Lab", "my ref", "._lab", name} {
+		invalid = append(invalid, InvalidCosignerReferenceInfo{Path: dir + file + ".json", Name: file, Reason: `unsupported schema "wrong"`})
+	}
+	m := sizedForTest(t, Model{standalone: standalone, viewState: ViewCosignerReferences, connectionState: ConnectionConnected,
+		cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
+	for range len(references) + len(invalid) - 1 {
+		m = press(t, m, "down")
+	}
+	return m
+}
+
+// When the status and a list error need more room than the manager keeps
+// below its list, the list gives up rows, so the window cuts none of it: with
+// a status left by an earlier removal, with a failed re-list, and with a file
+// name longer than a line. Each case takes rows from the list, and the hint's
+// path and the selected row stay on screen, in a pane and standalone.
+func TestCosignerManagerGivesUpRowsForALongStatus(t *testing.T) {
+	const (
+		deepDir = "/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/"
+		spaced  = "copy of the west cosigner reference from the old machine before the move"
+		// Short, so the status bar's copy of it fits the window too.
+		listError = "store busy; try again"
+	)
+	long := strings.Repeat("x", 100)
+	for _, tc := range []struct {
+		name, dir, file string
+		after           func(Model) Model
+	}{
+		{"status from an earlier removal", deepDir, spaced, func(m Model) Model {
+			m.cosigner.managerStatus = "Removed bad"
+			return m
+		}},
+		{"failed re-list", deepDir, "a-really-long-file-name-for-a-cosigner-reference", func(m Model) Model {
+			return updateModel(t, m, CosignerReferencesMsg{Error: listError})
+		}},
+		{"file name longer than a line", deepDir, long, func(m Model) Model { return m }},
+	} {
+		for _, standalone := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s standalone %v", tc.name, standalone), func(t *testing.T) {
+				m := fullInvalidCosignerReferencesModel(t, tc.dir, tc.file, standalone)
+				m = tc.after(press(t, m, "enter"))
+				quiet := m
+				quiet.cosigner.managerStatus, quiet.cosigner.deleteHint, quiet.cosigner.listErr = "", "", ""
+				if m.cosignerManagerVisibleRows() >= quiet.cosignerManagerVisibleRows() {
+					t.Fatalf("the list keeps %d rows, as many as with no status: the case does not need more room", m.cosignerManagerVisibleRows())
+				}
+				view := stripANSI(m.View())
+				checkFitsMinSize(t, view)
+				flat := strings.Join(strings.Fields(view), "")
+				path := strings.Join(strings.Fields(tc.dir+tc.file+".json"), "")
+				if !strings.Contains(flat, path) || !strings.Contains(view, "> "+tc.file[:8]) {
+					t.Errorf("the hint's path or the selected row is not all on screen:\n%s", view)
+				}
+			})
+		}
+	}
+}
+
+// The hint stays only while the selected row is still the file it names. The
+// operator deletes the file and refreshes, so the cursor lands on bad.json;
+// a reference sorted ahead of the rows, as an import adds, moves another row
+// under the cursor. A list that leaves the file under the cursor keeps it.
+func TestCosignerDeleteHintFollowsItsRowAcrossAList(t *testing.T) {
+	aaa := CosignerReferenceInfo{Name: "aaa", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"}
+	for _, tc := range []struct {
+		name     string
+		list     func(Model) CosignerReferencesMsg
+		wantHint bool
+	}{
+		{"file deleted", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: m.cosigner.references, Invalid: m.cosigner.invalid[:1]}
+		}, false},
+		{"rows moved", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: append(append([]CosignerReferenceInfo(nil), m.cosigner.references...), aaa), Invalid: m.cosigner.invalid}
+		}, false},
+		{"same rows", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: m.cosigner.references, Invalid: m.cosigner.invalid}
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := invalidCosignerReferencesModel(t)
+			m = press(t, m, "down", "down", "down", "enter", "r")
+			if !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+				t.Fatalf("no hint after enter:\n%s", stripANSI(m.View()))
+			}
+			m = updateModel(t, m, tc.list(m))
+			view := stripANSI(m.View())
+			checkFitsMinSize(t, view)
+			if got := strings.Contains(view, "delete it to clear it"); got != tc.wantHint {
+				t.Fatalf("hint shown %v, want %v, with the cursor on row %d:\n%s", got, tc.wantHint, m.cosigner.managerSelected, view)
+			}
+		})
+	}
+}
+
+// A details screen whose reference the list no longer holds offers only Back:
+// its footer names no action, and g and d do nothing.
+func TestGoneCosignerReferenceDetailsOfferOnlyBack(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "enter")
+	m = updateModel(t, m, CosignerReferencesMsg{References: m.cosigner.references[:1], Invalid: m.cosigner.invalid})
+	view := stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	if !strings.Contains(view, "no longer available") || !strings.Contains(view, "esc/q: Back") ||
+		strings.Contains(view, "g: Generate") || strings.Contains(view, "d: Remove") {
+		t.Fatalf("details of a gone reference:\n%s", view)
+	}
+	for _, key := range []string{"g", "d"} {
+		next, cmd := m.handleKeyPress(browserKey(key))
+		got := next.(Model)
+		if got.viewState != ViewCosignerReferenceDetails || cmd != nil || got.cosigner.managerStatus != "" || got.cosigner.importError != "" {
+			t.Fatalf("%s acted: view %v cmd nil=%v status %q error %q", key, got.viewState, cmd == nil, got.cosigner.managerStatus, got.cosigner.importError)
+		}
+	}
+	if m = press(t, m, "esc"); m.viewState != ViewCosignerReferences {
+		t.Fatalf("esc = view %v, want the list", m.viewState)
 	}
 }
