@@ -405,8 +405,9 @@ func TestStatusBarFitsEveryPartByRank(t *testing.T) {
 	lines := bar(all)
 	joined := strings.Join(lines, "\n")
 	if len(lines) != 1+maxErrorLines || !strings.HasPrefix(lines[1], "ALERT: the store root") || !strings.HasSuffix(strings.TrimRight(lines[1], " "), "ALERT-END") ||
-		!strings.Contains(joined, "WARNING-END") || !strings.HasSuffix(strings.TrimRight(lines[3], " "), "ERROR-END") || strings.Contains(joined, "NOTICE-END") {
-		t.Errorf("four long parts in three rows: one row each for the alert, the warning and the error, and none for the notice:\n%s", joined)
+		!strings.Contains(joined, "WARNING-END") || !strings.HasSuffix(strings.TrimRight(lines[3], " "), "ERROR-END") || strings.Contains(joined, "NOTICE-END") ||
+		!strings.HasSuffix(strings.TrimRight(lines[0], " "), "| +1 more: notice") {
+		t.Errorf("four long parts in three rows: one row each for the alert, the warning and the error, and the notice counted:\n%s", joined)
 	}
 
 	two := base
@@ -444,6 +445,48 @@ func TestFailedBackupListShowsOnceOnTheBackupsPage(t *testing.T) {
 		m = press(t, m, "esc")
 		if view := stripANSI(m.View()); m.viewState != ViewKeyList || !strings.Contains(view, "Error: Backup list failed: open") {
 			t.Errorf("standalone %v: the key list does not report the failed list:\n%s", standalone, view)
+		}
+	}
+}
+
+// The status bar never leaves a part out without saying so, and never the
+// error: lost notifications, which can be a missed approval, rank with the
+// signer's alerts, the error keeps a row however many alerts there are, and
+// a count on the line names what does not fit.
+func TestStatusBarCountsWhatItLeavesOut(t *testing.T) {
+	alert := func(i int) string {
+		return fmt.Sprintf("policy %d names network testnet-%d, which this node does not know; the document keeps working", i, i)
+	}
+	for _, tc := range []struct {
+		name   string
+		alerts []string
+		conn   ConnectionState
+		state  signerRuntimeState
+		count  string
+	}{
+		{"a short alert and two long ones", []string{"store health: archive member bad", alert(1), alert(2)},
+			ConnectionConnected, signerRuntimeUnlocked, "| +4 more: alert, warning, notice"},
+		{"disconnected and in recovery with two alerts", []string{alert(0), alert(1)},
+			ConnectionDisconnected, signerRuntimeRecovery, "| +3"},
+		{"three long alerts", []string{alert(0), alert(1), alert(2)},
+			ConnectionConnected, signerRuntimeUnlocked, "| +4 more: alert, warning, notice"},
+		{"five alerts", []string{alert(0), alert(1), alert(2), alert(3), alert(4)},
+			ConnectionConnected, signerRuntimeUnlocked, "| +6 more: alert, warning, notice"},
+	} {
+		m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: tc.conn, signerStatusKnown: true, signerState: tc.state, keyCount: 123,
+			signerWarnings: tc.alerts, notificationsLost: 2, lastError: longDaemonError, lastWarning: "the policy was applied but its sidecar is stale",
+			lastNotice: "Copied the address to the clipboard"}, MinWidth, MinHeight)
+		lines := strings.Split(stripANSI(m.renderStatusBar()), "\n")
+		bar := strings.Join(lines, "\n")
+		if len(lines) != 1+maxErrorLines || !strings.HasSuffix(strings.TrimRight(lines[0], " "), tc.count) ||
+			!strings.Contains(bar, "Warning: 2 signer notifications lost") || !strings.Contains(bar, "ALERT: ") ||
+			!strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), "permission denied") {
+			t.Errorf("%s: want the lost notifications, an alert, the error, and %q on the line:\n%s", tc.name, tc.count, bar)
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > MinWidth {
+				t.Errorf("%s: line wider than the window: %q", tc.name, line)
+			}
 		}
 	}
 }

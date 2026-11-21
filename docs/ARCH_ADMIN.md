@@ -1297,9 +1297,11 @@ the window with a word wider than a line, such as a path, broken
 screen sizes itself from the window body under the bar as drawn
 (`windowBodyHeight`), so a list keeps its selected row in view and a pager
 its "more" markers. The bar takes at most three rows under its line. They go
-to the alert first, then the error, the warning and the notice, a row kept
-for each later part while rows last, and a part left without a row is not
-shown. The bar leaves out a failed list that its screen, the cosigner
+to the alerts first, lost notifications among them since a lost notification
+can be an approval request, then the error, the warning and the notice, a row
+kept for each later part while rows last and one always for the error. The
+parts left without a row are counted on the line, which keeps room for the
+count ("+2 more: warning, notice"). The bar leaves out a failed list that its screen, the cosigner
 manager or the Backups page, already shows (`statusBarError`). A part longer than its rows is cut in the middle, at an ellipsis: it
 keeps its start and the most of its end its last row holds, since a Go error
 ends in its cause.

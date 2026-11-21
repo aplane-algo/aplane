@@ -629,11 +629,13 @@ const (
 )
 
 // statusPart is one part of the status bar: its terminal-safe text, the
-// style it is drawn in, and its rank.
+// style it is drawn in, its rank, and the kind the count of parts left out
+// names it by.
 type statusPart struct {
 	text  string
 	style lipgloss.Style
 	rank  statusRank
+	kind  string
 }
 
 // statusParts is the status bar's parts in the order its line shows them,
@@ -641,107 +643,168 @@ type statusPart struct {
 func (m Model) statusParts() (parts []statusPart, settingAt int) {
 	switch m.connectionState {
 	case ConnectionConnected:
-		parts = append(parts, statusPart{"Connected", statusConnectedStyle, rankLine})
+		parts = append(parts, statusPart{"Connected", statusConnectedStyle, rankLine, ""})
 	case ConnectionConnecting:
-		parts = append(parts, statusPart{"Connecting...", subtitleStyle, rankLine})
+		parts = append(parts, statusPart{"Connecting...", subtitleStyle, rankLine, ""})
 	case ConnectionDisconnected:
-		parts = append(parts, statusPart{"Disconnected (press 'c' to reconnect)", statusDisconnectedStyle, rankLine})
+		parts = append(parts, statusPart{"Disconnected (press 'c' to reconnect)", statusDisconnectedStyle, rankLine, ""})
 	}
 
 	// Signer status (only show once we've heard from apsigner)
 	if m.signerStatusKnown {
 		switch m.signerState {
 		case signerRuntimeUnlocked:
-			parts = append(parts, statusPart{fmt.Sprintf("Signer Unlocked (%d keys)", m.keyCount), statusUnlockedStyle, rankLine})
+			parts = append(parts, statusPart{fmt.Sprintf("Signer Unlocked (%d keys)", m.keyCount), statusUnlockedStyle, rankLine, ""})
 		case signerRuntimeRecovery:
-			parts = append(parts, statusPart{"Signer Recovery (signing disabled)", statusLockedStyle, rankLine})
+			parts = append(parts, statusPart{"Signer Recovery (signing disabled)", statusLockedStyle, rankLine, ""})
 		default:
-			parts = append(parts, statusPart{"Signer Locked", statusLockedStyle, rankLine})
+			parts = append(parts, statusPart{"Signer Locked", statusLockedStyle, rankLine, ""})
 		}
 	}
 
-	// Signer-raised alerts stay until the signer clears them.
-	for _, warning := range m.signerWarnings {
-		parts = append(parts, statusPart{"ALERT: " + terminalSafe(warning), errorStyle, rankAlert})
-	}
-
-	// A lost notification can be an approval request, so this stays for the session.
+	// A lost notification can be an approval request, so this stays for the
+	// session and ranks with the signer's alerts, ahead of them as it is
+	// always short.
 	if m.notificationsLost > 0 {
 		noun := "notifications"
 		if m.notificationsLost == 1 {
 			noun = "notification"
 		}
-		parts = append(parts, statusPart{fmt.Sprintf("Warning: %d signer %s lost", m.notificationsLost, noun), warningStyle, rankWarning})
+		parts = append(parts, statusPart{fmt.Sprintf("Warning: %d signer %s lost", m.notificationsLost, noun), warningStyle, rankAlert, "notifications lost"})
+	}
+	// Signer-raised alerts stay until the signer clears them.
+	for _, warning := range m.signerWarnings {
+		parts = append(parts, statusPart{"ALERT: " + terminalSafe(warning), errorStyle, rankAlert, "alert"})
 	}
 	if m.lastNotice != "" {
-		parts = append(parts, statusPart{terminalSafe(m.lastNotice), statusConnectedStyle, rankNotice})
+		parts = append(parts, statusPart{terminalSafe(m.lastNotice), statusConnectedStyle, rankNotice, "notice"})
 	}
 	if m.lastWarning != "" {
-		parts = append(parts, statusPart{"Warning: " + terminalSafe(m.lastWarning), warningStyle, rankWarning})
+		parts = append(parts, statusPart{"Warning: " + terminalSafe(m.lastWarning), warningStyle, rankWarning, "warning"})
 	}
 	settingAt = len(parts)
 	if errorText := m.statusBarError(); errorText != "" {
-		parts = append(parts, statusPart{"Error: " + terminalSafe(errorText), errorStyle, rankError})
+		parts = append(parts, statusPart{"Error: " + terminalSafe(errorText), errorStyle, rankError, "error"})
 	}
 	return parts, settingAt
 }
 
-// renderStatusBar renders the bottom status bar. Its parts share one line
-// while they fit, and those that do not go under it, wrapped to the window
-// and cut in the middle (wrapCutLines), so no screen grows wider than the
-// window. The rows under the line, at most maxErrorLines, go by rank, a row
-// kept for each later part while rows last; a part left without a row is
-// not shown.
-func (m Model) renderStatusBar() string {
-	width := m.tableWidth()
-	parts, settingAt := m.statusParts()
+// statusLayout is where the status bar draws each part: on the line, in the
+// rows under it, or left out.
+type statusLayout struct {
+	onLine  []bool
+	rows    map[int][]string
+	dropped []int // the parts left out, by rank
+	used    int   // the columns the line's parts take
+}
+
+// statusCountRoom is the room the line keeps for the count of the parts
+// left out when there are any: " | +99".
+const statusCountRoom = len(" | +99")
+
+// layoutStatusParts places parts on a line of lineWidth columns while they
+// fit, by rank, the connection and signer state always, and the rest in at
+// most maxErrorLines rows of width columns under it, wrapped and cut in the
+// middle (wrapCutLines). The rows go by rank, a row kept for each later
+// part while rows last, and one always for the error, which answers what
+// the operator just did.
+func layoutStatusParts(parts []statusPart, width, lineWidth int) statusLayout {
 	byRank := make([]int, len(parts))
 	for i := range byRank {
 		byRank[i] = i
 	}
 	slices.SortStableFunc(byRank, func(a, b int) int { return int(parts[a].rank) - int(parts[b].rank) })
 
-	onLine := make([]bool, len(parts))
-	used := 0
-	for _, i := range byRank {
-		w := lipgloss.Width(parts[i].text)
-		if used > 0 {
-			w += len(" | ")
-		}
-		if parts[i].rank == rankLine || used+w <= width {
-			onLine[i] = true
-			used += w
-		}
-	}
-
+	layout := statusLayout{onLine: make([]bool, len(parts)), rows: map[int][]string{}}
 	var under []int
 	for _, i := range byRank {
-		if !onLine[i] {
+		w := lipgloss.Width(parts[i].text)
+		if layout.used > 0 {
+			w += len(" | ")
+		}
+		if parts[i].rank == rankLine || layout.used+w <= lineWidth {
+			layout.onLine[i] = true
+			layout.used += w
+		} else {
 			under = append(under, i)
 		}
 	}
-	rows := make(map[int][]string, len(under))
-	budget := maxErrorLines
-	for k, i := range under {
-		if budget == 0 {
-			break
+
+	held, later := 0, len(under) // the error's row, and the other parts still to place
+	for _, i := range under {
+		if parts[i].rank == rankError {
+			held, later = 1, later-1
 		}
-		rows[i] = wrapCutLines(parts[i].text, width, max(1, budget-(len(under)-k-1)))
-		budget -= len(rows[i])
+	}
+	budget := maxErrorLines
+	for _, i := range under {
+		if parts[i].rank == rankError {
+			held = 0
+		} else {
+			later--
+		}
+		avail := budget - held
+		if avail <= 0 {
+			layout.dropped = append(layout.dropped, i)
+			continue
+		}
+		layout.rows[i] = wrapCutLines(parts[i].text, width, max(1, avail-later))
+		budget -= len(layout.rows[i])
+	}
+	return layout
+}
+
+// statusCount is the line's count of the parts left out, naming their kinds
+// when room allows.
+func statusCount(parts []statusPart, dropped []int, room int) string {
+	var kinds []string
+	for _, i := range dropped {
+		if !slices.Contains(kinds, parts[i].kind) {
+			kinds = append(kinds, parts[i].kind)
+		}
+	}
+	short := fmt.Sprintf("+%d", len(dropped))
+	for _, text := range []string{short + " more: " + strings.Join(kinds, ", "), short + " more"} {
+		if lipgloss.Width(text) <= room {
+			return text
+		}
+	}
+	return short
+}
+
+// renderStatusBar renders the bottom status bar (layoutStatusParts), so no
+// screen grows wider than the window. When parts are left out, the line
+// keeps room for a count of them.
+func (m Model) renderStatusBar() string {
+	width := m.tableWidth()
+	parts, settingAt := m.statusParts()
+	layout := layoutStatusParts(parts, width, width)
+	if len(layout.dropped) > 0 {
+		layout = layoutStatusParts(parts, width, width-statusCountRoom)
 	}
 
 	var line, blocks []string
 	settingSlot := 0
 	for i, part := range parts {
 		switch {
-		case onLine[i]:
+		case layout.onLine[i]:
 			line = append(line, part.style.Render(part.text))
 			if i < settingAt {
 				settingSlot++
 			}
-		case rows[i] != nil:
-			blocks = append(blocks, part.style.Render(strings.Join(rows[i], "\n")))
+		case layout.rows[i] != nil:
+			blocks = append(blocks, part.style.Render(strings.Join(layout.rows[i], "\n")))
 		}
+	}
+	used := layout.used
+	if len(layout.dropped) > 0 {
+		style := warningStyle
+		if parts[layout.dropped[0]].rank <= rankError {
+			style = errorStyle
+		}
+		count := statusCount(parts, layout.dropped, width-used-len(" | "))
+		line = append(line, style.Render(count))
+		used += len(" | ") + lipgloss.Width(count)
 	}
 	if setting := m.settingWarningPart(width, used); setting != "" {
 		line = slices.Insert(line, settingSlot, setting)
