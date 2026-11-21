@@ -180,6 +180,7 @@ func (m *Model) clearCosignerWorkflowState() {
 	m.cosigner.managerScroll = 0
 	m.cosigner.managerStatus = ""
 	m.cosigner.deleteHint = ""
+	m.cosigner.detailsName = ""
 	m.cosigner.removeFocus = 0
 	m.cosigner.removeName = ""
 	m.cosigner.removeInvalid = false

@@ -306,6 +306,7 @@ func TestRemainingDaemonErrorsAreEscaped(t *testing.T) {
 	refs := testCosignerReferences()
 	cosigner := Model{width: 100, height: 40, cosigner: cosignerState{references: refs, loaded: true, importError: "remove failed: " + clearScreen}}
 	cosigner.viewState = ViewCosignerReferenceDetails
+	cosigner.cosigner.detailsName = "alpha"
 	assertNeutralized(t, "cosigner details", cosigner.renderCosignerReferenceDetails(), `remove failed: \x1b[2J`)
 	cosigner.viewState = ViewCosignerRemoveConfirm
 	cosigner.cosigner.removeName = "alpha"

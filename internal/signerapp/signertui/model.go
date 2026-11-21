@@ -362,6 +362,9 @@ type cosignerState struct {
 	managerSelected int
 	managerScroll   int
 	managerStatus   string
+	// detailsName is the reference the details screen shows, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another row.
+	detailsName string
 	// deleteHint is the path of the selected reference file that remove
 	// does not reach, which the manager says to delete.
 	deleteHint  string

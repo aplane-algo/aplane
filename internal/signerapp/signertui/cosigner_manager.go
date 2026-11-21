@@ -105,7 +105,8 @@ func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m.cosigner.managerSelected++
 		}
 	case "enter", " ":
-		if _, ok := m.selectedCosignerReference(); ok {
+		if reference, ok := m.selectedCosignerReference(); ok {
+			m.cosigner.detailsName = reference.Name
 			m.cosigner.importError = ""
 			m.viewState = ViewCosignerReferenceDetails
 		} else if bad, ok := m.selectedInvalidCosignerReference(); ok {
@@ -252,13 +253,24 @@ func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, te
 	case "esc", "q":
 		m.viewState = ViewCosignerReferences
 	case "g":
-		return m.beginSelectedCosignerGeneration()
+		return m.beginDetailsCosignerGeneration()
 	case "d":
-		if reference, ok := m.selectedCosignerReference(); ok {
+		if reference, ok := m.detailsCosignerReference(); ok {
 			m = m.beginCosignerRemoval(reference.Name, false)
 		}
 	}
 	return m, nil
+}
+
+// detailsCosignerReference finds the reference the details screen shows in
+// the list as it now stands; ok is false once it is not listed.
+func (m Model) detailsCosignerReference() (CosignerReferenceInfo, bool) {
+	for _, reference := range m.cosigner.references {
+		if reference.Name == m.cosigner.detailsName {
+			return reference, true
+		}
+	}
+	return CosignerReferenceInfo{}, false
 }
 
 func (m Model) compatibleCosignerGenerateTypeIndices(componentKeyType string) []int {
@@ -271,8 +283,8 @@ func (m Model) compatibleCosignerGenerateTypeIndices(componentKeyType string) []
 	return indices
 }
 
-func (m Model) beginSelectedCosignerGeneration() (tea.Model, tea.Cmd) {
-	reference, ok := m.selectedCosignerReference()
+func (m Model) beginDetailsCosignerGeneration() (tea.Model, tea.Cmd) {
+	reference, ok := m.detailsCosignerReference()
 	if !ok {
 		m.cosigner.managerStatus = "Cosigner reference is no longer available"
 		m.viewState = ViewCosignerReferences
@@ -348,7 +360,7 @@ func (m Model) handleCosignerGenerateTypeKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 			m.cosigner.generateTypeSelected++
 		}
 	case "enter", " ":
-		reference, ok := m.selectedCosignerReference()
+		reference, ok := m.detailsCosignerReference()
 		if !ok || m.cosigner.generateTypeSelected < 0 || m.cosigner.generateTypeSelected >= len(m.cosigner.generateTypeIndices) {
 			m.cosigner.importError = "Cosigner reference or compatible account key type is no longer available"
 			m.viewState = ViewCosignerReferenceDetails
@@ -499,7 +511,7 @@ func (m Model) cosignerReferenceColumns(references []CosignerReferenceInfo) (nam
 }
 
 func (m Model) renderCosignerReferenceDetails() string {
-	reference, ok := m.selectedCosignerReference()
+	reference, ok := m.detailsCosignerReference()
 	if !ok {
 		return m.renderPopup(70, "Cosigner reference is no longer available")
 	}
@@ -538,7 +550,7 @@ func (m Model) renderCosignerReferenceDetails() string {
 }
 
 func (m Model) renderCosignerGenerateType() string {
-	reference, ok := m.selectedCosignerReference()
+	reference, ok := m.detailsCosignerReference()
 	if !ok {
 		return m.renderPopup(70, "Cosigner reference is no longer available")
 	}

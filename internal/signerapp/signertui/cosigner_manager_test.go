@@ -93,7 +93,7 @@ func TestCosignerManagerSortsAliasesAndKeepsPublicKeyOutOfViews(t *testing.T) {
 		t.Fatalf("manager list exposed raw public material or an unabridged ID:\n%s", list)
 	}
 
-	m.cosigner.managerSelected = 2
+	m.cosigner.detailsName = "west"
 	details := stripANSI(m.renderCosignerReferenceDetails())
 	if !strings.Contains(details, groupedWitnessKeyID(testWitnessKeyID)) {
 		t.Fatalf("details missing full grouped witness ID:\n%s", details)
@@ -113,8 +113,8 @@ func TestCosignerManagerRemovalDefaultsToCancelAndReportsResult(t *testing.T) {
 	m := Model{
 		viewState: ViewCosignerReferenceDetails,
 		cosigner: cosignerState{
-			references:      testCosignerReferences(),
-			managerSelected: 2,
+			references:  testCosignerReferences(),
+			detailsName: "west",
 		},
 	}
 
@@ -206,7 +206,7 @@ func TestGenerateAccountFromReferencePreselectsCosigner(t *testing.T) {
 	})
 	m := Model{
 		viewState: ViewCosignerReferenceDetails,
-		cosigner: cosignerState{references: []CosignerReferenceInfo{{
+		cosigner: cosignerState{detailsName: "lab", references: []CosignerReferenceInfo{{
 			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",
 		}}},
 	}
@@ -250,12 +250,12 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 	})
 	m := Model{
 		viewState: ViewCosignerReferenceDetails,
-		cosigner: cosignerState{references: []CosignerReferenceInfo{{
+		cosigner: cosignerState{detailsName: "lab", references: []CosignerReferenceInfo{{
 			Name: "lab", ComponentKey: testWitnessID1, KeyType: "witness.v1",
 		}}},
 	}
 
-	nextModel, _ := m.beginSelectedCosignerGeneration()
+	nextModel, _ := m.beginDetailsCosignerGeneration()
 	next := nextModel.(Model)
 	if next.viewState != ViewCosignerGenerateType {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerGenerateType)
@@ -279,7 +279,7 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 
 func TestCosignerDetailsHaveNoClientRouteActions(t *testing.T) {
 	t.Setenv("APCLIENT_DATA", t.TempDir())
-	m := Model{width: 120, height: 40, viewState: ViewCosignerReferenceDetails, cosigner: cosignerState{references: testCosignerReferences()}}
+	m := Model{width: 120, height: 40, viewState: ViewCosignerReferenceDetails, cosigner: cosignerState{references: testCosignerReferences(), detailsName: "alpha"}}
 	view := m.renderCosignerReferenceDetails()
 	for _, label := range []string{"Client routes", "Live route", "Verify route"} {
 		if strings.Contains(view, label) {
@@ -574,5 +574,32 @@ func TestCosignerManagerMarksAStaleListOfReferenceFilesOnly(t *testing.T) {
 	}}, MinWidth, MinHeight)
 	if view := stripANSI(m.View()); !strings.Contains(view, "Showing the last list read.") {
 		t.Fatalf("a stale list of reference files is not marked:\n%s", view)
+	}
+}
+
+// The details screen shows the reference it opened on. A list that arrives
+// while it is open, here with a reference that sorts ahead of it, moves the
+// rows under the cursor but not the details, before and after a cancelled
+// removal; a reference the list no longer holds is no longer available.
+func TestCosignerReferenceDetailsKeepTheirReferenceAcrossAList(t *testing.T) {
+	aaa := CosignerReferenceInfo{Name: "aaa", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"}
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "enter")
+	if m.viewState != ViewCosignerReferenceDetails {
+		t.Fatalf("view %v, want the details", m.viewState)
+	}
+	references := append(append([]CosignerReferenceInfo(nil), m.cosigner.references...), aaa)
+	m = updateModel(t, m, CosignerReferencesMsg{References: references, Invalid: m.cosigner.invalid})
+	for _, step := range [][]string{nil, {"d", "esc"}} {
+		m = press(t, m, step...)
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		if m.viewState != ViewCosignerReferenceDetails || !strings.Contains(view, "Name:     west") {
+			t.Fatalf("after %v: view %v shows:\n%s", step, m.viewState, view)
+		}
+	}
+	m = updateModel(t, m, CosignerReferencesMsg{References: references[:1], Invalid: m.cosigner.invalid})
+	if view := stripANSI(m.View()); !strings.Contains(view, "Cosigner reference is no longer available") {
+		t.Fatalf("details after their reference went:\n%s", view)
 	}
 }
