@@ -165,6 +165,24 @@ func TestGetStatus_Success(t *testing.T) {
 	}
 }
 
+// An answer that omits signer_locked reads as locked: nothing treats a signer
+// as able to sign on a field it did not send.
+func TestGetStatusReadsAMissingSignerLockedAsLocked(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"state":"unlocked","key_count":1}`:                       true,
+		`{"state":"unlocked","signer_locked":false,"key_count":1}`: false,
+		`{"state":"locked","signer_locked":true,"key_count":1}`:    true,
+	} {
+		c := newTestClient(t, func(*http.Request) (*http.Response, error) {
+			return mockResponse(200, body), nil
+		})
+		got, err := c.GetStatusWithContext(context.Background())
+		if err != nil || got.SignerLocked != want || got.KeyCount != 1 {
+			t.Errorf("GetStatus(%s) = %+v, %v; want signer_locked %v and key_count 1", body, got, err, want)
+		}
+	}
+}
+
 func TestGetStatusRefreshesApprovalWaitCacheForSign(t *testing.T) {
 	identityWaits := []int64{420, 60}
 	identityCalls := 0
