@@ -957,6 +957,7 @@ type InstallLibraryTemplateResultMsg struct {
 }
 
 type ShowLibraryTemplateResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	TemplateType  string

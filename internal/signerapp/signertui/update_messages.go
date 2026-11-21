@@ -132,6 +132,9 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 		return m, m.enterUnlocked(msg.KeyCount)
 	} else {
 		m.auth.passphraseError = msg.Error
+		if m.auth.passphraseError == "" {
+			m.auth.passphraseError = "Unlock failed"
+		}
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
 			m.clearAuthPassphrase()
@@ -541,12 +544,10 @@ func (m Model) handleLibraryTemplatesMsg(msg LibraryTemplatesMsg) (tea.Model, te
 }
 
 func (m Model) handleShowLibraryTemplateResultMsg(msg ShowLibraryTemplateResultMsg) (tea.Model, tea.Cmd) {
-	// Only adopt the result if we're still waiting for it; ignore late replies
-	// after the user has navigated away.
+	// Only adopt the reply to the read the screen waits on: a reply to a read
+	// left earlier, even for the same template, is late.
 	if m.viewState == ViewLibraryTemplateDetails &&
-		m.library.detailsLoading &&
-		msg.KeyType == m.library.detailsKeyType &&
-		(m.library.detailsInstalled || msg.TemplateType == m.library.detailsTemplateType) {
+		msg.ID != "" && msg.ID == m.library.detailsRequestID {
 		m.library.detailsLoading = false
 		m.library.detailsRequestID = ""
 		if msg.Success {

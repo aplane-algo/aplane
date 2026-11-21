@@ -584,6 +584,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeShowLibraryTemplateResult: decodeAs(func(result ShowLibraryTemplateResultMessage) tea.Msg {
 		return ShowLibraryTemplateResultMsg{
+			ID:            result.ID,
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			TemplateType:  result.TemplateType,
@@ -596,6 +597,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 	}),
 	MsgTypeShowInstalledTemplateResult: decodeAs(func(result ShowInstalledTemplateResultMessage) tea.Msg {
 		return ShowLibraryTemplateResultMsg{
+			ID:           result.ID,
 			Success:      result.Success,
 			KeyType:      result.KeyType,
 			TemplateType: result.TemplateType,
