@@ -34,7 +34,9 @@ SDK configuration is documented in the separate
 Config files are located at `<data_dir>/config.yaml`.
 Unknown YAML fields are rejected at startup. This is intentional: misspelled
 settings should fail visibly instead of being silently ignored. Neither
-`config.yaml` carries a version: its field set is its format.
+`config.yaml` carries a version: its field set is its format. A `config.yaml`
+that is empty or holds only comments is refused as well, so a truncated file
+never runs on the defaults; delete it to use the defaults, or write `{}`.
 
 See [USER_INSTALL.md](USER_INSTALL.md) for the installation directory layout and what each install mode creates.
 

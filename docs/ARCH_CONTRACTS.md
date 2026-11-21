@@ -123,7 +123,9 @@ separately. The client data directory is resolved from the first of:
 
 Client config is loaded from `config.yaml` under the resolved data directory.
 It has no version field: its field set is its format, so a `schema_version`
-line is refused like any other unknown field.
+line is refused like any other unknown field. A file with no YAML document
+(empty, blank or only comments) is refused with `config file <path> is empty;
+delete it to use the defaults, or write {}`; `{}` is the defaults.
 Installer-written client configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`, and restrict `networks_allowed` to `mainnet` and
 `testnet` by default; existing configs are left unchanged if the
@@ -174,7 +176,10 @@ Source: `internal/serverconfig/serverconfig.go`
 
 Loaded from `-d <path>` or `APSIGNER_DATA`.
 It has no version field: its field set is its format, so a `schema_version`
-line is refused like any other unknown field.
+line is refused like any other unknown field. A file with no YAML document is
+refused with the same message as the client's, so a config truncated to
+nothing never starts the signer on the defaults; a missing file does, with a
+warning.
 Installer-written signer configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`; existing configs are left unchanged if the installer
 is pointed at a supported in-place upgrade target.

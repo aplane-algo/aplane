@@ -288,8 +288,8 @@ func LoadServerConfigStrict(dataDir string) (ServerConfig, error) {
 
 func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig) (ServerConfig, error) {
 	config := defaults
-	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
-		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	if err := apconfig.DecodeConfigFile(path, data, &config); err != nil {
+		return ServerConfig{}, err
 	}
 	return normalizeServerConfig(dataDir, config, defaults)
 }

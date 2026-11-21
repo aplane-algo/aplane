@@ -106,8 +106,8 @@ func LoadConfigFromPath(path string) (Config, error) {
 
 	// Start with defaults, then overlay config file values
 	config := DefaultConfig()
-	if err := UnmarshalKnownConfigFields(data, &config); err != nil {
-		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
+	if err := DecodeConfigFile(path, data, &config); err != nil {
+		return Config{}, err
 	}
 	if config.Algod, err = mergeClientNetworkAlgodConfig(config.Networks); err != nil {
 		return Config{}, fmt.Errorf("invalid network in networks config: %w", err)

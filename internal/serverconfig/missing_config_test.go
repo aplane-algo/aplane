@@ -37,3 +37,23 @@ func TestMissingConfigResolvesLikeAnEmptyFile(t *testing.T) {
 		t.Fatalf("no config file and an empty one differ:\n no file: %+v\n empty:   %+v", missing, empty)
 	}
 }
+
+// A signer config.yaml with no YAML document is refused, never read as the
+// defaults: a file truncated to nothing would otherwise start without the
+// settings it held.
+func TestEmptyConfigFileIsRefused(t *testing.T) {
+	for _, body := range []string{"", "\n", "  \n\n", "# only a comment\n"} {
+		dataDir := t.TempDir()
+		path := filepath.Join(dataDir, "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := "config file " + path + " is empty; delete it to use the defaults, or write {}"
+		if _, err := LoadServerConfig(dataDir); err == nil || err.Error() != want {
+			t.Errorf("%q: LoadServerConfig error = %v, want %q", body, err, want)
+		}
+		if _, err := LoadServerConfigStrict(dataDir); err == nil || err.Error() != want {
+			t.Errorf("%q: LoadServerConfigStrict error = %v, want %q", body, err, want)
+		}
+	}
+}

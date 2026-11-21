@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -420,7 +421,7 @@ func cosignerEndpointTestHex(prefix string) string {
 // TestConfigSchemaVersionField pins that the client config.yaml has no
 // schema_version: the strict decode refuses it as an unknown field.
 func TestConfigSchemaVersionField(t *testing.T) {
-	const unknown = "failed to parse config file: config field \"schema_version\" is unknown or no longer supported; " +
+	const unknown = ": config field \"schema_version\" is unknown or no longer supported; " +
 		"remove it from the file: yaml: unmarshal errors:\n  line 1: field schema_version not found in type config.Config"
 	for _, tt := range []struct {
 		line    string
@@ -439,8 +440,35 @@ func TestConfigSchemaVersionField(t *testing.T) {
 		if tt.wantErr == "" && err != nil {
 			t.Errorf("%q: LoadConfigFromPath error = %v, want nil", tt.line, err)
 		}
-		if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
-			t.Errorf("%q: LoadConfigFromPath error = %v, want %q", tt.line, err, tt.wantErr)
+		if want := "failed to parse config file " + path + tt.wantErr; tt.wantErr != "" && (err == nil || err.Error() != want) {
+			t.Errorf("%q: LoadConfigFromPath error = %v, want %q", tt.line, err, want)
 		}
+	}
+}
+
+// TestEmptyConfigFileIsRefused pins that a client config.yaml with no YAML
+// document is refused with its own message, and that an explicit empty
+// mapping is the defaults.
+func TestEmptyConfigFileIsRefused(t *testing.T) {
+	for _, body := range []string{"", "\n", "  \n\n", "# only a comment\n"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := "config file " + path + " is empty; delete it to use the defaults, or write {}"
+		if _, err := LoadConfigFromPath(path); err == nil || err.Error() != want {
+			t.Errorf("%q: LoadConfigFromPath error = %v, want %q", body, err, want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("{}: LoadConfigFromPath error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg, DefaultConfig()) {
+		t.Fatalf("{}: config = %+v, want the defaults", cfg)
 	}
 }
