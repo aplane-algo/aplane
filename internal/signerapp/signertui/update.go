@@ -404,6 +404,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cosigner.managerStatus = ""
 			}
 		} else {
+			// The failure is over, in the status bar too; another error
+			// there stays.
+			if m.cosigner.listErr != "" && m.lastError == m.cosigner.listErr {
+				m.lastError = ""
+			}
 			m.cosigner.listErr = ""
 			m.cosigner.references = append([]CosignerReferenceInfo(nil), msg.References...)
 			m.cosigner.invalid = append([]InvalidCosignerReferenceInfo(nil), msg.Invalid...)

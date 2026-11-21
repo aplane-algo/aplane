@@ -490,3 +490,25 @@ func TestStatusBarCountsWhatItLeavesOut(t *testing.T) {
 		}
 	}
 }
+
+// A cosigner list that succeeds after a failed one clears the failure from
+// the status bar as well as from the manager, so the bar does not bring back
+// an error that no longer holds; an error from anything else stays.
+func TestCosignerListSuccessClearsItsFailureFromTheBar(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	references, invalid := m.cosigner.references, m.cosigner.invalid
+	m = updateModel(t, m, CosignerReferencesMsg{Error: "permission denied"})
+	m = updateModel(t, m, CosignerReferencesMsg{References: references, Invalid: invalid})
+	if bar := stripANSI(m.renderStatusBar()); strings.Contains(bar, "permission denied") {
+		t.Fatalf("the list succeeded and the bar shows its old failure: %q", bar)
+	}
+	if m.lastError != "" {
+		t.Fatalf("lastError = %q after the list succeeded", m.lastError)
+	}
+
+	m = updateModel(t, m, ErrorMsg{Error: errors.New("store busy")})
+	m = updateModel(t, m, CosignerReferencesMsg{References: references, Invalid: invalid})
+	if m.lastError != "store busy" {
+		t.Fatalf("a successful list cleared another error: lastError = %q", m.lastError)
+	}
+}
