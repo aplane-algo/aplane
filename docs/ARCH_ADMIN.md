@@ -1360,7 +1360,15 @@ identifies the current screen. The enum has families for:
   first must not approve the second. The enrollment popup does the same, from
   when each request comes into view, the next queued one included, and each
   request opens with Reject focused whatever the focus was on the request
-  before it; the client's label and address are drawn escaped. `apapprover` reads whole lines, which the
+  before it. Text the client sent can never draw a line that reads like a
+  field: the popup's fingerprint and address fit their lines at 80 columns
+  under names the client cannot write, and the label is drawn quoted and
+  escaped (`strconv.Quote`) on one line of its own, cut in the middle when
+  long; the Enrolled Clients details draw it the same way, and `apapprover`
+  quotes it too. In the signing review a value that wraps, an asset's URL or
+  a note, marks each line it continues onto with `| ` (`reviewWrap`), and
+  `apapprover` cuts a request line longer than its terminal into pieces
+  marked the same way, so no value can start a line of its own. `apapprover` reads whole lines, which the
   terminal buffers until Enter, so instead of a delay it shows each request
   with a fresh four-digit code and approves only `y <code>` for the request on
   screen

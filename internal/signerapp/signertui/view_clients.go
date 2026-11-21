@@ -7,6 +7,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,9 +122,11 @@ func clientRow(cursor, fingerprint, label string, labelWidth int) string {
 func (m Model) selectedClientDetails() []string {
 	field := func(label, value string) string { return fmt.Sprintf("%-11s%s", label+":", value) }
 	var lines []string
+	// The client's label is quoted, escaped and cut in the middle to its one
+	// line, so it cannot draw a line that looks like another field.
 	addLabel := func(label string) {
 		if label != "" {
-			lines = append(lines, field("Label", terminalSafe(label)))
+			lines = append(lines, field("Label", ellipsizeMiddle(strconv.Quote(label), max(m.tableWidth()-11, 4))))
 		}
 	}
 	selected := m.clients.selected
@@ -155,10 +158,12 @@ func (m Model) renderRevokeClientConfirm() string {
 	} else {
 		sb.WriteString(errorStyle.Render("REVOKE CLIENT KEY"))
 		sb.WriteString("\n\n")
-		// The label is the client's own, sent before it was trusted.
+		// The label is the client's own, sent before it was trusted, so it is
+		// quoted, escaped and cut to its one line, as the enrollment popup
+		// draws it.
 		sb.WriteString("Key: " + terminalSafe(m.clients.confirmKey) + "\n")
 		if m.clients.confirmLabel != "" {
-			sb.WriteString("Label: " + terminalSafe(m.clients.confirmLabel) + "\n")
+			sb.WriteString(ellipsizeMiddle("Label: "+strconv.Quote(m.clients.confirmLabel), m.popupBodyWidth(80)) + "\n")
 		}
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render("This client's connections will be closed."))

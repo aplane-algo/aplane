@@ -306,7 +306,7 @@ func TestEnrolledClientsListFollowsSelection(t *testing.T) {
 			t.Errorf("selected %d: %d lines in a %d-line window", selected, lines, MinHeight)
 		}
 		for _, want := range []string{
-			"> " + keys[selected].Fingerprint, fmt.Sprintf("Label:     client-%02d", selected), "a approve",
+			"> " + keys[selected].Fingerprint, fmt.Sprintf(`Label:     "client-%02d"`, selected), "a approve",
 		} {
 			if !strings.Contains(view, want) {
 				t.Errorf("selected %d: %q missing from:\n%s", selected, want, view)

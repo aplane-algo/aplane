@@ -15,17 +15,21 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/transport"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -646,7 +650,8 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	}
 
 	if req.Description != "" {
-		fmt.Printf("\n%s\n", req.Description)
+		fmt.Println()
+		printConfined(req.Description, terminalWidth())
 	}
 	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
 		fmt.Printf("\n%s\n", line)
@@ -670,11 +675,59 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 		}
 		fmt.Printf("\n%s (%d):\n", list.heading, len(list.items))
 		for _, v := range list.items {
-			fmt.Println(violationLine(v))
+			printConfined(violationLine(v), terminalWidth())
 		}
 	}
 
 	fmt.Println(strings.Repeat("=", 60))
+}
+
+// continuationMark starts a line that continues the one above it.
+const continuationMark = "| "
+
+// printConfined prints text, each line cut at width columns, every piece
+// after a line's first marked as its continuation. Much of a request comes
+// from the client or the chain, an asset's URL or a note, so a value longer
+// than the terminal is wide would otherwise wrap onto a line it starts,
+// which could read like a field of its own.
+func printConfined(text string, width int) {
+	for _, line := range strings.Split(text, "\n") {
+		for _, piece := range confinedLines(line, width) {
+			fmt.Println(piece)
+		}
+	}
+}
+
+// confinedLines cuts line into pieces of at most width columns, every piece
+// after the first starting with continuationMark. A piece holds at least one
+// character, so a character wider than the room is a piece of its own.
+func confinedLines(line string, width int) []string {
+	if width <= len(continuationMark) || ansi.StringWidth(line) <= width {
+		return []string{line}
+	}
+	var pieces []string
+	for room := width; line != ""; room = width - len(continuationMark) {
+		piece := ansi.Truncate(line, room, "")
+		if piece == "" {
+			_, size := utf8.DecodeRuneInString(line)
+			piece = line[:size]
+		}
+		line = line[len(piece):]
+		if pieces != nil {
+			piece = continuationMark + piece
+		}
+		pieces = append(pieces, piece)
+	}
+	return pieces
+}
+
+// terminalWidth is the width of the terminal apapprover prints to, or 80
+// when it cannot tell.
+func terminalWidth() int {
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width >= 20 {
+		return width
+	}
+	return 80
 }
 
 // violationLine is one warning or note of a signing request: its severity,
@@ -702,11 +755,15 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 		fmt.Println("🔑 CLIENT ENROLLMENT REQUEST")
 	}
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Printf("SSH Key:     %s\n", req.SSHFingerprint)
+	// The label is the client's own text: quoted and escaped, it can neither
+	// drive the terminal nor end its quotes early, and at its bounded length
+	// its line fits the terminal, so it cannot run onto a line of its own
+	// that reads like a field.
+	fmt.Printf("SSH Key:     %s\n", termsafe.Line(req.SSHFingerprint))
 	if req.Label != "" {
-		fmt.Printf("Label:       %s\n", req.Label)
+		printConfined("Label:       "+strconv.Quote(req.Label), terminalWidth())
 	}
-	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
+	fmt.Printf("Remote Addr: %s\n", termsafe.Line(req.RemoteAddr))
 	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
 	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))

@@ -6,8 +6,11 @@ package main
 import (
 	"bytes"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/transport"
@@ -597,6 +600,61 @@ func TestViolationLineNamesOnlyAValue(t *testing.T) {
 	} {
 		if got := violationLine(tc.v); got != tc.want {
 			t.Errorf("violationLine(%+v) = %q, want %q", tc.v, got, tc.want)
+		}
+	}
+}
+
+// A request's text longer than the terminal is wide is cut into pieces each
+// marked as a continuation, so no value from the request can wrap onto a
+// line it starts, and read like a field of its own.
+func TestConfinedLinesMarkEveryContinuation(t *testing.T) {
+	line := "  URL: " + strings.Repeat("a", 70) + "To:      EVILADDRESS"
+	pieces := confinedLines(line, 80)
+	if len(pieces) != 2 || pieces[1] != continuationMark+"      EVILADDRESS" {
+		t.Fatalf("confinedLines = %q", pieces)
+	}
+	wide := strings.Repeat("漢字", 50)
+	pieces = confinedLines(wide, 21)
+	var joined strings.Builder
+	for i, piece := range pieces {
+		if ansi.StringWidth(piece) > 21 {
+			t.Errorf("piece %q is %d columns", piece, ansi.StringWidth(piece))
+		}
+		if i > 0 && !strings.HasPrefix(piece, continuationMark) {
+			t.Errorf("piece %d %q is not marked", i, piece)
+		}
+		joined.WriteString(strings.TrimPrefix(piece, continuationMark))
+	}
+	if joined.String() != wide {
+		t.Errorf("the pieces do not make up the line")
+	}
+}
+
+// A client's label is shown quoted and escaped on its own field's line: it
+// can neither drive the terminal nor draw a line that reads like the key's
+// fingerprint or address.
+func TestEnrollmentRequestLabelCannotImitateAField(t *testing.T) {
+	for _, label := range []string{
+		"laptop-of-ops SHA256:FakeFakeFakeFakeFakeFakeFakeFakeFakeFake123",
+		"x Remote Addr: 10.0.0.5:22",
+		"bidi \u202e and C1 \u0085 and \xff",
+	} {
+		rendered := captureStdout(t, func() {
+			displayClientEnrollmentRequest(&protocol.ClientEnrollmentRequestMessage{
+				SSHFingerprint: "SHA256:RealRealRealRealRealRealRealRealRealReal123", Label: label, RemoteAddr: "203.0.113.9:51234",
+			}, 1)
+		})
+		if !strings.Contains(rendered, "Label:       "+strconv.Quote(label)+"\n") {
+			t.Errorf("label %q not quoted on its line:\n%s", label, rendered)
+		}
+		for _, line := range strings.Split(rendered, "\n") {
+			if (strings.Contains(line, "SHA256:") && !strings.HasPrefix(line, "SSH Key:") && !strings.HasPrefix(line, "Label:")) ||
+				(strings.Contains(line, "Remote Addr:") && !strings.HasPrefix(line, "Remote Addr:") && !strings.HasPrefix(line, "Label:")) {
+				t.Errorf("label %q draws a field's line: %q", label, line)
+			}
+			if strings.ContainsAny(line, "\u202e\u0085") {
+				t.Errorf("label %q reaches the terminal unescaped: %q", label, line)
+			}
 		}
 	}
 }

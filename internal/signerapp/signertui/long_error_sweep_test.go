@@ -245,13 +245,14 @@ func checkLongErrorScreen(t *testing.T, name string, m Model, msgs statusMessage
 // sends its request, over whatever screen is showing, with the selected
 // button a line of each shows: a payroll to approve, and the longest
 // client enrollment request, a 64-byte label from an IPv6 address, with two
-// more waiting behind it.
+// more waiting behind it, and the same with each label built to imitate a
+// field (spoofEnrollmentLabels).
 func approvalPopups() []struct {
 	name     string
 	deliver  func(t *testing.T, m Model) Model
 	selected string
 } {
-	return []struct {
+	popups := []struct {
 		name     string
 		deliver  func(t *testing.T, m Model) Model
 		selected string
@@ -260,14 +261,30 @@ func approvalPopups() []struct {
 			return updateModel(t, m, SignRequestReceivedMsg{Request: *payrollReviewRequest(10)})
 		}, "REJECT (n)"},
 		{"enrollment request", func(t *testing.T, m Model) Model {
-			for i := range 3 {
-				m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{
-					ID: fmt.Sprintf("enroll-%d", i), SSHFingerprint: fmt.Sprintf("SHA256:%043d", i),
-					Label: strings.Repeat("l", 64), RemoteAddr: "[2001:db8:1234:5678:9abc:def0:1234:5678]:54321"}})
-			}
-			return m
+			return enrollmentRequests(t, m, strings.Repeat("l", 64))
 		}, "REJECT"},
 	}
+	for _, label := range spoofEnrollmentLabels {
+		popups = append(popups, struct {
+			name     string
+			deliver  func(t *testing.T, m Model) Model
+			selected string
+		}{fmt.Sprintf("enrollment request labelled %q", label), func(t *testing.T, m Model) Model {
+			return enrollmentRequests(t, m, label)
+		}, "REJECT"})
+	}
+	return popups
+}
+
+// enrollmentRequests delivers three enrollment requests with label, from an
+// IPv6 address, as the signer announces them.
+func enrollmentRequests(t *testing.T, m Model, label string) Model {
+	for i := range 3 {
+		m = updateModel(t, m, ClientEnrollmentRequestReceivedMsg{Request: PendingEnrollmentRequest{
+			ID: fmt.Sprintf("enroll-%d", i), SSHFingerprint: fmt.Sprintf("SHA256:%043d", i),
+			Label: label, RemoteAddr: "[2001:db8:1234:5678:9abc:def0:1234:5678]:54321"}})
+	}
+	return m
 }
 
 // Every apadmin screen fits 80x24, standalone and in an apconsole pane, with

@@ -7,6 +7,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,21 +20,17 @@ func (m Model) renderClientEnrollmentPopup() string {
 	}
 
 	req := m.enrollmentApproval.request
+	// Each field stays on one line whose name the client cannot write: the
+	// fingerprint and address fit at the minimum width, and the client's
+	// label is quoted, escaped and cut in the middle to its line, so no text
+	// the client sent can draw a line that looks like a field.
 	rows := []string{
 		"Client Enrollment Request",
-		fmt.Sprintf("Client SSH key fingerprint: %s", req.SSHFingerprint),
-		fmt.Sprintf("Remote Addr: %s", terminalSafe(req.RemoteAddr)),
+		"Fingerprint: " + req.SSHFingerprint,
+		"Address: " + terminalSafe(req.RemoteAddr),
 	}
 	if req.Label != "" {
-		// The label comes from the client, before the client is trusted.
-		rows = append(rows, fmt.Sprintf("Requested label: %s", terminalSafe(req.Label)))
-	}
-	// The title's margin is the gap under it.
-	var head strings.Builder
-	head.WriteString(titleStyle.Render(rows[0]))
-	head.WriteString("\n")
-	for _, row := range rows[1:] {
-		head.WriteString(row + "\n")
+		rows = append(rows, "Label: "+strconv.Quote(req.Label))
 	}
 	queued := len(m.enrollmentApproval.queue)
 	note := "Approving enrolls this key as a client; the client then connects on its own. No credential is issued. Esc leaves the request waiting."
@@ -43,6 +40,14 @@ func (m Model) renderClientEnrollmentPopup() string {
 	buttons := buttonPair(m.enrollmentApproval.focus, "APPROVE", "REJECT", nil)
 	popupWidth := enrollmentPopupWidth(append(rows, buttons))
 	width := m.popupBodyWidth(popupWidth)
+
+	// The title's margin is the gap under it.
+	var head strings.Builder
+	head.WriteString(titleStyle.Render(rows[0]))
+	head.WriteString("\n")
+	for _, row := range rows[1:] {
+		head.WriteString(ellipsizeMiddle(row, width) + "\n")
+	}
 
 	// The request and the buttons stay whole; the note takes the rows they
 	// leave, cut in the middle so it still ends with the requests waiting.
@@ -54,6 +59,8 @@ func (m Model) renderClientEnrollmentPopup() string {
 	return m.renderPopup(popupWidth, head.String()+subtitleStyle.Render(strings.Join(noteLines, "\n"))+"\n\n"+buttons)
 }
 
+// enrollmentPopupWidth is the popup width that holds the widest row inside
+// the popup's padding, for a window whose size is not yet known.
 func enrollmentPopupWidth(rows []string) int {
 	width := 0
 	for _, row := range rows {
@@ -61,5 +68,5 @@ func enrollmentPopupWidth(rows []string) int {
 			width = w
 		}
 	}
-	return width
+	return width + popupStyle.GetHorizontalPadding()
 }
