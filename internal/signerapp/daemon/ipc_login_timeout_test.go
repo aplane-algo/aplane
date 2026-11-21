@@ -103,7 +103,7 @@ func TestPreAuthLoginTimeoutIsClearedAfterLogin(t *testing.T) {
 			Type: protocol.MsgTypeAuth,
 		},
 		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
-		ProtocolVersion: testAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	rawResult := readAdminMessageType(t, conn, reader, protocol.MsgTypeAuthResult)
 	var result protocol.AuthResultMessage

@@ -91,8 +91,8 @@ The restored spec passes.
   `PromoteReplace` is the swap.
 - **`lock_on_disconnect` chosen at Init, never changed.** SO2 is vacuous when
   it is FALSE (the operator opted out of re-locking); TLC explores both.
-- **`AuthSucceed` models `auth`, not `auth_only`.** The current admin protocol
-  v6.0 retains `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
+- **`AuthSucceed` models `auth`, not `auth_only`.** The admin protocol retains
+  `auth_only` (`adminserver/session.go` `AuthenticateOutcome`,
   `transport/protocol_flow.go` `authenticateWithMode` with `only`), which verifies the
   passphrase and binds the runtime without authorizing or invoking
   `identity.unlock`. It is a non-owning, authenticated read-only observer:

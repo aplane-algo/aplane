@@ -15,21 +15,11 @@ const (
 	MessageKindNotification MessageKind = "notification"
 )
 
-const (
-	AdminProtocolVersionMajor = 8
-	AdminProtocolVersionMinor = 0
-)
-
-// ProtocolVersion is the admin IPC protocol version shape surfaced during
-// the auth hello. Clients must provide a matching major version.
-type ProtocolVersion struct {
-	Major int `json:"major"`
-	Minor int `json:"minor"`
-}
-
-func CurrentAdminProtocolVersion() ProtocolVersion {
-	return ProtocolVersion{Major: AdminProtocolVersionMajor, Minor: AdminProtocolVersionMinor}
-}
+// AdminProtocolVersion is the admin IPC protocol version. A client sends it
+// in auth.protocol_version and the server accepts only this exact value:
+// apadmin, apapprover and apsigner ship together, so there is no skew to
+// tolerate.
+const AdminProtocolVersion = 8
 
 // Admin protocol message type constants
 const (
@@ -214,15 +204,14 @@ func (b BaseMessage) MessageID() string {
 // Client must respond with AuthMessage before any other operations
 type AuthRequiredMessage struct {
 	BaseMessage
-	ProtocolVersion ProtocolVersion `json:"protocol_version"`
 }
 
 // AuthMessage is sent by an admin client to authenticate the IPC session.
-// ProtocolVersion is required by the server.
+// ProtocolVersion must be AdminProtocolVersion.
 type AuthMessage struct {
 	BaseMessage
-	Passphrase      SensitiveBytes   `json:"passphrase"`
-	ProtocolVersion *ProtocolVersion `json:"protocol_version,omitempty"`
+	Passphrase      SensitiveBytes `json:"passphrase"`
+	ProtocolVersion int            `json:"protocol_version"`
 }
 
 // Sign-request cancellation reasons carried on SignRequestCanceled

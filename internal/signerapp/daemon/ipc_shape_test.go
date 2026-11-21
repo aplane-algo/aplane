@@ -26,16 +26,11 @@ import (
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 )
 
-func testAdminProtocolVersion() *protocol.ProtocolVersion {
-	version := protocol.CurrentAdminProtocolVersion()
-	return &version
-}
-
 func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -53,10 +48,6 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	if !reflectJSONSubset(msgs[0], map[string]any{
 		"kind": string(protocol.MessageKindNotification),
 		"type": protocol.MsgTypeAuthRequired,
-		"protocol_version": map[string]any{
-			"major": float64(protocol.AdminProtocolVersionMajor),
-			"minor": float64(protocol.AdminProtocolVersionMinor),
-		},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -75,7 +66,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -105,10 +96,6 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 		"kind": string(protocol.MessageKindNotification),
 		"type": protocol.MsgTypeAuthRequired,
 		"id":   "",
-		"protocol_version": map[string]any{
-			"major": float64(protocol.AdminProtocolVersionMajor),
-			"minor": float64(protocol.AdminProtocolVersionMinor),
-		},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -130,7 +117,7 @@ func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
 	defer cleanup()
 	server.nodeFailState.Fail(errors.New("identity role conflict"))
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -312,7 +299,7 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 	server.auditLog = logger
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	conn := newIPCMockConn(authLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
@@ -371,7 +358,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	unknownLine := `{"kind":"request","type":"definitely_unknown","id":"req-1"}` + "\n"
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
@@ -587,7 +574,7 @@ func TestHandleRegisteredClientAnswersBadFramesInOrder(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":{"major":8,"minor":0}}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
 	frames := "not json\n" +
 		`{"kind":"response","type":"list_keys","id":"req-2"}` + "\n" +
 		`{"kind":"request","type":"definitely_unknown","id":"req-3"}` + "\n"

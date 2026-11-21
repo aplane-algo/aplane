@@ -73,7 +73,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 					Type: protocol.MsgTypeAuth,
 				},
 				Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
-				ProtocolVersion: testAdminProtocolVersion(),
+				ProtocolVersion: protocol.AdminProtocolVersion,
 			})
 
 			rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
@@ -140,7 +140,7 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	writeAdminMessage(t, clientConn, protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuthOnly},
 		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
-		ProtocolVersion: testAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
 	var authResult protocol.AuthResultMessage
@@ -220,7 +220,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 			Type: protocol.MsgTypeAuth,
 		},
 		Passphrase:      protocol.NewSensitiveBytes(string(testPassphrase)),
-		ProtocolVersion: testAdminProtocolVersion(),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	})
 
 	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)

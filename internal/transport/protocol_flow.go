@@ -93,7 +93,7 @@ func authenticateWithMode(conn handshakeConn, passphrase []byte, timeout time.Du
 	authMsg := protocol.AuthMessage{
 		BaseMessage:     protocol.BaseMessage{Type: authType},
 		Passphrase:      protocol.SensitiveBytes(bytes.Clone(passphrase)),
-		ProtocolVersion: ptrProtocolVersion(protocol.CurrentAdminProtocolVersion()),
+		ProtocolVersion: protocol.AdminProtocolVersion,
 	}
 	defer authMsg.Passphrase.Zero()
 	if err := conn.WriteJSON(authMsg); err != nil {
@@ -122,10 +122,6 @@ func authenticateWithMode(conn handshakeConn, passphrase []byte, timeout time.Du
 	}
 
 	return nil
-}
-
-func ptrProtocolVersion(v protocol.ProtocolVersion) *protocol.ProtocolVersion {
-	return &v
 }
 
 // unlockWithDispatcher sends an unlock request carrying its own copy of the

@@ -2558,11 +2558,10 @@ func authenticateOrDisplaceIPCClient(ipcClient *transport.IPCClient, passphrase 
 
 		switch base.Type {
 		case protocol.MsgTypeAuthRequired:
-			protocolVersion := protocol.CurrentAdminProtocolVersion()
 			authMsg := protocol.AuthMessage{
 				BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
 				Passphrase:      protocol.NewSensitiveBytes(passphrase),
-				ProtocolVersion: &protocolVersion,
+				ProtocolVersion: protocol.AdminProtocolVersion,
 			}
 			if err := ipcClient.WriteJSON(authMsg); err != nil {
 				return fmt.Errorf("failed to send auth message: %w", err)

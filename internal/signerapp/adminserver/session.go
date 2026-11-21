@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"sync"
 
@@ -171,8 +170,7 @@ func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Ac
 // connection authenticated, failed, or handled a one-shot bootstrap request.
 func (s *Session) AuthenticateOutcome() AuthOutcome {
 	authReq := protocol.AuthRequiredMessage{
-		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired},
-		ProtocolVersion: protocol.CurrentAdminProtocolVersion(),
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired},
 	}
 	if err := s.WriteJSON(authReq); err != nil {
 		return AuthOutcomeFailed
@@ -207,15 +205,20 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 			return AuthOutcomeFailed
 		}
 
+		// The version is read leniently and checked before the strict
+		// decode, so a client of another version is told that rather than
+		// shown its newer or older fields as unknown.
 		var versionEnvelope struct {
-			ProtocolVersion *protocol.ProtocolVersion `json:"protocol_version"`
+			ProtocolVersion int `json:"protocol_version"`
 		}
 		if err := json.Unmarshal(raw, &versionEnvelope); err != nil {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
 			return AuthOutcomeFailed
 		}
-		if ok, errMsg := validateAdminProtocolVersion(versionEnvelope.ProtocolVersion); !ok {
-			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, errMsg)
+		if versionEnvelope.ProtocolVersion != protocol.AdminProtocolVersion {
+			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, fmt.Sprintf(
+				"admin protocol version mismatch: client=%d server=%d",
+				versionEnvelope.ProtocolVersion, protocol.AdminProtocolVersion))
 			return AuthOutcomeFailed
 		}
 
@@ -423,22 +426,6 @@ func (s *Session) Bind(identity *auth.Identity, bound *productruntime.Runtime) {
 	if bound != nil {
 		s.state = StateAuthenticated
 	}
-}
-
-func validateAdminProtocolVersion(clientVersion *protocol.ProtocolVersion) (bool, string) {
-	if clientVersion == nil {
-		return false, "admin protocol version is required"
-	}
-	if clientVersion.Major != protocol.AdminProtocolVersionMajor {
-		return false, fmt.Sprintf("admin protocol major version mismatch: client=%d server=%d",
-			clientVersion.Major, protocol.AdminProtocolVersionMajor)
-	}
-	if clientVersion.Minor != protocol.AdminProtocolVersionMinor {
-		slog.Warn("admin protocol minor version mismatch",
-			"client_minor", clientVersion.Minor,
-			"server_minor", protocol.AdminProtocolVersionMinor)
-	}
-	return true, ""
 }
 
 func (s *Session) Conn() adminproto.AdminConn {

@@ -98,34 +98,12 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the current admin protocol version is 8.0 (8.0 renames the writable admin settings
-  `boundary_require_admin_key` to `require_contained` and `boundary_require_cosigner` to
-  `require_cosigner`, removes `admin_key_id` from
-  `prepare_generate_result`, replaces `prepare_generate_result.bounded.admin_operations`
-  with `bounded.rekey`, and adds `bounded.rekey_list`; a 7.x apadmin would read an account
-  with no `admin_operations` as having no rekey path, so it is refused at authentication
-  rather than shown a wrong review; later 8.0 work, still unreleased, makes
-  `bounded.max_fee` optional (absent on a `plain1` account), adds
-  `boundary_schema` to key types, `base_key_type` and `warnings` to
-  `prepare_generate_result`, and `warnings` to `generate_result`, and removes
-  `key_details.mnemonic_exportable`, since every native key can export its
-  phrase;
-  7.3 adds `review_fingerprint` and
-  `boundary_digest` to `prepare_generate_result`, an optional
-  `generate_key.expected_boundary_digest`, `per_key_contract` to key types, and the two
-  `boundary_require_*` admin settings; 7.2 adds `prepare_generate_key`
-  and an optional `generate_key.expected_fingerprint`; 7.1 makes `export_key` return
-  `export_result` with a native recovery phrase over local IPC and adds
-  `key_details.mnemonic_exportable`; 7.0 adds `get_policy_context`
-  and makes `apply_policy` name the composite snapshot it was reviewed
-  against, so a 6.x client is refused at authentication rather than applying
-  without that check; 6.1 added the ASA set messages); `auth_required`
-  carries it as
-  `protocol_version:{major,minor}`; clients must send their version in
-  `auth.protocol_version`; major-version mismatches
-  are rejected during authentication, and minor-version mismatches are logged
-  but accepted; v6 intentionally removes the retired `pending_attempts`
-  generation-inventory field and does not provide a v5 compatibility shim,
+- the admin protocol version is the single integer 8
+  (`protocol.AdminProtocolVersion`); clients send it in
+  `auth.protocol_version`, and the server refuses any other value, a
+  missing one included, during authentication; apadmin, apapprover and
+  apsigner ship together, so there is no skew tolerance and `auth_required`
+  carries no version,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -360,7 +338,7 @@ Server to Client:
 #### Session and Store Lifecycle
 
 - `auth` / `auth_only`: `passphrase`, required `protocol_version`; unknown
-  fields are rejected after the protocol major is validated
+  fields are rejected after the protocol version is checked
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal

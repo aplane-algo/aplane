@@ -1,8 +1,8 @@
 # Proposal: Authenticated Backup Archive Manifest
 
 **Status:** superseded by the credential-only archive and direct atomic restore
-contract first introduced with admin protocol v4. The current admin wire is
-v6.0. Retained only as historical rationale; the normative contract lives in
+contract first introduced with admin protocol v4. Retained only as
+historical rationale; the normative contract lives in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). Current archives also carry each
 exported key's own policy document; the node default policy and signer
 settings remain excluded.
