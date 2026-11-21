@@ -1088,8 +1088,7 @@ is built, then uses:
   (`productruntime.Runtime.IsUnlockedIn`). A recovery and a reconcile while
   a request waits for approval end that session, and the request answers
   `locked` instead of signing on a plan made before them; the client sends
-  it again. (A lock fails the pending approval itself, so a request waiting
-  across a lock answers `forbidden`, rejected by the operator.)
+  it again. A lock ends the wait the same way.
 
 ### Approval Text Is Escaped
 
@@ -2403,7 +2402,7 @@ distinct from the per-key snapshot returned by `/keys`, which is the source of
 truth for signing an existing key. `mnemonic_import` is the explicit user-facing
 mnemonic import capability; clients must not infer importability from
 `mnemonic_word_count`. It does not otherwise expose whether the binary
-has populated signer-side signing, keygen, mnemonic, or key-processor registries.
+has populated signer-side signing, keygen, or mnemonic registries.
 Client/signer provider-boundary refactors must preserve this schema and field
 meaning.
 

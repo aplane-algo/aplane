@@ -62,7 +62,7 @@ This split is a hard dependency boundary, not only a startup preference:
 
 - `cmd/apshell` calls `lsig/clientreg.RegisterClient()` and
   the client registration for native Ed25519 and Falcon. It must not populate
-  signer-side signing, keygen, mnemonic, or key-processor registries or link
+  signer-side signing, keygen, or mnemonic registries or link
   `github.com/algorand/falcon`.
 - `cmd/apsigner`, `cmd/apadmin`, `cmd/apstore`, and local `cmd/apconsole`
   composition call `lsig/signerreg.RegisterSigner()` plus Ed25519 and native
