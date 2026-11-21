@@ -87,6 +87,10 @@ type RegistrationReport struct {
 	CompiledConflictingKeyTypes  []string
 }
 
+// repairHint is what repairs a template record defect. The import needs an
+// unlocked signer, and a defect found at unlock leaves the store in recovery.
+const repairHint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+
 func (r RegistrationReport) Warnings() []string {
 	var warnings []string
 	for _, defect := range r.NamespaceDefects {
@@ -120,16 +124,16 @@ func (r RegistrationReport) Warnings() []string {
 		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (restart apsigner to redefine)", r.CompiledConflictingKeyTypes))
 	}
 	if len(r.GenericExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v "+repairHint, r.GenericExternalEditKeyTypes))
 	}
 	if len(r.ComposedExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v "+repairHint, r.ComposedExternalEditKeyTypes))
 	}
 	if len(r.GenericOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v "+repairHint, r.GenericOrphanedKeyTypes))
 	}
 	if len(r.ComposedOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v "+repairHint, r.ComposedOrphanedKeyTypes))
 	}
 	return warnings
 }

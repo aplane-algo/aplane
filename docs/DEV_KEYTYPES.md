@@ -191,7 +191,11 @@ Fingerprint authoring rules:
   computes, so one with another version prefix, no prefix, or a malformed hash is a
   mismatch like any other. A bump therefore changes every stored fingerprint:
   installed template records then read as externally edited and keys as
-  conflicting, so a bump is a store format change.
+  conflicting, so a bump is a store format change. Ship a bump either in a
+  new-install-only release or with a one-release window that verifies each
+  stored record under the old version and rewrites it to the new one; key files
+  need their own answer, such as a provenance rewrite or accepting the
+  conflict.
 - A base-key-type or provider-identifier rename is a separate compatibility
   event from the fingerprint: key files store the raw `base_key_type`, so the
   renamed identifier needs a retained registry alias or those keys cannot sign.

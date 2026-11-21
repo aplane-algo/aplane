@@ -181,7 +181,11 @@ the fingerprint formula:
 - Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
   (field set / hashing rules), never on a rename; update the goldens with it.
   A bump changes every fingerprint, so every installed template record and key
-  then reads as a mismatch: it is a store format change.
+  then reads as a mismatch: it is a store format change. Ship a bump either in
+  a new-install-only release or with a one-release window that verifies each
+  stored record under the old version and rewrites it to the new one; key
+  files need their own answer, such as a provenance rewrite or accepting the
+  conflict.
 - Do not add a new-account restriction to `ValidateTemplateSpec`,
   `validateBoundedConfig`, or the bounded metadata helpers. Installed templates
   reach them on load, and an error changes the fingerprint and fails the store's

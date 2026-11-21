@@ -150,7 +150,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 					if !reflect.DeepEqual(report.GenericExternalEditKeyTypes, []string{keyType}) {
 						t.Fatalf("GenericExternalEditKeyTypes = %v, want %s", report.GenericExternalEditKeyTypes, keyType)
 					}
-					wantWarning := "externally edited generic templates ignored on reload: [" + keyType + "] (reinstall via `apadmin template import`)"
+					wantWarning := "externally edited generic templates ignored on reload: [" + keyType + "] (reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
 					if !reflect.DeepEqual(report.Warnings(), []string{wantWarning}) {
 						t.Fatalf("Warnings() = %q, want %q", report.Warnings(), wantWarning)
 					}
@@ -247,5 +247,27 @@ func TestReloadRequiresTheRecordedCompiledFingerprintExactly(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A template record defect is repaired by a reimport only while the signer is
+// unlocked; the warning says so and points a store in recovery to the manual
+// repair.
+func TestRegistrationReportWarningsNameTheRepair(t *testing.T) {
+	report := RegistrationReport{
+		GenericExternalEditKeyTypes:  []string{"test.edited-generic.v1"},
+		ComposedExternalEditKeyTypes: []string{"test.edited-composed.v1"},
+		GenericOrphanedKeyTypes:      []string{"test.orphan-generic.v1"},
+		ComposedOrphanedKeyTypes:     []string{"test.orphan-composed.v1"},
+	}
+	const hint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+	want := []string{
+		"externally edited generic templates ignored on reload: [test.edited-generic.v1] " + hint,
+		"externally edited composed templates ignored on reload: [test.edited-composed.v1] " + hint,
+		"generic template state records without template files ignored on reload: [test.orphan-generic.v1] " + hint,
+		"composed template state records without template files ignored on reload: [test.orphan-composed.v1] " + hint,
+	}
+	if got := report.Warnings(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Warnings() = %q, want %q", got, want)
 	}
 }
