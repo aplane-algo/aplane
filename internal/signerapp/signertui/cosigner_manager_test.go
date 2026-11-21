@@ -255,7 +255,7 @@ func TestGenerateAccountFromReferenceChoosesAmongCompatibleTypes(t *testing.T) {
 		}}},
 	}
 
-	nextModel, _ := m.beginDetailsCosignerGeneration()
+	nextModel, _ := m.handleCosignerReferenceDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	next := nextModel.(Model)
 	if next.viewState != ViewCosignerGenerateType {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewCosignerGenerateType)
@@ -706,5 +706,29 @@ func TestCosignerDeleteHintFollowsItsRowAcrossAList(t *testing.T) {
 				t.Fatalf("hint shown %v, want %v, with the cursor on row %d:\n%s", got, tc.wantHint, m.cosigner.managerSelected, view)
 			}
 		})
+	}
+}
+
+// A details screen whose reference the list no longer holds offers only Back:
+// its footer names no action, and g and d do nothing.
+func TestGoneCosignerReferenceDetailsOfferOnlyBack(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "enter")
+	m = updateModel(t, m, CosignerReferencesMsg{References: m.cosigner.references[:1], Invalid: m.cosigner.invalid})
+	view := stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	if !strings.Contains(view, "no longer available") || !strings.Contains(view, "esc/q: Back") ||
+		strings.Contains(view, "g: Generate") || strings.Contains(view, "d: Remove") {
+		t.Fatalf("details of a gone reference:\n%s", view)
+	}
+	for _, key := range []string{"g", "d"} {
+		next, cmd := m.handleKeyPress(browserKey(key))
+		got := next.(Model)
+		if got.viewState != ViewCosignerReferenceDetails || cmd != nil || got.cosigner.managerStatus != "" || got.cosigner.importError != "" {
+			t.Fatalf("%s acted: view %v cmd nil=%v status %q error %q", key, got.viewState, cmd == nil, got.cosigner.managerStatus, got.cosigner.importError)
+		}
+	}
+	if m = press(t, m, "esc"); m.viewState != ViewCosignerReferences {
+		t.Fatalf("esc = view %v, want the list", m.viewState)
 	}
 }

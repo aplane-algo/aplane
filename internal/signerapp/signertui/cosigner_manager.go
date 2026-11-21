@@ -256,15 +256,20 @@ func wrapPath(path string, width int) string {
 }
 
 func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
+	if key := msg.String(); key == "esc" || key == "q" {
 		m.viewState = ViewCosignerReferences
+		return m, nil
+	}
+	// A reference the list no longer holds offers only Back.
+	reference, ok := m.detailsCosignerReference()
+	if !ok {
+		return m, nil
+	}
+	switch msg.String() {
 	case "g":
-		return m.beginDetailsCosignerGeneration()
+		return m.beginCosignerGeneration(reference)
 	case "d":
-		if reference, ok := m.detailsCosignerReference(); ok {
-			m = m.beginCosignerRemoval(reference.Name, false)
-		}
+		m = m.beginCosignerRemoval(reference.Name, false)
 	}
 	return m, nil
 }
@@ -290,13 +295,7 @@ func (m Model) compatibleCosignerGenerateTypeIndices(componentKeyType string) []
 	return indices
 }
 
-func (m Model) beginDetailsCosignerGeneration() (tea.Model, tea.Cmd) {
-	reference, ok := m.detailsCosignerReference()
-	if !ok {
-		m.cosigner.managerStatus = "Cosigner reference is no longer available"
-		m.viewState = ViewCosignerReferences
-		return m, nil
-	}
+func (m Model) beginCosignerGeneration(reference CosignerReferenceInfo) (tea.Model, tea.Cmd) {
 	indices := m.compatibleCosignerGenerateTypeIndices(reference.KeyType)
 	switch len(indices) {
 	case 0:
