@@ -194,3 +194,13 @@ func TestReviewWrappedValuesCannotStartAFieldLine(t *testing.T) {
 		}
 	}
 }
+
+// An imported key whose comment is not a label the signer admits is said to
+// be enrolled without a label.
+func TestImportStatusSaysTheCommentWasNotTheLabel(t *testing.T) {
+	m := sizedForTest(t, Model{viewState: ViewEnrolledClients, connectionState: ConnectionConnected}, MinWidth, MinHeight)
+	m = updateModel(t, m, ImportClientKeyResultMsg{Success: true, Fingerprint: "SHA256:one", Added: true, CommentRefused: true})
+	if want := "Client key SHA256:one enrolled without a label: " + commentRefusedReason + "."; m.clients.status != want {
+		t.Fatalf("status = %q, want %q", m.clients.status, want)
+	}
+}

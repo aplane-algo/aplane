@@ -794,6 +794,9 @@ type ImportClientKeyResultMsg struct {
 	Fingerprint string
 	Label       string
 	Added       bool
+	// CommentRefused reports that the key's comment was left out as its
+	// label: it is not a label the signer admits.
+	CommentRefused bool
 }
 
 // RevokeEnrolledKeyResultMsg is sent when a client key revocation completes.

@@ -168,3 +168,26 @@ func TestClientsResultLinesQuoteAndCutTheLabel(t *testing.T) {
 		}
 	}
 }
+
+// An import whose key comment is not a label the signer admits reports that
+// the key was enrolled without a label, rather than an error the operator
+// did not cause.
+func TestClientsImportSaysTheCommentWasNotTheLabel(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, result any) error {
+		if result, ok := result.(*protocol.ImportClientKeyResultMessage); ok {
+			*result = protocol.ImportClientKeyResultMessage{Success: true, Fingerprint: "SHA256:one", Added: true, CommentRefused: true}
+		}
+		return nil
+	}}
+	keyFile := filepath.Join(t.TempDir(), "id.pub")
+	if err := os.WriteFile(keyFile, []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl \u7530\u4e2d\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if err := (Catalog{Client: requester, Streams: Streams{Stdout: &bytes.Buffer{}, Stderr: &stderr}}).Run("clients", []string{"import", keyFile}); err != nil {
+		t.Fatalf("clients import: %v", err)
+	}
+	if want := "client key SHA256:one enrolled without a label: its comment is not printable ASCII text of at most 64 bytes\n"; stderr.String() != want {
+		t.Errorf("output %q, want %q", stderr.String(), want)
+	}
+}

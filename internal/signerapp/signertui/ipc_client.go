@@ -526,7 +526,8 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return RejectEnrollmentResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint}
 	}),
 	MsgTypeImportClientKeyResult: decodeAs(func(result ImportClientKeyResultMessage) tea.Msg {
-		return ImportClientKeyResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label, Added: result.Added}
+		return ImportClientKeyResultMsg{Success: result.Success, Error: result.Error, Fingerprint: result.Fingerprint, Label: result.Label, Added: result.Added,
+			CommentRefused: result.CommentRefused}
 	}),
 	MsgTypeRevokeEnrolledKeyResult: decodeAs(func(result RevokeEnrolledKeyResultMessage) tea.Msg {
 		return RevokeEnrolledKeyResultMsg{

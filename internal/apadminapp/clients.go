@@ -255,6 +255,8 @@ func (c Catalog) importClient(path, label string) error {
 		c.info("client key %s was already enrolled", result.Fingerprint)
 	case result.Label != "":
 		c.info("client key %s enrolled (label %s)", result.Fingerprint, termsafe.ResultLabel(result.Label))
+	case result.CommentRefused:
+		c.info("client key %s enrolled without a label: its comment is not printable ASCII text of at most 64 bytes", result.Fingerprint)
 	default:
 		c.info("client key %s enrolled", result.Fingerprint)
 	}

@@ -166,6 +166,10 @@ func (m Model) reportEnrollmentAnswer(
 	return m, clearCmd
 }
 
+// commentRefusedReason says why an imported key took no label from its key
+// line's comment.
+const commentRefusedReason = "its comment is not printable ASCII text of at most 64 bytes"
+
 func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Model, tea.Cmd) {
 	if !msg.Success {
 		m.clients.importError = msg.Error
@@ -177,6 +181,8 @@ func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Mo
 		m.clients.status = fmt.Sprintf("Client key %s was already enrolled.", msg.Fingerprint)
 	case msg.Label != "":
 		m.clients.status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, termsafe.ResultLabel(msg.Label))
+	case msg.CommentRefused:
+		m.clients.status = fmt.Sprintf("Client key %s enrolled without a label: %s.", msg.Fingerprint, commentRefusedReason)
 	default:
 		m.clients.status = fmt.Sprintf("Client key %s enrolled.", msg.Fingerprint)
 	}

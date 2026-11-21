@@ -552,8 +552,10 @@ with operator import of a public key (below), this is the whole bootstrap.
    such a request is refused so the queue and the registry never disagree
    about the key), and a request dropped by a write that is not yet durable
    is audited as rejected. Labels written by the admin protocol follow the
-   same rule as client-supplied ones: printable single-line text of at most
-   64 bytes. Every
+   same rule as client-supplied ones: printable ASCII text of 1 to 64 bytes
+   once trimmed. An import with no label given takes the key line's comment
+   when it meets the rule and enrolls the key without a label, saying so,
+   when it does not. Every
    waiting request is announced again when an admin session authenticates
 8. the client learns the outcome by connecting: an enrolled key is accepted,
    anything else is refused at the handshake
