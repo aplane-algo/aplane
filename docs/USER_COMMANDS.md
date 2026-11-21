@@ -1125,7 +1125,8 @@ from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
 admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
-Re-importing with the same alias replaces that alias's endpoint data. The
+Re-importing with the same alias replaces that alias's role and URL; its
+`identity_file` and `known_hosts_path` are kept. The
 signer endpoint keeps `role: signer`: importing or creating its alias as a
 cosigner is refused.
 
@@ -1235,7 +1236,9 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible cosigned or bounded-cosigner account without exposing a raw Falcon
-public-key input. The account-generation cosigner field (**Optional cosigner**,
+public-key input. A reference file that is not a valid reference is listed
+after the references; choose it to remove it, as `apadmin cosigner remove`
+would, or to be told to delete the file when remove does not reach it. The account-generation cosigner field (**Optional cosigner**,
 or **Cosigner** where a preset requires one) also offers **Use key file...** and
 **Paste public JSON...**, which import a key in place and return to the form
 with it selected; a key that is already imported is offered under its existing

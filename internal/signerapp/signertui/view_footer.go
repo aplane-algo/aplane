@@ -123,8 +123,14 @@ func (m Model) viewFooterText() string {
 		}
 		return "Enter/y: Enroll | n/Esc: Back"
 	case ViewCosignerReferences:
+		if _, ok := m.selectedInvalidCosignerReference(); ok {
+			return "up/down: Select | enter: Clear | i: Import file | p: Paste JSON | r: Refresh | esc/q: Back"
+		}
 		return "up/down: Select | enter: Details | i: Import file | p: Paste JSON | r: Refresh | esc/q: Back"
 	case ViewCosignerReferenceDetails:
+		if _, ok := m.detailsCosignerReference(); !ok {
+			return "esc/q: Back"
+		}
 		return "g: Generate account | d: Remove alias | esc/q: Back"
 	case ViewCosignerRemoveConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Remove | n/esc: Cancel"

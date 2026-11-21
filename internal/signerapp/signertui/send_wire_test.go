@@ -67,7 +67,7 @@ func TestSendCommandsWriteTheirMessages(t *testing.T) {
 		}, `{"type":"import_key","id":"import-2","key_type":"kt","mnemonic":"word word","parameters":{"a":"b"},"kind":"request"}`},
 		{"get settings", func(m Model) tea.Cmd { return m.sendGetAdminSettingsCmd() }, `{"type":"get_admin_settings","id":"admin-T","kind":"request"}`},
 		{"update setting", func(m Model) tea.Cmd { return m.sendUpdateAdminSettingCmd("k", "v") }, `{"type":"update_admin_setting","id":"admin-set-T","key":"k","value":"v","kind":"request"}`},
-		{"key details", func(m Model) tea.Cmd { return m.sendGetKeyDetailsCmd("ADDR") }, `{"type":"get_key_details","id":"details-T","address":"ADDR","kind":"request"}`},
+		{"key details", func(m Model) tea.Cmd { return m.sendGetKeyDetailsCmd("ADDR", "details-1") }, `{"type":"get_key_details","id":"details-1","address":"ADDR","kind":"request"}`},
 		{"list library", func(m Model) tea.Cmd { return m.sendListLibraryTemplatesCmd() }, `{"type":"list_library_templates","id":"tmpl-list-T","kind":"request"}`},
 		{"install library", func(m Model) tea.Cmd { return m.sendInstallLibraryTemplateCmd("kt", "tt", "install-1") }, `{"type":"install_library_template","id":"install-1","key_type":"kt","template_type":"tt","kind":"request"}`},
 		{"show library", func(m Model) tea.Cmd { return m.sendShowLibraryTemplateCmd("kt", "tt", "show-1") }, `{"type":"show_library_template","id":"show-1","key_type":"kt","template_type":"tt","kind":"request"}`},
