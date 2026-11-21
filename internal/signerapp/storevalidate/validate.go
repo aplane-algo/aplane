@@ -54,7 +54,7 @@ func FirstGeneration(c storeinit.FirstGenerationCandidate) error {
 // Candidate verifies all destination authority and every managed credential
 // without publishing runtime state or registering process-global providers.
 func Candidate(opts Options) error {
-	if err := validateDestinationAuthority(opts); err != nil {
+	if err := validateDestinationAuthority(opts, nil); err != nil {
 		return err
 	}
 
@@ -76,7 +76,7 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 	if err := genstore.ValidateCurrent(opts.Candidate); err != nil {
 		return fmt.Errorf("destination generation structure: %w", err)
 	}
-	if err := validateDestinationAuthority(opts); err != nil {
+	if err := validateDestinationAuthority(opts, nil); err != nil {
 		return err
 	}
 	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, repairedSelectors)
@@ -86,7 +86,34 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 	return validateCredentialReport(opts.ExpectedRole, scan)
 }
 
-func validateDestinationAuthority(opts Options) error {
+// TemplateRepairDestination proves that everything a template repair leaves
+// alone is healthy before it stages anything: the generation's structure,
+// its destination authority with only the template record defects of the
+// repaired key types excluded, and every credential. It is
+// RecoveryDestination with the exclusion moved from credentials to template
+// records. The completed staged candidate is subsequently passed through
+// Candidate with no exclusions.
+func TemplateRepairDestination(opts Options, repairedKeyTypes map[string]bool) error {
+	if len(repairedKeyTypes) == 0 {
+		return fmt.Errorf("template repair names no key type")
+	}
+	if err := genstore.ValidateCurrent(opts.Candidate); err != nil {
+		return fmt.Errorf("destination generation structure: %w", err)
+	}
+	if err := validateDestinationAuthority(opts, repairedKeyTypes); err != nil {
+		return err
+	}
+	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, nil)
+	if err != nil {
+		return fmt.Errorf("credentials: %w", err)
+	}
+	return validateCredentialReport(opts.ExpectedRole, scan)
+}
+
+// validateDestinationAuthority checks everything in a generation but its
+// credentials. repairedTemplates names the key types whose template record
+// defects a template repair replaces; every other caller passes nil.
+func validateDestinationAuthority(opts Options, repairedTemplates map[string]bool) error {
 	if opts.Keyring == nil {
 		return fmt.Errorf("candidate keyring is required")
 	}
@@ -121,7 +148,7 @@ func validateDestinationAuthority(opts Options) error {
 	if err != nil {
 		return fmt.Errorf("templates: %w", err)
 	}
-	if defects := report.ContentDefectKeyTypes(); len(defects) > 0 {
+	if defects := report.ContentDefectKeyTypesExcept(repairedTemplates); len(defects) > 0 {
 		return fmt.Errorf("template/key-type content defect: %s", defects[0])
 	}
 

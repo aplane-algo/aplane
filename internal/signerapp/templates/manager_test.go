@@ -746,6 +746,15 @@ func (p templatesTestProvider) CompatibilityFingerprint() string { return p.fing
 // lives in RegisterKeystoreTemplates), so unit tests exercise it directly.
 func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []string {
 	t.Helper()
+	defects, disabledOrphaned := sweepWithDisabledOrphansForTest(t, paths, masterKey)
+	if len(disabledOrphaned) != 0 {
+		t.Fatalf("sweepKeyTypeNamespace() disabled records without template = %v, want none", disabledOrphaned)
+	}
+	return defects
+}
+
+func sweepWithDisabledOrphansForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) ([]string, []string) {
+	t.Helper()
 	active := mustResolveActiveForTemplatesTest(t, paths)
 	records, err := keytypestate.ListActive(active)
 	if err != nil {
@@ -860,9 +869,9 @@ func TestSweepKeyTypeNamespaceFlagsDisabledRecordMissingTemplate(t *testing.T) {
 		t.Fatalf("remove template file: %v", err)
 	}
 
-	defects := sweepForTest(t, paths, masterKey)
-	if len(defects) != 1 || !strings.Contains(defects[0], "no template file") {
-		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-record-missing-template defect", defects)
+	defects, disabledOrphaned := sweepWithDisabledOrphansForTest(t, paths, masterKey)
+	if len(defects) != 0 || !reflect.DeepEqual(disabledOrphaned, []string{keyType}) {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, %#v; want only %s as a disabled record without template", defects, disabledOrphaned, keyType)
 	}
 }
 

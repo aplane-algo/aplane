@@ -259,6 +259,7 @@ func TestRegistrationReportWarningsNameTheRepair(t *testing.T) {
 		ComposedExternalEditKeyTypes: []string{"test.edited-composed.v1"},
 		GenericOrphanedKeyTypes:      []string{"test.orphan-generic.v1"},
 		ComposedOrphanedKeyTypes:     []string{"test.orphan-composed.v1"},
+		DisabledOrphanedKeyTypes:     []string{"test.orphan-disabled.v1"},
 	}
 	const hint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
 	want := []string{
@@ -266,8 +267,61 @@ func TestRegistrationReportWarningsNameTheRepair(t *testing.T) {
 		"externally edited composed templates ignored on reload: [test.edited-composed.v1] " + hint,
 		"generic template state records without template files ignored on reload: [test.orphan-generic.v1] " + hint,
 		"composed template state records without template files ignored on reload: [test.orphan-composed.v1] " + hint,
+		"disabled template state records without template files: [test.orphan-disabled.v1] " + hint,
 	}
 	if got := report.Warnings(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Warnings() = %q, want %q", got, want)
+	}
+}
+
+// A template repair takes its defects from RecordDefects, and the gate that
+// refuses a store for any other damage excludes those defects of the key
+// types it repairs and nothing else.
+func TestRegistrationReportRecordDefects(t *testing.T) {
+	report := RegistrationReport{
+		GenericInvalidKeyTypes:       []string{"test.invalid.v1"},
+		GenericExternalEditKeyTypes:  []string{"test.edited-generic.v1"},
+		ComposedExternalEditKeyTypes: []string{"test.edited-composed.v1"},
+		GenericOrphanedKeyTypes:      []string{"test.orphan-generic.v1"},
+		ComposedOrphanedKeyTypes:     []string{"test.orphan-composed.v1"},
+		DisabledOrphanedKeyTypes:     []string{"test.orphan-disabled.v1"},
+		NamespaceDefects:             []string{`unexpected entry "notes.txt"`},
+		// Registration-semantics outcomes are not content defects.
+		GenericConflictingKeyTypes: []string{"test.conflict.v1"},
+		GenericDisabledKeyTypes:    []string{"test.disabled.v1"},
+	}
+	wantDefects := []RecordDefect{
+		{KeyType: "test.orphan-generic.v1", Kind: RecordOrphaned, TemplateType: templatestore.TemplateTypeGeneric},
+		{KeyType: "test.orphan-composed.v1", Kind: RecordOrphaned, TemplateType: templatestore.TemplateTypeComposed},
+		{KeyType: "test.edited-generic.v1", Kind: RecordExternalEdit, TemplateType: templatestore.TemplateTypeGeneric},
+		{KeyType: "test.edited-composed.v1", Kind: RecordExternalEdit, TemplateType: templatestore.TemplateTypeComposed},
+		{KeyType: "test.orphan-disabled.v1", Kind: RecordDisabledOrphaned},
+	}
+	if got := report.RecordDefects(); !reflect.DeepEqual(got, wantDefects) {
+		t.Fatalf("RecordDefects() = %+v, want %+v", got, wantDefects)
+	}
+	all := []string{
+		"test.invalid.v1",
+		"test.orphan-generic.v1", "test.orphan-composed.v1",
+		"test.edited-generic.v1", "test.edited-composed.v1",
+		"test.orphan-disabled.v1",
+		`unexpected entry "notes.txt"`,
+	}
+	if got := report.ContentDefectKeyTypes(); !reflect.DeepEqual(got, all) {
+		t.Fatalf("ContentDefectKeyTypes() = %q, want %q", got, all)
+	}
+	repaired := map[string]bool{
+		"test.edited-generic.v1": true, "test.orphan-disabled.v1": true,
+		// A key type whose defect is not a record defect keeps it.
+		"test.invalid.v1": true,
+	}
+	want := []string{
+		"test.invalid.v1",
+		"test.orphan-generic.v1", "test.orphan-composed.v1",
+		"test.edited-composed.v1",
+		`unexpected entry "notes.txt"`,
+	}
+	if got := report.ContentDefectKeyTypesExcept(repaired); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ContentDefectKeyTypesExcept() = %q, want %q", got, want)
 	}
 }
