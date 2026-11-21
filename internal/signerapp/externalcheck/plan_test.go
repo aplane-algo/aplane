@@ -262,7 +262,7 @@ func TestRenderLookupRefusesAFactThatIsNotOnePathSegment(t *testing.T) {
 	cfg := compileChecks(t, `{"ops": {"base_url": "http://127.0.0.1:8650/api"}}`, `[{"id": "each", "source": "ops", "scope": "movement",
 	  "networks": ["*"], "path": "/d/{destination}", "query": {"k": "{kind}"}, "require": [{"pointer": "", "op": "present"}]}]`)
 	check, source := cfg.ExternalChecks[0], cfg.ExternalSources["ops"]
-	for _, value := range []string{"", ".", ".."} {
+	for _, value := range []string{"", ".", "..", "a/../b", "a/b", "/", `a\b`, `..\b`} {
 		_, err := renderLookup(check, source, Facts{"destination": value, "kind": "pay"})
 		if err == nil || err.Error() != "a fact would not render as one path segment" {
 			t.Fatalf("destination %q: error = %v, want a refusal", value, err)
@@ -272,11 +272,10 @@ func TestRenderLookupRefusesAFactThatIsNotOnePathSegment(t *testing.T) {
 		err.Error() != "a fact would render empty" {
 		t.Fatalf("an empty query fact: error = %v, want a refusal", err)
 	}
-	lookup, err := renderLookup(check, source, Facts{"destination": "a/../b", "kind": "pay"})
-	if err != nil || lookup.Path != "/api/d/a%2F..%2Fb?k=pay" {
-		t.Fatalf("a slash is escaped inside its segment: %+v, %v", lookup, err)
+	lookup, err := renderLookup(check, source, Facts{"destination": "a b", "kind": "pay"})
+	if err != nil || lookup.Path != "/api/d/a%20b?k=pay" {
+		t.Fatalf("a fact is escaped as one segment: %+v, %v", lookup, err)
 	}
-
 }
 
 // Applying names the checks BuildPlan plans for, in document order, and

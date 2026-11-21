@@ -990,8 +990,10 @@ included.
 Rescue reads the source token files only to warn of a missing token. When a
 token file cannot be read, rescue still runs: it says in one line which
 selector's file it could not read and that `apstore source token discard
-<selector>` removes a damaged one, and then gives no missing-token warning,
-as for a locked node. An `apply` is then refused before anything is
+<selector>` removes a damaged one (an entry of the source token directory
+that is no token file it names instead, to be removed by hand with the
+daemon stopped), and then gives no missing-token warning, as for a locked
+node. An `apply` is then refused before anything is
 committed, since a new generation is admitted only with every token file
 whole: discard the damaged file, or restore it from a backup, first.
 
@@ -1873,8 +1875,8 @@ reach a lookup. `type` is a transaction type a document can name; a
 transaction of any other type has no `type`, so a check that uses it refuses
 that transaction with `external_check:<id>:missing_fact`. `witness_key` is
 the requested Witness Key ID as the node holds it, with any surrounding space
-removed. A fact that would not render as one path segment (empty, `.` or
-`..`) refuses the request with `external_check:<id>:unavailable`. Requests
+removed. A fact that would not render as one path segment (empty, `.`,
+`..`, or holding `/` or `\`) refuses the request with `external_check:<id>:unavailable`. Requests
 that render the same are made once.
 
 **Rules.** A rule compares the value at `pointer`, a JSON Pointer into the

@@ -5,10 +5,12 @@ package policycmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/asasetstore"
+	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -162,12 +164,18 @@ func (b *offlineBackend) reload() error {
 // feed an advisory, so this never fails a rescue: when any token file cannot
 // be read, no names are known, as on a locked node, and note says which
 // selectors' files could not be read (never what they hold) and how a
-// damaged one is removed.
+// damaged one, or an entry that is no token file, is removed.
 func readSourceTokenNames(active storepaths.GenPaths, kr *crypto.Keyring) (map[string][]string, string) {
 	const unknown = "so source token names are not known and no missing-token warning is given"
 	selectors, err := sourcetokens.Selectors(active)
-	if err != nil {
-		return nil, "the source token files could not be listed, " + unknown + "; run apstore verify to see why"
+	var stray *sourcetokens.UnsupportedEntryError
+	switch {
+	case errors.As(err, &stray):
+		// Discard takes a selector, which such an entry does not name.
+		return nil, fmt.Sprintf("the source token directory holds %q, which is no source token file, %s; "+
+			"with the daemon stopped, remove it by hand from %s", filepath.Base(stray.Path), unknown, filepath.Dir(stray.Path))
+	case err != nil:
+		return nil, fmt.Sprintf("the source token directory could not be read (%v), %s", err, unknown)
 	}
 	names := make(map[string][]string, len(selectors))
 	var unreadable []string

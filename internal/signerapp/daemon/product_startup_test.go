@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -542,5 +543,55 @@ func TestUnlockAlertsAboutStoredAdmissionProblems(t *testing.T) {
 	if !strings.Contains(alerts, "policy default: asset 12345 on mainnet is not in this node's ASA set") ||
 		!strings.Contains(alerts, "/limits/mainnet/asa:12345") {
 		t.Fatalf("status alerts = %q", alerts)
+	}
+}
+
+// A damaged token file is damage in the selected generation, as a damaged
+// key file is: the first unlock's reload fails into recovery with the
+// verified policy published either way, so recovery shows and exports it,
+// and no token is left in memory.
+func TestGenerationDamagePublishesTheVerifiedPolicy(t *testing.T) {
+	for name, damage := range map[string]func(t *testing.T, active utilkeys.GenPaths) string{
+		"a damaged key file": func(t *testing.T, active utilkeys.GenPaths) string {
+			return filepath.Join(active.KeysDir(), "DAMAGED.key")
+		},
+		"a damaged token file": func(t *testing.T, active utilkeys.GenPaths) string {
+			return active.SourceTokenPath(policy.DefaultKey)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			RegisterProviders()
+			root := t.TempDir()
+			keyPaths := utilkeys.NewPaths(root)
+			cfg := serverconfig.DefaultServerConfig()
+			passphrase := []byte("damage-passphrase")
+			if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+				DataDir: root, Paths: keyPaths, Role: noderole.RoleCosigner,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			active, err := genstore.ResolveStoreRootWithKeyring(keyPaths, testKeyringForStore(t, keyPaths, passphrase))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(damage(t, active), []byte("damaged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ir, err := signerstartup.BuildProductRuntime(signerstartup.ProductBuildOptions{
+				DataDir: root, KeyPaths: keyPaths, Config: &cfg, DefaultSessionTimeout: 15 * time.Minute,
+			}, signerstartup.ProductBuildHooks{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ir.ReloadWithPassphrase(passphrase); !signertemplates.IsGenerationValidationErr(err) {
+				t.Fatalf("ReloadWithPassphrase() error = %v, want a generation validation failure", err)
+			}
+			if np, set := ir.PolicyState(); np == nil || set == nil || np.Default == nil {
+				t.Fatalf("PolicyState() = %v, %v; want the verified policy published", np, set)
+			}
+			if names, known := ir.SourceTokenNamesFor(policy.DefaultKey); known {
+				t.Fatalf("SourceTokenNamesFor() = %v, known; want no token index", names)
+			}
+		})
 	}
 }

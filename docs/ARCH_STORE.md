@@ -1681,7 +1681,8 @@ reads and writes, and the runtime index.
   durability is uncertain publishes what the file then holds. A replaced
   index is zeroed when its last reader has released, never while one may
   hold it. Lock cleanup zeroes the index after the key users have drained,
-  a failed unlock reload clears what it published, and a locked node has
+  a failed unlock reload clears what it published, and so does an unlock
+  the fence refuses for a recovery entered while it ran; a locked node has
   none. A token sent in a request header is a Go
   string, which cannot be zeroed; zeroing covers the index.
 - **Lifecycle.** Key deletion moves the key's file to
@@ -1703,7 +1704,9 @@ reads and writes, and the runtime index.
   `token_not_set` until a token is set again. `apadmin policy rescue` reads
   token files only for its missing-token advisory, so a damaged one never
   fails a rescue: the names are then not known, and rescue names the
-  selector whose file it could not read and the discard command. A rescue
+  selector whose file it could not read and the discard command, or an
+  entry of `source_tokens/` that is no token file, which discard cannot
+  name, to be removed by hand with the daemon stopped. A rescue
   apply is still refused before anything is committed, since candidate
   validation admits a generation only with every token file whole.
 
@@ -1871,8 +1874,9 @@ blocked. Entries are not dropped from an otherwise published snapshot. A
 source token file that cannot be read, opened or decoded as its selector's,
 and an entry of `source_tokens/` that is not a token file, are damage of the
 same kind (`sourcetokens.ErrDamaged`): the reload fails with a
-generation-validation error before any key is scanned, and an unlock enters
-recovery with signing blocked. A `source_tokens/` directory that cannot be
+generation-validation error before any key is scanned, but after the verified
+policy is published, as it is when a key file is damaged, so the recovery an
+unlock then enters, with signing blocked, shows and exports that policy. A `source_tokens/` directory that cannot be
 read at all fails the unlock instead, as an unreadable `keys/` does.
 
 Role-conflicting key inventory is not ordinary per-item invalidity. It is a

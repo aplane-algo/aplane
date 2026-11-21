@@ -224,17 +224,61 @@ func TestSourceTokenListPrintsATable(t *testing.T) {
 	}
 }
 
-func TestSourceTokenListEmptyAndOmitted(t *testing.T) {
+func TestSourceTokenListEmpty(t *testing.T) {
 	requester := &fakeRequester{handle: func(message, out any) error {
-		*out.(*protocol.SourceTokenListResultMessage) = protocol.SourceTokenListResultMessage{Success: true, Omitted: 4}
+		*out.(*protocol.SourceTokenListResultMessage) = protocol.SourceTokenListResultMessage{Success: true}
 		return nil
 	}}
 	var stdout, stderr bytes.Buffer
 	if err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run("source", []string{"token", "list"}); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "no source tokens are set or needed") ||
-		!strings.Contains(stderr.String(), "warning: 4 more selector(s) not listed; list one selector at a time") {
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "no source tokens are set or needed") {
 		t.Fatalf("stdout %q stderr %q", stdout.String(), stderr.String())
+	}
+}
+
+// A listing of every selector is read a page at a time, each request
+// starting after the last selector the one before listed, until a page
+// leaves none out.
+func TestSourceTokenListReadsEveryPage(t *testing.T) {
+	pages := map[string]protocol.SourceTokenListResultMessage{
+		"":        {Success: true, Omitted: 2, Selectors: []protocol.SourceTokenSelector{{Selector: "default", Tokens: []protocol.SourceTokenInfo{{Source: "ops", State: protocol.SourceTokenNeeded}}}}},
+		"default": {Success: true, Omitted: 1, Selectors: []protocol.SourceTokenSelector{{Selector: "KEY1", Tokens: []protocol.SourceTokenInfo{{Source: "screening", SetAt: "2026-11-21T01:00:00Z", State: protocol.SourceTokenInUse}}}}},
+		"KEY1":    {Success: true, Selectors: []protocol.SourceTokenSelector{{Selector: "KEY2", Tokens: []protocol.SourceTokenInfo{{Source: "treasury", SetAt: "2026-11-21T02:00:00Z", State: protocol.SourceTokenUnused}}}}},
+	}
+	requester := &fakeRequester{handle: func(message, out any) error {
+		page, ok := pages[message.(protocol.SourceTokenListMessage).After]
+		if !ok {
+			return fmt.Errorf("after %q", message.(protocol.SourceTokenListMessage).After)
+		}
+		*out.(*protocol.SourceTokenListResultMessage) = page
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	if err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run("source", []string{"token", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "SELECTOR  SOURCE     SET                   STATE\n" +
+		"default   ops        -                     needed\n" +
+		"KEY1      screening  2026-11-21T01:00:00Z  in use\n" +
+		"KEY2      treasury   2026-11-21T02:00:00Z  unused\n"
+	if stdout.String() != want || len(requester.requests) != 3 || strings.Contains(stderr.String(), "not listed") {
+		t.Fatalf("%d requests, table:\n%s\nstderr %q", len(requester.requests), stdout.String(), stderr.String())
+	}
+}
+
+// A node whose listing does not move on is refused after one page per
+// selector a cosigner can have, as the export's read is.
+func TestSourceTokenListRefusesAListingThatDoesNotMoveOn(t *testing.T) {
+	requester := &fakeRequester{handle: func(message, out any) error {
+		*out.(*protocol.SourceTokenListResultMessage) = protocol.SourceTokenListResultMessage{Success: true, Omitted: 1,
+			Selectors: []protocol.SourceTokenSelector{{Selector: "default"}}}
+		return nil
+	}}
+	var stdout, stderr bytes.Buffer
+	err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run("source", []string{"token", "list"})
+	if err == nil || !strings.Contains(err.Error(), "does not move on") || len(requester.requests) != 2 || stdout.Len() != 0 {
+		t.Fatalf("Run() error = %v after %d requests, stdout %q", err, len(requester.requests), stdout.String())
 	}
 }

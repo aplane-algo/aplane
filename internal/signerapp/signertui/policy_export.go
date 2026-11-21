@@ -135,10 +135,10 @@ func (m Model) startPolicyExport() (tea.Model, tea.Cmd) {
 		export.err = err.Error()
 		return m, nil
 	}
-	export.path = dir
+	// Each attempt starts afresh: nothing an earlier one fetched or noted
+	// carries over.
+	*export = policyExportState{path: dir}
 	summary := m.policies.policy
-	export.queue = nil
-	export.docs = nil
 	export.expected = make(map[string]string, len(summary.Documents))
 	for _, doc := range summary.Documents {
 		export.queue = append(export.queue, doc.Key)

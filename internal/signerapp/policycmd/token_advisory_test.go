@@ -206,3 +206,29 @@ func TestRescueApplyNamesTheDamagedTokenFile(t *testing.T) {
 		t.Fatalf("a refused apply committed generation %s", after)
 	}
 }
+
+// An entry of source_tokens/ that is no token file cannot be discarded by
+// selector, so rescue names the entry and says it is removed by hand.
+func TestRescueNamesAnEntryThatIsNoTokenFile(t *testing.T) {
+	root, passphrase := initializedPolicyStore(t, noderole.RoleCosigner)
+	t.Setenv(passphraseEnv, passphrase)
+	active, kr, err := genstore.ResolveStoreRoot(storepaths.NewPaths(root), []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr.Zero()
+	if err := os.WriteFile(filepath.Join(active.SourceTokensDir(), "notes.txt"), []byte("not a token file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if err := (RescueRunner{}).Run(context.Background(), Command{Verb: VerbStatus, DataDir: root},
+		Streams{Stdout: &stdout, Stderr: &stderr}); err != nil {
+		t.Fatalf("rescue status = %q, %q, %v", stdout.String(), stderr.String(), err)
+	}
+	note := stderr.String()
+	if !strings.Contains(note, `"notes.txt"`) || !strings.Contains(note, "by hand") ||
+		!strings.Contains(note, active.SourceTokensDir()) || strings.Contains(note, "apstore verify") ||
+		strings.Contains(note, "not a token file") {
+		t.Fatalf("rescue status stderr = %q, want the entry named and removed by hand", note)
+	}
+}

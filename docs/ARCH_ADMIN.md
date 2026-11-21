@@ -815,9 +815,10 @@ can replace a token but never read one.
   (it need not be listed itself), so a client that passes the last selector
   of each page until `omitted` is absent reads every selector, at most 17
   pages at the 8,192-key cap. A page's selectors are chosen before anything
-  is decrypted, and only their token files are read. An export of a cosigner
-  reads the whole listing this way to record which sources every selector,
-  a key with no document of its own included, has a token for.
+  is decrypted, and only their token files are read. `apadmin source token
+  list` without a selector reads the whole listing this way, and so does an
+  export of a cosigner, to record which sources every selector, a key with
+  no document of its own included, has a token for.
 
 Set and remove are in-place writes of the selected generation under the
 store mutation lock, as key generation is; they mint nothing, and the runtime
@@ -1712,9 +1713,12 @@ and the context file records, beside its digests, the sources every
 selector with a token has one for, a key without a document of its own
 included, for appolicy's missing-token warning. When the listing is refused
 (a session without `policy.update`) or fails, the context file records none
-and the export says so. It writes nothing unless every fetched document matches the
-digest the summary listed, together they are the summary's
-`policy_set_sha256`, and with the context they make the snapshot, so an
+and the export says so. No reply tells a client its actions, so the export
+asks regardless, and a refused listing is audited as one authorization
+denial; the product authorizer grants `policy.update` to every session that
+can read a policy, so only another authorizer leads there. It writes
+nothing unless every fetched document matches the digest the summary listed,
+together they are the summary's `policy_set_sha256`, and with the context they make the snapshot, so an
 apply that lands during the export is refused rather than written as a mix.
 An in-progress marker in `.appolicy` is written first and removed only after
 the documents and then the context are durable, so an export that stops part

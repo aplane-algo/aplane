@@ -31,6 +31,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -184,7 +185,10 @@ func (preview *Preview) setAsideResidue(damage error, current storepaths.GenPath
 		return nil
 	}
 	if path, ok := damagePath(damage, current); ok && slices.Contains(preview.Residue, path) {
-		preview.ResidueDamage = append(preview.ResidueDamage, path)
+		// An entry of source_tokens/ is both damage and commit-blocking.
+		if !slices.Contains(preview.ResidueDamage, path) {
+			preview.ResidueDamage = append(preview.ResidueDamage, path)
+		}
 		return nil
 	}
 	return damage
@@ -197,6 +201,7 @@ func damagePath(damage error, current storepaths.GenPaths) (string, bool) {
 		template   *storevalidate.TemplateContentDefectError
 		credential *storevalidate.CredentialDefectError
 		policyFile *policy.UnsupportedEntryError
+		tokenFile  *sourcetokens.UnsupportedEntryError
 		stray      *storevalidate.DeletedArchiveStrayError
 		path       string
 	)
@@ -207,6 +212,8 @@ func damagePath(damage error, current storepaths.GenPaths) (string, bool) {
 		path = credential.Warning.KeyFile
 	case errors.As(damage, &policyFile):
 		path = policyFile.Path
+	case errors.As(damage, &tokenFile):
+		path = tokenFile.Path
 	case errors.As(damage, &stray):
 		return stray.Path, true
 	default:

@@ -1263,7 +1263,9 @@ not repair, and the preview names it:
     limit, rebuild from a backup with `apstore rebuild --address` for the keys
     to keep, since a signer in recovery cannot delete keys;
   - more cosigner credentials than any commit accepts: rebuild with
-    `apstore rebuild --address` for the credentials to keep.
+    `apstore rebuild --address` for the credentials to keep;
+  - a source token file of a key the node does not hold: with `apsigner`
+    stopped, remove it with `apstore source token discard <selector>`.
 
 While the signer is unlocked, a reload after an install or after a change to
 the store's files can also find a defect without leaving the signer. A

@@ -1382,8 +1382,8 @@ X-Aplane-Request-Id: <32 hex characters, fresh per lookup>
 
 A fact is escaped as one path segment in the path, and a query value is
 escaped whole. Behind the facts' own forms, rendering refuses a lookup in
-which a fact in the path would be empty, `.` or `..`, or would escape to
-more than one segment, and one in which a fact in a query value would be
+which a fact in the path would be empty, `.` or `..`, or would hold `/` or
+`\`, and one in which a fact in a query value would be
 empty: `external_check:<id>:unavailable`, "a fact would not render as one
 path segment" (or "would render empty"). The method is always GET, with no
 body and no cookies. The rendered URL must still be at the source's scheme,

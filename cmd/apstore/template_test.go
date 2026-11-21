@@ -346,6 +346,8 @@ func TestTemplateRepairAdvicePerRefusal(t *testing.T) {
 			"restore " + keystorePaths().GenerationDir("gen-1600000000-0badc0de") + " from the same snapshot as the rest of the store, or move it out of the store"},
 		{"too large", fmt.Errorf("%w: over", templaterepair.ErrGenerationTooLarge), "remove deleted-archive members with `apadmin archive prune` until the generation fits"},
 		{"cosigner credential limit", fmt.Errorf("credential inventory: %w", keys.ErrCosignerCredentialLimit), "rebuild the store from a backup with `apstore rebuild --address` for the credentials to keep"},
+		{"source tokens of a key not held", fmt.Errorf("source tokens: %w", &storevalidate.UnheldSourceTokensError{Selector: "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"}),
+			"with apsigner stopped, remove its token file with `apstore source token discard MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ`, then repair again"},
 		{"other damage", fmt.Errorf("%w: key file", templaterepair.ErrOtherDamage), otherDamageAdvice},
 	} {
 		log.Reset()

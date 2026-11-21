@@ -83,7 +83,14 @@ func runExportWithTokens(t *testing.T, m Model, dir string, docs map[string]stri
 	}
 	m.policies.export.path = dir
 	next, _ = m.handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	m = next.(Model)
+	return answerExport(t, next.(Model), docs, tokens)
+}
+
+// answerExport answers each request of the export in progress as
+// runExportWithTokens does, and returns the model and the write command.
+func answerExport(t *testing.T, m Model, docs map[string]string, tokens map[string][]string) (Model, tea.Cmd) {
+	t.Helper()
+	var next tea.Model
 	var cmd tea.Cmd
 	selectors := slices.Sorted(maps.Keys(tokens))
 	for m.policies.export.pendingID != "" {
@@ -230,6 +237,37 @@ func TestPolicyExportWithoutTokenNamesSaysSo(t *testing.T) {
 				t.Fatalf("an export without token names = %+v, %v", selected, err)
 			}
 		})
+	}
+}
+
+// A retry is an export of its own: a note an earlier attempt left, from a
+// token listing the node refused, is not shown after one that recorded the
+// names.
+func TestPolicyExportRetryDropsTheEarlierAttemptsTokenNote(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: "{}\n"}
+	m := exportPoliciesModel(t, docs, policy.DefaultKey)
+	dir := filepath.Join(t.TempDir(), "export")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "occupied"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, write := runExportWithTokens(t, m, dir, docs, nil)
+	next, _ := m.handlePolicyExportWritten(write().(PolicyExportWrittenMsg))
+	m = next.(Model)
+	if m.viewState != ViewPolicyExportForm || m.policies.export.err == "" {
+		t.Fatalf("the first attempt: view %v err %q; want the write refused", m.viewState, m.policies.export.err)
+	}
+
+	if err := os.Remove(filepath.Join(dir, "occupied")); err != nil {
+		t.Fatal(err)
+	}
+	next, _ = m.handlePolicyExportFormKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m, write = answerExport(t, next.(Model), docs, map[string][]string{})
+	next, _ = m.handlePolicyExportWritten(write().(PolicyExportWrittenMsg))
+	if status := next.(Model).policies.status; !strings.Contains(status, "Exported 1 policy document(s)") || strings.Contains(status, "No source token names") {
+		t.Fatalf("the retry: status = %q", status)
 	}
 }
 

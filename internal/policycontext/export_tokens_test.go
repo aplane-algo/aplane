@@ -81,11 +81,6 @@ func TestExportCosignerFixture(t *testing.T) {
 	if fmt.Sprint(got.SourceTokens) != fmt.Sprint(map[string][]string{cosignerExportKey: {"screening", "treasury"}, cosignerFollowerKey: {"ops"}}) {
 		t.Fatalf("SourceTokens = %v", got.SourceTokens)
 	}
-	for selector, want := range map[string]string{cosignerFollowerKey: "[ops]", policy.DefaultKey: "[]"} {
-		if names, known := got.SourceTokenNames(selector); !known || fmt.Sprint(names) != want {
-			t.Fatalf("SourceTokenNames(%s) = %v, %v; want %s, known", selector, names, known, want)
-		}
-	}
 	if again, _ := got.Marshal(); !bytes.Equal(again, want) {
 		t.Fatal("a parsed export encodes differently")
 	}
@@ -112,9 +107,6 @@ func TestSourceTokensAreNotDigested(t *testing.T) {
 	if err != nil || parsed.SourceTokens != nil {
 		t.Fatalf("ParseExport() = %+v, %v; want no names recorded", parsed, err)
 	}
-	if _, known := parsed.SourceTokenNames(policy.DefaultKey); known {
-		t.Fatal("an export that recorded no names claims to know the default's")
-	}
 	// Recording none is still recording: an empty list says no selector
 	// has a token.
 	empty := sampleCosignerExport(t, map[string][]string{policy.DefaultKey: {}})
@@ -124,8 +116,6 @@ func TestSourceTokensAreNotDigested(t *testing.T) {
 	}
 	if parsed, err := ParseExport(data); err != nil || parsed.SourceTokens == nil || len(parsed.SourceTokens) != 0 {
 		t.Fatalf("ParseExport() = %+v, %v", parsed, err)
-	} else if names, known := parsed.SourceTokenNames(cosignerExportKey); !known || len(names) != 0 {
-		t.Fatalf("SourceTokenNames() = %v, %v; want none, known", names, known)
 	}
 }
 

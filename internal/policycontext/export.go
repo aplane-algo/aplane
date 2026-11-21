@@ -53,9 +53,9 @@ type Export struct {
 	// it had one for, sorted. A selector it does not list had none. It is
 	// nil when the export recorded no names (a signer, or a cosigner whose
 	// tokens the export could not read), and then nothing is known of
-	// tokens; use SourceTokenNames. The names sit beside the context and the
-	// baseline and are in neither digest: a token is not policy, so one set
-	// after the export does not make the export stale.
+	// tokens. The names sit beside the context and the baseline and are in
+	// neither digest: a token is not policy, so one set after the export
+	// does not make the export stale.
 	SourceTokens map[string][]string
 }
 
@@ -116,17 +116,6 @@ func (e *Export) RecordSourceTokens(names map[string][]string) error {
 	}
 	e.SourceTokens = recorded
 	return nil
-}
-
-// SourceTokenNames returns the source names selector had a token for at the
-// export, and known: false when the export recorded no names, so nothing is
-// known of the selector's tokens. A selector the recorded names do not list
-// had none, known.
-func (e *Export) SourceTokenNames(selector string) (names []string, known bool) {
-	if e == nil || e.SourceTokens == nil {
-		return nil, false
-	}
-	return e.SourceTokens[selector], true
 }
 
 // validateSourceTokenNames checks one selector's recorded names: 1 to

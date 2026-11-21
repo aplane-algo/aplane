@@ -35,16 +35,15 @@ func WritePolicyExport(dir string, docs []policyexport.Document, view adminproto
 // The listing needs policy.update, as every read of token names does.
 type SourceTokenNames struct {
 	names map[string][]string
-	after string
-	pages int
+	pages sourceTokenPages
 }
 
 // Add records one reply. It returns the after of the next request, and done
 // once the listing is whole. A failed reply, or one that does not move the
 // listing on, is an error, and then nothing gathered should be recorded.
 func (c *SourceTokenNames) Add(msg protocol.SourceTokenListResultMessage) (after string, done bool, err error) {
-	if !msg.Success {
-		return "", false, protocol.WithCode(msg.Code, fmt.Errorf("source token list: %s", msg.Error))
+	if after, done, err = c.pages.next(msg); err != nil {
+		return "", false, err
 	}
 	if c.names == nil {
 		c.names = map[string][]string{}
@@ -56,21 +55,39 @@ func (c *SourceTokenNames) Add(msg protocol.SourceTokenListResultMessage) (after
 			}
 		}
 	}
+	return after, done, nil
+}
+
+// sourceTokenPages follows a source_token_list read a page at a time: each
+// reply names the selector the next request starts after, until a reply
+// leaves none out.
+type sourceTokenPages struct {
+	after string
+	pages int
+}
+
+// next takes one reply and returns the after of the next request, and done
+// once the listing is whole. A failed reply, or one that does not move the
+// listing on, is an error.
+func (p *sourceTokenPages) next(msg protocol.SourceTokenListResultMessage) (after string, done bool, err error) {
+	if !msg.Success {
+		return "", false, protocol.WithCode(msg.Code, fmt.Errorf("source token list: %s", msg.Error))
+	}
 	if msg.Omitted == 0 {
 		return "", true, nil
 	}
 	// A page lists at least one selector, so a whole listing takes at most
 	// one page per selector a cosigner can have.
-	c.pages++
-	if len(msg.Selectors) == 0 || c.pages > policycontext.MaxSourceTokenSelectors {
+	p.pages++
+	if len(msg.Selectors) == 0 || p.pages > policycontext.MaxSourceTokenSelectors {
 		return "", false, errors.New("source token list: the node's listing does not move on")
 	}
-	next := msg.Selectors[len(msg.Selectors)-1].Selector
-	if next == c.after {
+	after = msg.Selectors[len(msg.Selectors)-1].Selector
+	if after == p.after {
 		return "", false, errors.New("source token list: the node's listing does not move on")
 	}
-	c.after = next
-	return next, false, nil
+	p.after = after
+	return after, false, nil
 }
 
 // Names is every selector with a token and the sources it has one for, as

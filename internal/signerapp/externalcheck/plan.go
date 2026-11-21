@@ -301,13 +301,13 @@ func renderLookup(check policy.ExternalCheckV1, source policy.ExternalSourceV1, 
 	for _, part := range check.Path.Parts {
 		if part.Fact != "" {
 			// A second wall behind the facts' own forms: a value that is
-			// empty, a dot segment, or that escapes to more than one
-			// segment would change which resource the path names.
-			segment := url.PathEscape(facts[part.Fact])
-			if segment == "" || segment == "." || segment == ".." || strings.Contains(segment, "/") {
+			// empty, a dot segment, or that holds a path separator would
+			// change which resource the path names, escaped or not.
+			value := facts[part.Fact]
+			if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\`) {
 				return Lookup{}, errors.New("a fact would not render as one path segment")
 			}
-			path.WriteString(segment)
+			path.WriteString(url.PathEscape(value))
 			continue
 		}
 		path.WriteString(part.Literal)

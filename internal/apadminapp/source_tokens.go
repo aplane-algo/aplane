@@ -134,19 +134,35 @@ func (c Catalog) removeSourceToken(cmd sourceTokenCommand) error {
 	return nil
 }
 
+// listSourceTokens lists one selector, or every selector a page at a time,
+// as an export reads them.
 func (c Catalog) listSourceTokens(selector string) error {
-	var result protocol.SourceTokenListResultMessage
-	if err := c.Client.Request(protocol.SourceTokenListMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSourceTokenList, ID: c.requestID("source-token-list")},
-		Selector:    selector,
-	}, &result); err != nil {
-		return err
-	}
-	if !result.Success {
-		return resultError("source token list failed", result.Code, result.Error)
+	var listings []protocol.SourceTokenSelector
+	var pages sourceTokenPages
+	for after := ""; ; {
+		var result protocol.SourceTokenListResultMessage
+		if err := c.Client.Request(protocol.SourceTokenListMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSourceTokenList, ID: c.requestID("source-token-list")},
+			Selector:    selector,
+			After:       after,
+		}, &result); err != nil {
+			return err
+		}
+		if !result.Success {
+			return resultError("source token list failed", result.Code, result.Error)
+		}
+		next, done, err := pages.next(result)
+		if err != nil {
+			return err
+		}
+		listings = append(listings, result.Selectors...)
+		if done {
+			break
+		}
+		after = next
 	}
 	rows := [][]string{{"SELECTOR", "SOURCE", "SET", "STATE"}}
-	for _, listing := range result.Selectors {
+	for _, listing := range listings {
 		if listing.Selector == selector && listing.Policy == protocol.SourceTokenPolicyDefault {
 			c.info("%s follows the node default, whose checks use the tokens of default", selector)
 		}
@@ -162,9 +178,6 @@ func (c Catalog) listSourceTokens(selector string) error {
 		c.info("no source tokens are set or needed")
 	} else {
 		writeTable(c.Streams.Stdout, rows)
-	}
-	if result.Omitted > 0 {
-		c.warn("%d more selector(s) not listed; list one selector at a time", result.Omitted)
 	}
 	return nil
 }

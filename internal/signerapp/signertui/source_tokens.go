@@ -169,6 +169,15 @@ func sourceTokenRows(sources []string, tokens []protocol.SourceTokenInfo) []sour
 	return rows
 }
 
+// routeSourceTokenList hands a token listing to the policy export waiting on
+// it, or else to the key's source tokens view.
+func (m Model) routeSourceTokenList(msg sourceTokenListMsg) (tea.Model, tea.Cmd) {
+	if next, cmd, ok := m.handlePolicyExportSourceTokens(msg); ok {
+		return next, cmd
+	}
+	return m.handleSourceTokenList(msg)
+}
+
 func (m Model) handleSourceTokenList(msg sourceTokenListMsg) (tea.Model, tea.Cmd) {
 	st := &m.sourceTokens
 	if msg.ID == "" || msg.ID != st.listID {

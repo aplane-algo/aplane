@@ -47,11 +47,6 @@ func TestWriteRecordsTheSourceTokenNamesOfEverySelector(t *testing.T) {
 	if fmt.Sprint(export.SourceTokens) != fmt.Sprint(map[string][]string{exportTestKey: {"screening", "treasury"}, followerKey: {"ops"}}) {
 		t.Fatalf("SourceTokens = %v", export.SourceTokens)
 	}
-	for selector, want := range map[string]string{followerKey: "[ops]", policy.DefaultKey: "[]", exportTestKey: "[screening treasury]"} {
-		if names, known := export.SourceTokenNames(selector); !known || fmt.Sprint(names) != want {
-			t.Fatalf("SourceTokenNames(%s) = %v, %v; want %s, known", selector, names, known, want)
-		}
-	}
 
 	paths, err = view.write(filepath.Join(t.TempDir(), "export"), []Document{def, key})
 	if err != nil {
@@ -59,8 +54,6 @@ func TestWriteRecordsTheSourceTokenNamesOfEverySelector(t *testing.T) {
 	}
 	if export := readExport(t, paths).Export; export.SourceTokens != nil {
 		t.Fatalf("an export without names recorded %v", export.SourceTokens)
-	} else if _, known := export.SourceTokenNames(followerKey); known {
-		t.Fatal("an export without names claims to know a selector's")
 	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(paths[0]), ContextDir, ContextFile))
 	if err != nil || strings.Contains(string(data), "source_tokens") {

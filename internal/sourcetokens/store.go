@@ -34,9 +34,21 @@ type damagedError struct{ err error }
 func (e damagedError) Error() string   { return e.err.Error() }
 func (e damagedError) Unwrap() []error { return []error{ErrDamaged, e.err} }
 
+// UnsupportedEntryError is an entry of source_tokens/ that is not a token
+// file: a name other than a valid selector's <selector>.enc, or no regular
+// file. It is ErrDamaged.
+type UnsupportedEntryError struct {
+	// Path is the entry's path.
+	Path string
+}
+
+func (e *UnsupportedEntryError) Error() string {
+	return fmt.Sprintf("source tokens contain unsupported entry %q", filepath.Base(e.Path))
+}
+
 // Selectors lists the selectors with a token file in the generation, sorted,
 // after checking that the namespace holds only canonical <selector>.enc
-// regular files. It decrypts nothing.
+// regular files (an UnsupportedEntryError otherwise). It decrypts nothing.
 func Selectors(active storepaths.GenPaths) ([]string, error) {
 	entries, err := os.ReadDir(active.SourceTokensDir())
 	if err != nil {
@@ -47,7 +59,7 @@ func Selectors(active storepaths.GenPaths) ([]string, error) {
 		name := entry.Name()
 		selector, ok := strings.CutSuffix(name, storepaths.SourceTokenFileExtension)
 		if !ok || ValidateSelector(selector) != nil || !entry.Type().IsRegular() {
-			return nil, damagedError{fmt.Errorf("source tokens contain unsupported entry %q", name)}
+			return nil, damagedError{&UnsupportedEntryError{Path: filepath.Join(active.SourceTokensDir(), name)}}
 		}
 		selectors = append(selectors, selector)
 	}

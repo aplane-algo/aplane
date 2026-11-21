@@ -543,7 +543,28 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
 		ir.notifyLocked()
 	}
+	if !ok && errMsg == signerruntime.RecoveryDuringUnlockMessage {
+		ir.clearFencedSourceTokens()
+	}
 	return ok, keyCount, errMsg
+}
+
+// clearFencedSourceTokens clears the source token index an unlock's reload
+// published before the fence refused the unlock for a recovery entered after
+// it began: the unlock published nothing, and, as a failed unlock reload
+// does, leaves no tokens. The fence runs no lock cleanup, since recovery
+// administration needs the keyring; it needs no tokens. A reconcile reloads
+// and lifts a recovery under the store mutation lock, which this holds, so
+// an index is kept only when one has: the signer is then unlocked with the
+// tokens of the generation that reconcile followed.
+func (ir *Runtime) clearFencedSourceTokens() {
+	defer ir.lockStoreMutation()()
+	if ir.IsUnlocked() {
+		return
+	}
+	ir.passphraseLock.Lock()
+	ir.sourceTokens.Clear()
+	ir.passphraseLock.Unlock()
 }
 
 // --- Approval ---
@@ -1547,17 +1568,24 @@ func (ir *Runtime) reconcileDirty() {
 }
 
 func (ir *Runtime) reloadFromWatcher() error {
+	defer ir.lockStoreMutation()()
+	_, err := ir.Reload()
+	return err
+}
+
+// lockStoreMutation takes the process store mutation lock (reloadLock), when
+// one is wired, and returns its release.
+func (ir *Runtime) lockStoreMutation() (unlock func()) {
 	ir.watcherMu.Lock()
 	lockFn := ir.reloadLock
 	ir.watcherMu.Unlock()
 	if lockFn != nil {
 		if lock := lockFn(); lock != nil {
 			lock.Lock()
-			defer lock.Unlock()
+			return lock.Unlock
 		}
 	}
-	_, err := ir.Reload()
-	return err
+	return func() {}
 }
 
 // StopKeyWatcher stops the file watcher if running.

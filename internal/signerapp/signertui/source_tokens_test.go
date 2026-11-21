@@ -41,7 +41,9 @@ func sourceTokensDetailsModel(t *testing.T) (Model, string) {
 	t.Helper()
 	m := activityReadyModel()
 	m.initialNodeRole = "cosigner"
-	next, cmd := m.Update(KeyDetailsMsg{Success: true, Address: sourceTokensTestKey, KeyType: witness.Falcon1024V1})
+	// The details open only on the reply to the read the key list waits on.
+	m.details.requestID = "details-1"
+	next, cmd := m.Update(KeyDetailsMsg{ID: "details-1", Success: true, Address: sourceTokensTestKey, KeyType: witness.Falcon1024V1})
 	m = next.(Model)
 	if cmd == nil || m.sourceTokens.listID == "" || m.sourceTokens.key != sourceTokensTestKey {
 		t.Fatalf("opening a cosigner key asked for no sources: %+v", m.sourceTokens)
@@ -134,7 +136,8 @@ func TestKeyDetailsAsksForSourcesOnlyForCosignerKeys(t *testing.T) {
 	} {
 		m := activityReadyModel()
 		m.initialNodeRole = tt.role
-		next, cmd := m.Update(KeyDetailsMsg{Success: true, Address: tt.address, KeyType: tt.keyType})
+		m.details.requestID = "details-1"
+		next, cmd := m.Update(KeyDetailsMsg{ID: "details-1", Success: true, Address: tt.address, KeyType: tt.keyType})
 		m = next.(Model)
 		if cmd != nil || m.sourceTokens.listID != "" || m.sourceTokensLine() != "" {
 			t.Fatalf("%s: asked for sources", tt.name)

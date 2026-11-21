@@ -262,6 +262,7 @@ func adviseRefusal(err error, generation storepaths.GenPaths) {
 	var member *storevalidate.DeletedArchiveMemberError
 	var stray *storevalidate.DeletedArchiveStrayError
 	var unsealed *templaterepair.UnsealedParentError
+	var unheld *storevalidate.UnheldSourceTokensError
 	switch {
 	case errors.As(err, &member):
 		logWarnf("unlock never opens the deleted archive, but every generation commit verifies it: start apsigner, which unlocks into recovery, remove the member with `apadmin archive prune --confirm %s`, stop apsigner, and repair again", strings.Join(member.Prune, " "))
@@ -273,6 +274,8 @@ func adviseRefusal(err error, generation storepaths.GenPaths) {
 			keystorePaths().GenerationDir(unsealed.Parent))
 	case errors.Is(err, templaterepair.ErrGenerationTooLarge):
 		logWarnf("start apsigner, which unlocks into recovery, remove deleted-archive members with `apadmin archive prune` until the generation fits, stop apsigner, and repair again; a signer in recovery cannot delete keys, so if the keys alone are over the limit, rebuild the store from a backup with `apstore rebuild --address` for the keys to keep")
+	case errors.As(err, &unheld):
+		logWarnf("no commit keeps source tokens for a key the node does not hold: with apsigner stopped, remove its token file with `apstore source token discard %s`, then repair again", unheld.Selector)
 	case errors.Is(err, keys.ErrCosignerCredentialLimit):
 		logWarnf("no commit accepts more cosigner credentials than the limit, and a signer in recovery cannot delete keys: rebuild the store from a backup with `apstore rebuild --address` for the credentials to keep")
 	case errors.Is(err, templaterepair.ErrOtherDamage):
