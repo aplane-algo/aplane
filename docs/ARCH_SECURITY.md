@@ -490,7 +490,8 @@ with operator import of a public key (below), this is the whole bootstrap.
 - Audit: `CLIENT_ENROLLMENT_REQUESTED` when a new request is queued,
   `CLIENT_ENROLLED` or `CLIENT_ENROLLMENT_REJECTED` with the admin session's
   attribution when the operator answers
-- Refusals are reported as `ERROR: ...` lines with exit status 1:
+- Refusals are reported as `ERROR: ...` lines on the session's standard
+  output, as every reply is (nothing is written to stderr), with exit status 1:
   `enrollment queue is full; ask the operator to clear it and try again`, or
   `failed to record enrollment request` when the queue cannot be written
 - Nothing is stored on the client: its key is its credential, and the node
