@@ -1221,12 +1221,13 @@ With no signer running, nothing else reconciles the generation store, so a
 repair with `--confirm` first does what every unlock does: it quarantines a
 generation an earlier mint published but never committed, and discards
 staging residue, such as what an interrupted repair leaves, and says what it
-moved. The preview says when that is pending, and classifies the generation
-as reconciliation will leave it, so residue it would discard is not reported
-as damage; to do that without writing to the store, it reads a private
-temporary copy of the generation without the residue, outside the store,
-and removes the copy. A retry after a failed or interrupted repair therefore
-needs nothing else.
+moved. The preview says when that is pending. It reads the generation as it
+stands and writes nothing: damage about a crash-residue file is labelled as
+residue a `--confirm` run discards first, not as damage. Residue can hide
+other damage from the preview, so the `--confirm` run classifies the
+generation again after it reconciles, and refuses if the defects it finds no
+longer match those named or anything else is damaged. A retry after a failed
+or interrupted repair therefore needs nothing else.
 
 The repair commits a new generation (operation `template-repair`) whose parent
 is the damaged generation, which is kept, sealed, until generation pruning;

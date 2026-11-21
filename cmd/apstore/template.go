@@ -213,6 +213,12 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 		logInfof("repin keeps the stored template as it is now: use it only if you know why the record and the template differ, for example after a fingerprint-format change")
 		logInfof("otherwise drop the record, start apsigner, and import the template again from a file you trust with `apadmin template import`")
 	}
+	for _, path := range preview.ResidueDamage {
+		logInfof("%s: crash residue; a --confirm run discards it first", path)
+	}
+	if len(preview.Residue) > 0 {
+		logInfof("the generation holds %d crash residue file(s), so its classification may change once reconciliation discards them: a --confirm run reclassifies after it reconciles, and refuses if the defects it finds no longer match those named or anything else is damaged", len(preview.Residue))
+	}
 	if preview.ReconcilePending() {
 		logInfof("reconciliation is pending: %d uncommitted generation(s) to quarantine and %d crash residue(s) to discard; a repair with --confirm reconciles first, as an unlock does",
 			len(preview.Reconcile.Quarantined), len(preview.Reconcile.DiscardedStaging))

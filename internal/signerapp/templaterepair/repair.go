@@ -17,7 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -139,6 +140,16 @@ type Preview struct {
 	// Reconcile is what a repair's reconciliation would quarantine or
 	// discard first: residue an earlier mint left.
 	Reconcile genstore.ReconcileReport
+	// Residue is the crash residue in the current generation, relative to
+	// its directory (genstore.WriteResidue). The preview classifies the
+	// generation as it stands, residue included, so its classification may
+	// change once reconciliation discards the residue; Repair reclassifies
+	// then.
+	Residue []string
+	// ResidueDamage is the damage the classification found that is crash
+	// residue, by its path: a --confirm run discards it first, so it is
+	// neither OtherDamage nor CommitBlocked.
+	ResidueDamage []string
 }
 
 // ReconcilePending reports whether a repair would quarantine or discard
@@ -148,27 +159,64 @@ func (preview Preview) ReconcilePending() bool {
 }
 
 // Inspect classifies every template record defect in the selected
-// generation, with the classification reload uses.
+// generation, with the classification reload uses. It reads the generation
+// in place and writes nothing.
 func Inspect(opts Options) (Preview, error) {
 	preview := Preview{GenerationID: opts.Current.GenerationID()}
-	view, done, err := reconciledView(opts.Current)
-	if err != nil {
-		return Preview{}, err
-	}
-	defer done()
-	classified := opts
-	classified.Current = view
+	// A namespace that cannot be listed is structural damage, which the gate
+	// reports itself.
+	preview.Residue, _ = genstore.WriteResidue(opts.Current)
 	// Reconciliation refusing the store is damage unlock refuses too.
 	report, reconcileErr := genstore.InspectStoreRoot(opts.Paths, opts.Keyring)
 	preview.Reconcile = report
-	if err := classify(classified, &preview, reconcileErr); err != nil {
+	if err := classify(opts, &preview, reconcileErr); err != nil {
 		return Preview{}, err
 	}
-	if view.Dir() != opts.Current.Dir() {
-		preview.OtherDamage = relocate(preview.OtherDamage, view.Dir(), opts.Current.Dir())
-		preview.CommitBlocked = relocate(preview.CommitBlocked, view.Dir(), opts.Current.Dir())
-	}
+	preview.OtherDamage = preview.setAsideResidue(preview.OtherDamage, opts.Current)
+	preview.CommitBlocked = preview.setAsideResidue(preview.CommitBlocked, opts.Current)
 	return preview, nil
+}
+
+// setAsideResidue returns damage, or nil when it is about a file of the
+// crash residue, which it records in ResidueDamage instead.
+func (preview *Preview) setAsideResidue(damage error, current storepaths.GenPaths) error {
+	if damage == nil {
+		return nil
+	}
+	if path, ok := damagePath(damage, current); ok && slices.Contains(preview.Residue, path) {
+		preview.ResidueDamage = append(preview.ResidueDamage, path)
+		return nil
+	}
+	return damage
+}
+
+// damagePath is the path, relative to current's directory, of the file the
+// first damage is about, when its error names one.
+func damagePath(damage error, current storepaths.GenPaths) (string, bool) {
+	var (
+		template   *storevalidate.TemplateContentDefectError
+		credential *storevalidate.CredentialDefectError
+		policyFile *policy.UnsupportedEntryError
+		stray      *storevalidate.DeletedArchiveStrayError
+		path       string
+	)
+	switch {
+	case errors.As(damage, &template) && template.Path != "":
+		path = template.Path
+	case errors.As(damage, &credential):
+		path = credential.Warning.KeyFile
+	case errors.As(damage, &policyFile):
+		path = policyFile.Path
+	case errors.As(damage, &stray):
+		return stray.Path, true
+	default:
+		return "", false
+	}
+	relative, err := filepath.Rel(current.Dir(), path)
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(relative), true
 }
 
 // classify fills preview with the record defects of opts.Current, the
@@ -214,48 +262,6 @@ func classify(opts Options, preview *Preview, reconcileErr error) error {
 	}
 	preview.CommitBlocked = commitBlocked(current, preview.Reconcile, scan)
 	return nil
-}
-
-// reconciledView is current as reconciliation will leave it, which is what
-// a --confirm run, reconciling first, classifies: current itself when it
-// holds no write residue, else a private copy without the residue, outside
-// the store, which done removes. A preview writes nothing to the store.
-func reconciledView(current storepaths.GenPaths) (storepaths.GenPaths, func(), error) {
-	residue, err := genstore.WriteResidue(current)
-	if err != nil || len(residue) == 0 {
-		// A namespace that cannot be listed is structural damage, which the
-		// gate reports for current itself.
-		return current, func() {}, nil
-	}
-	dir, err := os.MkdirTemp("", "aplane-template-repair-")
-	if err != nil {
-		return storepaths.GenPaths{}, nil, fmt.Errorf("classify the generation without its write residue: %w", err)
-	}
-	done := func() { _ = os.RemoveAll(dir) }
-	view, err := genstore.CopyWithoutWriteResidue(current, dir)
-	if err != nil {
-		done()
-		return storepaths.GenPaths{}, nil, err
-	}
-	return view, done, nil
-}
-
-// relocatedError is an error found in the private copy of a generation,
-// worded with the generation's own directory.
-type relocatedError struct {
-	err           error
-	copy, current string
-}
-
-func (e relocatedError) Error() string { return strings.ReplaceAll(e.err.Error(), e.copy, e.current) }
-
-func (e relocatedError) Unwrap() error { return e.err }
-
-func relocate(err error, copy, current string) error {
-	if err == nil {
-		return nil
-	}
-	return relocatedError{err: err, copy: copy, current: current}
 }
 
 // commitBlocked is what refuses a mint over the current generation and

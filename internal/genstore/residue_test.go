@@ -12,10 +12,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// WriteResidue lists what reconciliation's sweep discards, and the copy
-// without it is the generation as reconciliation leaves it, with the store
-// untouched.
-func TestCopyWithoutWriteResidue(t *testing.T) {
+// WriteResidue lists exactly what reconciliation's sweep discards, by path,
+// and leaves the generation alone.
+func TestWriteResidueIsWhatReconciliationDiscards(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	gen := mintTestGeneration(t, paths, testGenA, map[string]string{
 		"keytypes/test.kept.v1.json": "{}",
@@ -39,54 +38,24 @@ func TestCopyWithoutWriteResidue(t *testing.T) {
 	if !reflect.DeepEqual(residue, want) {
 		t.Fatalf("WriteResidue() = %q, want %q", residue, want)
 	}
-	before := treeFiles(t, gen.Dir())
-
-	copied, err := CopyWithoutWriteResidue(gen, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateCurrent(copied); err != nil {
-		t.Fatalf("ValidateCurrent(copy) error = %v", err)
-	}
-	got := treeFiles(t, copied.Dir())
 	for _, relative := range residue {
-		delete(before, relative)
-	}
-	if !reflect.DeepEqual(got, before) {
-		t.Fatalf("copy = %v, want the generation without its residue %v", got, before)
-	}
-	if after := treeFiles(t, gen.Dir()); len(after) != len(before)+len(residue) {
-		t.Fatalf("the source generation changed: %v", after)
+		if _, err := os.Stat(filepath.Join(gen.Dir(), filepath.FromSlash(relative))); err != nil {
+			t.Fatalf("WriteResidue() touched %s: %v", relative, err)
+		}
 	}
 	report, err := reconcileSelected(paths, testGenA, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(treeFiles(t, gen.Dir()), got) {
-		t.Fatalf("reconciled generation = %v, want the copy %v", treeFiles(t, gen.Dir()), got)
+	if !reflect.DeepEqual(report.DiscardedStaging, []string{storepaths.GenerationSealName + ".tmp-123456", "ADDR.key.tmp-998877", "test.kept.v1.json.tmp-123"}) {
+		t.Fatalf("reconcile discarded %q, want the listed residue", report.DiscardedStaging)
 	}
-	if len(report.DiscardedStaging) != len(residue) {
-		t.Fatalf("reconcile discarded %v, want %d entries", report.DiscardedStaging, len(residue))
-	}
-}
-
-func treeFiles(t *testing.T, dir string) map[string]string {
-	t.Helper()
-	files := map[string]string{}
-	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return err
+	for _, relative := range residue {
+		if _, err := os.Stat(filepath.Join(gen.Dir(), filepath.FromSlash(relative))); !os.IsNotExist(err) {
+			t.Fatalf("%s after reconciliation: %v, want gone", relative, err)
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(dir, path)
-		files[filepath.ToSlash(relative)] = string(data)
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	return files
+	if _, err := os.Stat(filepath.Join(gen.KeyTypeRecordsDir(), "custom.tmp-v2.template")); err != nil {
+		t.Fatalf("a record whose name contains .tmp- was discarded: %v", err)
+	}
 }

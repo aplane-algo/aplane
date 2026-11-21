@@ -40,28 +40,54 @@ type TemplateRegistrar struct {
 // generation-based store any entry here fails the selected generation's
 // validation (docs/ARCH_STORE.md, "Runtime reload behavior").
 func (r RegistrationReport) ContentDefectKeyTypes() []string {
-	return r.ContentDefectKeyTypesExcept(nil)
+	defects := r.ContentDefectsExcept(nil)
+	texts := make([]string, len(defects))
+	for i, defect := range defects {
+		texts[i] = defect.Text
+	}
+	return texts
 }
 
-// ContentDefectKeyTypesExcept is ContentDefectKeyTypes without the record
-// defects (RecordDefects) of the key types a template repair replaces. Every
-// other defect stays, the repaired key types' other defects included.
-func (r RegistrationReport) ContentDefectKeyTypesExcept(repaired map[string]bool) []string {
-	var defects []string
+// ContentDefect is one content defect. Text is the key type, or the
+// namespace defect's description; Entry, for a namespace defect about one
+// entry of the keytypes namespace, is that entry's name.
+type ContentDefect struct {
+	Text  string
+	Entry string
+}
+
+// ContentDefectsExcept is ContentDefectKeyTypes without the record defects
+// (RecordDefects) of the key types a template repair replaces. Every other
+// defect stays, the repaired key types' other defects included.
+func (r RegistrationReport) ContentDefectsExcept(repaired map[string]bool) []ContentDefect {
+	var defects []ContentDefect
 	for _, bucket := range [][]string{
 		r.GenericInvalidKeyTypes,
 		r.ComposedInvalidKeyTypes,
 		r.InvalidStateRecordKeyTypes,
 		r.CompiledInvalidKeyTypes,
 	} {
-		defects = append(defects, bucket...)
+		for _, keyType := range bucket {
+			defects = append(defects, ContentDefect{Text: keyType})
+		}
 	}
 	for _, defect := range r.RecordDefects() {
 		if !repaired[defect.KeyType] {
-			defects = append(defects, defect.KeyType)
+			defects = append(defects, ContentDefect{Text: defect.KeyType})
 		}
 	}
-	return append(defects, r.NamespaceDefects...)
+	for _, defect := range r.NamespaceDefects {
+		defects = append(defects, ContentDefect(defect))
+	}
+	return defects
+}
+
+// NamespaceDefect is a content problem the keytypes namespace sweep found.
+// Entry names the entry it is about, or is empty for one about the whole
+// namespace.
+type NamespaceDefect struct {
+	Text  string
+	Entry string
 }
 
 // RecordDefectKind is a template record defect: a content defect that leaves
@@ -117,7 +143,7 @@ type RegistrationReport struct {
 	// namespace directly: unexpected entries, template files without a
 	// state record, and templates (including disabled ones) that fail to
 	// decrypt. Registration is record-driven and would never touch these.
-	NamespaceDefects []string
+	NamespaceDefects []NamespaceDefect
 	// DisabledOrphanedKeyTypes are disabled YAML records with no template
 	// file, which the namespace sweep finds: registration's orphan buckets
 	// hold enabled records only.
@@ -151,7 +177,7 @@ const repairHint = "(stop apsigner and repair with `apstore template repair`; se
 func (r RegistrationReport) Warnings() []string {
 	var warnings []string
 	for _, defect := range r.NamespaceDefects {
-		warnings = append(warnings, fmt.Sprintf("keytypes namespace defect: %s", defect))
+		warnings = append(warnings, fmt.Sprintf("keytypes namespace defect: %s", defect.Text))
 	}
 	if r.GenericErr != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to load generic templates: %v", r.GenericErr))
@@ -344,14 +370,14 @@ func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
 // It returns the disabled records without a template file apart, by key
 // type, and every other defect as a description. Both feed the fail-closed
 // reload gate (docs/ARCH_STORE.md, "Runtime reload behavior").
-func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) (defects, disabledOrphaned []string) {
+func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, records []keytypestate.Record, registrarsBySource map[keytypestate.Source]TemplateRegistrar) (defects []NamespaceDefect, disabledOrphaned []string) {
 	dir := active.KeyTypeRecordsDir()
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return []string{fmt.Sprintf("read keytypes namespace: %v", err)}, nil
+		return []NamespaceDefect{{Text: fmt.Sprintf("read keytypes namespace: %v", err)}}, nil
 	}
 	recordsByKeyType := make(map[string]keytypestate.Record, len(records))
 	for _, rec := range records {
@@ -374,24 +400,24 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 		name := entry.Name()
 		switch {
 		case entry.IsDir():
-			defects = append(defects, fmt.Sprintf("unexpected directory %q", name))
+			defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("unexpected directory %q", name), Entry: name})
 		case strings.HasSuffix(name, ".json"):
 			// Lookup APIs normalize the key type before reading, so a
 			// record whose basename is not already canonical is silently
 			// invisible to them — unaccounted content, not "invalid".
 			keyType := strings.TrimSuffix(name, ".json")
 			if canonical, err := keytypestate.NormalizeKeyType(keyType); err != nil || canonical != keyType {
-				defects = append(defects, fmt.Sprintf("record %q does not use a canonical key type filename", name))
+				defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("record %q does not use a canonical key type filename", name), Entry: name})
 			}
 			// Record content validity is covered by ListInvalidActive.
 		case strings.HasSuffix(name, ".template"):
 			keyType := strings.TrimSuffix(name, ".template")
 			if canonical, err := keytypestate.NormalizeKeyType(keyType); err != nil || canonical != keyType {
-				defects = append(defects, fmt.Sprintf("template %q does not use a canonical key type filename", name))
+				defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("template %q does not use a canonical key type filename", name), Entry: name})
 				continue
 			}
 			if !recordFileExists[keyType] {
-				defects = append(defects, fmt.Sprintf("template %q has no state record", name))
+				defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("template %q has no state record", name), Entry: name})
 				continue
 			}
 			rec, ok := recordsByKeyType[keyType]
@@ -401,7 +427,7 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 				continue
 			}
 			if rec.Source == keytypestate.SourceCompiled {
-				defects = append(defects, fmt.Sprintf("template %q is paired with a compiled-provider record, which does not use template files", name))
+				defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("template %q is paired with a compiled-provider record, which does not use template files", name), Entry: name})
 				continue
 			}
 			// Disabled YAML templates are skipped by registration, so their
@@ -411,11 +437,11 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 			// loaded by registration.
 			if rec.State == keytypestate.StateDisabled {
 				if err := validateTemplateContent(dir, name, keyType, kr, registrarsBySource[rec.Source]); err != nil {
-					defects = append(defects, fmt.Sprintf("disabled template %q failed validation: %v", name, err))
+					defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("disabled template %q failed validation: %v", name, err), Entry: name})
 				}
 			}
 		default:
-			defects = append(defects, fmt.Sprintf("unexpected entry %q", name))
+			defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("unexpected entry %q", name), Entry: name})
 		}
 	}
 	// Record-driven pass: a disabled YAML record whose template file is
@@ -429,7 +455,7 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 			disabledOrphaned = append(disabledOrphaned, rec.KeyType)
 		}
 	}
-	sort.Strings(defects)
+	sort.Slice(defects, func(i, j int) bool { return defects[i].Text < defects[j].Text })
 	return defects, disabledOrphaned
 }
 

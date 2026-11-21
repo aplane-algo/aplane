@@ -91,6 +91,28 @@ func (e *DeletedArchiveMemberError) Error() string {
 
 func (e *DeletedArchiveMemberError) Unwrap() error { return e.Err }
 
+// TemplateContentDefectError is the first template or key-type content
+// defect a generation holds. Path, for a defect about one entry of the
+// keytypes namespace, is that entry's path.
+type TemplateContentDefectError struct {
+	Defect string
+	Path   string
+}
+
+func (e *TemplateContentDefectError) Error() string {
+	return "template/key-type content defect: " + e.Defect
+}
+
+// CredentialDefectError is the first entry of the keys namespace a
+// credential scan could not load; its Warning names the file.
+type CredentialDefectError struct {
+	Warning keys.KeyScanWarning
+}
+
+func (e *CredentialDefectError) Error() string {
+	return "credential content defect: " + e.Warning.Message()
+}
+
 // DeletedArchiveStrayError is a file in the deleted archive that is no
 // member of it: its name is not one a member takes. Every commit refuses it,
 // unlock never reads it, and archive prune, which takes members only, cannot
@@ -221,8 +243,12 @@ func validateDestinationAuthority(opts Options, repairedTemplates map[string]boo
 	if err != nil {
 		return fmt.Errorf("templates: %w", err)
 	}
-	if defects := report.ContentDefectKeyTypesExcept(repairedTemplates); len(defects) > 0 {
-		return fmt.Errorf("template/key-type content defect: %s", defects[0])
+	if defects := report.ContentDefectsExcept(repairedTemplates); len(defects) > 0 {
+		damaged := &TemplateContentDefectError{Defect: defects[0].Text}
+		if defects[0].Entry != "" {
+			damaged.Path = filepath.Join(opts.Candidate.KeyTypeRecordsDir(), defects[0].Entry)
+		}
+		return damaged
 	}
 
 	return nil
@@ -326,7 +352,7 @@ func validateCredentialReport(role noderole.Role, scan *keys.KeyScanReport) erro
 // forbids.
 func validateLoadableCredentials(role noderole.Role, scan *keys.KeyScanReport) error {
 	if len(scan.Warnings) > 0 {
-		return fmt.Errorf("credential content defect: %s", scan.Warnings[0].Message())
+		return &CredentialDefectError{Warning: scan.Warnings[0]}
 	}
 	keyTypes := make(map[string]string, len(scan.Keys))
 	for selector, info := range scan.Keys {

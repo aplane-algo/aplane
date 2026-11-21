@@ -391,28 +391,50 @@ func captureStderr(t *testing.T, fn func()) string {
 	return string(data)
 }
 
-// Write residue the --confirm run's reconciliation discards is reported as
-// pending, not as damage that refuses the repair, and a dry run passes.
-func TestTemplateRepairPreviewSetsWriteResidueAside(t *testing.T) {
-	withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
-		current := currentGenerationForTest(t, passphrase)
-		if err := os.WriteFile(filepath.Join(current.KeyTypeRecordsDir(), "x.json.tmp-123"), []byte("partial"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan); err != nil {
-			t.Fatalf("dry run error = %v, want the repair planned", err)
-		}
-		if strings.Contains(log.String(), "refused") || !strings.Contains(log.String(), "1 crash residue(s) to discard") {
-			t.Fatalf("preview log = %q, want the residue pending and no refusal", log.String())
-		}
-		log.Reset()
-		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"); err != nil {
-			t.Fatalf("template repair --confirm error = %v", err)
-		}
-		if !strings.Contains(log.String(), "x.json.tmp-123") {
-			t.Fatalf("repair log = %q, want the residue reported as discarded", log.String())
-		}
-	})
+// Crash residue the --confirm run's reconciliation discards is labelled as
+// such, not as damage that refuses the repair, and a dry run passes; the
+// preview says the classification may change once it is discarded.
+func TestTemplateRepairPreviewLabelsCrashResidue(t *testing.T) {
+	for _, residue := range []string{"keytypes/x.json.tmp-123", "keys/ADDR.key.tmp-456"} {
+		t.Run(residue, func(t *testing.T) {
+			withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+				tmp := t.TempDir()
+				t.Setenv("TMPDIR", tmp)
+				current := currentGenerationForTest(t, passphrase)
+				if err := os.WriteFile(filepath.Join(current.Dir(), filepath.FromSlash(residue)), []byte("partial"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				before := apstoreStoreDigest(t)
+				if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan); err != nil {
+					t.Fatalf("dry run error = %v, want the repair planned", err)
+				}
+				for _, want := range []string{
+					residue + ": crash residue; a --confirm run discards it first",
+					"its classification may change once reconciliation discards them: a --confirm run reclassifies after it reconciles",
+				} {
+					if !strings.Contains(log.String(), want) {
+						t.Fatalf("preview log = %q, want %q", log.String(), want)
+					}
+				}
+				if strings.Contains(log.String(), "refused") || strings.Contains(log.String(), "apstore rebuild") {
+					t.Fatalf("preview log = %q, want no refusal and no rebuild advice", log.String())
+				}
+				if apstoreStoreDigest(t) != before {
+					t.Fatal("a preview changed the store")
+				}
+				if entries, err := os.ReadDir(tmp); err != nil || len(entries) != 0 {
+					t.Fatalf("the preview created %v in the temp directory (%v)", entries, err)
+				}
+				log.Reset()
+				if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"); err != nil {
+					t.Fatalf("template repair --confirm error = %v", err)
+				}
+				if !strings.Contains(log.String(), "reconciled: discarded crash residue "+filepath.Base(residue)) {
+					t.Fatalf("repair log = %q, want the residue reported as discarded", log.String())
+				}
+			})
+		})
+	}
 }
 
 func TestTemplateRepairReportsAnUncertainCommit(t *testing.T) {

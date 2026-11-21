@@ -284,7 +284,7 @@ func TestRegistrationReportRecordDefects(t *testing.T) {
 		GenericOrphanedKeyTypes:      []string{"test.orphan-generic.v1"},
 		ComposedOrphanedKeyTypes:     []string{"test.orphan-composed.v1"},
 		DisabledOrphanedKeyTypes:     []string{"test.orphan-disabled.v1"},
-		NamespaceDefects:             []string{`unexpected entry "notes.txt"`},
+		NamespaceDefects:             []NamespaceDefect{{Text: `unexpected entry "notes.txt"`, Entry: "notes.txt"}},
 		// Registration-semantics outcomes are not content defects.
 		GenericConflictingKeyTypes: []string{"test.conflict.v1"},
 		GenericDisabledKeyTypes:    []string{"test.disabled.v1"},
@@ -314,13 +314,13 @@ func TestRegistrationReportRecordDefects(t *testing.T) {
 		// A key type whose defect is not a record defect keeps it.
 		"test.invalid.v1": true,
 	}
-	want := []string{
-		"test.invalid.v1",
-		"test.orphan-generic.v1", "test.orphan-composed.v1",
-		"test.edited-composed.v1",
-		`unexpected entry "notes.txt"`,
+	want := []ContentDefect{
+		{Text: "test.invalid.v1"},
+		{Text: "test.orphan-generic.v1"}, {Text: "test.orphan-composed.v1"},
+		{Text: "test.edited-composed.v1"},
+		{Text: `unexpected entry "notes.txt"`, Entry: "notes.txt"},
 	}
-	if got := report.ContentDefectKeyTypesExcept(repaired); !reflect.DeepEqual(got, want) {
-		t.Fatalf("ContentDefectKeyTypesExcept() = %q, want %q", got, want)
+	if got := report.ContentDefectsExcept(repaired); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ContentDefectsExcept() = %+v, want %+v", got, want)
 	}
 }

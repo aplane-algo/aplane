@@ -241,46 +241,6 @@ func WriteResidue(gen storepaths.GenPaths) ([]string, error) {
 	return residue, nil
 }
 
-// CopyWithoutWriteResidue copies gen into dir, which must be empty, without
-// its write residue: the generation as it will stand once reconciliation has
-// run, for a read-only classification of that state that writes nothing to
-// the store. The copy is no generation of the store and nothing selects it;
-// the caller removes it.
-func CopyWithoutWriteResidue(gen storepaths.GenPaths, dir string) (storepaths.GenPaths, error) {
-	residue, err := WriteResidue(gen)
-	if err != nil {
-		return storepaths.GenPaths{}, err
-	}
-	err = filepath.WalkDir(gen.Dir(), func(source string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relative, err := filepath.Rel(gen.Dir(), source)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dir, relative)
-		switch {
-		case entry.IsDir():
-			if relative == "." {
-				return nil
-			}
-			return os.Mkdir(target, fsutil.StoreDirPerm)
-		case slices.Contains(residue, filepath.ToSlash(relative)):
-			return nil
-		}
-		data, mode, err := fsutil.ReadRegularFile(source)
-		if err != nil {
-			return fmt.Errorf("copy %s: %w", relative, err)
-		}
-		return os.WriteFile(target, data, mode.Perm()&fsutil.StoreFilePerm)
-	})
-	if err != nil {
-		return storepaths.GenPaths{}, fmt.Errorf("copy generation %s without write residue: %w", gen.GenerationID(), err)
-	}
-	return storepaths.StagedGenerationPaths(gen.GenerationID(), dir), nil
-}
-
 // CollectGarbageStoreRoot prunes retained generations only after the sole
 // store root and its selection have been authenticated under kr.
 func CollectGarbageStoreRoot(paths storepaths.Paths, retainRollbackParent bool, kr *crypto.Keyring) ([]string, error) {

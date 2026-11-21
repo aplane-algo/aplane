@@ -593,37 +593,84 @@ func TestRepairDiscardsStagingResidueFirst(t *testing.T) {
 	}
 }
 
-// Write residue a crashed durable write left in the current generation is
-// discarded by the reconciliation a --confirm run starts with, so the
-// preview classifies the generation without it: pending reconciliation, not
-// damage. The preview writes nothing.
-func TestInspectClassifiesTheGenerationAsReconciliationLeavesIt(t *testing.T) {
-	f := damagedStore(t)
-	for _, relative := range []string{"keytypes/x.json.tmp-123", "keys/ADDR.key.tmp-456"} {
-		if err := os.WriteFile(filepath.Join(f.opts.Current.Dir(), filepath.FromSlash(relative)), []byte("partial"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+// Crash residue in the current generation is classified in place: damage
+// about a residue file is set aside as residue, which the --confirm run's
+// reconciliation discards first, not reported as damage. The preview leaves
+// the store byte-identical and creates nothing outside it.
+func TestInspectSetsCrashResidueAside(t *testing.T) {
+	for _, tc := range []struct {
+		name, residue string
+		commitOnly    bool
+	}{
+		{name: "template namespace", residue: "keytypes/x.json.tmp-123"},
+		{name: "keys namespace", residue: "keys/ADDR.key.tmp-456"},
+		{name: "key policies namespace", residue: "policies/K.json.tmp-789"},
+		{name: "deleted archive", residue: "deleted/keys/ADDR.key.tmp-321", commitOnly: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := damagedStore(t)
+			tmp := t.TempDir()
+			t.Setenv("TMPDIR", tmp)
+			if err := os.WriteFile(filepath.Join(f.opts.Current.Dir(), filepath.FromSlash(tc.residue)), []byte("partial"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := storeDigest(t, f)
+			preview, err := templaterepair.Inspect(f.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if storeDigest(t, f) != before {
+				t.Fatal("a preview changed the store")
+			}
+			if entries, err := os.ReadDir(tmp); err != nil || len(entries) != 0 {
+				t.Fatalf("the preview created %v in the temp directory (%v)", entries, err)
+			}
+			if preview.OtherDamage != nil || preview.CommitBlocked != nil || len(preview.Defects) != 5 {
+				t.Fatalf("Inspect() = damage %v, commit blocked %v, %d defects; want the 5 defects and no damage",
+					preview.OtherDamage, preview.CommitBlocked, len(preview.Defects))
+			}
+			if !reflect.DeepEqual(preview.Residue, []string{tc.residue}) || !reflect.DeepEqual(preview.ResidueDamage, []string{tc.residue}) {
+				t.Fatalf("Inspect() residue %q, residue damage %q; want %s for both", preview.Residue, preview.ResidueDamage, tc.residue)
+			}
+			if _, err := preview.Plan(allDefectActions()); err != nil {
+				t.Fatalf("Plan() error = %v, want the repair planned", err)
+			}
+			result, err := templaterepair.Repair(f.opts, allDefectActions())
+			if err != nil || len(result.Reconciled.DiscardedStaging) != 1 {
+				t.Fatalf("Repair() = %+v, %v; want the residue discarded and a commit", result, err)
+			}
+		})
 	}
-	before := storeDigest(t, f)
+}
+
+// The preview sees only the first damage, so residue can hide real damage
+// behind it. The --confirm run reclassifies after it reconciles, and refuses
+// for what the residue hid.
+func TestRepairReclassifiesAfterReconciling(t *testing.T) {
+	f := damagedStore(t)
+	if err := os.WriteFile(filepath.Join(f.opts.Current.KeyTypeRecordsDir(), "x.json.tmp-123"), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.opts.Current.KeysDir(), "DAMAGED.key"), []byte("damaged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	preview, err := templaterepair.Inspect(f.opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if storeDigest(t, f) != before {
-		t.Fatal("a preview changed the store")
+	if preview.OtherDamage != nil || len(preview.ResidueDamage) != 1 {
+		t.Fatalf("Inspect() = damage %v, residue damage %q; want only the residue reported", preview.OtherDamage, preview.ResidueDamage)
 	}
-	if preview.OtherDamage != nil || preview.CommitBlocked != nil || len(preview.Defects) != 5 {
-		t.Fatalf("Inspect() = damage %v, commit blocked %v, %d defects; want the 5 defects and no damage", preview.OtherDamage, preview.CommitBlocked, len(preview.Defects))
+	_, err = templaterepair.Repair(f.opts, allDefectActions())
+	if !errors.Is(err, templaterepair.ErrOtherDamage) || !strings.Contains(err.Error(), "DAMAGED.key") {
+		t.Fatalf("Repair() error = %v, want the damaged key file found after reconciliation", err)
 	}
-	if !preview.ReconcilePending() || !reflect.DeepEqual(preview.Reconcile.DiscardedStaging, []string{"ADDR.key.tmp-456", "x.json.tmp-123"}) {
-		t.Fatalf("Inspect().Reconcile = %+v, want both residue files pending", preview.Reconcile)
-	}
-	result, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{
+}
+
+func allDefectActions() map[string]templaterepair.Action {
+	return map[string]templaterepair.Action{
 		editedGeneric: templaterepair.ActionRepin, editedComposed: templaterepair.ActionRepin,
 		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
-	})
-	if err != nil || len(result.Reconciled.DiscardedStaging) != 2 {
-		t.Fatalf("Repair() = %+v, %v; want the residue discarded and a commit", result, err)
 	}
 }
 
