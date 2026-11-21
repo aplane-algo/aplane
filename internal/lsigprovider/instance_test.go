@@ -175,7 +175,7 @@ func TestCompareAccountProvenance(t *testing.T) {
 		{name: "unrelated shape added", stored: instanceFingerprintA, parameters: list},
 		{name: "own shape changed", stored: instanceFingerprintA, parameters: map[string]string{"shape": "changed"}, want: lsigprovider.TemplateProvenanceStatusConflict},
 		{name: "shape no longer available", stored: instanceFingerprintA, parameters: map[string]string{"shape": "gone"}, want: lsigprovider.TemplateProvenanceStatusUnavailable},
-		{name: "different fingerprint format", stored: "2:" + strings.Repeat("a", 64), parameters: list, want: lsigprovider.TemplateProvenanceStatusUnavailable},
+		{name: "another fingerprint version", stored: "2:" + strings.Repeat("a", 64), parameters: list, want: lsigprovider.TemplateProvenanceStatusConflict},
 		{name: "nothing recorded", parameters: list},
 	} {
 		t.Run(test.name, func(t *testing.T) {

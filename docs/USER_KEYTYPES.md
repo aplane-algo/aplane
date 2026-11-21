@@ -1128,15 +1128,14 @@ the daemon reloads the product runtime.
 Example:
 
 ```text
-conflicting compiled key type records ignored on reload: [aplane.ed25519.v1]
+conflicting compiled key type records ignored on reload: [aplane.ed25519.v1] (re-pin each with `apadmin keytype enable <key_type>`)
 ```
 
 This means the product has an enabled compiled-provider state record whose
-stored fingerprint and the current provider fingerprint are the same fingerprint
-version but differ — a genuine provider-definition (behavior) change. The
-fingerprint is behavior-only and versioned, so a pure rename of a key type,
-family, or base key type does not trigger this, and a different-version stored
-fingerprint is treated as benign (re-pinned), not a conflict.
+stored fingerprint is not the current provider fingerprint, byte for byte: a
+provider-definition (behavior) change, or a fingerprint from another
+fingerprint format version. The fingerprint is behavior-only, so a pure rename
+of a key type, family, or base key type does not trigger this.
 
 Refresh the enablement record:
 
@@ -1150,23 +1149,49 @@ files.
 ### Invalid or externally edited YAML template
 
 Reload rejects templates whose encrypted YAML no longer matches the
-same-version fingerprint stored in the state record (a changed behavior or
-`valid_rekey_target` declaration); a different-version stored fingerprint is
-treated as benign, not an external edit.
-
-Recovery is to reinstall through the supported import path:
-
-```bash
-apadmin -d $APSIGNER_DATA template import path/to/template.yaml
-```
+fingerprint stored in the state record, byte for byte: a changed behavior or
+`valid_rekey_target` declaration, or a stored fingerprint from another
+fingerprint format version. This is a content defect; see
+[Repairing a template record](#repairing-a-template-record).
 
 Do not edit installed `.template` files in place.
 
 ### State record without template file
 
-Reload reports this as an orphaned installed template. Reinstall the template
-through `apadmin template import` or remove the broken state record through the
-supported template management flow.
+Reload reports this as an orphaned installed template, also a content defect;
+see [Repairing a template record](#repairing-a-template-record).
+
+### Repairing a template record
+
+What repairs a template record defect depends on when the reload finds it.
+
+- **Signer unlocked.** A reload after an install, or after a change to the
+  store's files, leaves the signer unlocked. Reimport the template: the import
+  writes the template file and rewrites its record with the current
+  fingerprint.
+
+  ```bash
+  apadmin -d $APSIGNER_DATA template import path/to/template.yaml
+  ```
+
+- **Store in recovery.** At unlock the defect fails the selected generation's
+  validation: unlock reports `recovery_blocked` and the signer stays in
+  recovery. `apadmin template import` needs an unlocked signer, so it fails
+  there, and the product has no repair for this. A backup restore does not
+  help either: its candidate generation keeps the same record and fails the
+  same validation. Stop `apsigner`, then do one of these:
+  - Edit the record `identities/default/generations/<generation-id>/keytypes/<key_type>.json`
+    in the current generation, the one `apadmin generations list` reports as
+    current. For an externally edited template, remove its `fingerprint` field,
+    so the record pins nothing; for an orphaned record, delete the file. Start
+    and unlock `apsigner`, then reimport the template so its record pins the
+    current fingerprint again.
+  - Move the store aside and rebuild it from a backup archive with
+    `apstore rebuild` (see
+    [Rebuild an Absent Keystore](USER_STORE_MGMT.md#rebuild-an-absent-keystore)).
+    A rebuilt store has the archive's credentials and per-key policies but no
+    templates or key type state, so import the templates again after the first
+    unlock.
 
 ## Compatibility Rules
 

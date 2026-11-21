@@ -87,6 +87,10 @@ type RegistrationReport struct {
 	CompiledConflictingKeyTypes  []string
 }
 
+// repairHint is what repairs a template record defect. The import needs an
+// unlocked signer, and a defect found at unlock leaves the store in recovery.
+const repairHint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+
 func (r RegistrationReport) Warnings() []string {
 	var warnings []string
 	for _, defect := range r.NamespaceDefects {
@@ -117,19 +121,19 @@ func (r RegistrationReport) Warnings() []string {
 		warnings = append(warnings, fmt.Sprintf("invalid compiled key type records ignored on reload: %v", r.CompiledInvalidKeyTypes))
 	}
 	if len(r.CompiledConflictingKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (restart apsigner to redefine)", r.CompiledConflictingKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (re-pin each with `apadmin keytype enable <key_type>`)", r.CompiledConflictingKeyTypes))
 	}
 	if len(r.GenericExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v "+repairHint, r.GenericExternalEditKeyTypes))
 	}
 	if len(r.ComposedExternalEditKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedExternalEditKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("externally edited composed templates ignored on reload: %v "+repairHint, r.ComposedExternalEditKeyTypes))
 	}
 	if len(r.GenericOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.GenericOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("generic template state records without template files ignored on reload: %v "+repairHint, r.GenericOrphanedKeyTypes))
 	}
 	if len(r.ComposedOrphanedKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v (reinstall via `apadmin template import`)", r.ComposedOrphanedKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("composed template state records without template files ignored on reload: %v "+repairHint, r.ComposedOrphanedKeyTypes))
 	}
 	return warnings
 }
@@ -440,11 +444,7 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 	}
 
 	if existing != nil {
-		// Both fingerprints are computed by this binary (same fingerprint
-		// version), so this is always a same-version comparison; routing it
-		// through the shared helper keeps it consistent and future-proof if
-		// either side is ever sourced from durable storage.
-		if match, comparable := lsigprovider.FingerprintsMatch(registryFingerprint, incomingFingerprint); comparable && match {
+		if registryFingerprint == incomingFingerprint {
 			outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
 		} else {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
@@ -486,10 +486,9 @@ func validateCompiledProviderRecords(records []keytypestate.Record) templatepoli
 			continue
 		}
 		registryFingerprint, _ := lsigprovider.CompatibilityFingerprintOf(provider)
-		// Only a same-version, different-hash pair is a real conflict; a
-		// cross-version or unparseable stored fingerprint is treated as
-		// idempotent (benign) so a formula bump cannot false-conflict.
-		if match, comparable := lsigprovider.FingerprintsMatch(rec.Fingerprint, registryFingerprint); comparable && !match {
+		// A record that pinned nothing is consistent; a pinned fingerprint must
+		// be the provider's byte for byte.
+		if rec.Fingerprint != "" && rec.Fingerprint != registryFingerprint {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 			continue
 		}

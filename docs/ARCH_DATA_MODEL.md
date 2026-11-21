@@ -944,10 +944,10 @@ Key inventory projections may include `template_provenance_status` and
 `template_provenance_note`. These are informational comparisons between a key
 file's stored template fingerprint and the currently registered local
 definition. The fingerprint covers behavior and a YAML template's
-`valid_rekey_target` declaration; it is versioned (`<n>:` prefix) and
-identifier-independent, and the comparison is version-aware: only a same-version,
-different-hash pair is a conflict, while a different-version or malformed stored
-fingerprint is "not comparable" and benign. They do not change signing behavior.
+`valid_rekey_target` declaration; it is versioned (`1:` prefix) and
+identifier-independent, and a stored fingerprint must equal the registered one
+byte for byte: any other value, another version prefix or no prefix included, is a
+conflict. They do not change signing behavior.
 
 ### Plugin Protocol
 
@@ -1329,7 +1329,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
 | LogicSig derivation record | signing authority metadata | key payload `lsig_derivation`, absent on an unsalted key | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | `algod_v13_auto_salt` keys require final TEAL v13+ bytecode. Unknown or internally inconsistent derivation records reject scan and signing, and a restore skips the key. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
-| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Covers behavior and a YAML template's `valid_rekey_target`; versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
+| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Covers behavior and a YAML template's `valid_rekey_target`; versioned (`1:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; a stored value that is not byte-identical to the registered one, another version prefix or no prefix included, is a conflict. |
 | Offline key inventory | local decrypted projection | encrypted key files plus passphrase | `apstore keys list` output | `cmd/apstore`, `internal/keys` | Does not print private key, mnemonic, or raw cosigner public key by default. |
 
 ### Key Type And Template Catalog

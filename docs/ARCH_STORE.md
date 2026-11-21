@@ -963,18 +963,18 @@ subject to the node role gate above.
 | Default-enabled cosigner key type | Raw cosigner-key generator/signing support is registered and cataloged as default-enabled. The current types are `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1`. | Yes on cosigner nodes. | Component-signing only on cosigner nodes; never normal spending `/sign`. | None. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apadmin keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
-| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`. |
+| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | Yes when allowed by node role: generation follows the enabled record, and reload only warns that the record conflicts. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apadmin keytype enable <key_type>`, which re-pins the record. |
 | Signer library YAML only | Plaintext YAML exists under `library/templates/`; no identity install exists. | No. | No effect on existing keys. | Install/import template into identity. |
 | YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by node role. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Disable or remove, if no stored key uses it. |
 | YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Enable, remove, or explicit template restore may re-enable. |
-| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No. | No for any key; reload fails the selected generation into recovery mode (signing blocked for all keys) until the operator repairs or reinstalls the template. | Reinstall through supported template import/install path. |
+| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No. | No for any key; reload fails the selected generation into recovery mode (signing blocked for all keys) until the operator repairs or reinstalls the template. | Reimport through `apadmin template import` while the signer is unlocked. A store already in recovery has no in-product repair; see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
 | YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall/import template. |
 
 Registration-semantics outcomes are not content defects and do not block other
 keys: a compiled, generic, or composed conflict with an already-registered
 process-global provider, idempotent re-registration, and disabled records. A
-fingerprint pair from different fingerprint versions is not comparable and is
-not treated as an external edit.
+record's fingerprint is compared with its template's byte for byte, so one from
+another fingerprint version is an external edit like any other difference.
 
 #### Key type transitions
 
@@ -986,18 +986,22 @@ not treated as an external edit.
 | Disable YAML template | No active key file in the identity uses that key type. | Set state record to `disabled`, keep encrypted `.template`. | Template remains installed but hidden from generation. |
 | Enable YAML template | Encrypted `.template` and state record are valid. | Set state record to `enabled`, reload identity. | Template is visible for generation. |
 | Remove YAML template | No active key file in the identity uses that key type. | Delete state record and move `.template` to `deleted/keytypes/`. | Template leaves active scans. |
-| Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload ignores the conflicting activation. | Generation is hidden until re-enabled; valid existing keys are not rewritten. |
-| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths. |
+| Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload warns that the record conflicts. | Generation stays available; valid existing keys are not rewritten; `apadmin keytype enable` re-pins the record. |
+| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths while the signer is unlocked; for a store in recovery see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
 
-Fingerprint comparisons are version-aware. The compatibility fingerprint is
+Fingerprint comparisons are exact. The compatibility fingerprint is
 identifier-independent (it hashes behavior-bearing fields and a YAML template's
 `valid_rekey_target` declaration, not `key_type`/`family`/display or a renamed
 base key type) and is stored versioned
-(`<n>:` prefix). A real conflict is only a same-version, different-hash pair; a
-cross-version or malformed stored fingerprint is "not comparable" and benign —
-the activation is re-pinned/registered, not flagged as a conflict. So the
-"changed compiled fingerprint" row above triggers only on a genuine same-version
-behavior change, not on a formula-version bump.
+(`1:` prefix). A stored fingerprint matches only when it is byte-identical to
+the one the current code computes, so one with another version prefix, no
+prefix, or a malformed hash is a mismatch: an external edit for a YAML template
+record, which fails the reload closed, and a conflict for a compiled provider
+record. A provider with no fingerprint, as the plain hosts are, matches only a
+record that pins none, so a compiled record that pins any value for it, a
+well-formed `1:` one included, is a conflict. A record that pinned no
+fingerprint is not compared. A formula-version bump changes every stored
+fingerprint, so it is a store format change, not something reload absorbs.
 
 The unused-key guard on disable/remove protects operators from accidentally
 hiding the normal generation source for a key type still in use. It is not a
@@ -1045,7 +1049,7 @@ deletes are durable publications (temporary file, file fsync, rename, parent
 directory fsync).
 
 The record fingerprint is the compatibility digest, stored as
-`<n>:<sha256hex>` and described under [Key type transitions](#key-type-transitions). It is provenance
+`1:<sha256hex>` and described under [Key type transitions](#key-type-transitions). It is provenance
 only: never read on the signing path, and not a signing secret or
 authorization token.
 
@@ -1433,7 +1437,7 @@ bounded keys require version 2. LogicSig key payloads include:
   signature args; v1 signing-metadata DSA keys also persist it when it equals
   `key_type`. This field does not say which provider owns account metadata,
   creation parameters, TEAL, or cosigned assembly.
-- `template_fingerprint` — optional; the versioned (`<n>:` prefix)
+- `template_fingerprint` — optional; the versioned (`1:` prefix)
   compatibility fingerprint of the template/provider definition that created
   or was bundled with the key, when known, covering its behavior and a YAML
   template's `valid_rekey_target`. It depends on no user-facing
@@ -1540,13 +1544,13 @@ LogicSig salting is a generation-time contract:
 
 Templates are the source for generation, discovery, and new key creation;
 they are not consulted at sign time. `template_fingerprint` is provenance only:
-versioned (`<n>:` prefix) and identifier-independent, covering behavior and a
+versioned (`1:` prefix) and identifier-independent, covering behavior and a
 YAML template's `valid_rekey_target`. Key
 inventory surfaces may compare it with the registered local definition and
 report a template conflict or unavailable template, but those notices do not
-invalidate a key. The comparison is version-aware: only a same-version,
-different-hash pair is a conflict; a different-version or malformed fingerprint
-is "not comparable" and benign.
+invalidate a key. The comparison is exact: a stored fingerprint that is not
+byte-identical to the registered one, another version prefix or no prefix included,
+is a conflict.
 
 #### Signing authority
 
@@ -1921,10 +1925,9 @@ Lifecycle:
     the signing index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
-    Comparisons are version-aware: the fingerprint is identifier-independent,
-    and only a same-version, different-hash pair is a
-    conflict — a cross-version or malformed stored fingerprint is "not
-    comparable" and benign.
+    Comparisons are exact: the fingerprint is identifier-independent, and a
+    stored value that is not byte-identical to the current one, another
+    version prefix included, is a conflict.
 
 ## Backup and restore
 

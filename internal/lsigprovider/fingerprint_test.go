@@ -4,7 +4,6 @@
 package lsigprovider
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -63,90 +62,20 @@ func TestHashCompatibilitySpecPanicsOnInvalidSpec(t *testing.T) {
 	}{})
 }
 
-// TestHashCompatibilitySpecCarriesVersionPrefix pins the versioned wire format:
-// every emitted fingerprint is "<version>:<hex>".
+// TestHashCompatibilitySpecCarriesVersionPrefix pins the stored format: every
+// emitted fingerprint is "1:<hex>", which every installed template record and
+// key holds, and which a stored fingerprint must equal exactly.
 func TestHashCompatibilitySpecCarriesVersionPrefix(t *testing.T) {
 	got := HashCompatibilitySpec(struct {
 		A string `json:"a"`
 	}{A: "x"})
 
-	wantPrefix := fmt.Sprintf("%d:", CompatibilityFingerprintVersion)
+	const wantPrefix = "1:"
 	if !strings.HasPrefix(got, wantPrefix) {
 		t.Fatalf("HashCompatibilitySpec() = %q, want prefix %q", got, wantPrefix)
 	}
-	parsed, ok := ParseCompatibilityFingerprint(got)
-	if !ok {
-		t.Fatalf("ParseCompatibilityFingerprint(%q) ok = false, want true", got)
-	}
-	if parsed.Version != CompatibilityFingerprintVersion {
-		t.Fatalf("parsed version = %d, want %d", parsed.Version, CompatibilityFingerprintVersion)
-	}
-	if len(parsed.Hash) != 64 {
-		t.Fatalf("parsed hash = %q (len %d), want a 64-char sha256 hex", parsed.Hash, len(parsed.Hash))
-	}
-}
-
-func TestParseCompatibilityFingerprint(t *testing.T) {
-	hexA := strings.Repeat("a", 64)
-	hexB := strings.Repeat("b", 64)
-	tests := []struct {
-		in          string
-		wantVersion int
-		wantHash    string
-		wantOK      bool
-	}{
-		{in: "1:" + hexA, wantVersion: 1, wantHash: hexA, wantOK: true},
-		{in: "2:" + hexA, wantVersion: 2, wantHash: hexA, wantOK: true},
-		{in: "10:" + hexB, wantVersion: 10, wantHash: hexB, wantOK: true},
-		{in: "abcd", wantVersion: 0, wantHash: "abcd", wantOK: false},
-		{in: "", wantVersion: 0, wantHash: "", wantOK: false},
-		{in: "x:" + hexA, wantVersion: 0, wantHash: "x:" + hexA, wantOK: false},
-		{in: "0:" + hexA, wantVersion: 0, wantHash: "0:" + hexA, wantOK: false},
-		{in: ":" + hexA, wantVersion: 0, wantHash: ":" + hexA, wantOK: false},
-		{in: "-1:" + hexA, wantVersion: 0, wantHash: "-1:" + hexA, wantOK: false},
-		// valid version prefix but malformed (non-sha256-hex) hash -> not comparable
-		{in: "1:not-a-sha256", wantVersion: 1, wantHash: "not-a-sha256", wantOK: false},
-		{in: "1:" + hexA[:63], wantVersion: 1, wantHash: hexA[:63], wantOK: false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.in, func(t *testing.T) {
-			got, ok := ParseCompatibilityFingerprint(tc.in)
-			if ok != tc.wantOK || got.Version != tc.wantVersion || got.Hash != tc.wantHash {
-				t.Fatalf("ParseCompatibilityFingerprint(%q) = (%+v, %v), want ({%d %q}, %v)",
-					tc.in, got, ok, tc.wantVersion, tc.wantHash, tc.wantOK)
-			}
-		})
-	}
-}
-
-func TestFingerprintsMatch(t *testing.T) {
-	hexA := strings.Repeat("a", 64)
-	hexB := strings.Repeat("b", 64)
-	tests := []struct {
-		name           string
-		stored         string
-		live           string
-		wantMatch      bool
-		wantComparable bool
-	}{
-		{name: "same version same hash", stored: "1:" + hexA, live: "1:" + hexA, wantMatch: true, wantComparable: true},
-		{name: "same version different hash", stored: "1:" + hexA, live: "1:" + hexB, wantMatch: false, wantComparable: true},
-		{name: "different versions not comparable", stored: "1:" + hexA, live: "2:" + hexA, wantMatch: false, wantComparable: false},
-		{name: "empty stored not comparable", stored: "", live: "1:" + hexA, wantMatch: false, wantComparable: false},
-		{name: "empty live not comparable", stored: "1:" + hexA, live: "", wantMatch: false, wantComparable: false},
-		{name: "unparseable stored not comparable", stored: "aaaa", live: "1:" + hexA, wantMatch: false, wantComparable: false},
-		{name: "unparseable live not comparable", stored: "1:" + hexA, live: "aaaa", wantMatch: false, wantComparable: false},
-		{name: "both unparseable not comparable", stored: "aaaa", live: "aaaa", wantMatch: false, wantComparable: false},
-		{name: "malformed stored not comparable", stored: "1:not-a-sha256", live: "1:" + hexA, wantMatch: false, wantComparable: false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			match, comparable := FingerprintsMatch(tc.stored, tc.live)
-			if match != tc.wantMatch || comparable != tc.wantComparable {
-				t.Fatalf("FingerprintsMatch(%q, %q) = (%v, %v), want (%v, %v)",
-					tc.stored, tc.live, match, comparable, tc.wantMatch, tc.wantComparable)
-			}
-		})
+	if hash := strings.TrimPrefix(got, wantPrefix); len(hash) != 64 || strings.Trim(hash, "0123456789abcdef") != "" {
+		t.Fatalf("HashCompatibilitySpec() hash = %q, want a 64-char lowercase sha256 hex", hash)
 	}
 }
 

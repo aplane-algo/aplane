@@ -410,17 +410,44 @@ func TestCompareForReload(t *testing.T) {
 			want:                OutcomeIdempotent,
 		},
 		{
-			name:                "cross-version registry not a conflict",
+			name:                "cross-version registry conflicts",
 			rec:                 Record{Source: SourceCompiled, Fingerprint: fp},
 			registryFingerprint: fpV2,
-			want:                OutcomeRegister,
+			want:                OutcomeConflict,
 		},
 		{
-			name:                "cross-version file is not an external edit",
+			name:                "cross-version file is an external edit",
 			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fp},
 			fileFingerprint:     fpV2,
 			registryFingerprint: fp,
-			want:                OutcomeIdempotent,
+			want:                OutcomeExternalEdit,
+		},
+		{
+			name:            "unversioned record before registration",
+			rec:             Record{Source: SourceYAMLGeneric, Fingerprint: strings.Repeat("a", 64)},
+			fileFingerprint: fp,
+			want:            OutcomeExternalEdit,
+		},
+		{
+			name:                "unversioned record after registration",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: strings.Repeat("a", 64)},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeExternalEdit,
+		},
+		{
+			name:                "version 0 record",
+			rec:                 Record{Source: SourceYAMLComposed, Fingerprint: "0:" + strings.Repeat("a", 64)},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeExternalEdit,
+		},
+		{
+			name:                "cross-version record",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fpV2},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeExternalEdit,
 		},
 	}
 

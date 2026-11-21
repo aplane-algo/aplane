@@ -186,9 +186,16 @@ Fingerprint authoring rules:
 - Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
   (the canonical field set or hashing/projection rules), and update the goldens
   with it; a rename is not a formula change and must never bump the version. The
-  stored form is `"<version>:<sha256hex>"`, and comparisons are version-aware: a
-  cross-version or malformed fingerprint is "not comparable" (benign), while only
-  a same-version, different-hash pair is a conflict.
+  stored form is `"<version>:<sha256hex>"`, today `1:<sha256hex>`. A stored
+  fingerprint matches only when it is byte-identical to the one the current code
+  computes, so one with another version prefix, no prefix, or a malformed hash is a
+  mismatch like any other. A bump therefore changes every stored fingerprint:
+  installed template records then read as externally edited and keys as
+  conflicting, so a bump is a store format change. Ship a bump either in a
+  new-install-only release or with a one-release window that verifies each
+  stored record under the old version and rewrites it to the new one; key files
+  need their own answer, such as a provenance rewrite or accepting the
+  conflict.
 - A base-key-type or provider-identifier rename is a separate compatibility
   event from the fingerprint: key files store the raw `base_key_type`, so the
   renamed identifier needs a retained registry alias or those keys cannot sign.

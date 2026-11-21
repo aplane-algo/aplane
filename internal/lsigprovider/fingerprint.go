@@ -8,92 +8,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
 // CompatibilityFingerprintVersion is the format version emitted by
 // HashCompatibilitySpec. It is the major contract version of the *fingerprint
 // formula* (the canonical field set and hashing rules), not of any provider or
-// template. Bump it only when the formula itself changes (field set / hashing /
-// projection rules) so old keys read as incompatible-format rather than as a
-// behavior conflict. An identifier rename (key_type, family, base key type) is
-// NOT a formula change and must never bump this.
+// template. A stored fingerprint matches only when it is byte-identical to the
+// one the current code computes, which always carries this version's prefix,
+// so a stored fingerprint with another prefix, or no prefix, is a mismatch.
+// Bumping it therefore changes every fingerprint a store holds: bump it only
+// when the formula itself changes (field set / hashing / projection rules). An
+// identifier rename (key_type, family, base key type) is NOT a formula change
+// and must never bump this.
 const CompatibilityFingerprintVersion = 1
-
-// ParsedFingerprint is the decomposed form of a versioned compatibility
-// fingerprint string ("<version>:<hash>").
-type ParsedFingerprint struct {
-	Version int
-	Hash    string
-}
-
-// ParseCompatibilityFingerprint splits a versioned fingerprint string into its
-// version and hash. A well-formed "<n>:<hash>" (n a positive integer) returns
-// {n, hash}, true. Any string without a valid positive-integer version prefix
-// (unprefixed or malformed) parses as version 0 with the whole string as the
-// hash and ok=false; version 0 is never comparable. A valid version prefix whose
-// hash is not 64-char sha256 hex also returns ok=false (malformed → not
-// comparable).
-func ParseCompatibilityFingerprint(s string) (ParsedFingerprint, bool) {
-	idx := strings.IndexByte(s, ':')
-	if idx <= 0 {
-		return ParsedFingerprint{Version: 0, Hash: s}, false
-	}
-	version, err := strconv.Atoi(s[:idx])
-	if err != nil || version <= 0 {
-		return ParsedFingerprint{Version: 0, Hash: s}, false
-	}
-	hash := s[idx+1:]
-	if !isSHA256Hex(hash) {
-		// A well-formed version prefix with a malformed (non-sha256-hex) hash is
-		// treated as not comparable, never as a behavior match or conflict.
-		return ParsedFingerprint{Version: version, Hash: hash}, false
-	}
-	return ParsedFingerprint{Version: version, Hash: hash}, true
-}
-
-// isSHA256Hex reports whether s is exactly 64 hexadecimal characters — the shape
-// HashCompatibilitySpec always produces. Anything else is malformed.
-func isSHA256Hex(s string) bool {
-	if len(s) != 64 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
-			return false
-		}
-	}
-	return true
-}
-
-// FingerprintsMatch reports whether a durable (stored) fingerprint and a freshly
-// computed (live) fingerprint describe the same behavior, and whether they were
-// even comparable.
-//
-//   - empty stored                     -> (false, false)  no provenance to compare
-//   - either side fails to parse        -> (false, false)  unparseable
-//   - recognized but differing versions -> (false, false)  incompatible format
-//   - same version                      -> (stored.hash == live.hash, true)
-//
-// A (false, false) result is benign: callers must treat "not comparable" as
-// "no behavior conflict", never as a conflict. Only (false, true) — same
-// version, different hash — is a real behavior conflict.
-func FingerprintsMatch(stored, live string) (match bool, comparable bool) {
-	if stored == "" {
-		return false, false
-	}
-	ps, okStored := ParseCompatibilityFingerprint(stored)
-	pl, okLive := ParseCompatibilityFingerprint(live)
-	if !okStored || !okLive {
-		return false, false
-	}
-	if ps.Version != pl.Version {
-		return false, false
-	}
-	return ps.Hash == pl.Hash, true
-}
 
 // fingerprintBasePrimitives projects a raw, renameable base key type onto a
 // stable behavior token for the compatibility fingerprint. Hashing this token
