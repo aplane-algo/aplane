@@ -538,7 +538,10 @@ a route's `allow_close` or `allow_clawback`, routes for a transfer type the
 document's `transaction_types` rejects, a cosigner document whose routes
 permit movements with no fee cap, and the wide choices: a cosigner type with
 no routing behind it, a rekey rule open to any target, and a route that closes
-out to any address.
+out to any address. For [external checks](#external-checks) it also warns of
+a source on plain http, a check that uses a fact some of what it covers never
+has, a check for a network no route covers, and a source whose token the key
+has none of.
 
 `apply` runs `check` first, prints its warnings, and stops on errors. It then
 applies the change against the `policy_set_sha256` it read at the start, so the
@@ -1039,6 +1042,8 @@ in base units, and ASA IDs are written `asa:<id>`.
 | `asset_sets` | both | no | Named per-network asset sets for routes, local to this document. |
 | `transfer_policy` | both | yes | Source/asset/destination route table for direct ALGO and ASA movements: `routes` (required, may be empty) and `blocked_destinations`. Signer documents also require `on_no_route`, `close_on_no_route`, and `clawback_on_no_route`. |
 | `rekey_policy` | cosigner | no | Allow-list for pure 0 ALGO self-payment rekeys by sender and target. A sender or a target may be `*`; a target may be `self`, the sender's own address. |
+| `external_sources` | cosigner | no | REST sources the document's external checks ask, by name; appears with `external_checks`. See [External checks](#external-checks). |
+| `external_checks` | cosigner | no | Lookups whose answers must satisfy the check's rules before the cosigner signs; they only refuse. See [External checks](#external-checks). |
 
 Cosigner policy never produces review verdicts: there is no `review_above`, no
 `review` type verdict, and no `on_no_route` family (an unmatched movement,
@@ -1597,6 +1602,483 @@ Start such a file with `apadmin policy template --key <WitnessKeyID>` on the
 cosigner node: it writes the deny-all default with the key filled in, and the
 allow-list is what you add.
 
+## External checks
+
+A cosigner key's document can make the cosigner ask other services about a
+request before it signs. An external check is a REST lookup: the cosigner
+sends a `GET` request, built from the transaction, to a source the document
+names, and the JSON answer must satisfy the rules the check states. Checks
+add facts the transaction does not carry:
+
+- **An ops switch.** A service you run says whether this witness key may
+  sign now, so you can stop the key signing without changing its policy.
+- **Address screening.** A screening service's sanctions flag or risk score
+  for each destination.
+- **An allowance kept elsewhere.** A treasury service reports how much an
+  account may still send of an asset, and the payment's amount must fit it.
+- **An approval kept elsewhere.** A ticket system says that a payment to
+  this destination is approved.
+
+Only cosigner documents take `external_sources` and `external_checks`; a
+signer document with either is refused. This section is a guide;
+[ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks) has the full
+grammar and the exact request the cosigner sends.
+
+### How checks decide
+
+- **Checks only refuse.** A check can turn a signature into a refusal, never
+  a refusal into a signature. A source that is down, wrong or compromised
+  can stop the cosigner signing; it cannot make the cosigner sign anything
+  the document refuses.
+- **They run only when the policy would sign.** The checks are the
+  cosigner's last step. Nothing is sent to a source for a request that the
+  document, or an earlier step, already refuses.
+- **Every rule of every check that applies must hold.** A check applies
+  where its scope, `networks` and `movement_kinds` match the request; a
+  check that matches nothing in the request makes no lookup.
+- **Any failed lookup refuses.** A timeout, a refused connection, a
+  redirect, a status other than 200, an answer over its size limit or not
+  strict JSON, a value a rule needs that is missing or of the wrong type,
+  and a token the source needs that is not set all refuse the request.
+- **Nothing waits and nothing is remembered.** A refused request stays
+  refused; the client sends it again to have it judged again. Answers are
+  never cached, so every request asks again.
+
+### A worked example
+
+This document lets the cosigner sign mainnet payments and asset transfers to
+any address, behind two checks: an ops switch on the cosigner's own machine,
+which takes no token, and a screening service, which takes one.
+
+```json
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "description": "Mainnet payments to any address, screened, behind an ops switch",
+  "reject_close_remainder": true,
+  "reject_asset_close": true,
+  "reject_clawback": true,
+  "reject_rekey": true,
+  "max_fee_microalgos": "5000",
+  "transaction_types": { "*": "reject", "pay": "allow", "axfer": "allow" },
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "payments-out",
+        "networks": ["mainnet"],
+        "sources": ["*"],
+        "assets": ["*"],
+        "destinations": ["*"]
+      }
+    ]
+  },
+  "external_sources": {
+    "ops": { "base_url": "http://127.0.0.1:8650" },
+    "screening": {
+      "base_url": "https://screen.example.com/api",
+      "token": { "header": "Authorization", "prefix": "Bearer " },
+      "timeout_ms": 2000
+    }
+  },
+  "external_checks": [
+    {
+      "id": "ops-switch",
+      "description": "The ops service can stop this witness signing",
+      "source": "ops",
+      "scope": "request",
+      "networks": ["*"],
+      "path": "/signing/{witness_key}",
+      "require": [ { "pointer": "/enabled", "op": "eq", "bool": true } ]
+    },
+    {
+      "id": "screen-destination",
+      "description": "Screen the destination of every payment and asset transfer",
+      "source": "screening",
+      "scope": "movement",
+      "networks": ["mainnet"],
+      "movement_kinds": ["pay", "axfer"],
+      "path": "/v2/addresses/{destination}",
+      "query": { "chain": "algorand" },
+      "require": [
+        { "pointer": "/sanctioned", "op": "eq", "bool": false },
+        { "pointer": "/risk/score", "op": "le", "number": "30" }
+      ]
+    }
+  ]
+}
+```
+
+- **`ops-switch`** runs once per request and asks
+  `GET http://127.0.0.1:8650/signing/<Witness Key ID>`. The answer must hold
+  `"enabled": true`. Plain `http://` is allowed only to `localhost` or a
+  loopback address, so this suits a service on the cosigner's own machine.
+- **`screen-destination`** runs for each payment and asset transfer on
+  mainnet and asks
+  `GET https://screen.example.com/api/v2/addresses/<destination>?chain=algorand`,
+  with the header `Authorization: Bearer <token>`. The answer must say the
+  address is not sanctioned and its risk score is at most 30. This answer
+  passes:
+
+  ```json
+  {"address": "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI", "sanctioned": false, "risk": {"score": 4, "level": "low"}}
+  ```
+
+  Members the rules do not name, such as `level` here, are ignored.
+
+The document names the header the token goes in and the text before it,
+never the token itself. A policy document is exported and reviewed in plain
+text; the token is a secret, set on the node and kept encrypted with the
+key.
+
+On the cosigner node, apply the document:
+
+```bash
+apadmin policy apply MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json
+```
+
+Among its warnings, apply says the `ops` source is not encrypted and that the
+`screening` token is not set yet:
+
+```text
+warning: MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json /external_sources/ops/base_url: source ops is reached over plain http on this machine; its answers and any token are not encrypted
+warning: MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json /external_sources/screening/token: source screening takes a token and MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ has none set, so every lookup to it refuses; set one with apadmin source token set MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ screening
+```
+
+Its diff marks each check added `tightened` and each source added `changed`.
+Until the token is set, every mainnet payment and asset transfer is refused
+with `external_check:screen-destination:token_not_set`. Set it:
+
+```bash
+apadmin source token set MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ screening
+```
+
+apadmin prompts `Enter the token for source screening:` without echoing what
+you type, then prints
+`token set for source screening on MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ`. A script
+passes `--token-stdin` and writes the token to apadmin's stdin; a token is
+never a command-line argument (see
+[USER_COMMANDS.md](USER_COMMANDS.md#apadmin-source-token)). You can also set
+the token before applying the document; `set` then warns that no source of
+the key's current document takes it. Check the result:
+
+```bash
+apadmin source token list MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ
+```
+
+```text
+SELECTOR                                              SOURCE     SET                   STATE
+MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ  screening  2026-11-21T09:30:12Z  in use
+```
+
+`in use` means a source of the document takes the token and one is set,
+`needed` that a source takes one and none is set, and `unused` that a token
+is set that no source of the document takes. `ops` takes no token, so it
+has no row. No command shows a token's value.
+
+### What a refusal looks like
+
+The requester is told which check refused which part of the request, and
+the rule ID, never what the source answered. In apshell:
+
+```text
+✗ Failed: failed to sign and submit: cosigner component signing failed for Witness Key ID MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ (aplane.witness-falcon1024.v1) via ssh://cosigner.example.com:2222: signer error (403): cosigner policy rejected request: external check screen-destination refused the pay movement of transaction 0 (external_check:screen-destination)
+```
+
+The SDKs receive the same 403 policy rejection. The cosigner's audit log has
+the rest: the source, the request and what failed.
+
+```bash
+jq 'select(.policy_rule_id // "" | startswith("external_check:")) | {timestamp, txn_auth, txn_sender, reason, policy_rule_id}' "$APSIGNER_DATA/audit.log"
+```
+
+```json
+{
+  "timestamp": "2026-11-21T09:41:07.302848383Z",
+  "txn_auth": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "txn_sender": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM",
+  "reason": "cosigner_policy_rejected: external_check:screen-destination: external check screen-destination refused the pay movement of transaction 0; source screening, GET /api/v2/addresses/EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI?chain=algorand: /risk/score = 72, want le 30",
+  "policy_rule_id": "external_check:screen-destination"
+}
+```
+
+A signed request's record says which checks passed, in its `txn_details`:
+`external checks passed: ops-switch, screen-destination (2 lookups)`.
+Cosigner rejections share the audit log's rate limit; past it, they are
+counted in a `COSIGNER_REJECTIONS_SUPPRESSED` record instead (see
+[USER_LOGGING.md](USER_LOGGING.md#authentication)).
+
+| Rule ID | Why the check refused |
+|---------|-----------------------|
+| `external_check:<id>` | A rule of the check does not hold for the answer, or the answer does not echo the request ID |
+| `external_check:<id>:unavailable` | The lookup failed: a timeout, no connection, a redirect, a status other than 200, an answer too large or not strict JSON, a certificate or pin that does not match; also a node that cannot run checks |
+| `external_check:<id>:token_not_set` | The source takes a token and the document's selector has none; nothing was sent |
+| `external_check:<id>:missing_fact` | What the check runs on lacks a fact it uses, such as `amount` on a close-out; nothing was sent |
+| `external_check:<id>:too_many_lookups` | The request needs more than 32 lookups; nothing was sent |
+
+### Reference
+
+These tables are a summary; the full grammar is in
+[ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks).
+
+**Sources.** `external_sources` maps a name (lowercase letters, digits, `-`
+and `_`) to a source:
+
+| Field | Meaning |
+|-------|---------|
+| `base_url` | Required. `https://` with a host, an optional port and a path prefix; `http://` only to `localhost` or a loopback address |
+| `token` | `header`, and an optional `prefix` such as `"Bearer "`: the header the key's token is sent in. Absent: no token is sent |
+| `timeout_ms` | Per lookup, 100 to 10000; absent means 2000 |
+| `max_response_bytes` | Answer size cap, 1 to 1048576; absent means 65536 |
+| `tls_spki_sha256` | 1 to 8 pinned server keys, for `https://` only; see [TLS](#tls) |
+
+**Checks.** Each check has an `id`, unique in the document and part of its
+rule IDs, a `source`, a `scope`, `networks` (`["*"]` or a list, as on
+routes), a `path` that starts with `/` and is appended to the source's
+`base_url`, optional `query` parameters, an optional `echo_pointer` where the
+answer must hold the request's `X-Aplane-Request-Id`, and `require`, one to
+eight rules. A `movement` check may name the `movement_kinds` it is for:
+`pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, `clawback`; absent
+means every kind.
+
+**Scopes and facts.** The scope says what one lookup is for. `path` and the
+`query` values are templates whose `{fact}` placeholders, and a rule's `fact`
+operand, name facts of the check's scope:
+
+| Scope | Runs | Facts |
+|-------|------|-------|
+| `request` | Once per request | `network`, `witness_key` |
+| `transaction` | Once per transaction the cosigner signs | Those of `request`, and `sender`, `txid`, `type`, `fee`, `rekey_to` |
+| `movement` | Once per transfer movement of such a transaction | Those of `transaction`, and `kind`, `source`, `asset_source` (a clawback's), `destination`, `asset` (`algo` or `asa:<id>`), `asset_id`, `amount` (base units) |
+
+No fact is free text: a note, application arguments and asset names never
+reach a lookup. Requests that render the same are made once.
+
+**Rules.** A rule compares the value at `pointer`, a JSON Pointer into the
+answer, with one operand:
+
+| `op` | Operand | Holds when the value |
+|------|---------|----------------------|
+| `eq`, `ne` | `number`, `string`, `bool` or `fact` | Is of the operand's type, and equals it or differs from it |
+| `lt`, `le`, `gt`, `ge` | `number`, or a `fact` that is a number | Is a number, and compares so |
+| `in`, `not_in` | `numbers` or `strings`, 1 to 64 of them | Is of their type, and is one of them or none of them |
+| `present`, `absent` | None | Is there, or is not |
+
+Every operator but `present` and `absent` fails on a missing value, a
+`null` or a value of another type, `ne` and `not_in` included; `present`
+holds for any value there, `null` too. Numbers are compared as exact
+decimals, so `1`, `1.0` and `1e0` are equal; a `number` operand is a decimal
+string, as amounts are.
+
+**Limits.**
+
+- 8 sources and 8 checks per document, and 8 rules per check.
+- 32 lookups per request, at most 4 at a time, and 16 at a time to one
+  origin (`scheme://host:port`) across the node.
+- Each lookup waits its source's `timeout_ms`, and all of a request's
+  lookups end within 10 seconds.
+- An answer is read only with status 200, within `max_response_bytes`, and
+  as strict JSON: one value, no duplicate keys, nesting at most 64 deep.
+- A token is 1 to 1024 bytes of visible ASCII, and a selector holds at most
+  8.
+
+### What surprises
+
+- **A check that uses `amount` refuses close-outs.** A close-out's amount is
+  not known when it is signed, so a `movement` check that uses `amount`
+  refuses every `pay_close` and `asset_close` it covers, with
+  `external_check:<id>:missing_fact`. Adding a `treasury` source,
+  `{"base_url": "https://treasury.example.com", "token": {"header": "X-Api-Key"}}`,
+  and this allowance check to the example
+
+  ```json
+  {
+    "id": "daily-allowance",
+    "source": "treasury",
+    "scope": "movement",
+    "networks": ["mainnet"],
+    "path": "/allowance/{source}/{asset}",
+    "require": [ { "pointer": "/remaining", "op": "ge", "fact": "amount" } ]
+  }
+  ```
+
+  makes `check` warn:
+
+  ```text
+  MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json /external_checks/2: warning: check daily-allowance uses amount, which a close-out does not have, so it refuses every pay_close and asset_close it sees; name the kinds it is for in movement_kinds
+  ```
+
+  Leave the close-outs out with `"movement_kinds": ["pay", "axfer"]`, and
+  decide them with `reject_close_remainder` and the routes' `allow_close`.
+- **A `pay` check also runs on a cosigned rekey.** The cosigner signs a
+  rekey as a 0 ALGO payment from the account to itself, so a `movement`
+  check for `pay` runs on it with the account as `destination`. The new
+  authority is the `transaction` fact `rekey_to`, which only a rekey has.
+  A check that uses `rekey_to` refuses every transaction that does not
+  rekey, and `check` warns of that, so give such a check only to a key
+  that is asked for nothing but rekeys.
+- **A key on the node default uses the default's sources and tokens.** A
+  key with no document of its own follows `default.json`: the default's
+  checks run for it, and its sources are sent the tokens set for `default`,
+  with `apadmin source token set default <source>`. A key's own tokens
+  serve only its own document, and nothing is inherited between the two.
+  `apadmin source token list <key>` for such a key says it follows the node
+  default and lists the rows of `default`.
+
+### What external checks do not give
+
+- **A hard cap.** A lookup is a read. Two requests made at once both see the
+  same remaining allowance and both pass, and the source never learns what
+  was signed unless it watches the chain itself. An allowance read from a
+  source is a soft cap.
+- **Arithmetic.** A rule compares one value of the answer with a constant
+  or with one fact. "Amount times price is at most the limit" cannot be
+  written; have the source return the computed value and compare that.
+- **Revocation.** Removing a token does not revoke it. Generations made
+  while it was set keep a copy until they are pruned, and every backup made
+  while it was set keeps one. Revoke a token at the service that issued it.
+- **Privacy from the source.** A lookup carries the facts its path and query
+  name, such as an address, an asset or an amount, and the source learns
+  them. Nothing is sent for a request the policy refuses.
+- **An on-chain binding.** Nothing about the checks is in an account's
+  program; they decide only whether the cosigner signs.
+
+### TLS
+
+- **System roots by default.** An `https://` source is verified against the
+  system's root certificates and its host name, needs TLS 1.2 or later, and
+  goes through the environment's HTTP proxy, as algod and the Indexer do. A
+  redirect is never followed.
+- **Pinning a server key.** `tls_spki_sha256` lists the SHA-256 of the
+  server's public key (its SubjectPublicKeyInfo), in standard base64. With
+  pins, the root certificates play no part: the server's certificate must
+  be valid for the host name and within its validity period, and its public
+  key must be one of the pins. Compute a pin from the running server:
+
+  ```bash
+  openssl s_client -connect screen.example.com:443 -servername screen.example.com </dev/null 2>/dev/null \
+    | openssl x509 -pubkey -noout \
+    | openssl pkey -pubin -outform der \
+    | openssl dgst -sha256 -binary \
+    | openssl enc -base64
+  ```
+
+  or from its certificate file, with `openssl x509 -in server.pem -pubkey
+  -noout` as the first command. A pin names a key, not a certificate: a
+  renewed certificate for the same key still matches. Before the service
+  moves to a new key, add the new key's pin beside the current one, and
+  remove the old pin after the move:
+
+  ```json
+  "screening": {
+    "base_url": "https://screen.example.com/api",
+    "token": { "header": "Authorization", "prefix": "Bearer " },
+    "tls_spki_sha256": [
+      "yvZJv80CTIywOLP+/JhHYN4epPNb8XllczG5YJYQaGw=",
+      "WFtUnlG7CijukE0PYMnLJGYvp/m3E/gieTZWG1cGV2M="
+    ]
+  }
+  ```
+
+- **Plain `http://` only to loopback.** A source on `http://` must be
+  `localhost` or a loopback address, takes no proxy, and is refused when the
+  address actually dialed is not loopback. Its answers and any token it is
+  sent are not encrypted, and `check` and `apply` warn of it
+  (`external_check:plain_http_source`).
+
+### Testing a document offline
+
+`appolicy` checks and tries a document with external checks without a node
+or a source. Keep canned answers out of the policy directory, or in a
+subdirectory such as `answers/`, since `appolicy check DIR` reads every
+`*.json` file in `DIR` as a policy document.
+
+```bash
+appolicy check MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json
+appolicy explain MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json
+```
+
+`explain` describes each source and each check in words: what it asks, how
+often, and the rules the answer must satisfy.
+
+`try` shows the lookups the cosigner would make for one transaction, and
+with `--answer` judges each check on a canned answer, here one with a risk
+score of 72:
+
+```text
+$ appolicy try MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json \
+    --from CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM \
+    --to EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI \
+    --amount 5000000 --network mainnet \
+    --answer ops-switch=answers/ops.json --answer screen-destination=answers/screen.json
+MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json (cosigner document "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"): this cosigner policy document permits the supplied transaction, but external check screen-destination refuses it
+  [external_check:screen-destination] external check screen-destination refused the pay movement of transaction 0; source screening, GET /api/v2/addresses/EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI?chain=algorand: /risk/score = 72, want le 30
+lookups the cosigner would make:
+  ops: GET /signing/MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ, for ops-switch
+  screening: GET /api/v2/addresses/EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI?chain=algorand, for screen-destination
+judged on the answers given:
+  ops-switch, the request: passes
+  screen-destination, the pay movement of transaction 0: refuses (external_check:screen-destination): /risk/score = 72, want le 30
+```
+
+Saved cases keep such tries, with their answers or with a named failure, in
+`.appolicy/cases.json`, and `appolicy test` runs them again, so an edit that
+changes a decision shows before you apply it:
+
+```json
+{
+  "format": "aplane.policy-cases.v1",
+  "cases": [
+    {
+      "name": "a clean destination is signed",
+      "document": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json",
+      "txn": {"network": "mainnet", "sender": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM", "receiver": "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI", "amount": 5000000},
+      "answers": {
+        "ops-switch": {"answer": {"enabled": true}},
+        "screen-destination": {"answer": {"sanctioned": false, "risk": {"score": 4}}}
+      },
+      "expect": {"outcome": "approve"}
+    },
+    {
+      "name": "screening down refuses",
+      "document": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ.json",
+      "txn": {"network": "mainnet", "sender": "CEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEI7JH2AYM", "receiver": "EIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDOHSEZI", "amount": 5000000},
+      "answers": {"ops-switch": {"answer": {"enabled": true}}},
+      "failures": {"screen-destination": "timeout"},
+      "expect": {"outcome": "reject", "rule_id": "external_check:screen-destination:unavailable"}
+    }
+  ]
+}
+```
+
+```text
+$ appolicy test
+ok    a clean destination is signed
+ok    screening down refuses
+2 case(s), 0 failed, 0 could not run (built-in networks only)
+```
+
+Files from `apadmin policy export --all DIR` on an unlocked cosigner also
+record which sources each key had a token for, so `appolicy check DIR` warns
+of a token that is not set. The rest of `try`, its JSON output and the case
+format are in
+[Checking policy files offline with appolicy](#checking-policy-files-offline-with-appolicy).
+
+### Tokens and backups
+
+- **A key's tokens travel in its backup.** A backup carries each cosigner
+  key's tokens with the key, encrypted under the export passphrase, and a
+  restore writes them with the key, so its checks can authenticate at once.
+  `restore preview` names the sources a key has a token for, never a token.
+- **The node default's tokens do not.** After restoring onto a new node, set
+  them again with `apadmin source token set default <source>`.
+- **Deleting a key archives its tokens with it**, as its policy is archived.
+
+See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for restore conflicts and
+rollback. In the apadmin TUI, Key Details for a cosigner key shows each
+source of the document that governs it with its token state, and `o` sets
+or removes a token.
+
 ## Validation Checklist
 
 Before relying on a policy:
@@ -1617,6 +2099,9 @@ Before relying on a policy:
 6. Install the policy with `apadmin policy apply FILE`, which signs the
    sidecars and activates the policy. For hand-placed documents, run
    `apstore policy sign` and start the signer.
+7. For a cosigner document with external checks, try it with
+   `appolicy try --answer` on the answers each source gives, set its tokens,
+   and confirm `apadmin source token list <key>` shows no token `needed`.
 
 ## Troubleshooting
 
@@ -1631,6 +2116,8 @@ Before relying on a policy:
 | `export --key K` fails with `policy_document_not_found` | The key has no policy of its own; it follows the default, which `export` without `--key` returns. |
 | `check`, `diff` or `apply` fails with `policy_export_stale` | The files come from an export the node has moved on from: its policy, ASA set or network map changed since. Export again with `export --all` into a new directory and copy your edited files into it, or run `diff --no-node-context FILE` to review against the live node and `apply --no-node-context FILE` when the diff shows only your edits (in the TUI, load a copy from outside the export). See [Exporting the whole policy](#exporting-the-whole-policy). |
 | A cosigner key rejects every request | It has no file and follows the deny-all default; give it one with `apadmin policy template --key <WitnessKeyID>`, edited and applied. |
+| A cosigned request is refused with `external_check:<id>:token_not_set` | The check's source takes a token and none is set for the document that governs the key; a key on the node default uses the tokens of `default`. Set it with `apadmin source token set`; see [External checks](#external-checks). |
+| A cosigned request is refused with `external_check:<id>:unavailable` | The check's lookup failed. The cosigner's audit log says how: a timeout, a status, an answer that is not strict JSON, a certificate or pin that does not match. |
 | A request is rejected with `transaction_type:<type>` | The governing document's `transaction_types` rejects that type, directly or through `*`. |
 | A transfer is rejected unexpectedly | `"on_no_route": "reject"`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
 | A route does not match an ASA | ASA IDs are network-local; check the transaction network and any `asset_sets` mapping. |

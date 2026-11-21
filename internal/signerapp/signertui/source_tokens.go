@@ -31,7 +31,7 @@ const (
 )
 
 // sourceTokenRemovedNote follows a successful remove.
-const sourceTokenRemovedNote = "Token removed. Earlier generations keep a copy until they are pruned; revoke the token at the service."
+const sourceTokenRemovedNote = "Token removed. Earlier generations and backups keep a copy; revoke the token at the service."
 
 // sourceTokenRow is one source of the governing document.
 type sourceTokenRow struct {

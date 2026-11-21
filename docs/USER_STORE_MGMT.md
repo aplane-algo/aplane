@@ -538,15 +538,15 @@ the key had before it.
 
 A backup does not carry the node default policy or the node default's source
 tokens, approval defaults, network mappings, templates, endpoints, or operator
-settings. Set the node default's tokens again on the destination with
+settings. Review the destination's default policy before restoring if you do
+not want the credentials to become usable under its current rules, and set the
+node default's tokens again on the destination with
 `apadmin source token set default <source>`.
 
 Removing a token (`apadmin source token remove`) takes it out of the current
 generation only. Older generations, until they are pruned, and every backup
 made while it was set keep a copy. When a token may have leaked, revoke it at
-the service that issued it; removing it from the node is not revocation. Review the destination's
-default policy before restoring if you do not want the credentials to become
-usable under its current rules.
+the service that issued it; removing it from the node is not revocation.
 
 A canonical-plaintext-identical destination credential is an idempotent no-op.
 A different credential is a conflict. An unreadable destination credential is

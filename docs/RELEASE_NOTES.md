@@ -10,60 +10,38 @@ before it was renamed `enroll`.
 ## Cosigner policy documents can describe external checks
 
 - **A cosigner document can name REST sources and checks over their
-  answers.** `external_sources` and `external_checks` say what to look up
-  for a request and what the JSON answer must hold before the cosigner
-  signs. Checks only refuse; they never allow what the policy rejects.
-  `apadmin policy`, `appolicy` and the schema accept, check, explain and
-  compare the two fields.
-- **`appolicy try` says `conditional_approve`** when a cosigner policy
-  approves a transaction and a check that applies to it has no answer. A try
-  asks no source; it lists the lookups the cosigner would make, as `GET`
-  requests rendered from the transaction. Saved cases record the same word.
-- **`appolicy try --answer CHECK-ID=FILE` judges a check on a canned
-  answer** with the cosigner's own rules. Every check that applies passing
-  makes the outcome `approve`; one refusing makes it `reject` with the
-  check's rule ID, and try shows what failed and the request, for example
-  `/risk/score = 72, want le 30`. An answer the cosigner would not read,
-  such as one over the source's size or with a duplicate key, is a failed
-  lookup. A unit that lacks a fact its check uses, such as `amount` on a
-  close-out, is refused with `missing_fact` without any answer. The terminal
-  UI's try form takes the same answers. An answer for a check that does not
-  apply is bad input.
-- **Saved cases answer external checks.** A case may give, per check,
-  `answers` (one answer for every unit, or one per request path) and
-  `failures` (`timeout`, `status`, `not_json`, `pin_mismatch`,
-  `token_not_set` and others) to pin the fail-closed outcomes. `appolicy
-  test` runs them through the same code as `try --answer`. The cases format
-  keeps its name.
-- **An export of a cosigner records which sources have a token**, per
-  document, names only, and `appolicy check` warns of a source whose token
-  the document's key lacked at the export. A token set after the export does
-  not make the export stale. `get_policy_document` carries the names on an
-  unlocked cosigner, and a locked node no longer reports every token as
-  missing to `apadmin policy check`.
-- **The cosigner makes the lookups** for a request its policy would sign,
-  and signs only if every check passes. A lookup that times out, is
-  redirected, answers anything but 200, or answers something that is not
-  strict JSON refuses the request. The requester is told which check
-  refused; what the source answered stays in the cosigner's audit log. A
-  lock ends lookups in flight at once.
-- **`apadmin source token` keeps a source's token.** `set` prompts for
-  the token without echo, or reads it with `--token-stdin`; `remove` deletes
-  it; `list` shows, per selector, the sources with a token, when each was
-  set, and whether the policy document uses it (`in use`, `unused`,
-  `needed`). No command shows a token. Tokens are kept encrypted with the
-  cosigner key, and a check on a source whose token is not set refuses with
-  `external_check:<id>:token_not_set`; `apadmin policy apply` and `policy
-  rescue` warn of it. apadmin's Key Details for a cosigner key shows its
-  sources' token state and sets or removes a token. Removing a token does
-  not revoke it: earlier generations and earlier backups keep a copy. The
-  admin protocol is now 8.1.
-- **A backup carries a cosigner key's tokens with the key.** They are
-  encrypted under the export passphrase beside the key and its policy, and
-  restore writes them with the key, so its checks can authenticate at once.
-  `restore preview` and `apstore verify` name the sources a key has a token
-  for, never a token. A destination that holds different tokens for the key
-  is a conflict that `--replace-existing` resolves; identical tokens are left
+  answers.** `external_sources` and `external_checks` say what the cosigner
+  looks up for a request and what the JSON answer must hold before it signs.
+  Checks only refuse; they never allow what the policy rejects. `apadmin
+  policy`, `appolicy` and the schema accept, check, explain and compare the
+  two fields.
+- **The cosigner makes the lookups** for a request its policy would sign, and
+  signs only if every check passes. A lookup that times out, is redirected,
+  answers anything but 200, or answers something that is not strict JSON
+  refuses the request. The requester is told which check refused; what the
+  source answered stays in the cosigner's audit log. A lock ends lookups in
+  flight at once.
+- **`apadmin source token` keeps a source's token.** `set` prompts for the
+  token without echo, or reads it with `--token-stdin`; `remove` deletes it;
+  `list` shows, per selector, the sources with a token, when each was set,
+  and whether the policy document uses it (`in use`, `unused`, `needed`). No
+  command shows a token. A check on a source whose token is not set refuses
+  with `external_check:<id>:token_not_set`; `apadmin policy check` and
+  `apply` on an unlocked node, and `policy rescue`, warn of it. apadmin's Key
+  Details for a cosigner key shows its sources' token state and sets or
+  removes a token. Removing a token does not revoke it: earlier generations
+  and earlier backups keep a copy.
+- **Tokens are kept encrypted in the store with the cosigner key.** Every
+  store generation now has `source_tokens/`, which on a cosigner node holds
+  one `<selector>.enc` per policy selector with tokens (a Witness Key ID or
+  `default`), and `deleted/source_tokens/`, where a deleted key's tokens are
+  archived. A passphrase change re-encrypts them with the keys.
+- **A backup carries a cosigner key's tokens with the key**, encrypted under
+  the export passphrase beside the key and its policy, and restore writes
+  them with the key, so its checks can authenticate at once. `restore
+  preview` and `apstore verify` name the sources a key has a token for, never
+  a token. A destination that holds different tokens for the key is a
+  conflict that `--replace-existing` resolves; identical tokens are left
   alone. Rolling the restore back brings back the tokens the key had before,
   also after a passphrase change, and a token set or removed after the
   restore keeps rollback from running, as a key change does. `apstore
@@ -71,13 +49,40 @@ before it was renamed `enroll`.
   them again on the new node. An archive may now hold 24,600 entries and an
   8 MiB sealed manifest, enough for a credential, a policy and tokens for
   each of 8,192 keys.
-- **`apstore source token discard <selector>`** deletes a token file that
-  no longer decrypts, which keeps every unlock in recovery. Run it with the
+- **`apstore source token discard <selector>`** deletes a token file that no
+  longer decrypts, which keeps every unlock in recovery. Run it with the
   daemon stopped; it deletes the file without reading it and archives
   nothing, and the selector's sources then refuse with `token_not_set` until
   their tokens are set again. A recovery-mode restore with
   `--replace-existing` also replaces a damaged token file of a key whose
   backup carries its tokens.
+- **`appolicy try` judges external checks offline.** It asks no source: it
+  lists the lookups the cosigner would make, as `GET` requests rendered from
+  the transaction, and says `conditional_approve` when the policy approves
+  and a check that applies has no answer. `--answer CHECK-ID=FILE` judges a
+  check on a canned answer with the cosigner's own rules. Every check that
+  applies passing makes the outcome `approve`; one refusing makes it
+  `reject` with the check's rule ID, and try shows what failed and the
+  request, for example `/risk/score = 72, want le 30`. An answer the cosigner
+  would not read, such as one over the source's size or with a duplicate
+  key, is a failed lookup. A unit that lacks a fact its check uses, such as
+  `amount` on a close-out, is refused with `missing_fact` without any answer.
+  An answer for a check that does not apply is bad input. The terminal UI's
+  try form takes the same answers.
+- **Saved cases answer external checks.** A case may give, per check,
+  `answers` (one answer for every unit, or one per request path) and
+  `failures` (`timeout`, `status`, `not_json`, `pin_mismatch`,
+  `token_not_set` and others) to pin the fail-closed outcomes, and may expect
+  `conditional_approve`. `appolicy test` runs them through the same code as
+  `try --answer`. The cases format keeps its name.
+- **An export of a cosigner records which sources have a token**, per
+  document, names only, and `appolicy check` warns of a source whose token
+  the document's key lacked at the export. A token set after the export does
+  not make the export stale.
+- **The admin protocol is now 8.1.** It adds `source_token_set`,
+  `source_token_remove` and `source_token_list`, the source names in a
+  `restore_preview` key and a `restore_backup_result`, and, on an unlocked
+  cosigner, the source names of a `policy_document`.
 
 ## This release is new-install only
 

@@ -41,7 +41,8 @@ func (s Service) SetSourceToken(selector, source string, token []byte) ([]source
 // RemoveSourceToken removes source's token from a cosigner policy selector.
 // Removing the selector's last token deletes its file: nothing is archived,
 // so the deleted archive never keeps a removed token. Generations minted
-// while the token was set keep their copy until they are pruned.
+// while the token was set keep their copy until they are pruned, and backups
+// made while it was set keep theirs.
 func (s Service) RemoveSourceToken(selector, source string) ([]sourcetokens.Entry, *Error) {
 	return s.changeSourceTokens(selector, false, func(current *sourcetokens.File) (*sourcetokens.File, error) {
 		return sourcetokens.RemoveToken(current, source)

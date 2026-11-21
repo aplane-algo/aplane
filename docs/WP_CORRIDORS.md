@@ -33,8 +33,11 @@ the profile matrix explored below:
 - there is no governance rekey key: a new program is reached only through a
   handover to a listed key, so the M-of-N governance arrangement recommended
   below is not supported as such;
-- the cosigner decides from its policy document and the transaction group
-  alone; it does not consult off-chain state or external services.
+- the cosigner decides from its policy document and the transaction group,
+  and from any refuse-only external checks its operator configured for its
+  key. It cannot tell a Corridor account from any other account composed
+  with that key, so those checks apply to Corridor accounts too. They can
+  only refuse a signature, so Corridor's on-chain guarantees are unchanged.
 
 The frozen wire, program, metadata, custody, and choreography contract is in
 [ARCH_COSIGNED.md](ARCH_COSIGNED.md#corridor-v1) and

@@ -26,6 +26,11 @@
 # host with that cosigner then signs through apshell and all three SDKs and
 # closes out, so the real cosigner node signs in Ed25519 and the program checks
 # it on chain. A release that predates the key type skips this part.
+# The first cosigner key's document then gains external checks against a stub
+# source on the cosigner's loopback, with a token set through apadmin source
+# token: the plain host's send passes, is refused by a rule, by a timeout and
+# without the token, and the token appears in no log or export. A release that
+# predates external checks skips this part.
 # Local mode uses the local aplanesdk checkout for all three SDKs: Python
 # installed from source, TypeScript built and packed on the host, and a Go
 # program built statically on the host. Release mode uses PyPI, npm and the
@@ -82,6 +87,14 @@ SDK_VENV="/home/$TEST_USER/aplane/apclient/python-sdk-venv"
 TS_SDK_DIR="/home/$TEST_USER/aplane/apclient/typescript-sdk"
 GO_SDK_BIN=""
 GO_SDK_CONTAINER_BIN="/home/$TEST_USER/aplane/apclient/go-sdk-validate"
+# The external checks section's stub source listens on the cosigner
+# container's loopback; the cosigner reaches it over plain http.
+EXTERNAL_STUB_PORT=18650
+EXTERNAL_STUB_DIR="/home/$TEST_USER/external-stub"
+EXTERNAL_SOURCE_NAME="stub"
+EXTERNAL_SOURCE_TIMEOUT_MS=1000
+EXTERNAL_SOURCE_TOKEN=""
+COSIGNER_DATA_DIR="/home/$TEST_USER/aplane/apsigner"
 
 usage() {
     cat <<'EOF'
@@ -116,7 +129,10 @@ SDK's bounded-base component, cosigner component, and shared assembly choreograp
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
 proves that cosigner loss blocks spend while the account's listed key can still
 take it over, and a plus cosigned account's unlisted rekey waits on the cosigner
-node's rekey policy. By default every SDK comes from the local aplanesdk repo
+node's rekey policy. The cosigner node's policy for its key also gains external
+checks against a stub source on the cosigner's loopback, with a token: a
+cosigned send passes them, and is refused by a rule, on a timeout, and once
+the token is removed. By default every SDK comes from the local aplanesdk repo
 (the host needs go and npm); with --release-install, Python comes from PyPI,
 TypeScript from npm and Go from the published module.
 EOF
@@ -1907,6 +1923,457 @@ validate_ed25519_cosigner() {
     with_ed25519_cosigner close_plain_host
 }
 
+# cosigner_supports_external_checks reports whether the cosigner node's
+# apadmin keeps source tokens; a release that predates external checks has no
+# source command. A malformed source command is a usage error refused before
+# any admin session opens, so asking displaces no approval session.
+cosigner_supports_external_checks() {
+    local out
+    out="$(docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && apadmin source token 2>&1")" || true
+    grep -Fq 'usage: apadmin source token' <<<"$out"
+}
+
+# cosigner_admin runs one apadmin command line on the cosigner node with the
+# store passphrase and prints its stdout and stderr together. Each run is an
+# admin session, which displaces the cosigner's approval session.
+cosigner_admin() {
+    docker_exec_as_tester "$COSIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apadmin -d '$COSIGNER_DATA_DIR' $1 2>&1"
+}
+
+# write_cosigner_file writes stdin to path on the cosigner node, as the test
+# user, by rename, so the stub never reads half a file.
+write_cosigner_file() {
+    local path="$1" mode="${2:-644}"
+    docker exec -i --user "$TEST_USER" "$COSIGNER_CONTAINER" bash -c \
+        "umask 077 && cat > '$path.tmp' && chmod $mode '$path.tmp' && mv '$path.tmp' '$path'"
+}
+
+# write_external_stub writes the stub source: a few lines of the Python
+# standard library, which the image already has for the SDK check.
+write_external_stub() {
+    cat > "$1" <<'PY'
+"""Stub external source for the Docker smoke, on loopback only.
+
+GET /v1/<name>/... is answered with answers/<name>.json from the stub's
+directory, with the request's X-Aplane-Request-Id echoed as request_id in an
+object answer. An answer file holding "hang" answers nothing for 30 seconds.
+A request without "Authorization: Bearer <token>", the token in the token
+file, is answered 401. Each request is logged with its path and whether it
+carried the token, never the token itself.
+"""
+import json
+import os
+import re
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+PORT = int(sys.argv[1])
+ROOT = sys.argv[2]
+
+
+def read(name):
+    with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+        return f.read()
+
+
+class Stub(BaseHTTPRequestHandler):
+    def do_GET(self):
+        authorized = self.headers.get("Authorization") == "Bearer " + read("token")
+        with open(os.path.join(ROOT, "requests.log"), "a", encoding="utf-8") as log:
+            log.write(json.dumps({"path": self.path, "authorized": authorized}) + "\n")
+        if not authorized:
+            return self.reply(401, {"error": "token required"})
+        match = re.match(r"^/v1/([a-z-]+)/", self.path)
+        try:
+            body = read("answers/%s.json" % match.group(1)) if match else None
+        except OSError:
+            body = None
+        if body is None:
+            return self.reply(404, {"error": "no answer for this path"})
+        if body.strip() == "hang":
+            time.sleep(30)
+            return
+        answer = json.loads(body)
+        if isinstance(answer, dict):
+            answer["request_id"] = self.headers.get("X-Aplane-Request-Id", "")
+        self.reply(200, answer)
+
+    def reply(self, status, value):
+        body = json.dumps(value).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+ThreadingHTTPServer.daemon_threads = True
+ThreadingHTTPServer(("127.0.0.1", PORT), Stub).serve_forever()
+PY
+}
+
+# set_external_stub_answer sets what the stub answers under /v1/<name>/: a
+# JSON document, or hang.
+set_external_stub_answer() {
+    printf '%s\n' "$2" | write_cosigner_file "$EXTERNAL_STUB_DIR/answers/$1.json"
+}
+
+stop_external_stub() {
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "pkill -f 'external-stub/[s]tub.py' || true"
+}
+
+# start_external_stub starts the stub source on the cosigner's loopback with
+# favourable answers, and checks it refuses a request without the token.
+start_external_stub() {
+    local stub_file code i
+    stop_external_stub
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "rm -rf '$EXTERNAL_STUB_DIR' && mkdir -p '$EXTERNAL_STUB_DIR/answers' && chmod 700 '$EXTERNAL_STUB_DIR'"
+    stub_file="$(mktemp)"
+    write_external_stub "$stub_file"
+    write_cosigner_file "$EXTERNAL_STUB_DIR/stub.py" < "$stub_file"
+    rm -f "$stub_file"
+    printf '%s' "$EXTERNAL_SOURCE_TOKEN" | write_cosigner_file "$EXTERNAL_STUB_DIR/token" 600
+    set_external_stub_answer switch '{"enabled": true}'
+    set_external_stub_answer screen '{"sanctioned": false, "risk": {"score": 12}}'
+    docker exec -d --user "$TEST_USER" "$COSIGNER_CONTAINER" bash -c \
+        "exec python3 '$EXTERNAL_STUB_DIR/stub.py' '$EXTERNAL_STUB_PORT' '$EXTERNAL_STUB_DIR' > '$EXTERNAL_STUB_DIR/stub.log' 2>&1"
+    for i in $(seq 1 20); do
+        code="$(docker_exec_as_tester "$COSIGNER_CONTAINER" "curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:$EXTERNAL_STUB_PORT/v1/switch/probe'")" || code=""
+        [ "$code" = 401 ] && break
+        sleep 0.5
+    done
+    if [ "$code" != 401 ]; then
+        docker_exec_as_tester "$COSIGNER_CONTAINER" "cat '$EXTERNAL_STUB_DIR/stub.log'" >&2 || true
+        die "the stub source did not answer 401 to a request without its token (got ${code:-no answer})"
+    fi
+    # The token goes to curl on stdin, never on a command line.
+    code="$(printf 'header = "Authorization: Bearer %s"\n' "$EXTERNAL_SOURCE_TOKEN" | \
+        docker exec -i --user "$TEST_USER" "$COSIGNER_CONTAINER" \
+        curl -s -o /dev/null -w '%{http_code}' -K - "http://127.0.0.1:$EXTERNAL_STUB_PORT/v1/switch/probe")" || code=""
+    [ "$code" = 200 ] || die "the stub source did not answer 200 to a request with its token (got ${code:-no answer})"
+    printf 'stub source listening on 127.0.0.1:%s in %s: 401 without the token, 200 with it\n' "$EXTERNAL_STUB_PORT" "$COSIGNER_CONTAINER"
+}
+
+# external_stub_requests prints the stub's request log, one JSON line per
+# request.
+external_stub_requests() {
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "cat '$EXTERNAL_STUB_DIR/requests.log' 2>/dev/null || true"
+}
+
+count_lines() {
+    if [ -z "$1" ]; then
+        printf '0\n'
+    else
+        printf '%s\n' "$1" | wc -l | tr -d ' '
+    fi
+}
+
+cosigner_audit_log() {
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "cat '$COSIGNER_DATA_DIR/audit.log'"
+}
+
+# write_external_checks_policy writes the first cosigner key's open transfer
+# document with two external checks on the stub source: an ops switch for
+# the witness key, whose answer must echo the request ID, and a screening of
+# each payment's destination with a rule on a risk score.
+write_external_checks_policy() {
+    cat > "$1" <<JSON
+{
+  "format": "aplane.policy.v1",
+  "role": "cosigner",
+  "key": "$COSIGNER_COMPONENT_KEY",
+  "reject_close_remainder": false,
+  "reject_asset_close": false,
+  "reject_clawback": false,
+  "reject_rekey": true,
+  "max_fee_microalgos": "0",
+  "transaction_types": {"*": "reject", "pay": "allow", "axfer": "allow"},
+  "transfer_policy": {
+    "routes": [
+      {"id": "docker_smoke_allow_all", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["*"]},
+      {"id": "docker_smoke_close", "networks": ["*"], "sources": ["*"], "assets": ["*"], "destinations": ["$CLOSE_DESTINATION_ADDRESS"], "allow_close": true}
+    ]
+  },
+  "external_sources": {
+    "$EXTERNAL_SOURCE_NAME": {
+      "base_url": "http://127.0.0.1:$EXTERNAL_STUB_PORT/v1",
+      "token": {"header": "Authorization", "prefix": "Bearer "},
+      "timeout_ms": $EXTERNAL_SOURCE_TIMEOUT_MS
+    }
+  },
+  "external_checks": [
+    {
+      "id": "ops-switch",
+      "source": "$EXTERNAL_SOURCE_NAME",
+      "scope": "request",
+      "networks": ["*"],
+      "path": "/switch/{witness_key}",
+      "echo_pointer": "/request_id",
+      "require": [{"pointer": "/enabled", "op": "eq", "bool": true}]
+    },
+    {
+      "id": "screen-destination",
+      "source": "$EXTERNAL_SOURCE_NAME",
+      "scope": "movement",
+      "networks": ["*"],
+      "movement_kinds": ["pay", "axfer"],
+      "path": "/screen/{destination}",
+      "query": {"network": "{network}"},
+      "require": [
+        {"pointer": "/sanctioned", "op": "eq", "bool": false},
+        {"pointer": "/risk/score", "op": "le", "number": "30"}
+      ]
+    }
+  ]
+}
+JSON
+}
+
+# apply_external_checks_policy applies the document with external checks
+# while the key has no token for its source, and checks apply warned of it.
+# want is the apply's result: "applied" or "unchanged".
+apply_external_checks_policy() {
+    local want="$1" policy_file out
+    policy_file="$(mktemp)"
+    write_external_checks_policy "$policy_file"
+    docker cp "$policy_file" "$COSIGNER_CONTAINER:/tmp/cosigner-external-checks.json"
+    rm -f "$policy_file"
+    docker_exec "$COSIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/cosigner-external-checks.json
+    if ! out="$(cosigner_admin "policy apply --yes /tmp/cosigner-external-checks.json")"; then
+        printf '%s\n' "$out" >&2
+        die "applying the cosigner key's document with external checks failed"
+    fi
+    printf '%s\n' "$out"
+    case "$want" in
+        applied) grep -q '^policy applied as generation ' <<<"$out" || die "the document with external checks was not applied" ;;
+        unchanged) grep -qx 'policy unchanged' <<<"$out" || die "re-applying the document with external checks did not report it unchanged" ;;
+    esac
+    grep -Fq "/external_sources/$EXTERNAL_SOURCE_NAME/token: source $EXTERNAL_SOURCE_NAME takes a token and $COSIGNER_COMPONENT_KEY has none set" <<<"$out" \
+        || die "apply did not warn that the source's token is not set (external_check:token_not_set)"
+}
+
+# expect_source_token_state checks apadmin source token list shows the stub
+# source's token for the key in state want.
+expect_source_token_state() {
+    local want="$1" out
+    if ! out="$(cosigner_admin "source token list $COSIGNER_COMPONENT_KEY")"; then
+        printf '%s\n' "$out" >&2
+        die "apadmin source token list failed"
+    fi
+    printf '%s\n' "$out"
+    grep -Eq "^$COSIGNER_COMPONENT_KEY +$EXTERNAL_SOURCE_NAME +[^ ]+ +$want\$" <<<"$out" \
+        || die "apadmin source token list does not show the $EXTERNAL_SOURCE_NAME token as '$want'"
+}
+
+# set_external_source_token sets the token through apadmin, read from stdin.
+set_external_source_token() {
+    local out
+    if ! out="$(printf '%s' "$EXTERNAL_SOURCE_TOKEN" | docker exec -i --user "$TEST_USER" "$COSIGNER_CONTAINER" bash -lc \
+        ". /home/$TEST_USER/aplane/apenv.sh && APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' \
+        apadmin -d '$COSIGNER_DATA_DIR' source token set '$COSIGNER_COMPONENT_KEY' '$EXTERNAL_SOURCE_NAME' --token-stdin 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "apadmin source token set failed"
+    fi
+    printf '%s\n' "$out"
+    grep -Fq "token set for source $EXTERNAL_SOURCE_NAME on $COSIGNER_COMPONENT_KEY" <<<"$out" \
+        || die "apadmin source token set did not report the token set"
+}
+
+remove_external_source_token() {
+    local out
+    if ! out="$(cosigner_admin "source token remove $COSIGNER_COMPONENT_KEY $EXTERNAL_SOURCE_NAME")"; then
+        printf '%s\n' "$out" >&2
+        die "apadmin source token remove failed"
+    fi
+    printf '%s\n' "$out"
+    grep -Fq "token removed for source $EXTERNAL_SOURCE_NAME on $COSIGNER_COMPONENT_KEY" <<<"$out" \
+        || die "apadmin source token remove did not report the token removed"
+    grep -Fq 'Removing a token does not revoke it' <<<"$out" \
+        || die "apadmin source token remove did not say that removing a token does not revoke it"
+}
+
+# run_plain_host_validate prints apshell's output for the plain host's 0 ALGO
+# self-send. It never fails on its own: the callers decide what the output
+# must say.
+run_plain_host_validate() {
+    local script="$1"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$PLAIN_HOST_ADDRESS' > /tmp/$script.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/$script.script 2>&1" || true
+}
+
+# expect_external_check_refusal checks apshell's output for a send the
+# cosigner refused under rule: nothing was sent, and the requester was told
+# the check and its rule ID.
+expect_external_check_refusal() {
+    local out="$1" check="$2" rule="$3" what="$4"
+    if grep -Fq 'Validated successfully' <<<"$out" || grep -Fq 'Transaction(s) submitted' <<<"$out"; then
+        die "$what: the cosigned send was submitted"
+    fi
+    grep -Fq "cosigner policy rejected request: external check $check refused " <<<"$out" \
+        || die "$what: apshell did not report the cosigner's refusal by external check $check"
+    grep -Fq "($rule)" <<<"$out" || die "$what: the refusal does not name $rule"
+}
+
+# expect_audit_since checks the cosigner's audit log, from line from on,
+# holds every given text, and prints the records that hold the first.
+expect_audit_since() {
+    local from="$1" what="$2" audit text
+    shift 2
+    audit="$(cosigner_audit_log | tail -n "+$from")" || die "$what: could not read the cosigner's audit log"
+    for text in "$@"; do
+        grep -Fq -- "$text" <<<"$audit" || die "$what: the cosigner's audit log does not have '$text': $audit"
+    done
+    printf 'cosigner audit:\n'
+    grep -F -- "$1" <<<"$audit"
+}
+
+now_ms() {
+    date +%s%3N
+}
+
+# verify_policy_exports_omit_token exports the key's document, and the whole
+# policy with its node context, while the token is set, and checks neither
+# carries the token: the context names the source only.
+verify_policy_exports_omit_token() {
+    local out export_dir="/tmp/cosigner-external-policy-export" hits
+    if ! out="$(cosigner_admin "policy export --key $COSIGNER_COMPONENT_KEY")"; then
+        printf '%s\n' "$out" >&2
+        die "policy export of the key with external checks failed"
+    fi
+    grep -Fq '"external_checks"' <<<"$out" || die "the key's policy export has no external checks: $out"
+    if grep -Fq -- "$EXTERNAL_SOURCE_TOKEN" <<<"$out"; then
+        die "the key's policy export carries the source token"
+    fi
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "rm -rf '$export_dir'"
+    if ! out="$(cosigner_admin "policy export --all $export_dir")"; then
+        printf '%s\n' "$out" >&2
+        die "policy export --all failed"
+    fi
+    printf '%s\n' "$out"
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "grep -q '\"$EXTERNAL_SOURCE_NAME\"' '$export_dir/.appolicy/node.json'" \
+        || die "the export's node context does not name the source the key has a token for"
+    hits="$(printf '%s' "$EXTERNAL_SOURCE_TOKEN" | docker exec -i --user "$TEST_USER" "$COSIGNER_CONTAINER" \
+        bash -c "token=\"\$(cat)\"; grep -rlF -- \"\$token\" '$export_dir' || true")"
+    [ -z "$hits" ] || die "the policy export carries the source token in: $hits"
+    printf 'policy exports name the %s source and carry no token\n' "$EXTERNAL_SOURCE_NAME"
+}
+
+# verify_source_token_not_written checks the token appears nowhere the
+# cosigner node wrote: its data directory, where the audit log is, and /tmp,
+# where the daemon and approver logs and the policy export are. Only the stub
+# holds it.
+verify_source_token_not_written() {
+    local hits
+    docker_exec_as_tester "$COSIGNER_CONTAINER" "test -s '$COSIGNER_DATA_DIR/audit.log' && test -s /tmp/apcosigner.log" \
+        || die "the cosigner's audit log or daemon log is missing"
+    hits="$(printf '%s' "$EXTERNAL_SOURCE_TOKEN" | docker exec -i --user "$TEST_USER" "$COSIGNER_CONTAINER" \
+        bash -c "token=\"\$(cat)\"; grep -rlF -- \"\$token\" '$COSIGNER_DATA_DIR' /tmp 2>/dev/null || true")"
+    [ -z "$hits" ] || die "the source token was written to: $hits"
+    printf 'the source token is in no file under %s or /tmp, the audit, daemon and approver logs among them\n' "$COSIGNER_DATA_DIR"
+}
+
+# validate_external_checks gives the first cosigner key's document external
+# checks on a stub source and sends the plain host's 0 ALGO self-send through
+# them: it passes, is refused by a rule, is refused on a timeout, and is
+# refused once the token is removed. The key's open document is applied
+# again at the end.
+validate_external_checks() {
+    [ -n "$PLAIN_HOST_ADDRESS" ] || die "plain host address is not set"
+    [ -n "$COSIGNER_COMPONENT_KEY" ] || die "Witness Key ID is not set"
+    local out requests before after audit_from started pass_ms hang_ms limit_ms
+    EXTERNAL_SOURCE_TOKEN="docker-smoke-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+
+    log "Starting a stub external source on the cosigner's loopback"
+    start_external_stub
+
+    log "Applying external checks to the cosigner key's document before its token is set"
+    apply_external_checks_policy applied
+    expect_source_token_state needed
+
+    log "Setting the source token through apadmin source token set --token-stdin"
+    set_external_source_token
+    expect_source_token_state 'in use'
+    verify_policy_exports_omit_token
+    start_cosigner_apapprover
+
+    log "External checks pass: the cosigned send succeeds on chain"
+    before="$(count_lines "$(external_stub_requests)")"
+    audit_from=$(( $(count_lines "$(cosigner_audit_log)") + 1 ))
+    started="$(now_ms)"
+    out="$(run_plain_host_validate external-checks-pass)"
+    pass_ms=$(( $(now_ms) - started ))
+    printf '%s\n' "$out"
+    grep -Fq 'Validated successfully' <<<"$out" \
+        || die "the cosigned send did not succeed with every external check passing"
+    requests="$(external_stub_requests | tail -n "+$((before + 1))")"
+    printf 'stub requests for the send:\n%s\n' "$requests"
+    grep -Fq "{\"path\": \"/v1/switch/$COSIGNER_COMPONENT_KEY\", \"authorized\": true}" <<<"$requests" \
+        || die "the stub was not asked the ops switch for the witness key with the token"
+    grep -Fq "{\"path\": \"/v1/screen/$PLAIN_HOST_ADDRESS?network=$NETWORK_TOKEN\", \"authorized\": true}" <<<"$requests" \
+        || die "the stub was not asked to screen the payment's destination with the token"
+    expect_audit_since "$audit_from" "passing send" "external checks passed: ops-switch, screen-destination (2 lookups)"
+
+    log "External checks refuse by a rule: the requester is told the rule ID, the audit log the answer"
+    set_external_stub_answer screen '{"sanctioned": false, "risk": {"score": 87.5}}'
+    audit_from=$(( $(count_lines "$(cosigner_audit_log)") + 1 ))
+    out="$(run_plain_host_validate external-checks-rule)"
+    printf '%s\n' "$out"
+    expect_external_check_refusal "$out" screen-destination external_check:screen-destination "refusal by a rule"
+    if grep -Fq -e '87.5' -e '/risk/score' -e 'want le' <<<"$out"; then
+        die "the requester was told what the source answered"
+    fi
+    expect_audit_since "$audit_from" "refusal by a rule" "external_check:screen-destination" "/risk/score = 87.5, want le 30"
+
+    log "External checks refuse on a timeout within the source's timeout_ms"
+    set_external_stub_answer screen hang
+    audit_from=$(( $(count_lines "$(cosigner_audit_log)") + 1 ))
+    started="$(now_ms)"
+    out="$(run_plain_host_validate external-checks-timeout)"
+    hang_ms=$(( $(now_ms) - started ))
+    printf '%s\n' "$out"
+    expect_external_check_refusal "$out" screen-destination external_check:screen-destination:unavailable "refusal on a timeout"
+    expect_audit_since "$audit_from" "refusal on a timeout" "external_check:screen-destination:unavailable" "timeout after 1s"
+    printf 'passing send %d ms, timed-out send %d ms, timeout_ms %d\n' "$pass_ms" "$hang_ms" "$EXTERNAL_SOURCE_TIMEOUT_MS"
+    [ "$hang_ms" -ge "$EXTERNAL_SOURCE_TIMEOUT_MS" ] \
+        || die "the timed-out send took ${hang_ms} ms, less than the source's ${EXTERNAL_SOURCE_TIMEOUT_MS} ms timeout"
+    # The source's own timeout adds about a second to a send; the 10-second
+    # deadline over all of a request's lookups would add ten, so the bound
+    # stays below it.
+    limit_ms=$(( pass_ms + EXTERNAL_SOURCE_TIMEOUT_MS + 4000 ))
+    [ "$limit_ms" -le 9500 ] || limit_ms=9500
+    [ "$hang_ms" -lt "$limit_ms" ] \
+        || die "the timed-out send took ${hang_ms} ms, not bounded by the source's ${EXTERNAL_SOURCE_TIMEOUT_MS} ms timeout (limit ${limit_ms} ms)"
+    set_external_stub_answer screen '{"sanctioned": false, "risk": {"score": 12}}'
+
+    log "Removing the source token: the send is refused with token_not_set and asks the stub nothing"
+    remove_external_source_token
+    expect_source_token_state needed
+    apply_external_checks_policy unchanged
+    start_cosigner_apapprover
+    before="$(count_lines "$(external_stub_requests)")"
+    audit_from=$(( $(count_lines "$(cosigner_audit_log)") + 1 ))
+    out="$(run_plain_host_validate external-checks-no-token)"
+    printf '%s\n' "$out"
+    expect_external_check_refusal "$out" ops-switch external_check:ops-switch:token_not_set "refusal without a token"
+    expect_audit_since "$audit_from" "refusal without a token" "external_check:ops-switch:token_not_set" "no token set"
+    after="$(count_lines "$(external_stub_requests)")"
+    [ "$after" = "$before" ] || die "the stub was asked $((after - before)) time(s) for a send whose token is not set"
+
+    log "Verifying the source token is in no log or export on the cosigner node"
+    verify_source_token_not_written
+
+    log "Restoring the cosigner key's open document and stopping the stub source"
+    apply_cosigner_key_policy
+    stop_external_stub
+    start_cosigner_apapprover
+}
+
 verify_guided_cosigner_setup() {
     local out client_data cosigner_ssh_port
 
@@ -2586,6 +3053,14 @@ main() {
     if [ -n "$GO_SDK_BIN" ]; then
         log "Validating the plain host through the Go SDK, with and without cosigner discovery"
         run_go_sdk_plain_host_validate
+    fi
+
+    if cosigner_supports_external_checks; then
+        validate_external_checks
+    elif [ "$RELEASE_INSTALL" = "1" ]; then
+        log "Skipping external checks: this release's cosigner node has no apadmin source token"
+    else
+        die "the locally built cosigner node's apadmin has no source token command"
     fi
 
     log "Closing the plain host out through apshell"

@@ -1321,8 +1321,9 @@ printf '%s' "$SCREENING_TOKEN" | \
 ```
 
 `remove` deletes the source's token. Removing a token does not revoke it:
-generations made while it was set keep a copy until they are pruned, so
-revoke the token at the service as well.
+generations made while it was set keep a copy until they are pruned, and
+backups made while it was set keep one, so revoke the token at the service
+as well.
 
 `list` prints one row per token, and one per token a source needs:
 

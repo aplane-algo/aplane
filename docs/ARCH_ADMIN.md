@@ -796,8 +796,8 @@ can replace a token but never read one.
 - `source_token_remove`: `selector`, `source` -> `source_token_remove_result`:
   the same fields. Removing the last token deletes the selector's file;
   nothing is archived. Generations minted while the token was set keep their
-  copy until they are pruned, so a removed token is revoked at the service,
-  not here.
+  copy until they are pruned, and backups made while it was set keep theirs,
+  so a removed token is revoked at the service, not here.
 - `source_token_list`: optional `selector` -> `source_token_list_result`:
   `success`, `selectors[]`, optional `omitted`, optional `code`, optional
   `error`. Each selector carries `selector`, `policy` (`own` when the node has
@@ -1424,7 +1424,7 @@ identifies the current screen. The enum has families for:
   token, so the form's commands are Enter, `ctrl+r`, the arrows, Tab and
   `Esc`; the typed token is zeroed on every way out of the form, on lock and
   on disconnect, and after a remove the form says that earlier generations
-  keep a copy until they are pruned.
+  and backups keep a copy.
 - Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
 - Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
   list): the enrollment requests waiting for approval (`a` approve, `x`

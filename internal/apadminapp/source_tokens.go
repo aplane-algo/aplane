@@ -26,7 +26,7 @@ const tokenStdinFlag = "--token-stdin"
 const maxTokenInput = 4096
 
 // sourceTokenRemoveNotice follows every successful remove.
-const sourceTokenRemoveNotice = "Removing a token does not revoke it: generations made while it was set keep a copy until they are pruned, so revoke the token at the service."
+const sourceTokenRemoveNotice = "Removing a token does not revoke it: generations made while it was set keep a copy until they are pruned, and backups made while it was set keep one, so revoke the token at the service."
 
 type sourceTokenCommand struct {
 	verb       string
