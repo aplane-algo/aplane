@@ -23,7 +23,7 @@ func TestErrorCutKeepsItsCause(t *testing.T) {
 	const cause = "no space left on device"
 	text := "Error: backup export failed: open /home/operator-with-a-long-name/.local/share/aplane/apsigner-data/" +
 		"identities/default/backups/exports/2026-11-21T04-28-41Z-signer-backup-archive.apbackup.tmp: " + cause
-	lines := wrapErrorLines(text, MinWidth)
+	lines := wrapCutLines(text, MinWidth, maxErrorLines)
 	if len(lines) != maxErrorLines || lines[0] != "Error: backup export failed: open" ||
 		!strings.HasSuffix(lines[len(lines)-2], "...") || lines[len(lines)-1] != cause {
 		t.Fatalf("cut to:\n%s", strings.Join(lines, "\n"))
@@ -42,12 +42,12 @@ func TestErrorCutKeepsItsCause(t *testing.T) {
 	}
 }
 
-// wrapErrorLines returns at any width, a character wider than the width
+// wrapCutLines returns at any width, a character wider than the width
 // included, and keeps the error's end.
 func TestWrapErrorLinesEndsForAWideCharacter(t *testing.T) {
 	for _, width := range []int{0, 1, 2} {
 		done := make(chan []string, 1)
-		go func() { done <- wrapErrorLines("Error: 漢字のパス", width) }()
+		go func() { done <- wrapCutLines("Error: 漢字のパス", width, maxErrorLines) }()
 		select {
 		case lines := <-done:
 			if len(lines) > maxErrorLines || lines[len(lines)-1] != "ス" {
@@ -60,7 +60,7 @@ func TestWrapErrorLinesEndsForAWideCharacter(t *testing.T) {
 				}
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatalf("width %d: wrapErrorLines does not return", width)
+			t.Fatalf("width %d: wrapCutLines does not return", width)
 		}
 	}
 }
@@ -369,5 +369,59 @@ func TestListWindowShowsARowForAMarkerItDoesNotNeed(t *testing.T) {
 	}
 	if pane, standalone := gap(false), gap(true); standalone != pane {
 		t.Errorf("the settings start %d rows under the title when they scroll, %d when they fit", standalone, pane)
+	}
+}
+
+// Every status bar part fits the window, not only the error: a part too long
+// for the line goes under it, wrapped and cut in the middle, and the rows
+// under the line, at most maxErrorLines, go to the alert, then the error,
+// then the warning, then the notice, a row kept for each while rows last.
+func TestStatusBarFitsEveryPartByRank(t *testing.T) {
+	long := func(what, end string) string {
+		return what + " " + strings.Repeat("with a reason long enough to need more than a line ", 3) + end
+	}
+	bar := func(m Model) []string {
+		t.Helper()
+		m = sizedForTest(t, m, MinWidth, MinHeight)
+		lines := strings.Split(stripANSI(m.renderStatusBar()), "\n")
+		if len(lines) > 1+maxErrorLines {
+			t.Errorf("a status bar of %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > MinWidth {
+				t.Errorf("line wider than the window: %q", line)
+			}
+		}
+		return lines
+	}
+	base := Model{viewState: ViewKeyList, connectionState: ConnectionConnected, signerStatusKnown: true, signerState: signerRuntimeUnlocked}
+
+	all := base
+	all.signerWarnings = []string{long("the store root failed its check", "ALERT-END")}
+	all.lastError = long("the signer refused the request", "ERROR-END")
+	all.lastWarning = long("the policy sidecar is stale", "WARNING-END")
+	all.lastNotice = long("copied the address", "NOTICE-END")
+	lines := bar(all)
+	joined := strings.Join(lines, "\n")
+	if len(lines) != 1+maxErrorLines || !strings.HasPrefix(lines[1], "ALERT: the store root") || !strings.HasSuffix(strings.TrimRight(lines[1], " "), "ALERT-END") ||
+		!strings.Contains(joined, "WARNING-END") || !strings.HasSuffix(strings.TrimRight(lines[3], " "), "ERROR-END") || strings.Contains(joined, "NOTICE-END") {
+		t.Errorf("four long parts in three rows: one row each for the alert, the warning and the error, and none for the notice:\n%s", joined)
+	}
+
+	two := base
+	two.lastWarning = long("the policy sidecar is stale", "WARNING-END")
+	two.lastNotice = long("copied the address", "NOTICE-END")
+	lines = bar(two)
+	if len(lines) != 4 || !strings.HasPrefix(lines[1], "copied the address") || !strings.HasSuffix(strings.TrimRight(lines[1], " "), "NOTICE-END") ||
+		!strings.HasPrefix(lines[2], "Warning: the policy") || !strings.HasSuffix(strings.TrimRight(lines[3], " "), "WARNING-END") {
+		t.Errorf("the warning gets two rows and the notice one, shown in the line's order:\n%s", strings.Join(lines, "\n"))
+	}
+
+	short := base
+	short.lastNotice = "Copied"
+	short.lastError = long("the signer refused the request", "ERROR-END")
+	lines = bar(short)
+	if !strings.HasSuffix(strings.TrimRight(lines[0], " "), "| Copied") || !strings.HasPrefix(lines[1], "Error: the signer refused") {
+		t.Errorf("a short notice stays on the line when a long error goes under it:\n%s", strings.Join(lines, "\n"))
 	}
 }

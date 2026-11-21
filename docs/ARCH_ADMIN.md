@@ -1290,14 +1290,17 @@ only a "Window too small" screen, which says when an approval request is
 waiting, and ignores every key but `ctrl+c`, so no key acts on a screen the
 operator cannot see. A selection list that cannot show every row scrolls
 around the selection and keeps the text and buttons below it on screen
-(`fitSelectionList`). A daemon error too long for the status bar's line goes
-under it, wrapped to the window with a word wider than a line, such as a
-path, broken (`wrapErrorLines`); the screen above gives up the rows it takes.
-Every screen sizes itself from the window body under the bar as drawn
+(`fitSelectionList`). The status bar's parts share its line while they fit;
+an alert, error, warning or notice too long for it goes under it, wrapped to
+the window with a word wider than a line, such as a path, broken
+(`wrapCutLines`), and the screen above gives up the rows it takes. Every
+screen sizes itself from the window body under the bar as drawn
 (`windowBodyHeight`), so a list keeps its selected row in view and a pager
-its "more" markers.
-An error longer than three lines is cut in the middle, at an ellipsis: it
-keeps its start and the most of its end one line holds, since a Go error
+its "more" markers. The bar takes at most three rows under its line. They go
+to the alert first, then the error, the warning and the notice, a row kept
+for each later part while rows last, and a part left without a row is not
+shown. A part longer than its rows is cut in the middle, at an ellipsis: it
+keeps its start and the most of its end its last row holds, since a Go error
 ends in its cause.
 
 Every field that names a file on the machine running `apadmin` can also be

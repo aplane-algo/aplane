@@ -616,35 +616,53 @@ func renderedBlockHeight(s string) int {
 // is shown in: "Warning: ", the longest setting name (18 columns) and "...".
 const minSettingWarningWidth = len("Warning: ") + 18 + len("...")
 
-// renderStatusBar renders the bottom status bar
-func (m Model) renderStatusBar() string {
-	var parts []string
+// statusRank orders the status bar's parts for the rows under its line: a
+// lower rank gets its rows first.
+type statusRank int
 
-	// Connection status
+const (
+	rankLine statusRank = iota // connection and signer state, always on the line
+	rankAlert
+	rankError
+	rankWarning
+	rankNotice
+)
+
+// statusPart is one part of the status bar: its terminal-safe text, the
+// style it is drawn in, and its rank.
+type statusPart struct {
+	text  string
+	style lipgloss.Style
+	rank  statusRank
+}
+
+// statusParts is the status bar's parts in the order its line shows them,
+// and the place among them of the admin panel's setting warning.
+func (m Model) statusParts() (parts []statusPart, settingAt int) {
 	switch m.connectionState {
 	case ConnectionConnected:
-		parts = append(parts, statusConnectedStyle.Render("Connected"))
+		parts = append(parts, statusPart{"Connected", statusConnectedStyle, rankLine})
 	case ConnectionConnecting:
-		parts = append(parts, subtitleStyle.Render("Connecting..."))
+		parts = append(parts, statusPart{"Connecting...", subtitleStyle, rankLine})
 	case ConnectionDisconnected:
-		parts = append(parts, statusDisconnectedStyle.Render("Disconnected (press 'c' to reconnect)"))
+		parts = append(parts, statusPart{"Disconnected (press 'c' to reconnect)", statusDisconnectedStyle, rankLine})
 	}
 
 	// Signer status (only show once we've heard from apsigner)
 	if m.signerStatusKnown {
 		switch m.signerState {
 		case signerRuntimeUnlocked:
-			parts = append(parts, statusUnlockedStyle.Render(fmt.Sprintf("Signer Unlocked (%d keys)", m.keyCount)))
+			parts = append(parts, statusPart{fmt.Sprintf("Signer Unlocked (%d keys)", m.keyCount), statusUnlockedStyle, rankLine})
 		case signerRuntimeRecovery:
-			parts = append(parts, statusLockedStyle.Render("Signer Recovery (signing disabled)"))
+			parts = append(parts, statusPart{"Signer Recovery (signing disabled)", statusLockedStyle, rankLine})
 		default:
-			parts = append(parts, statusLockedStyle.Render("Signer Locked"))
+			parts = append(parts, statusPart{"Signer Locked", statusLockedStyle, rankLine})
 		}
 	}
 
 	// Signer-raised alerts stay until the signer clears them.
 	for _, warning := range m.signerWarnings {
-		parts = append(parts, errorStyle.Render("ALERT: "+terminalSafe(warning)))
+		parts = append(parts, statusPart{"ALERT: " + terminalSafe(warning), errorStyle, rankAlert})
 	}
 
 	// A lost notification can be an approval request, so this stays for the session.
@@ -653,56 +671,106 @@ func (m Model) renderStatusBar() string {
 		if m.notificationsLost == 1 {
 			noun = "notification"
 		}
-		parts = append(parts, warningStyle.Render(fmt.Sprintf("Warning: %d signer %s lost", m.notificationsLost, noun)))
+		parts = append(parts, statusPart{fmt.Sprintf("Warning: %d signer %s lost", m.notificationsLost, noun), warningStyle, rankWarning})
 	}
-
-	// Notice if any
 	if m.lastNotice != "" {
-		parts = append(parts, statusConnectedStyle.Render(terminalSafe(m.lastNotice)))
+		parts = append(parts, statusPart{terminalSafe(m.lastNotice), statusConnectedStyle, rankNotice})
 	}
-
-	// Warning if any
 	if m.lastWarning != "" {
-		parts = append(parts, warningStyle.Render("Warning: "+terminalSafe(m.lastWarning)))
+		parts = append(parts, statusPart{"Warning: " + terminalSafe(m.lastWarning), warningStyle, rankWarning})
 	}
-	settingAt := len(parts)
+	settingAt = len(parts)
+	if errorText := m.statusBarError(); errorText != "" {
+		parts = append(parts, statusPart{"Error: " + terminalSafe(errorText), errorStyle, rankError})
+	}
+	return parts, settingAt
+}
 
-	// An error too long for the line goes under it, wrapped to the window,
-	// so no screen grows wider than the window.
-	errorText := m.statusBarError()
-	errorUnder := false
-	if errorText != "" {
-		part := errorStyle.Render("Error: " + terminalSafe(errorText))
-		if lipgloss.Width(strings.Join(append(slices.Clone(parts), part), " | ")) <= m.tableWidth() {
-			parts = append(parts, part)
-		} else {
-			errorUnder = true
+// renderStatusBar renders the bottom status bar. Its parts share one line
+// while they fit, and those that do not go under it, wrapped to the window
+// and cut in the middle (wrapCutLines), so no screen grows wider than the
+// window. The rows under the line, at most maxErrorLines, go by rank, a row
+// kept for each later part while rows last; a part left without a row is
+// not shown.
+func (m Model) renderStatusBar() string {
+	width := m.tableWidth()
+	parts, settingAt := m.statusParts()
+	byRank := make([]int, len(parts))
+	for i := range byRank {
+		byRank[i] = i
+	}
+	slices.SortStableFunc(byRank, func(a, b int) int { return int(parts[a].rank) - int(parts[b].rank) })
+
+	onLine := make([]bool, len(parts))
+	used := 0
+	for _, i := range byRank {
+		w := lipgloss.Width(parts[i].text)
+		if used > 0 {
+			w += len(" | ")
+		}
+		if parts[i].rank == rankLine || used+w <= width {
+			onLine[i] = true
+			used += w
 		}
 	}
 
-	// A setting update's in-effect warning belongs to the admin panel. It is
-	// cut to the room the line leaves, so the line stays one row and takes
-	// none from the panel, and dropped when that room cannot hold even the
-	// setting's name; the panel's own unsaved warning still shows.
-	if w := m.admin.settingWarning.text; m.viewState == ViewAdminPanel && w != "" {
-		room := m.tableWidth() - lipgloss.Width(strings.Join(parts, " | "))
-		if len(parts) > 0 {
-			room -= len(" | ")
+	var under []int
+	for _, i := range byRank {
+		if !onLine[i] {
+			under = append(under, i)
 		}
-		if room >= minSettingWarningWidth {
-			parts = slices.Insert(parts, settingAt, warningStyle.Render(ellipsize(terminalSafe(w), room)))
+	}
+	rows := make(map[int][]string, len(under))
+	budget := maxErrorLines
+	for k, i := range under {
+		if budget == 0 {
+			break
 		}
+		rows[i] = wrapCutLines(parts[i].text, width, max(1, budget-(len(under)-k-1)))
+		budget -= len(rows[i])
 	}
 
-	line := strings.Join(parts, " | ")
-	if !errorUnder {
-		return helpStyle.Render(line)
+	var line, blocks []string
+	settingSlot := 0
+	for i, part := range parts {
+		switch {
+		case onLine[i]:
+			line = append(line, part.style.Render(part.text))
+			if i < settingAt {
+				settingSlot++
+			}
+		case rows[i] != nil:
+			blocks = append(blocks, part.style.Render(strings.Join(rows[i], "\n")))
+		}
 	}
-	errorBlock := errorStyle.Render(strings.Join(wrapErrorLines("Error: "+terminalSafe(errorText), m.tableWidth()), "\n"))
-	if line == "" {
-		return helpStyle.Render(errorBlock)
+	if setting := m.settingWarningPart(width, used); setting != "" {
+		line = slices.Insert(line, settingSlot, setting)
 	}
-	return helpStyle.Render(line + "\n" + errorBlock)
+	if len(line) > 0 {
+		blocks = append([]string{strings.Join(line, " | ")}, blocks...)
+	}
+	return helpStyle.Render(strings.Join(blocks, "\n"))
+}
+
+// settingWarningPart is the status line's part for a setting update's
+// in-effect warning, which belongs to the admin panel, on a line of width
+// whose other parts take used columns. It is cut to the room they leave, so
+// the line stays one row and takes none from the panel, and dropped when
+// that room cannot hold even the setting's name; the panel's own unsaved
+// warning still shows.
+func (m Model) settingWarningPart(width, used int) string {
+	w := m.admin.settingWarning.text
+	if m.viewState != ViewAdminPanel || w == "" {
+		return ""
+	}
+	room := width - used
+	if used > 0 {
+		room -= len(" | ")
+	}
+	if room < minSettingWarningWidth {
+		return ""
+	}
+	return warningStyle.Render(ellipsize(terminalSafe(w), room))
 }
 
 // statusBarError is the error the status bar shows: the last error, but not
@@ -715,30 +783,35 @@ func (m Model) statusBarError() string {
 	return m.lastError
 }
 
-// maxErrorLines bounds a daemon error shown in the status bar or a screen, so
-// a long one leaves the rest of the window its room.
+// maxErrorLines bounds a daemon error a screen shows, and the rows the
+// status bar takes under its line, so a long message leaves the rest of the
+// window its room.
 const maxErrorLines = 3
 
-// wrapErrorLines wraps an error to width, breaking a word wider than a line,
-// such as a path. An error longer than maxErrorLines lines is cut in the
-// middle, since a Go error ends in its cause ("no space left on device"): its
-// first lines, the last of them ending in "..." where the text is cut, then
-// as much of its end as one line holds.
-func wrapErrorLines(text string, width int) []string {
+// wrapCutLines wraps text to width, breaking a word wider than a line, such
+// as a path. Text longer than maxLines lines is cut in the middle, since a
+// Go error ends in its cause ("no space left on device"): its first lines,
+// the last of them ending in "..." where the text is cut, then as much of
+// its end as one line holds; on a single line, its start, "...", and its
+// end.
+func wrapCutLines(text string, width, maxLines int) []string {
 	width = max(width, 1)
 	words := breakWideWords(strings.Fields(text), width)
 	lines := strings.Split(wrapPlainText(strings.Join(words, " "), width), "\n")
-	if len(lines) <= maxErrorLines {
+	if len(lines) <= maxLines {
 		return lines
+	}
+	if maxLines <= 1 {
+		return []string{ellipsizeMiddle(strings.Join(strings.Fields(text), " "), width)}
 	}
 	// The end: the most of the last words one line holds. The wrap fills
 	// each line before the next, so if the rest fit in fewer lines than are
-	// kept for it, the whole error would have fit, and some of it is cut.
+	// kept for it, the whole text would have fit, and some of it is cut.
 	tail := len(words) - 1
 	for tail > 0 && lipgloss.Width(strings.Join(words[tail-1:], " ")) <= width {
 		tail--
 	}
-	head := strings.Split(wrapPlainText(strings.Join(words[:tail], " "), width), "\n")[:maxErrorLines-1]
+	head := strings.Split(wrapPlainText(strings.Join(words[:tail], " "), width), "\n")[:maxLines-1]
 	head[len(head)-1] = ellipsize(head[len(head)-1]+"...", width)
 	return append(head, strings.Join(words[tail:], " "))
 }

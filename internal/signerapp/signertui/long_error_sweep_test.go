@@ -152,10 +152,45 @@ func slicesRepeat(s string, n int) []string {
 	return out
 }
 
-// checkLongErrorScreen fails when m, showing errText in its status bar, has
-// a line wider than the window, is taller than it, is cut by it, hides its
-// selected row, or does not end with the error's last line.
-func checkLongErrorScreen(t *testing.T, name string, m Model, errText, selected string) {
+// statusMessages is what the sweep puts in the status bar beside the
+// screen: an error, and for the last set a long alert, notice and warning
+// and lost notifications as well. ends is the end of each message the bar
+// must show; the error's ends the screen.
+type statusMessages struct {
+	name                   string
+	err                    string
+	alert, notice, warning string
+	lost                   uint64
+	ends                   []string
+}
+
+func longErrorStatusMessages() []statusMessages {
+	const address = "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ"
+	return []statusMessages{
+		{name: "long error", err: longDaemonError, ends: []string{"permission denied"}},
+		{name: "very long error", err: veryLongDaemonError, ends: []string{"the store is full"}},
+		{name: "long alert, notice, warning and error", err: longDaemonError,
+			alert:   "the store root could not be verified against the generation on disk, so signing is held: verify failed",
+			notice:  "Copied the address " + address + " to the clipboard for the operator: copied",
+			warning: "the policy for key " + address + " was applied but its sidecar is stale: stale sidecar",
+			lost:    2, ends: []string{"verify failed", "stale sidecar", "permission denied"}},
+	}
+}
+
+// set puts the messages other than the error in m's status bar.
+func (s statusMessages) set(m Model) Model {
+	if s.alert != "" {
+		m.signerWarnings = []string{s.alert}
+	}
+	m.lastNotice, m.lastWarning, m.notificationsLost = s.notice, s.warning, s.lost
+	return m
+}
+
+// checkLongErrorScreen fails when m, showing msgs in its status bar, has a
+// line wider than the window, is taller than it, is cut by it, hides its
+// selected row, does not end with its whole status bar, or leaves out the
+// end of a message the bar must show, the error's last.
+func checkLongErrorScreen(t *testing.T, name string, m Model, msgs statusMessages, selected string) {
 	t.Helper()
 	view := stripANSI(m.View())
 	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
@@ -168,9 +203,22 @@ func checkLongErrorScreen(t *testing.T, name string, m Model, errText, selected 
 		}
 	}
 	checkBodyFits(t, name, m)
-	errorLines := wrapErrorLines("Error: "+terminalSafe(errText), MinWidth)
-	if last := strings.TrimRight(lines[len(lines)-1], " "); last != errorLines[len(errorLines)-1] {
-		t.Errorf("%s: the screen ends with %q, not the error's last line %q:\n%s", name, last, errorLines[len(errorLines)-1], view)
+	bar := strings.Split(stripANSI(m.renderStatusBar()), "\n")
+	if len(bar) > 1+maxErrorLines || len(bar) > len(lines) {
+		t.Fatalf("%s: a status bar of %d lines:\n%s", name, len(bar), view)
+	}
+	for k, row := range bar {
+		if got := lines[len(lines)-len(bar)+k]; strings.TrimRight(got, " ") != strings.TrimRight(row, " ") {
+			t.Errorf("%s: the screen's row %q is not the status bar's %q:\n%s", name, got, row, view)
+		}
+	}
+	for _, end := range msgs.ends {
+		if !strings.Contains(strings.Join(bar, "\n"), end) {
+			t.Errorf("%s: the status bar leaves out %q:\n%s", name, end, view)
+		}
+	}
+	if end := msgs.ends[len(msgs.ends)-1]; !strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), end) {
+		t.Errorf("%s: the screen does not end with the error's end %q:\n%s", name, end, view)
 	}
 	if selected == "" {
 		return
@@ -184,14 +232,15 @@ func checkLongErrorScreen(t *testing.T, name string, m Model, errText, selected 
 }
 
 // Every apadmin screen fits 80x24, standalone and in an apconsole pane, with
-// an error that wraps under the status bar and one too long for its rows:
-// no line is wider than the window, nothing is cut without a marker, the
-// selected row is on screen, and the error's last line, which names its
+// an error that wraps under the status bar, one too long for its rows, and
+// a long alert, notice and warning beside an error: no line is wider than
+// the window, nothing is cut without a marker, the selected row is on
+// screen, the whole status bar is, and the error's end, which names its
 // cause, ends the screen. The empty screens are drawn as
 // TestEveryViewFitsAtMinSize draws them, and the populated ones with more
 // rows than the window holds, the selection at the far end.
 func TestEveryScreenFitsWithALongError(t *testing.T) {
-	for _, errText := range []string{longDaemonError, veryLongDaemonError} {
+	for _, msgs := range longErrorStatusMessages() {
 		for _, standalone := range []bool{false, true} {
 			for v := ViewAuth; v <= ViewStoreRecovery; v++ {
 				if v == ViewPolicyEdit {
@@ -200,15 +249,17 @@ func TestEveryScreenFitsWithALongError(t *testing.T) {
 				m := sizedForTest(t, Model{viewState: v, standalone: standalone, auth: authState{passphraseMasked: true},
 					forms: formsState{importMnemonicInput: newImportMnemonicInput()}, connectionState: ConnectionConnected,
 					signerStatusKnown: true, signerState: signerRuntimeUnlocked}, MinWidth, MinHeight)
-				m.lastError = errText
-				checkLongErrorScreen(t, fmt.Sprintf("view %d standalone %v error %d", v, standalone, len(errText)), m, errText, "")
+				m = msgs.set(m)
+				m.lastError = msgs.err
+				checkLongErrorScreen(t, fmt.Sprintf("view %d standalone %v %s", v, standalone, msgs.name), m, msgs, "")
 			}
 			for _, screen := range populatedLongErrorScreens() {
 				m := screen.build(t, standalone)
 				m.connectionState, m.signerStatusKnown, m.signerState = ConnectionConnected, true, signerRuntimeUnlocked
+				m = msgs.set(m)
 				// As a daemon error arrives, after the screen was drawn.
-				m = updateModel(t, m, ErrorMsg{Error: errors.New(errText)})
-				checkLongErrorScreen(t, fmt.Sprintf("%s standalone %v error %d", screen.name, standalone, len(errText)), m, errText, screen.selected)
+				m = updateModel(t, m, ErrorMsg{Error: errors.New(msgs.err)})
+				checkLongErrorScreen(t, fmt.Sprintf("%s standalone %v %s", screen.name, standalone, msgs.name), m, msgs, screen.selected)
 			}
 		}
 	}

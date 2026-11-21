@@ -198,7 +198,7 @@ func (m Model) cosignerListErrorBlock() string {
 	if m.cosigner.listErr == "" {
 		return ""
 	}
-	block := errorStyle.Render(strings.Join(wrapErrorLines("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth()), "\n")) + "\n"
+	block := errorStyle.Render(strings.Join(wrapCutLines("Cosigner references could not be listed: "+terminalSafe(m.cosigner.listErr), m.tableWidth(), maxErrorLines), "\n")) + "\n"
 	if m.cosignerManagerRows() > 0 {
 		block += subtitleStyle.Render("Showing the last list read.") + "\n"
 	}
