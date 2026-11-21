@@ -3,26 +3,30 @@
 > Status: TLC checked over the bounded finite state space (one rotating sign
 > and one mnemonic export, each repeating, two unlock attempts that may
 > overlap, at most two lock or recovery transitions); the recorded positive
-> run generated 3616 distinct states at depth 18 with no counterexamples, and
-> the deep configuration (three transitions) 5588 distinct states at depth 19.
-> Eight expected-failure negative controls must keep producing their exact
+> run generated 6748 distinct states at depth 18 with no counterexamples, and
+> the deep configuration (three transitions) 10957 distinct states at depth 19.
+> Ten expected-failure negative controls must keep producing their exact
 > counterexamples:
 > `key_use_lock_negative_recheck.cfg` (`FinalRecheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 392 distinct states at depth 7),
+> `KU1_NoSignatureAfterLock`, 606 distinct states at depth 7),
 > `key_use_lock_negative_generation.cfg` (`GenerationCheck = FALSE`, violates
-> `KU1_NoSignatureAfterLock`, 715 distinct states at depth 8),
+> `KU1_NoSignatureAfterLock`, 1198 distinct states at depth 8),
 > `key_use_lock_negative_recovery.cfg` (`RecoveryEndsSession = FALSE`,
-> violates `KU1_NoSignatureAfterLock`, 701 distinct states at depth 8),
+> violates `KU1_NoSignatureAfterLock`, 1366 distinct states at depth 8),
 > `key_use_lock_negative_drain.cfg` (`DrainWaits = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 226 distinct states at depth 6),
+> `KU2_NoKeyMaterialAtWipe`, 312 distinct states at depth 6),
 > `key_use_lock_negative_register.cfg` (`RegisterChecksLock = FALSE`, violates
-> `KU2_NoKeyMaterialAtWipe`, 302 distinct states at depth 6),
+> `KU2_NoKeyMaterialAtWipe`, 437 distinct states at depth 6),
 > `key_use_lock_negative_register_export.cfg` (`RegisterChecksLock = FALSE`,
-> violates `KU3_NoExportAfterWipe`, 1379 distinct states at depth 8),
+> violates `KU3_NoExportAfterWipe`, 2464 distinct states at depth 8),
 > `key_use_lock_negative_unlock.cfg` (`UnlockWaitsForCleanup = FALSE`,
-> violates `KU4_NoWipeWhileUnlocked`, 544 distinct states at depth 6) and
+> violates `KU4_NoWipeWhileUnlocked`, 747 distinct states at depth 6),
 > `key_use_lock_negative_loser.cfg` (`LoserLocks = FALSE`, violates
-> `KU4_NoWipeWhileUnlocked`, 2700 distinct states at depth 10).
+> `KU4_NoWipeWhileUnlocked`, 4701 distinct states at depth 10) and
+> `key_use_lock_negative_publish.cfg` (`UnlockFencesRecovery = FALSE`,
+> violates `KU5_NoUnlockOverLaterRecovery`, 88 distinct states at depth 4) and
+> `key_use_lock_negative_reentry.cfg` (`RecoveryReentryMovesSession = FALSE`,
+> violates `KU5_NoUnlockOverLaterRecovery`, 243 distinct states at depth 5).
 
 The holders of loaded key material that register a key use with
 `Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
@@ -51,6 +55,7 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU2 | The session is never cleared while a key use is registered | `KU2_NoKeyMaterialAtWipe` |
 | KU3 | An export never delivers a phrase after the session was cleared | `KU3_NoExportAfterWipe` |
 | KU4 | The session is never cleared while the signer is unlocked | `KU4_NoWipeWhileUnlocked` |
+| KU5 | An unlock never publishes unlocked over a recovery entered after it began | `KU5_NoUnlockOverLaterRecovery` |
 
 KU1 is not "nothing leaves after a lock starts". Both holders check and then
 release, and those two steps are not atomic in the code, so a lock landing
@@ -75,16 +80,20 @@ waits for it; KU2 and KU3 cover that case.
   moves under `stateMu`. `DrainBegin` and `Wipe` transcribe `drainKeyUsers` and
   `performLockCleanup` in `internal/signerapp/productruntime/runtime.go`.
 - `EnterRecovery` and `LeaveRecovery` transcribe `SetRecovery` and
-  `TryRecovery` from the unlocked state, and `PromoteRecoveryToUnlocked`, in
-  the same file. `SetRecovery` does nothing on a locked signer, as
+  `TryRecovery` from the unlocked state or from recovery, and
+  `PromoteRecoveryToUnlocked`, in the same file. An entry from recovery is a
+  restore, rollback or reconcile entering it again; it moves the session
+  generation as the first entry did (`enterRecoveryLocked`), which every
+  unlock attempt in flight later finds. `SetRecovery` does nothing on a locked signer, as
   `EnterRecovery`'s guard requires: a store mutation that a lock overtook
   calls it after the lock, and the signer stays locked. Recovery keeps the keyring: nothing drains and nothing is
   cleared. It ends the unlocked session: the session generation moves, and
   `productruntime`'s `SetRecovery` and `TryRecoveryUnlock` cancel the key
   uses that session handed out (`cancelKeyUses`), without waiting for them.
-  The session generation is a counter of its own, apart from the one the
-  unlock fence compares, so an unlock that overlaps an entry into recovery
-  does not run the lock's cleanup. A signer in recovery can be locked like an unlocked
+  The session generation is a counter of its own, apart from the lock
+  generation the unlock's first fence compares, so an unlock that overlaps an
+  entry into recovery does not run the lock's cleanup. Its second fence
+  compares the session, so it does not publish over that recovery either. A signer in recovery can be locked like an unlocked
   one. `KeyUseContext` refuses a new key use in recovery, since the signer is
   not unlocked.
 - `UnlockStart` and `UnlockFinish` transcribe `TryUnlock` and `TryRecovery`
@@ -96,7 +105,13 @@ waits for it; KU2 and KU3 cover that case.
   `lockGen` and the session move, in the critical section that decides the
   cleanup), because another attempt may have published a session those keys
   now serve, or may publish one before the clear runs; moving `lockGen` makes
-  that attempt lose too.
+  that attempt lose too. An attempt that finds `lockGen` where it was but the
+  session moved met an entry into recovery: a store change on another
+  connection ended in doubt while the attempt ran its passphrase checks and
+  reload, outside the store mutation lock. It publishes nothing and runs no
+  cleanup, so the signer stays in recovery with the keyring recovery
+  administration needs, and `UnlockIdentity` answers from the state it then
+  finds, `recovery_blocked` while the recovery lasts.
   Both attempts are modeled as `TryUnlock`; a `TryRecovery` that wins enters
   recovery instead, which clears nothing.
 - `LockState` from the locked state is `BeginMaintenance`, which runs a
@@ -129,6 +144,8 @@ The guards are constants:
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 | `UnlockWaitsForCleanup` | TRUE: `TryUnlock` and `TryRecovery` wait (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then read the lock generation; `FinishMaintenance` waits the same way before it compares the generation its token recorded | Without it an unlock that begins between a lock's state change and its session clear passes the unlock fence, and the cleanup clears the session it published |
 | `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
+| `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `RecoveryDuringUnlockMessage` without publishing or cleaning up | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
+| `RecoveryReentryMovesSession` | TRUE: `enterRecoveryLocked` moves the session on every entry, one from recovery included | Without it an unlock begun in recovery misses a restore, rollback or reconcile that entered recovery again, and publishes over it |
 
 The negative controls:
 
@@ -142,6 +159,13 @@ The negative controls:
 | `RegisterChecksLock = FALSE` | KU3 fails: an export registers the same way, reads the credential, and delivers the phrase after the session was cleared |
 | `UnlockWaitsForCleanup = FALSE` | KU4 fails: the signer locks, an unlock lands before the lock's cleanup has cleared the session, and the cleanup then clears the session of the unlocked signer |
 | `LoserLocks = FALSE` | KU4 fails: an unlock starts on the locked signer, a lock on the locked signer moves `lockGen`, a second unlock starts with no cleanup to wait for, the first loses and starts its cleanup, the second publishes, and the cleanup clears its session |
+| `UnlockFencesRecovery = FALSE` | KU5 fails in three steps: a second unlock starts on the unlocked signer, a store change enters recovery, and the unlock publishes unlocked over it |
+| `RecoveryReentryMovesSession = FALSE` | KU5 fails in four steps: the signer enters recovery, an unlock starts in it, a restore enters recovery again without moving the session, and the unlock publishes unlocked over it |
+
+KU5's history is its own: `ulSawRecov` records every entry into recovery
+while an attempt runs, whatever moved, and is not the flag the fence reads
+(`ulRecov`, the session moving). So a mutation of either half of the guard,
+the fence or the session move, is caught.
 
 The harness (`scripts/run-formal-tests.py`) requires exactly that violation
 for each.
@@ -221,10 +245,19 @@ for each.
   state space.
 - Two unlock attempts. A third adds nothing a second does not: an attempt
   that loses moves `lockGen` for every other attempt in flight.
-- A winning `TryUnlock` publishes over whatever state it finds, recovery
-  included, since entering recovery moves the session and not `lockGen`. No
-  property here depends on it: a holder from before the recovery is stale
-  by the session generation.
+- A winning `TryUnlock` publishes over the state it finds, recovery included,
+  only when no entry into recovery came after it began: an unlock that starts
+  in recovery is the recovery exit once its reconcile passed (KU5 is about
+  recoveries entered later). A first unlock of a locked signer is not fenced:
+  `SetRecovery` does nothing there and the session does not move. Store
+  mutations refuse a signer that is not unlocked (or, for restore and
+  rollback, in recovery), checked under the store mutation lock, so none
+  commits under such an unlock; that is a Go-level contract pinned by the
+  `admin` and `backupadmin` tests.
+- A `TryRecovery` from the locked state moves the session too
+  (`enterRecoveryLocked`), so a `TryUnlock` in flight beside it does not
+  publish over the recovery it enters. The model has no winning `TryRecovery`
+  branch; `TestAnUnlockInFlightDoesNotPublishOverALaterRecovery` pins it.
 
 ## How to check
 

@@ -393,10 +393,12 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 	if lockCalls.Load() != 0 {
 		t.Fatal("recovery ran the on-lock cleanup; it has to keep the keyring")
 	}
+	// Entered again from recovery it moves again, so an unlock that began
+	// in the first recovery does not publish over the second.
 	inRecovery := rt.LockGeneration()
 	rt.SetRecovery() // already there
-	if rt.LockGeneration() != inRecovery {
-		t.Fatal("recovery entered twice moved the generation twice")
+	if rt.LockGeneration() == inRecovery || !rt.IsRecovery() {
+		t.Fatalf("recovery entered from recovery: generation %d -> %d, state %v", inRecovery, rt.LockGeneration(), rt.GetState())
 	}
 	if !rt.PromoteRecoveryToUnlocked() {
 		t.Fatal("recovery did not promote")
@@ -440,11 +442,13 @@ func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	if !rt.IsRecovery() || rt.LockGeneration() == session {
 		t.Fatalf("state %v, generation %d (was %d); want recovery in a new generation", rt.GetState(), rt.LockGeneration(), session)
 	}
-	// From locked it ends nothing.
+	// From locked there is no session to end, but the generation still
+	// moves: an unlock in flight beside it must not publish over the
+	// recovery it enters.
 	rt.Lock()
 	locked := rt.LockGeneration()
-	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok || rt.LockGeneration() != locked {
-		t.Fatalf("TryRecovery from locked: ok %v (%s), generation %d -> %d", ok, msg, locked, rt.LockGeneration())
+	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok || !rt.IsRecovery() || rt.LockGeneration() == locked {
+		t.Fatalf("TryRecovery from locked: ok %v (%s), state %v, generation %d -> %d", ok, msg, rt.GetState(), locked, rt.LockGeneration())
 	}
 }
 
@@ -462,6 +466,9 @@ func TestUnlockOverlappingRecoveryDoesNotRunTheLockCleanup(t *testing.T) {
 	}, nil)
 	if msg == LockedDuringUnlockMessage || lockCalls.Load() != 0 {
 		t.Fatalf("an unlock overlapping recovery was treated as losing to a lock: ok %v, %q, %d cleanup(s)", ok, msg, lockCalls.Load())
+	}
+	if ok || msg != RecoveryDuringUnlockMessage || !rt.IsRecovery() {
+		t.Fatalf("an unlock overlapping recovery = ok %v, %q, state %v; want it to publish nothing and leave recovery", ok, msg, rt.GetState())
 	}
 }
 

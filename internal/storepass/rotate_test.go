@@ -6,8 +6,10 @@ package storepass
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -432,5 +434,70 @@ func TestRotateRefusesAnOverLimitGenerationBeforeSealing(t *testing.T) {
 	after, err := crypto.ReadStoreRootExact(fixture.paths.ProductDir())
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("the refused passphrase change replaced the store root")
+	}
+}
+
+// Pruning cannot drop a pruned generation's anchor, since prune holds no
+// passphrase; the next passphrase change leaves it out of the successor
+// keyring. That change once refused every later passphrase change, because
+// the successor keyring had to keep every anchor the current one carried.
+func TestRotateAfterPruningAnAnchoredGenerationDropsItsAnchor(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		changes   int
+		allPriors bool
+	}{
+		{name: "all priors after one change", changes: 1, allPriors: true},
+		{name: "rollback parent kept after two changes", changes: 2, allPriors: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newRotateFixture(t)
+			passphrase := fixture.oldPassphrase
+			for i := range tc.changes {
+				next := []byte(fmt.Sprintf("store-passphrase-%d", i+1))
+				if _, err := Rotate(fixture.paths, passphrase, next, RotateOptions{ValidateCandidate: acceptCandidate}); err != nil {
+					t.Fatalf("Rotate(%d) error = %v", i+1, err)
+				}
+				passphrase = next
+			}
+			_, kr, err := genstore.ResolveStoreRoot(fixture.paths, passphrase)
+			if err != nil {
+				t.Fatal(err)
+			}
+			removed, err := genstore.CollectGarbageStoreRoot(fixture.paths, !tc.allPriors, kr)
+			kr.Zero()
+			if err != nil || !slices.Contains(removed, rotateFirstGeneration) {
+				t.Fatalf("CollectGarbageStoreRoot() = %v, %v; want %s removed", removed, err, rotateFirstGeneration)
+			}
+
+			final := []byte("store-passphrase-final")
+			if _, err := Rotate(fixture.paths, passphrase, final, RotateOptions{ValidateCandidate: acceptCandidate}); err != nil {
+				t.Fatalf("Rotate() after prune error = %v", err)
+			}
+			active, kr, err := genstore.ResolveStoreRoot(fixture.paths, final)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer kr.Zero()
+			if _, ok := kr.HistoricalGenerationAnchor(rotateFirstGeneration); ok {
+				t.Fatal("successor keyring kept the pruned generation's anchor")
+			}
+			entries, err := os.ReadDir(fixture.paths.GenerationsDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if entry.Name() == active.GenerationID() {
+					continue
+				}
+				anchor, ok := kr.HistoricalGenerationAnchor(entry.Name())
+				if !ok {
+					t.Fatalf("retained generation %s has no anchor", entry.Name())
+				}
+				if err := genstore.ValidateAnchoredSealed(fixture.paths.GenerationPaths(entry.Name()), anchor, kr); err != nil {
+					t.Fatalf("retained generation %s: %v", entry.Name(), err)
+				}
+			}
+		})
 	}
 }

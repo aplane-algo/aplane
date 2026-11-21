@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 
@@ -206,11 +207,17 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err := checkReviewedValues(creation, reviewed); err != nil {
 		return nil, err
 	}
+	// A LogicSig key type compiles its TEAL on algod here, under the store
+	// mutation lock that admin mutations, watcher reloads and the unlock
+	// reconcile also take; the bound keeps a hung algod from holding it.
+	// Nothing else in generation waits on the context.
+	compileCtx, cancelCompile := context.WithTimeout(ctx, tealCompileTimeout)
+	defer cancelCompile()
 	if genericlsig.IsGenericLSigType(keyType) {
 		if s.GenerateGenericLSig == nil {
 			return nil, &Error{Kind: ErrorInternal, Message: "generic lsig generator not configured"}
 		}
-		address, err := s.GenerateGenericLSig(ctx, keyType, params)
+		address, err := s.GenerateGenericLSig(compileCtx, keyType, params)
 		if err != nil {
 			return nil, mapGenerateError(err)
 		}
@@ -226,7 +233,7 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	var genResult *keymgmt.GenerateResult
 	err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		var genErr error
-		genResult, genErr = mut.GenerateKeyWithActivatedContext(ctx, keyType, mk, params, activated)
+		genResult, genErr = mut.GenerateKeyWithActivatedContext(compileCtx, keyType, mk, params, activated)
 		return genErr
 	})
 	if err != nil {
@@ -553,9 +560,16 @@ func (s Service) lockMutation() func() {
 	return s.MutationLock.Unlock
 }
 
+// tealCompileTimeout bounds key generation's TEAL compile on algod, which
+// runs under the store mutation lock.
+var tealCompileTimeout = 15 * time.Second
+
 func mapGenerateError(err error) *Error {
 	if isLockedStateError(err) {
 		return &Error{Kind: ErrorLocked, Message: "signer is locked"}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &Error{Kind: ErrorInternal, Message: fmt.Sprintf("key generation failed: algod did not answer the TEAL compile within %s", tealCompileTimeout)}
 	}
 	if errors.Is(err, keygen.ErrInvalidParams) {
 		return &Error{Kind: ErrorInvalidInput, Message: err.Error()}

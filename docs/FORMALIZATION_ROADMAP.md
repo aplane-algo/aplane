@@ -880,3 +880,39 @@ could be dropped (EQ6). That unreadable state stays outside the model; the
 companion describes how the code now handles it. The positive runs drop to
 2216 states at depth 11 and, deep, 11581 at depth 15; the negative control
 is unchanged.
+
+Fixed 2026-11-21: an unlock in flight published over a recovery entered
+after it began. `TryUnlock` fenced its publish on `lockGen` only, and
+entering recovery moves the session, not `lockGen`, so a second unlock of
+an unlocked signer, or one begun in recovery, published unlocked over the
+recovery an uncertain policy, ASA set or rollback commit entered while it ran
+its passphrase checks and reload. `TryUnlock` now reads the session with
+`lockGen` and, when only the session moved, publishes nothing, runs no
+cleanup, and answers `RecoveryDuringUnlockMessage`, which `UnlockIdentity`
+reports as `recovery_blocked`; `enterRecoveryLocked` moves the session on
+every entry, one from recovery included. `commitAndReload`'s second
+`SetRecovery` is gone. `key_use_lock.tla` gains `ulRecov`, a ghost
+`overRecovery`, `EnterRecovery` from recovery, the guard
+`UnlockFencesRecovery` in `UnlockFinish`, the property KU5 and the negative
+control `key_use_lock_negative_publish.cfg` (88 states at depth 4). The
+companion's note that a winning `TryUnlock` publishes over any state is
+replaced. The positive runs grow to 6748 states at depth 18 and, deep, 10957
+at depth 19; KU1 to KU4 still hold, and every other key-use negative control
+still fails on its own property (counts in `metrics.json`).
+`recovery_binding.tla` is unchanged. Model-extension candidate: an unlock
+that begins in recovery reconciles under the store mutation lock, then
+reloads and publishes outside it, a way out of recovery no model has.
+`make formal-test` now has 38 runs, twenty-two of them negative controls.
+
+Changed 2026-11-21: KU5's ghost read the flag its guard reads, so a mutation
+of `EnterRecovery` that moved the session only from the unlocked state (the
+old `enterRecoveryLocked`) still passed `Safety` at the same 6748 states.
+`key_use_lock.tla` now gives KU5 its own history, `ulSawRecov` (recovery was
+entered since the attempt began, whatever moved), splits the guard into
+`UnlockFencesRecovery` (the fence) and `RecoveryReentryMovesSession` (an
+entry from recovery moves the session), and gains the negative control
+`key_use_lock_negative_reentry.cfg` (243 states at depth 5). The positive
+runs are unchanged at 6748 states at depth 18 and, deep, 10957 at depth 19;
+`key_use_lock_negative_recovery.cfg` grows to 1366 states at depth 8, where
+the ghost and the fence's flag now differ, and still fails KU1. `make
+formal-test` now has 39 runs, twenty-three of them negative controls.

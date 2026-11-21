@@ -471,7 +471,8 @@ Use `apadmin` when `apsigner` is running and unlocked:
    intend to replace the listed destination credentials.
 
 The export passphrase is required before addresses or key types are shown.
-Wrong-passphrase and malformed-archive attempts are rate-limited. A successful
+Wrong-passphrase and malformed-archive attempts are rate-limited; a restore
+refused because the signer was locked is not counted. A successful
 restore immediately commits one generation and reloads the signer; there is no
 inactive recovered-batch or policy-comparison step.
 

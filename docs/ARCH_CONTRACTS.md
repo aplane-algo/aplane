@@ -190,7 +190,11 @@ longer reads, such as one an earlier version wrote), and says to remove it.
 
 Process-global settings live in `config.yaml`. Product runtime settings live in
 `identities/default/config.yaml`; nil means inherit from process defaults.
-Unknown fields, including `decommissioned`, fail parsing.
+Unknown fields, including `decommissioned`, fail parsing. An absent file means
+no overrides; one with no YAML document (empty, blank or only comments) is
+refused with `config file <path> is empty` by the load and by a setting's
+save, which would otherwise write back only its own key. A null document
+(`---`, `~` or `null`) reads as an empty mapping, no overrides, on both.
 
 Signer policy participates in the ordered approval engine.
 The active node-role policy is product-store scoped and stored in the selected
