@@ -339,7 +339,7 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // The unlock's reload published a source token index before the fence. The
 // fence leaves it: recovery keeps the keyring that decrypts the token files,
 // and a clear there could wipe the index a second unlock had just published.
-// No lookup uses it until the signer is unlocked, and a lock zeroes it.
+// Nothing is served from it until the signer is unlocked, and a lock zeroes it.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -393,9 +393,19 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			if got := ir.GetState(); got != tc.state {
 				t.Fatalf("state = %v, want %v", got, tc.state)
 			}
-			got, known := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening")
-			if !known || got != "tok-fenced" {
-				t.Fatalf("SourceTokenFor() = %q, %v; want the index the reload published kept", got, known)
+			// The fence left the index the reload published intact.
+			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); kept != "tok-fenced" {
+				t.Fatalf("the index holds %q after the fenced unlock, want it kept", kept)
+			}
+			// It is served only while the signer is unlocked: in recovery
+			// neither a token nor the names are answered from it.
+			unlocked := tc.state == signerruntime.SignerStateUnlocked
+			got, served := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening")
+			if served != unlocked || (unlocked && got != "tok-fenced") {
+				t.Fatalf("SourceTokenFor() = %q, %v; want served only while unlocked (%v)", got, served, unlocked)
+			}
+			if _, known := ir.SourceTokenNamesFor(sourcetokens.DefaultSelector); known != unlocked {
+				t.Fatalf("SourceTokenNamesFor() known = %v, want %v", known, unlocked)
 			}
 			// A lock ends it: the index the reload published is zeroed.
 			ir.Lock()
@@ -418,5 +428,39 @@ func TestAFencedUnlockAnswersALockThatCameAfter(t *testing.T) {
 	ir.Lock()
 	if success, _, errMsg, code := answerFencedUnlock(ir, signerruntime.RecoveryDuringUnlockMessage); success || errMsg != signerruntime.LockedDuringUnlockMessage || code != protocol.ErrCodeUnlockFailed {
 		t.Fatalf("answerFencedUnlock(locked) = (%v, %q, %q), want the lost-race answer", success, errMsg, code)
+	}
+}
+
+// A second unlock whose reload fails without touching the keyring, as when a
+// passphrase change landed after the passphrase was verified, leaves the
+// session in service its tokens: it still has its keyring. The reload once
+// cleared the index on every failure, leaving the signer unlocked with no
+// tokens.
+func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
+		t.Fatalf("UnlockIdentity() failed: %s", errMsg)
+	}
+	file, err := sourcetokens.SetToken(nil, sourcetokens.DefaultSelector, "screening", []byte("tok-live"), time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := sourcetokens.NewIndex([]*sourcetokens.File{file})
+	file.Zero()
+	ir.PublishSourceTokens(index)
+
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, errors.New("failed to unlock the keystore: injected")
+	})
+	if _, err := ir.ReloadWithPassphrase(testPassphrase); err == nil {
+		t.Fatal("ReloadWithPassphrase() succeeded")
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("the session's keyring is closed: %v", err)
+	}
+	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-live" {
+		t.Fatalf("SourceTokenFor() = %q, %v after a failed reload that kept the keyring; want the tokens kept", got, ok)
 	}
 }
