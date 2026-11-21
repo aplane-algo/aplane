@@ -132,6 +132,9 @@ func (m Model) handleUnlockResultMsg(msg UnlockResultMsg) (tea.Model, tea.Cmd) {
 		return m, m.enterUnlocked(msg.KeyCount)
 	} else {
 		m.auth.passphraseError = msg.Error
+		if m.auth.passphraseError == "" {
+			m.auth.passphraseError = "Unlock failed"
+		}
 		if isSeriousUnlockError(msg.Code) {
 			m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
 			m.clearAuthPassphrase()
@@ -506,6 +509,16 @@ func (m Model) handleAdminSettingUpdatedMsg(msg AdminSettingUpdatedMsg) (tea.Mod
 }
 
 func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
+	// Only the reply to the read the key list waits on is taken, and it opens
+	// the details only while the key list is still on screen: a reply to an
+	// earlier read, or one that lands after the operator moved on, is late.
+	if msg.ID == "" || msg.ID != m.details.requestID {
+		return m, nil
+	}
+	m.details.requestID = ""
+	if msg.Success && m.viewState != ViewKeyList {
+		return m, nil
+	}
 	if msg.Success {
 		m.details.address = msg.Address
 		m.details.keyType = msg.KeyType
@@ -541,12 +554,10 @@ func (m Model) handleLibraryTemplatesMsg(msg LibraryTemplatesMsg) (tea.Model, te
 }
 
 func (m Model) handleShowLibraryTemplateResultMsg(msg ShowLibraryTemplateResultMsg) (tea.Model, tea.Cmd) {
-	// Only adopt the result if we're still waiting for it; ignore late replies
-	// after the user has navigated away.
+	// Only adopt the reply to the read the screen waits on: a reply to a read
+	// left earlier, even for the same template, is late.
 	if m.viewState == ViewLibraryTemplateDetails &&
-		m.library.detailsLoading &&
-		msg.KeyType == m.library.detailsKeyType &&
-		(m.library.detailsInstalled || msg.TemplateType == m.library.detailsTemplateType) {
+		msg.ID != "" && msg.ID == m.library.detailsRequestID {
 		m.library.detailsLoading = false
 		m.library.detailsRequestID = ""
 		if msg.Success {

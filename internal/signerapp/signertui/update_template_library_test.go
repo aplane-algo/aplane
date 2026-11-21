@@ -290,7 +290,7 @@ func TestTemplateLibraryViewKeyShowsInstalledTemplateWithoutLibraryFile(t *testi
 	}
 
 	shown, _ := opened.Update(ShowLibraryTemplateResultMsg{
-		Success: true, KeyType: keyType, TemplateType: "composed", TemplateYAML: []byte("schema_version: 2\n"),
+		ID: opened.library.detailsRequestID, Success: true, KeyType: keyType, TemplateType: "composed", TemplateYAML: []byte("schema_version: 2\n"),
 	})
 	view := shown.(Model).renderLibraryTemplateDetails()
 	for _, want := range []string{"Installed YAML: ", "schema_version: 2"} {
@@ -300,7 +300,7 @@ func TestTemplateLibraryViewKeyShowsInstalledTemplateWithoutLibraryFile(t *testi
 	}
 
 	// A failed lookup carries no template type, and must not stay on Loading.
-	failed, _ := opened.Update(ShowLibraryTemplateResultMsg{KeyType: keyType, Error: "template not found"})
+	failed, _ := opened.Update(ShowLibraryTemplateResultMsg{ID: opened.library.detailsRequestID, KeyType: keyType, Error: "template not found"})
 	if got := failed.(Model); got.library.detailsLoading || got.library.detailsError != "template not found" {
 		t.Fatalf("failed lookup: loading=%v error=%q", got.library.detailsLoading, got.library.detailsError)
 	}
@@ -308,7 +308,7 @@ func TestTemplateLibraryViewKeyShowsInstalledTemplateWithoutLibraryFile(t *testi
 
 func TestInstalledTemplateReplyReachesTheDetailsView(t *testing.T) {
 	raw, err := json.Marshal(ShowInstalledTemplateResultMessage{
-		BaseMessage:  BaseMessage{Type: MsgTypeShowInstalledTemplateResult},
+		BaseMessage:  BaseMessage{Type: MsgTypeShowInstalledTemplateResult, ID: "tmpl-show-installed-1"},
 		Success:      true,
 		KeyType:      "aplane.pathway1.v1",
 		TemplateType: "composed",
@@ -326,7 +326,7 @@ func TestInstalledTemplateReplyReachesTheDetailsView(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := decoded.(ShowLibraryTemplateResultMsg)
-	if !ok || !got.Success || got.KeyType != "aplane.pathway1.v1" || string(got.TemplateYAML) != "schema_version: 2\n" {
+	if !ok || got.ID != "tmpl-show-installed-1" || !got.Success || got.KeyType != "aplane.pathway1.v1" || string(got.TemplateYAML) != "schema_version: 2\n" {
 		t.Fatalf("decoded = %#v", decoded)
 	}
 }
@@ -419,10 +419,11 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 		viewState: ViewLibraryTemplateDetails,
 		width:     100,
 		height:    30,
-		library:   libraryState{detailsLoading: true, detailsKeyType: "test.generic-policy.v1", detailsTemplateType: "generic"},
+		library:   libraryState{detailsLoading: true, detailsRequestID: "tmpl-show-library-1", detailsKeyType: "test.generic-policy.v1", detailsTemplateType: "generic"},
 	}
 
 	next, _ := m.Update(ShowLibraryTemplateResultMsg{
+		ID:            "tmpl-show-library-1",
 		Success:       true,
 		KeyType:       "test.generic-policy.v1",
 		TemplateType:  "generic",
