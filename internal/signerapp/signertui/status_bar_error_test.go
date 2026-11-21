@@ -512,3 +512,33 @@ func TestCosignerListSuccessClearsItsFailureFromTheBar(t *testing.T) {
 		t.Fatalf("a successful list cleared another error: lastError = %q", m.lastError)
 	}
 }
+
+// The policy editor keeps the cursor's line in view when an error takes rows
+// from it: the next key edits a line the operator can see.
+func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		m := cosignerPoliciesModel("default")
+		m.standalone, m.connectionState = standalone, ConnectionConnected
+		m = openEditorForKeyOnDefault(t, sizedForTest(t, m, MinWidth, MinHeight))
+		lines := make([]string, 60)
+		for i := range lines {
+			lines[i] = fmt.Sprintf("line-%03d", i)
+		}
+		m.policies.apply.edit.input.SetValue(strings.Join(lines, "\n"))
+		// As the program runs: a draw after each message.
+		_ = m.View()
+		for _, key := range []tea.KeyType{tea.KeyUp, tea.KeyDown} {
+			m = updateModel(t, m, tea.KeyMsg{Type: key})
+			_ = m.View()
+		}
+		if view := stripANSI(m.View()); !strings.Contains(view, "line-059") {
+			t.Fatalf("standalone %v: the cursor's last line is not on screen before the error:\n%s", standalone, view)
+		}
+		m = updateModel(t, m, ErrorMsg{Error: errors.New(longDaemonError)})
+		view := stripANSI(m.View())
+		checkBodyFits(t, fmt.Sprintf("standalone %v", standalone), m)
+		if !strings.Contains(view, "line-059") {
+			t.Errorf("standalone %v: the cursor's line is hidden after the error:\n%s", standalone, view)
+		}
+	}
+}

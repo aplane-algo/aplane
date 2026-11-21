@@ -407,6 +407,12 @@ func (m Model) sizedPolicyEditor() textarea.Model {
 	}
 	input.SetWidth(m.policyApplyReviewWidth())
 	input.SetHeight(max(height, 5))
+	// The text area moves its view to the cursor only in an update, over
+	// the lines it last drew, and a status bar that grew since the last key
+	// leaves it fewer rows: drawn at the new height, then updated with no
+	// message, it keeps the cursor's line in view.
+	_ = input.View()
+	input, _ = input.Update(nil)
 	return input
 }
 
