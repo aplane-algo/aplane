@@ -608,10 +608,11 @@ baseline, or unlock-time completion pass.
 Retained generations are not rewritten during rotation. Exact historical
 anchors and anchor-gated reads preserve historical least authority.
 
-Generation pruning cannot drop a pruned generation's anchor, because prune
-holds no passphrase to rewrap the keyring. The stale anchor stays in the root,
-where it grants nothing, until the next passphrase change leaves it out of the
-successor keyring. A successor never changes the anchor of a generation it
+Generation pruning does not drop a pruned generation's anchor: prune deletes
+generation directories and does not rewrite `store-root.enc`, and an ordinary
+root commit keeps the wrapped keyring exactly as it read it. The stale anchor
+stays in the root, where it grants nothing, until the next passphrase change
+leaves it out of the successor keyring. A successor never changes the anchor of a generation it
 retains.
 
 ### Restore rollback

@@ -77,8 +77,9 @@ func NewKeyring() (*Keyring, error) {
 // NewSuccessorKeyring adds exactly one fresh term and replaces the complete
 // historical-anchor set without mutating current. anchors covers the
 // generations the store still retains: the anchor of a generation pruned
-// since the last change is left out, and so dropped, because prune holds no
-// passphrase to drop it itself.
+// since the last change is left out, and so dropped. Prune does not rewrite
+// store-root.enc, and an ordinary root commit keeps the wrapped keyring as it
+// read it, so a passphrase change is the first commit that can drop it.
 func NewSuccessorKeyring(current *Keyring, anchors []HistoricalGenerationAnchor) (*Keyring, error) {
 	if current == nil || len(current.terms) == 0 {
 		return nil, ErrKeyringNotOpen
