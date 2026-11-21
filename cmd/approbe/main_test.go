@@ -189,9 +189,9 @@ func TestRunSignerIPCPathMirrorsManagedDaemonResolution(t *testing.T) {
 				t.Fatal(err)
 			}
 			configured := tt.configured(root)
-			config := "schema_version: 1\n"
+			config := "{}\n"
 			if configured != "" {
-				config += fmt.Sprintf("ipc_path: %q\n", configured)
+				config = fmt.Sprintf("ipc_path: %q\n", configured)
 			}
 			if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0o600); err != nil {
 				t.Fatal(err)

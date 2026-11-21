@@ -18,7 +18,6 @@ const (
 
 // Config holds apshell configuration settings
 type Config struct {
-	SchemaVersion   int      `yaml:"schema_version,omitempty" description:"Client config schema version" default:"1"`
 	Network         string   `yaml:"network" description:"Default network context token" default:"testnet"`
 	NetworksAllowed []string `yaml:"networks_allowed" description:"Restrict allowed networks (empty = all)" default:"[]"`
 	Theme           string   `yaml:"theme" description:"Local client UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
@@ -40,7 +39,6 @@ type Config struct {
 // Algod URLs are empty - user must explicitly configure them.
 func DefaultConfig() Config {
 	return Config{
-		SchemaVersion:            ConfigSchemaVersion,
 		Network:                  "testnet",
 		NetworksAllowed:          []string{}, // Empty = all networks allowed
 		Theme:                    "auto",
@@ -109,10 +107,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 	// Start with defaults, then overlay config file values
 	config := DefaultConfig()
 	if err := UnmarshalKnownConfigFields(data, &config); err != nil {
-		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
-	}
-	config.SchemaVersion = NormalizeConfigSchemaVersion(config.SchemaVersion)
-	if err := ValidateConfigSchemaVersion("client config", config.SchemaVersion); err != nil {
 		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	if config.Algod, err = mergeClientNetworkAlgodConfig(config.Networks); err != nil {

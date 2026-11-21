@@ -40,6 +40,11 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, e
 // SaveStoredClientEndpointRegistry writes endpoints.yaml. Callers hold the
 // client-data lock.
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {
+	// The decode checks the version of a file it reads; the save checks the
+	// one it is handed, and has no default for an unset version.
+	if registry.SchemaVersion != ClientEndpointSchemaVersion {
+		return fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
+	}
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return err
 	}
@@ -135,14 +140,6 @@ func RemoveStoredClientEndpoint(dataDir, alias string) error {
 // that was loaded or is about to be saved: every endpoint, then at most one
 // signer endpoint and MaxClientCosignerEndpoints cosigner endpoints.
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
-	// A loaded registry already passed the decode's schema check; this one
-	// is for a registry built in memory and handed to the save.
-	if registry.SchemaVersion == 0 {
-		registry.SchemaVersion = ClientEndpointSchemaVersion
-	}
-	if registry.SchemaVersion != ClientEndpointSchemaVersion {
-		return fmt.Errorf("%s schema_version = %d, want %d", ClientEndpointsFile, registry.SchemaVersion, ClientEndpointSchemaVersion)
-	}
 	if registry.Endpoints == nil {
 		registry.Endpoints = map[string]ClientEndpointConfig{}
 	}

@@ -122,8 +122,8 @@ separately. The client data directory is resolved from the first of:
 - `APCLIENT_DATA`
 
 Client config is loaded from `config.yaml` under the resolved data directory.
-It supports optional `schema_version: 1`; absent means v1 for existing configs,
-and unsupported versions fail during load.
+It has no version field: its field set is its format, so a `schema_version`
+line is refused like any other unknown field.
 Installer-written client configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`, and restrict `networks_allowed` to `mainnet` and
 `testnet` by default; existing configs are left unchanged if the
@@ -163,9 +163,8 @@ Validation:
   `endpoint`, `ssh`, `signer_port` and `algod` included, with apshell's
   `config field "<name>" is unknown or no longer supported`. They validate
   only the values they read, so some files apshell refuses still load in an
-  SDK: an empty file, an unsupported `schema_version`, or a bad
-  `signer_status_poll_interval`. They resolve SSH-only connection profiles
-  from `endpoints.yaml`.
+  SDK: an empty file or a bad `signer_status_poll_interval`. They resolve
+  SSH-only connection profiles from `endpoints.yaml`.
   First-use trust is an explicit connection/enrollment option, not a
   config.yaml routing field.
 
@@ -174,8 +173,8 @@ Validation:
 Source: `internal/serverconfig/serverconfig.go`
 
 Loaded from `-d <path>` or `APSIGNER_DATA`.
-It supports optional `schema_version: 1`; absent means v1 for existing configs,
-and unsupported versions fail during load.
+It has no version field: its field set is its format, so a `schema_version`
+line is refused like any other unknown field.
 Installer-written signer configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`; existing configs are left unchanged if the installer
 is pointed at a supported in-place upgrade target.

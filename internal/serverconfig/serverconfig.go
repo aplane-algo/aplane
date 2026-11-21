@@ -38,7 +38,6 @@ const (
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
-	SchemaVersion     int                  `yaml:"schema_version,omitempty" description:"Signer config schema version" default:"1"`
 	Endpoint          ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
 	PassphraseTimeout string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
 	ApprovalWait      string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"4m"`
@@ -220,7 +219,6 @@ func ValidateSSHListenAddress(value string) error {
 // Relative paths in config are resolved relative to the data directory ($APSIGNER_DATA).
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
-		SchemaVersion:      apconfig.ConfigSchemaVersion,
 		Endpoint:           DefaultServerEndpointConfig(),
 		PassphraseTimeout:  "15m", // 15 minute admin idle timeout (use "0" to disable)
 		ApprovalWait:       DefaultApprovalWaitString,
@@ -262,7 +260,7 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: Config file not found: %s\n", path)
-		return normalizeServerConfig(dataDir, path, defaults, defaults)
+		return normalizeServerConfig(dataDir, defaults, defaults)
 	}
 	if err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to read config file %s: %w", path, err)
@@ -293,19 +291,14 @@ func parseServerConfig(dataDir, path string, data []byte, defaults ServerConfig)
 	if err := apconfig.UnmarshalKnownConfigFields(data, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-	return normalizeServerConfig(dataDir, path, config, defaults)
+	return normalizeServerConfig(dataDir, config, defaults)
 }
 
 // normalizeServerConfig validates config, fills what it leaves unset from
 // defaults, derives the runtime network indexes, and resolves relative paths
 // against dataDir. A config read from a file and the defaults used when there
-// is none both pass through it, so they resolve alike. path names the config
-// file in messages.
-func normalizeServerConfig(dataDir, path string, config, defaults ServerConfig) (ServerConfig, error) {
-	config.SchemaVersion = apconfig.NormalizeConfigSchemaVersion(config.SchemaVersion)
-	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
-		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
-	}
+// is none both pass through it, so they resolve alike.
+func normalizeServerConfig(dataDir string, config, defaults ServerConfig) (ServerConfig, error) {
 	for network := range config.Networks {
 		if err := apconfig.ValidateNetworkID(network); err != nil {
 			return ServerConfig{}, fmt.Errorf("invalid network in networks config: %w", err)

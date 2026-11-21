@@ -26,7 +26,7 @@ func TestMissingConfigResolvesLikeAnEmptyFile(t *testing.T) {
 		t.Fatalf("host key path without a config file = %q, want %q", missing.Endpoint.SSH.HostKeyPath, want)
 	}
 
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("schema_version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	empty, err := LoadServerConfig(dataDir)
