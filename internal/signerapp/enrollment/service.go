@@ -85,7 +85,7 @@ func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending b
 		if s.AuditLog != nil {
 			s.AuditLog.LogClientEnrollmentRequested(fingerprint, label, remoteAddr)
 		}
-		s.logf("enrollment request queued from %s (key: %s, label: %q); approve it in apadmin", remoteAddr, fingerprint, label)
+		s.logf("enrollment request queued from %s (key: %s, label: %+q); approve it in apadmin", remoteAddr, fingerprint, label)
 		if s.Notify != nil {
 			s.Notify(Request{ID: RequestID(fingerprint), Fingerprint: fingerprint, Label: label, RemoteAddr: remoteAddr, RequestedAt: s.now()})
 		}

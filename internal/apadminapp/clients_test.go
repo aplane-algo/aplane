@@ -5,10 +5,13 @@ package apadminapp
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // The documented forms put --label after the positional argument; the
@@ -128,5 +131,40 @@ func TestClientsListPutsTheLabelOnItsOwnQuotedLine(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `label "\u7530\u4e2d\u306e\u30ce\u30fc\u30c8PC"`) {
 		t.Errorf("a stored non-ASCII label is not shown as escapes:\n%s", stdout.String())
+	}
+}
+
+// The lines reporting an approval or an import name the label quoted in
+// ASCII and cut to 32 columns: they run on past 80 columns, and a whole
+// label could start a line of its own reading like another key.
+func TestClientsResultLinesQuoteAndCutTheLabel(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	for _, label := range []string{
+		"x client key SHA256:ExpectedLaptopKeyAbCdEfGhIjKlMnOpQrStUvWx",
+		"laptop\u202e\u0085\u7530",
+	} {
+		requester := &fakeRequester{handle: func(message, result any) error {
+			switch result := result.(type) {
+			case *protocol.ApproveEnrollmentResultMessage:
+				*result = protocol.ApproveEnrollmentResultMessage{Success: true, Fingerprint: fingerprint, Label: label}
+			case *protocol.ImportClientKeyResultMessage:
+				*result = protocol.ImportClientKeyResultMessage{Success: true, Fingerprint: fingerprint, Label: label, Added: true}
+			}
+			return nil
+		}}
+		keyFile := filepath.Join(t.TempDir(), "id.pub")
+		if err := os.WriteFile(keyFile, []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ops\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"approve", fingerprint}, {"import", keyFile}} {
+			var stdout, stderr bytes.Buffer
+			if err := (Catalog{Client: requester, Streams: Streams{Stdout: &stdout, Stderr: &stderr}}).Run("clients", args); err != nil {
+				t.Fatalf("clients %s: %v", args[0], err)
+			}
+			want := "client key " + fingerprint + " enrolled (label " + termsafe.ResultLabel(label) + ")\n"
+			if stderr.String() != want || strings.ContainsAny(stderr.String(), "\u202e\u0085\u7530") {
+				t.Errorf("clients %s with label %+q: %q, want %q", args[0], label, stderr.String(), want)
+			}
+		}
 	}
 }

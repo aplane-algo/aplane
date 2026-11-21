@@ -67,3 +67,16 @@ func TestQuotedFieldCutsBetweenEscapes(t *testing.T) {
 		}
 	}
 }
+
+// A result line's label is quoted in ASCII and at most 32 columns.
+func TestResultLabelIsShortAndQuoted(t *testing.T) {
+	for _, label := range []string{"laptop", strings.Repeat("x", 64), "x client key SHA256:ExpectedLaptopKeyAbCdEfGhIjKl", "\u7530\u202e\xff"} {
+		got := ResultLabel(label)
+		if len(got) > resultLabelWidth || !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) || !PrintableASCII(got) {
+			t.Errorf("ResultLabel(%q) = %q", label, got)
+		}
+	}
+	if got := ResultLabel("laptop"); got != `"laptop"` {
+		t.Errorf("ResultLabel(laptop) = %q", got)
+	}
+}

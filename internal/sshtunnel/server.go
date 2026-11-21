@@ -1066,13 +1066,15 @@ func (s *Server) respondEnrollment(sshConn ssh.Conn, channel ssh.Channel, msg st
 	return sendExitStatus(channel, status)
 }
 
-// quoteClientText renders unauthenticated client text for a log line: quoted
-// so control characters and terminal escapes print as escapes, and truncated.
+// quoteClientText renders unauthenticated client text for a log line, which
+// may reach a terminal: quoted in ASCII, so control characters, terminal
+// escapes and every other character beyond ASCII print as escapes, and
+// truncated.
 func quoteClientText(text string) string {
 	if len(text) > maxLoggedClientTextBytes {
-		return strconv.Quote(text[:maxLoggedClientTextBytes]) + "..."
+		return strconv.QuoteToASCII(text[:maxLoggedClientTextBytes]) + "..."
 	}
-	return strconv.Quote(text)
+	return strconv.QuoteToASCII(text)
 }
 
 func parseExecCommand(payload []byte) (string, bool) {

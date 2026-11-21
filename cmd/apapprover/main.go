@@ -76,7 +76,7 @@ type enrollmentOutcome struct {
 func (o enrollmentOutcome) String() string {
 	switch {
 	case o.success && o.approved && o.label != "":
-		return fmt.Sprintf("✓ Client key %s enrolled (%s)", o.fingerprint, o.label)
+		return fmt.Sprintf("✓ Client key %s enrolled (%s)", o.fingerprint, termsafe.ResultLabel(o.label))
 	case o.success && o.approved:
 		return fmt.Sprintf("✓ Client key %s enrolled", o.fingerprint)
 	case o.success:

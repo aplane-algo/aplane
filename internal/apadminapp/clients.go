@@ -195,7 +195,7 @@ func (c Catalog) approveClient(fingerprint, label string) error {
 		return resultError("enrollment approval failed", result.Code, result.Error)
 	}
 	if result.Label != "" {
-		c.info("client key %s enrolled (label %q)", result.Fingerprint, result.Label)
+		c.info("client key %s enrolled (label %s)", result.Fingerprint, termsafe.ResultLabel(result.Label))
 	} else {
 		c.info("client key %s enrolled", result.Fingerprint)
 	}
@@ -254,7 +254,7 @@ func (c Catalog) importClient(path, label string) error {
 	case !result.Added:
 		c.info("client key %s was already enrolled", result.Fingerprint)
 	case result.Label != "":
-		c.info("client key %s enrolled (label %q)", result.Fingerprint, result.Label)
+		c.info("client key %s enrolled (label %s)", result.Fingerprint, termsafe.ResultLabel(result.Label))
 	default:
 		c.info("client key %s enrolled", result.Fingerprint)
 	}

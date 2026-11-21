@@ -111,17 +111,6 @@ func (m Model) handleEnrolledKeysList(msg EnrolledKeysListMsg) (tea.Model, tea.C
 	return m, nil
 }
 
-// statusLabelWidth bounds a label quoted in a status line, which wraps with
-// the screen: too short for a fingerprint, the label cannot imitate one on
-// a line it starts.
-const statusLabelWidth = 32
-
-// statusLabel is a client's label as a status line names it: quoted in
-// ASCII and cut in the middle to statusLabelWidth columns.
-func statusLabel(label string) string {
-	return termsafe.QuotedField("", label, statusLabelWidth)
-}
-
 // handleApproveEnrollmentResult reports the signer's answer where the
 // operator is looking: the Enrolled Clients status line when that screen is
 // up, otherwise (an answer given from the popup) the status bar, so a failed
@@ -131,7 +120,7 @@ func (m Model) handleApproveEnrollmentResult(msg ApproveEnrollmentResultMsg) (te
 	status := func(fingerprint string) string {
 		switch {
 		case msg.Success && msg.Label != "":
-			return fmt.Sprintf("Enrolled %s (%s).", fingerprint, statusLabel(msg.Label))
+			return fmt.Sprintf("Enrolled %s (%s).", fingerprint, termsafe.ResultLabel(msg.Label))
 		case msg.Success:
 			return fmt.Sprintf("Enrolled %s.", fingerprint)
 		default:
@@ -187,7 +176,7 @@ func (m Model) handleImportClientKeyResult(msg ImportClientKeyResultMsg) (tea.Mo
 	case !msg.Added:
 		m.clients.status = fmt.Sprintf("Client key %s was already enrolled.", msg.Fingerprint)
 	case msg.Label != "":
-		m.clients.status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, statusLabel(msg.Label))
+		m.clients.status = fmt.Sprintf("Client key %s enrolled (%s).", msg.Fingerprint, termsafe.ResultLabel(msg.Label))
 	default:
 		m.clients.status = fmt.Sprintf("Client key %s enrolled.", msg.Fingerprint)
 	}

@@ -148,9 +148,9 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, finger
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
 		}
 		if err != nil {
-			logWarnf("client key enrolled: %s (label %q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
+			logWarnf("client key enrolled: %s (label %+q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
 		} else {
-			logInfof("client key enrolled: %s (label %q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
+			logInfof("client key enrolled: %s (label %+q, requested from %s)", fingerprint, entry.Label, entry.RemoteAddr)
 		}
 	}
 	// A retry after a failed queue write enrolls nothing but clears the
@@ -229,9 +229,9 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, lab
 			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
 		}
 		if err != nil {
-			logWarnf("client key imported: %s (label %q) but the import did not complete: %v", fingerprint, label, err)
+			logWarnf("client key imported: %s (label %+q) but the import did not complete: %v", fingerprint, label, err)
 		} else {
-			logInfof("client key imported: %s (label %q)", fingerprint, label)
+			logInfof("client key imported: %s (label %+q)", fingerprint, label)
 		}
 	} else if err == nil {
 		logInfof("client key import: %s is already enrolled", fingerprint)

@@ -100,3 +100,14 @@ func clip(row string, width int) string {
 	}
 	return row
 }
+
+// resultLabelWidth bounds a label a result line names. Such a line runs on
+// with the screen's text and can wrap at the label's spaces; cut to this,
+// the label is too short to carry a fingerprint onto a line it starts.
+const resultLabelWidth = 32
+
+// ResultLabel is a client's label as a line reporting a decision names it:
+// an ASCII Go string literal cut in the middle to resultLabelWidth columns.
+func ResultLabel(label string) string {
+	return QuotedField("", label, resultLabelWidth)
+}

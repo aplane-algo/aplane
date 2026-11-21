@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/transport"
 )
 
@@ -735,6 +736,22 @@ func TestApproverTakesNoAnswerOnANarrowTerminal(t *testing.T) {
 			if len(sent) != 1 || len(a.queue) != 0 {
 				t.Errorf("%s at %d columns: the approval was not taken once wide enough: sent %v", name, width, sent)
 			}
+		}
+	}
+}
+
+// The line reporting an enrollment names the label quoted in ASCII and cut
+// to 32 columns: whole, it runs on past 80 columns and could start a line
+// reading like the next request's key, and a label queued before labels were
+// ASCII could reach the terminal with its controls.
+func TestEnrollmentOutcomeQuotesAndCutsTheLabel(t *testing.T) {
+	for _, label := range []string{
+		"x SSH Key:     SHA256:ExpectedLaptopKeyAbCdEfGhIjKlMnOpQrStUv",
+		"laptop\u202e\u0085\u7530",
+	} {
+		line := enrollmentOutcome{approved: true, success: true, fingerprint: "SHA256:one", label: label}.String()
+		if want := "✓ Client key SHA256:one enrolled (" + termsafe.ResultLabel(label) + ")"; line != want {
+			t.Errorf("outcome for %+q = %q, want %q", label, line, want)
 		}
 	}
 }
