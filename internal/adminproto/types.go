@@ -233,6 +233,12 @@ type RestoreKeyInfo struct {
 	KeyType        string
 	AlreadyExists  bool
 	HasPolicy      bool
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, never a token. A preview lists the names of at
+	// most 4,096 tokens across its keys, so it fits one admin frame;
+	// SourceTokensOmitted counts this key's names it left out.
+	SourceTokens        []string
+	SourceTokensOmitted int
 }
 
 type PreviewRestoreRequest struct {
@@ -314,11 +320,13 @@ type RestoreBackupResult struct {
 	Skipped        []RestoreSkipped
 	SkippedOmitted int
 	// PoliciesRestored lists the keys whose archived policy document was
-	// installed.
-	PoliciesRestored []string
-	KeyCount         int
-	Code             string
-	Error            string
+	// installed, and SourceTokensRestored those whose archived source
+	// tokens were.
+	PoliciesRestored     []string
+	SourceTokensRestored []string
+	KeyCount             int
+	Code                 string
+	Error                string
 }
 
 // RollbackRestoreRequest identifies an authenticated request to reconstruct

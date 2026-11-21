@@ -28,9 +28,9 @@ import (
 // it, prepared for destination installation. Its selector, canonical key JSON
 // and payload come from that one parse and are unexported, so an entry
 // cannot name a selector or category its credential does not have. The key
-// JSON contains private authority and must be cleared with ZeroSecrets.
-// Policy is the credential's archived policy document of its own, nil when
-// the archive carries none.
+// JSON and any archived source tokens are secret and must be cleared with
+// ZeroSecrets. Policy is the credential's archived policy document of its
+// own, nil when the archive carries none.
 type CredentialEntry struct {
 	StageHint *RotatingStageHint
 	Policy    []byte
@@ -48,6 +48,11 @@ type admittedCredential struct {
 	// payload is the admitted payload with its secrets cleared: the
 	// category, key type, public key and genesis hash later steps read.
 	payload *keys.Payload
+	// sourceTokens is a cosigner key's archived token file, canonical
+	// plaintext, nil when the archive carries none; sourceTokenNames are its
+	// source names, sorted.
+	sourceTokens     []byte
+	sourceTokenNames []string
 }
 
 // Selector is the credential's canonical selector, derived from its payload.
@@ -82,12 +87,35 @@ func (e *CredentialEntry) keyJSON() []byte {
 	return e.credential.keyJSON
 }
 
+// SourceTokenNames lists the sources the archive carries a token for under
+// this cosigner key, sorted: names only, never a token. It is nil when the
+// archive carries none.
+func (e *CredentialEntry) SourceTokenNames() []string {
+	if e.credential == nil {
+		return nil
+	}
+	return e.credential.sourceTokenNames
+}
+
+// sourceTokensPlaintext is the archived token file's canonical plaintext,
+// nil when the archive carries none or once it was cleared.
+func (e *CredentialEntry) sourceTokensPlaintext() []byte {
+	if e.credential == nil {
+		return nil
+	}
+	return e.credential.sourceTokens
+}
+
+// ZeroSecrets clears the credential and its archived source tokens, for
+// every copy of the entry.
 func (e *CredentialEntry) ZeroSecrets() {
 	if e == nil || e.credential == nil {
 		return
 	}
 	crypto.ZeroBytes(e.credential.keyJSON)
 	e.credential.keyJSON = nil
+	crypto.ZeroBytes(e.credential.sourceTokens)
+	e.credential.sourceTokens = nil
 }
 
 // RestoreSet is a fully authenticated archive selection: the credentials
@@ -105,7 +133,7 @@ type RestoreSet struct {
 }
 
 // SkippedEntry is an archived credential this node cannot admit, and why.
-// Its archived policy is skipped with it.
+// Its archived policy and source tokens are skipped with it.
 type SkippedEntry struct {
 	Selector string
 	Reason   string
@@ -199,14 +227,15 @@ type RestoreConflict struct {
 }
 
 // RestoreClassification is destination state pinned under the identity
-// mutation lock immediately before generation minting. Policies lists the
-// entries whose archived policy must be installed, whether or not their
-// credential is pending.
+// mutation lock immediately before generation minting. Policies and
+// SourceTokens list the entries whose archived policy or source tokens must
+// be installed, whether or not their credential is pending.
 type RestoreClassification struct {
-	Identical []CredentialEntry
-	Pending   []CredentialEntry
-	Policies  []CredentialEntry
-	Conflicts []RestoreConflict
+	Identical    []CredentialEntry
+	Pending      []CredentialEntry
+	Policies     []CredentialEntry
+	SourceTokens []CredentialEntry
+	Conflicts    []RestoreConflict
 }
 
 // LoadManagedRestoreSet snapshots and authenticates a managed archive and
@@ -274,9 +303,9 @@ type openedArchive struct {
 }
 
 // openArchive authenticates an extracted archive against its sealed manifest
-// and checks its structure: it holds a credential, and each policy it holds
-// belongs to one. A failure after the manifest authenticated is an
-// AuthenticatedArchiveError.
+// and checks its structure: it holds a credential, and each policy and set
+// of source tokens it holds belongs to one. A failure after the manifest
+// authenticated is an AuthenticatedArchiveError.
 func openArchive(sourceRoot string, exportPassphrase []byte) (openedArchive, error) {
 	manifest, err := OpenSealedManifest(sourceRoot, exportPassphrase)
 	if err != nil {
@@ -290,8 +319,8 @@ func openArchive(sourceRoot string, exportPassphrase []byte) (openedArchive, err
 }
 
 // archiveSelectors lists the credentials an extracted archive holds, sorted,
-// refusing a policy that belongs to none of them. A member whose name is not
-// its credential's selector is admission's to skip.
+// refusing a policy or source tokens that belong to none of them. A member
+// whose name is not its credential's selector is admission's to skip.
 func archiveSelectors(keysDir string) ([]string, error) {
 	selectors, err := ScanBackupFiles(keysDir)
 	if err != nil {
@@ -311,6 +340,15 @@ func archiveSelectors(keysDir string) ([]string, error) {
 	for _, key := range keysWithPolicy {
 		if _, held := slices.BinarySearch(selectors, key); !held {
 			return nil, fmt.Errorf("backup policy %s has no credential in the archive", key)
+		}
+	}
+	keysWithTokens, err := scanBackupSourceTokens(keysDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keysWithTokens {
+		if _, held := slices.BinarySearch(selectors, key); !held {
+			return nil, fmt.Errorf("backup source tokens %s have no credential in the archive", key)
 		}
 	}
 	return selectors, nil
@@ -397,14 +435,16 @@ func (a openedArchive) admitEach(
 	return skipped, nil
 }
 
-// loadCredentialEntry reads and decrypts one archived credential and its
-// archived policy, then admits them. Deep verify, restore, its preview and
-// rebuild all load credentials here, so they admit and skip the same ones.
+// loadCredentialEntry reads and decrypts one archived credential, its
+// archived policy and its archived source tokens, then admits them. Deep
+// verify, restore, its preview and rebuild all load credentials here, so
+// they admit and skip the same ones.
 //
 // A member that cannot be read or decrypted is an error: the sealed manifest
 // holds its digest, so it is damage to the archive, not a credential this
-// node cannot use. A decrypted credential or policy this node does not admit
-// is returned as skipped, with the reason.
+// node cannot use. A decrypted credential, policy or set of source tokens
+// this node does not admit is returned as skipped, with the reason; the
+// skipped key's tokens are zeroed with it.
 func (a openedArchive) loadCredentialEntry(
 	selector string,
 	exportPassphrase []byte,
@@ -426,14 +466,22 @@ func (a openedArchive) loadCredentialEntry(
 	if err != nil {
 		return CredentialEntry{}, nil, err
 	}
+	tokens, err := readBackupSourceTokens(a.keysDir, selector, exportPassphrase)
+	if err != nil {
+		return CredentialEntry{}, nil, err
+	}
 	entry, err := admitCredentialEntry(plaintext, selector, role)
 	if err == nil && document != nil {
 		if _, err = policy.DecodePolicyV1(document, selector, role); err != nil {
-			entry.ZeroSecrets()
 			err = fmt.Errorf("backup policy for %s: %w", selector, err)
 		}
 	}
+	if err == nil {
+		err = entry.admitSourceTokens(tokens)
+	}
 	if err != nil {
+		entry.ZeroSecrets()
+		crypto.ZeroBytes(tokens)
 		return CredentialEntry{}, &SkippedEntry{Selector: selector, Reason: err.Error()}, nil
 	}
 	entry.Policy = document
@@ -558,6 +606,7 @@ func ClassifyRestoreSet(
 	for i := range set.Entries {
 		entry := set.Entries[i]
 		classifyRestorePolicy(active, role, entry, kr, &result)
+		classifyRestoreSourceTokens(active, entry, kr, &result)
 		destPath, exists, err := keys.ManagedCredentialDestinationActive(
 			active,
 			entry.Selector(),

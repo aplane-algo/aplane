@@ -328,18 +328,21 @@ func restoreDisplayRow(result RestoreDisplayResult, i int, selected bool, rowWid
 	if i >= len(result.Activated) {
 		return errorStyle.Render(restoreSkippedLine(result.Skipped[i-len(result.Activated)], prefix, keyAddressShortWidth, rowWidth))
 	}
-	line := restoreDisplayKeyLine(result.Activated[i], prefix, rowWidth)
+	line := restoreDisplayKeyLine(result.Activated[i], result.TokensRestored[result.Activated[i].Address], prefix, rowWidth)
 	if selected {
 		return selectedStyle.Render(line)
 	}
 	return normalStyle.Render(line)
 }
 
-func restoreDisplayKeyLine(key RestoreKeyInfo, prefix string, maxWidth int) string {
+func restoreDisplayKeyLine(key RestoreKeyInfo, tokens bool, prefix string, maxWidth int) string {
 	keyType := "[" + displayKeyType(key.KeyType) + "]"
 	suffix := "  " + keyType
 	if key.HasPolicy {
 		suffix += "  policy"
+	}
+	if tokens {
+		suffix += "  tokens"
 	}
 	addressWidth := keyAddressWidth(maxWidth, prefix, suffix)
 	return fmt.Sprintf("%s%s%s", prefix, restorePreviewAddress(key, addressWidth), suffix)
@@ -422,6 +425,9 @@ func restorePreviewFlags(key RestoreKeyInfo) string {
 	}
 	if key.HasPolicy {
 		suffix += "  +policy"
+	}
+	if len(key.SourceTokens) > 0 || key.SourceTokensOmitted > 0 {
+		suffix += "  +tokens"
 	}
 	return suffix
 }

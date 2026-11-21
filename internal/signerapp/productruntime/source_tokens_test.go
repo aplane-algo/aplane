@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 )
 
 // These tests anchor the source token index in KU2 of

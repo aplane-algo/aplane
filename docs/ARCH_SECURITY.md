@@ -2392,7 +2392,8 @@ A token's custody:
 - **At rest.** It is kept in the store, never in a policy document: one
   term-encrypted file per policy selector under the store keyring, as a key
   file is ([ARCH_STORE.md](ARCH_STORE.md#source-token-files)). It is
-  re-encrypted with the store on a passphrase change.
+  re-encrypted with the store on a passphrase change, and sealed again under
+  the current term when restore, rollback or rebuild writes it.
 - **In memory.** Only while the node is unlocked, in an immutable token
   index the reload decrypts. Lock cleanup zeroes the index once every lookup
   has been canceled and released, and a replaced index is zeroed when its
@@ -2404,9 +2405,26 @@ A token's custody:
   three messages require `policy.update` and are not open to `auth_only`
   sessions. apadmin reads it from a no-echo prompt or stdin, never from the
   command line.
+- **In backups.** A backup carries each cosigner key's tokens with the key,
+  encrypted under the export passphrase the requesting session supplies
+  ([ARCH_STORE.md](ARCH_STORE.md#export-and-archive-shape)); the node
+  default's tokens are not carried. Creating a backup (`backup`) and exporting
+  it (`read_backup_chunk`) need `identity.backup`, as they do for the key
+  records in the same archive. An admin session able to create and export a
+  backup can therefore carry a key's tokens off the node, encrypted under a
+  passphrase it chose. That is the same exposure as the key records, and no
+  wider. Backup create and export are not limited by session origin, as key
+  import and export are; the admin protocol is carried only over the local
+  IPC socket, so every admin session is a local one. Restore preview, the
+  restore result and `apstore verify` name the sources a key has tokens for,
+  never a token.
 - **Removal.** Removing a token deletes it from the selected generation.
   Generations minted while it was set keep a copy, encrypted, until they are
-  pruned, so revoking a token means revoking it at the service.
+  pruned, and every backup made while it was set keeps one under its export
+  passphrase, so revoking a token means revoking it at the service.
+- **Damage.** `apstore source token discard`, run with the daemon stopped
+  and the store passphrase, deletes a token file that no longer decrypts
+  without reading it. It is an offline tool and writes no audit record.
 
 The limit: a token placed in a request header is a Go string, which cannot
 be zeroed. That copy, and those the HTTP transport makes, live until the

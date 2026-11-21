@@ -234,6 +234,10 @@ verification.
 - For each backed-up key with a policy of its own, `policies/<key>.apb`: the
   key's exact policy document, encrypted with the same passphrase (a signing
   address on a signer node, a Witness Key ID on a cosigner node)
+- On a cosigner node, for each backed-up key with source tokens,
+  `source_tokens/<key>.apb`: the key's tokens for its policy's external
+  sources, encrypted with the same passphrase. Anyone with the archive and
+  its export passphrase can read them, as they can read the key itself.
 - `README.md` with decryption instructions
 - `manifest.sealed`, the archive's authenticated description: an inventory of
   every other member with its digest, the source node role, and archive
@@ -245,7 +249,8 @@ It does **not** include:
 - the store's `store-root.enc` root and `.keystore` marker
 - the enrolled client key registry
 - any unlocked runtime state
-- the node default policy, approval defaults, network/genesis mappings, templates, or key-type state
+- the node default policy or the node default's source tokens (`apadmin source token set default ...`)
+- approval defaults, network/genesis mappings, templates, or key-type state
 - algod URLs, algod tokens, endpoints, or other network credentials
 
 **Important:** Backup files use standalone `envelope_version 2` encryption. Each `.apb` file embeds its own salt, so only the file and the export passphrase are needed to decrypt it.
@@ -501,7 +506,7 @@ restore it:
 credential, and atomically commits the admitted ones as one new generation. A
 key this node cannot admit, such as one whose format or key type this release
 does not support, or one the node role forbids, is skipped with its policy and
-reported with the reason; `restore preview` lists the same keys first. A
+source tokens and reported with the reason; `restore preview` lists the same keys first. A
 damaged archive is refused whole. Use `--address ADDRESS` one or more times to
 select a subset; naming a key that would be skipped refuses the restore, and so
 does a restore with nothing left to restore. Use `--replace-existing` only when
@@ -511,7 +516,8 @@ credential.
 The core ownership rule is:
 
 > Backup restores credential authority. A key brings its own policy if it has
-> one; otherwise the destination's default policy and configuration govern it.
+> one, and a cosigner key its source tokens; otherwise the destination's
+> default policy, its tokens and configuration govern it.
 
 A key's own policy file is backed up with the key, on both node roles, and
 installed with it on restore, so a cold standby enforces the same policy as
@@ -520,15 +526,47 @@ the restore reports a conflict, and `--replace-existing` replaces it. A
 destination policy is kept when the archive carries none, and a restored key
 with no file of its own follows the destination's default.
 
-A backup does not carry the node default policy, approval defaults, network
-mappings, templates, endpoints, or operator settings. Review the destination's
+A cosigner key's source tokens travel the same way: the backup carries them
+encrypted under the export passphrase, `restore preview` names the sources
+each key has a token for (never a token), and restore writes them with the
+key, so the restored key's external checks can authenticate at once. A
+destination that already holds different tokens for that key, or a token file
+that no longer decrypts, is a conflict that `--replace-existing` replaces;
+identical tokens are left as they are, and a destination's tokens are kept
+when the archive carries none. Rolling a restore back brings back the tokens
+the key had before it.
+
+A backup does not carry the node default policy or the node default's source
+tokens, approval defaults, network mappings, templates, endpoints, or operator
+settings. Set the node default's tokens again on the destination with
+`apadmin source token set default <source>`.
+
+Removing a token (`apadmin source token remove`) takes it out of the current
+generation only. Older generations, until they are pruned, and every backup
+made while it was set keep a copy. When a token may have leaked, revoke it at
+the service that issued it; removing it from the node is not revocation. Review the destination's
 default policy before restoring if you do not want the credentials to become
 usable under its current rules.
 
 A canonical-plaintext-identical destination credential is an idempotent no-op.
 A different credential is a conflict. An unreadable destination credential is
 also a replaceable conflict, allowing a recovery-mode restore to repair store
-damage with `--replace-existing`.
+damage with `--replace-existing`; the same holds for a cosigner key's source
+token file when the archive carries tokens for that key.
+
+A source token file that no longer decrypts keeps every unlock in recovery.
+When no backup can replace it (the node default's file, or a key whose backup
+has no tokens), stop the daemon and discard the file:
+
+```bash
+./apstore source token discard <WitnessKeyID|default>
+```
+
+Discard deletes the file without reading it and asks before it does
+(`--yes` answers for unattended runs). Nothing is archived, and apstore writes
+no audit record, so keep the terminal output. Start and unlock the daemon
+again; the selector's sources refuse with `token_not_set` until you set their
+tokens again.
 
 A reload failure after restore publication enters recovery mode and blocks
 signing. The operator reconciles, repairs, or requests an eligible explicit
@@ -685,6 +723,8 @@ integrity metadata. They deliberately exclude:
 
 - the node default policy (`default.json`) and every policy integrity sidecar;
   a key's own `policies/<key>.json` travels with the key
+- the node default's source tokens (`source_tokens/default.enc`); a cosigner
+  key's own token file travels with the key
 - `user_auto_approve` and other product settings
 - network/genesis mappings and endpoints
 - installed or library templates and key-type enable/disable state
@@ -704,7 +744,7 @@ stored in a valid credential.
 
 Archive authentication proves exact membership under the export passphrase. It
 does not authorize any destination policy choice; explicit replacement
-authorizes a differing archived per-key policy. The operator is responsible
+authorizes a differing archived per-key policy or source token file. The operator is responsible
 for the destination default policy and configuration under which restored
 credentials will run.
 ### Rebuild an Absent Keystore
@@ -733,7 +773,8 @@ from the manifest, rebuild warns and uses the explicit role. Rebuild admits
 keys as a restore does, before it asks for the new store passphrase: it prints
 each key it skips with the reason, including a key class the destination role
 forbids, and rebuilds the rest. Naming a skipped key with `--address`, or a
-rebuild with nothing left to rebuild, is refused and writes nothing.
+rebuild with nothing left to rebuild, is refused and writes nothing. Each
+rebuilt key brings its own policy and, on a cosigner, its source tokens.
 
 ### Verifying Restoration
 
@@ -865,6 +906,9 @@ From the key details view:
 ./apadmin policy rescue export --key <key> > key.json
 ./apadmin policy rescue check default.json key.json
 ./apadmin policy rescue apply - < default.json
+
+# Discard a source token file that no longer decrypts (daemon stopped)
+./apstore source token discard <WitnessKeyID|default>
 
 # Template management (for custom LogicSigs)
 ./apadmin template list

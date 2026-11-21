@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
@@ -71,12 +72,15 @@ func loadRollbackGenerationSource(
 	return source, nil
 }
 
-// populateRollbackGeneration replaces active keys/, keytypes/, and the
-// per-key policies/ in a staging copy of the outgoing generation: restore
-// installs key policies with their keys, so undoing a restore undoes those
-// too. Deleted archives, the node default policy, the ASA set, and node role
+// populateRollbackGeneration replaces active keys/, keytypes/, the per-key
+// policies/ and the per-key source_tokens/ in a staging copy of the
+// outgoing generation: restore installs key policies and source tokens with
+// their keys, so undoing a restore undoes those too. Deleted archives, the
+// node default policy and its source tokens, the ASA set, and node role
 // authority remain monotonic and therefore come from the outgoing state.
-// Source members are consumed only from exact seal-verified buffers.
+// Source members are consumed only from exact seal-verified buffers; each
+// encrypted one is opened under its own term and sealed again under the
+// current one.
 func populateRollbackGeneration(
 	source *rollbackGenerationSource,
 	role noderole.Role,
@@ -86,12 +90,15 @@ func populateRollbackGeneration(
 	if source == nil || source.seal == nil {
 		return fmt.Errorf("rollback source is not authenticated")
 	}
-	for _, dir := range []string{staged.KeysDir(), staged.KeyTypeRecordsDir(), staged.PoliciesDir()} {
+	for _, dir := range []string{staged.KeysDir(), staged.KeyTypeRecordsDir(), staged.PoliciesDir(), staged.SourceTokensDir()} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return err
 		}
 		for _, entry := range entries {
+			if dir == staged.SourceTokensDir() && entry.Name() == rollbackKeptSourceTokens {
+				continue
+			}
 			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
 				return fmt.Errorf("clear rollback target %s: %w", entry.Name(), err)
 			}
@@ -104,7 +111,11 @@ func populateRollbackGeneration(
 			}
 			continue
 		}
-		if !strings.HasPrefix(entry.Path, "keys/") && !strings.HasPrefix(entry.Path, "keytypes/") {
+		if entry.Path == "source_tokens/"+rollbackKeptSourceTokens {
+			continue
+		}
+		if !strings.HasPrefix(entry.Path, "keys/") && !strings.HasPrefix(entry.Path, "keytypes/") &&
+			!strings.HasPrefix(entry.Path, "source_tokens/") {
 			continue
 		}
 		memberPath := filepath.Join(
@@ -195,10 +206,15 @@ func restoreRollbackPolicy(source *rollbackGenerationSource, role noderole.Role,
 	return nil
 }
 
-// rollbackMemberContext classifies one keys/ or keytypes/ source member;
-// populateRollbackGeneration routes policies/ to restoreRollbackPolicy and
-// keeps everything else from the outgoing generation, so any other member is
-// refused.
+// rollbackKeptSourceTokens is the node default's token file, which rollback
+// keeps from the outgoing generation with the node default policy: restore
+// never writes it.
+const rollbackKeptSourceTokens = sourcetokens.DefaultSelector + storepaths.SourceTokenFileExtension
+
+// rollbackMemberContext classifies one keys/, keytypes/ or per-key
+// source_tokens/ source member; populateRollbackGeneration routes policies/
+// to restoreRollbackPolicy and keeps everything else from the outgoing
+// generation, so any other member is refused.
 func rollbackMemberContext(
 	entry genstore.InventoryEntry,
 ) (crypto.ObjectContext, bool, error) {
@@ -206,6 +222,8 @@ func rollbackMemberContext(
 	switch namespace {
 	case "keys":
 		return rollbackCredentialContext(entry.Path, name, entry.Term)
+	case "source_tokens":
+		return rollbackSourceTokensContext(entry.Path, name, entry.Term)
 	case "keytypes":
 		switch {
 		case strings.HasSuffix(name, templatestore.TemplateFileExtension):
@@ -273,6 +291,16 @@ func rollbackCredentialContext(path, name string, term int64) (crypto.ObjectCont
 			class,
 		)
 	}
+}
+
+// rollbackSourceTokensContext accepts a cosigner key's token file: a term
+// envelope named for its Witness Key ID.
+func rollbackSourceTokensContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {
+	selector, ok := strings.CutSuffix(name, storepaths.SourceTokenFileExtension)
+	if !ok || selector == sourcetokens.DefaultSelector || sourcetokens.ValidateSelector(selector) != nil || term <= 0 {
+		return crypto.ObjectContext{}, false, fmt.Errorf("rollback source has invalid source token file %q", path)
+	}
+	return crypto.SourceTokensContext(selector), true, nil
 }
 
 func rollbackTemplateContext(path, name string, term int64) (crypto.ObjectContext, bool, error) {

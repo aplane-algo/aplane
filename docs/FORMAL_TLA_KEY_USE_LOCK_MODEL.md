@@ -202,7 +202,7 @@ for each.
   of this model.
 - The source token index counts readers of its own: an index that a reload
   or a token change replaces is zeroed when its last reader releases
-  (`internal/signerapp/sourcetokens/index.go`). The model does not represent
+  (`internal/sourcetokens/index.go`). The model does not represent
   those readers. Its claim needs only that the step reads tokens inside its
   key use, so at `Wipe` the drain has ended every reader and the index is
   zeroed at once. A step whose key use the lock refused may still read the

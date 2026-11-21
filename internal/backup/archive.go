@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/aplane-algo/aplane/internal/keys"
 )
 
 // IsArchivePath reports whether the path looks like a supported backup archive.
@@ -115,12 +117,16 @@ func CreateTarGzArchive(srcDir, destPath string) (err error) {
 }
 
 // Decompression limits for backup archives. A backup holds encrypted
-// credential payloads, a sealed manifest, and a README — all small; anything
-// approaching these bounds is not a backup.
+// credential payloads, policies and source tokens, a sealed manifest, and a
+// README — all small; anything approaching these bounds is not a backup.
 const (
-	// Enough for a credential and a policy per key at the 8,192-key cosigner
-	// cap, plus the README and manifest.
-	maxArchiveEntries        = 16400
+	// maxArchiveMembersPerKey is what a backup carries for one key: its
+	// credential, its policy document and its source tokens.
+	maxArchiveMembersPerKey = 3
+	// maxArchiveEntries is every member of every key at the 8,192-key
+	// cosigner cap (3 × 8,192 = 24,576), plus README.md, manifest.sealed and
+	// the three member directories, rounded up: 24,600.
+	maxArchiveEntries        = maxArchiveMembersPerKey*keys.MaxCosignerCredentials + 24
 	maxArchiveExtractedBytes = 1 << 30 // 1 GiB across all entries
 )
 

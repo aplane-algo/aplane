@@ -534,7 +534,7 @@ All under `cmd/`:
 | `apadmin` | TUI and batch admin client over local IPC; owns all general live administration, including policy, backup/restore, passphrase rotation, templates, key types, cosigner references, endpoint export, and generation inventory, plus explicit offline policy rescue | UI (TUI/CLI) + admin protocol + Providers |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | `apapprover` | Minimal approval-only CLI over IPC | UI (CLI) + IPC |
-| `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, offline template record repair, private-store permission audit/migration, and offline key inventory; it has no live admin transport | Providers (KeyGen) + Crypto + Store Mutation |
+| `apstore` | Stopped-daemon store tool: local `initialize`, policy integrity check/verify/sign, external-file-only `verify`, `rebuild`, offline generation pruning, offline template record repair, private-store permission audit/migration, offline key inventory, and offline discard of a damaged source token file; it has no live admin transport | Providers (KeyGen) + Crypto + Store Mutation |
 | `appass` | Passphrase auto-unlock setup TUI | UI (TUI) + Crypto |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | `configdoc` | Config documentation generator |  |

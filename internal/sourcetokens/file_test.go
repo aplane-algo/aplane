@@ -309,3 +309,40 @@ func TestSealRefusesAFileOverTheLimitUnderAnyTerm(t *testing.T) {
 		t.Fatalf("the largest accepted file is %d bytes at a later term, over %d", len(sealedLate), MaxFileBytes)
 	}
 }
+
+// DecodeSealable accepts exactly the plaintext Seal would seal: a file one
+// byte larger than the largest Seal accepts decodes, but is refused as one
+// that could not become a token file.
+func TestDecodeSealableAcceptsWhatSealAccepts(t *testing.T) {
+	kr := testKeyring(t)
+	base := mustSet(t, nil, testKeyID, "s0", strings.Repeat("a", MaxTokenBytes))
+	base = mustSet(t, base, testKeyID, "s1", strings.Repeat("b", MaxTokenBytes))
+	n := MaxTokenBytes
+	for ; n > 0; n-- {
+		if _, err := Seal(mustSet(t, base, testKeyID, "s2", strings.Repeat("c", n)), kr); err == nil {
+			break
+		}
+	}
+	for length, wantErr := range map[int]bool{n: false, n + 1: true} {
+		plaintext, err := Encode(mustSet(t, base, testKeyID, "s2", strings.Repeat("c", length)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Decode(plaintext, testKeyID); err != nil {
+			t.Fatalf("Decode(token of %d) error = %v", length, err)
+		}
+		f, err := DecodeSealable(plaintext, testKeyID)
+		switch {
+		case wantErr && !errors.Is(err, ErrFileTooLarge):
+			t.Fatalf("DecodeSealable(token of %d) error = %v, want ErrFileTooLarge", length, err)
+		case !wantErr && err != nil:
+			t.Fatalf("DecodeSealable(token of %d) error = %v", length, err)
+		case err != nil && strings.Contains(err.Error(), "ccc"):
+			t.Fatalf("DecodeSealable() error quotes a token: %v", err)
+		}
+		f.Zero()
+	}
+	if _, err := DecodeSealable([]byte(`{"format":"aplane.source-tokens.v1"}`), testKeyID); err == nil {
+		t.Fatal("DecodeSealable accepted a file Decode refuses")
+	}
+}

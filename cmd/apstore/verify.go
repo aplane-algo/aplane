@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -47,6 +48,9 @@ func verifyDeep(backupPath string) error {
 		logInfof("  %s.apb (%s, decrypts OK)", result.Address, result.KeyType)
 		if result.HasPolicy {
 			logInfof("  policies/%s.apb (policy, decrypts OK)", result.Address)
+		}
+		if len(result.SourceTokens) > 0 {
+			logInfof("  source_tokens/%s.apb (source tokens for %s, decrypts OK)", result.Address, strings.Join(result.SourceTokens, ", "))
 		}
 	}
 	for _, skipped := range report.Skipped {

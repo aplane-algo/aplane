@@ -187,3 +187,25 @@ func TestInspectTermEnvelopeTermIsZeroUnlessPresentAndValid(t *testing.T) {
 		}
 	}
 }
+
+// TermEnvelopeLen is exactly what Seal writes, whatever the plaintext length
+// and however many digits the term has.
+func TestTermEnvelopeLenMatchesSeal(t *testing.T) {
+	key := bytes.Repeat([]byte{7}, 32)
+	for _, term := range []int64{1, 42, 1 << 40, 1<<63 - 1} {
+		kr, err := NewKeyringFromTermKey(term, slices.Clone(key))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []int{0, 1, 2, 3, 100, 2899, 4096} {
+			sealed, err := kr.Seal(make([]byte, n), SourceTokensContext("default"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := TermEnvelopeLen(n, term); got != len(sealed) {
+				t.Fatalf("TermEnvelopeLen(%d, %d) = %d, Seal wrote %d", n, term, got, len(sealed))
+			}
+		}
+		kr.Zero()
+	}
+}

@@ -486,7 +486,7 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 		return err
 	}
 	defer crypto.ZeroBytes(secret)
-	s.info("restored credentials use the destination's configuration; cosigner keys bring their archived policy")
+	s.info("restored credentials use the destination's configuration; cosigner keys bring their archived policy and source tokens")
 	var result protocol.RestoreBackupResultMessage
 	if err := s.Client.Request(protocol.RestoreBackupMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackup, ID: s.requestID("restore")},
@@ -513,6 +513,9 @@ func (s Store) restoreApplyBackup(apply restoreApply) error {
 		len(result.Restored)+result.RestoredOmitted, len(result.Identical)+result.IdenticalOmitted, len(result.Skipped)+result.SkippedOmitted)
 	if len(result.PoliciesRestored) > 0 {
 		s.info("installed archived policy for %d cosigner key(s): %s", len(result.PoliciesRestored), strings.Join(result.PoliciesRestored, ", "))
+	}
+	if len(result.SourceTokensRestored) > 0 {
+		s.info("installed archived source tokens for %d cosigner key(s): %s", len(result.SourceTokensRestored), strings.Join(result.SourceTokensRestored, ", "))
 	}
 	if result.GenerationID != "" {
 		s.info("generation: %s", result.GenerationID)
@@ -560,7 +563,7 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 		if key.AlreadyExists {
 			status = "exists"
 		}
-		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s\n", escaped([]any{key.Address, key.KeyType, status})...)
+		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  %s  %s%s\n", escaped([]any{key.Address, key.KeyType, status, restorePreviewTokens(key)})...)
 	}
 	for _, skipped := range result.Skipped {
 		_, _ = fmt.Fprintf(s.Streams.Stdout, "  %s  skipped: %s\n", escaped([]any{skipped.Selector, skipped.Reason})...)
@@ -570,6 +573,19 @@ func (s Store) renderRestorePreview(result protocol.RestorePreviewMessage) {
 	}
 	if len(result.Skipped) > 0 {
 		s.warn("%d key(s) cannot be restored on this node and would be skipped", len(result.Skipped)+result.SkippedOmitted)
+	}
+}
+
+// restorePreviewTokens names the sources an archived cosigner key carries a
+// token for, never a token, or says how many names the preview left out.
+func restorePreviewTokens(key protocol.RestoreKeyInfo) string {
+	switch {
+	case key.SourceTokensOmitted > 0:
+		return fmt.Sprintf("  source tokens: %d (names not listed)", key.SourceTokensOmitted)
+	case len(key.SourceTokens) > 0:
+		return "  source tokens: " + strings.Join(key.SourceTokens, ", ")
+	default:
+		return ""
 	}
 }
 

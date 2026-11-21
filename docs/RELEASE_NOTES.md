@@ -34,9 +34,28 @@ before it was renamed `enroll`.
   `external_check:<id>:token_not_set`; `apadmin policy apply` and `policy
   rescue` warn of it. apadmin's Key Details for a cosigner key shows its
   sources' token state and sets or removes a token. Removing a token does
-  not revoke it: earlier generations keep a copy until pruned. Backups do
-  not carry tokens yet, so set them again after a restore. The admin
-  protocol is now 8.1.
+  not revoke it: earlier generations and earlier backups keep a copy. The
+  admin protocol is now 8.1.
+- **A backup carries a cosigner key's tokens with the key.** They are
+  encrypted under the export passphrase beside the key and its policy, and
+  restore writes them with the key, so its checks can authenticate at once.
+  `restore preview` and `apstore verify` name the sources a key has a token
+  for, never a token. A destination that holds different tokens for the key
+  is a conflict that `--replace-existing` resolves; identical tokens are left
+  alone. Rolling the restore back brings back the tokens the key had before,
+  also after a passphrase change, and a token set or removed after the
+  restore keeps rollback from running, as a key change does. `apstore
+  rebuild` writes them too. The node default's tokens are not carried; set
+  them again on the new node. An archive may now hold 24,600 entries and an
+  8 MiB sealed manifest, enough for a credential, a policy and tokens for
+  each of 8,192 keys.
+- **`apstore source token discard <selector>`** deletes a token file that
+  no longer decrypts, which keeps every unlock in recovery. Run it with the
+  daemon stopped; it deletes the file without reading it and archives
+  nothing, and the selector's sources then refuse with `token_not_set` until
+  their tokens are set again. A recovery-mode restore with
+  `--replace-existing` also replaces a damaged token file of a key whose
+  backup carries its tokens.
 
 ## This release is new-install only
 

@@ -30,9 +30,11 @@ const (
 	ManifestSchema        = "aplane.credential-backup.manifest.v1"
 	ManifestSchemaVersion = 1
 
-	// The sealed manifest lists every member; 4 MiB covers an archive at the
-	// cosigner caps, a credential and a policy for each of 8,192 keys.
-	maxSealedManifestBytes = 4 << 20
+	// The sealed manifest lists every member. 8 MiB covers an archive at the
+	// cosigner caps: a credential, a policy and source tokens for each of
+	// 8,192 keys take about 4.3 MB as plaintext, and the envelope grows that
+	// by a third with base64.
+	maxSealedManifestBytes = 8 << 20
 )
 
 // ManifestMember is one archive member's authenticated identity.
@@ -266,8 +268,8 @@ func isCredentialBackupMember(path string) bool {
 		return true
 	}
 	dir, name := filepath.Split(path)
-	return (dir == "apb/" || dir == backupPoliciesDir+"/") && strings.HasSuffix(name, ".apb") &&
-		name != ".apb" && name == filepath.Base(name)
+	return (dir == "apb/" || dir == backupPoliciesDir+"/" || dir == backupSourceTokensDir+"/") &&
+		strings.HasSuffix(name, ".apb") && name != ".apb" && name == filepath.Base(name)
 }
 
 func readSealedManifestFile(path string) ([]byte, error) {

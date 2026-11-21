@@ -467,6 +467,12 @@ type RestoreKeyInfo struct {
 	KeyType        string  `json:"key_type,omitempty"`
 	AlreadyExists  bool    `json:"already_exists,omitempty"`
 	HasPolicy      bool    `json:"has_policy,omitempty"`
+	// SourceTokens names the sources the archive carries a token for under
+	// this cosigner key, never a token. A preview lists the names of at
+	// most 4,096 tokens across its keys; source_tokens_omitted counts this
+	// key's names it left out.
+	SourceTokens        []string `json:"source_tokens,omitempty"`
+	SourceTokensOmitted int      `json:"source_tokens_omitted,omitempty"`
 }
 
 // RestoreSkipped is an archived credential the restore skips because the
@@ -533,11 +539,13 @@ type RestoreBackupResultMessage struct {
 	Skipped        []RestoreSkipped `json:"skipped,omitempty"`
 	SkippedOmitted int              `json:"skipped_omitted,omitempty"`
 	// PoliciesRestored lists the keys whose archived policy document was
-	// installed.
-	PoliciesRestored []string `json:"policies_restored,omitempty"`
-	KeyCount         int      `json:"key_count,omitempty"`
-	Code             string   `json:"code,omitempty"`
-	Error            string   `json:"error,omitempty"`
+	// installed, and SourceTokensRestored those whose archived source
+	// tokens were.
+	PoliciesRestored     []string `json:"policies_restored,omitempty"`
+	SourceTokensRestored []string `json:"source_tokens_restored,omitempty"`
+	KeyCount             int      `json:"key_count,omitempty"`
+	Code                 string   `json:"code,omitempty"`
+	Error                string   `json:"error,omitempty"`
 }
 
 type RollbackRestoreMessage struct {

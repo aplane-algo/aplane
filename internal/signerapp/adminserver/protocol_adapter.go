@@ -318,23 +318,24 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 
 func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBackupResult) protocol.RestoreBackupResultMessage {
 	return protocol.RestoreBackupResultMessage{
-		BaseMessage:      protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackupResult, ID: id},
-		Success:          result.Success,
-		OperationID:      result.OperationID,
-		ArchiveSHA256:    result.ArchiveSHA256,
-		GenerationID:     result.GenerationID,
-		Restored:         protocolRestoreCredentials(result.Restored),
-		RestoredOmitted:  result.RestoredOmitted,
-		Identical:        protocolRestoreCredentials(result.Identical),
-		IdenticalOmitted: result.IdenticalOmitted,
-		Conflicts:        protocolRestoreConflicts(result.Conflicts),
-		ConflictsOmitted: result.ConflictsOmitted,
-		Skipped:          protocolRestoreSkipped(result.Skipped),
-		SkippedOmitted:   result.SkippedOmitted,
-		PoliciesRestored: result.PoliciesRestored,
-		KeyCount:         result.KeyCount,
-		Code:             result.Code,
-		Error:            result.Error,
+		BaseMessage:          protocol.BaseMessage{Type: protocol.MsgTypeRestoreBackupResult, ID: id},
+		Success:              result.Success,
+		OperationID:          result.OperationID,
+		ArchiveSHA256:        result.ArchiveSHA256,
+		GenerationID:         result.GenerationID,
+		Restored:             protocolRestoreCredentials(result.Restored),
+		RestoredOmitted:      result.RestoredOmitted,
+		Identical:            protocolRestoreCredentials(result.Identical),
+		IdenticalOmitted:     result.IdenticalOmitted,
+		Conflicts:            protocolRestoreConflicts(result.Conflicts),
+		ConflictsOmitted:     result.ConflictsOmitted,
+		Skipped:              protocolRestoreSkipped(result.Skipped),
+		SkippedOmitted:       result.SkippedOmitted,
+		PoliciesRestored:     result.PoliciesRestored,
+		SourceTokensRestored: result.SourceTokensRestored,
+		KeyCount:             result.KeyCount,
+		Code:                 result.Code,
+		Error:                result.Error,
 	}
 }
 
@@ -438,6 +439,8 @@ func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.Resto
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
 			StageHint:     item.StageHint, StageHintRound: item.StageHintRound,
+			SourceTokens:        item.SourceTokens,
+			SourceTokensOmitted: item.SourceTokensOmitted,
 		}
 	}
 	return out

@@ -850,6 +850,9 @@ type RestoreDisplayResult struct {
 	Activated   []RestoreKeyInfo
 	// ActivatedOmitted counts the restored keys the result did not list.
 	ActivatedOmitted int
+	// TokensRestored names the keys whose archived source tokens were
+	// installed.
+	TokensRestored map[string]bool
 	// Skipped lists the archived keys the node cannot admit, which were
 	// never restorable; SkippedOmitted counts those not listed.
 	Skipped        []RestoreSkipped

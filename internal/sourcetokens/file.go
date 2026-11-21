@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -44,10 +44,6 @@ const (
 	// within the supported store size: at 8,192 keys they take at most
 	// 32 MiB. Eight tokens fit only when they are short.
 	MaxFileBytes = 4096
-
-	// maxTermDigits is the length of the largest term an envelope can
-	// carry, math.MaxInt64 in decimal.
-	maxTermDigits = 19
 )
 
 var (
@@ -220,18 +216,41 @@ func Seal(f *File, kr *crypto.Keyring) ([]byte, error) {
 		return nil, err
 	}
 	defer crypto.ZeroBytes(plaintext)
+	if err := checkSealedSize(f.Selector, len(plaintext)); err != nil {
+		return nil, err
+	}
 	sealed, err := kr.Seal(plaintext, crypto.SourceTokensContext(f.Selector))
 	if err != nil {
 		return nil, fmt.Errorf("encrypt source tokens of %s: %w", f.Selector, err)
 	}
-	// The term is the only part of an envelope whose length can change when
-	// the same plaintext is sealed again: reserve room for the longest.
-	headroom := maxTermDigits - len(strconv.FormatInt(kr.CurrentTerm(), 10))
-	if size := len(sealed) + headroom; size > MaxFileBytes {
-		return nil, fmt.Errorf("%w: the tokens of %s would take %d encrypted bytes, more than %d; use fewer or shorter tokens",
-			ErrFileTooLarge, f.Selector, size, MaxFileBytes)
-	}
 	return sealed, nil
+}
+
+// checkSealedSize refuses plaintext whose token file would exceed
+// MaxFileBytes under some term. The term is the only part of an envelope
+// whose length can change when the same plaintext is sealed again, so the
+// bound is taken at the longest term an envelope can carry.
+func checkSealedSize(selector string, plaintextLen int) error {
+	if size := crypto.TermEnvelopeLen(plaintextLen, math.MaxInt64); size > MaxFileBytes {
+		return fmt.Errorf("%w: the tokens of %s would take %d encrypted bytes, more than %d; use fewer or shorter tokens",
+			ErrFileTooLarge, selector, size, MaxFileBytes)
+	}
+	return nil
+}
+
+// DecodeSealable is Decode for plaintext that is to become selector's token
+// file, as a backup carries it: it must also be small enough to seal within
+// MaxFileBytes under any term. The caller zeroes plaintext and the file.
+func DecodeSealable(plaintext []byte, selector string) (*File, error) {
+	f, err := Decode(plaintext, selector)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSealedSize(selector, len(plaintext)); err != nil {
+		f.Zero()
+		return nil, err
+	}
+	return f, nil
 }
 
 // Open decrypts one token file as selector's and decodes it. The file must

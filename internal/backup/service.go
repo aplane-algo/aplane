@@ -85,6 +85,9 @@ func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
 	if _, err := exportKeyPolicies(activeStore, nodeRole.Role, stageDir, exported, req.Keyring, req.ExportPassphrase); err != nil {
 		return nil, err
 	}
+	if _, err := exportKeySourceTokens(activeStore, nodeRole.Role, stageDir, exported, req.Keyring, req.ExportPassphrase); err != nil {
+		return nil, err
+	}
 	if err := WriteReadme(stageDir); err != nil {
 		return nil, err
 	}

@@ -90,6 +90,13 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
+	case "source":
+		if err := runStoreMutatingCommand(command, func() error {
+			return cmdSource(args[1:])
+		}); err != nil {
+			exitWithError(err)
+		}
+
 	default:
 		logErrorf("unknown command: %s", command)
 		flag.Usage()

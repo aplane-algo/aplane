@@ -22,8 +22,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
+	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )

@@ -189,14 +189,27 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 	}
 }
 
+// maxReportedSourceTokenNames bounds the source names a preview lists across
+// all its keys. A key holds at most eight tokens with names of up to 64
+// bytes, so at the 8,192-key cosigner cap the names alone would not fit one
+// admin frame; past the bound a key reports how many names it left out.
+const maxReportedSourceTokenNames = 4096
+
 func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreKeyInfo {
 	out := make([]adminproto.RestoreKeyInfo, len(items))
+	names := maxReportedSourceTokenNames
 	for i, item := range items {
 		out[i] = adminproto.RestoreKeyInfo{
 			Address:       item.Address,
 			KeyType:       item.KeyType,
 			AlreadyExists: item.AlreadyExists,
 			HasPolicy:     item.HasPolicy,
+		}
+		if len(item.SourceTokens) <= names {
+			out[i].SourceTokens = item.SourceTokens
+			names -= len(item.SourceTokens)
+		} else {
+			out[i].SourceTokensOmitted = len(item.SourceTokens)
 		}
 		if item.StageHint != nil {
 			n := item.StageHint.Stage

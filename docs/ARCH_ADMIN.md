@@ -601,8 +601,12 @@ transaction type is one more entry in `fields` and needs no client change.
   (the creation time sealed in the authenticated manifest), `keys[]`,
   `skipped[]`, `skipped_omitted`, optional `code`, `error`. It classifies the whole archive as a
   whole-archive restore would. Each key in `keys[]` is one the restore would
-  admit and reports address, key type, destination presence and
-  `has_policy`; each entry of `skipped[]` is one it would skip, with
+  admit and reports address, key type, destination presence,
+  `has_policy`, and, for a cosigner key whose archive carries source tokens,
+  `source_tokens[]`: the source names it has a token for, sorted, never a
+  token. A preview lists the names of at most 4,096 tokens across its keys;
+  a key whose names it leaves out reports how many in
+  `source_tokens_omitted` instead. Each entry of `skipped[]` is one it would skip, with
   `selector` and `reason`. A preview whose keys are all skipped still
   succeeds, so every reason is shown; restore refuses it. Preview never
   mutates the store and, like `list_backups`, is available in unlocked or
@@ -612,12 +616,15 @@ transaction type is one more entry in `fields` and needs no client change.
   `restore_backup_result`: `success`, operation ID, archive SHA-256,
   generation ID, `restored[]`, `restored_omitted`, `identical[]`,
   `identical_omitted`, `conflicts[]`, `conflicts_omitted`, `skipped[]`,
-  `skipped_omitted`, `key_count`, optional `policies_restored[]`, `code`,
-  `error`. The server
+  `skipped_omitted`, `key_count`, optional `policies_restored[]`, optional
+  `source_tokens_restored[]` (the cosigner keys whose archived source tokens
+  were installed), `code`, `error`. The server
   admits each selected credential, skips one it cannot admit (with its
-  archived policy) and lists it in `skipped[]` with `selector` and
-  `reason`, then publishes the admitted ones as one `credential-restore`
-  generation. A selection in `addresses[]` that names a skipped credential
+  archived policy and source tokens) and lists it in `skipped[]` with
+  `selector` and `reason`, then publishes the admitted ones as one
+  `credential-restore` generation. A destination token file that differs
+  from the archive's, or does not decrypt, is listed in `conflicts[]` and
+  needs `replace_existing`, as a differing per-key policy does. A selection in `addresses[]` that names a skipped credential
   is refused, never narrowed, and so is a restore with nothing left to
   restore (`restore_failed`); `skipped[]` then lists what was or would have
   been skipped. Archive-level failures (authentication, manifest and
@@ -631,8 +638,9 @@ transaction type is one more entry in `fields` and needs no client change.
   the rest. A skipped `selector` is cut at 128 bytes, and a skip or conflict
   `reason`, and the skip reason a refusal quotes, at 1 KiB; an archive entry
   name a refusal quotes is cut at 512 bytes. A cut ends `…(N bytes)`. A
-  preview's `keys[]` and `policies_restored[]` are not cut; they hold at
-  most one short entry per archived key. A failure's text names an archive
+  preview's `keys[]`, `policies_restored[]` and `source_tokens_restored[]`
+  are not cut; they hold at most one short entry per archived key, and a
+  preview's source names are bounded as above. A failure's text names an archive
   member by its path in the archive, never by where the daemon extracted
   it, on preview, restore and import alike.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation

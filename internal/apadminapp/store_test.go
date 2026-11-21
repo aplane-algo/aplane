@@ -349,3 +349,17 @@ func TestStoreRestoreApplyArguments(t *testing.T) {
 		}
 	}
 }
+
+// A preview line names the sources an archived cosigner key carries a token
+// for, or says how many names the preview left out, and never shows more.
+func TestRestorePreviewTokensNamesSourcesOnly(t *testing.T) {
+	for key, want := range map[*protocol.RestoreKeyInfo]string{
+		{SourceTokens: []string{"screening", "treasury"}}: "  source tokens: screening, treasury",
+		{SourceTokensOmitted: 3}:                          "  source tokens: 3 (names not listed)",
+		{}:                                                "",
+	} {
+		if got := restorePreviewTokens(*key); got != want {
+			t.Fatalf("restorePreviewTokens(%+v) = %q, want %q", *key, got, want)
+		}
+	}
+}
