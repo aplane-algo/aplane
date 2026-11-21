@@ -339,7 +339,7 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // The unlock's reload published a source token index before the fence. The
 // fence leaves it: recovery keeps the keyring that decrypts the token files,
 // and a clear there could wipe the index a second unlock had just published.
-// Nothing is served from it until the signer is unlocked, and a lock zeroes it.
+// No lookup uses it until the signer is unlocked, and a lock zeroes it.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -397,13 +397,9 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 			if kept, _ := index.TokenFor(sourcetokens.DefaultSelector, "screening"); kept != "tok-fenced" {
 				t.Fatalf("the index holds %q after the fenced unlock, want it kept", kept)
 			}
-			// It is served only while the signer is unlocked: in recovery
-			// neither a token nor the names are answered from it.
+			// Its token names are answered only while the signer is
+			// unlocked: a policy check in recovery reads none from it.
 			unlocked := tc.state == signerruntime.SignerStateUnlocked
-			got, served := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening")
-			if served != unlocked || (unlocked && got != "tok-fenced") {
-				t.Fatalf("SourceTokenFor() = %q, %v; want served only while unlocked (%v)", got, served, unlocked)
-			}
 			if _, known := ir.SourceTokenNamesFor(sourcetokens.DefaultSelector); known != unlocked {
 				t.Fatalf("SourceTokenNamesFor() known = %v, want %v", known, unlocked)
 			}

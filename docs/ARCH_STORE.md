@@ -1685,10 +1685,10 @@ reads and writes, and the runtime index.
   when it closed the keyring, and leaves it when the keyring stayed open,
   as it does for a session in service. A node that goes from unlocked to
   recovery keeps its index with the keyring, and so does an unlock the
-  fence refuses; a recovery entered because a reload failed validation has
-  none. A lock removes a kept index and a later reload replaces it. The
-  index is served only while the node is unlocked: in recovery neither a
-  token nor a token name is answered from it. A token sent in a request
+  fence refuses; a recovery entered because an unlock's own reload failed
+  validation has none. A lock removes a kept index and a later reload
+  replaces it. In recovery no lookup runs, and a policy check is answered
+  no token names from the index. A token sent in a request
   header is a Go string, which cannot be zeroed; zeroing covers the index.
 - **Lifecycle.** Key deletion moves the key's file to
   `deleted/source_tokens/`; archive prune accepts it; a generation mint

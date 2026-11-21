@@ -2395,11 +2395,11 @@ A token's custody:
   re-encrypted with the store on a passphrase change, and sealed again under
   the current term when restore, rollback or rebuild writes it.
 - **In memory.** Only while the keyring is open, in an immutable token
-  index a reload decrypts. The node holds it while it is unlocked, and
-  serves tokens and token names from it only then. A node that goes from
-  unlocked to recovery keeps the index in memory until a lock removes it
-  or a reload replaces it: the keyring that decrypts the token files stays
-  open there too. Lock cleanup zeroes the index once every lookup
+  index a reload decrypts. The node holds it while it is unlocked. A node
+  that goes from unlocked to recovery keeps the index in memory until a
+  lock removes it or a reload replaces it: the keyring that decrypts the
+  token files stays open there too, no lookup runs, and no token name is
+  answered from it. Lock cleanup zeroes the index once every lookup
   has been canceled and released, and a replaced index is zeroed when its
   last reader releases it.
 - **Over the admin protocol.** It travels in one message,
