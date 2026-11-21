@@ -171,14 +171,15 @@ func (m *Model) clampCosignerManagerScroll(count int) {
 }
 
 func (m Model) cosignerManagerVisibleRows() int {
-	// The title, the blank line under it and the two scroll lines take 4
-	// lines, and 6 more are kept for a list error and the status. A longer
-	// one takes rows from the list, so the window never cuts it off.
+	// The title block and the two scroll lines are around the list, and 5
+	// more lines are kept for a list error and the status. A longer one takes
+	// rows from the list, so the window does not cut it off, until the list
+	// is down to its last 3 rows.
 	extra := renderedBlockHeight(m.cosignerListErrorBlock())
 	if status := m.cosignerManagerStatusBlock(); status != "" {
 		extra += 1 + renderedBlockHeight(status)
 	}
-	rows := m.windowBodyHeight() - 4 - max(6, extra)
+	rows := m.windowBodyHeight() - strings.Count(cosignerManagerTitle(), "\n") - 2 - max(5, extra)
 	if len(m.cosigner.invalid) > 0 {
 		rows -= 2 // the invalid-file note and the blank line above it
 	}
@@ -186,6 +187,12 @@ func (m Model) cosignerManagerVisibleRows() int {
 		return 3
 	}
 	return rows
+}
+
+// cosignerManagerTitle is the block above the list: the title, its margin
+// and a blank line.
+func cosignerManagerTitle() string {
+	return titleStyle.Render("Cosigner References") + "\n\n"
 }
 
 // cosignerListErrorBlock is what the manager shows above the list when the
@@ -212,7 +219,7 @@ func (m Model) cosignerManagerStatusBlock() string {
 	if m.cosigner.deleteHint != "" {
 		path := terminalSafe(m.cosigner.deleteHint)
 		lines = append(lines, subtitleStyle.Render(
-			wrapPlainText("Remove does not reach "+filepath.Base(path)+"; delete it to clear it:", m.tableWidth())+"\n"+
+			wrapPlainText("Remove does not reach this file; delete it to clear it:", m.tableWidth())+"\n"+
 				wrapPath(path, m.tableWidth())))
 	}
 	return strings.Join(lines, "\n")
@@ -440,8 +447,7 @@ func (m Model) renderCosignerReferences() string {
 	// rows from the list; the selected row stays on screen.
 	m.clampCosignerManagerScroll(rows)
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Cosigner References"))
-	body.WriteString("\n\n")
+	body.WriteString(cosignerManagerTitle())
 	// A failed list says so: it is not an empty one.
 	body.WriteString(m.cosignerListErrorBlock())
 	if rows == 0 && m.cosigner.listErr != "" {

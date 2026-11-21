@@ -452,7 +452,7 @@ func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T
 	}
 	view := stripANSI(m.View())
 	checkFitsMinSize(t, view)
-	want := "Remove does not reach my ref.json; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
+	want := "Remove does not reach this file; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
 	if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, want) {
 		t.Errorf("%q missing from:\n%s", want, view)
 	}
@@ -601,5 +601,73 @@ func TestCosignerReferenceDetailsKeepTheirReferenceAcrossAList(t *testing.T) {
 	m = updateModel(t, m, CosignerReferencesMsg{References: references[:1], Invalid: m.cosigner.invalid})
 	if view := stripANSI(m.View()); !strings.Contains(view, "Cosigner reference is no longer available") {
 		t.Fatalf("details after their reference went:\n%s", view)
+	}
+}
+
+// fullInvalidCosignerReferencesModel is the manager at the minimum window
+// size with 12 references and 5 reference files in dir that remove does not
+// reach, the last named name, with the cursor on that last row.
+func fullInvalidCosignerReferencesModel(t *testing.T, dir, name string, standalone bool) Model {
+	t.Helper()
+	var references []CosignerReferenceInfo
+	for i := 0; i < 12; i++ {
+		references = append(references, CosignerReferenceInfo{Name: fmt.Sprintf("ref-%02d", i), ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"})
+	}
+	var invalid []InvalidCosignerReferenceInfo
+	for _, file := range []string{"bad", "Lab", "my ref", "._lab", name} {
+		invalid = append(invalid, InvalidCosignerReferenceInfo{Path: dir + file + ".json", Name: file, Reason: `unsupported schema "wrong"`})
+	}
+	m := sizedForTest(t, Model{standalone: standalone, viewState: ViewCosignerReferences, connectionState: ConnectionConnected,
+		cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
+	for range len(references) + len(invalid) - 1 {
+		m = press(t, m, "down")
+	}
+	return m
+}
+
+// When the status and a list error need more room than the manager keeps
+// below its list, the list gives up rows, so the window cuts none of it: with
+// a status left by an earlier removal, with a failed re-list, and with a file
+// name longer than a line. Each case takes rows from the list, and the hint's
+// path and the selected row stay on screen, in a pane and standalone.
+func TestCosignerManagerGivesUpRowsForALongStatus(t *testing.T) {
+	const (
+		deepDir = "/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/"
+		spaced  = "copy of the west cosigner reference from the old machine before the move"
+		// Short, so the status bar's copy of it fits the window too.
+		listError = "store busy; try again"
+	)
+	long := strings.Repeat("x", 100)
+	for _, tc := range []struct {
+		name, dir, file string
+		after           func(Model) Model
+	}{
+		{"status from an earlier removal", deepDir, spaced, func(m Model) Model {
+			m.cosigner.managerStatus = "Removed bad"
+			return m
+		}},
+		{"failed re-list", deepDir, "a-really-long-file-name-for-a-cosigner-reference", func(m Model) Model {
+			return updateModel(t, m, CosignerReferencesMsg{Error: listError})
+		}},
+		{"file name longer than a line", deepDir, long, func(m Model) Model { return m }},
+	} {
+		for _, standalone := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s standalone %v", tc.name, standalone), func(t *testing.T) {
+				m := fullInvalidCosignerReferencesModel(t, tc.dir, tc.file, standalone)
+				m = tc.after(press(t, m, "enter"))
+				quiet := m
+				quiet.cosigner.managerStatus, quiet.cosigner.deleteHint, quiet.cosigner.listErr = "", "", ""
+				if m.cosignerManagerVisibleRows() >= quiet.cosignerManagerVisibleRows() {
+					t.Fatalf("the list keeps %d rows, as many as with no status: the case does not need more room", m.cosignerManagerVisibleRows())
+				}
+				view := stripANSI(m.View())
+				checkFitsMinSize(t, view)
+				flat := strings.Join(strings.Fields(view), "")
+				path := strings.Join(strings.Fields(tc.dir+tc.file+".json"), "")
+				if !strings.Contains(flat, path) || !strings.Contains(view, "> "+tc.file[:8]) {
+					t.Errorf("the hint's path or the selected row is not all on screen:\n%s", view)
+				}
+			})
+		}
 	}
 }
