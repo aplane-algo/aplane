@@ -268,14 +268,25 @@ func (c *Client) signRequestTimeout() time.Duration {
 	return wait + signApprovalSlack
 }
 
-// GetStatusWithContext fetches authenticated signer status and keyset revision from Signer.
+// statusAnswer is a /status answer with signer_locked read as a pointer: its
+// field shadows the embedded one, so an answer that omits it is seen.
+type statusAnswer struct {
+	signerapi.StatusResponse
+	SignerLocked *bool `json:"signer_locked"`
+}
+
+// GetStatusWithContext fetches authenticated signer status and keyset revision
+// from Signer. An answer without signer_locked reads as locked, so nothing
+// treats a signer as able to sign on a field it did not send.
 func (c *Client) GetStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
-	statusResp, err := doJSON[signerapi.StatusResponse](c, ctx, "GET", "/status", nil, statusTimeout, "failed to get signer status")
+	answer, err := doJSON[statusAnswer](c, ctx, "GET", "/status", nil, statusTimeout, "failed to get signer status")
 	if err != nil {
 		return nil, err
 	}
+	statusResp := answer.StatusResponse
+	statusResp.SignerLocked = answer.SignerLocked == nil || *answer.SignerLocked
 	c.cacheApprovalWaitSeconds(statusResp.ApprovalWaitSeconds)
-	return statusResp, nil
+	return &statusResp, nil
 }
 
 // RequestGroupPlanWithContext sends transactions to the /plan endpoint for group planning.

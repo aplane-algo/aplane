@@ -27,7 +27,7 @@ func TestFailedBackupListShowsTheErrorNotAnEmptyRepository(t *testing.T) {
 		t.Fatalf("a failed first list:\n%s", view)
 	}
 
-	listed := BackupInfo{FileName: "lab-signer.tar.gz", Path: "lab-signer.tar.gz", Size: 100}
+	listed := BackupInfo{FileName: "lab-signer.tar.gz", Size: 100}
 	m, _ = update(t, m, BackupsListMsg{Backups: []BackupInfo{listed}})
 	m, _ = update(t, m, BackupsListMsg{Error: "read backups: input/output error"})
 	view = stripANSI(m.renderBackups())

@@ -62,7 +62,4 @@ func TestHandleHealthIsPublic(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "\"signer_locked\":false") {
 		t.Fatalf("expected unlocked status, got %s", w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "\"ready_for_signing\":true") {
-		t.Fatalf("expected ready_for_signing true, got %s", w.Body.String())
-	}
 }

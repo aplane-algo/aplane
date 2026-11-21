@@ -37,11 +37,9 @@ func TestKeyListBackupsShortcutOpensBackupsPage(t *testing.T) {
 }
 
 func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
-	archivePath := filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz")
 	m := Model{
 		viewState: ViewBackups,
 		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
-			Path:     archivePath,
 			FileName: "aplane-backup.tar.gz",
 		}}, selectedBackup: 0},
 	}
@@ -67,7 +65,6 @@ func TestRenderRestoreListDoesNotExposeDaemonBackupDirectory(t *testing.T) {
 		dataDir:   dataDir,
 		viewState: ViewBackups,
 		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
-			Path:     filepath.Join(dataDir, "backups", "default", "aplane-backup.tar.gz"),
 			FileName: "aplane-backup.tar.gz",
 			Size:     4096,
 		}}},
@@ -81,11 +78,9 @@ func TestRenderRestoreListDoesNotExposeDaemonBackupDirectory(t *testing.T) {
 
 func TestBackupsListResponsePopulatesRestoreBrowser(t *testing.T) {
 	m := Model{viewState: ViewBackups}
-	archivePath := filepath.Join(t.TempDir(), "backups", "default", "backup.tar.gz")
 
 	next, _ := m.Update(BackupsListMsg{
 		Backups: []BackupInfo{{
-			Path:     archivePath,
 			FileName: "backup.tar.gz",
 			Size:     4096,
 		}},

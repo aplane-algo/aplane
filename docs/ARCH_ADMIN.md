@@ -536,8 +536,8 @@ transaction type is one more entry in `fields` and needs no client change.
   the manifest opened. `warning` reports an archive published without a
   durable directory entry, as `commit_backup_import_result` does.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`,
-  `error`; each item has a basename-only compatibility `path`, file name,
-  packaging metadata, checksum, and size; `created_at` is the archive file's
+  `error`; each item has a basename-only `file_name`, packaging metadata,
+  checksum, and size; `created_at` is the archive file's
   modification time. Items are ordered newest first by the time in a managed
   archive's name (`aplane-backup-<UTC time>.tar.gz`), falling back to that
   file time. Successful backup-create and import
@@ -641,7 +641,7 @@ transaction type is one more entry in `fields` and needs no client change.
 
 #### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts, in key order; see Writable Settings)
+- `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts, in key order; see Writable Settings)
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_saved"` means a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
 

@@ -41,7 +41,6 @@ func mockCosignerEndpoint(
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		discoveryCalls.Add(1)
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
-			Count: 1,
 			Keys: []signerapi.KeyInfo{{
 				Address:      componentSelector,
 				PublicKeyHex: publicKeyHex,

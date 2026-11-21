@@ -19,16 +19,14 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 		switch req.URL.Path {
 		case "/status":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-				State:           "unlocked",
-				ReadyForSigning: true,
-				KeyCount:        1,
-				KeysetRevision:  4,
+				State:          "unlocked",
+				KeyCount:       1,
+				KeysetRevision: 4,
 			}, req), nil
 		case "/keys":
 			keysCalls++
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-				Count: 1,
-				Keys:  []signerapi.KeyInfo{{Address: addr, KeyType: "ed25519"}},
+				Keys: []signerapi.KeyInfo{{Address: addr, KeyType: "ed25519"}},
 			}, req), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -60,10 +58,9 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 		switch req.URL.Path {
 		case "/status":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-				State:           "unlocked",
-				ReadyForSigning: true,
-				KeyCount:        1,
-				KeysetRevision:  7,
+				State:          "unlocked",
+				KeyCount:       1,
+				KeysetRevision: 7,
 			}, req), nil
 		case "/keys":
 			t.Fatal("/keys should not be called when revision and count match")
@@ -85,6 +82,31 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 	}
 }
 
+// A /status answer without signer_locked reads as a locked signer: the cache
+// is cleared and /keys is not read.
+func TestSyncSignerStatusReadsAMissingSignerLockedAsLocked(t *testing.T) {
+	addr := testAddr(34)
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(addr, "ed25519", "ed25519")
+
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, signerCache, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/status" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return keyMgmtJSONResponse(t, http.StatusOK, map[string]any{"state": "unlocked", "key_count": 1, "keyset_revision": 7}, req), nil
+	})
+	eng.signerStatusRevisionSeen = true
+	eng.signerStatusKeysetRevSeen = 7
+
+	result, err := eng.SyncSignerStatus(context.Background())
+	if err != nil {
+		t.Fatalf("SyncSignerStatus() error = %v", err)
+	}
+	if !result.CacheCleared || result.CacheRefreshed {
+		t.Fatalf("result = %+v, want the cache cleared and not refreshed", result)
+	}
+}
+
 func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	addr := testAddr(33)
 	signerCache := cache.NewSignerCache()
@@ -95,11 +117,10 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 		}
 		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.StatusResponse{
-			State:           "locked",
-			SignerLocked:    true,
-			ReadyForSigning: false,
-			KeyCount:        0,
-			KeysetRevision:  8,
+			State:          "locked",
+			SignerLocked:   true,
+			KeyCount:       0,
+			KeysetRevision: 8,
 		}, req), nil
 	})
 	eng.signerStatusRevisionSeen = true

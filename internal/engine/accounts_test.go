@@ -362,7 +362,7 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 			http.Error(w, `{"error":"signer is locked","code":"locked"}`, http.StatusForbidden)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{
 			{Address: "NATIVE", KeyType: "ed25519", ValidRekeyTarget: true},
 			{Address: "HTLC", KeyType: "aplane.htlc.v1", IsGenericLsig: true},
 		}})
@@ -451,13 +451,9 @@ func TestCurrentKeysRefusesAnInconsistentList(t *testing.T) {
 		answer signerapi.KeysResponse
 		want   string
 	}{
-		"count larger than the records": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
-			want: "signer's key list is inconsistent: count 2, 1 record(s)"},
-		"records but a count of 0": {answer: signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}}},
-			want: "signer's key list is inconsistent: count 0, 1 record(s)"},
-		"a record with no address": {answer: signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{KeyType: "ed25519"}}},
+		"a record with no address": {answer: signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{KeyType: "ed25519"}}},
 			want: "signer's key list is inconsistent: record 0 has no address"},
-		"an address listed twice": {answer: signerapi.KeysResponse{Count: 2, Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}, {Address: "A", KeyType: "aplane.htlc.v1"}}},
+		"an address listed twice": {answer: signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A", KeyType: "ed25519"}, {Address: "A", KeyType: "aplane.htlc.v1"}}},
 			want: "signer's key list is inconsistent: A is listed twice"},
 	} {
 		setAnswer(tc.answer)
@@ -466,7 +462,7 @@ func TestCurrentKeysRefusesAnInconsistentList(t *testing.T) {
 		}
 	}
 
-	setAnswer(signerapi.KeysResponse{Count: 0, Keys: []signerapi.KeyInfo{}})
+	setAnswer(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{}})
 	if keys, err := eng.CurrentKeys(context.Background()); err != nil || len(keys) != 0 {
 		t.Fatalf("CurrentKeys(empty) = %v, %v; want an empty list", keys, err)
 	}

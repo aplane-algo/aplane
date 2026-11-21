@@ -147,7 +147,7 @@ func (m Model) handleBackupsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // restoring is the view's last step.
 func (m Model) openBackupView(info BackupInfo) Model {
 	m.clearRestorePassphrase()
-	m.restore.archivePath = info.Path
+	m.restore.archivePath = info.FileName
 	m.restore.archiveCreatedAt = 0
 	m.restore.passphraseError = ""
 	m.restore.previewError = ""

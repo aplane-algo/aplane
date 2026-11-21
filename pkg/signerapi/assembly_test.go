@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
+func TestAssemblyRequestValidatesTargetsAndCoverage(t *testing.T) {
 	valid := AssemblyRequest{
 		RequestID: "asm-1", GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
 		Targets: []AssemblyTarget{
-			{TargetIndex: 0, Kind: AssemblyTargetKindBoundedCosigner, AuthAddress: "PLAIN", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "bb"},
-			{TargetIndex: 1, Kind: AssemblyTargetKindBoundedCosigner, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd", CosignerSignature: "ee"},
+			{TargetIndex: 0, AuthAddress: "PLAIN", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "bb"},
+			{TargetIndex: 1, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd", CosignerSignature: "ee"},
 		},
 		Passthrough: []AssemblyPassthroughItem{{TargetIndex: 2, SignedTxnHex: "ff"}},
 	}
@@ -30,8 +30,6 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 		{"coverage gap", func(r *AssemblyRequest) { r.Passthrough = nil }, "not covered"},
 		{"no base signatures", func(r *AssemblyRequest) { r.Targets[0].BaseSignatures = nil }, "base_signatures and assembly_receipt are required"},
 		{"no receipt", func(r *AssemblyRequest) { r.Targets[1].AssemblyReceipt = "" }, "base_signatures and assembly_receipt are required"},
-		{"unknown kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "future" }, "kind must be"},
-		{"the retired guarded kind", func(r *AssemblyRequest) { r.Targets[0].Kind = "guarded" }, "kind must be"},
 		{"a cosigner request ID without its signature", func(r *AssemblyRequest) {
 			r.Targets[1].CosignerSignature, r.Targets[1].CosignerSourceRequestID = "", "cosigner-1"
 		}, "cosigner_source_request_id needs a cosigner_signature"},
@@ -54,7 +52,7 @@ func TestAssemblyRequestValidatesDiscriminatedTargetsAndCoverage(t *testing.T) {
 func TestAssemblyRequestLeavesTheCosignerToBoundedAssembly(t *testing.T) {
 	req := AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets:       []AssemblyTarget{{TargetIndex: 0, Kind: AssemblyTargetKindBoundedCosigner, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd"}},
+		Targets:       []AssemblyTarget{{TargetIndex: 0, AuthAddress: "BOUNDED", BaseSignatures: []string{"cc"}, AssemblyReceipt: "dd"}},
 	}
 	if err := req.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)

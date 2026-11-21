@@ -415,15 +415,15 @@ ends a description with (`lsigprovider.DescriptionText`).
 
 ### Bounded Authorization
 
-`bounded2` is the bounded authorization contract, used by both the `bounded1` and
-`cosigned1` signing choreographies. Normative field inventory, encodings, and custody
+`bounded2` is the bounded authorization contract, used both by accounts that sign
+through ordinary `/sign` and by the `cosigned1` signing choreography. Normative field inventory, encodings, and custody
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
   `bounded_authorization` (signing metadata version 2), owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
-- Inventory advertises `signing_flow: bounded1` without a cosigner or
-  `cosigned1` with a cosigner.
+- Inventory advertises no `signing_flow` without a cosigner (ordinary `/sign`)
+  and `cosigned1` with a cosigner.
 - The stored `rekey` setting is `refused` or `spending_key`. The spending key is
   signer-managed (`.key`). An account that declares `rekey: refused` has no rekey
   path unless it also carries a rekey-to list (`rekey_list`: contract, depth,
@@ -911,7 +911,7 @@ Primary projections:
 HTTP authentication resolves the connection's enrolled client key to a
 `client:<fingerprint>` principal, and handlers use the process-owned product
 runtime. Clients route signing on inventory `signing_flow`
-labels (`bounded1`, `cosigned1`, `rotating1`, or empty for plain `/sign`) and
+labels (`cosigned1`, `rotating1`, or empty for plain `/sign`) and
 must fail closed on unknown labels.
 
 ### Admin Protocol
@@ -1187,7 +1187,7 @@ These decisions are part of the current data model and contract surface:
 | Cosigner routing is operation-scoped runtime state. | Clients query authenticated `/keys` for each cosigned operation; no cosigner-key inventory is persisted in `endpoints.yaml`. |
 | `cosigners/<name>.json` records are public generation references. | They help the TUI select a cosigner public key but do not prove endpoint ownership or signer custody. |
 | Cosigned account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
-| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `bounded1`, `cosigned1`, and `rotating1` and fail closed on unknown labels, the retired `cosigner1` included. A choreography change mints a new label (`cosigned1` replaced `bounded-cosigner1`), so an old client refuses the key. |
+| Inventory `signing_flow` labels are frozen routing tokens. | Clients implement empty, `cosigned1`, and `rotating1` and fail closed on unknown labels, the retired `cosigner1` and `bounded1` included. A choreography change mints a new label (`cosigned1` replaced `bounded-cosigner1`), so an old client refuses the key. |
 | Live `/sign` responds with `GroupSignResponse`. | There is no separate signerapi `SignResponse` DTO. |
 | Recovery material is released only by explicit local native-key export. | `export_key` requires local IPC, authorization, an unlocked healthy store and fresh passphrase verification; only native Ed25519/Falcon are eligible. Generate results still omit mnemonics. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; request DTO changes belong in `pkg/signerapi` with fixtures. |
@@ -1326,7 +1326,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Key creation parameters | provenance/generation input | key payload `parameters` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Canonical payload parser rejects duplicate object members, unknown fields, and noncanonical aliases. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Bytecode must derive an off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
-| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`bounded1`, `cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
+| Signing flow label | wire/runtime routing projection | inventory `signing_flow` on `/keys` and `/keytypes` | client route selection (`cosigned1`, `rotating1`, or empty) | `pkg/signerapi`, `internal/signerapp/rest`, clients | Frozen labels; unknown flows fail closed; empty means ordinary `/sign`. |
 | LogicSig derivation record | signing authority metadata | key payload `lsig_derivation`, absent on an unsalted key | stored final-bytecode derivation contract | `internal/lsigsalt`, `internal/keys` | `algod_v13_auto_salt` keys require final TEAL v13+ bytecode. Unknown or internally inconsistent derivation records reject scan and signing, and a restore skips the key. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
 | Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Covers behavior and a YAML template's `valid_rekey_target`; versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
@@ -1428,7 +1428,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Admin delete DTO | wire request/projection | address query parameter | empty `{}` response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
 | Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `cosigner` or `bounded-base` (the retired `user` kind is refused), one kind per request; every original group position is a target or contextual position, and omitted request IDs are generated. |
 | Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Cosigner components carry one signature; bounded-base components carry base signatures, validated runtime args, an assembly receipt, and the classified `path`. |
-| Assembly request | wire request | group bytes plus `bounded-cosigner` targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Each target carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey; the retired `cosigned` kind is refused. Mixed kinds are rejected per `/sign/component` request. |
+| Assembly request | wire request | group bytes plus bounded-cosigner targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | A target names no kind: each carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey. |
 | Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
 | Rotating prepare request/response | wire request/projection | rotating account transaction intent | `signerapi.RotatingPrepareRequest`, `RotatingPrepareResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/prepare`; contract fixtures `rotating_prepare_{request,response}.json`. |
 | Rotating sign request/response | wire request/projection | prepared rotating group | `signerapi.RotatingSignRequest`, `RotatingSignResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/sign`; live request IDs are cancel handles; contract fixtures `rotating_sign_{request,response}.json`. |
@@ -1519,7 +1519,7 @@ name a test inline:
 
 - HTTP DTO and contract fixtures: `pkg/signerapi/types_contract_test.go`,
   `pkg/signerapi/cosigner_test.go`, `test/contracts/signerapi/*.json`.
-- HTTP method/shape enforcement: `internal/signerapp/daemon/method_compat_test.go`,
+- HTTP method/shape enforcement: `internal/signerapp/daemon/method_test.go`,
   `internal/signerapp/daemon/rest_shape_test.go`, `internal/signerclient/client_test.go`.
 - Endpoint registry and endpoint writes:
   `internal/config/client_endpoints.go`,

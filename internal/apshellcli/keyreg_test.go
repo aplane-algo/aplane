@@ -106,7 +106,7 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 			for address := range keys {
 				infos = append(infos, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
 			}
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(infos), Keys: infos})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: infos})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
 			var req signerapi.GroupSignRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

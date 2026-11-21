@@ -1402,13 +1402,8 @@ request state and principals without a runtime ID.
 | `DELETE` | `/admin/keys` | yes | yes |
 | `POST` | `/admin/rotating/recover` | yes | to start; a cancel answers while locked |
 
-Method enforcement:
-
-- `/sign`, `/sign/component`, `/sign/assemble`,
-  `/sign/rotating/prepare`, `/sign/rotating/sign`, `/sign/cancel`, `/plan`,
-  `/status`, `/admin/generate`, `/admin/keys`, and `/admin/rotating/recover`
-  enforce their HTTP method.
-- `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
+Method enforcement: every endpoint answers only the method in the table above.
+Any other method, `HEAD` included, returns `405` with `code:"bad_request"`.
 
 Transport behavior:
 
@@ -1443,7 +1438,6 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `forbidden` | authenticated request the signer refuses (policy or role) | `403` |
 | `locked` | signer keystore is locked, or the session the request began in has ended (a lock, store maintenance such as a passphrase change, or a recovery and a reconcile, since it began); send it again | `403` |
 | `not_found` | unknown key or resource | `404` |
-| `invalid_passphrase` | passphrase verification failure | `403` |
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
@@ -1819,8 +1813,8 @@ transaction's effects; only which branch of the author's Layer 3 accepts it
 can differ from what was approved.
 
 `/sign/assemble` accepts `signerapi.AssemblyRequest`: optional `request_id`,
-the frozen group, discriminated `targets[]`, and optional `passthrough[]`.
-Every target is `bounded-cosigner` (the retired `cosigned` kind is refused) and
+the frozen group, `targets[]`, and optional `passthrough[]`. Every target is a
+cosigned account's (bounded-cosigner) position, so a target names no kind, and
 carries base signatures, runtime arguments, an assembly receipt, and a cosigner
 signature, which is optional on the wire: a listed rekey carries none.
 `cosigner_source_request_id` needs a `cosigner_signature`. Every position is
@@ -2245,12 +2239,10 @@ warning does not establish that no leaf was reused.
 
 `/keys` response:
 
-- `count`: the number of `keys[]` records. The list is the whole of an
-  unlocked signer's keys: a signer that locks while it builds the list
-  answers as a locked signer does (403, `locked`), never with a short or empty
-  list, and a client deciding from the list treats a `count` that disagrees
-  with its records as no list
-- `keys[]` with `address`, `public_key_hex`, `key_type`
+- `keys[]` with `address`, `public_key_hex`, `key_type`. The list is the
+  whole of an unlocked signer's keys: a signer that locks while it builds the
+  list answers as a locked signer does (403, `locked`), never with a short or
+  empty list
 - optional `authorization_kind` with closed account-authorization values
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
@@ -2261,18 +2253,18 @@ warning does not establish that no leaf was reused.
   (JavaScript `sign()`, a transaction file, a plugin's default group,
   presign-plan managed slots, cosigned contextual positions) reads no kind and
   leaves authorization to the signer.
-- optional `signing_flow`: explicit signing choreography label. `bounded1`
-  selects bounded routing without an online cosigner (a bounded or plain host
-  without a cosigner), `cosigned1` selects the user-first bounded
+- optional `signing_flow`: explicit signing choreography label. `cosigned1`
+  selects the user-first bounded
   component/cosigner/assembly flow for a cosigned account's spends and rekeys,
   on a plain or bounded host, `rotating1` selects the rotating account
-  prepare and sign flow, and empty means ordinary `/sign`. Clients
+  prepare and sign flow, and empty means ordinary `/sign`, the path of a
+  bounded or plain host account without a cosigner too. Clients
   dispatch these cases explicitly and fail closed on labels they do not
-  implement, the retired `cosigner1` included.
+  implement, the retired `cosigner1` and `bounded1` included.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
   this key's `signing_flow` (for `cosigned1`)
-- optional `bounded_authorization`: present for `signing_flow: bounded1` and
-  `cosigned1`.
+- optional `bounded_authorization`: present for a bounded or plain host
+  account, with an empty `signing_flow` or `cosigned1`.
   It contains `contract` (`bounded2`, or `plain1` for a plain host account without bounds),
   `base_signature_arg_layout`, `spend_effects` (empty on `plain1`), `max_fee`
   (present on `bounded2`, absent on `plain1`, which has no fee ceiling; clients
@@ -2340,12 +2332,9 @@ stored provenance was available. These fields do not change `/sign` behavior.
 `/status` response:
 
 - `node_role`: optional signer node role (`signer` or `cosigner`); omitted when unset
-- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
-  is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
 - `state`: runtime state (`locked`, `unlocked`, `recovery`, or `unknown`)
-- `signer_locked`
-- `ready_for_signing`
+- `signer_locked`: false exactly when the signer can sign
 - `key_count`: number of loaded keys
 - `keyset_revision`: process-local unsigned revision counter for the published
   key snapshot. It starts at a random value below 2^52 on process start and
@@ -2463,13 +2452,8 @@ stored metadata resolve the provider and any composed template's base primitive.
 
 - `status` (`healthy` or `degraded`)
 - `service`
-- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
-  is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
 - `signer_locked`
-- `ready_for_signing`
-- `ssh_enabled`
-- `ipc_enabled`
 - `warnings`: optional persistent operator-facing health warnings. `/health`
   is unauthenticated, so its warnings omit error detail such as store paths
   (the authenticated `/status` warnings keep it), and the store inspection
@@ -2656,7 +2640,7 @@ Cross-SDK compatibility-bearing behavior:
   on operator approval, so SDK deadlines for them follow the same
   approval-aware rule as `/sign`, not the short cosigner-role component deadline.
 - SDKs expose the authenticated `/status` DTO, including
-  `protocol_version`, `build_version`, `keyset_revision`, and
+  `build_version`, `keyset_revision`, and
   `approval_wait_seconds`, plus optional persistent operator-facing `warnings`,
   and include the matching signer API fixture in their contract suites.
 - SDK `/sign` calls should include an opaque `request_id` when the client may

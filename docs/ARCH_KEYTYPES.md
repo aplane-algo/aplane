@@ -45,7 +45,7 @@ another merely because two dimensions currently use the same string.
 | **Policy/profile** | What concrete behavior narrows the account contract? | fixed allowlist, Merkle recipient proof, Corridor composition | Full key-type provider/template plus behavior parameters |
 | **Base key type** | Which signature construction produces the account's DSA signature arguments? | `aplane.falcon1024.v1`, `aplane.ed25519.v1` | Stored `base_key_type` and composed provider definition |
 | **Auxiliary authority enrollment** | Which additional authority participates, for which role or operation, and under whose custody? | cosigner witness | Embedded public key, durable metadata, and custody-specific message contract |
-| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `bounded1`, `cosigned1`, `rotating1` | Signer-advertised `signing_flow` |
+| **Signing flow** | Which versioned client/server protocol obtains a usable signature for this key? | empty ordinary flow, `cosigned1`, `rotating1` | Signer-advertised `signing_flow` |
 | **Endpoint choreography** | Which ordered calls implement the selected flow for this transaction path? | `/sign`; `/sign/component` then `/sign/assemble`; `/sign/rotating/prepare` then `/sign/rotating/sign` | Flow contract, transaction classification, and HTTP DTOs |
 | **Provider and routing family** | Which registered implementation performs keygen, derivation, signing, or assembly? | composed provider routed through `aplane.falcon1024`; the plain host provider (`lsig/plainhost`) | Provider registry and `RoutingFamily()` |
 | **Principal authorization** | May the authenticated caller invoke this operation on the target identity/resource? | `sign.request`, `sign.component`, `sign.assemble` | Reserved product principal, closed action allowlist, and HTTP/admin enforcement point |
@@ -69,9 +69,10 @@ The terms are related, but none is a synonym for another:
 - A **signing flow** is a wire-routing capability, not an on-chain program.
   Clients select it from inventory and must fail closed on unknown values.
 - An **endpoint choreography** is the transaction-path-specific sequence inside
-  a flow. One key-level flow can have more than one path: under the `bounded1`
-  flow, a spend, a spending-key rekey, and a listed rekey all use ordinary
-  `/sign`, but under their own argument-slot rules, and a rekey forces review.
+  a flow. One key-level flow can have more than one path: for a bounded
+  account without a cosigner, a spend, a spending-key rekey, and a listed rekey
+  all use ordinary `/sign`, but under their own argument-slot rules, and a rekey
+  forces review.
 - A **provider** is an implementation mechanism. Changing registry ownership or
   routing does not by itself change a key type, authorization contract, or
   signing flow, although behavior-visible changes may require versioning those
@@ -109,8 +110,9 @@ policy determines whether that permitted call may release a signature for the
 particular transaction.
 
 `bounded2` (the bounded host) and `plain1` (the plain host) are the
-authorization-contract identifiers. Their signing-flow labels are `bounded1` for
-accounts that need no online cosigner and `cosigned1` for cosigned accounts. Flow labels version the
+authorization-contract identifiers. Accounts that need no online cosigner sign
+through ordinary `/sign` with no flow label, and cosigned accounts advertise
+`cosigned1`. Flow labels version the
 choreography, not the contract, so they do not follow the contract's number.
 `cosigned1` replaced `bounded-cosigner1` when the cosigned flow began to carry
 rekeys, so a client that knows only the spend-only choreography refuses a
@@ -174,8 +176,8 @@ from the presence of a witness key alone.
 | `falcon1024` | Native PQ | none | protocol Falcon-1024 scheme `f1`, self-owned | none | empty flow; `/sign`; supported consensus v42 or v43; top-level `PQsig` |
 | `aplane.falcon1024.v1`, no parameters | DSA LogicSig | plain DSA program | Falcon-1024, self-owned | none | empty flow; `/sign` |
 | `aplane.falcon1024.v1` or `aplane.ed25519.v1`, with a cosigner | DSA LogicSig | plain host `plain1`; any rekey setting | the type itself | signer-custodied cosigner (Falcon-1024 or Ed25519) on every spend and cosigned rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
-| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, overlays without a cosigner | DSA LogicSig | plain host `plain1`; rekey refused, spending key or only these | the type itself | none | `bounded1`; `/sign` |
-| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, Allowlist preset | DSA LogicSig | plain host `bounded2`; framework recipient allowlist; spending-key rekey | the type itself | none | `bounded1`; spend and rekey through `/sign` |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, overlays without a cosigner | DSA LogicSig | plain host `plain1`; rekey refused, spending key or only these | the type itself | none | empty flow; `/sign` |
+| `aplane.falcon1024.v1` or `aplane.ed25519.v1`, Allowlist preset | DSA LogicSig | plain host `bounded2`; framework recipient allowlist; spending-key rekey | the type itself | none | empty flow; spend and rekey through `/sign` |
 | `aplane.falcon1024.v1`, Corridor preset | DSA LogicSig | plain host `bounded2`; framework Merkle recipient allowlist; rekey only to a listed address (*only these*) | the type itself | signer-custodied cosigner (Falcon-1024 or Ed25519) on spend, never on a listed rekey | `cosigned1`; `/plan`, kind-tagged `/sign/component`, then `/sign/assemble` |
 | `aplane.rotating-triple-xmss.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024 and Ed25519 stage keys and an RFC 8391 XMSS tree shared by 1,024 stages, derived from one seed | none | `rotating1`; the signer also chooses the stage's one-time leaf |
 | `aplane.rotating-triple-slhdsa.v1` | DSA LogicSig (`rotating_lsig`) | dedicated compiled stage program; a new program per spend | Falcon-1024, two-layer SLH-DSA-SHA2-128 and Ed25519 per-stage keys derived from one seed | none | `rotating1`; stateless hash signing, no leaf allocation |
@@ -236,9 +238,8 @@ Library, then created like any other key type.
 
 A `plain1` account's every transaction without `RekeyTo` is a spend: any type,
 closes and clawback included. A `RekeyTo` passes only as a pure rekey, on the
-paths the arrangement gives. A cosigned account signs through `cosigned1`, one
-without a cosigner through `/sign` (`bounded1`), and the plain program through
-`/sign`. The Ed25519 plain host's spending key is classical; apadmin's review
+paths the arrangement gives. A cosigned account signs through `cosigned1`, and
+one without a cosigner and the plain program through `/sign`. The Ed25519 plain host's spending key is classical; apadmin's review
 says so. `/keytypes` reports both types `per_key_contract` with
 `boundary_schema` `aplane.boundary.v1`, so a boundary file or a preset can
 describe any of their accounts, and apshell also takes the parameters directly.

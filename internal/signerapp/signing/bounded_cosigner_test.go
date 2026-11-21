@@ -154,7 +154,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 		}
 	}
 	target := signerapi.AssemblyTarget{
-		TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+		TargetIndex: 0, AuthAddress: account,
 		BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
 		AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
 	}
@@ -265,7 +265,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 				t.Fatal(err)
 			}
 			target := signerapi.AssemblyTarget{
-				TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+				TargetIndex: 0, AuthAddress: account,
 				BaseSignatures: []string{sign(spendingPrivateKey, txID[:])}, AssemblyReceipt: sign(spendingPrivateKey, receiptMessage[:]),
 			}
 			if test.cosigner {
@@ -492,7 +492,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 				}
 			}
 			target := signerapi.AssemblyTarget{
-				TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: account,
+				TargetIndex: 0, AuthAddress: account,
 				BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
 				AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
 			}

@@ -44,8 +44,8 @@ a current-format key.
 `bounded2` is the framework-enforced execution contract of every schema-v2
 composed DSA template and of every bounded shape of the plain hosts. Read
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing schema-v2 composed
-templates, transaction-effect classification, argument slots, or the `bounded1` /
-`cosigned1` signing flows.
+templates, transaction-effect classification, argument slots, or the `cosigned1`
+signing flow.
 
 ## Key Type Source Model
 

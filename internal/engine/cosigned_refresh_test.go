@@ -50,7 +50,6 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 		}
 		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 2,
 			Keys: []signerapi.KeyInfo{{
 				Address: sender,
 				KeyType: "ed25519",
@@ -119,7 +118,6 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 		}
 		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 2,
 			Keys: []signerapi.KeyInfo{{
 				Address: sender,
 				KeyType: "ed25519",

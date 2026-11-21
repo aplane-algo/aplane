@@ -125,13 +125,14 @@ complete value-spending policy.
 | Framework Layer-3 policies | `fixed_allowlist`, `merkle_allowlist`; `none` for the plain hosts' limits-only shapes only |
 | Framework allowlist with author TEAL | `fixed_allowlist_custom`, `merkle_allowlist_custom` |
 | Inline recipient maximum | 30 entries |
-| Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
+| Flow labels | none (ordinary `/sign`) without a cosigner; `cosigned1` with a cosigner |
 | Online cosigner endpoints | `POST /plan`, `POST /sign/component`, `POST /sign/assemble` |
 | Bundled composed templates | none; the plain hosts `aplane.falcon1024.v1` and `aplane.ed25519.v1` offer the allowlist and limits-only shapes |
 
 `bounded2` is the only contract a bounded shape or template declares (a plain host
-account without bounds declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract,
-so a `bounded2` account without a cosigner still advertises `bounded1`. A cosigned
+account without bounds declares `plain1`), and neither has protocol aliases. Flow labels version the client/server choreography, not the contract.
+An account without a cosigner signs through ordinary `/sign` and advertises no
+flow. A cosigned
 account advertises `cosigned1`, which replaced `bounded-cosigner1` when the flow
 began to carry rekeys: a client that knows only the spend-only choreography then
 refuses a cosigned key instead of asking the cosigner to sign a listed rekey.
@@ -410,7 +411,7 @@ assembly work unchanged. It differs only in what the host allows:
 | Rekey setting | as `bounded2`: `refused` or `spending_key`, either with a rekey-to list (`only_these`, `plus_cosigned`) |
 | Cosigner | optional; `plus_cosigned` needs one |
 | Templates | cannot declare `plain1` |
-| Flow labels | `bounded1` without a cosigner; `cosigned1` with a cosigner |
+| Flow labels | none (ordinary `/sign`) without a cosigner; `cosigned1` with a cosigner |
 
 The program has no envelope. After the spending-key check it dispatches on
 `RekeyTo`: a transaction that doesn't rekey goes straight to the spend path, which
@@ -942,8 +943,9 @@ consulting the installed template.
 
 ## Routing and Approval
 
-`/keys` and `/keytypes` advertise `signing_flow: bounded1` for profiles without
-a cosigner and `signing_flow: cosigned1` for profiles whose durable
+`/keys` and `/keytypes` advertise no `signing_flow` for profiles without a
+cosigner, which sign through ordinary `/sign`, and `signing_flow: cosigned1`
+for profiles whose durable
 metadata contains `cosigner.contract: cosigner1`. Both expose the same typed
 `bounded_authorization` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
@@ -974,8 +976,7 @@ budgets a cosigned position in a mixed group on its component's path. The mark
 routes the request only. `/sign/assemble` classifies the canonical transaction
 against stored metadata again, through the planner's function, then requires a
 cosigner signature on `spend` and `spending_rekey` and refuses one on
-`listed_rekey`, so `cosigner_signature` is optional on a `bounded-cosigner`
-assembly target. A wrong mark can stall a request, never weaken it. The cosigner
+`listed_rekey`, so `cosigner_signature` is optional on an assembly target. A wrong mark can stall a request, never weaken it. The cosigner
 node decides a cosigned rekey as it decides any rekey, by its `reject_rekey`,
 `rekey_policy` edge and pure-shape check; a listed rekey never reaches it.
 

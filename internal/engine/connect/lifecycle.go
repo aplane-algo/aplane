@@ -125,7 +125,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	s.Mu.Unlock()
 
 	connected = true
-	return &Result{Target: target, KeyCount: keysResp.Count, Locked: keysResp.Locked}, nil
+	return &Result{Target: target, KeyCount: len(keysResp.Keys), Locked: keysResp.Locked}, nil
 }
 
 // Disconnect closes any active signer connection.

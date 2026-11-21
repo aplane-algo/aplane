@@ -53,8 +53,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		switch {
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return connectJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-				Count: 1,
-				Keys:  []signerapi.KeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
+				Keys: []signerapi.KeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keytypes":
 			return connectJSONResponse(t, http.StatusOK, signerapi.KeyTypesResponse{
@@ -113,8 +112,8 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	state := &ConnectionState{SignerClient: client}
 
 	keys, err := state.GetKeysWithContext(t.Context())
-	if err != nil || keys.Count != 1 {
-		t.Fatalf("GetKeysWithContext() = (%+v, %v), want count=1 nil", keys, err)
+	if err != nil || len(keys.Keys) != 1 {
+		t.Fatalf("GetKeysWithContext() = (%+v, %v), want one key nil", keys, err)
 	}
 	keyTypes, err := state.GetKeyTypesWithContext(t.Context())
 	if err != nil || len(keyTypes.KeyTypes) != 1 {
@@ -149,7 +148,6 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR1",
 			BaseSignatures:    []string{"aabb"},
 			AssemblyReceipt:   "ccdd",

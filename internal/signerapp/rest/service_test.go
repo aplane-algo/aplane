@@ -279,7 +279,6 @@ func TestServiceAssembleDelegates(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR",
 			BaseSignatures:    []string{"aa"},
 			AssemblyReceipt:   "cc",
@@ -354,8 +353,8 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Keys() error = %v", err)
 	}
-	if keysResp.Count != 1 {
-		t.Fatalf("Keys count = %d, want 1", keysResp.Count)
+	if len(keysResp.Keys) != 1 {
+		t.Fatalf("Keys count = %d, want 1", len(keysResp.Keys))
 	}
 	if keysResp.Keys[0].Address != genResp.Address {
 		t.Fatalf("Keys address = %q, want %q", keysResp.Keys[0].Address, genResp.Address)
@@ -416,8 +415,8 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Keys() error = %v", err)
 	}
-	if keysResp.Count != 1 {
-		t.Fatalf("Keys count = %d, want 1", keysResp.Count)
+	if len(keysResp.Keys) != 1 {
+		t.Fatalf("Keys count = %d, want 1", len(keysResp.Keys))
 	}
 	row := keysResp.Keys[0]
 	if row.Address != genResp.Address {
@@ -465,7 +464,9 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
 	}
 	info := infos[0]
-	if info.SigningFlow != signerapi.SigningFlowBounded1 || info.BoundedAuthorization == nil {
+	// Without a cosigner a bounded key type signs through ordinary /sign and
+	// advertises no flow.
+	if info.SigningFlow != "" || info.BoundedAuthorization == nil {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
 	bounded := info.BoundedAuthorization
@@ -1139,37 +1140,30 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 
 func TestServiceHealthShapesRuntimeState(t *testing.T) {
 	locked := setupProductRuntime(t, false)
-	resp := (Service{}).Health(locked, true, false)
+	resp := (Service{}).Health(locked)
 	if resp.Status != "healthy" {
 		t.Fatalf("Status = %q, want healthy", resp.Status)
 	}
 	if !resp.SignerLocked {
 		t.Fatal("SignerLocked = false, want true")
 	}
-	if resp.ReadyForSigning {
-		t.Fatal("ReadyForSigning = true, want false")
-	}
-	if !resp.SSHEnabled || resp.IPCEnabled {
-		t.Fatalf("transport flags = %#v, want ssh true ipc false", resp)
-	}
 
 	unlocked := setupProductRuntime(t, true)
-	resp = (Service{}).Health(unlocked, false, true)
+	resp = (Service{}).Health(unlocked)
 	if resp.SignerLocked {
 		t.Fatal("SignerLocked = true, want false")
-	}
-	if !resp.ReadyForSigning {
-		t.Fatal("ReadyForSigning = false, want true")
 	}
 }
 
 func TestServiceHealthDegradedWithoutIdentity(t *testing.T) {
-	resp := (Service{}).Health(nil, false, false)
+	resp := (Service{}).Health(nil)
 	if resp.Status != "degraded" {
 		t.Fatalf("Status = %q, want degraded", resp.Status)
 	}
-	if resp.ReadyForSigning {
-		t.Fatal("ReadyForSigning = true, want false")
+	// A signer without a runtime cannot sign, so it answers locked, as
+	// Status does.
+	if !resp.SignerLocked {
+		t.Fatal("SignerLocked = false, want true")
 	}
 }
 
@@ -1300,11 +1294,11 @@ teal: |
 func TestKeysAnswersLockedWhenALockCameDuringTheBuild(t *testing.T) {
 	ir := setupProductRuntime(t, true)
 	lockGen := ir.LockGeneration()
-	if resp, err := keysAnswer(ir, lockGen, []signerapi.KeyInfo{}); err != nil || resp.Count != 0 || len(resp.Keys) != 0 {
+	if resp, err := keysAnswer(ir, lockGen, []signerapi.KeyInfo{}); err != nil || len(resp.Keys) != 0 {
 		t.Fatalf("keysAnswer(unlocked, empty) = %+v, %v; want an empty list", resp, err)
 	}
-	if resp, err := (Service{}).Keys(ir); err != nil || resp.Count != 0 {
-		t.Fatalf("Keys(unlocked, no keys) = %+v, %v; want count 0", resp, err)
+	if resp, err := (Service{}).Keys(ir); err != nil || len(resp.Keys) != 0 {
+		t.Fatalf("Keys(unlocked, no keys) = %+v, %v; want no keys", resp, err)
 	}
 
 	list := (Service{}).BuildKeyInfoList(ir)

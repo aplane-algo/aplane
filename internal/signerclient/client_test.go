@@ -145,10 +145,9 @@ func TestSignerClientContextAccessIsRaceSafe(t *testing.T) {
 
 func TestGetStatus_Success(t *testing.T) {
 	resp := signerapi.StatusResponse{
-		State:           "unlocked",
-		ReadyForSigning: true,
-		KeyCount:        2,
-		KeysetRevision:  5,
+		State:          "unlocked",
+		KeyCount:       2,
+		KeysetRevision: 5,
 	}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet || req.URL.Path != "/status" {
@@ -163,6 +162,24 @@ func TestGetStatus_Success(t *testing.T) {
 	}
 	if got.KeysetRevision != 5 || got.KeyCount != 2 {
 		t.Fatalf("GetStatus() = %+v, want revision 5 count 2", got)
+	}
+}
+
+// An answer that omits signer_locked reads as locked: nothing treats a signer
+// as able to sign on a field it did not send.
+func TestGetStatusReadsAMissingSignerLockedAsLocked(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"state":"unlocked","key_count":1}`:                       true,
+		`{"state":"unlocked","signer_locked":false,"key_count":1}`: false,
+		`{"state":"locked","signer_locked":true,"key_count":1}`:    true,
+	} {
+		c := newTestClient(t, func(*http.Request) (*http.Response, error) {
+			return mockResponse(200, body), nil
+		})
+		got, err := c.GetStatusWithContext(context.Background())
+		if err != nil || got.SignerLocked != want || got.KeyCount != 1 {
+			t.Errorf("GetStatus(%s) = %+v, %v; want signer_locked %v and key_count 1", body, got, err, want)
+		}
 	}
 }
 
@@ -308,7 +325,6 @@ func requireDeadlineAtMost(t *testing.T, ctx context.Context, max time.Duration)
 
 func TestGetKeys_Success(t *testing.T) {
 	resp := signerapi.KeysResponse{
-		Count: 2,
 		Keys: []signerapi.KeyInfo{
 			{Address: "ADDR1", KeyType: "ed25519"},
 			{Address: "ADDR2", KeyType: "aplane.falcon1024.v1"},
@@ -324,9 +340,6 @@ func TestGetKeys_Success(t *testing.T) {
 	got, err := c.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetKeys() error = %v", err)
-	}
-	if got.Count != 2 {
-		t.Errorf("Count = %d, want 2", got.Count)
 	}
 	if len(got.Keys) != 2 {
 		t.Errorf("len(Keys) = %d, want 2", len(got.Keys))
@@ -540,7 +553,7 @@ func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 	}
 	assembly, err := c.RequestAssembleWithContext(t.Context(), signerapi.AssemblyRequest{
 		GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.AssemblyTarget{{
-			TargetIndex: 0, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "cc",
+			TargetIndex: 0, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", CosignerSignature: "cc",
 		}},
 	})
 	if err != nil || len(assembly.SignedGroup) != 1 {
@@ -755,7 +768,7 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].Kind != signerapi.AssemblyTargetKindBoundedCosigner || got.Targets[0].AuthAddress != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].AuthAddress != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AssemblyResponse{
@@ -768,7 +781,6 @@ func TestRequestAssemblePostsToAssembleEndpoint(t *testing.T) {
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AssemblyTarget{{
 			TargetIndex:       0,
-			Kind:              signerapi.AssemblyTargetKindBoundedCosigner,
 			AuthAddress:       "ADDR1",
 			BaseSignatures:    []string{"aabb"},
 			AssemblyReceipt:   "ccdd",

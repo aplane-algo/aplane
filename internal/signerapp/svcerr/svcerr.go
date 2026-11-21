@@ -4,12 +4,14 @@
 // Package svcerr is the single kinded service-error model for signer-side
 // application services. Kinds map one-to-one onto the stable wire codes in
 // pkg/signerapi and onto HTTP status at the adapter edge, so error message
-// wording never needs to carry machine meaning.
+// wording never needs to carry machine meaning. KindInvalidPassphrase alone
+// is admin-only and carries an IPC code.
 package svcerr
 
 import (
 	"net/http"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -22,7 +24,6 @@ const (
 	KindForbidden                Kind = signerapi.ErrCodeForbidden
 	KindLocked                   Kind = signerapi.ErrCodeLocked
 	KindNotFound                 Kind = signerapi.ErrCodeNotFound
-	KindInvalidPassphrase        Kind = signerapi.ErrCodeInvalidPassphrase
 	KindUnavailable              Kind = signerapi.ErrCodeUnavailable
 	KindCacheRefresh             Kind = signerapi.ErrCodeCacheRefresh
 	KindInternal                 Kind = signerapi.ErrCodeInternal
@@ -33,6 +34,10 @@ const (
 	KindRotatingStageChanged     Kind = signerapi.ErrCodeRotatingStageChanged
 	KindRotatingWindowNotCurrent Kind = signerapi.ErrCodeRotatingWindowNotCurrent
 	KindRekeyTargetNotValid      Kind = signerapi.ErrCodeRekeyTargetNotValid
+
+	// KindInvalidPassphrase is admin-only: no HTTP route takes a passphrase,
+	// so it has no HTTP code or status, and its value is the IPC code.
+	KindInvalidPassphrase Kind = protocol.ErrCodeInvalidPassphrase
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
@@ -44,7 +49,7 @@ func (k Kind) HTTPStatus() int {
 		return http.StatusConflict
 	case KindUnauthorized:
 		return http.StatusUnauthorized
-	case KindForbidden, KindLocked, KindInvalidPassphrase, KindRekeyTargetNotValid:
+	case KindForbidden, KindLocked, KindRekeyTargetNotValid:
 		return http.StatusForbidden
 	case KindNotFound:
 		return http.StatusNotFound

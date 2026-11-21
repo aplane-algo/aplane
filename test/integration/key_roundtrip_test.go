@@ -63,7 +63,7 @@ func TestNativeMnemonicExportRecoversDeletedKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("export with wrong passphrase: %v", err)
 			}
-			if refused.Success || len(refused.Mnemonic) != 0 || refused.Code != signerapi.ErrCodeInvalidPassphrase {
+			if refused.Success || len(refused.Mnemonic) != 0 || refused.Code != protocol.ErrCodeInvalidPassphrase {
 				refused.Mnemonic.Zero()
 				t.Fatalf("export with wrong passphrase = success %v, code %q", refused.Success, refused.Code)
 			}

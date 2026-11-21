@@ -285,7 +285,6 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeForbidden,
 		ErrCodeLocked,
 		ErrCodeNotFound,
-		ErrCodeInvalidPassphrase,
 		ErrCodeUnavailable,
 		ErrCodeCacheRefresh,
 		ErrCodeInternal,

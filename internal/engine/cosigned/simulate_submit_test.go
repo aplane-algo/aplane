@@ -103,7 +103,6 @@ func newCosignedExecutableTestHandler(t *testing.T, publicKeyHex string, capture
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		capture.record("keys")
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
-			Count: 1,
 			Keys: []signerapi.KeyInfo{{
 				Address:      componentSelector,
 				PublicKeyHex: publicKeyHex,
@@ -460,7 +459,7 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		appendEvent("keys")
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: cosignerHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: componentSelector, PublicKeyHex: cosignerHex, KeyType: witness.Falcon1024V1, IsWitnessKey: true}}})
 	})
 	mux.HandleFunc("/plan", func(w http.ResponseWriter, r *http.Request) {
 		var req signerapi.GroupSignRequest

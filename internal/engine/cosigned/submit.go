@@ -47,8 +47,9 @@ type cosignerRequestKey struct {
 type flowRoute int
 
 const (
-	// flowRoutePlain signs through the ordinary client path. Bounded1 belongs
-	// here: it has its own transaction-aware server-side path behind /sign.
+	// flowRoutePlain signs through the ordinary client path, a bounded account
+	// without a cosigner included: the signer's transaction-aware bounded path
+	// sits behind /sign.
 	flowRoutePlain flowRoute = iota
 	// flowRouteBoundedCosigner routes through the cosigned1 component
 	// orchestration.
@@ -61,7 +62,7 @@ const (
 
 func routeForSigningFlow(flow string) flowRoute {
 	switch flow {
-	case "", signerapi.SigningFlowBounded1:
+	case "":
 		return flowRoutePlain
 	case signerapi.SigningFlowCosigned1:
 		return flowRouteBoundedCosigner
@@ -183,7 +184,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	for _, target := range targets {
 		component := components[target.Index]
 		assemblyTarget := signerapi.AssemblyTarget{
-			TargetIndex: target.Index, Kind: signerapi.AssemblyTargetKindBoundedCosigner, AuthAddress: target.Account,
+			TargetIndex: target.Index, AuthAddress: target.Account,
 			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: baseRequestID,
 		}

@@ -32,14 +32,10 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			},
 			wantStatus: http.StatusOK,
 			want: map[string]any{
-				"status":            "healthy",
-				"service":           "Signer",
-				"protocol_version":  map[string]any{"major": float64(2), "minor": float64(0)},
-				"build_version":     version.String(),
-				"signer_locked":     false,
-				"ready_for_signing": true,
-				"ssh_enabled":       false,
-				"ipc_enabled":       false,
+				"status":        "healthy",
+				"service":       "Signer",
+				"build_version": version.String(),
+				"signer_locked": false,
 			},
 		},
 		{
@@ -50,11 +46,9 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			wantStatus: http.StatusOK,
 			want: map[string]any{
 				"node_role":             "signer",
-				"protocol_version":      map[string]any{"major": float64(2), "minor": float64(0)},
 				"build_version":         version.String(),
 				"state":                 "unlocked",
 				"signer_locked":         false,
-				"ready_for_signing":     true,
 				"key_count":             float64(0),
 				"keyset_revision":       float64(server.runtime.KeysetRevision()),
 				"approval_wait_seconds": serverconfig.DefaultApprovalWait.Seconds(),
@@ -67,8 +61,7 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			},
 			wantStatus: http.StatusOK,
 			want: map[string]any{
-				"count": float64(0),
-				"keys":  []any{},
+				"keys": []any{},
 			},
 		},
 		{
