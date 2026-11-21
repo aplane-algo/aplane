@@ -159,7 +159,8 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Show key details
 		if len(displayKeys) > 0 && m.keylist.selectedKey < len(displayKeys) {
-			return m, m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address)
+			m.details.requestID = newRequestID("details")
+			return m, m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address, m.details.requestID)
 		}
 	}
 

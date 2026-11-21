@@ -509,6 +509,16 @@ func (m Model) handleAdminSettingUpdatedMsg(msg AdminSettingUpdatedMsg) (tea.Mod
 }
 
 func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
+	// Only the reply to the read the key list waits on is taken, and it opens
+	// the details only while the key list is still on screen: a reply to an
+	// earlier read, or one that lands after the operator moved on, is late.
+	if msg.ID == "" || msg.ID != m.details.requestID {
+		return m, nil
+	}
+	m.details.requestID = ""
+	if msg.Success && m.viewState != ViewKeyList {
+		return m, nil
+	}
 	if msg.Success {
 		m.details.address = msg.Address
 		m.details.keyType = msg.KeyType

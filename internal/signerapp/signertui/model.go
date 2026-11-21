@@ -448,6 +448,7 @@ type manualLockState struct {
 
 // keyDetailsState is the key metadata viewer.
 type keyDetailsState struct {
+	requestID                string // the details read the key list waits on
 	address                  string
 	keyType                  string
 	publicKeyHex             string
@@ -939,6 +940,7 @@ type lockIdentitySendFailedMsg struct {
 
 // KeyDetailsMsg is sent when key details are retrieved
 type KeyDetailsMsg struct {
+	ID                       string
 	Success                  bool
 	Address                  string
 	KeyType                  string
