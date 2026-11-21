@@ -145,8 +145,9 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-// A change of the admin wire comes with a new version, so pinning it makes
-// that change a deliberate edit.
+// Pinned so a change of the version is a deliberate edit. The move to one
+// integer kept 8: builds before it sent {major, minor}, which neither side
+// can read from the other, so such a pair fails whatever the number is.
 func TestAdminProtocolVersionIsV8(t *testing.T) {
 	if AdminProtocolVersion != 8 {
 		t.Fatalf("AdminProtocolVersion = %d, want 8", AdminProtocolVersion)

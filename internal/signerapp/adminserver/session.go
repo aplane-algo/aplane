@@ -206,8 +206,10 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		// The version is read leniently and checked before the strict
-		// decode, so a client of another version is told that rather than
-		// shown its newer or older fields as unknown.
+		// decode, so a client that sends another integer version is told
+		// the versions differ rather than shown its other fields as unknown.
+		// A version in another shape, such as the {major, minor} object of
+		// earlier builds, fails this read as an invalid auth message.
 		var versionEnvelope struct {
 			ProtocolVersion int `json:"protocol_version"`
 		}

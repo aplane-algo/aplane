@@ -638,10 +638,6 @@ transaction type is one more entry in `fields` and needs no client change.
   repair material can be admitted and inspected, damaged credentials replaced,
   and the clean generation promoted. A locked session remains rejected with
   `signer_locked`.
-- protocol v4 removes the pre-release
-  `recover_backup/list_recovered/review_recovered/activate_recovered/`
-  `rollback_recovered/purge_recovered` lifecycle and its review token and
-  acknowledgement fields.
 
 #### Admin and Policy Settings
 
