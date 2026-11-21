@@ -10,36 +10,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/aplane-algo/aplane/internal/storeperm"
 )
 
-const defaultServiceFile = "/etc/systemd/system/apsigner.service"
-
-// serviceFilePath is written by the async status load and read by action
-// commands; both run in bubbletea command goroutines, so access goes through
-// the mutex-guarded accessors below.
-var serviceFileMu sync.Mutex
-var serviceFilePath = defaultServiceFile
-
-func currentServiceFile() string {
-	serviceFileMu.Lock()
-	defer serviceFileMu.Unlock()
-	return serviceFilePath
-}
-
-func setServiceFile(path string) {
-	serviceFileMu.Lock()
-	defer serviceFileMu.Unlock()
-	serviceFilePath = path
-}
-
-var serviceFileCandidates = []string{
-	defaultServiceFile,
-	"/lib/systemd/system/apsigner.service",
-	"/usr/lib/systemd/system/apsigner.service",
-}
+// serviceFile is the apsigner unit the installers write. Only tests point it
+// elsewhere.
+var serviceFile = "/etc/systemd/system/apsigner.service"
 
 type serviceInfo struct {
 	BinDir      string
@@ -135,14 +112,11 @@ func parseServiceFile(path string) (*serviceInfo, error) {
 // If that fails, it falls back to local mode using the current process info.
 // The boolean return value is true when running in local mode.
 func resolveServiceInfo() (*serviceInfo, bool) {
-	for _, path := range candidateServiceFiles() {
-		svc, err := parseServiceFile(path)
-		if err == nil {
-			setServiceFile(path)
-			return svc, false
-		}
+	svc, err := parseServiceFile(serviceFile)
+	if err != nil {
+		return localServiceInfo(), true
 	}
-	return localServiceInfo(), true
+	return svc, false
 }
 
 func localServiceInfo() *serviceInfo {
@@ -154,13 +128,6 @@ func localServiceInfo() *serviceInfo {
 		StoreUID: os.Geteuid(),
 		StoreGID: os.Getegid(),
 	}
-}
-
-func candidateServiceFiles() []string {
-	if path := currentServiceFile(); path != defaultServiceFile {
-		return []string{path}
-	}
-	return serviceFileCandidates
 }
 
 func currentUsername() string {

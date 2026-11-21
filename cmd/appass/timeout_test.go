@@ -93,9 +93,9 @@ func TestAHungDaemonReloadIsStopped(t *testing.T) {
 	if err := os.WriteFile(unit, []byte("[Unit]\nDescription=test\n\n[Service]\nExecStart=/bin/true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	original := currentServiceFile()
-	setServiceFile(unit)
-	t.Cleanup(func() { setServiceFile(original) })
+	original := serviceFile
+	serviceFile = unit
+	t.Cleanup(func() { serviceFile = original })
 
 	start := time.Now()
 	err := ensureLoadCredentialInService(filepath.Join(t.TempDir(), "passphrase.cred"))

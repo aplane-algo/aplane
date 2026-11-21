@@ -655,7 +655,6 @@ UNINSTALLER_ALREADY_ABSENT=0
 DATA_DIR_ALREADY_ABSENT=0
 REMOVED_BINARIES=()
 MISSING_BINARIES=()
-REMOVED_SERVICE_UNITS=()
 
 if [ -n "$PROD_DATA_DIR_INPUT" ]; then
     DATA_DIR="$PROD_DATA_DIR_INPUT"
@@ -701,16 +700,11 @@ else
     SERVICE_ALREADY_DISABLED=1
 fi
 
-# Remove the service file. Check both the current local-admin unit path and
-# the legacy packaged-unit path used by older installers.
-for service_unit in /etc/systemd/system/apsigner.service /lib/systemd/system/apsigner.service; do
-    if [ -f "$service_unit" ]; then
-        rm -f "$service_unit"
-        REMOVED_SERVICE_UNITS+=("$service_unit")
-        SERVICE_REMOVED=1
-    fi
-done
-if [ "$SERVICE_REMOVED" != "1" ]; then
+SERVICE_UNIT=/etc/systemd/system/apsigner.service
+if [ -f "$SERVICE_UNIT" ]; then
+    rm -f "$SERVICE_UNIT"
+    SERVICE_REMOVED=1
+else
     SERVICE_ALREADY_ABSENT=1
 fi
 systemctl daemon-reload
@@ -807,7 +801,7 @@ elif [ "$SERVICE_ALREADY_DISABLED" = "1" ]; then
     echo "  - apsigner service was already disabled or not installed"
 fi
 if [ "$SERVICE_REMOVED" = "1" ]; then
-    echo "  - removed apsigner systemd unit: ${REMOVED_SERVICE_UNITS[*]}"
+    echo "  - removed apsigner systemd unit: $SERVICE_UNIT"
 elif [ "$SERVICE_ALREADY_ABSENT" = "1" ]; then
     echo "  - systemd unit was already absent"
 fi
