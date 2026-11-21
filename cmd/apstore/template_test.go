@@ -338,6 +338,30 @@ func captureStderr(t *testing.T, fn func()) string {
 	return string(data)
 }
 
+// Write residue the --confirm run's reconciliation discards is reported as
+// pending, not as damage that refuses the repair, and a dry run passes.
+func TestTemplateRepairPreviewSetsWriteResidueAside(t *testing.T) {
+	withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+		current := currentGenerationForTest(t, passphrase)
+		if err := os.WriteFile(filepath.Join(current.KeyTypeRecordsDir(), "x.json.tmp-123"), []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan); err != nil {
+			t.Fatalf("dry run error = %v, want the repair planned", err)
+		}
+		if strings.Contains(log.String(), "refused") || !strings.Contains(log.String(), "1 staging residue(s) to discard") {
+			t.Fatalf("preview log = %q, want the residue pending and no refusal", log.String())
+		}
+		log.Reset()
+		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan, "--confirm"); err != nil {
+			t.Fatalf("template repair --confirm error = %v", err)
+		}
+		if !strings.Contains(log.String(), "x.json.tmp-123") {
+			t.Fatalf("repair log = %q, want the residue reported as discarded", log.String())
+		}
+	})
+}
+
 func TestTemplateRepairReportsAnUncertainCommit(t *testing.T) {
 	withDamagedTemplateStore(t, func(passphrase []byte, _ string, _ *bytes.Buffer) {
 		paths := keystorePaths()

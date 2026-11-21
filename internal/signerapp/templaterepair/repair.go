@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -147,15 +148,39 @@ func (preview Preview) ReconcilePending() bool {
 // generation, with the classification reload uses.
 func Inspect(opts Options) (Preview, error) {
 	preview := Preview{GenerationID: opts.Current.GenerationID()}
+	view, done, err := reconciledView(opts.Current)
+	if err != nil {
+		return Preview{}, err
+	}
+	defer done()
+	classified := opts
+	classified.Current = view
+	// Reconciliation refusing the store is damage unlock refuses too.
+	report, reconcileErr := genstore.InspectStoreRoot(opts.Paths, opts.Keyring)
+	preview.Reconcile = report
+	if err := classify(classified, &preview, reconcileErr); err != nil {
+		return Preview{}, err
+	}
+	if view.Dir() != opts.Current.Dir() {
+		preview.OtherDamage = relocate(preview.OtherDamage, view.Dir(), opts.Current.Dir())
+		preview.CommitBlocked = relocate(preview.CommitBlocked, view.Dir(), opts.Current.Dir())
+	}
+	return preview, nil
+}
+
+// classify fills preview with the record defects of opts.Current, the
+// first damage a repair does not cover, and what refuses a commit over it.
+// reconcileErr is reconciliation's refusal of the store, if any.
+func classify(opts Options, preview *Preview, reconcileErr error) error {
 	manager := signertemplates.NewManager(opts.Paths)
 	manager.ActivePaths = opts.Current
 	report, err := manager.ValidateKeystoreTemplates(opts.Keyring)
 	if err != nil {
-		return Preview{}, fmt.Errorf("classify template records: %w", err)
+		return fmt.Errorf("classify template records: %w", err)
 	}
 	recordDefects := report.RecordDefects()
 	if len(recordDefects) == 0 {
-		return preview, nil
+		return nil
 	}
 	defective := make(map[string]bool, len(recordDefects))
 	for _, recordDefect := range recordDefects {
@@ -168,25 +193,66 @@ func Inspect(opts Options) (Preview, error) {
 	preview.OtherDamage = damage
 	if scan == nil {
 		if scan, err = keys.ScanKeysDirectory(opts.Current, opts.Keyring, nil); err != nil {
-			return Preview{}, fmt.Errorf("count keys: %w", err)
+			return fmt.Errorf("count keys: %w", err)
 		}
 	}
 	for _, recordDefect := range recordDefects {
 		defect, err := describe(opts, recordDefect, scan)
 		if err != nil {
-			return Preview{}, err
+			return err
 		}
 		preview.Defects = append(preview.Defects, defect)
 	}
-	if preview.Reconcile, err = genstore.InspectStoreRoot(opts.Paths, opts.Keyring); err != nil {
-		// Reconciliation refuses this store, and so does unlock.
+	if reconcileErr != nil {
 		if preview.OtherDamage == nil {
-			preview.OtherDamage = err
+			preview.OtherDamage = reconcileErr
 		}
-		return preview, nil
+		return nil
 	}
 	preview.CommitBlocked = commitBlocked(current, preview.Reconcile, scan)
-	return preview, nil
+	return nil
+}
+
+// reconciledView is current as reconciliation will leave it, which is what
+// a --confirm run, reconciling first, classifies: current itself when it
+// holds no write residue, else a private copy without the residue, outside
+// the store, which done removes. A preview writes nothing to the store.
+func reconciledView(current storepaths.GenPaths) (storepaths.GenPaths, func(), error) {
+	residue, err := genstore.WriteResidue(current)
+	if err != nil || len(residue) == 0 {
+		// A namespace that cannot be listed is structural damage, which the
+		// gate reports for current itself.
+		return current, func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "aplane-template-repair-")
+	if err != nil {
+		return storepaths.GenPaths{}, nil, fmt.Errorf("classify the generation without its write residue: %w", err)
+	}
+	done := func() { _ = os.RemoveAll(dir) }
+	view, err := genstore.CopyWithoutWriteResidue(current, dir)
+	if err != nil {
+		done()
+		return storepaths.GenPaths{}, nil, err
+	}
+	return view, done, nil
+}
+
+// relocatedError is an error found in the private copy of a generation,
+// worded with the generation's own directory.
+type relocatedError struct {
+	err           error
+	copy, current string
+}
+
+func (e relocatedError) Error() string { return strings.ReplaceAll(e.err.Error(), e.copy, e.current) }
+
+func (e relocatedError) Unwrap() error { return e.err }
+
+func relocate(err error, copy, current string) error {
+	if err == nil {
+		return nil
+	}
+	return relocatedError{err: err, copy: copy, current: current}
 }
 
 // commitBlocked is what refuses a mint over the current generation and

@@ -593,6 +593,40 @@ func TestRepairDiscardsStagingResidueFirst(t *testing.T) {
 	}
 }
 
+// Write residue a crashed durable write left in the current generation is
+// discarded by the reconciliation a --confirm run starts with, so the
+// preview classifies the generation without it: pending reconciliation, not
+// damage. The preview writes nothing.
+func TestInspectClassifiesTheGenerationAsReconciliationLeavesIt(t *testing.T) {
+	f := damagedStore(t)
+	for _, relative := range []string{"keytypes/x.json.tmp-123", "keys/ADDR.key.tmp-456"} {
+		if err := os.WriteFile(filepath.Join(f.opts.Current.Dir(), filepath.FromSlash(relative)), []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := storeDigest(t, f)
+	preview, err := templaterepair.Inspect(f.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storeDigest(t, f) != before {
+		t.Fatal("a preview changed the store")
+	}
+	if preview.OtherDamage != nil || preview.CommitBlocked != nil || len(preview.Defects) != 5 {
+		t.Fatalf("Inspect() = damage %v, commit blocked %v, %d defects; want the 5 defects and no damage", preview.OtherDamage, preview.CommitBlocked, len(preview.Defects))
+	}
+	if !preview.ReconcilePending() || !reflect.DeepEqual(preview.Reconcile.DiscardedStaging, []string{"ADDR.key.tmp-456", "x.json.tmp-123"}) {
+		t.Fatalf("Inspect().Reconcile = %+v, want both residue files pending", preview.Reconcile)
+	}
+	result, err := templaterepair.Repair(f.opts, map[string]templaterepair.Action{
+		editedGeneric: templaterepair.ActionRepin, editedComposed: templaterepair.ActionRepin,
+		orphanGeneric: templaterepair.ActionDrop, orphanComposed: templaterepair.ActionDrop, orphanDisabled: templaterepair.ActionDrop,
+	})
+	if err != nil || len(result.Reconciled.DiscardedStaging) != 2 {
+		t.Fatalf("Repair() = %+v, %v; want the residue discarded and a commit", result, err)
+	}
+}
+
 // A parent whose seal is gone is kept by reconciliation and refuses every
 // mint, so the preview names it and the repair refuses before staging.
 func TestRepairRefusesWhatNoCommitCanSupersede(t *testing.T) {
