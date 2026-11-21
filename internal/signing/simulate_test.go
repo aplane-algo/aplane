@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -417,4 +418,37 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// A refused simulate request is an error. It is sent once, traced: every
+// node the client accepts (consensus v42 and v43, checked before any path
+// reaches simulate) supports execution traces, so there is no untraced retry.
+func TestSimulateRefusalIsNotRetried(t *testing.T) {
+	var requests []models.SimulateRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		var req models.SimulateRequest
+		if err := msgpack.Decode(body, &req); err != nil {
+			t.Fatalf("decode simulate request: %v", err)
+		}
+		requests = append(requests, req)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"refused"}`))
+	}))
+	defer server.Close()
+	client, err := algod.MakeClient(server.URL, "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	_, err = SimulateSignedTransactionsWithContext(t.Context(), []types.SignedTxn{{Txn: types.Transaction{Header: types.Header{Sender: types.Address{1}}}}}, client, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "simulation API call failed") || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("SimulateSignedTransactionsWithContext() error = %v, want the refusal", err)
+	}
+	if len(requests) != 1 || !requests[0].ExecTraceConfig.Enable || !requests[0].ExecTraceConfig.StateChange || !requests[0].AllowMoreLogging {
+		t.Fatalf("got %d requests (%+v), want one traced request", len(requests), requests)
+	}
 }

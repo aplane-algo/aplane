@@ -93,16 +93,9 @@ func simulateSignedTxnObjectsWithContext(
 		},
 	}
 
-	// Call simulate endpoint; fall back without trace if the node doesn't support it
 	resp, err := algodClient.SimulateTransaction(req).Do(ctx)
 	if err != nil {
-		// Retry without trace config — older nodes may reject ExecTraceConfig
-		req.ExecTraceConfig = models.SimulateTraceConfig{}
-		req.AllowMoreLogging = false
-		resp, err = algodClient.SimulateTransaction(req).Do(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("simulation API call failed: %w", err)
-		}
+		return nil, fmt.Errorf("simulation API call failed: %w", err)
 	}
 
 	// Process results
