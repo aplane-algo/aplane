@@ -414,6 +414,31 @@ func TestExternalCheckAdvisories(t *testing.T) {
 	}
 }
 
+// A source that takes a token is reported when the selector's names lack
+// it; one that takes none never is, and the plain advisories never say it.
+func TestMissingTokenAdvisories(t *testing.T) {
+	doc, err := decodeExternalDoc(t, externalFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range doc.Advisories() {
+		if a.RuleID == ConfigAdvisoryExternalTokenNotSet {
+			t.Fatalf("Advisories() reports a token without knowing any: %+v", a)
+		}
+	}
+	got := doc.MissingTokenAdvisories([]string{"screening", "unrelated"})
+	if len(got) != 1 || got[0].RuleID != ConfigAdvisoryExternalTokenNotSet || got[0].Pointer != "/external_sources/treasury/token" ||
+		got[0].Message != "source treasury takes a token and "+externalFixtureKey+" has none set, so every lookup to it refuses; set one with apadmin source token set "+externalFixtureKey+" treasury" {
+		t.Fatalf("MissingTokenAdvisories() = %+v", got)
+	}
+	if got := doc.MissingTokenAdvisories(nil); len(got) != 2 || got[0].Pointer != "/external_sources/screening/token" {
+		t.Fatalf("MissingTokenAdvisories(none) = %+v", got)
+	}
+	if got := doc.MissingTokenAdvisories([]string{"screening", "treasury"}); len(got) != 0 {
+		t.Fatalf("MissingTokenAdvisories(all) = %+v", got)
+	}
+}
+
 func TestExternalChecksDiff(t *testing.T) {
 	decode := func(change func(doc map[string]any)) *PolicyV1 {
 		raw := externalFixture(t)

@@ -168,7 +168,10 @@ func (m Model) handlePolicyExportDocumentLoaded(msg PolicyDocumentLoadedMsg) (te
 		export.err = policyResultError(doc.Code, doc.Error, "a policy document is unavailable")
 		return m, nil
 	}
-	export.docs = append(export.docs, policyexport.Document{Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key]})
+	export.docs = append(export.docs, policyexport.Document{
+		Key: doc.Key, Document: doc.Document, SHA256: export.expected[doc.Key],
+		SourceTokens: doc.SourceTokens, SourceTokensKnown: doc.SourceTokensKnown,
+	})
 	if len(export.queue) > 0 {
 		return m.fetchNextPolicyExportDocument()
 	}

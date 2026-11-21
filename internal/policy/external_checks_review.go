@@ -27,10 +27,31 @@ const (
 	ConfigAdvisoryExternalPlainHTTP = "external_check:plain_http_source"
 	// ConfigAdvisoryExternalTokenNotSet reports a source that takes a token
 	// the document's selector has none of, so every lookup to it refuses.
-	// Advisories cannot report it, having no knowledge of tokens: a live
-	// policy apply and a rescue add it, given the selector's token names.
+	// Advisories cannot report it, having no knowledge of tokens:
+	// MissingTokenAdvisories does, given the selector's token names, for a
+	// live policy apply (the token index), a rescue (the token files) and
+	// appolicy check (the names an export's node context recorded).
 	ConfigAdvisoryExternalTokenNotSet = "external_check:token_not_set"
 )
+
+// MissingTokenAdvisories reports each source of d that takes a token when
+// names, the source names d's selector has a token for, lacks it: every
+// lookup to that source refuses with token_not_set until one is set.
+func (d *PolicyV1) MissingTokenAdvisories(names []string) []ConfigAdvisory {
+	var out []ConfigAdvisory
+	for _, name := range d.ExternalSourceNames() {
+		if d.ExternalSources[name].Token == nil || slices.Contains(names, name) {
+			continue
+		}
+		out = append(out, ConfigAdvisory{
+			RuleID:  ConfigAdvisoryExternalTokenNotSet,
+			Pointer: "/external_sources/" + escapeJSONPointer(name) + "/token",
+			Message: fmt.Sprintf("source %s takes a token and %s has none set, so every lookup to it refuses; set one with apadmin source token set %s %s",
+				name, d.Key, d.Key, name),
+		})
+	}
+	return out
+}
 
 // externalCloseKinds are the movement kinds whose amount is not known when
 // the transaction is signed.

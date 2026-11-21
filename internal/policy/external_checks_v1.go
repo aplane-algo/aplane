@@ -289,6 +289,12 @@ func (d *policyV1Decoder) externalChecks() error {
 	return nil
 }
 
+// IsExternalSourceName reports whether name is a valid source name: at most
+// 64 lowercase letters, digits, '_' or '-', starting with a letter or digit.
+func IsExternalSourceName(name string) bool {
+	return len(name) <= 64 && policyTokenPattern.MatchString(name)
+}
+
 func decodeExternalSources(node *jsonNode) (map[string]ExternalSourceV1, error) {
 	r, err := readJSONObject(node, "external_sources")
 	if err != nil {
@@ -303,7 +309,7 @@ func decodeExternalSources(node *jsonNode) (map[string]ExternalSourceV1, error) 
 	out := make(map[string]ExternalSourceV1, len(node.keys))
 	for _, name := range node.keys {
 		sn := r.field(name)
-		if len(name) > 64 || !policyTokenPattern.MatchString(name) {
+		if !IsExternalSourceName(name) {
 			return nil, docErrorf(sn.pointer, "source name %q must be lowercase letters, digits, '_' or '-', starting with a letter or digit", name)
 		}
 		source, err := decodeExternalSource(sn)

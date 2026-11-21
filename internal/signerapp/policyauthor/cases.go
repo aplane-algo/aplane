@@ -11,9 +11,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 )
 
@@ -36,12 +40,25 @@ type CaseFile struct {
 }
 
 // Case is one saved try: the document, by its path relative to the
-// workspace directory, the transaction, and the answer expected.
+// workspace directory, the transaction, how the external checks' lookups
+// end, and the answer expected. Answers and Failures are keyed by check ID;
+// a check in neither still decides, and none is in both.
 type Case struct {
-	Name     string     `json:"name"`
-	Document string     `json:"document"`
-	Txn      CaseTxn    `json:"txn"`
-	Expect   CaseExpect `json:"expect"`
+	Name     string                `json:"name"`
+	Document string                `json:"document"`
+	Txn      CaseTxn               `json:"txn"`
+	Answers  map[string]CaseAnswer `json:"answers,omitempty"`
+	Failures map[string]string     `json:"failures,omitempty"`
+	Expect   CaseExpect            `json:"expect"`
+}
+
+// CaseAnswer is one check's canned answer: Answer for every unit of the
+// check, or ByPath, one per rendered request path and query, when units need
+// different answers. Exactly one is set. An answer is read as the cosigner
+// reads one, from its text without the file's indentation.
+type CaseAnswer struct {
+	Answer json.RawMessage            `json:"answer,omitempty"`
+	ByPath map[string]json.RawMessage `json:"by_path,omitempty"`
 }
 
 // CaseTxn is a try's transaction as saved. Amounts are base units; a nonzero
@@ -165,9 +182,163 @@ func (cf *CaseFile) validate() error {
 		if _, ok := policyeval.ParseOutcome(c.Expect.Outcome); !ok && c.Expect.Outcome != OutcomeConditionalApprove {
 			return fmt.Errorf("case %q: expected outcome %q is not reject, review, approve, %s or default", c.Name, c.Expect.Outcome, OutcomeConditionalApprove)
 		}
+		if err := c.validateExternal(); err != nil {
+			return fmt.Errorf("case %q: %w", c.Name, err)
+		}
 		seen[c.Name] = true
 	}
 	return nil
+}
+
+// validateExternal checks a case's answers and failures as far as they can
+// be checked without its document: each answer has one form, each failure is
+// a named one, and no check has both. Whether the document has the check, and
+// whether its source could fail that way, is checked when the case runs.
+func (c Case) validateExternal() error {
+	for _, id := range sortedKeys(c.Answers) {
+		a := c.Answers[id]
+		switch {
+		case id == "":
+			return errors.New("an answer names no check")
+		case (len(a.Answer) > 0) == (a.ByPath != nil):
+			return fmt.Errorf("answer for external check %s needs exactly one of \"answer\" and \"by_path\"", id)
+		case a.ByPath != nil && len(a.ByPath) == 0:
+			return fmt.Errorf("answer for external check %s: by_path names no request", id)
+		}
+		for _, path := range sortedKeys(a.ByPath) {
+			if !strings.HasPrefix(path, "/") {
+				return fmt.Errorf("answer for external check %s: by_path key %q is not a request path", id, path)
+			}
+		}
+		if _, both := c.Failures[id]; both {
+			return fmt.Errorf("external check %s has both an answer and a failure", id)
+		}
+	}
+	for _, id := range sortedKeys(c.Failures) {
+		if id == "" {
+			return errors.New("a failure names no check")
+		}
+		if !slices.Contains(externalcheck.Failures, c.Failures[id]) {
+			return fmt.Errorf("failure %q for external check %s is not one of %s", c.Failures[id], id, strings.Join(externalcheck.Failures, ", "))
+		}
+	}
+	return nil
+}
+
+// externalAnswers is how the case's lookups end, as a try takes them. Each
+// answer is compacted, so a save's indentation never changes what it is.
+func (c Case) externalAnswers() (ExternalAnswers, error) {
+	if len(c.Answers) == 0 && len(c.Failures) == 0 {
+		return nil, nil
+	}
+	out := make(ExternalAnswers, len(c.Answers)+len(c.Failures))
+	for id, a := range c.Answers {
+		var answer CheckAnswer
+		if len(a.Answer) > 0 {
+			body, err := compactAnswer(a.Answer)
+			if err != nil {
+				return nil, fmt.Errorf("answer for external check %s: %w", id, err)
+			}
+			answer.Answer = body
+		}
+		if a.ByPath != nil {
+			answer.ByPath = make(map[string][]byte, len(a.ByPath))
+			for path, raw := range a.ByPath {
+				body, err := compactAnswer(raw)
+				if err != nil {
+					return nil, fmt.Errorf("answer for external check %s at %s: %w", id, path, err)
+				}
+				answer.ByPath[path] = body
+			}
+		}
+		out[id] = answer
+	}
+	for id, failure := range c.Failures {
+		out[id] = CheckAnswer{Failure: failure}
+	}
+	return out, nil
+}
+
+func compactAnswer(raw json.RawMessage) ([]byte, error) {
+	var b bytes.Buffer
+	if err := json.Compact(&b, raw); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// CaseOf is a try kept as a case named name, for the document at path
+// document in the workspace: its transaction, how its external checks'
+// lookups ended, and its answer. An answer the cosigner would refuse to read
+// is kept as the failure it stands for, too_large or not_json, since its
+// text may not survive being written into the cases file.
+func CaseOf(name, document string, f *File, txn TryTxn, answers ExternalAnswers, result TryResult) Case {
+	c := Case{Name: name, Document: document, Txn: CaseTxnOf(txn), Expect: ExpectOf(result)}
+	for _, id := range sortedKeys(answers) {
+		a := answers[id]
+		if a.Failure != "" {
+			c.addFailure(id, a.Failure)
+			continue
+		}
+		source := sourceOfCheck(f, id)
+		if a.ByPath == nil {
+			if failure := unreadableAnswer(a.Answer, source); failure != "" {
+				c.addFailure(id, failure)
+				continue
+			}
+			c.addAnswer(id, CaseAnswer{Answer: json.RawMessage(a.Answer)})
+			continue
+		}
+		// Answers by path come from a case, so each is already JSON.
+		byPath := make(map[string]json.RawMessage, len(a.ByPath))
+		for path, body := range a.ByPath {
+			byPath[path] = json.RawMessage(body)
+		}
+		c.addAnswer(id, CaseAnswer{ByPath: byPath})
+	}
+	return c
+}
+
+func (c *Case) addAnswer(id string, a CaseAnswer) {
+	if c.Answers == nil {
+		c.Answers = map[string]CaseAnswer{}
+	}
+	c.Answers[id] = a
+}
+
+func (c *Case) addFailure(id, failure string) {
+	if c.Failures == nil {
+		c.Failures = map[string]string{}
+	}
+	c.Failures[id] = failure
+}
+
+// unreadableAnswer is the failure an answer the cosigner would refuse to read
+// stands for, "" for one it reads.
+func unreadableAnswer(body []byte, source policy.ExternalSourceV1) string {
+	if _, err := externalcheck.ParseAnswer(body, source); err == nil {
+		return ""
+	}
+	if len(body) > source.MaxResponseBytes {
+		return externalcheck.FailureTooLarge
+	}
+	if !json.Valid(body) || !utf8.Valid(body) {
+		return externalcheck.FailureNotJSON
+	}
+	// Valid JSON the strict reader refuses, such as a duplicate key, is kept
+	// as it is: it survives the cases file, and is refused again when run.
+	return ""
+}
+
+func sourceOfCheck(f *File, id string) policy.ExternalSourceV1 {
+	if f != nil && f.Document != nil {
+		for _, check := range f.Document.ExternalChecks {
+			if check.ID == id {
+				return f.Document.ExternalSources[check.Source]
+			}
+		}
+	}
+	return policy.ExternalSourceV1{MaxResponseBytes: policy.DefaultExternalRespBytes}
 }
 
 // Add appends c, refusing a name already used.
@@ -221,7 +392,12 @@ func RunCases(cases []Case, document func(name string) (*File, error), networks 
 			out[i].Err = err
 			continue
 		}
-		got, err := Try(f, c.Txn.TryTxn(), networks)
+		answers, err := c.externalAnswers()
+		if err != nil {
+			out[i].Err = err
+			continue
+		}
+		got, err := TryWithAnswers(f, c.Txn.TryTxn(), answers, networks)
 		if err != nil {
 			out[i].Err = err
 			continue

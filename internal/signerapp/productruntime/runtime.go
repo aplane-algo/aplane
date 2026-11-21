@@ -396,7 +396,8 @@ func (ir *Runtime) SourceTokenFor(selector, source string) (string, bool) {
 // SourceTokenNames returns the source names with a token, by cosigner policy
 // selector, from the index published at the time of the call: the live
 // tokens a policy apply's missing-token advisory checks a document against.
-// A locked signer has none.
+// A locked signer returns nil: it has no index, so which tokens are set is
+// not known.
 func (ir *Runtime) SourceTokenNames() map[string][]string {
 	return ir.sourceTokens.Names()
 }

@@ -94,34 +94,40 @@ type TryResult struct {
 }
 
 // OutcomeConditionalApprove is the outcome word of a try the policy approves
-// and at least one external check applies to: the cosigner signs only if its
-// checks pass, and a try asks no source.
+// and an external check still decides, with no answer given for it: the
+// cosigner signs only if its checks pass, and a try asks no source.
 const OutcomeConditionalApprove = "conditional_approve"
 
 // OutcomeWord is the result's outcome as a report and a saved case write it:
-// the policy outcome's word, or OutcomeConditionalApprove when the policy
-// approves and external checks then decide. An approval with no check that
-// applies is a plain approve.
+// the outcome's word, or OutcomeConditionalApprove when the policy approves
+// and an external check without an answer then decides. An approval every
+// applying check passed, or with no check that applies, is a plain approve;
+// a check that refused makes the outcome a reject.
 func (r TryResult) OutcomeWord() string {
-	if r.Outcome == policyeval.Approve && r.ExternalChecks != nil && len(r.ExternalChecks.Apply) > 0 {
+	if r.Outcome == policyeval.Approve && r.ExternalChecks != nil && !r.ExternalChecks.decided() {
 		return OutcomeConditionalApprove
 	}
 	return r.Outcome.String()
 }
 
-// TryExternalChecks is what follows a cosigner policy that would sign under a
-// document with external checks. Nothing is looked up.
-type TryExternalChecks struct {
-	// Apply are the IDs of the checks that would make a lookup for the
-	// transaction, in document order.
-	Apply []string
+// Try asks what f's document decides for txn, as the signer's evaluator
+// would, using networks to compile the document and resolve the network. Its
+// external checks, if the policy approves, are left undecided.
+func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
+	return TryWithAnswers(f, txn, nil, networks)
 }
 
-// Try asks what f's document decides for txn, as the signer's evaluator
-// would, using networks to compile the document and resolve the network.
-func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
+// TryWithAnswers is Try with the document's external checks judged on
+// answers. An answer for a check the document does not have, one for a check
+// that does not apply when the policy approves, and one its source could not
+// give are errors. When a check refuses, the outcome is a reject and the
+// refusal its first violation.
+func TryWithAnswers(f *File, txn TryTxn, answers ExternalAnswers, networks Networks) (TryResult, error) {
 	if f.Document == nil {
 		return TryResult{}, fmt.Errorf("%s is not a valid policy document; fix its problems first", filepath.Base(f.Path))
+	}
+	if err := validateAnswers(f.Document, answers); err != nil {
+		return TryResult{}, err
 	}
 	cfg, err := f.Document.Compile(policy.DefaultConfigWithGenesisHashResolver(networks.Resolver))
 	if err != nil {
@@ -158,11 +164,18 @@ func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
 	}
 	if f.Role == noderole.RoleCosigner && verdict.Outcome == policyeval.Approve && len(f.Document.ExternalChecks) > 0 {
 		network, _ := networks.Resolver.NetworkForGenesisHashBytes(built.GenesisHash[:])
-		apply := applicableExternalChecks(f.Document, network, built)
-		result.ExternalChecks = &TryExternalChecks{Apply: apply}
+		x, err := judgeExternalChecks(f.Document, cfg, built, network, f.Key, answers)
+		if err != nil {
+			return TryResult{}, err
+		}
+		result.ExternalChecks = x
+		if x.Refusal != nil {
+			result.Outcome = policyeval.Reject
+			result.Violations = append(result.Violations, refusalViolation(x.Refusal))
+		}
 	}
 	result.Summary = trySummary(result)
-	result.Assumes = tryAssumptions(f.Role, txn, built, networks)
+	result.Assumes = tryAssumptions(f.Role, f.Key, txn, built, networks, result.ExternalChecks)
 	return result, nil
 }
 
@@ -255,23 +268,7 @@ func applicableExternalChecks(doc *policy.PolicyV1, network string, txn types.Tr
 
 func trySummary(r TryResult) string {
 	if r.Role == noderole.RoleCosigner {
-		if r.Outcome != policyeval.Approve {
-			return "this cosigner policy document rejects the supplied transaction"
-		}
-		permits := "this cosigner policy document permits the supplied transaction"
-		x := r.ExternalChecks
-		if x == nil {
-			return permits
-		}
-		next := "no external check applies to it"
-		switch len(x.Apply) {
-		case 0:
-		case 1:
-			next = "then external check " + x.Apply[0] + " decides"
-		default:
-			next = "then external checks " + joinAnd(x.Apply) + " decide"
-		}
-		return permits + "; " + next
+		return cosignerTrySummary(r)
 	}
 	switch r.Outcome {
 	case policyeval.Reject:
@@ -288,10 +285,52 @@ func trySummary(r TryResult) string {
 	}
 }
 
-func tryAssumptions(role noderole.Role, t TryTxn, built types.Transaction, networks Networks) []string {
+// cosignerTrySummary says what a cosigner document decides: it rejects, or
+// it permits and the external checks that apply then pass, refuse, or still
+// decide.
+func cosignerTrySummary(r TryResult) string {
+	permits := "this cosigner policy document permits the supplied transaction"
+	x := r.ExternalChecks
+	switch {
+	case x != nil && x.Refusal != nil:
+		return permits + ", but external check " + x.Refusal.CheckID + " refuses it"
+	case r.Outcome != policyeval.Approve:
+		return "this cosigner policy document rejects the supplied transaction"
+	case x == nil:
+		return permits
+	case len(x.Apply) == 0:
+		return permits + "; no external check applies to it"
+	}
+	var clauses []string
+	if passed := x.passedChecks(); len(passed) > 0 {
+		clauses = append(clauses, checksClause(passed, "passes", "pass")+" on the answers given")
+	}
+	if pending := x.pendingChecks(); len(pending) > 0 {
+		clauses = append(clauses, "then "+checksClause(pending, "decides", "decide"))
+	}
+	return permits + "; " + strings.Join(clauses, ", ")
+}
+
+// checksClause names checks with a verb in the singular or the plural.
+func checksClause(ids []string, one, many string) string {
+	if len(ids) == 1 {
+		return "external check " + ids[0] + " " + one
+	}
+	return "external checks " + joinAnd(ids) + " " + many
+}
+
+func tryAssumptions(role noderole.Role, key string, t TryTxn, built types.Transaction, networks Networks, x *TryExternalChecks) []string {
 	out := []string{
 		networks.Source,
 		fmt.Sprintf("fee as entered: %d microAlgos", built.Fee),
+	}
+	if x != nil && len(x.Apply) > 0 {
+		out = append(out, "no source is asked: a check is judged only on an answer given for it")
+		if key == policy.DefaultKey {
+			out = append(out, "the request's witness key is written as default; the cosigner writes the key the request is for")
+		} else {
+			out = append(out, "the request is for witness key "+key)
+		}
 	}
 	if t.RekeyTo != "" && role != noderole.RoleCosigner {
 		held := "no"

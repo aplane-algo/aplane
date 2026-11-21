@@ -164,7 +164,9 @@ func (b *offlineBackend) Document(_ context.Context, key, expectedSnapshot strin
 			return adminproto.PolicyDocumentResult{Key: key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}, nil
 		}
 	}
-	return policyapply.Document(b.current, key), nil
+	// b.env.SourceTokens is read from the token files on a cosigner store
+	// only, so a signer's documents never claim to know them.
+	return policyapply.WithSourceTokens(policyapply.Document(b.current, key), b.env.SourceTokens), nil
 }
 
 func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequest) (adminproto.CheckPolicyResult, error) {

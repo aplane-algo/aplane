@@ -4,10 +4,13 @@
 package authortui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/asa"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -110,5 +113,76 @@ func TestTryWithExternalChecks(t *testing.T) {
 	}
 	if strings.Contains(out, "cannot keep") {
 		t.Fatalf("try view says a token cannot be kept:\n%s", view(m))
+	}
+}
+
+// TestTryAnswersInTheForm: on a document with external checks the try form
+// ends with the answers to judge them on; the result shows the lookups and
+// what each answer decided, and a kept case keeps the answers. A document
+// without checks has no such field.
+func TestTryAnswersInTheForm(t *testing.T) {
+	signer, _ := workspace(t, map[string][]byte{"treasury.json": fixture(t, "signer_key_full.json")})
+	m, _ := press(t, New(signer, nil, nil), "t")
+	if m.try.count != tryAnswers || strings.Contains(view(m), tryLabels[tryAnswers]) {
+		t.Fatalf("a signer document's form shows the answers field:\n%s", view(m))
+	}
+
+	ws, dir := workspace(t, map[string][]byte{"cosigner.json": fixture(t, externalFixture)})
+	ops := filepath.Join(dir, "ops.answer")
+	fail := filepath.Join(dir, "fail.answer")
+	for path, body := range map[string]string{ops: `{"enabled": true}`, fail: `{"sanctioned": true, "risk": {"score": 1, "level": "low"}}`} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m = New(ws, nil, nil)
+	m, _ = press(t, m, "t")
+	if !strings.Contains(view(m), tryLabels[tryAnswers]) {
+		t.Fatalf("the form lacks the answers field:\n%s", view(m))
+	}
+	m, _ = press(t, m, "up")
+	m = ctrl(t, m, tea.KeyCtrlU)
+	m, _ = press(t, m, "mainnet", "down", treasuryAddr, "down", opsMainnet, "down", "5")
+	for m.try.cursor != tryAnswers {
+		m, _ = press(t, m, "down")
+	}
+	m, _ = press(t, m, "ops-switch="+ops, " ", "screen-destination="+fail, "enter")
+	if m.try.err != "" || m.try.result == nil || m.try.result.OutcomeWord() != "reject" {
+		t.Fatalf("try: err %q, result %+v", m.try.err, m.try.result)
+	}
+	// Wrapping may break a line at a space or after a hyphen, so the lines
+	// are compared without their spaces.
+	squeeze := func(s string) string { return strings.Join(strings.Fields(s), "") }
+	out := squeeze(ansi.Strip(strings.Join(m.tryResultLines(), "\n")))
+	for _, want := range []string{
+		"but external check screen-destination refuses it",
+		"lookups the cosigner would make:",
+		"ops-switch, the request: passes",
+		"refuses (external_check:screen-destination): /sanctioned = true, want eq false",
+		"still to decide, with no answer given:",
+	} {
+		if !strings.Contains(out, squeeze(want)) {
+			t.Fatalf("try result lacks %q:\n%s", want, strings.Join(m.tryResultLines(), "\n"))
+		}
+	}
+	m = ctrl(t, m, tea.KeyCtrlS)
+	m, _ = press(t, m, "sanctioned", "enter")
+	cases, err := policyauthor.LoadCases(dir)
+	if err != nil || len(cases.Cases) != 1 {
+		t.Fatalf("saved = %+v, %v", cases, err)
+	}
+	c := cases.Cases[0]
+	if squeeze(string(c.Answers["ops-switch"].Answer)) != `{"enabled":true}` || len(c.Answers) != 2 ||
+		c.Expect != (policyauthor.CaseExpect{Outcome: "reject", RuleID: "external_check:screen-destination"}) {
+		t.Fatalf("case = %+v", c)
+	}
+	if !strings.Contains(m.casesLabel(), "cases: 1 pass") {
+		t.Fatalf("the kept case does not pass again: %q", m.casesLabel())
+	}
+
+	// An answer that cannot apply is reported, not tried.
+	m, _ = press(t, m, " ", "nope="+ops, "enter")
+	if m.try.result != nil || !strings.Contains(m.try.err, "no external check nope") {
+		t.Fatalf("bad answer: err %q", m.try.err)
 	}
 }

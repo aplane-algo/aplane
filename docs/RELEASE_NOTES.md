@@ -16,9 +16,31 @@ before it was renamed `enroll`.
   `apadmin policy`, `appolicy` and the schema accept, check, explain and
   compare the two fields.
 - **`appolicy try` says `conditional_approve`** when a cosigner policy
-  approves a transaction and at least one check applies to it. A try asks
-  no source, so the outcome is no longer a plain `approve`; saved cases
-  record the same word.
+  approves a transaction and a check that applies to it has no answer. A try
+  asks no source; it lists the lookups the cosigner would make, as `GET`
+  requests rendered from the transaction. Saved cases record the same word.
+- **`appolicy try --answer CHECK-ID=FILE` judges a check on a canned
+  answer** with the cosigner's own rules. Every check that applies passing
+  makes the outcome `approve`; one refusing makes it `reject` with the
+  check's rule ID, and try shows what failed and the request, for example
+  `/risk/score = 72, want le 30`. An answer the cosigner would not read,
+  such as one over the source's size or with a duplicate key, is a failed
+  lookup. A unit that lacks a fact its check uses, such as `amount` on a
+  close-out, is refused with `missing_fact` without any answer. The terminal
+  UI's try form takes the same answers. An answer for a check that does not
+  apply is bad input.
+- **Saved cases answer external checks.** A case may give, per check,
+  `answers` (one answer for every unit, or one per request path) and
+  `failures` (`timeout`, `status`, `not_json`, `pin_mismatch`,
+  `token_not_set` and others) to pin the fail-closed outcomes. `appolicy
+  test` runs them through the same code as `try --answer`. The cases format
+  keeps its name.
+- **An export of a cosigner records which sources have a token**, per
+  document, names only, and `appolicy check` warns of a source whose token
+  the document's key lacked at the export. A token set after the export does
+  not make the export stale. `get_policy_document` carries the names on an
+  unlocked cosigner, and a locked node no longer reports every token as
+  missing to `apadmin policy check`.
 - **The cosigner makes the lookups** for a request its policy would sign,
   and signs only if every check passes. A lookup that times out, is
   redirected, answers anything but 200, or answers something that is not

@@ -25,6 +25,10 @@ type NodeContext struct {
 	ExportedAt time.Time
 	// Path is the context file it was read from.
 	Path string
+	// SourceTokens names, by document key, the sources whose token the
+	// node had at the export; nil when the export recorded none, and then
+	// nothing is said of tokens.
+	SourceTokens map[string][]string
 }
 
 // Describe says where the context comes from and how old it is, for a
@@ -117,5 +121,19 @@ func (w *Workspace) checkAdmission(f *File) {
 	}
 	for _, p := range policyadmission.Check(f.Document, ctx) {
 		w.Problems = append(w.Problems, Problem{Path: f.Path, Pointer: p.Pointer, Severity: severity, RuleID: p.RuleID, Message: p.Message + note})
+	}
+	w.checkSourceTokens(f)
+}
+
+// checkSourceTokens warns of each source f's document declares a token for
+// that its selector had none of at the export. It says nothing without an
+// export that recorded the node's token names: which tokens are set is not
+// in the files.
+func (w *Workspace) checkSourceTokens(f *File) {
+	if w.Node == nil || w.Node.SourceTokens == nil || f.Role != w.Node.Context.Role() {
+		return
+	}
+	for _, a := range f.Document.MissingTokenAdvisories(w.Node.SourceTokens[f.Document.Key]) {
+		w.Problems = append(w.Problems, Problem{Path: f.Path, Pointer: a.Pointer, Severity: SeverityWarning, RuleID: a.RuleID, Message: a.Message})
 	}
 }

@@ -839,9 +839,30 @@ Consequences:
   what a document decides through the node's own pure evaluator
   (`policyeval`), for one direct transfer at a time: they are not a full
   transaction simulator and not an oracle for the policy a node runs now.
+  For a cosigner document with external checks they plan the lookups with
+  the cosigner's own `externalcheck.BuildPlan` and judge each check on an
+  answer the author supplies (`try --answer`, or a case's `answers`) with
+  `externalcheck.ParseAnswer` and `externalcheck.JudgeOffline`, or on a named
+  lookup failure (a case's `failures`, `externalcheck.FailureOf`). They never
+  contact a source and never see a token. Offline there is no request ID, so
+  `JudgeOffline` passes the string at a check's `echo_pointer` to `Judge` as
+  the request ID and reports the echo as unverified; `Judge`, which the
+  cosigner runs, still compares the echo with the ID it sent.
   Saved cases live in `.appolicy/cases.json` in the workspace, in their own
   format, `aplane.policy-cases.v1` (`policyauthor/cases.go`), separate from
-  the node context and from the daemon's verdict fixtures. A file's name,
+  the node context and from the daemon's verdict fixtures. A case may carry,
+  per check ID, `answers` (one `answer` for every unit, or `by_path`, one per
+  rendered request) and `failures`; both fields are optional, so the format
+  keeps its name. An export of a cosigner records, beside the context and
+  outside its digests, the source names each exported document's selector
+  has a token for (`source_tokens` in `.appolicy/node.json`, taken from the
+  `get_policy_document` replies of an unlocked node). `appolicy check` then
+  reports `external_check:token_not_set` for a source that takes a token its
+  selector lacked at the export; without recorded names it reports nothing
+  about tokens. Since the names are not digested, a token set or removed
+  after the export does not make `apadmin policy apply` refuse the export as
+  stale: tokens are not policy, and a live apply reports the advisory
+  against the live token index. A file's name,
   its strings (a JSON `\u001b` decodes to a raw ESC) and the saved cases can
   hold terminal control sequences or bidirectional controls, so the editor
   shows each as its escape, as the apadmin TUI does
@@ -876,7 +897,12 @@ the top level, named for the role and shape they exercise
 `cosigner_key_minimal.json`); schema-invalid documents in `invalid/`; and
 documents the schema accepts but the node's semantic rules reject in
 `semantic_invalid/`. The fixture test decodes each valid document against the
-role its name states.
+role its name states. The judge fixtures in
+[`test/contracts/policy/v1/external/`](../test/contracts/policy/v1/external/README.md)
+(`aplane.policy-external-judge.v1`) freeze the external check rule
+semantics: each case is a check's rules and optional `echo_pointer`, a
+unit's facts, an answer and the expected pass or fail, run through the
+decoder, the answer reader and `externalcheck.Judge`.
 
 ## Role Domains
 
@@ -1165,7 +1191,8 @@ are set with `apadmin source token set` and kept encrypted in the store with
 the key, never in a document (see
 [ARCH_STORE.md](ARCH_STORE.md#source-token-files)). A check on a source that
 declares a token the selector has none of refuses with
-`external_check:<id>:token_not_set`, and a live apply or a rescue warns of it
+`external_check:<id>:token_not_set`, and a live check or apply, a rescue,
+and `appolicy check` against an export warn of it
 (`external_check:token_not_set`, see [Advisories](#advisories)). A node that
 cannot run checks at all refuses with `external_check:<id>:unavailable`.
 
@@ -1369,6 +1396,9 @@ The `Content-Type` header is not checked. Anything else is a failed lookup.
 - With `echo_pointer`, the string there must equal the lookup's
   `X-Aplane-Request-Id`.
 
+These semantics are frozen by the judge fixtures in
+[`test/contracts/policy/v1/external/`](../test/contracts/policy/v1/external/README.md).
+
 **Refusals.** A refusal is a 403 policy rejection. The requester is told the
 check, its rule ID and the unit, for example `external check
 screen-destination refused the pay movement of transaction 0
@@ -1437,7 +1467,7 @@ would change to resolve it:
 | `external_check:fact_absent_for_covered_units` | A check uses a fact some of the units it covers never have, so it refuses every one of them: `amount` on a close-out kind, `asset_source` on a kind other than `clawback`, or `rekey_to`, which only a rekey has |
 | `external_check:network_without_route` | A check names a network no route covers, so no transfer there reaches it |
 | `external_check:plain_http_source` | A source is reached over plain `http://` on loopback; its answers and any token are not encrypted |
-| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy apply` (against the token index) and `apadmin policy rescue` (against the token files) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
+| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy check` and `apply` (against the token index, while unlocked), `apadmin policy rescue` (against the token files), and `appolicy check` (against the token names an export of the node recorded) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
 
 ## Embedded Defaults
 
@@ -1673,7 +1703,8 @@ and applied time (the default first), each held key's coverage (`own`,
 and `policy_set_sha256`, a digest over the whole document set.
 `get_policy_document` returns one document's exact bytes by key (`default` or
 a selector), optionally only while the node is still at a given composite
-snapshot. `get_policy_context` returns the node's policy context (role,
+snapshot; an unlocked cosigner also names the sources that selector has a
+token for, which an export records beside its context. `get_policy_context` returns the node's policy context (role,
 admission rules version, network map, effective ASA set) with
 `context_sha256` and `snapshot_sha256`, the composite digest of the context
 and `policy_set_sha256` (`internal/policycontext`; encodings pinned in
@@ -2019,7 +2050,12 @@ Implementation source of truth:
   set) and the context and snapshot digests.
 - `internal/policyadmission`: the admission rules for submitted documents.
 - `internal/policyexport`: `apadmin policy export --all` and the node
-  context file (`aplane.policy-node-context.v1`) appolicy reads.
+  context file (`aplane.policy-node-context.v1`) appolicy reads, with the
+  token names of a cosigner export.
+- `internal/signerapp/externalcheck`: the external check plan, fetcher,
+  judge and runner; `offline.go` holds what appolicy judges with offline
+  (`JudgeOffline`, `FailureOf`).
 - `cmd/appolicy`, `internal/signerapp/policyauthor`,
   `policyauthor/authortui`: the offline editor, check, format, explain,
-  try, and saved cases.
+  try with canned external check answers (`try_external.go`), and saved
+  cases.

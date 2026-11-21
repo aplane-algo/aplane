@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -22,7 +23,9 @@ func (s Service) GetPolicy() adminproto.PolicyView {
 
 // GetPolicyDocumentAt returns one active policy document's exact bytes,
 // refusing when ExpectedSnapshotSHA256 is set and the node's policy or
-// context moved since that snapshot.
+// context moved since that snapshot. On an unlocked cosigner node it also
+// names the sources the document's selector has a token for, so an export
+// can record them; a locked node does not know them.
 func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) adminproto.PolicyDocumentResult {
 	np, set := s.Runtime.PolicyState()
 	if req.ExpectedSnapshotSHA256 != "" && np != nil {
@@ -36,7 +39,11 @@ func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) ad
 			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}
 		}
 	}
-	return policyapply.Document(np, req.Key)
+	var tokens map[string][]string
+	if s.Runtime.NodeRole() == noderole.RoleCosigner {
+		tokens = s.Runtime.SourceTokenNames()
+	}
+	return policyapply.WithSourceTokens(policyapply.Document(np, req.Key), tokens)
 }
 
 // GetPolicyContext returns the node's policy context with its digests,

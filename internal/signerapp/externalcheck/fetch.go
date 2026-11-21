@@ -116,11 +116,25 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
-	limit := lookup.Source.MaxResponseBytes
-	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(lookup.Source.MaxResponseBytes)+1))
 	if err != nil {
 		return nil, describeFetchError(err, ctx, timeout)
 	}
+	root, err := ParseAnswer(body, lookup.Source)
+	if err != nil {
+		return nil, err
+	}
+	return &Answer{Root: root, RequestID: requestID}, nil
+}
+
+// ParseAnswer reads body as the answer of a lookup to source: at most the
+// source's max_response_bytes, and strict JSON within the answer's bounds
+// (nesting, number literals and exponents). The error is in the audit
+// record's words. The fetcher reads every answer through it, and an offline
+// tool reads a canned answer through it, so an answer the cosigner refuses
+// is refused there too.
+func ParseAnswer(body []byte, source policy.ExternalSourceV1) (*strictjson.Node, error) {
+	limit := source.MaxResponseBytes
 	if len(body) > limit {
 		return nil, fmt.Errorf("body over %d bytes", limit)
 	}
@@ -129,20 +143,27 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 		MaxNumberLiteral: answerMaxNumberLiteral, MaxExponent: answerMaxExponent,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("the answer is not acceptable JSON: %s", quoteBare(err.Error()))
+		return nil, fmt.Errorf("%w: %s", errNotJSON, quoteBare(err.Error()))
 	}
-	return &Answer{Root: root, RequestID: requestID}, nil
+	return root, nil
 }
+
+// timeoutError is a lookup that ran past its source's timeout.
+func timeoutError(timeout time.Duration) error { return fmt.Errorf("timeout after %s", timeout) }
 
 // errCanceled is a lookup that ended because its context was canceled: the
 // request went away, the node locked, or another lookup had already failed.
 var errCanceled = errors.New("canceled")
 
-// errPinMismatch and its kin are TLS refusals the audit record names plainly.
+// errPinMismatch and its kin are the failures the audit record names plainly.
 var (
 	errPinMismatch   = errors.New("TLS pin mismatch")
 	errNoCertificate = errors.New("the server presented no certificate")
 	errNotLoopback   = errors.New("an http source must be on a loopback address")
+	errCertificate   = errors.New("the server's certificate was not accepted")
+	errUnreachable   = errors.New("the source could not be reached")
+	errNotJSON       = errors.New("the answer is not acceptable JSON")
+	errNoToken       = errors.New("no token set")
 )
 
 // describeFetchError turns a transport error into the audit record's words.
@@ -156,7 +177,7 @@ func describeFetchError(err error, ctx context.Context, timeout time.Duration) e
 	case errors.Is(err, errNotLoopback):
 		return errNotLoopback
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return fmt.Errorf("timeout after %s", timeout)
+		return timeoutError(timeout)
 	case errors.Is(ctx.Err(), context.Canceled):
 		return errCanceled
 	}
@@ -165,11 +186,11 @@ func describeFetchError(err error, ctx context.Context, timeout time.Duration) e
 	var unknownErr x509.UnknownAuthorityError
 	var invalidErr x509.CertificateInvalidError
 	if errors.As(err, &certErr) || errors.As(err, &hostErr) || errors.As(err, &unknownErr) || errors.As(err, &invalidErr) {
-		return errors.New("the server's certificate was not accepted")
+		return errCertificate
 	}
 	var opErr *net.OpError
 	if errors.As(err, &opErr) && opErr.Op == "dial" {
-		return errors.New("the source could not be reached")
+		return errUnreachable
 	}
 	return errors.New("the lookup failed")
 }

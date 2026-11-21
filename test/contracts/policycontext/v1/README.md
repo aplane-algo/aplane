@@ -42,15 +42,30 @@ writes as `.appolicy/node.json` beside the policy documents
 - `context_sha256`, the digest above of those parts;
 - `baseline`: the node's documents at export as `key` and exact-byte
   `sha256`, sorted by key, with their `policy_set_sha256` and the composite
-  `snapshot_sha256`.
+  `snapshot_sha256`;
+- optional `source_tokens`, on a cosigner export only: one entry per
+  baseline document, in the baseline's order, each a `key` and `sources`,
+  the names (sorted, each once, at most 8, possibly none) of the sources the
+  document's selector had a token for. It is present only when the node knew
+  its tokens for every document (it was unlocked); absent, the export says
+  nothing of tokens. `node-context-cosigner.json` pins it.
+
+`source_tokens` is not part of `context_sha256` or `snapshot_sha256`. A token
+is not policy: setting or removing one after an export must not make an
+apply from that export stale, so the names sit beside the digests. No digest
+catches a hand edit to them; appolicy uses them only for its missing-token
+warning.
 
 A reader recomputes every digest from the file's own contents and refuses a
 file whose digests do not match, an unknown field, another format or rules
-version, a token listed twice, or two tokens naming one chain. The file is
+version, a network token listed twice, two network tokens naming one chain, or a
+`source_tokens` that is on a signer export, does not list exactly the
+baseline's documents in order, or lists a name that is not a source name,
+out of order, twice, or past the eighth. The file is
 an offline copy, not an authority: the digests catch damage and hand edits,
 and an apply still checks the node's live snapshot. To re-record after an
 intended format change, which is a contract change:
 
 ```bash
-go test ./internal/policycontext -run TestExportFixture -update-digests
+go test ./internal/policycontext -run 'TestExportFixture|TestExportCosignerFixture' -update-digests
 ```

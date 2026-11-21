@@ -299,7 +299,10 @@ func exportAll(ctx context.Context, backend Backend, streams Streams, dir string
 		if !doc.Success {
 			return resultError(doc.Code, doc.Error)
 		}
-		docs = append(docs, policyexport.Document{Key: info.Key, Document: doc.Document, SHA256: info.SHA256})
+		docs = append(docs, policyexport.Document{
+			Key: info.Key, Document: doc.Document, SHA256: info.SHA256,
+			SourceTokens: doc.SourceTokens, SourceTokensKnown: doc.SourceTokensKnown,
+		})
 	}
 	paths, err := apadminapp.WritePolicyExport(dir, docs, pctx, time.Now())
 	if err != nil {

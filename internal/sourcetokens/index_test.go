@@ -198,3 +198,24 @@ func TestHolderIsSafeForConcurrentUse(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// A holder with no index, as a locked node has, does not know which tokens
+// are set; a published index with none knows there are none.
+func TestNamesTellsNoIndexFromNoTokens(t *testing.T) {
+	var h Holder
+	if names := h.Names(); names != nil {
+		t.Fatalf("Names() with no index = %v, want nil", names)
+	}
+	h.Publish(NewIndex(nil))
+	if names := h.Names(); names == nil || len(names) != 0 {
+		t.Fatalf("Names() of an empty index = %v, want an empty map", names)
+	}
+	h.Publish(indexOf(t, map[string]string{"ops": "one", "screening": "two"}))
+	if names := h.Names(); len(names) != 1 || fmt.Sprint(names[testKeyID]) != "[ops screening]" {
+		t.Fatalf("Names() = %v", names)
+	}
+	h.Clear()
+	if names := h.Names(); names != nil {
+		t.Fatalf("Names() after Clear = %v, want nil", names)
+	}
+}

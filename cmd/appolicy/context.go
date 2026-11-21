@@ -29,7 +29,7 @@ func nodeContextForDir(dir, override string) (*policyauthor.NodeContext, error) 
 }
 
 func nodeContextOf(s *policyexport.Selected) *policyauthor.NodeContext {
-	return &policyauthor.NodeContext{Context: s.Export.Context, ExportedAt: s.Export.ExportedAt, Path: s.Path}
+	return &policyauthor.NodeContext{Context: s.Export.Context, ExportedAt: s.Export.ExportedAt, Path: s.Path, SourceTokens: s.Export.SourceTokens}
 }
 
 // workspacePaths are the paths a workspace was opened with and the files it

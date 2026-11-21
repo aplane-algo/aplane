@@ -321,7 +321,9 @@ listed documents and leaves every other key's document unchanged.
 stored, into the new or empty directory `DIR`: the default as `default.json`
 and each key's own document as `<key>.json`, mode 0600. It also writes the
 node's policy context to `DIR/.appolicy/node.json`: its role, the networks it
-maps, its ASA set, and the digests of the documents it held. `appolicy` uses
+maps, its ASA set, and the digests of the documents it held. A cosigner
+exported while unlocked also records, per document, the names of the sources
+its key has a token for; never a token. `appolicy` uses
 that file to check the documents against this node rather than against the
 built-in tables (see [Checking policy files offline](#checking-policy-files-offline-with-appolicy)).
 The export reads every document from one state of the node and writes
@@ -678,6 +680,9 @@ appolicy fmt policy/                # rewrite files in canonical form
 appolicy explain treasury.json      # one document in plain language
 appolicy try treasury.json --from ADDR --to ADDR --amount 600000000 --network mainnet
                                     # what the document decides for one transaction
+appolicy try cosigner.json --from ADDR --to ADDR --amount 5 --network mainnet \
+  --answer screen-destination=screen.json
+                                    # judge an external check on a canned answer
 appolicy test policy/               # re-run the saved cases in policy/.appolicy/cases.json
 ```
 
@@ -697,6 +702,16 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   file, or files from two exports is an error, never a quiet fallback to the
   built-in tables. appolicy never reads a signer's data directory; the
   removed `--signer-data` flag is refused with a pointer to the export.
+
+  An export of an unlocked cosigner also lists, for each document, the
+  sources its key had a token for (names only, never a token). check then
+  warns of a source that takes a token its document's key had none of
+  (`external_check:token_not_set`), since every lookup to it would refuse.
+  The default's tokens serve only the default document. Without a node
+  context, or from an export that lists no token names (a signer, or a
+  cosigner exported while locked), check says nothing about tokens. A token
+  set or removed after the export does not make the export stale: tokens are
+  not policy.
 
 - **The editor.** `appolicy PATH...` (or `appolicy open PATH...`) opens a
   terminal UI on the named files. A directory lists its files; a single file
@@ -755,9 +770,12 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   - **Trying and saved cases:** `t` opens a form to try a transaction
     against the open document as edited, saved or not, with the same answer
     and assumptions as `appolicy try`; on a signer key's own document the
-    sender starts as that key. Enter tries it and `ctrl+s` keeps the answer
-    as a saved case under a name. The saved cases run again after every key
-    against the documents as edited: the header shows how many pass or fail,
+    sender starts as that key. On a document with external checks the form
+    ends with Answers: `check-id=FILE` pairs separated by spaces, as
+    `--answer` takes them. Enter tries it and `ctrl+s` keeps the answer, and
+    the answers it was judged on, as a saved case under a name. The saved
+    cases run again after every key against the documents as edited: the
+    header shows how many pass or fail,
     and `T` lists them with what each got and expected, so an edit that
     changes a decision shows before you save it. Networks come from the
     node context as for try.
@@ -798,6 +816,65 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   `--rekey-held`. `--json` prints the result as JSON. It exits 0
   whatever the verdict and 2 for bad input.
 
+  **External checks.** When a cosigner document with external checks permits
+  the transaction, try lists the lookups the cosigner would make for it,
+  each as its source and `GET` request rendered from the transaction, with
+  identical requests merged as the cosigner merges them. No source is asked
+  and no token is read. `--answer CHECK-ID=FILE`, repeated for more checks,
+  judges a check on the answer in `FILE`, with the cosigner's own rules, for
+  every unit the check applies to:
+
+  ```text
+  $ appolicy try cosigner.json --from TREAS... --to OPS... --amount 5 --network mainnet \
+      --answer ops-switch=ops.json --answer screen-destination=screen.json
+  cosigner.json (cosigner document "MYJZ..."): this cosigner policy document permits the supplied transaction, but external check screen-destination refuses it
+    [external_check:screen-destination] external check screen-destination refused the pay movement of transaction 0; source screening, GET /api/v2/addresses/OPS...?chain=algorand: /risk/score = 72, want le 30
+  lookups the cosigner would make:
+    ops: GET /signing/MYJZ..., for ops-switch
+    screening: GET /api/v2/addresses/OPS...?chain=algorand, for screen-destination
+    treasury: GET /allowance/TREAS.../algo, for daily-allowance
+  judged on the answers given:
+    ops-switch, the request: passes
+    screen-destination, the pay movement of transaction 0: refuses (external_check:screen-destination): /risk/score = 72, want le 30
+  still to decide, with no answer given:
+    daily-allowance, the pay movement of transaction 0: treasury GET /allowance/TREAS.../algo
+  ```
+
+  - **The outcome.** `approve` when every check that applies is answered
+    and passes; `reject` with the check's rule ID when one refuses; and
+    `conditional_approve` while a check that applies has no answer, naming
+    the checks that passed and those that still decide. When several refuse,
+    try reports the one the cosigner would: a missing token first, then a
+    failed lookup, then a rule that does not hold.
+  - **What a refusal shows.** The detail and the request, as the cosigner's
+    audit record has them, for example `/risk/score = 72, want le 30`. The
+    cosigner tells a requester only which check refused which unit; try is
+    your own tool.
+  - **The answer file** is read as the cosigner reads a source's answer: at
+    most the source's `max_response_bytes`, strict JSON with no duplicate
+    keys, nesting at most 64 deep, and number literals of at most 64
+    characters. An answer the cosigner would not read is a failed lookup,
+    `external_check:<id>:unavailable`, and is not judged.
+  - **The echo.** A check with `echo_pointer` passes on any string there,
+    since no request ID was sent, and try says its echo cannot be verified
+    offline. A missing value, or one that is not a string, still fails.
+  - **Refusals that need no answer.** A unit that lacks a fact its check uses
+    is refused before any lookup, with `external_check:<id>:missing_fact`:
+    `amount` on a close-out, or `rekey_to` on a transaction that does not
+    rekey. try reports it with or without answers.
+  - **Bad input.** An answer for a check the document does not have, or for
+    one that does not apply to the transaction, exits 2.
+  - **The witness key.** A key's own document is tried as a request for that
+    key. The default document governs every key without its own, so a
+    request rendered from it writes the witness key as `default`.
+  - **JSON.** `--json` adds to `external_checks`: `apply` (the checks that
+    apply), `lookups` (each `source`, `path` and the `checks` judged on its
+    answer), `judged` (each `check`, `unit`, `source`, `path`, `result` of
+    `pass` or `fail`, and for a failure its `rule_id` and `detail`;
+    `echo_unverified` when the echo was taken on trust), `pending` (the units
+    with no answer), and `refusal` (`rule_id`, `check`, `unit`, `source`,
+    `path`, `detail`) when one refuses.
+
   The answer is the document's, not the node's, and it lists what it
   assumed: the fee you entered, no fee or dummies the signer adds for
   LogicSig or post-quantum keys, an unknown key type, and no refusals the
@@ -814,8 +891,8 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   workspace, the transaction, and the outcome (`reject`, `review`, `approve`
   or `default`, the words try prints) with its rule. A cosigner document
   with external checks has a fifth outcome, `conditional_approve`: the policy
-  approves and at least one check applies, so the cosigner signs only if its
-  checks pass. A try asks no source, so it cannot say which way they go:
+  approves and a check that applies has no answer, so the cosigner signs only
+  if its checks pass:
 
   ```json
   {
@@ -835,9 +912,50 @@ appolicy test policy/               # re-run the saved cases in policy/.appolicy
   `receiver`; `amount`; `asset`; `fee`, default 1000; `close_to`;
   `clawback_from`; `rekey_to`; `rekey_target_held`). A review or approval
   matches its deciding rule; a rejection matches its first violation's rule,
-  or any rejection when `rule_id` is omitted. test exits 0 when every case
-  passes, 1 when one fails, and 2 when the file is bad or a case cannot run
-  (its document is missing or invalid). It writes nothing.
+  or any rejection when `rule_id` is omitted.
+
+  A case judges its external checks through the same code as `try
+  --answer`. Per check ID it may give `answers`, each either one `answer`
+  for every unit of the check or `by_path`, one answer per rendered request
+  path and query as try lists them, and `failures`, a named way every lookup
+  of the check fails, to pin a fail-closed outcome:
+
+  ```json
+  {
+    "name": "screening down refuses",
+    "document": "cosigner.json",
+    "txn": {"network": "mainnet", "sender": "TREAS...", "receiver": "OPS...", "amount": 5},
+    "answers": {
+      "ops-switch": {"answer": {"enabled": true}},
+      "screen-destination": {"by_path": {
+        "/api/v2/addresses/OPS...?chain=algorand": {"sanctioned": false, "risk": {"score": 3, "level": "low"}}
+      }}
+    },
+    "failures": {"daily-allowance": "timeout"},
+    "expect": {"outcome": "reject", "rule_id": "external_check:daily-allowance:unavailable"}
+  }
+  ```
+
+  The failures are `timeout`, `unreachable`, `status`, `too_large`,
+  `not_json`, `certificate`, `pin_mismatch` and `token_not_set`. Each
+  refuses as the cosigner would: `token_not_set` with
+  `external_check:<id>:token_not_set`, the others with
+  `external_check:<id>:unavailable`. An answer is read as the cosigner reads
+  one, from its text without the file's indentation. A check with neither
+  still decides. A case kept from a try keeps the answers it was judged on;
+  an answer the cosigner would not read is kept as `not_json` or
+  `too_large`. The file is refused whole when a check has both an answer and
+  a failure, an answer has both or neither of `answer` and `by_path`, a
+  `by_path` key is not a request path, or a failure is not one of these. A
+  case cannot run when it answers a check its document does not have or
+  that does not apply, names a request the check does not make, or names a
+  failure its source cannot have (`pin_mismatch` without pins,
+  `certificate` on plain http, `token_not_set` for a source without a
+  token).
+
+  test exits 0 when every case passes, 1 when one fails, and 2 when the file
+  is bad or a case cannot run (its document is missing or invalid, or its
+  answers do not fit it). It writes nothing.
 - **explain** describes a valid document. Amounts are shown in base units and,
   where the asset's decimals are known, in display units: from the node's
   ASA set in the export, else from the built-in asset table.

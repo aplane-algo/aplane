@@ -76,6 +76,9 @@ type fakeOnlineSession struct {
 	contextSet string
 	// context, when set, is the full context served instead of digests alone.
 	context *protocol.PolicyContextMessage
+	// tokens, when set, are the source names each selector has a token for,
+	// served with its document as an unlocked cosigner node does.
+	tokens map[string][]string
 }
 
 // builtinContext is the context of a node of role with the built-in
@@ -192,6 +195,9 @@ func (f *fakeOnlineSession) SendAndReceive(message interface{}, _ time.Duration)
 			reply = protocol.PolicyDocumentMessage{Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot"}
 		} else if body, ok := f.bodies[request.Key]; ok {
 			reply = protocol.PolicyDocumentMessage{Success: true, Key: request.Key, Document: body}
+			if f.tokens != nil {
+				reply.SourceTokens, reply.SourceTokensKnown = f.tokens[request.Key], true
+			}
 		}
 		reply.BaseMessage = protocol.BaseMessage{Type: protocol.MsgTypePolicyDocument, ID: request.ID}
 		return protocol.MarshalAdminMessage(reply)

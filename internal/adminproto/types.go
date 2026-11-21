@@ -560,14 +560,20 @@ type PolicyDocumentInfo struct {
 }
 
 // PolicyDocumentResult is one stored policy document's exact bytes.
+// SourceTokens names, sorted, the sources the document's selector has a
+// token for, and SourceTokensKnown says the node knows: it is set only by an
+// unlocked cosigner node or a rescue of a cosigner store, so on a signer, or
+// a locked cosigner, an empty SourceTokens says nothing.
 type PolicyDocumentResult struct {
-	Success      bool
-	Key          string
-	Document     string
-	SHA256       string
-	SignedAtUnix int64
-	Code         string
-	Error        string
+	Success           bool
+	Key               string
+	Document          string
+	SHA256            string
+	SignedAtUnix      int64
+	SourceTokens      []string
+	SourceTokensKnown bool
+	Code              string
+	Error             string
 }
 
 // Key policy coverage states.

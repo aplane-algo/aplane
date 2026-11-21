@@ -60,6 +60,14 @@ func exportSummary(docs map[string]string, order ...string) protocol.PolicyMessa
 // request from docs. It returns the model and the write command.
 func runExport(t *testing.T, m Model, dir string, docs map[string]string) (Model, tea.Cmd) {
 	t.Helper()
+	return runExportWithTokens(t, m, dir, docs, nil)
+}
+
+// runExportWithTokens is runExport from a node that names, with each
+// document, the source names its selector has a token for; nil tokens is a
+// node that does not know them.
+func runExportWithTokens(t *testing.T, m Model, dir string, docs map[string]string, tokens map[string][]string) (Model, tea.Cmd) {
+	t.Helper()
 	next, _ := m.handlePoliciesKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = next.(Model)
 	if m.viewState != ViewPolicyExportForm || !strings.HasPrefix(m.policies.export.path, "~/policy-export-") {
@@ -78,6 +86,7 @@ func runExport(t *testing.T, m Model, dir string, docs map[string]string) (Model
 		}
 		next, cmd = m.handlePolicyDocumentLoaded(PolicyDocumentLoadedMsg{Document: protocol.PolicyDocumentMessage{
 			BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Success: true, Key: want, Document: docs[want],
+			SourceTokens: tokens[want], SourceTokensKnown: tokens != nil,
 		}})
 		m = next.(Model)
 	}
@@ -108,6 +117,25 @@ func TestPolicyExportWritesEveryDocument(t *testing.T) {
 	selected, err := policyexport.Discover([]string{filepath.Join(dir, policy.DefaultKey+".json")}, "")
 	if err != nil || selected == nil || selected.Export.Baseline.SnapshotSHA256 != m.policies.snapshot {
 		t.Fatalf("the export's context = %+v, %v; want the snapshot it was read at", selected, err)
+	}
+}
+
+// The export records the source names each document came with.
+func TestPolicyExportRecordsSourceTokenNames(t *testing.T) {
+	docs := map[string]string{policy.DefaultKey: "{\"key\": \"default\"}\n", policyViewKeyA: "{\"key\": \"" + policyViewKeyA + "\"}\n"}
+	m := exportPoliciesModel(t, docs, policy.DefaultKey, policyViewKeyA)
+	dir := filepath.Join(t.TempDir(), "export")
+	m, _ = runExportWithTokens(t, m, dir, docs, map[string][]string{policyViewKeyA: {"screening"}})
+	written := writePolicyExportCmd(m.policies.export.path, m.policies.export.docs, m.policies.export.context)().(PolicyExportWrittenMsg)
+	if written.Err != nil {
+		t.Fatal(written.Err)
+	}
+	selected, err := policyexport.Discover([]string{filepath.Join(dir, policy.DefaultKey+".json")}, "")
+	if err != nil || selected == nil {
+		t.Fatalf("Discover() = %v, %v", selected, err)
+	}
+	if got := selected.Export.SourceTokens; len(got) != 2 || len(got[policy.DefaultKey]) != 0 || len(got[policyViewKeyA]) != 1 || got[policyViewKeyA][0] != "screening" {
+		t.Fatalf("recorded names = %v", got)
 	}
 }
 

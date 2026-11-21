@@ -1,0 +1,62 @@
+{
+  "format": "aplane.policy-node-context.v1",
+  "exported_at": "2026-11-01T12:30:45Z",
+  "role": "cosigner",
+  "rules_version": 1,
+  "networks": [
+    {
+      "network": "mainnet",
+      "genesis_hash": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    },
+    {
+      "network": "private-dev",
+      "genesis_hash": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  ],
+  "assets": [
+    {
+      "genesis_hash": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "asset_id": 31566704,
+      "name": "USDC",
+      "unit_name": "USDC",
+      "decimals": 6,
+      "origin": "builtin"
+    },
+    {
+      "genesis_hash": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "asset_id": 7,
+      "name": "Example",
+      "unit_name": "XYZ",
+      "decimals": 2,
+      "origin": "operator"
+    }
+  ],
+  "context_sha256": "44b3a3fdab6bc6fe9d28e495beef36e133bc29e9b24fe99255c0275e634e2523",
+  "baseline": {
+    "documents": [
+      {
+        "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "key": "default",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "policy_set_sha256": "38939fa80ea61c93cc14692e4f5d3b4138afee05341bb28d7975513ad83ea745",
+    "snapshot_sha256": "f00dc94423cb071bb9b7397b21e4d59105079fcd3c3607387d17ca5351478174"
+  },
+  "source_tokens": [
+    {
+      "key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+      "sources": [
+        "screening",
+        "treasury"
+      ]
+    },
+    {
+      "key": "default",
+      "sources": []
+    }
+  ]
+}

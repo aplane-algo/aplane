@@ -57,7 +57,7 @@ func (r *Runner) Run(ctx context.Context, cfg *policy.Config, req Request) (*Sum
 			token, ok = r.Tokens(cfg.DocumentKey, lookup.SourceName)
 		}
 		if !ok {
-			return nil, r.lookupRefusal(plan, i, policy.ExternalCheckTokenNotSetOutcome, "no token set")
+			return nil, r.lookupRefusal(plan, i, policy.ExternalCheckTokenNotSetOutcome, errNoToken.Error())
 		}
 		tokens[i] = token
 	}

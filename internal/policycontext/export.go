@@ -23,10 +23,15 @@ import (
 const ExportFormat = "aplane.policy-node-context.v1"
 
 // MaxExportBytes bounds a context file. Its asset table is bounded by the
-// ASA set file (1 MiB of confirmations) and its manifest by the node's
-// document cap (8,192 keys and the default), so even at both limits a file
-// is well under this.
-const MaxExportBytes = 4 << 20
+// ASA set file (1 MiB of confirmations), its manifest by the node's document
+// cap (8,192 keys and the default), and its source token names by that cap
+// and MaxSourceTokenNames per document, so even at every limit a file is
+// well under this.
+const MaxExportBytes = 16 << 20
+
+// MaxSourceTokenNames is the most source names an export records for one
+// document: a selector's token file holds at most 8 tokens.
+const MaxSourceTokenNames = 8
 
 // Export is a node's policy context as exported with its documents: when it
 // was taken, the context, and the baseline, the documents the node held then.
@@ -36,6 +41,13 @@ type Export struct {
 	ExportedAt time.Time
 	Context    *Context
 	Baseline   Baseline
+	// SourceTokens names, for every baseline document of a cosigner export,
+	// the sources its selector had a token for at export, sorted; nil when
+	// the export recorded none (a signer, or a cosigner that was locked).
+	// The names sit beside the context and the baseline and are in neither
+	// digest: a token is not policy, so one set after the export does not
+	// make the export stale.
+	SourceTokens map[string][]string
 }
 
 // Baseline is the node's policy documents at export, by digest, with the
@@ -63,6 +75,49 @@ func NewExport(ctx *Context, docs []policy.DocumentDigest, at time.Time) (*Expor
 	}
 	// The file records whole seconds.
 	return &Export{ExportedAt: at.UTC().Truncate(time.Second), Context: ctx, Baseline: baseline}, nil
+}
+
+// RecordSourceTokens records, for every baseline document, the source names
+// names (by selector) lists for it: none when it lists none. Only a cosigner
+// export records them, and names may list only baseline documents, each
+// with at most MaxSourceTokenNames valid source names.
+func (e *Export) RecordSourceTokens(names map[string][]string) error {
+	if e.Context.Role() != noderole.RoleCosigner {
+		return fmt.Errorf("only a cosigner export records source token names, not a %s one", e.Context.Role())
+	}
+	recorded := make(map[string][]string, len(e.Baseline.Documents))
+	for _, doc := range e.Baseline.Documents {
+		sorted := append([]string{}, names[doc.Key]...)
+		sort.Strings(sorted)
+		if err := validateSourceTokenNames(doc.Key, sorted); err != nil {
+			return err
+		}
+		recorded[doc.Key] = sorted
+	}
+	for key := range names {
+		if _, ok := recorded[key]; !ok {
+			return fmt.Errorf("source tokens: %s is not a baseline document", key)
+		}
+	}
+	e.SourceTokens = recorded
+	return nil
+}
+
+// validateSourceTokenNames checks one document's recorded names: sorted,
+// distinct, valid source names, at most MaxSourceTokenNames.
+func validateSourceTokenNames(key string, names []string) error {
+	if len(names) > MaxSourceTokenNames {
+		return fmt.Errorf("source tokens of %s: %d names, at most %d", key, len(names), MaxSourceTokenNames)
+	}
+	for i, name := range names {
+		if !policy.IsExternalSourceName(name) {
+			return fmt.Errorf("source tokens of %s: %q is not a source name", key, name)
+		}
+		if i > 0 && names[i-1] >= name {
+			return fmt.Errorf("source tokens of %s must be sorted and listed once", key)
+		}
+	}
+	return nil
 }
 
 var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -99,6 +154,14 @@ type exportFileV1 struct {
 	Assets        []exportAsset   `json:"assets"`
 	ContextSHA256 string          `json:"context_sha256"`
 	Baseline      exportBaseline  `json:"baseline"`
+	// SourceTokens is absent when the export recorded none, else it has one
+	// entry per baseline document, in the baseline's order.
+	SourceTokens []exportSourceTokens `json:"source_tokens,omitempty"`
+}
+
+type exportSourceTokens struct {
+	Key     string   `json:"key"`
+	Sources []string `json:"sources"`
 }
 
 type exportNetwork struct {
@@ -155,6 +218,9 @@ func (e *Export) Marshal() ([]byte, error) {
 	}
 	for _, doc := range e.Baseline.Documents {
 		f.Baseline.Documents = append(f.Baseline.Documents, exportDocument{Key: doc.Key, SHA256: doc.SHA256})
+		if e.SourceTokens != nil {
+			f.SourceTokens = append(f.SourceTokens, exportSourceTokens{Key: doc.Key, Sources: append([]string{}, e.SourceTokens[doc.Key]...)})
+		}
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -244,5 +310,35 @@ func ParseExport(data []byte) (*Export, error) {
 	if e.Baseline.SnapshotSHA256 != f.Baseline.SnapshotSHA256 {
 		return nil, errors.New("context file's snapshot_sha256 does not match its context and baseline")
 	}
+	if err := e.parseSourceTokens(f.SourceTokens); err != nil {
+		return nil, fmt.Errorf("context file: %w", err)
+	}
 	return e, nil
+}
+
+// parseSourceTokens reads the file's source token names, when it has them:
+// one entry per baseline document, in the baseline's order, on a cosigner
+// export only.
+func (e *Export) parseSourceTokens(entries []exportSourceTokens) error {
+	if entries == nil {
+		return nil
+	}
+	docs := e.Baseline.Documents
+	if len(entries) != len(docs) {
+		return fmt.Errorf("source_tokens lists %d documents, the baseline %d", len(entries), len(docs))
+	}
+	names := make(map[string][]string, len(entries))
+	for i, entry := range entries {
+		if entry.Key != docs[i].Key {
+			return fmt.Errorf("source_tokens entry %d is %s, want the baseline's %s", i, entry.Key, docs[i].Key)
+		}
+		if entry.Sources == nil {
+			return fmt.Errorf("source_tokens entry %s has no sources list", entry.Key)
+		}
+		if err := validateSourceTokenNames(entry.Key, entry.Sources); err != nil {
+			return err
+		}
+		names[entry.Key] = entry.Sources
+	}
+	return e.RecordSourceTokens(names)
 }

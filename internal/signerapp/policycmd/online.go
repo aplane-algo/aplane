@@ -83,7 +83,8 @@ func (b onlineBackend) Document(_ context.Context, key, expectedSnapshot string)
 	}, protocol.MsgTypePolicyDocument, &msg)
 	return adminproto.PolicyDocumentResult{
 		Success: msg.Success, Key: msg.Key, Document: msg.Document, SHA256: msg.SHA256,
-		SignedAtUnix: msg.SignedAtUnix, Code: msg.Code, Error: msg.Error,
+		SignedAtUnix: msg.SignedAtUnix, SourceTokens: msg.SourceTokens, SourceTokensKnown: msg.SourceTokensKnown,
+		Code: msg.Code, Error: msg.Error,
 	}, err
 }
 

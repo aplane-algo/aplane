@@ -1357,15 +1357,21 @@ type PolicyContextMessage struct {
 }
 
 // PolicyDocumentMessage returns one active policy document's exact bytes.
+// SourceTokens names, sorted, the sources the document's selector has a
+// token for, never a token; SourceTokensKnown is true only when the node
+// knows which tokens are set (an unlocked cosigner node), so an absent list
+// means none only when it is true.
 type PolicyDocumentMessage struct {
 	BaseMessage
-	Success      bool   `json:"success"`
-	Key          string `json:"key,omitempty"`
-	Document     string `json:"document,omitempty"`
-	SHA256       string `json:"sha256,omitempty"`
-	SignedAtUnix int64  `json:"signed_at_unix,omitempty"`
-	Code         string `json:"code,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Success           bool     `json:"success"`
+	Key               string   `json:"key,omitempty"`
+	Document          string   `json:"document,omitempty"`
+	SHA256            string   `json:"sha256,omitempty"`
+	SignedAtUnix      int64    `json:"signed_at_unix,omitempty"`
+	SourceTokens      []string `json:"source_tokens,omitempty"`
+	SourceTokensKnown bool     `json:"source_tokens_known,omitempty"`
+	Code              string   `json:"code,omitempty"`
+	Error             string   `json:"error,omitempty"`
 }
 
 // CheckPolicyMessage validates candidate documents for the node's role

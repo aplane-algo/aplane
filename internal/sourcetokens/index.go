@@ -79,12 +79,14 @@ func (x *Index) TokenFor(selector, source string) (string, bool) {
 }
 
 // Names returns the source names with a token, by selector, each list
-// sorted. The caller holds a reader of x. A nil index has none.
+// sorted. The caller holds a reader of x. A nil index, as a locked node has,
+// does not know which tokens are set: it returns nil, which is not the empty
+// map of a published index with no tokens.
 func (x *Index) Names() map[string][]string {
-	out := map[string][]string{}
 	if x == nil {
-		return out
+		return nil
 	}
+	out := map[string][]string{}
 	for key := range x.tokens {
 		out[key.selector] = append(out[key.selector], key.source)
 	}
@@ -192,7 +194,7 @@ func (h *Holder) Acquire() (*Index, func()) {
 
 // Names reads the source names with a token from the current index, by
 // selector, holding a reader while it does. With no current index, as on a
-// locked node, it returns none.
+// locked node, it returns nil: which tokens are set is not known.
 func (h *Holder) Names() map[string][]string {
 	x, release := h.Acquire()
 	defer release()

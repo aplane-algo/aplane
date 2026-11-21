@@ -328,30 +328,11 @@ func advisoryWarnings(env Env, doc adminproto.PolicyDocument) []adminproto.Polic
 	}
 	advisories := decoded.Advisories()
 	if env.SourceTokens != nil {
-		advisories = append(advisories, missingTokenAdvisories(decoded, env.SourceTokens[doc.Key])...)
+		advisories = append(advisories, decoded.MissingTokenAdvisories(env.SourceTokens[doc.Key])...)
 	}
 	out := make([]adminproto.PolicyProblem, 0, len(advisories))
 	for _, a := range advisories {
 		out = append(out, adminproto.PolicyProblem{Key: doc.Key, Pointer: a.Pointer, Message: a.Message})
-	}
-	return out
-}
-
-// missingTokenAdvisories reports each source of decoded that takes a token
-// when names, the source names its selector has a token for, lacks it:
-// every lookup to that source refuses with token_not_set until one is set.
-func missingTokenAdvisories(decoded *policy.PolicyV1, names []string) []policy.ConfigAdvisory {
-	var out []policy.ConfigAdvisory
-	for _, name := range decoded.ExternalSourceNames() {
-		if decoded.ExternalSources[name].Token == nil || slices.Contains(names, name) {
-			continue
-		}
-		out = append(out, policy.ConfigAdvisory{
-			RuleID:  policy.ConfigAdvisoryExternalTokenNotSet,
-			Pointer: "/external_sources/" + name + "/token",
-			Message: fmt.Sprintf("source %s takes a token and %s has none set, so every lookup to it refuses; set one with apadmin source token set %s %s",
-				name, decoded.Key, decoded.Key, name),
-		})
 	}
 	return out
 }
@@ -518,6 +499,19 @@ func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumen
 		}
 	}
 	return adminproto.PolicyDocumentResult{Key: key, Code: "policy_document_not_found", Error: fmt.Sprintf("no policy of its own for key %s; it follows the node default", key)}
+}
+
+// WithSourceTokens adds to a document read the source names its selector has
+// a token for, sorted, from names (by selector). nil names, as a signer node
+// or a locked cosigner has, leave the result not knowing them.
+func WithSourceTokens(result adminproto.PolicyDocumentResult, names map[string][]string) adminproto.PolicyDocumentResult {
+	if !result.Success || names == nil {
+		return result
+	}
+	result.SourceTokens = slices.Clone(names[result.Key])
+	slices.Sort(result.SourceTokens)
+	result.SourceTokensKnown = true
+	return result
 }
 
 // HeldPolicyKeys returns the selectors among a key index's selector-to-file
