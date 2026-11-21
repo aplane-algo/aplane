@@ -362,7 +362,19 @@ type cosignerState struct {
 	managerSelected int
 	managerScroll   int
 	managerStatus   string
-	removeFocus     int
+	// detailsName is the reference the details screen shows, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another row.
+	detailsName string
+	// deleteHint is the path of the selected reference file that remove
+	// does not reach, which the manager says to delete.
+	deleteHint  string
+	removeFocus int
+	// removeName is what the remove confirmation removes, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another
+	// row; removeInvalid says it is a reference file that is not a valid
+	// reference.
+	removeName    string
+	removeInvalid bool
 
 	generateTypeIndices  []int
 	generateTypeSelected int
@@ -439,6 +451,7 @@ type manualLockState struct {
 
 // keyDetailsState is the key metadata viewer.
 type keyDetailsState struct {
+	requestID                string // the details read the key list waits on
 	address                  string
 	keyType                  string
 	publicKeyHex             string
@@ -930,6 +943,7 @@ type lockIdentitySendFailedMsg struct {
 
 // KeyDetailsMsg is sent when key details are retrieved
 type KeyDetailsMsg struct {
+	ID                       string
 	Success                  bool
 	Address                  string
 	KeyType                  string
@@ -957,6 +971,7 @@ type InstallLibraryTemplateResultMsg struct {
 }
 
 type ShowLibraryTemplateResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	TemplateType  string

@@ -564,6 +564,12 @@ read-only `status`, `export`, and `check` commands unlock it before reading
 policy state and are therefore not guaranteed to preserve the daemon's lock
 state.
 
+An online apply, and a change to the node's ASA set, needs the signer
+unlocked when it runs. While it is locked, an unlock still in progress on
+another connection included, the change is refused with `identity_locked`
+and nothing is written; once the unlock completes, apply again. A stopped
+signer takes `apadmin policy rescue` instead.
+
 ### The node's ASA set
 
 A node keeps an ASA set: the built-in asset table plus the assets you confirm
@@ -839,8 +845,14 @@ follows the node role recorded in the store. Reads (`status`, `export`,
 `check`, `diff`, `template`) hold the shared store lock; `apply` and `remove`
 hold the exclusive store lock and require a stopped daemon. Rescue applies use
 the same check and commit rules as the daemon and also commit a new
-generation. On a systemd store, run rescue as root only while `apsigner` is
-stopped.
+generation. With no signer running, nothing else reconciles the generation
+store, so `apply` and `remove` first do what every unlock does: they
+quarantine a generation an earlier mint published but never committed, and
+discard crash residue, and say what they moved. A retry after an interrupted or
+failed apply therefore needs nothing else. On a systemd store, run rescue as
+root only while `apsigner` is stopped; a root-run `apply` or `remove` hands
+the store back to its service principal on every outcome, a failed one
+included.
 
 Rescue commands need the store passphrase to verify the sidecars:
 

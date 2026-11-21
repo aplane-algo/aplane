@@ -24,7 +24,9 @@ var AcquireSharedStoreLock = storelock.AcquireShared
 
 // RescueRunner runs policy commands directly against a stopped daemon's
 // store. Reads hold the shared store lock; apply and remove hold the
-// exclusive lock and commit through the same rules as the daemon.
+// exclusive lock and commit through the same rules as the daemon. With no
+// signer running, nothing else reconciles the generation store, so apply
+// and remove reconcile it first, as every unlock does.
 type RescueRunner struct{}
 
 // Run runs a validated command that needs the node, as OnlineRunner.Run
@@ -62,35 +64,48 @@ func (r RescueRunner) Run(ctx context.Context, command Command, streams Streams)
 	}
 	defer kr.Zero()
 
+	return finishRescue(rescue(ctx, command, streams, paths, kr), guard.Normalize)
+}
+
+// rescue runs command against the store the keyring opened, reconciling it
+// first when the command mutates.
+func rescue(ctx context.Context, command Command, streams Streams, paths storepaths.Paths, kr *crypto.Keyring) error {
+	if command.mutates() {
+		report, err := genstore.ReconcileStoreRoot(paths, kr)
+		for _, moved := range report.Moved() {
+			_, _ = fmt.Fprintf(streams.Stderr, "reconciled: %s\n", moved)
+		}
+		if err != nil {
+			return fmt.Errorf("reconcile the generation store: %w", err)
+		}
+	}
 	backend, err := newOfflineBackend(command.DataDir, paths, kr)
 	if err != nil {
 		return err
 	}
-	return finishRescue(run(ctx, command, streams, backend), backend.committed, guard.Normalize)
+	return run(ctx, command, streams, backend)
 }
 
-// finishRescue ends a rescue whose command returned runErr. A commit that
-// landed, or may have, leaves files a root-run rescue owns, so they are
-// normalized even when the command then reports a failure: an uncertain
-// commit, or a reload that failed after the commit.
-func finishRescue(runErr error, committed bool, normalize func() error) error {
-	if !committed {
-		return runErr
-	}
+// finishRescue ends a rescue whose command returned runErr. A mutating
+// rescue normalizes ownership on every outcome, as apstore's offline
+// mutations do: what it wrote is root-owned when root runs it, a commit, a
+// reconciliation, and a mint that failed after it published its successor
+// or sealed the current generation alike. normalize does nothing for a
+// read, or a store that is not managed.
+func finishRescue(runErr error, normalize func() error) error {
 	if err := normalize(); err != nil {
 		if runErr != nil {
 			return fmt.Errorf("%w; managed store ownership normalization also failed: %v", runErr, err)
 		}
-		return fmt.Errorf("policy applied, but managed store ownership normalization failed: %w", err)
+		return fmt.Errorf("managed store ownership normalization failed after the policy rescue: %w", err)
 	}
 	return runErr
 }
 
 // offlineBackend serves policy requests from the store itself.
 type offlineBackend struct {
-	env       policyapply.Env
-	current   *policyruntime.NodePolicy
-	committed bool
+	env     policyapply.Env
+	current *policyruntime.NodePolicy
 }
 
 func newOfflineBackend(dataDir string, paths storepaths.Paths, kr *crypto.Keyring) (*offlineBackend, error) {
@@ -151,19 +166,12 @@ func (b *offlineBackend) Check(_ context.Context, req adminproto.CheckPolicyRequ
 func (b *offlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyRequest) (adminproto.ApplyPolicyResult, error) {
 	outcome, err := policyapply.Commit(b.env, req)
 	if err != nil {
-		if outcome.Uncertain {
-			// The root may name the new generation: normalize its
-			// ownership as for a commit, or a service-user daemon could
-			// not read what a root-run rescue may have published.
-			b.committed = true
-		}
 		return adminproto.ApplyPolicyResult{
 			Code: policyapply.Code(err, "policy_apply_failed"), Error: err.Error(),
 			Errors: outcome.Problems, CommitUncertain: outcome.Uncertain,
 		}, nil
 	}
 	if outcome.GenerationID != "" {
-		b.committed = true
 		if err := b.reload(); err != nil {
 			return adminproto.ApplyPolicyResult{}, fmt.Errorf("policy applied as generation %s, but reloading it failed: %w", outcome.GenerationID, err)
 		}

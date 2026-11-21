@@ -6,6 +6,7 @@ package genstore
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -35,6 +36,20 @@ type ReconcileReport struct {
 	// damage, not an uncommitted attempt: reconciliation retains it and
 	// pruning refuses to run until the operator restores or removes it.
 	RetainedUnsealedParent string
+}
+
+// Moved describes, one line each, what a reconciliation quarantined or
+// discarded: what an offline mint, which no unlock precedes, reports after
+// it reconciles.
+func (r ReconcileReport) Moved() []string {
+	moved := make([]string, 0, len(r.Quarantined)+len(r.DiscardedStaging))
+	for _, quarantined := range r.Quarantined {
+		moved = append(moved, "quarantined uncommitted generation "+quarantined.GenerationID)
+	}
+	for _, residue := range r.DiscardedStaging {
+		moved = append(moved, "discarded crash residue "+residue)
+	}
+	return moved
 }
 
 // InspectStoreRoot authenticates a fresh root read and classifies generation
@@ -181,15 +196,32 @@ func reconcileSelected(paths storepaths.Paths, current string, kr *crypto.Keyrin
 // carries state). Structural validation tolerates them; this is where
 // they are removed, or only reported when remove is unset.
 func sweepWriteResidue(paths storepaths.Paths, current string, remove bool, report *ReconcileReport) error {
-	currentDir := paths.GenerationPaths(current).Dir()
-	residueDirs := []string{currentDir}
-	for _, namespace := range generationLeafNamespaces {
-		residueDirs = append(residueDirs, filepath.Join(currentDir, namespace))
+	gen := paths.GenerationPaths(current)
+	residue, err := WriteResidue(gen)
+	if err != nil {
+		return err
 	}
-	for _, dir := range residueDirs {
-		entries, err := os.ReadDir(dir)
+	for _, relative := range residue {
+		name := filepath.Base(relative)
+		if remove {
+			if err := fsutil.RemoveDurable(filepath.Join(gen.Dir(), filepath.FromSlash(relative))); err != nil {
+				return fmt.Errorf("discard durable-write residue %s: %w", name, err)
+			}
+		}
+		report.DiscardedStaging = append(report.DiscardedStaging, name)
+	}
+	return nil
+}
+
+// WriteResidue lists the orphaned durable-write temp files in gen, relative
+// to its directory and slash-separated: what reconciliation discards from
+// the current generation.
+func WriteResidue(gen storepaths.GenPaths) ([]string, error) {
+	var residue []string
+	for _, namespace := range append([]string{""}, generationLeafNamespaces...) {
+		entries, err := os.ReadDir(filepath.Join(gen.Dir(), namespace))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, entry := range entries {
 			name := entry.Name()
@@ -199,19 +231,14 @@ func sweepWriteResidue(paths storepaths.Paths, current string, remove bool, repo
 			// committing rename is atomic), and unswept namespace residue
 			// would be copied into every child generation and sealed there.
 			isResidue := isDurableWriteResidue(name) ||
-				(dir != currentDir && hasDurableWriteTempSuffix(name))
+				(namespace != "" && hasDurableWriteTempSuffix(name))
 			if entry.IsDir() || !isResidue {
 				continue
 			}
-			if remove {
-				if err := fsutil.RemoveDurable(filepath.Join(dir, name)); err != nil {
-					return fmt.Errorf("discard durable-write residue %s: %w", name, err)
-				}
-			}
-			report.DiscardedStaging = append(report.DiscardedStaging, name)
+			residue = append(residue, path.Join(namespace, name))
 		}
 	}
-	return nil
+	return residue, nil
 }
 
 // CollectGarbageStoreRoot prunes retained generations only after the sole

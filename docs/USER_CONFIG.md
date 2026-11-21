@@ -279,7 +279,7 @@ Importing an endpoint creates routing/configuration only. It does not copy SSH
 host trust, private keys, or passphrases, and it does not enroll the client's
 key at the node; that is still done with `enroll --endpoint <alias>`
 (or automatically by `endpoints add`). Re-import with the same alias replaces
-that alias's endpoint data.
+that alias's role and URL and keeps its `identity_file` and `known_hosts_path`.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
@@ -352,6 +352,13 @@ apsigner reads `config.yaml` and `identities/default/config.yaml` when it
 starts. Without a top-level `config.yaml` it starts on the defaults and
 warns; one that exists but cannot be read (permissions, a disk error) stops
 it, rather than starting it on defaults that would drop what the file sets.
+An `identities/default/config.yaml` that is empty or holds only comments
+is refused like an empty `config.yaml` (`config file <path> is empty`), at
+start and by a setting's save, so an overlay truncated to nothing does not
+drop the settings it saved; delete it or write `{}` for no overrides. A
+missing one means no overrides, and so does one that is just `---` or
+`null`, as for `config.yaml`; a setting saved through `apadmin` is then
+written into it.
 An edit to either file while it runs takes effect at the next restart. A setting changed through `apadmin` takes effect while the signer
 runs and rewrites only its own key in `identities/default/config.yaml`, so
 other keys keep their values, a hand edit included (comments and key order

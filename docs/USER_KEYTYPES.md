@@ -1163,35 +1163,116 @@ see [Repairing a template record](#repairing-a-template-record).
 
 ### Repairing a template record
 
-What repairs a template record defect depends on when the reload finds it.
+A template record defect is an externally edited record (its fingerprint is
+not the one its encrypted template computes) or an orphaned record (a record,
+enabled or disabled, whose template file is missing). Found at unlock, it fails
+the selected generation's validation: unlock reports `recovery_blocked` and
+the signer stays in recovery. `apadmin template import` needs an unlocked
+signer, and a backup restore keeps the same record, so neither repairs it
+there.
 
-- **Signer unlocked.** A reload after an install, or after a change to the
-  store's files, leaves the signer unlocked. Reimport the template: the import
-  writes the template file and rewrites its record with the current
-  fingerprint.
+Stop `apsigner`, then preview the defects:
 
-  ```bash
-  apadmin -d $APSIGNER_DATA template import path/to/template.yaml
-  ```
+```bash
+apstore -d $APSIGNER_DATA template repair
+```
 
-- **Store in recovery.** At unlock the defect fails the selected generation's
-  validation: unlock reports `recovery_blocked` and the signer stays in
-  recovery. `apadmin template import` needs an unlocked signer, so it fails
-  there, and the product has no repair for this. A backup restore does not
-  help either: its candidate generation keeps the same record and fails the
-  same validation. Stop `apsigner`, then do one of these:
-  - Edit the record `identities/default/generations/<generation-id>/keytypes/<key_type>.json`
-    in the current generation, the one `apadmin generations list` reports as
-    current. For an externally edited template, remove its `fingerprint` field,
-    so the record pins nothing; for an orphaned record, delete the file. Start
-    and unlock `apsigner`, then reimport the template so its record pins the
-    current fingerprint again.
-  - Move the store aside and rebuild it from a backup archive with
-    `apstore rebuild` (see
-    [Rebuild an Absent Keystore](USER_STORE_MGMT.md#rebuild-an-absent-keystore)).
-    A rebuilt store has the archive's credentials and per-key policies but no
-    templates or key type state, so import the templates again after the first
-    unlock.
+The preview lists each defective key type with its defect, the actions it
+allows, and the number of keys of that type. For an external edit it also
+shows the fingerprint the record pins and the one its stored template
+computes, and states how many of the keys were created from the stored
+template and how many from another definition. Healthy templates are not
+listed and cannot be named.
+
+Each defect takes one of two actions, and the preview recommends neither for
+an external edit:
+
+- **`repin`**, for an external edit only: rewrite the record's fingerprint to
+  the one the stored template computes, keeping its state and activation time.
+  The stored template is encrypted for its key type under the current
+  passphrase term, so another key type's template does not open in its place.
+  That binding is to the key type and the term, not to the generation or the
+  definition: an earlier definition of the same key type, from a prior
+  generation or the deleted archive, opens as well, and a repin would pin it.
+  Keys whose recorded fingerprint differs read `conflict` afterwards.
+- **`drop`**, for any defect and the only action for an orphaned record:
+  delete the record. An externally edited template is also moved to
+  `deleted/keytypes/`, as `apadmin template remove` moves it. Keys of the type
+  keep signing from their stored metadata, but no new key of the type can be
+  created until the template is imported again.
+
+The key files are authenticated and the record is not, so the keys are the
+evidence. Keys created from the stored template point at the record as what
+changed; keys created from another definition point at the template. Repin
+only if you know why the record and the template differ, for example after a
+fingerprint-format change. Otherwise drop the record, start `apsigner`, and
+import the template again from a file you trust with `apadmin template
+import`, which pins only the definition that file holds.
+
+Name every defect in one run, each under one verb. Without `--confirm` the
+command previews the repair and changes nothing:
+
+```bash
+apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.retired.v1
+apstore -d $APSIGNER_DATA template repair repin example.escrow.v1 drop example.retired.v1 --confirm
+```
+
+With no signer running, nothing else reconciles the generation store, so a
+repair with `--confirm` first does what every unlock does: it quarantines a
+generation an earlier mint published but never committed, and discards
+staging residue, such as what an interrupted repair leaves, and says what it
+moved. The preview says when that is pending. It reads the generation as it
+stands and writes nothing: damage about a crash-residue file is labelled as
+residue a `--confirm` run discards first, not as damage. Residue can hide
+other damage from the preview, so the `--confirm` run classifies the
+generation again after it reconciles, and refuses if the defects it finds no
+longer match those named or anything else is damaged. A retry after a failed
+or interrupted repair therefore needs nothing else.
+
+The repair commits a new generation (operation `template-repair`) whose parent
+is the damaged generation, which is kept, sealed, until generation pruning;
+`apadmin restore rollback` does not return to it. Key files are never touched. Start and unlock `apsigner` afterwards; it unlocks normally.
+
+The repair is refused, and changes nothing but what reconciliation moved, for
+a key type that is not a template record defect, a re-pin of a record with no
+template file, or a defect left unnamed. It is also refused for damage it does
+not repair, and the preview names it:
+
+- **Damage unlock also refuses**, such as a malformed key file, an unreadable
+  template, or a damaged policy or node-role sidecar: the repair would not let
+  the signer unlock. Repair that damage first, or move the store aside and
+  rebuild it from a backup archive with `apstore rebuild` (see
+  [Rebuild an Absent Keystore](USER_STORE_MGMT.md#rebuild-an-absent-keystore)).
+  A rebuilt store has the archive's credentials and per-key policies but no
+  templates or key type state, so import the templates again after the first
+  unlock.
+- **Damage only a commit refuses**, which unlock never reads. The preview
+  gives the step for each:
+  - a deleted-archive member that does not verify: start `apsigner`, which
+    unlocks into recovery, remove it with `apadmin archive prune --confirm
+    <deleted/path>` (an archived policy document together with its sidecar),
+    stop `apsigner`, and repair again;
+  - a file in the deleted archive that is no member, which archive prune
+    cannot remove: with `apsigner` stopped, move it out of the store's
+    `deleted/` directory;
+  - a parent generation that has lost its seal: with `apsigner` stopped,
+    restore it from the same snapshot as the rest of the store, or move it
+    out of the store;
+  - a generation too large for any successor: prune deleted-archive members
+    in recovery as above until it fits, or, if the keys alone are over the
+    limit, rebuild from a backup with `apstore rebuild --address` for the keys
+    to keep, since a signer in recovery cannot delete keys;
+  - more cosigner credentials than any commit accepts: rebuild with
+    `apstore rebuild --address` for the credentials to keep.
+
+While the signer is unlocked, a reload after an install or after a change to
+the store's files can also find a defect without leaving the signer. A
+reimport repairs it there as well: the import writes the template file and
+rewrites its record with the current fingerprint.
+
+```bash
+apadmin -d $APSIGNER_DATA template import path/to/template.yaml
+```
 
 ## Compatibility Rules
 

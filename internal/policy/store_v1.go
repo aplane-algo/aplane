@@ -145,6 +145,16 @@ func LoadVerifiedKeyPolicy(active storepaths.GenPaths, role noderole.Role, key s
 	return StoredDocument{Key: key, Bytes: data, SignedAtUnix: signedAt}, true, nil
 }
 
+// UnsupportedEntryError is an entry of the key policies namespace that is
+// neither a <selector>.json document nor its sidecar. Path is its path.
+type UnsupportedEntryError struct {
+	Path string
+}
+
+func (e *UnsupportedEntryError) Error() string {
+	return fmt.Sprintf("key policies contain unsupported entry %q", filepath.Base(e.Path))
+}
+
 // KeyPolicyKeys lists the key selectors that have a policy document of their
 // own, sorted, after checking that the namespace holds only complete document
 // and sidecar pairs. It does not verify or decode the documents.
@@ -162,7 +172,7 @@ func KeyPolicyKeys(active storepaths.GenPaths) ([]string, error) {
 			key = strings.TrimSuffix(name, ".json")
 		}
 		if key == name || storepaths.ValidatePolicySelector(key) != nil || !entry.Type().IsRegular() {
-			return nil, fmt.Errorf("key policies contain unsupported entry %q", name)
+			return nil, &UnsupportedEntryError{Path: filepath.Join(active.PoliciesDir(), name)}
 		}
 		if isSidecar {
 			sidecars[key] = true
@@ -290,7 +300,7 @@ func ResignKeyPolicies(active storepaths.GenPaths, role noderole.Role, kr *crypt
 			continue
 		}
 		if storepaths.ValidatePolicySelector(key) != nil {
-			return fmt.Errorf("key policies contain unsupported entry %q", entry.Name())
+			return &UnsupportedEntryError{Path: filepath.Join(active.PoliciesDir(), entry.Name())}
 		}
 		path := active.PolicyPath(key)
 		data, err := readPolicyFile(path)

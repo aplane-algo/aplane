@@ -93,13 +93,16 @@ func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo, returnView V
 	m.library.detailsContent = ""
 	m.library.detailsError = ""
 	m.library.detailsScrollOffset = 0
+	// A read that never settled, such as one a lock interrupted, is not
+	// waited on here.
+	m.library.detailsLoading = false
+	m.library.detailsRequestID = ""
 
 	if isCompiledProviderLibraryEntry(tmpl) {
 		// No YAML on disk for compiled providers; synthesize a parameter
 		// listing from the metadata the server already shipped with the list.
 		m.library.detailsSourcePath = ""
 		m.library.detailsContent = renderCompiledProviderDetailsText(tmpl)
-		m.library.detailsLoading = false
 		m.viewState = ViewLibraryTemplateDetails
 		return m, nil, ""
 	}

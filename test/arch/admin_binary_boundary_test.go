@@ -38,6 +38,9 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 			if name == "github.com/aplane-algo/aplane/internal/transport" {
 				t.Errorf("%s imports the live admin transport", entry.Name())
 			}
+			if apstoreForbiddenTemplateImports[name] {
+				t.Errorf("%s imports %s: apstore reaches templates only through the offline repair, internal/signerapp/templaterepair", entry.Name(), name)
+			}
 		}
 	}
 
@@ -45,14 +48,33 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 	assertFileOmits(t, filepath.Join(root, "main.go"), "adminSocketPath")
 	assertFileOmits(t, filepath.Join(root, "dispatch.go"),
 		`case "backup":`, `case "restore":`, `case "changepass":`,
-		`case "template":`, `case "keytype":`, `case "cosigner":`, `case "endpoint":`,
+		`case "keytype":`, `case "cosigner":`, `case "endpoint":`,
 	)
 	assertFileOmits(t, filepath.Join(root, "usage.go"),
-		"apstore backup", "apstore restore", "apstore changepass", "apstore template",
+		"apstore backup", "apstore restore", "apstore changepass",
 		"apstore keytype", "apstore cosigner", "apstore endpoint", "generations <list",
 	)
 	assertFileOmits(t, filepath.Join(root, "generations.go"), `case "list":`)
 }
+
+// apstoreForbiddenTemplateImports are the template packages apstore does not
+// import. The live template commands moved to apadmin; apstore keeps only
+// the offline repair, run with apsigner stopped, and reaches templates
+// through internal/signerapp/templaterepair alone, so a template command
+// that installs, imports or removes cannot be added to it directly. The
+// check is on apstore's own imports, so a new package between apstore and
+// these that wraps a template mutation would pass it: an import check cannot
+// tell that package from templaterepair, which imports templatelibrary
+// itself. That path is reviewed by hand.
+var apstoreForbiddenTemplateImports = map[string]bool{
+	"github.com/aplane-algo/aplane/internal/templatelibrary":         true,
+	"github.com/aplane-algo/aplane/internal/templatestore":           true,
+	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin": true,
+}
+
+// offlineTemplateRepair is the one apstore template command: the offline
+// repair, which the retired-command pattern would otherwise match.
+var offlineTemplateRepair = regexp.MustCompile(`^template\s+repair\b`)
 
 func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -87,8 +109,12 @@ func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if match := retired.Find(data); match != nil {
-			t.Errorf("%s retains retired live command %q", rel, match)
+		for _, span := range retired.FindAllIndex(data, -1) {
+			if offlineTemplateRepair.Match(data[span[1]-len("template"):]) {
+				continue
+			}
+			t.Errorf("%s retains retired live command %q", rel, data[span[0]:span[1]])
+			break
 		}
 		return nil
 	})

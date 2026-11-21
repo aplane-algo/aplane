@@ -118,6 +118,9 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	if !success && errMsg == signerruntime.RecoveryDuringUnlockMessage {
+		return answerFencedUnlock(ir, errMsg)
+	}
 	if !success && signertemplates.IsGenerationValidationError(errMsg) {
 		// Content defects in the selected generation are a recovery
 		// condition, not an unlock failure: the passphrase was right and
@@ -133,6 +136,23 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 		return failedUnlock(errMsg)
 	}
 	return true, keyCount, "", ""
+}
+
+// answerFencedUnlock answers an unlock that met an entry into recovery and
+// so published nothing, from the state the signer is in now: a reconcile on
+// another connection may have lifted that recovery, or a lock come in, since.
+func answerFencedUnlock(ir *productruntime.Runtime, errMsg string) (bool, int, string, string) {
+	switch ir.GetState() {
+	case signerruntime.SignerStateRecovery:
+		// A store change on another connection ended in doubt while this
+		// unlock ran; the signer stays in recovery, as that change answered.
+		logWarnf("identity is recovery-blocked: %s", errMsg)
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
+	case signerruntime.SignerStateUnlocked:
+		return true, ir.KeyCount(), "", ""
+	default:
+		return failedUnlock(signerruntime.LockedDuringUnlockMessage)
+	}
 }
 
 // failedUnlock answers an unlock that failed with errMsg. A failure other

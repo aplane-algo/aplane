@@ -67,6 +67,34 @@ func TestEndpointImportWritesV2ConnectionProfileOnly(t *testing.T) {
 	}
 }
 
+// Re-importing over an alias replaces its routing; the envelope carries no
+// SSH paths, so the alias keeps the identity file and known-hosts path it had.
+func TestEndpointImportKeepsTheAliasSSHPaths(t *testing.T) {
+	dataDir := t.TempDir()
+	stored := "schema_version: 2\nendpoints:\n  cosigner-local:\n    role: cosigner\n    url: ssh://old.example\n" +
+		"    identity_file: keys/id\n    known_hosts_path: keys/known_hosts\n"
+	if err := os.WriteFile(config.GetClientEndpointsPath(dataDir), []byte(stored), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newEndpointTestApp(t, dataDir).EndpointImport(t.Context(), EndpointImportRequest{
+		Alias: "cosigner-local", Role: config.ClientEndpointRoleCosigner,
+		Path: writeEndpointEnvelope(t, dataDir),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := config.LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := config.ClientEndpointConfig{
+		Role: config.ClientEndpointRoleCosigner, URL: "ssh://127.0.0.1:2223",
+		IdentityFile: "keys/id", KnownHostsPath: "keys/known_hosts",
+	}
+	if got := registry.Endpoints["cosigner-local"]; got != want {
+		t.Fatalf("stored endpoint = %+v, want %+v", got, want)
+	}
+}
+
 // An envelope from before the port fields were retired is refused: the
 // envelope is strict, and nothing could honor the ports anyway.
 func TestEndpointImportRejectsEnvelopeWithRetiredPortFields(t *testing.T) {

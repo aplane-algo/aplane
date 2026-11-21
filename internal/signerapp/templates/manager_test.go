@@ -618,7 +618,7 @@ func assertLifecycleReportBucket(t *testing.T, report RegistrationReport, keyTyp
 	if want == "namespace defect" {
 		found := false
 		for _, defect := range report.NamespaceDefects {
-			if strings.Contains(defect, keyType) {
+			if strings.Contains(defect.Text, keyType) {
 				found = true
 			}
 		}
@@ -746,6 +746,17 @@ func (p templatesTestProvider) CompatibilityFingerprint() string { return p.fing
 // lives in RegisterKeystoreTemplates), so unit tests exercise it directly.
 func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []string {
 	t.Helper()
+	defects, disabledOrphaned := sweepWithDisabledOrphansForTest(t, paths, masterKey)
+	if len(disabledOrphaned) != 0 {
+		t.Fatalf("sweepKeyTypeNamespace() disabled records without template = %v, want none", disabledOrphaned)
+	}
+	return defects
+}
+
+// sweepWithDisabledOrphansForTest returns the sweep's defect texts and its
+// disabled records without template.
+func sweepWithDisabledOrphansForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) ([]string, []string) {
+	t.Helper()
 	active := mustResolveActiveForTemplatesTest(t, paths)
 	records, err := keytypestate.ListActive(active)
 	if err != nil {
@@ -759,7 +770,12 @@ func sweepForTest(t *testing.T, paths storepaths.Paths, masterKey []byte) []stri
 	for _, registrar := range registrars {
 		registrarsBySource[registrar.Source] = registrar
 	}
-	return sweepKeyTypeNamespace(active, cryptotest.Keyring(t, masterKey), records, registrarsBySource)
+	defects, disabledOrphaned := sweepKeyTypeNamespace(active, cryptotest.Keyring(t, masterKey), records, registrarsBySource)
+	texts := make([]string, len(defects))
+	for i, defect := range defects {
+		texts[i] = defect.Text
+	}
+	return texts, disabledOrphaned
 }
 
 func TestSweepKeyTypeNamespaceCleanStore(t *testing.T) {
@@ -860,9 +876,9 @@ func TestSweepKeyTypeNamespaceFlagsDisabledRecordMissingTemplate(t *testing.T) {
 		t.Fatalf("remove template file: %v", err)
 	}
 
-	defects := sweepForTest(t, paths, masterKey)
-	if len(defects) != 1 || !strings.Contains(defects[0], "no template file") {
-		t.Fatalf("sweepKeyTypeNamespace() = %#v, want one disabled-record-missing-template defect", defects)
+	defects, disabledOrphaned := sweepWithDisabledOrphansForTest(t, paths, masterKey)
+	if len(defects) != 0 || !reflect.DeepEqual(disabledOrphaned, []string{keyType}) {
+		t.Fatalf("sweepKeyTypeNamespace() = %#v, %#v; want only %s as a disabled record without template", defects, disabledOrphaned, keyType)
 	}
 }
 
@@ -932,4 +948,21 @@ func mustResolveActiveForTemplatesTest(t *testing.T, paths storepaths.Paths) sto
 		t.Fatalf("Resolve: %v", err)
 	}
 	return active
+}
+
+// A namespace defect about one entry names it, so a caller can tell which
+// file it is about without reading the text.
+func TestSweepKeyTypeNamespaceNamesTheEntry(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	paths = genstoretest.MintFirst(t, paths)
+	masterKey := testTemplateMasterKey()
+	active := mustResolveActiveForTemplatesTest(t, paths)
+	if err := os.WriteFile(filepath.Join(active.KeyTypeRecordsDir(), "x.json.tmp-123"), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defects, _ := sweepKeyTypeNamespace(active, cryptotest.Keyring(t, masterKey), nil, nil)
+	want := []NamespaceDefect{{Text: `unexpected entry "x.json.tmp-123"`, Entry: "x.json.tmp-123"}}
+	if !reflect.DeepEqual(defects, want) {
+		t.Fatalf("sweepKeyTypeNamespace() = %+v, want %+v", defects, want)
+	}
 }

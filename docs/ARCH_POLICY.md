@@ -1354,7 +1354,11 @@ decision.
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`.
 - Online changes require an unlocked signer store and reload the runtime
-  from the committed generation.
+  from the committed generation. The unlocked state is checked under the
+  store mutation lock, so a change made while an unlock is still in flight
+  on another connection is refused with `identity_locked` rather than
+  committed before the unlock publishes. Offline rescue works on a stopped
+  store and does not take this path.
 - Every digest covers the exact stored bytes; there is no canonical
   re-serialization. `policy_set_sha256` is the lowercase hex SHA-256 over the
   sorted lines `<key> <document sha256>\n`, one per document, where `<key>`
@@ -1585,10 +1589,11 @@ the same rules as the daemon (the shared `internal/signerapp/policyapply`
 package). It reads root `node.yaml` for the role, verifies the policy
 sidecars with the store passphrase, and rejects `--ipc-path`. Read verbs hold
 the shared store lock; `apply` and `remove` hold the exclusive store mutation
-lock and therefore require a stopped daemon. On a systemd store, offline use
-requires root. A root-run rescue change of a production store restores the
-owner recorded in root-controlled `install/service-principal.json` before
-returning. Online and
+lock and therefore require a stopped daemon; they reconcile the generation
+store first, as an unlock does. On a systemd store, offline use requires
+root. A root-run rescue change of a production store restores the owner
+recorded in root-controlled `install/service-principal.json` before returning,
+whatever the outcome. Online and
 rescue policy commands read the passphrase from `APSIGNER_PASSPHRASE`, a
 terminal, or one stdin line; when the document is read from stdin the
 passphrase must come from `APSIGNER_PASSPHRASE` or the controlling terminal.

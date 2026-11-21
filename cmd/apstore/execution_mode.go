@@ -122,7 +122,7 @@ func requireLocalDataDirOwnedByCurrentUser(dataDir string, args []string) error 
 
 func isOfflineMutatingCommand(command string) bool {
 	switch command {
-	case "initialize", "policy", "rebuild", "generations", "permissions":
+	case "initialize", "policy", "rebuild", "generations", "permissions", "template":
 		return true
 	default:
 		return false

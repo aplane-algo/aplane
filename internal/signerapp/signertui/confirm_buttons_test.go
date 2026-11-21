@@ -25,7 +25,7 @@ func buttonsLine(rendered, left, right string) string {
 // buttons as every other dialog does: side by side, the focused one marked.
 func TestConfirmDialogButtonsSitSideBySide(t *testing.T) {
 	cosigner := Model{width: 100, height: 40, viewState: ViewCosignerRemoveConfirm,
-		cosigner: cosignerState{references: testCosignerReferences(), loaded: true}}
+		cosigner: cosignerState{references: testCosignerReferences(), loaded: true, removeName: "alpha"}}
 	library := Model{width: 100, height: 40, viewState: ViewTemplateInstallConfirm, library: libraryState{
 		pendingTemplate: &protocol.LibraryTemplateInfo{KeyType: "test.timed-policy.v1", TemplateType: "generic"},
 	}}

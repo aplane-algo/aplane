@@ -4,15 +4,18 @@
 package backupadmin
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -144,6 +147,7 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 	}
 
 	var preview *backup.RestorePreview
+	tried := false
 	err = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		active, resolveErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
 		if resolveErr != nil {
@@ -154,13 +158,17 @@ func (s Service) PreviewRestore(req adminproto.PreviewRestoreRequest) adminproto
 			return bindErr
 		}
 		var previewErr error
+		tried = true
 		preview, previewErr = backup.PreviewRestoreWithNodeRole(bound, archivePath, passphraseBytes, ir.NodeRole())
 		return previewErr
 	})
 	if err != nil {
-		if backup.ArchiveAuthenticated(err) {
+		// As for a restore, only an attempt that read the archive with the
+		// passphrase counts.
+		switch {
+		case backup.ArchiveAuthenticated(err):
 			limiter.RecordSuccess(archivePath)
-		} else {
+		case tried:
 			limiter.RecordFailure(archivePath)
 		}
 		return adminproto.RestorePreviewResult{
@@ -197,4 +205,20 @@ func projectRestoreKeyInfos(items []backup.RestoreKeyInfo) []adminproto.RestoreK
 		}
 	}
 	return out
+}
+
+// requireUnlockedOrRecovery refuses a restore or rollback that reached the
+// store mutation lock on a signer neither unlocked nor in recovery. The
+// handler's gate ran before the request queued on the lock, and a lock and a
+// new unlock since can leave the keyring open on a signer not yet published
+// unlocked: a commit there whose reload failed would call SetRecovery on a
+// locked signer, which does nothing, and the unlock would then publish
+// unlocked over a generation the runtime had not followed. The caller holds
+// the store mutation lock.
+func requireUnlockedOrRecovery(ir *productruntime.Runtime) error {
+	switch ir.GetState() {
+	case signerruntime.SignerStateUnlocked, signerruntime.SignerStateRecovery:
+		return nil
+	}
+	return fmt.Errorf("signer is locked: %w", keystore.ErrStoreLocked)
 }

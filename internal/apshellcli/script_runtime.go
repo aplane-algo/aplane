@@ -6,10 +6,12 @@ package apshellcli
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 )
 
@@ -40,19 +42,13 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return false, "", nil, nil, fmt.Errorf("plugin manager not initialized")
 	}
 
-	// Find plugin using cached discovery - first try by command name, then by manifest name
-	plugin, err := p.repl.app().Plugins.FindByCommand(pluginName)
+	commandName := pluginName
+	plugin, err := p.repl.app().Plugins.FindByCommand(commandName)
+	if errors.Is(err, pluginmanager.ErrNoPluginForCommand) {
+		plugin, commandName, err = p.pluginCommandByName(pluginName)
+	}
 	if err != nil {
-		if errors.Is(err, pluginmanager.ErrNoPluginForCommand) {
-			// Try finding by manifest name for typed-function-oriented callers.
-			// Execution still routes through plugin command dispatch.
-			plugin, err = p.repl.app().Plugins.FindByName(pluginName)
-			if err != nil {
-				return false, "", nil, nil, fmt.Errorf("plugin or command '%s' not found", pluginName)
-			}
-		} else {
-			return false, "", nil, nil, err
-		}
+		return false, "", nil, nil, err
 	}
 
 	// Check if plugin supports current network (uses engine's network which may differ from manager's)
@@ -69,10 +65,10 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 	if err != nil {
 		return false, "", nil, nil, err
 	}
-	normalizedArgs := apshellapp.NormalizePluginCommandArgs(plugin, pluginName, pluginArgs)
+	normalizedArgs := apshellapp.NormalizePluginCommandArgs(plugin, commandName, pluginArgs)
 
 	// Execute the plugin command
-	result, err := p.repl.app().Plugins.ExecuteCommand(p.repl.commandContext(), plugin.Manifest.Name, pluginName, normalizedArgs, context)
+	result, err := p.repl.app().Plugins.ExecuteCommand(p.repl.commandContext(), plugin.Manifest.Name, commandName, normalizedArgs, context)
 	if err != nil {
 		return false, "", nil, nil, fmt.Errorf("plugin execution failed: %w", err)
 	}
@@ -89,6 +85,27 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		p.repl.renderWarnings(step.Warnings)
 	}
 	return jsPluginOutcome(pr, runErr, p.repl.app().IsSimulateEnabled())
+}
+
+// pluginCommandByName resolves a name that no plugin declares as a command
+// to the plugin with that manifest name and its one command. plugin() takes
+// a command, as the command line does, and a plugin is sent only commands
+// its manifest declares; a plugin with several has no command its name
+// could stand for.
+func (p *PluginExecutorAdapter) pluginCommandByName(name string) (*discovery.Plugin, string, error) {
+	plugin, err := p.repl.app().Plugins.FindByName(name)
+	if err != nil {
+		return nil, "", fmt.Errorf("plugin or command '%s' not found", name)
+	}
+	if len(plugin.Manifest.Commands) != 1 {
+		commands := make([]string, 0, len(plugin.Manifest.Commands))
+		for _, command := range plugin.Manifest.Commands {
+			commands = append(commands, command.Name)
+		}
+		slices.Sort(commands)
+		return nil, "", fmt.Errorf("no plugin command %q: plugin %s has several commands; name one of %s", name, name, strings.Join(commands, ", "))
+	}
+	return plugin, plugin.Manifest.Commands[0].Name, nil
 }
 
 // jsPluginOutcome is plugin()'s answer for a finished run. A run that produced
