@@ -39,8 +39,7 @@ path is preserved. This lets clients reach a private managed store without
 reading it.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
-`APLANE_REQUIRE_MINISIGN`; matching `APSIGNER_*` names are compatibility
-aliases.
+`APLANE_REQUIRE_MINISIGN`.
 
 ## Table of Contents
 
