@@ -973,8 +973,8 @@ subject to the node role gate above.
 Registration-semantics outcomes are not content defects and do not block other
 keys: a compiled, generic, or composed conflict with an already-registered
 process-global provider, idempotent re-registration, and disabled records. A
-fingerprint pair from different fingerprint versions is not comparable and is
-not treated as an external edit.
+record's fingerprint is compared with its template's byte for byte, so one from
+another fingerprint version is an external edit like any other difference.
 
 #### Key type transitions
 
@@ -989,15 +989,17 @@ not treated as an external edit.
 | Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload ignores the conflicting activation. | Generation is hidden until re-enabled; valid existing keys are not rewritten. |
 | Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths. |
 
-Fingerprint comparisons are version-aware. The compatibility fingerprint is
+Fingerprint comparisons are exact. The compatibility fingerprint is
 identifier-independent (it hashes behavior-bearing fields and a YAML template's
 `valid_rekey_target` declaration, not `key_type`/`family`/display or a renamed
 base key type) and is stored versioned
-(`<n>:` prefix). A real conflict is only a same-version, different-hash pair; a
-cross-version or malformed stored fingerprint is "not comparable" and benign —
-the activation is re-pinned/registered, not flagged as a conflict. So the
-"changed compiled fingerprint" row above triggers only on a genuine same-version
-behavior change, not on a formula-version bump.
+(`1:` prefix). A stored fingerprint matches only when it is byte-identical to
+the one the current code computes, so one with another version prefix, no prefix, or
+a malformed hash is a mismatch: an external edit for a YAML template record,
+which fails the reload closed, and a conflict for a compiled provider record. A
+record that pinned no fingerprint is not compared. A formula-version bump
+changes every stored fingerprint, so it is a store format change, not something
+reload absorbs.
 
 The unused-key guard on disable/remove protects operators from accidentally
 hiding the normal generation source for a key type still in use. It is not a
@@ -1544,9 +1546,9 @@ versioned (`<n>:` prefix) and identifier-independent, covering behavior and a
 YAML template's `valid_rekey_target`. Key
 inventory surfaces may compare it with the registered local definition and
 report a template conflict or unavailable template, but those notices do not
-invalidate a key. The comparison is version-aware: only a same-version,
-different-hash pair is a conflict; a different-version or malformed fingerprint
-is "not comparable" and benign.
+invalidate a key. The comparison is exact: a stored fingerprint that is not
+byte-identical to the registered one, another version prefix or no prefix included,
+is a conflict.
 
 #### Signing authority
 
@@ -1921,10 +1923,9 @@ Lifecycle:
     the signing index before commit and reload complete.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
-    Comparisons are version-aware: the fingerprint is identifier-independent,
-    and only a same-version, different-hash pair is a
-    conflict — a cross-version or malformed stored fingerprint is "not
-    comparable" and benign.
+    Comparisons are exact: the fingerprint is identifier-independent, and a
+    stored value that is not byte-identical to the current one, another
+    version prefix included, is a conflict.
 
 ## Backup and restore
 

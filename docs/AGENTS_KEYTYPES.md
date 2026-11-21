@@ -167,9 +167,11 @@ For user output, choose a name tied to the user's actual policy.
 ## Fingerprint Rules
 
 The template compatibility fingerprint is provenance only (never signing
-authority) and versioned (`<n>:` prefix). It covers behavior and a YAML
-template's `valid_rekey_target`. When touching key-type definitions or the
-fingerprint formula:
+authority) and versioned (the `1:` prefix). It covers behavior and a YAML
+template's `valid_rekey_target`. A stored fingerprint matches only when it is
+byte-identical to the one the current code computes: one with another prefix,
+or no prefix, is a mismatch like any other. When touching key-type definitions or
+the fingerprint formula:
 
 - The fingerprint hashes only behavior-bearing fields and a template's
   `valid_rekey_target` declaration; identity, routing, and display fields
@@ -178,6 +180,8 @@ fingerprint formula:
 - `base_primitive` tokens are a frozen namespace: add rows, never rename a token.
 - Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
   (field set / hashing rules), never on a rename; update the goldens with it.
+  A bump changes every fingerprint, so every installed template record and key
+  then reads as a mismatch: it is a store format change.
 - Do not add a new-account restriction to `ValidateTemplateSpec`,
   `validateBoundedConfig`, or the bounded metadata helpers. Installed templates
   reach them on load, and an error changes the fingerprint and fails the store's

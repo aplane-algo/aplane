@@ -1132,11 +1132,10 @@ conflicting compiled key type records ignored on reload: [aplane.ed25519.v1]
 ```
 
 This means the product has an enabled compiled-provider state record whose
-stored fingerprint and the current provider fingerprint are the same fingerprint
-version but differ — a genuine provider-definition (behavior) change. The
-fingerprint is behavior-only and versioned, so a pure rename of a key type,
-family, or base key type does not trigger this, and a different-version stored
-fingerprint is treated as benign (re-pinned), not a conflict.
+stored fingerprint is not the current provider fingerprint, byte for byte: a
+provider-definition (behavior) change, or a fingerprint from another
+fingerprint format version. The fingerprint is behavior-only, so a pure rename
+of a key type, family, or base key type does not trigger this.
 
 Refresh the enablement record:
 
@@ -1150,9 +1149,9 @@ files.
 ### Invalid or externally edited YAML template
 
 Reload rejects templates whose encrypted YAML no longer matches the
-same-version fingerprint stored in the state record (a changed behavior or
-`valid_rekey_target` declaration); a different-version stored fingerprint is
-treated as benign, not an external edit.
+fingerprint stored in the state record, byte for byte: a changed behavior or
+`valid_rekey_target` declaration, or a stored fingerprint from another
+fingerprint format version.
 
 Recovery is to reinstall through the supported import path:
 
