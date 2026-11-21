@@ -42,7 +42,7 @@ func cosignerOperations() []startedCosignerOperation {
 			name: "remove", progress: ViewCosignerRemoving, back: ViewCosignerRemoveConfirm, prefix: "cosigner-remove",
 			start: func(t *testing.T) (Model, tea.Cmd) {
 				m := Model{viewState: ViewCosignerRemoveConfirm, connectionState: ConnectionConnected,
-					cosigner: cosignerState{references: testCosignerReferences(), managerSelected: 2}}
+					cosigner: cosignerState{references: testCosignerReferences(), managerSelected: 2, removeName: "west"}}
 				next, cmd := m.handleCosignerRemoveConfirmKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 				return next.(Model), cmd
 			},

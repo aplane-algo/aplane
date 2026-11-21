@@ -363,6 +363,12 @@ type cosignerState struct {
 	managerScroll   int
 	managerStatus   string
 	removeFocus     int
+	// removeName is what the remove confirmation removes, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another
+	// row; removeInvalid says it is a reference file that is not a valid
+	// reference.
+	removeName    string
+	removeInvalid bool
 
 	generateTypeIndices  []int
 	generateTypeSelected int

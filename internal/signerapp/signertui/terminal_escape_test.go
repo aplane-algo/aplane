@@ -308,6 +308,7 @@ func TestRemainingDaemonErrorsAreEscaped(t *testing.T) {
 	cosigner.viewState = ViewCosignerReferenceDetails
 	assertNeutralized(t, "cosigner details", cosigner.renderCosignerReferenceDetails(), `remove failed: \x1b[2J`)
 	cosigner.viewState = ViewCosignerRemoveConfirm
+	cosigner.cosigner.removeName = "alpha"
 	assertNeutralized(t, "cosigner remove confirm", cosigner.renderCosignerRemoveConfirm(), `remove failed: \x1b[2J`)
 
 	auth := Model{width: 100, height: 40, connectionState: ConnectionConnected, auth: authState{passphraseError: "unlock failed: " + setTitle}}

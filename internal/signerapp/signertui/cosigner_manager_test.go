@@ -457,3 +457,64 @@ func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T
 		t.Errorf("%q missing from:\n%s", want, view)
 	}
 }
+
+// The remove confirmation removes what it opened on. A list that arrives
+// while it is open, here with a reference that sorts into the rows, moves the
+// rows under the cursor but not the confirmation's target, for a reference
+// file and for a reference alike.
+func TestCosignerRemoveConfirmationKeepsItsTargetAcrossAList(t *testing.T) {
+	zeta := CosignerReferenceInfo{Name: "zeta", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"}
+	aaa := CosignerReferenceInfo{Name: "aaa", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"}
+	for _, tc := range []struct {
+		name     string
+		open     []string
+		added    CosignerReferenceInfo
+		want     string
+		wantText string
+	}{
+		{name: "reference file", open: []string{"down", "down", "enter"}, added: zeta, want: "bad", wantText: "bad.json"},
+		{name: "reference", open: []string{"down", "enter", "d"}, added: aaa, want: "west", wantText: "Remove alias west"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := invalidCosignerReferencesModel(t)
+			removals := sentCosignerRemovals(t, &m)
+			m = press(t, m, tc.open...)
+			if m.viewState != ViewCosignerRemoveConfirm {
+				t.Fatalf("view %v, want the remove confirmation", m.viewState)
+			}
+			references := append(append([]CosignerReferenceInfo(nil), m.cosigner.references...), tc.added)
+			m = updateModel(t, m, CosignerReferencesMsg{References: references, Invalid: m.cosigner.invalid})
+			view := stripANSI(m.View())
+			checkFitsMinSize(t, view)
+			if !strings.Contains(view, tc.wantText) || strings.Contains(view, tc.added.Name) {
+				t.Fatalf("after the list the confirmation shows:\n%s", view)
+			}
+			next, cmd := m.handleKeyPress(browserKey("y"))
+			m = next.(Model)
+			runSends(cmd)
+			select {
+			case name := <-removals:
+				if name != tc.want {
+					t.Fatalf("removal sent for %q, want %q", name, tc.want)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("no removal was sent")
+			}
+		})
+	}
+}
+
+// A target the list no longer holds is not removed: the confirmation says so
+// and y returns to the list without a request.
+func TestCosignerRemoveConfirmationDropsATargetNoLongerListed(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "down", "enter")
+	m = updateModel(t, m, CosignerReferencesMsg{References: m.cosigner.references, Invalid: m.cosigner.invalid[1:]})
+	if view := stripANSI(m.View()); !strings.Contains(view, "Cosigner reference is no longer available") {
+		t.Fatalf("confirmation after its target went:\n%s", view)
+	}
+	next, cmd := m.handleKeyPress(browserKey("y"))
+	if got := next.(Model); got.viewState != ViewCosignerReferences || cmd != nil {
+		t.Fatalf("y = view %v cmd nil=%v, want the list and no request", got.viewState, cmd == nil)
+	}
+}

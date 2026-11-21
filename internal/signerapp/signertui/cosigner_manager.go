@@ -120,6 +120,14 @@ func (m Model) beginInvalidCosignerReferenceClear(bad InvalidCosignerReferenceIn
 		m.cosigner.managerStatus = terminalSafe(fmt.Sprintf("Remove does not reach %s; delete %s to clear it.", filepath.Base(bad.Path), bad.Path))
 		return m
 	}
+	return m.beginCosignerRemoval(bad.Name, true)
+}
+
+// beginCosignerRemoval opens the remove confirmation, on Cancel, for the
+// reference or reference file called name.
+func (m Model) beginCosignerRemoval(name string, invalid bool) Model {
+	m.cosigner.removeName = name
+	m.cosigner.removeInvalid = invalid
 	m.cosigner.removeFocus = 0
 	m.cosigner.importError = ""
 	m.viewState = ViewCosignerRemoveConfirm
@@ -172,10 +180,8 @@ func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, te
 	case "g":
 		return m.beginSelectedCosignerGeneration()
 	case "d":
-		if _, ok := m.selectedCosignerReference(); ok {
-			m.cosigner.removeFocus = 0
-			m.cosigner.importError = ""
-			m.viewState = ViewCosignerRemoveConfirm
+		if reference, ok := m.selectedCosignerReference(); ok {
+			m = m.beginCosignerRemoval(reference.Name, false)
 		}
 	}
 	return m, nil
@@ -280,8 +286,15 @@ func (m Model) handleCosignerGenerateTypeKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 }
 
 func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	name, back, ok := m.cosignerRemoveTarget()
-	if !ok {
+	// A cancel returns to a reference's details, or to the list for a
+	// reference file, which has no details.
+	back := ViewCosignerReferenceDetails
+	_, listed := m.cosignerRemovalReference()
+	if m.cosigner.removeInvalid {
+		back = ViewCosignerReferences
+		_, listed = m.cosignerRemovalFile()
+	}
+	if !listed {
 		m.viewState = ViewCosignerReferences
 		return m, nil
 	}
@@ -300,22 +313,38 @@ func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.C
 			return m, nil
 		}
 		id := m.beginOperation(ViewCosignerRemoving)
-		return m, m.sendRemoveCosignerReferenceCmd(name, id)
+		return m, m.sendRemoveCosignerReferenceCmd(m.cosigner.removeName, id)
 	}
 	return m, nil
 }
 
-// cosignerRemoveTarget names what the remove confirmation removes and the
-// view a cancel returns to: a reference's details, or the list for a file that
-// is not a valid reference, which has no details.
-func (m Model) cosignerRemoveTarget() (name string, back ViewState, ok bool) {
-	if reference, ok := m.selectedCosignerReference(); ok {
-		return reference.Name, ViewCosignerReferenceDetails, true
+// cosignerRemovalReference finds the reference the remove confirmation
+// removes in the list as it now stands; ok is false once it is not listed.
+func (m Model) cosignerRemovalReference() (CosignerReferenceInfo, bool) {
+	if m.cosigner.removeInvalid {
+		return CosignerReferenceInfo{}, false
 	}
-	if bad, ok := m.selectedInvalidCosignerReference(); ok && bad.Removable {
-		return bad.Name, ViewCosignerReferences, true
+	for _, reference := range m.cosigner.references {
+		if reference.Name == m.cosigner.removeName {
+			return reference, true
+		}
 	}
-	return "", ViewCosignerReferences, false
+	return CosignerReferenceInfo{}, false
+}
+
+// cosignerRemovalFile finds the reference file the remove confirmation
+// removes in the list as it now stands; ok is false once it is not listed as
+// one remove clears.
+func (m Model) cosignerRemovalFile() (InvalidCosignerReferenceInfo, bool) {
+	if !m.cosigner.removeInvalid {
+		return InvalidCosignerReferenceInfo{}, false
+	}
+	for _, bad := range m.cosigner.invalid {
+		if bad.Name == m.cosigner.removeName && bad.Removable {
+			return bad, true
+		}
+	}
+	return InvalidCosignerReferenceInfo{}, false
 }
 
 func (m Model) renderCosignerReferences() string {
@@ -468,11 +497,11 @@ func (m Model) renderCosignerRemoveConfirm() string {
 	var body strings.Builder
 	body.WriteString(warningStyle.Render("REMOVE COSIGNER REFERENCE"))
 	body.WriteString("\n\n")
-	if reference, ok := m.selectedCosignerReference(); ok {
+	if reference, ok := m.cosignerRemovalReference(); ok {
 		body.WriteString("Remove alias " + reference.Name + " from cosigned-account generation?\n\n")
 		body.WriteString("Witness Key ID:\n")
 		body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
-	} else if bad, ok := m.selectedInvalidCosignerReference(); ok && bad.Removable {
+	} else if bad, ok := m.cosignerRemovalFile(); ok {
 		body.WriteString(wrapPlainText(terminalSafe("Remove "+filepath.Base(bad.Path)+"? It is not a valid reference:"), m.popupBodyWidth(80)))
 		body.WriteString("\n\n")
 		body.WriteString(wrapPlainText(terminalSafe(bad.Reason), m.popupBodyWidth(80)))
