@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
@@ -37,10 +36,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return exitUsage
 	}
-	if removed := removedFlag(args); removed != "" {
-		writef(stderr, "appolicy: %s\n", removed)
-		return exitUsage
-	}
 	switch args[0] {
 	case "-h", "--help", "help":
 		usage(stdout)
@@ -60,10 +55,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runTest(args[1:], stdout, stderr)
 	case "open":
 		return runOpen(args[1:], stderr)
-	}
-	if retired := retiredForm(args); retired != "" {
-		writef(stderr, "appolicy: %s\n", retired)
-		return exitUsage
 	}
 	// A path in place of a command opens it: appolicy policy/ is appolicy open
 	// policy/.
@@ -132,19 +123,6 @@ damaged export, or files from two exports, is an error.
 appolicy never contacts a node. Install policy with apadmin policy check and
 apadmin policy apply.
 `)
-}
-
-// retiredForm explains an invocation of the retired appolicy binary, which
-// took flags rather than commands.
-func retiredForm(args []string) string {
-	first := strings.TrimLeft(args[0], "-")
-	switch first {
-	case "online", "check", "yaml", "sha256", "save", "to-sentry", "d":
-		if strings.HasPrefix(args[0], "-") {
-			return fmt.Sprintf("%s is a flag of the retired appolicy, which is not supported; manage a node's policy with apadmin policy (see docs/USER_POLICY.md)", args[0])
-		}
-	}
-	return ""
 }
 
 func newFlags(name string, stderr io.Writer) *flag.FlagSet {

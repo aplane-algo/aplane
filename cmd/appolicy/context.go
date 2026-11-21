@@ -4,8 +4,6 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/aplane-algo/aplane/internal/policyexport"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyauthor"
 )
@@ -44,25 +42,4 @@ func workspacePaths(w *policyauthor.Workspace) []string {
 		paths = append(paths, f.Path)
 	}
 	return paths
-}
-
-// removedFlag explains a flag appolicy no longer has, which it refuses
-// rather than ignores: a check that quietly stopped reading the signer's
-// networks would pass documents the node refuses.
-func removedFlag(args []string) string {
-	for _, arg := range args {
-		if arg == "--" {
-			break
-		}
-		if !strings.HasPrefix(arg, "-") {
-			continue
-		}
-		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if name == "signer-data" {
-			return "--signer-data is removed: appolicy no longer reads a signer's data directory. " +
-				"Export the node's policy with apadmin policy export --all DIR, then open, check or try the files in DIR; " +
-				"appolicy reads the node's networks and ASA set from DIR/.appolicy/node.json, or from --node-context FILE"
-		}
-	}
-	return ""
 }

@@ -67,20 +67,6 @@ func writeNodeContext(t *testing.T, dir string, privateDev bool) string {
 	return put(t, filepath.Join(dir, policyexport.ContextDir), policyexport.ContextFile, data)
 }
 
-func TestSignerDataIsRemoved(t *testing.T) {
-	for _, args := range [][]string{
-		{"check", "--signer-data", "x", "f.json"},
-		{"open", "--signer-data=x", "f.json"},
-		{"try", "f.json", "-signer-data", "x"},
-		{"explain", "--signer-data", "", "f.json"},
-	} {
-		code, _, errOut := appolicy(args...)
-		if code != exitUsage || !strings.Contains(errOut, "--signer-data is removed") || !strings.Contains(errOut, "apadmin policy export --all") {
-			t.Errorf("%v: exit %d: %s", args, code, errOut)
-		}
-	}
-}
-
 // checkJSON runs check --json and returns the exit code and the report.
 func checkJSON(t *testing.T, args ...string) (int, checkReport) {
 	t.Helper()
