@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
 	"testing"
@@ -104,6 +105,27 @@ func TestEllipsizeMiddleCountsColumns(t *testing.T) {
 	} {
 		if got := ellipsizeMiddle(tc.in, tc.width); got != tc.want || lipgloss.Width(got) > tc.width {
 			t.Errorf("ellipsizeMiddle(%q, %d) = %q (%d columns), want %q", tc.in, tc.width, got, lipgloss.Width(got), tc.want)
+		}
+	}
+}
+
+// ellipsizeMiddle and ellipsize fit their width whatever the width of the
+// cluster a cut falls in: a three-em dash the width library counts as four
+// columns, a base with spacing marks, an emoji with a skin-tone modifier.
+func TestEllipsizeFitsAnyClusterWidth(t *testing.T) {
+	r := rand.New(rand.NewSource(1))
+	pieces := []string{"a", "Z", " ", "\u2e3b", "\u2e3a", "\u7530\u0903\u0903", "x" + strings.Repeat("\u0903", 21),
+		"\U0001f44d\U0001f3fd", "a\U0001f3fb\U0001f3fb", "\u7530", "\U0001f600", "e\u0301"}
+	for range 20000 {
+		var b strings.Builder
+		for range r.Intn(30) {
+			b.WriteString(pieces[r.Intn(len(pieces))])
+		}
+		s, width := b.String(), r.Intn(40)
+		for name, cut := range map[string]func(string, int) string{"ellipsizeMiddle": ellipsizeMiddle, "ellipsize": ellipsize} {
+			if got := cut(s, width); lipgloss.Width(got) > width {
+				t.Fatalf("%s(%q, %d) = %q, %d columns", name, s, width, got, lipgloss.Width(got))
+			}
 		}
 	}
 }

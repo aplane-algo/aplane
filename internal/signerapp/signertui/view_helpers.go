@@ -492,11 +492,13 @@ func ellipsizeMiddle(s string, width int) string {
 	}
 	prefix := (width - 3) / 2
 	suffix := width - 3 - prefix
-	end := ansi.TruncateLeft(s, total-suffix, "")
-	if ansi.StringWidth(end) > suffix {
-		// The cut fell inside a two-column character, which TruncateLeft
-		// keeps whole.
-		end = ansi.TruncateLeft(s, total-suffix+1, "")
+	// TruncateLeft keeps whole a cluster the cut falls inside, however many
+	// columns it takes, so the cut moves right until the end fits.
+	cut := total - suffix
+	end := ansi.TruncateLeft(s, cut, "")
+	for ansi.StringWidth(end) > suffix {
+		cut++
+		end = ansi.TruncateLeft(s, cut, "")
 	}
 	return ansi.Truncate(s, prefix, "") + "..." + end
 }
