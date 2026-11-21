@@ -40,6 +40,22 @@ func (m Model) selectedCosignerReference() (CosignerReferenceInfo, bool) {
 	return references[m.cosigner.managerSelected], true
 }
 
+// cosignerManagerRows is how many rows the manager lists: the references,
+// then the reference files that are not valid references.
+func (m Model) cosignerManagerRows() int {
+	return len(m.cosigner.references) + len(m.cosigner.invalid)
+}
+
+// selectedInvalidCosignerReference returns the selected row when it is a
+// reference file that is not a valid reference.
+func (m Model) selectedInvalidCosignerReference() (InvalidCosignerReferenceInfo, bool) {
+	index := m.cosigner.managerSelected - len(m.cosigner.references)
+	if index < 0 || index >= len(m.cosigner.invalid) {
+		return InvalidCosignerReferenceInfo{}, false
+	}
+	return m.cosigner.invalid[index], true
+}
+
 func (m Model) openCosignerReferenceManager() (tea.Model, tea.Cmd) {
 	// Cosigner nodes export public references; they never import them, so
 	// the manager is not offered there and the key binding is inert.
@@ -63,7 +79,6 @@ func (m Model) beginManagerCosignerImport() Model {
 }
 
 func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	references := m.sortedCosignerReferences()
 	switch msg.String() {
 	case "esc", "q":
 		m.viewState = ViewKeyList
@@ -83,17 +98,32 @@ func (m Model) handleCosignerReferencesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			m.cosigner.managerSelected--
 		}
 	case "down", "j":
-		if m.cosigner.managerSelected+1 < len(references) {
+		if m.cosigner.managerSelected+1 < m.cosignerManagerRows() {
 			m.cosigner.managerSelected++
 		}
 	case "enter", " ":
 		if _, ok := m.selectedCosignerReference(); ok {
 			m.cosigner.importError = ""
 			m.viewState = ViewCosignerReferenceDetails
+		} else if bad, ok := m.selectedInvalidCosignerReference(); ok {
+			m = m.beginInvalidCosignerReferenceClear(bad)
 		}
 	}
-	m.clampCosignerManagerScroll(len(references))
+	m.clampCosignerManagerScroll(m.cosignerManagerRows())
 	return m, nil
+}
+
+// beginInvalidCosignerReferenceClear confirms the removal of a file that
+// remove clears, as for a reference; of any other it says to delete it.
+func (m Model) beginInvalidCosignerReferenceClear(bad InvalidCosignerReferenceInfo) Model {
+	if !bad.Removable {
+		m.cosigner.managerStatus = terminalSafe(fmt.Sprintf("Remove does not reach %s; delete %s to clear it.", filepath.Base(bad.Path), bad.Path))
+		return m
+	}
+	m.cosigner.removeFocus = 0
+	m.cosigner.importError = ""
+	m.viewState = ViewCosignerRemoveConfirm
+	return m
 }
 
 func (m *Model) clampCosignerManagerScroll(count int) {
@@ -126,36 +156,13 @@ func (m *Model) clampCosignerManagerScroll(count int) {
 
 func (m Model) cosignerManagerVisibleRows() int {
 	rows := m.windowBodyHeight() - 10
-	if lines := len(m.invalidCosignerReferenceLines()); lines > 0 {
-		rows -= lines + 1
+	if len(m.cosigner.invalid) > 0 {
+		rows -= 2 // the invalid-file note and the blank line above it
 	}
 	if rows < 3 {
 		return 3
 	}
 	return rows
-}
-
-// maxShownInvalidCosignerReferences bounds the report below the list, so the
-// list keeps its rows; apadmin cosigner list names every one.
-const maxShownInvalidCosignerReferences = 3
-
-// invalidCosignerReferenceLines reports the reference files that are not valid
-// references. The manager acts only on listed references, so it points to
-// where each is cleared.
-func (m Model) invalidCosignerReferenceLines() []string {
-	count := len(m.cosigner.invalid)
-	if count == 0 {
-		return nil
-	}
-	lines := []string{fmt.Sprintf("%d reference file(s) are not valid references:", count)}
-	for i, bad := range m.cosigner.invalid {
-		if i == maxShownInvalidCosignerReferences {
-			lines = append(lines, fmt.Sprintf("  and %d more", count-i))
-			break
-		}
-		lines = append(lines, "  "+filepath.Base(bad.Path)+": "+bad.Reason)
-	}
-	return append(lines, "apadmin cosigner list says how to clear each.")
 }
 
 func (m Model) handleCosignerReferenceDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -273,7 +280,7 @@ func (m Model) handleCosignerGenerateTypeKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 }
 
 func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	reference, ok := m.selectedCosignerReference()
+	name, back, ok := m.cosignerRemoveTarget()
 	if !ok {
 		m.viewState = ViewCosignerReferences
 		return m, nil
@@ -282,20 +289,33 @@ func (m Model) handleCosignerRemoveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.C
 	case "left", "right", "tab", "shift+tab":
 		m.cosigner.removeFocus = 1 - m.cosigner.removeFocus
 	case "esc", "n":
-		m.viewState = ViewCosignerReferenceDetails
+		m.viewState = back
 		m.cosigner.removeFocus = 0
 	case "y":
 		m.cosigner.removeFocus = 1
 		fallthrough
 	case "enter", " ":
 		if m.cosigner.removeFocus == 0 {
-			m.viewState = ViewCosignerReferenceDetails
+			m.viewState = back
 			return m, nil
 		}
 		id := m.beginOperation(ViewCosignerRemoving)
-		return m, m.sendRemoveCosignerReferenceCmd(reference.Name, id)
+		return m, m.sendRemoveCosignerReferenceCmd(name, id)
 	}
 	return m, nil
+}
+
+// cosignerRemoveTarget names what the remove confirmation removes and the
+// view a cancel returns to: a reference's details, or the list for a file that
+// is not a valid reference, which has no details.
+func (m Model) cosignerRemoveTarget() (name string, back ViewState, ok bool) {
+	if reference, ok := m.selectedCosignerReference(); ok {
+		return reference.Name, ViewCosignerReferenceDetails, true
+	}
+	if bad, ok := m.selectedInvalidCosignerReference(); ok && bad.Removable {
+		return bad.Name, ViewCosignerReferences, true
+	}
+	return "", ViewCosignerReferences, false
 }
 
 func (m Model) renderCosignerReferences() string {
@@ -310,46 +330,52 @@ func (m Model) renderCosignerReferences() string {
 			body.WriteString(subtitleStyle.Render("Showing the last list read.") + "\n")
 		}
 	}
-	if len(references) == 0 && m.cosigner.listErr != "" {
+	rows := m.cosignerManagerRows()
+	if rows == 0 && m.cosigner.listErr != "" {
 		body.WriteString(wrapPlainText("r lists them again.", m.tableWidth()) + "\n")
-	} else if len(references) == 0 {
+	} else if rows == 0 {
 		body.WriteString(wrapPlainText("No cosigner references enrolled. Press i to import a public envelope file or p to paste JSON.", m.tableWidth()) + "\n")
 	} else {
 		nameWidth, idWidth := m.cosignerReferenceColumns(references)
 		start := m.cosigner.managerScroll
-		end := start + m.cosignerManagerVisibleRows()
-		if end > len(references) {
-			end = len(references)
-		}
+		end := min(start+m.cosignerManagerVisibleRows(), rows)
 		body.WriteString(scrollMoreAboveLine(start))
 		body.WriteString("\n")
 		for index := start; index < end; index++ {
-			reference := references[index]
 			prefix := "  "
 			if index == m.cosigner.managerSelected {
 				prefix = "> "
 			}
-			row := fmt.Sprintf("%s%-*s  %-*s  %s",
-				prefix,
-				nameWidth, ellipsizeMiddle(reference.Name, nameWidth),
-				idWidth, apadminapp.CompactWitnessKeyID(reference.ComponentKey),
-				displayKeyType(reference.KeyType),
-			)
-			if index == m.cosigner.managerSelected {
-				body.WriteString(selectedStyle.Render(row))
+			var row string
+			if index < len(references) {
+				reference := references[index]
+				row = fmt.Sprintf("%s%-*s  %-*s  %s",
+					prefix,
+					nameWidth, ellipsizeMiddle(reference.Name, nameWidth),
+					idWidth, apadminapp.CompactWitnessKeyID(reference.ComponentKey),
+					displayKeyType(reference.KeyType),
+				)
 			} else {
+				bad := m.cosigner.invalid[index-len(references)]
+				row = ellipsize(terminalSafe(prefix+filepath.Base(bad.Path)+": "+bad.Reason), m.tableWidth())
+			}
+			switch {
+			case index == m.cosigner.managerSelected:
+				body.WriteString(selectedStyle.Render(row))
+			case index >= len(references):
+				body.WriteString(errorStyle.Render(row))
+			default:
 				body.WriteString(row)
 			}
 			body.WriteString("\n")
 		}
-		body.WriteString(scrollMoreBelowLine(len(references) - end))
+		body.WriteString(scrollMoreBelowLine(rows - end))
 		body.WriteString("\n")
 	}
-	if lines := m.invalidCosignerReferenceLines(); len(lines) > 0 {
+	if count := len(m.cosigner.invalid); count > 0 {
 		body.WriteString("\n")
-		for _, line := range lines {
-			body.WriteString(errorStyle.Render(ellipsize(terminalSafe(line), m.tableWidth())) + "\n")
-		}
+		note := fmt.Sprintf("%d reference file(s) are not valid references; select one to clear it.", count)
+		body.WriteString(errorStyle.Render(ellipsize(note, m.tableWidth())) + "\n")
 	}
 	if m.cosigner.managerStatus != "" {
 		body.WriteString("\n")
@@ -439,16 +465,20 @@ func (m Model) renderCosignerGenerateType() string {
 }
 
 func (m Model) renderCosignerRemoveConfirm() string {
-	reference, ok := m.selectedCosignerReference()
-	if !ok {
-		return m.renderPopup(70, "Cosigner reference is no longer available")
-	}
 	var body strings.Builder
 	body.WriteString(warningStyle.Render("REMOVE COSIGNER REFERENCE"))
 	body.WriteString("\n\n")
-	body.WriteString("Remove alias " + reference.Name + " from cosigned-account generation?\n\n")
-	body.WriteString("Witness Key ID:\n")
-	body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
+	if reference, ok := m.selectedCosignerReference(); ok {
+		body.WriteString("Remove alias " + reference.Name + " from cosigned-account generation?\n\n")
+		body.WriteString("Witness Key ID:\n")
+		body.WriteString(wrapPlainText(groupedWitnessKeyID(reference.ComponentKey), m.popupBodyWidth(80)))
+	} else if bad, ok := m.selectedInvalidCosignerReference(); ok && bad.Removable {
+		body.WriteString(wrapPlainText(terminalSafe("Remove "+filepath.Base(bad.Path)+"? It is not a valid reference:"), m.popupBodyWidth(80)))
+		body.WriteString("\n\n")
+		body.WriteString(wrapPlainText(terminalSafe(bad.Reason), m.popupBodyWidth(80)))
+	} else {
+		return m.renderPopup(70, "Cosigner reference is no longer available")
+	}
 	body.WriteString("\n\n")
 	body.WriteString(buttonPair(m.cosigner.removeFocus, "CANCEL", "REMOVE", buttonDanger))
 	body.WriteString("\n")

@@ -4,9 +4,14 @@
 package tui
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
@@ -287,9 +292,9 @@ func TestCosignerDetailsHaveNoClientRouteActions(t *testing.T) {
 	}
 }
 
-// The manager reports the reference files that are not valid references
-// below the list, at the minimum window size too, and points to where each
-// is cleared, since it acts only on listed references.
+// The manager lists the reference files that are not valid references after
+// the references, and a note below the list counts them, at the minimum window
+// size too. Every one is reachable by scrolling.
 func TestCosignerManagerReportsInvalidReferenceFiles(t *testing.T) {
 	var references []CosignerReferenceInfo
 	for i := 0; i < 12; i++ {
@@ -302,26 +307,153 @@ func TestCosignerManagerReportsInvalidReferenceFiles(t *testing.T) {
 		})
 	}
 	m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
+	const note = "5 reference file(s) are not valid references; select one to clear it."
 	view := stripANSI(m.View())
-	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
-	if len(lines) > MinHeight {
-		t.Fatalf("view is %d lines, more than the %d-line window:\n%s", len(lines), MinHeight, view)
-	}
-	for _, want := range []string{
-		"5 reference file(s) are not valid references:",
-		`  bad.json: unsupported schema "wrong"`,
-		`  my ref.json: unsupported schema "wrong"`,
-		"  and 2 more",
-		"apadmin cosigner list says how to clear each.",
-		"ref-00",
-	} {
+	checkFitsMinSize(t, view)
+	for _, want := range []string{note, "> ref-00"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("%q missing from:\n%s", want, view)
 		}
+	}
+	for range len(references) + len(invalid) - 1 {
+		m = press(t, m, "down")
+	}
+	view = stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	for _, want := range []string{note, `  bad.json: unsupported schema "wrong"`, `  my ref.json: unsupported schema "wrong"`, `> x.json: unsupported schema "wrong"`} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q missing from:\n%s", want, view)
+		}
+	}
+}
+
+// invalidCosignerReferencesModel is the manager at the minimum window size
+// with two references and, listed after them, two reference files that are
+// not valid references: one remove clears, and one only deleting it does.
+func invalidCosignerReferencesModel(t *testing.T) Model {
+	t.Helper()
+	const dir = "/var/lib/apsigner/identities/default/cosigners/"
+	return sizedForTest(t, Model{viewState: ViewCosignerReferences, connectionState: ConnectionConnected, cosigner: cosignerState{
+		loaded: true,
+		references: []CosignerReferenceInfo{
+			{Name: "alpha", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"},
+			{Name: "west", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"},
+		},
+		invalid: []InvalidCosignerReferenceInfo{
+			{Path: dir + "bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
+			{Path: dir + "my ref.json", Name: "my ref", Reason: `"my ref" is not a reference name`},
+		},
+	}}, MinWidth, MinHeight)
+}
+
+// checkFitsMinSize fails when view is taller or wider than the minimum window.
+func checkFitsMinSize(t *testing.T, view string) {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) > MinHeight {
+		t.Errorf("view is %d lines, more than the %d-line window:\n%s", len(lines), MinHeight, view)
 	}
 	for _, line := range lines {
 		if lipgloss.Width(line) > MinWidth {
 			t.Errorf("line wider than the window: %q", line)
 		}
+	}
+}
+
+// sentCosignerRemovals connects m to a pipe and returns the name of each
+// cosigner reference removal it sends.
+func sentCosignerRemovals(t *testing.T, m *Model) <-chan string {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close() })
+	client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(client.Disconnect)
+	m.adminClient = client
+	sent := make(chan string, 8)
+	go func() {
+		reader := bufio.NewReader(serverConn)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var msg protocol.RemoveCosignerReferenceMessage
+			if json.Unmarshal(line, &msg) == nil && msg.Type == protocol.MsgTypeRemoveCosignerReference {
+				sent <- msg.Name
+			}
+		}
+	}()
+	return sent
+}
+
+// A reference file that is not a valid reference is a row of the list. One
+// that remove clears is removed through the same confirmation as a
+// reference, which defaults to Cancel.
+func TestCosignerManagerRemovesARemovableInvalidReferenceFile(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	removals := sentCosignerRemovals(t, &m)
+	m = press(t, m, "down", "down")
+	view := stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	for _, want := range []string{`> bad.json: unsupported schema "wrong"`, "enter: Clear"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q missing from:\n%s", want, view)
+		}
+	}
+
+	m = press(t, m, "enter")
+	if m.viewState != ViewCosignerRemoveConfirm || m.cosigner.removeFocus != 0 {
+		t.Fatalf("enter = view %v focus %d, want the remove confirmation on Cancel", m.viewState, m.cosigner.removeFocus)
+	}
+	view = stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	for _, want := range []string{"REMOVE COSIGNER REFERENCE", "bad.json", `unsupported schema "wrong"`, "CANCEL", "REMOVE"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q missing from:\n%s", want, view)
+		}
+	}
+	if m = press(t, m, "enter"); m.viewState != ViewCosignerReferences {
+		t.Fatalf("Cancel = view %v, want the list", m.viewState)
+	}
+
+	m = press(t, m, "enter")
+	next, cmd := m.handleKeyPress(browserKey("y"))
+	m = next.(Model)
+	if m.viewState != ViewCosignerRemoving {
+		t.Fatalf("y = view %v, want removing", m.viewState)
+	}
+	runSends(cmd)
+	select {
+	case name := <-removals:
+		if name != "bad" {
+			t.Fatalf("removal sent for %q, want bad", name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no removal was sent")
+	}
+	m = updateModel(t, m, CosignerRemoveResultMsg{ID: m.operation.id, Success: true, Name: "bad", Removed: true})
+	if m.viewState != ViewCosignerReferences || m.cosigner.managerStatus != "Removed bad" {
+		t.Fatalf("result = view %v status %q", m.viewState, m.cosigner.managerStatus)
+	}
+}
+
+// A file remove does not reach is not offered for removal: choosing it says
+// to delete the file.
+func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T) {
+	m := invalidCosignerReferencesModel(t)
+	m = press(t, m, "down", "down", "down")
+	next, cmd := m.handleKeyPress(browserKey("enter"))
+	m = next.(Model)
+	if m.viewState != ViewCosignerReferences || cmd != nil {
+		t.Fatalf("enter = view %v cmd nil=%v, want the list and no request", m.viewState, cmd == nil)
+	}
+	view := stripANSI(m.View())
+	checkFitsMinSize(t, view)
+	want := "Remove does not reach my ref.json; delete /var/lib/apsigner/identities/default/cosigners/my ref.json to clear it."
+	if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, want) {
+		t.Errorf("%q missing from:\n%s", want, view)
 	}
 }
