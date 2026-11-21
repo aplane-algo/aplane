@@ -1681,10 +1681,11 @@ reads and writes, and the runtime index.
   durability is uncertain publishes what the file then holds. A replaced
   index is zeroed when its last reader has released, never while one may
   hold it. Lock cleanup zeroes the index after the key users have drained,
-  and a failed unlock reload clears what it published; a locked node has
-  none. Recovery keeps the index with the keyring: nothing reads it there,
-  and the reload that lifts the recovery replaces it. A token sent in a request header is a Go
-  string, which cannot be zeroed; zeroing covers the index.
+  and an unlock reload that fails clears the index with the keyring it
+  closes; a locked node has none. A node that enters recovery keeps the
+  index it had, with the keyring: no lookup runs there, and the next
+  reload that publishes one replaces it. A token sent in a request header
+  is a Go string, which cannot be zeroed; zeroing covers the index.
 - **Lifecycle.** Key deletion moves the key's file to
   `deleted/source_tokens/`; archive prune accepts it; a generation mint
   copies token files with the generation; a passphrase change re-encrypts

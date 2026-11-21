@@ -457,7 +457,8 @@ func (ir *Runtime) SetUnlocked() {
 // and passes handed out in that session are cancelled, so a stage table pass
 // stops and leaves the worker free to restore for the session a reconcile
 // opens. Nothing is drained or cleared; recovery keeps the keyring, and with
-// it the source token index, which a reconcile's reload replaces.
+// it the source token index, which the next reload that publishes one
+// replaces.
 func (ir *Runtime) SetRecovery() {
 	ir.lockRuntime.SetRecovery()
 	ir.cancelKeyUses()
@@ -550,8 +551,8 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	// clearing the index would hide nothing; and a clear here could land
 	// after a second unlock's reload had published its index and before
 	// that unlock published, leaving the signer unlocked with no tokens. A
-	// lock clears the index, and nothing reads it until the signer is
-	// unlocked: the external check step reads it inside a key use.
+	// lock clears the index, and no lookup uses it until the signer is
+	// unlocked: the external check step reads tokens inside a key use.
 	return ok, keyCount, errMsg
 }
 
@@ -1444,7 +1445,9 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 //
 // When it fails, the reload has already closed the keyring it opened, and the
 // source token index goes with it: a reload can publish the index before a
-// later step fails, and a failed unlock must leave no tokens in memory.
+// later step fails, and tokens must not outlive the keyring that decrypts
+// them. A wrong passphrase never gets here; performUnlock refuses it first.
+// An unlock the fence refuses did not fail, and keeps its index (TryUnlock).
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()

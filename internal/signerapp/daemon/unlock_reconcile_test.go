@@ -339,14 +339,13 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 // The unlock's reload published a source token index before the fence. The
 // fence leaves it: recovery keeps the keyring that decrypts the token files,
 // and a clear there could wipe the index a second unlock had just published.
-// Nothing reads it until the signer is unlocked, and a lock zeroes it.
+// No lookup uses it until the signer is unlocked, and a lock zeroes it.
 func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		after  func(*productruntime.Runtime)
-		want   func(t *testing.T, success bool, keyCount int, errMsg, code string)
-		state  signerruntime.SignerState
-		tokens bool
+		name  string
+		after func(*productruntime.Runtime)
+		want  func(t *testing.T, success bool, keyCount int, errMsg, code string)
+		state signerruntime.SignerState
 	}{
 		{
 			name:  "still in recovery",
@@ -356,8 +355,7 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
 				}
 			},
-			state:  signerruntime.SignerStateRecovery,
-			tokens: true,
+			state: signerruntime.SignerStateRecovery,
 		},
 		{
 			name:  "a reconcile lifted it",
@@ -367,8 +365,7 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want a plain success", success, keyCount, errMsg, code)
 				}
 			},
-			state:  signerruntime.SignerStateUnlocked,
-			tokens: true,
+			state: signerruntime.SignerStateUnlocked,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -397,8 +394,8 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 				t.Fatalf("state = %v, want %v", got, tc.state)
 			}
 			got, known := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening")
-			if known != tc.tokens || (tc.tokens && got != "tok-fenced") {
-				t.Fatalf("SourceTokenFor() = %q, %v; want the index kept: %v", got, known, tc.tokens)
+			if !known || got != "tok-fenced" {
+				t.Fatalf("SourceTokenFor() = %q, %v; want the index the reload published kept", got, known)
 			}
 			// A lock ends it: the index the reload published is zeroed.
 			ir.Lock()
