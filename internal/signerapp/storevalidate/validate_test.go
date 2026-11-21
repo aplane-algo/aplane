@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -261,6 +262,38 @@ func TestTemplateRepairDestinationSkipsOnlyTheRepairedRecords(t *testing.T) {
 		}
 		if err := storevalidate.Candidate(opts); !errors.As(err, &damaged) || damaged.Path != member {
 			t.Fatalf("Candidate() error = %v, want the member %s", err, member)
+		}
+		if !reflect.DeepEqual(damaged.Prune, []string{member}) {
+			t.Fatalf("member prune selection = %q, want %q", damaged.Prune, member)
+		}
+	})
+	// An archived policy document is pruned together with its sidecar.
+	t.Run("archived policy document", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const document = "deleted/policies/K.json"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(document)))
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(document+".hmac")))
+		var damaged *storevalidate.DeletedArchiveMemberError
+		err := storevalidate.Candidate(opts)
+		if !errors.As(err, &damaged) || !reflect.DeepEqual(damaged.Prune, []string{document, document + ".hmac"}) {
+			t.Fatalf("Candidate() error = %v (%+v), want the document and its sidecar to prune", err, damaged)
+		}
+	})
+	// A file whose name no member takes is not prunable, and says so by type.
+	t.Run("stray file", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const stray = "deleted/keys/notes.txt"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(stray)))
+		scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var strayErr *storevalidate.DeletedArchiveStrayError
+		if err := storevalidate.CommitOnlyDamage(opts, scan); !errors.As(err, &strayErr) || strayErr.Path != stray ||
+			err.Error() != `deleted archive: unsupported deleted credential "`+stray+`"` {
+			t.Fatalf("CommitOnlyDamage() error = %v, want the stray %s", err, stray)
 		}
 	})
 }

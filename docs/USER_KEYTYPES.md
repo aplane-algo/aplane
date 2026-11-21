@@ -1245,11 +1245,24 @@ not repair, and the preview names it:
   A rebuilt store has the archive's credentials and per-key policies but no
   templates or key type state, so import the templates again after the first
   unlock.
-- **Damage only a commit refuses**, such as a deleted-archive member that does
-  not verify. Unlock never opens the deleted archive, but every generation
-  commit verifies it. Start `apsigner`, which unlocks into recovery, remove
-  the member with `apadmin archive prune --confirm <deleted/path>`, stop
-  `apsigner`, and repair again.
+- **Damage only a commit refuses**, which unlock never reads. The preview
+  gives the step for each:
+  - a deleted-archive member that does not verify: start `apsigner`, which
+    unlocks into recovery, remove it with `apadmin archive prune --confirm
+    <deleted/path>` (an archived policy document together with its sidecar),
+    stop `apsigner`, and repair again;
+  - a file in the deleted archive that is no member, which archive prune
+    cannot remove: with `apsigner` stopped, move it out of the store's
+    `deleted/` directory;
+  - a parent generation that has lost its seal: with `apsigner` stopped,
+    restore it from the same snapshot as the rest of the store, or move it
+    out of the store;
+  - a generation too large for any successor: prune deleted-archive members
+    in recovery as above until it fits, or, if the keys alone are over the
+    limit, rebuild from a backup with `apstore rebuild --address` for the keys
+    to keep, since a signer in recovery cannot delete keys;
+  - more cosigner credentials than any commit accepts: rebuild with
+    `apstore rebuild --address` for the credentials to keep.
 
 While the signer is unlocked, a reload after an install or after a change to
 the store's files can also find a defect without leaving the signer. A

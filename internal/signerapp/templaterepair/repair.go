@@ -65,6 +65,9 @@ var (
 	// ErrCommitBlocked refuses a repair that no generation commit could
 	// complete over the current generation.
 	ErrCommitBlocked = errors.New("no generation can be committed over the current one")
+	// ErrGenerationTooLarge is the commit-blocking damage of a current
+	// generation too large for any successor to fit the quarantine limits.
+	ErrGenerationTooLarge = errors.New("the generation is too large for a successor")
 	// ErrNothingNamed refuses a repair that names no key type. apstore
 	// refuses such a command line first; this guard is what keeps Repair
 	// from committing a generation that changes nothing.
@@ -261,12 +264,23 @@ func relocate(err error, copy, current string) error {
 // though unlock never reads it.
 func commitBlocked(current storevalidate.Options, reconcile genstore.ReconcileReport, scan *keys.KeyScanReport) error {
 	if parent := reconcile.RetainedUnsealedParent; parent != "" {
-		return fmt.Errorf("the current generation's parent %s has lost its seal, which reconciliation keeps and every mint refuses; restore it from the same snapshot as the rest of the store, or remove it", parent)
+		return &UnsealedParentError{Parent: parent}
 	}
 	if err := genstore.RequireSuccessorFits(current.Candidate); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrGenerationTooLarge, err)
 	}
 	return storevalidate.CommitOnlyDamage(current, scan)
+}
+
+// UnsealedParentError is a current generation whose parent has lost its
+// seal: reconciliation keeps that parent as damage, and every mint refuses
+// it.
+type UnsealedParentError struct {
+	Parent string
+}
+
+func (e *UnsealedParentError) Error() string {
+	return fmt.Sprintf("the current generation's parent %s has lost its seal, which reconciliation keeps and every mint refuses", e.Parent)
 }
 
 func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *keys.KeyScanReport) (Defect, error) {

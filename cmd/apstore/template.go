@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 const templateRepairUsage = "usage: apstore template repair [repin <key_type>...] [drop <key_type>...] [--confirm]"
@@ -146,7 +149,7 @@ func runTemplateRepair(opts templaterepair.Options, actions map[string]templater
 		return fmt.Errorf("%w; start apsigner and unlock it to check which generation it selects", err)
 	}
 	if err != nil {
-		adviseRefusal(err)
+		adviseRefusal(err, opts.Current)
 		return err
 	}
 	logInfof("template repair committed generation %s over %s, which is kept", result.GenerationID, result.Parent)
@@ -224,7 +227,7 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 	}
 	if preview.CommitBlocked != nil {
 		logWarnf("a repair is refused: no generation can be committed over the current one: %v", preview.CommitBlocked)
-		adviseRefusal(preview.CommitBlocked)
+		adviseRefusal(preview.CommitBlocked, keystorePaths().GenerationPaths(preview.GenerationID))
 		return nil
 	}
 	logInfof("repair every defect in one run: apstore template repair repin <key_type>... drop <key_type>... --confirm")
@@ -250,12 +253,25 @@ func printExternalEditEvidence(defect templaterepair.Defect) {
 
 const otherDamageAdvice = "a repair would not let the signer unlock: repair that damage first and run the repair again, or rebuild the store from a backup (apstore rebuild)"
 
-// adviseRefusal says what clears the damage that refused a repair.
-func adviseRefusal(err error) {
+// adviseRefusal says what clears the damage that refused a repair over
+// generation, whatever its class.
+func adviseRefusal(err error, generation storepaths.GenPaths) {
 	var member *storevalidate.DeletedArchiveMemberError
+	var stray *storevalidate.DeletedArchiveStrayError
+	var unsealed *templaterepair.UnsealedParentError
 	switch {
 	case errors.As(err, &member):
-		logWarnf("unlock never opens the deleted archive, but every generation commit verifies it: start apsigner, remove the member with `apadmin archive prune --confirm %s`, stop apsigner, and repair again", member.Path)
+		logWarnf("unlock never opens the deleted archive, but every generation commit verifies it: start apsigner, which unlocks into recovery, remove the member with `apadmin archive prune --confirm %s`, stop apsigner, and repair again", strings.Join(member.Prune, " "))
+	case errors.As(err, &stray):
+		logWarnf("%s is no deleted-archive member, so `apadmin archive prune` cannot remove it: with apsigner stopped, move it out of the store's deleted/ directory, then repair again",
+			filepath.Join(generation.Dir(), filepath.FromSlash(stray.Path)))
+	case errors.As(err, &unsealed):
+		logWarnf("with apsigner stopped, restore %s from the same snapshot as the rest of the store, or move it out of the store, then repair again",
+			keystorePaths().GenerationDir(unsealed.Parent))
+	case errors.Is(err, templaterepair.ErrGenerationTooLarge):
+		logWarnf("start apsigner, which unlocks into recovery, remove deleted-archive members with `apadmin archive prune` until the generation fits, stop apsigner, and repair again; a signer in recovery cannot delete keys, so if the keys alone are over the limit, rebuild the store from a backup with `apstore rebuild --address` for the keys to keep")
+	case errors.Is(err, keys.ErrCosignerCredentialLimit):
+		logWarnf("no commit accepts more cosigner credentials than the limit, and a signer in recovery cannot delete keys: rebuild the store from a backup with `apstore rebuild --address` for the credentials to keep")
 	case errors.Is(err, templaterepair.ErrOtherDamage):
 		logWarnf("%s", otherDamageAdvice)
 	}

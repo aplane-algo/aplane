@@ -79,7 +79,10 @@ type DeletedArchiveMemberError struct {
 	// Path is the member's canonical path in the generation, such as
 	// deleted/keytypes/<key_type>.template.
 	Path string
-	Err  error
+	// Prune is the selection archive prune takes to remove it: the member,
+	// with the other half of an archived policy document and its sidecar.
+	Prune []string
+	Err   error
 }
 
 func (e *DeletedArchiveMemberError) Error() string {
@@ -87,6 +90,18 @@ func (e *DeletedArchiveMemberError) Error() string {
 }
 
 func (e *DeletedArchiveMemberError) Unwrap() error { return e.Err }
+
+// DeletedArchiveStrayError is a file in the deleted archive that is no
+// member of it: its name is not one a member takes. Every commit refuses it,
+// unlock never reads it, and archive prune, which takes members only, cannot
+// remove it.
+type DeletedArchiveStrayError struct {
+	// Path is the file's path in the generation.
+	Path   string
+	Reason string
+}
+
+func (e *DeletedArchiveStrayError) Error() string { return fmt.Sprintf("%s %q", e.Reason, e.Path) }
 
 // RecoveryDestination proves that destination authority and every
 // unselected credential are healthy before a recovery-mode restore. Only the
@@ -225,7 +240,7 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 		case "deleted/keys":
 			selector, class, ok := keys.ParseManagedCredentialFilename(base)
 			if !ok {
-				return fmt.Errorf("unsupported deleted credential %q", entry.Path)
+				return &DeletedArchiveStrayError{Path: entry.Path, Reason: "unsupported deleted credential"}
 			}
 			switch class {
 			case keys.ManagedCredentialAccount:
@@ -233,11 +248,11 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 			case keys.ManagedCredentialCosigner:
 				ctx = crypto.CosignerCredentialContext(selector)
 			default:
-				return fmt.Errorf("unsupported deleted credential class in %q", entry.Path)
+				return &DeletedArchiveStrayError{Path: entry.Path, Reason: "unsupported deleted credential class in"}
 			}
 		case "deleted/keytypes":
 			if !strings.HasSuffix(base, ".template") {
-				return fmt.Errorf("unsupported deleted template %q", entry.Path)
+				return &DeletedArchiveStrayError{Path: entry.Path, Reason: "unsupported deleted template"}
 			}
 			ctx = crypto.KeyTypeTemplateContext(strings.TrimSuffix(base, ".template"))
 		case "deleted/policies":
@@ -246,18 +261,18 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 			}
 			continue
 		default:
-			return fmt.Errorf("deleted member is outside closed namespaces: %q", entry.Path)
+			return &DeletedArchiveStrayError{Path: entry.Path, Reason: "deleted member is outside closed namespaces:"}
 		}
 		data, _, err := fsutil.ReadRegularFileLimited(
 			filepath.Join(candidate.Dir(), filepath.FromSlash(entry.Path)),
 			crypto.MaxStandaloneEnvelopeBytes,
 		)
 		if err != nil {
-			return err
+			return &DeletedArchiveMemberError{Path: entry.Path, Prune: []string{entry.Path}, Err: err}
 		}
 		plaintext, err := kr.Open(data, ctx)
 		if err != nil {
-			return &DeletedArchiveMemberError{Path: entry.Path, Err: err}
+			return &DeletedArchiveMemberError{Path: entry.Path, Prune: []string{entry.Path}, Err: err}
 		}
 		crypto.ZeroBytes(plaintext)
 	}
@@ -271,20 +286,30 @@ func verifyArchivedPolicy(candidate storepaths.GenPaths, relative string, kr *cr
 	path := filepath.Join(candidate.Dir(), filepath.FromSlash(relative))
 	if docPath, ok := strings.CutSuffix(path, ".hmac"); ok {
 		if _, err := os.Lstat(docPath); err != nil {
-			return fmt.Errorf("archived policy sidecar %q has no document: %w", relative, err)
+			return &DeletedArchiveMemberError{Path: relative, Prune: []string{relative},
+				Err: fmt.Errorf("archived policy sidecar has no document: %w", err)}
 		}
 		return nil
 	}
+	if !strings.HasSuffix(relative, ".json") {
+		return &DeletedArchiveStrayError{Path: relative, Reason: "unsupported deleted policy"}
+	}
+	// A document and its sidecar are one record to archive prune.
+	prune := []string{relative}
+	sidecarPath := policy.PolicyIntegritySidecarPath(path)
+	if _, err := os.Lstat(sidecarPath); err == nil {
+		prune = append(prune, relative+".hmac")
+	}
 	data, _, err := fsutil.ReadRegularFileLimited(path, 1<<20)
 	if err != nil {
-		return err
+		return &DeletedArchiveMemberError{Path: relative, Prune: prune, Err: err}
 	}
-	sidecar, err := policy.LoadPolicyIntegritySidecar(policy.PolicyIntegritySidecarPath(path))
+	sidecar, err := policy.LoadPolicyIntegritySidecar(sidecarPath)
 	if err != nil {
-		return &DeletedArchiveMemberError{Path: relative, Err: err}
+		return &DeletedArchiveMemberError{Path: relative, Prune: prune, Err: err}
 	}
 	if err := policy.VerifyPolicyIntegrity(data, sidecar, kr); err != nil {
-		return &DeletedArchiveMemberError{Path: relative, Err: err}
+		return &DeletedArchiveMemberError{Path: relative, Prune: prune, Err: err}
 	}
 	return nil
 }

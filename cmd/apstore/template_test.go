@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -318,6 +320,57 @@ func TestTemplateRepairAdvisesByDamage(t *testing.T) {
 				t.Fatalf("preview log = %q, want the unlock refusal and its advice", log.String())
 			}
 		})
+	})
+}
+
+// Every class of damage that refuses a repair carries its own advice.
+func TestTemplateRepairAdvicePerRefusal(t *testing.T) {
+	var log bytes.Buffer
+	appLogger.SetOutput(&log)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
+	oldDataDirectory := dataDirectory
+	t.Cleanup(func() { dataDirectory = oldDataDirectory })
+	dataDirectory = t.TempDir()
+	generation := keystorePaths().GenerationPaths("gen-1700000000-0badc0de")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"archive member", &storevalidate.DeletedArchiveMemberError{
+			Path: "deleted/policies/K.json", Prune: []string{"deleted/policies/K.json", "deleted/policies/K.json.hmac"}, Err: errors.New("bad"),
+		}, "`apadmin archive prune --confirm deleted/policies/K.json deleted/policies/K.json.hmac`"},
+		{"stray archive file", &storevalidate.DeletedArchiveStrayError{Path: "deleted/keys/notes.txt", Reason: "unsupported deleted credential"},
+			filepath.Join(generation.Dir(), "deleted", "keys", "notes.txt") + " is no deleted-archive member, so `apadmin archive prune` cannot remove it: with apsigner stopped, move it out of the store's deleted/ directory"},
+		{"unsealed parent", &templaterepair.UnsealedParentError{Parent: "gen-1600000000-0badc0de"},
+			"restore " + keystorePaths().GenerationDir("gen-1600000000-0badc0de") + " from the same snapshot as the rest of the store, or move it out of the store"},
+		{"too large", fmt.Errorf("%w: over", templaterepair.ErrGenerationTooLarge), "remove deleted-archive members with `apadmin archive prune` until the generation fits"},
+		{"cosigner credential limit", fmt.Errorf("credential inventory: %w", keys.ErrCosignerCredentialLimit), "rebuild the store from a backup with `apstore rebuild --address` for the credentials to keep"},
+		{"other damage", fmt.Errorf("%w: key file", templaterepair.ErrOtherDamage), otherDamageAdvice},
+	} {
+		log.Reset()
+		adviseRefusal(fmt.Errorf("template repair refused: %w: %w", templaterepair.ErrCommitBlocked, tc.err), generation)
+		if !strings.Contains(log.String(), tc.want) {
+			t.Fatalf("%s: advice = %q, want %q", tc.name, log.String(), tc.want)
+		}
+	}
+}
+
+// A stray file in the deleted archive, which archive prune cannot remove, is
+// named with the advice to move it out by hand.
+func TestTemplateRepairAdvisesOnAStrayArchiveFile(t *testing.T) {
+	withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+		current := currentGenerationForTest(t, passphrase)
+		stray := filepath.Join(current.DeletedKeysDir(), "notes.txt")
+		if err := os.WriteFile(stray, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair"); err != nil {
+			t.Fatal(err)
+		}
+		if want := stray + " is no deleted-archive member"; !strings.Contains(log.String(), want) {
+			t.Fatalf("preview log = %q, want %q", log.String(), want)
+		}
 	})
 }
 
