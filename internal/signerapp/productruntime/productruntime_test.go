@@ -550,6 +550,36 @@ func TestStoredConfigRefusesAnOverlayWithNoDocument(t *testing.T) {
 	}
 }
 
+// An overlay whose only document is null (`---`, `~`, `null`, or `---` and
+// then comments) holds a document, so it is not refused as empty: it reads
+// as an empty mapping, no overrides, as a null config.yaml does. A setting
+// saved over it once panicked, writing into the nil map the decode left,
+// and took the signer down with it.
+func TestStoredConfigReadsANullDocumentAsNoOverridesAndSavesOverIt(t *testing.T) {
+	for _, data := range []string{"---\n", "~\n", "null\n", "---\n# require_cosigner: true\n"} {
+		t.Run(data, func(t *testing.T) {
+			root := t.TempDir()
+			path := ConfigPath(root)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if cfg, err := LoadStoredConfig(root); err != nil || *cfg != (StoredConfig{}) {
+				t.Fatalf("LoadStoredConfig() = %#v, %v; want no overrides", cfg, err)
+			}
+			if err := SaveStoredSetting(root, "require_cosigner", true); err != nil {
+				t.Fatalf("SaveStoredSetting() error = %v", err)
+			}
+			cfg, err := LoadStoredConfig(root)
+			if err != nil || cfg.RequireCosigner == nil || !*cfg.RequireCosigner {
+				t.Fatalf("LoadStoredConfig() after the save = %#v, %v; want require_cosigner true", cfg, err)
+			}
+		})
+	}
+}
+
 func TestLoadStoredConfigRejectsDecommissionedField(t *testing.T) {
 	root := t.TempDir()
 	path := ConfigPath(root)

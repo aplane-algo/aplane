@@ -249,6 +249,11 @@ func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 			return err
 		}
 	}
+	// A null document decodes to a nil map; like LoadStoredConfig, read it
+	// as an empty mapping.
+	if existing == nil {
+		existing = make(map[string]interface{})
+	}
 
 	existing[key] = value
 
