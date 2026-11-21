@@ -10,7 +10,7 @@ func (fs *Signer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		writeErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productRuntime(), fs.currentSSHServer() != nil, fs.ipcServer != nil))
+	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productRuntime()))
 }
 
 func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {

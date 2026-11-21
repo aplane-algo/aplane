@@ -588,10 +588,10 @@ func endpointRoleKeysHandler(nodeRole string, keys []signerapi.KeyInfo) http.Han
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/status" {
-			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{NodeRole: nodeRole, State: "unlocked", ReadyForSigning: true})
+			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{NodeRole: nodeRole, State: "unlocked"})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 	})
 }
 

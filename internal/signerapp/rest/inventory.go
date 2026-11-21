@@ -167,10 +167,7 @@ func keysAnswer(ir *productruntime.Runtime, lockGen uint64, keyList []signerapi.
 	if !ir.IsUnlocked() || ir.LockGeneration() != lockGen {
 		return nil, lockedError()
 	}
-	return &signerapi.KeysResponse{
-		Count: len(keyList),
-		Keys:  keyList,
-	}, nil
+	return &signerapi.KeysResponse{Keys: keyList}, nil
 }
 
 // BuildKeyTypes lists the key types the node offers for its role. While the

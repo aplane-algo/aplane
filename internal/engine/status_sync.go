@@ -41,7 +41,7 @@ func (e *Engine) SyncSignerStatus(ctx context.Context) (*SignerStatusSyncResult,
 		RevisionChanged: revisionChanged,
 	}
 
-	if !status.ReadyForSigning {
+	if status.SignerLocked {
 		if firstSync || revisionChanged || e.signerCacheCount() > 0 || !e.signerCacheIsLocked() {
 			e.resetSignerCache(true)
 			result.CacheCleared = true

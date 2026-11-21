@@ -22,7 +22,7 @@ func TestHealthRedactsStoreCheckFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	health := (Service{}).Health(ir, false, false)
+	health := (Service{}).Health(ir)
 	if len(health.Warnings) != 1 || strings.Contains(health.Warnings[0], active.Dir()) {
 		t.Fatalf("health warnings = %q, want one warning without store paths", health.Warnings)
 	}
@@ -44,17 +44,17 @@ func TestHealthCachesStoreInspection(t *testing.T) {
 	cache := &StoreHealthCache{now: func() time.Time { return now }}
 	svc := Service{Deps: Dependencies{StoreHealth: cache}}
 
-	if warnings := svc.Health(ir, false, false).Warnings; len(warnings) != 0 {
+	if warnings := svc.Health(ir).Warnings; len(warnings) != 0 {
 		t.Fatalf("initial warnings = %q, want none", warnings)
 	}
 	if err := os.RemoveAll(active.DeletedKeysDir()); err != nil {
 		t.Fatal(err)
 	}
-	if warnings := svc.Health(ir, false, false).Warnings; len(warnings) != 0 {
+	if warnings := svc.Health(ir).Warnings; len(warnings) != 0 {
 		t.Fatalf("warnings within TTL = %q, want the cached result", warnings)
 	}
 	now = now.Add(storeHealthCacheTTL)
-	if warnings := svc.Health(ir, false, false).Warnings; len(warnings) != 1 {
+	if warnings := svc.Health(ir).Warnings; len(warnings) != 1 {
 		t.Fatalf("warnings after TTL = %q, want a fresh failure", warnings)
 	}
 }

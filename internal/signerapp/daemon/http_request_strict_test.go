@@ -321,7 +321,7 @@ func TestSignerClientRequestsDecodeStrictly(t *testing.T) {
 	var failures []string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
-			writeJSON(w, http.StatusOK, signerapi.StatusResponse{State: "unlocked", ReadyForSigning: true, ApprovalWaitSeconds: 60})
+			writeJSON(w, http.StatusOK, signerapi.StatusResponse{State: "unlocked", ApprovalWaitSeconds: 60})
 			return
 		}
 		newValue, ok := requestTypes[r.URL.Path]

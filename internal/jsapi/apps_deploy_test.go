@@ -65,7 +65,7 @@ func TestAppDeployReturnsAConfirmedDeployWithoutItsApp(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: 1, Keys: []signerapi.KeyInfo{{Address: deployer, KeyType: "ed25519", AuthorizationKind: "ed25519"}}})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: deployer, KeyType: "ed25519", AuthorizationKind: "ed25519"}}})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
 			var req signerapi.GroupSignRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

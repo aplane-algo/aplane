@@ -145,10 +145,9 @@ func TestSignerClientContextAccessIsRaceSafe(t *testing.T) {
 
 func TestGetStatus_Success(t *testing.T) {
 	resp := signerapi.StatusResponse{
-		State:           "unlocked",
-		ReadyForSigning: true,
-		KeyCount:        2,
-		KeysetRevision:  5,
+		State:          "unlocked",
+		KeyCount:       2,
+		KeysetRevision: 5,
 	}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet || req.URL.Path != "/status" {
@@ -308,7 +307,6 @@ func requireDeadlineAtMost(t *testing.T, ctx context.Context, max time.Duration)
 
 func TestGetKeys_Success(t *testing.T) {
 	resp := signerapi.KeysResponse{
-		Count: 2,
 		Keys: []signerapi.KeyInfo{
 			{Address: "ADDR1", KeyType: "ed25519"},
 			{Address: "ADDR2", KeyType: "aplane.falcon1024.v1"},
@@ -324,9 +322,6 @@ func TestGetKeys_Success(t *testing.T) {
 	got, err := c.GetKeysWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetKeys() error = %v", err)
-	}
-	if got.Count != 2 {
-		t.Errorf("Count = %d, want 2", got.Count)
 	}
 	if len(got.Keys) != 2 {
 		t.Errorf("len(Keys) = %d, want 2", len(got.Keys))

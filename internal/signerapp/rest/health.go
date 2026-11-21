@@ -14,34 +14,27 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-func (s Service) Health(ir *productruntime.Runtime, sshEnabled, ipcEnabled bool) *signerapi.HealthResponse {
+func (s Service) Health(ir *productruntime.Runtime) *signerapi.HealthResponse {
 	status := "healthy"
 	locked := false
-	readyForSigning := false
 	if ir == nil {
 		status = "degraded"
 	} else {
 		locked = !ir.IsUnlocked()
-		readyForSigning = ir.IsUnlocked()
 	}
 
 	return &signerapi.HealthResponse{
-		Status:          status,
-		Service:         "Signer",
-		ProtocolVersion: signerapi.CurrentProtocolVersion(),
-		BuildVersion:    version.String(),
-		SignerLocked:    locked,
-		ReadyForSigning: readyForSigning,
-		SSHEnabled:      sshEnabled,
-		IPCEnabled:      ipcEnabled,
-		Warnings:        s.publicStoreHealthWarnings(ir),
+		Status:       status,
+		Service:      "Signer",
+		BuildVersion: version.String(),
+		SignerLocked: locked,
+		Warnings:     s.publicStoreHealthWarnings(ir),
 	}
 }
 
 func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 	state := "unknown"
 	locked := true
-	readyForSigning := false
 	keyCount := 0
 	keysetRevision := uint64(0)
 	approvalWaitSeconds := int64(0)
@@ -51,7 +44,6 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 		nodeRole = string(ir.NodeRole())
 		state = ir.GetState().String()
 		locked = !ir.IsUnlocked()
-		readyForSigning = ir.IsUnlocked()
 		keyCount = ir.KeyCount()
 		keysetRevision = ir.KeysetRevision()
 		approvalWaitSeconds = int64(ir.Config().ApprovalWait() / time.Second)
@@ -59,11 +51,9 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 
 	return &signerapi.StatusResponse{
 		NodeRole:            nodeRole,
-		ProtocolVersion:     signerapi.CurrentProtocolVersion(),
 		BuildVersion:        version.String(),
 		State:               state,
 		SignerLocked:        locked,
-		ReadyForSigning:     readyForSigning,
 		KeyCount:            keyCount,
 		KeysetRevision:      keysetRevision,
 		ApprovalWaitSeconds: approvalWaitSeconds,

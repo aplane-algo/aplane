@@ -28,7 +28,7 @@ func newRecordingEndpoint(t *testing.T, nodeRole string, keys []signerapi.KeyInf
 		case "/status":
 			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{NodeRole: nodeRole, State: "unlocked"})
 		case "/keys":
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 		default:
 			http.NotFound(w, r)
 		}

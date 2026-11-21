@@ -44,9 +44,9 @@ func TestSignedTransactionsWarnWhenTheRefreshAfterARekeyFails(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/keys":
 			keys := []signerapi.KeyInfo{{Address: account.Address.String(), KeyType: "ed25519", AuthorizationKind: "ed25519", ValidRekeyTarget: true}}
-			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Count: len(keys), Keys: keys})
+			_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: keys})
 		case r.Method == http.MethodGet && r.URL.Path == "/status":
-			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{State: "unlocked", ReadyForSigning: true, KeyCount: 1})
+			_ = json.NewEncoder(w).Encode(signerapi.StatusResponse{State: "unlocked", KeyCount: 1})
 		case r.Method == http.MethodPost && r.URL.Path == "/sign":
 			var req signerapi.GroupSignRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

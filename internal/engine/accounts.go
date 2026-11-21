@@ -136,10 +136,11 @@ func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 // and writes no cache, so a decision made from it uses the list the signer
 // gave for that decision, whatever happens to the signer cache meanwhile. No
 // signer client is ErrNotConnected, and a locked signer is ErrSignerLocked,
-// never an empty list. An answer that disagrees with itself (a count other
-// than its number of records, a record with no address, an address listed
-// twice) is an error, never a list: a decision must not read a short list as
-// the signer holding fewer keys.
+// never an empty list. An answer that disagrees with itself (a record with no
+// address, an address listed twice) is an error, never a list. The signer
+// answers as locked rather than send a list a lock cut short
+// (rest.keysAnswer), so a decision never reads a short list as the signer
+// holding fewer keys.
 func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 	keysResp, err := e.GetKeysWithContext(ctx)
 	if err != nil {
@@ -147,9 +148,6 @@ func (e *Engine) CurrentKeys(ctx context.Context) ([]KeyInfo, error) {
 	}
 	if keysResp.Locked {
 		return nil, ErrSignerLocked
-	}
-	if keysResp.Count != len(keysResp.Keys) {
-		return nil, fmt.Errorf("signer's key list is inconsistent: count %d, %d record(s)", keysResp.Count, len(keysResp.Keys))
 	}
 	seen := make(map[string]bool, len(keysResp.Keys))
 	for i, k := range keysResp.Keys {

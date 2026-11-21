@@ -2239,12 +2239,10 @@ warning does not establish that no leaf was reused.
 
 `/keys` response:
 
-- `count`: the number of `keys[]` records. The list is the whole of an
-  unlocked signer's keys: a signer that locks while it builds the list
-  answers as a locked signer does (403, `locked`), never with a short or empty
-  list, and a client deciding from the list treats a `count` that disagrees
-  with its records as no list
-- `keys[]` with `address`, `public_key_hex`, `key_type`
+- `keys[]` with `address`, `public_key_hex`, `key_type`. The list is the
+  whole of an unlocked signer's keys: a signer that locks while it builds the
+  list answers as a locked signer does (403, `locked`), never with a short or
+  empty list
 - optional `authorization_kind` with closed account-authorization values
   `ed25519`, `native_pq`, or `logic_sig`. It is derived from the durable key
   category and is authoritative for choosing the transaction authorization
@@ -2334,12 +2332,9 @@ stored provenance was available. These fields do not change `/sign` behavior.
 `/status` response:
 
 - `node_role`: optional signer node role (`signer` or `cosigner`); omitted when unset
-- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
-  is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
 - `state`: runtime state (`locked`, `unlocked`, `recovery`, or `unknown`)
-- `signer_locked`
-- `ready_for_signing`
+- `signer_locked`: false exactly when the signer can sign
 - `key_count`: number of loaded keys
 - `keyset_revision`: process-local unsigned revision counter for the published
   key snapshot. It starts at a random value below 2^52 on process start and
@@ -2457,13 +2452,8 @@ stored metadata resolve the provider and any composed template's base primitive.
 
 - `status` (`healthy` or `degraded`)
 - `service`
-- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
-  is diagnostic surfacing, not capability negotiation
 - `build_version`: apsigner build string for skew diagnosis
 - `signer_locked`
-- `ready_for_signing`
-- `ssh_enabled`
-- `ipc_enabled`
 - `warnings`: optional persistent operator-facing health warnings. `/health`
   is unauthenticated, so its warnings omit error detail such as store paths
   (the authenticated `/status` warnings keep it), and the store inspection
@@ -2650,7 +2640,7 @@ Cross-SDK compatibility-bearing behavior:
   on operator approval, so SDK deadlines for them follow the same
   approval-aware rule as `/sign`, not the short cosigner-role component deadline.
 - SDKs expose the authenticated `/status` DTO, including
-  `protocol_version`, `build_version`, `keyset_revision`, and
+  `build_version`, `keyset_revision`, and
   `approval_wait_seconds`, plus optional persistent operator-facing `warnings`,
   and include the matching signer API fixture in their contract suites.
 - SDK `/sign` calls should include an opaque `request_id` when the client may

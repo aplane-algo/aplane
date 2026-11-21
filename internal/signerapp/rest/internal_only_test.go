@@ -63,8 +63,8 @@ func TestKeysKeepsExistingInternalProviderAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Count != len(keyTypes) {
-		t.Fatalf("inventory has %d accounts, want %d", resp.Count, len(keyTypes))
+	if len(resp.Keys) != len(keyTypes) {
+		t.Fatalf("inventory has %d accounts, want %d", len(resp.Keys), len(keyTypes))
 	}
 	for _, key := range resp.Keys {
 		if key.KeyType != keyTypes[key.Address] {

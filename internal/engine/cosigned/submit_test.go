@@ -701,7 +701,6 @@ func cosignerEndpointHandler(t *testing.T, publicKeyHex string, privateKey []byt
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
-			Count: 1,
 			Keys: []signerapi.KeyInfo{{
 				Address:      componentSelector,
 				PublicKeyHex: publicKeyHex,
