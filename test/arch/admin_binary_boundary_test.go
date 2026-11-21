@@ -38,6 +38,9 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 			if name == "github.com/aplane-algo/aplane/internal/transport" {
 				t.Errorf("%s imports the live admin transport", entry.Name())
 			}
+			if apstoreForbiddenTemplateImports[name] {
+				t.Errorf("%s imports %s: apstore reaches templates only through the offline repair, internal/signerapp/templaterepair", entry.Name(), name)
+			}
 		}
 	}
 
@@ -52,27 +55,17 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 		"apstore keytype", "apstore cosigner", "apstore endpoint", "generations <list",
 	)
 	assertFileOmits(t, filepath.Join(root, "generations.go"), `case "list":`)
-	// The live template commands moved to apadmin. apstore keeps only the
-	// offline repair, run with apsigner stopped.
-	assertTemplateOnlyRepairs(t, filepath.Join(root, "usage.go"))
-	assertTemplateOnlyRepairs(t, filepath.Join(root, "template.go"))
 }
 
-var templateSubcommand = regexp.MustCompile(`\bapstore\b[^\n]*?\btemplate\s+([a-z-]+)`)
-
-// assertTemplateOnlyRepairs requires every apstore template command line in
-// path to name the offline repair.
-func assertTemplateOnlyRepairs(t *testing.T, path string) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, match := range templateSubcommand.FindAllSubmatch(data, -1) {
-		if string(match[1]) != "repair" {
-			t.Errorf("%s names apstore template %s; only the offline repair stays in apstore", filepath.Base(path), match[1])
-		}
-	}
+// apstoreForbiddenTemplateImports are the template packages apstore does not
+// import. The live template commands moved to apadmin; apstore keeps only
+// the offline repair, run with apsigner stopped, and reaches templates
+// through internal/signerapp/templaterepair alone, so a template command
+// that installs, imports or removes cannot be added to it.
+var apstoreForbiddenTemplateImports = map[string]bool{
+	"github.com/aplane-algo/aplane/internal/templatelibrary":         true,
+	"github.com/aplane-algo/aplane/internal/templatestore":           true,
+	"github.com/aplane-algo/aplane/internal/signerapp/templateadmin": true,
 }
 
 // offlineTemplateRepair is the one apstore template command: the offline

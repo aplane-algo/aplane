@@ -23,6 +23,8 @@ const (
 	keyTypeStatePackage    = modulePrefix + "/internal/keytypestate"
 	templateAdminPackage   = modulePrefix + "/internal/signerapp/templateadmin"
 	templateRuntimePackage = modulePrefix + "/internal/signerapp/templates"
+	templateRepairPackage  = modulePrefix + "/internal/signerapp/templaterepair"
+	apstorePackage         = modulePrefix + "/cmd/apstore"
 )
 
 var templateLeafMutationAPIs = map[string]map[string]bool{
@@ -45,6 +47,18 @@ var templateLeafCallers = map[string]map[string]bool{
 	keyTypeStatePackage + ".DeleteActive": {
 		"removeInstalledActive":    true,
 		"DropTemplateRecordActive": true,
+	},
+}
+
+// templateRepairAPIs are the templatelibrary record repairs. A re-pin
+// trusts whatever template authenticates for the key type, and a drop
+// deletes a record with no in-use check, each on any generation handle, so
+// only the offline repair, which checks both against reload's classification
+// first, may call them.
+var templateRepairAPIs = map[string]map[string]bool{
+	templateLibraryPackage: {
+		"RepinTemplateRecordActive": true,
+		"DropTemplateRecordActive":  true,
 	},
 }
 
@@ -96,7 +110,7 @@ func TestTemplateMutationCallsStayInLibrary(t *testing.T) {
 			return err
 		}
 		packagePath := modulePrefix + "/" + filepath.ToSlash(filepath.Dir(relative))
-		calls, dotImports, err := templateLeafCallsInFile(path)
+		calls, dotImports, err := templateLeafCallsInFile(path, templateLeafMutationAPIs)
 		if err != nil {
 			return err
 		}
@@ -128,6 +142,65 @@ func TestTemplateMutationCallsStayInLibrary(t *testing.T) {
 			if !ownerCalls[key] {
 				t.Errorf("internal/templatelibrary no longer calls %s; remove the unused mutation API or update the boundary deliberately", key)
 			}
+		}
+	}
+}
+
+// TestTemplateRecordRepairsStayInTheOfflineRepair confines the record
+// repairs to internal/signerapp/templaterepair, and that package to
+// apstore, which runs it with the signer stopped.
+func TestTemplateRecordRepairsStayInTheOfflineRepair(t *testing.T) {
+	root := repositoryRoot(t)
+	repairCalls := make(map[string]bool)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "node_modules", "temp":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		packagePath := modulePrefix + "/" + filepath.ToSlash(filepath.Dir(relative))
+		calls, dotImports, err := templateLeafCallsInFile(path, templateRepairAPIs)
+		if err != nil {
+			return err
+		}
+		for _, imported := range dotImports {
+			t.Errorf("%s dot-imports %s: the record repairs must be referenced explicitly so their callers remain inspectable", filepath.ToSlash(relative), imported)
+		}
+		for _, call := range calls {
+			key := call.packagePath + "." + call.api
+			if packagePath != templateRepairPackage {
+				t.Errorf("%s:%d calls %s: only internal/signerapp/templaterepair may call it", filepath.ToSlash(relative), call.position.Line, key)
+				continue
+			}
+			repairCalls[key] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk production Go files: %v", err)
+	}
+	for packagePath, apis := range templateRepairAPIs {
+		for api := range apis {
+			if key := packagePath + "." + api; !repairCalls[key] {
+				t.Errorf("internal/signerapp/templaterepair no longer calls %s; remove it or update the boundary deliberately", key)
+			}
+		}
+	}
+	for pkg, imports := range moduleImports(t) {
+		if pkg != apstorePackage && slices.Contains(imports, templateRepairPackage) {
+			t.Errorf("%s imports %s: only cmd/apstore runs the offline template repair", pkg, templateRepairPackage)
 		}
 	}
 }
@@ -172,7 +245,10 @@ func TestRetiredTemplatePersistenceAPIsStayDeleted(t *testing.T) {
 	}
 }
 
-func templateLeafCallsInFile(path string) ([]templateLeafCall, []string, error) {
+// templateLeafCallsInFile lists the references in path to the apis named,
+// keyed by import path, and the import paths of those packages that path
+// dot-imports.
+func templateLeafCallsInFile(path string, apis map[string]map[string]bool) ([]templateLeafCall, []string, error) {
 	fileset := token.NewFileSet()
 	file, err := parser.ParseFile(fileset, path, nil, 0)
 	if err != nil {
@@ -183,7 +259,7 @@ func templateLeafCallsInFile(path string) ([]templateLeafCall, []string, error) 
 	var dotImports []string
 	for _, spec := range file.Imports {
 		imported, err := strconv.Unquote(spec.Path.Value)
-		if err != nil || templateLeafMutationAPIs[imported] == nil {
+		if err != nil || apis[imported] == nil {
 			continue
 		}
 		alias := filepath.Base(imported)
@@ -216,7 +292,7 @@ func templateLeafCallsInFile(path string) ([]templateLeafCall, []string, error) 
 				return true
 			}
 			packagePath := aliases[ident.Name]
-			if packagePath == "" || !templateLeafMutationAPIs[packagePath][selector.Sel.Name] {
+			if packagePath == "" || !apis[packagePath][selector.Sel.Name] {
 				return true
 			}
 			calls = append(calls, templateLeafCall{
@@ -251,7 +327,7 @@ var _ = stateleaf.DeleteActive`
 	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	calls, dotImports, err := templateLeafCallsInFile(path)
+	calls, dotImports, err := templateLeafCallsInFile(path, templateLeafMutationAPIs)
 	if err != nil {
 		t.Fatal(err)
 	}
