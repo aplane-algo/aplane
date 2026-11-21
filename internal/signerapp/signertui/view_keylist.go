@@ -467,5 +467,5 @@ func (m Model) tealFullDisplayHeader(width int) string {
 func (m Model) tealLines() []string { return strings.Split(m.details.teal, "\n") }
 
 func (m Model) tealFullDisplayVisibleLines() int {
-	return m.pagerVisibleLines(m.tealFullDisplayHeader(m.pagerWidth()))
+	return m.pagerVisibleLines(m.tealFullDisplayHeader(m.pagerWidth()), pagerScrollFooter)
 }

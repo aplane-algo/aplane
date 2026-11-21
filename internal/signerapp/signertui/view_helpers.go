@@ -493,22 +493,29 @@ func (m Model) pagerWidth() int {
 	return m.width
 }
 
+// pagerScrollKeys names a text pager's scroll keys, which its footer adds
+// when its text does not fit.
+const pagerScrollKeys = "up/down/pgup/pgdown: Scroll"
+
 // pagerScrollFooter is a full-screen text pager's footer when its text does
 // not fit.
-const pagerScrollFooter = "Esc/q close | up/down/pgup/pgdown: Scroll"
+const pagerScrollFooter = "Esc/q close | " + pagerScrollKeys
 
 // pagerVisibleLines is how many lines of text a full-screen pager shows: the
-// window body under the pager's footer at its tallest (the footer names the
-// scroll keys only when the text does not fit, so the fit cannot be measured
-// under the footer it decides), less the rows of header drawn above the text
-// and a row for each scroll marker. The renderer and the key handler both
-// use it, so the furthest the keys scroll is the end of the text in view.
-func (m Model) pagerVisibleLines(header string) int {
+// window body under the pager's footer at its tallest, scrollFooter (the
+// footer names the scroll keys only when the text does not fit, so the fit
+// cannot be measured under the footer it decides), less the rows of chrome
+// drawn above and below the text, each ending in a newline, and a row for
+// each scroll marker. The body is measured under the status bar as drawn, so
+// a long error takes its rows from the text. The renderer and the key
+// handler both use it, so the furthest the keys scroll is the end of the
+// text in view.
+func (m Model) pagerVisibleLines(chrome, scrollFooter string) int {
 	if m.height <= 0 {
 		return 20
 	}
-	body := m.windowBodyHeightUnder(renderedBlockHeight(m.renderFooterText(pagerScrollFooter)))
-	if visible := body - strings.Count(header, "\n") - 2; visible > 1 {
+	body := m.windowBodyHeightUnder(renderedBlockHeight(m.renderFooterText(scrollFooter)))
+	if visible := body - strings.Count(chrome, "\n") - 2; visible > 1 {
 		return visible
 	}
 	return 1

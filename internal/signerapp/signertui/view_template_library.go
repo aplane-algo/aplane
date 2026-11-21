@@ -296,15 +296,16 @@ func templateDetailField(label, value string) string {
 	return fmt.Sprintf("%-10s %s\n", label+":", value)
 }
 
+// templateLibraryVisibleHeight is how many entries the library list shows:
+// up to 12, in what the window body leaves beside the rest of the screen.
 func (m Model) templateLibraryVisibleHeight() int {
-	h := m.height - 18
-	if h < 4 {
-		h = 4
+	if m.height <= 0 {
+		return 4
 	}
-	if h > 12 {
-		h = 12
-	}
-	return h
+	// The title and its margin, the subtitle and its gap, the two "more"
+	// lines, the gap above the entry's details, and their four lines.
+	const chrome = 2 + 2 + 2 + 1 + 4
+	return min(max(m.windowBodyHeight()-chrome, 1), 12)
 }
 
 func templateLibraryTitle(tmpl LibraryTemplateInfo) string {

@@ -288,14 +288,11 @@ func (m Model) policyDocumentLines() []string {
 	return lines
 }
 
+// policyDocumentKeys is the document view's footer without its scroll keys.
+const policyDocumentKeys = "e: Edit | esc/q: Back"
+
 func (m Model) policyDocumentVisibleLines() int {
-	if m.height <= 0 {
-		return 20
-	}
-	if visible := m.height - 8; visible > 1 {
-		return visible
-	}
-	return 1
+	return m.pagerVisibleLines(m.policyDocumentHeader(m.policyDocumentWidth()), policyDocumentKeys+" | "+pagerScrollKeys)
 }
 
 func (m Model) handlePolicyDocumentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -420,30 +417,38 @@ func shortDigest(digest string) string {
 	return digest
 }
 
-func (m Model) renderPolicyDocument() string {
-	width := m.width
-	if width < 20 {
-		width = 80
+func (m Model) policyDocumentWidth() int {
+	if m.width < 20 {
+		return 80
 	}
+	return m.width
+}
+
+func policyDocumentTitle() string {
+	return titleStyle.Render("Policy Document") + "\n"
+}
+
+// policyDocumentHeader is what the document view draws above the document.
+func (m Model) policyDocumentHeader(width int) string {
 	doc := m.policies.document
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Policy Document"))
-	sb.WriteString("\n")
+	return policyDocumentTitle() + subtitleStyle.Render(ellipsize(terminalSafe(doc.Key+"  sha256 "+doc.SHA256), width)) + "\n\n"
+}
+
+func (m Model) renderPolicyDocument() string {
+	doc := m.policies.document
 	switch {
 	case m.policies.docLoading:
-		sb.WriteString(subtitleStyle.Render("Loading document..."))
-		return sb.String()
+		return policyDocumentTitle() + subtitleStyle.Render("Loading document...")
 	case !doc.Success:
 		msg := doc.Error
 		if msg == "" {
 			msg = "document is unavailable"
 		}
-		sb.WriteString(subtitleStyle.Render("Document unavailable: " + terminalSafe(msg)))
-		return sb.String()
+		return policyDocumentTitle() + subtitleStyle.Render("Document unavailable: "+terminalSafe(msg))
 	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(doc.Key+"  sha256 "+doc.SHA256), width)))
-	sb.WriteString("\n\n")
-
+	width := m.policyDocumentWidth()
+	var sb strings.Builder
+	sb.WriteString(m.policyDocumentHeader(width))
 	writePagerLines(&sb, m.policyDocumentLines(), m.policies.scrollOffset, m.policyDocumentVisibleLines(), func(line string) string {
 		// The stored bytes can hold control and bidirectional characters in
 		// a string, which show as escapes.
@@ -454,9 +459,9 @@ func (m Model) renderPolicyDocument() string {
 
 func (m Model) policiesFooterText() string {
 	if m.viewState == ViewPolicyDocument {
-		footer := "e: Edit | esc/q: Back"
+		footer := policyDocumentKeys
 		if len(m.policyDocumentLines()) > m.policyDocumentVisibleLines() {
-			footer += " | up/down/pgup/pgdown: Scroll"
+			footer += " | " + pagerScrollKeys
 		}
 		return footer
 	}

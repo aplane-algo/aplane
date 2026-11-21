@@ -471,16 +471,12 @@ func wrapIndentedLine(line string, width int) []string {
 	return parts
 }
 
+// policyApplyVisibleLines is how many review lines the apply review shows,
+// with its header above them and the gap and prompt below.
 func (m Model) policyApplyVisibleLines() int {
-	if m.height <= 0 {
-		return 20
-	}
-	// Title, target and its gap, the two "more" lines, the gap above the
-	// prompt, a prompt that wraps to two lines, then three rows for the
-	// footer and status bar. The footer's text depends on this count, so
-	// windowBodyHeight cannot be used here.
-	const chrome = 2 + 2 + 2 + 1 + 2 + 3
-	return max(m.height-chrome, 1)
+	width := m.policyApplyReviewWidth()
+	chrome := m.policyApplyReviewHeader(width) + "\n" + m.policyApplyReviewPrompt(width) + "\n"
+	return m.pagerVisibleLines(chrome, m.policyApplyReviewKeys()+" | "+pagerScrollKeys)
 }
 
 func (m Model) renderPolicyApplyForm() string {
@@ -511,36 +507,46 @@ func (m Model) renderPolicyApplyForm() string {
 	return m.renderPopup(90, body.String())
 }
 
-func (m Model) renderPolicyApplyReview() string {
+// policyApplyReviewHeader is what the apply review draws above the review
+// lines.
+func (m Model) policyApplyReviewHeader(width int) string {
 	apply := m.policies.apply
+	return titleStyle.Render("Review Policy Change") + "\n" +
+		subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+policyTargetLabel(apply.doc.Key), width)) + "\n\n"
+}
+
+// policyApplyReviewPrompt is what the apply review draws under the review
+// lines: what y does, or why it does nothing.
+func (m Model) policyApplyReviewPrompt(width int) string {
+	apply := m.policies.apply
+	switch {
+	case apply.applying:
+		return subtitleStyle.Render("Applying policy...")
+	case apply.applyErr != "" && apply.edit.active:
+		return errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back to the editor and check again.", width))
+	case apply.applyErr != "":
+		return errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back and load the file again.", width))
+	case apply.unchanged:
+		return subtitleStyle.Render("Policy unchanged; there is nothing to apply.")
+	case apply.edit.active:
+		return warningStyle.Render(wrapPlainText("Apply these changes? The node stores the edited text exactly and activates it immediately.", width))
+	default:
+		return warningStyle.Render(wrapPlainText("Apply these changes? The node stores the file's exact bytes and activates them immediately.", width))
+	}
+}
+
+func (m Model) renderPolicyApplyReview() string {
 	width := m.policyApplyReviewWidth()
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Review Policy Change"))
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render(ellipsize(terminalSafe(apply.file)+"  →  "+policyTargetLabel(m.policies.apply.doc.Key), width)))
-	sb.WriteString("\n\n")
-
-	writePagerLines(&sb, m.policyApplyReviewLines(), apply.scrollOffset, m.policyApplyVisibleLines(), func(line policyApplyReviewLine) string {
+	sb.WriteString(m.policyApplyReviewHeader(width))
+	writePagerLines(&sb, m.policyApplyReviewLines(), m.policies.apply.scrollOffset, m.policyApplyVisibleLines(), func(line policyApplyReviewLine) string {
 		if line.attention {
 			return warningStyle.Render(line.text)
 		}
 		return line.text
 	})
 	sb.WriteString("\n")
-	switch {
-	case apply.applying:
-		sb.WriteString(subtitleStyle.Render("Applying policy..."))
-	case apply.applyErr != "" && apply.edit.active:
-		sb.WriteString(errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back to the editor and check again.", width)))
-	case apply.applyErr != "":
-		sb.WriteString(errorStyle.Render(wrapPlainText("Nothing more can be applied from this review; go back and load the file again.", width)))
-	case apply.unchanged:
-		sb.WriteString(subtitleStyle.Render("Policy unchanged; there is nothing to apply."))
-	case apply.edit.active:
-		sb.WriteString(warningStyle.Render(wrapPlainText("Apply these changes? The node stores the edited text exactly and activates it immediately.", width)))
-	default:
-		sb.WriteString(warningStyle.Render(wrapPlainText("Apply these changes? The node stores the file's exact bytes and activates them immediately.", width)))
-	}
+	sb.WriteString(m.policyApplyReviewPrompt(width))
 	sb.WriteString("\n")
 	return sb.String()
 }
@@ -556,22 +562,28 @@ func (m Model) policyApplyFooterText() string {
 	if apply.applying {
 		return "Applying..."
 	}
-	footer := "n/esc: Cancel"
-	if apply.edit.active {
-		footer = "n/esc: Back to editor"
-	}
-	if apply.unchanged || apply.applyErr != "" {
-		footer = "esc: Back"
-		if apply.edit.active {
-			footer = "esc: Back to editor"
-		}
-	} else {
-		footer = "y: Apply | " + footer
-	}
+	footer := m.policyApplyReviewKeys()
 	if len(m.policyApplyReviewLines()) > m.policyApplyVisibleLines() {
-		footer += " | up/down/pgup/pgdown: Scroll"
+		footer += " | " + pagerScrollKeys
 	}
 	return footer
+}
+
+// policyApplyReviewKeys is the apply review's footer, but for one while it
+// applies, without its scroll keys.
+func (m Model) policyApplyReviewKeys() string {
+	apply := m.policies.apply
+	back := "n/esc: Cancel"
+	if apply.edit.active {
+		back = "n/esc: Back to editor"
+	}
+	if apply.unchanged || apply.applyErr != "" {
+		if apply.edit.active {
+			return "esc: Back to editor"
+		}
+		return "esc: Back"
+	}
+	return "y: Apply | " + back
 }
 
 // sendCheckPolicyCmd asks the daemon to validate one candidate document.

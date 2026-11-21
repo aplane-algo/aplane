@@ -743,10 +743,11 @@ func (m Model) ensureParamVisible(paramIdx, maxVisibleParams int) Model {
 	return m
 }
 
-// getMaxVisibleParams returns max visible params based on terminal height.
+// getMaxVisibleParams returns max visible params based on the popup's
+// height, which follows the status bar as drawn.
 func (m Model) getMaxVisibleParams() int {
-	reservedLines := 18
-	availableHeight := m.height - reservedLines
+	reservedLines := 12
+	availableHeight := m.popupContentHeight() - reservedLines
 	if availableHeight < 8 {
 		availableHeight = 8
 	}

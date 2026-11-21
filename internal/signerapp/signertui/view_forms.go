@@ -281,11 +281,11 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	return m.renderPopup(80, sb.String())
 }
 
-// visibleParamModalFields is how many parameter fields the modal renders at
-// the current terminal height.
+// visibleParamModalFields is how many parameter fields the modal renders in
+// the popup's height, which follows the status bar as drawn.
 func (m Model) visibleParamModalFields() int {
-	const reservedLines = 12 // title + button + help + error + margins
-	availableHeight := max(m.height-reservedLines, 12)
+	const reservedLines = 6 // title + button + help + error + margins
+	availableHeight := max(m.popupContentHeight()-reservedLines, 12)
 	return max(availableHeight/8, 1)
 }
 

@@ -397,31 +397,22 @@ func (m Model) policyEditMessages() []policyApplyReviewLine {
 	return out
 }
 
-// sizedPolicyEditor returns the editor fitted to the space left by the header
-// and the messages under it.
+// sizedPolicyEditor returns the editor fitted to the window body the header
+// above it and the messages under it leave.
 func (m Model) sizedPolicyEditor() textarea.Model {
 	input := m.policies.apply.edit.input
 	height := 20
 	if m.height > 0 {
-		height = m.height - 9 - len(m.policyEditMessages())
+		height = m.windowBodyHeight() - strings.Count(m.policyEditHeader(m.policyApplyReviewWidth()), "\n") - len(m.policyEditMessages())
 	}
 	input.SetWidth(m.policyApplyReviewWidth())
 	input.SetHeight(max(height, 5))
 	return input
 }
 
-func (m Model) renderPolicyEdit() string {
+// policyEditHeader is what the editor draws above the text.
+func (m Model) policyEditHeader(width int) string {
 	edit := m.policies.apply.edit
-	width := m.policyApplyReviewWidth()
-	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Edit Policy"))
-	sb.WriteString("\n")
-	if edit.loading {
-		sb.WriteString(subtitleStyle.Render("Loading document..."))
-		return sb.String()
-	}
-	sb.WriteString(subtitleStyle.Render(ellipsize(policyTargetLabel(m.policies.apply.edit.key), width)))
-	sb.WriteString("\n")
 	hint := "Nothing is stored until the edit is checked, reviewed, and applied."
 	switch {
 	case edit.preset != "" && edit.isNew:
@@ -431,8 +422,21 @@ func (m Model) renderPolicyEdit() string {
 	case edit.isNew:
 		hint = "No policy of its own yet: this is the node default with the key filled in. Applying it gives the key its own policy; comments are removed on apply."
 	}
-	sb.WriteString(helpStyle.Render(ellipsize(hint, width)))
-	sb.WriteString("\n\n")
+	return titleStyle.Render("Edit Policy") + "\n" +
+		subtitleStyle.Render(ellipsize(policyTargetLabel(edit.key), width)) + "\n" +
+		helpStyle.Render(ellipsize(hint, width)) + "\n\n"
+}
+
+func (m Model) renderPolicyEdit() string {
+	width := m.policyApplyReviewWidth()
+	var sb strings.Builder
+	if m.policies.apply.edit.loading {
+		sb.WriteString(titleStyle.Render("Edit Policy"))
+		sb.WriteString("\n")
+		sb.WriteString(subtitleStyle.Render("Loading document..."))
+		return sb.String()
+	}
+	sb.WriteString(m.policyEditHeader(width))
 	sb.WriteString(m.sizedPolicyEditor().View())
 	sb.WriteString("\n")
 	for _, line := range m.policyEditMessages() {

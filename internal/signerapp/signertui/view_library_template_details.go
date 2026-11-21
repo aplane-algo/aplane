@@ -75,7 +75,7 @@ func (m Model) libraryTemplateDetailsLines() []string {
 }
 
 func (m Model) libraryTemplateDetailsVisibleLines() int {
-	return m.pagerVisibleLines(m.libraryTemplateDetailsHeader(m.pagerWidth()))
+	return m.pagerVisibleLines(m.libraryTemplateDetailsHeader(m.pagerWidth()), pagerScrollFooter)
 }
 
 func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -147,6 +148,107 @@ func TestALongErrorKeepsTheSelectedRowOnScreen(t *testing.T) {
 		checkFitsMinSize(t, view)
 		if !strings.Contains(view, "> example.t29.v1") {
 			t.Errorf("standalone %v: the selected library entry is not on screen:\n%s", standalone, view)
+		}
+	}
+}
+
+// checkBodyFits fails when m's screen needs more rows than the window body
+// under the status bar as drawn has, so the window would cut it.
+func checkBodyFits(t *testing.T, name string, m Model) {
+	t.Helper()
+	content := strings.TrimRight(stripANSI(m.renderViewContent()), "\n")
+	if need := strings.Count(content, "\n") + 1; need > m.windowBodyHeight() {
+		t.Errorf("%s: needs %d rows, the body has %d, so the window cuts it:\n%s", name, need, m.windowBodyHeight(), stripANSI(m.View()))
+	}
+}
+
+// Every text pager measures its height under the status bar as drawn, so a
+// long error takes its rows from the text: the end of the text and the
+// marker for the lines below stay on screen, as does what the pager draws
+// under the text.
+func TestTextPagersFollowAWrappedStatusBar(t *testing.T) {
+	const total = 40
+	lines := make([]string, total)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line-%03d", i)
+	}
+	for _, p := range textPagers() {
+		for _, standalone := range []bool{false, true} {
+			name := fmt.Sprintf("%s standalone %v", p.name, standalone)
+			m := sizedForTest(t, Model{standalone: standalone, connectionState: ConnectionConnected}, MinWidth, MinHeight)
+			p.setup(&m, lines)
+			m.lastError = longDaemonError
+			checkBodyFits(t, name, m)
+			if _, _, _, below := shownLines(t, stripANSI(m.View())); !below {
+				t.Errorf("%s: no marker for the lines below:\n%s", name, stripANSI(m.View()))
+			}
+			for range total {
+				m = updateModel(t, m, tea.KeyMsg{Type: tea.KeyPgDown})
+			}
+			view := stripANSI(m.View())
+			checkFitsMinSize(t, view)
+			checkBodyFits(t, name, m)
+			if _, last, _, _ := shownLines(t, view); last != total-1 {
+				t.Errorf("%s: scrolled to the end, the last line shown is %d:\n%s", name, last, view)
+			}
+			if p.name == "policy apply review" && !strings.Contains(strings.Join(strings.Fields(view), " "), "activates them immediately. y: Apply") {
+				t.Errorf("%s: the prompt or its footer is cut:\n%s", name, view)
+			}
+		}
+	}
+}
+
+// The admin panel scrolls its settings around the selected one when they do
+// not fit, as they do not with a long error or standalone, so the last
+// settings are not cut off without a marker.
+func TestAdminPanelScrollsUnderAWrappedStatusBar(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		m := sizedForTest(t, Model{viewState: ViewAdminPanel, standalone: standalone, connectionState: ConnectionConnected, lastError: longDaemonError,
+			admin: adminPanelState{editingRow: -1, settings: &AdminSettings{PassphraseMethod: "none", Theme: "auto"}}}, MinWidth, MinHeight)
+		name := fmt.Sprintf("standalone %v", standalone)
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		checkBodyFits(t, name, m)
+		if !strings.Contains(view, "> User Auto-Approve") || !strings.Contains(view, "▼") {
+			t.Errorf("%s: the first setting or the marker below it is not on screen:\n%s", name, view)
+		}
+		m.admin.selectedRow = len(m.adminRows()) - 1
+		view = stripANSI(m.View())
+		checkBodyFits(t, name, m)
+		if !strings.Contains(view, "> Build") || !strings.Contains(view, "▲") {
+			t.Errorf("%s: the last setting or the marker above it is not on screen:\n%s", name, view)
+		}
+	}
+}
+
+// The KeyType Library and the policy editor size themselves from the window
+// body under the status bar as drawn.
+func TestLibraryAndPolicyEditorFollowAWrappedStatusBar(t *testing.T) {
+	var entries []protocol.LibraryTemplateInfo
+	for i := range 30 {
+		entries = append(entries, protocol.LibraryTemplateInfo{KeyType: fmt.Sprintf("example.t%02d.v1", i), TemplateType: "generic",
+			DisplayName: "Template", Description: "a template", FileName: "template.yaml"})
+	}
+	for _, standalone := range []bool{false, true} {
+		for _, errText := range []string{"", longDaemonError} {
+			name := fmt.Sprintf("standalone %v error %v", standalone, errText != "")
+			lib := sizedForTest(t, Model{viewState: ViewTemplateLibrary, standalone: standalone, connectionState: ConnectionConnected,
+				lastError: errText, library: libraryState{templates: entries}}, MinWidth, MinHeight)
+			checkBodyFits(t, "library "+name, lib)
+			if view := stripANSI(lib.View()); !strings.Contains(view, "File:") || !strings.Contains(view, "▼") {
+				t.Errorf("library %s: the entry's details or the marker below the list is cut:\n%s", name, view)
+			}
+
+			ed := cosignerPoliciesModel("default")
+			ed.standalone = standalone
+			ed = sizedForTest(t, ed, MinWidth, MinHeight)
+			ed = openEditorForKeyOnDefault(t, ed)
+			ed.lastError = errText
+			ed.policies.apply.err = "the check refused the document"
+			checkBodyFits(t, "editor "+name, ed)
+			if view := stripANSI(ed.View()); !strings.Contains(view, "the check refused the document") {
+				t.Errorf("editor %s: the message under the text is cut:\n%s", name, view)
+			}
 		}
 	}
 }

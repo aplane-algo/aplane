@@ -1293,6 +1293,9 @@ around the selection and keeps the text and buttons below it on screen
 (`fitSelectionList`). A daemon error too long for the status bar's line goes
 under it, wrapped to the window with a word wider than a line, such as a
 path, broken (`wrapErrorLines`); the screen above gives up the rows it takes.
+Every screen sizes itself from the window body under the bar as drawn
+(`windowBodyHeight`), so a list keeps its selected row in view and a pager
+its "more" markers.
 An error longer than three lines is cut in the middle, at an ellipsis: it
 keeps its start and the most of its end one line holds, since a Go error
 ends in its cause.
