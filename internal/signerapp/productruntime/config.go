@@ -4,10 +4,7 @@
 package productruntime
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -15,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -211,8 +209,10 @@ func ConfigPath(dataRoot string) string {
 	return filepath.Join(storepaths.NewPaths(dataRoot).ProductDir(), "config.yaml")
 }
 
-// LoadStoredConfig reads the product runtime settings overlay.
-// Returns an empty config if the file does not exist.
+// LoadStoredConfig reads the product runtime settings overlay. An absent
+// file means no overrides; one that holds no YAML document is refused, as
+// an empty config.yaml is, so an overlay truncated to nothing never starts
+// the signer without the restrictive settings it saved.
 func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
 	path := ConfigPath(dataRoot)
 	data, err := os.ReadFile(path)
@@ -222,15 +222,9 @@ func LoadStoredConfig(dataRoot string) (*StoredConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read runtime config: %w", err)
 	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return &StoredConfig{}, nil
-	}
-
 	var cfg StoredConfig
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("failed to parse runtime config: %w", err)
+	if err := apconfig.DecodeConfigFile(path, data, &cfg); err != nil {
+		return nil, err
 	}
 	return &cfg, nil
 }
@@ -248,9 +242,11 @@ func SaveStoredSetting(dataRoot, key string, value interface{}) error {
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read runtime config: %w", err)
 	}
-	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &existing); err != nil {
-			return fmt.Errorf("failed to parse runtime config: %w", err)
+	// An overlay with no document is refused here too: writing back only
+	// this key would make a truncated overlay's loss permanent.
+	if err == nil {
+		if err := apconfig.DecodeConfigFile(path, data, &existing); err != nil {
+			return err
 		}
 	}
 

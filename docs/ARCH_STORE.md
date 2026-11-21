@@ -869,7 +869,7 @@ This separation is deliberate:
 | Witness public sidecar | selected generation `keys/<witness_key_id>.cos.json` | Canonical public witness reference for a local cosigner key. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | selected generation `node.yaml.hmac` | Product-store HMAC over the exact root `node.yaml` bytes. |
-| Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected. |
+| Product runtime config | `identities/default/config.yaml` | Product runtime settings such as approval and lock timeouts; it does not carry key-class role. Unknown fields are rejected, and so is a file with no YAML document; an absent file means no overrides. |
 | Key type state record | selected generation `keytypes/<key_type>.json` | Product-store discovery/generation state. |
 | Installed YAML template | selected generation `keytypes/<key_type>.template` | Encrypted generation source for the product runtime after reload. |
 | Deleted key archive | selected generation `deleted/keys/` | Removed key files; outside active scans. |
