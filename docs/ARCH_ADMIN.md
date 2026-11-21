@@ -1299,7 +1299,8 @@ screen sizes itself from the window body under the bar as drawn
 its "more" markers. The bar takes at most three rows under its line. They go
 to the alert first, then the error, the warning and the notice, a row kept
 for each later part while rows last, and a part left without a row is not
-shown. A part longer than its rows is cut in the middle, at an ellipsis: it
+shown. The bar leaves out a failed list that its screen, the cosigner
+manager or the Backups page, already shows (`statusBarError`). A part longer than its rows is cut in the middle, at an ellipsis: it
 keeps its start and the most of its end its last row holds, since a Go error
 ends in its cause.
 

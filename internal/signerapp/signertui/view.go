@@ -774,10 +774,12 @@ func (m Model) settingWarningPart(width, used int) string {
 }
 
 // statusBarError is the error the status bar shows: the last error, but not
-// on the cosigner manager while it is the failed list the manager shows in
-// its own block, so the error is on screen once.
+// on the cosigner manager or the Backups page while it is the failed list
+// the screen shows itself, so the error is on screen once.
 func (m Model) statusBarError() string {
-	if m.viewState == ViewCosignerReferences && m.lastError == m.cosigner.listErr {
+	switch {
+	case m.viewState == ViewCosignerReferences && m.lastError == m.cosigner.listErr,
+		m.viewState == ViewBackups && m.lastError == backupListFailure(m.restore.backupsListErr):
 		return ""
 	}
 	return m.lastError

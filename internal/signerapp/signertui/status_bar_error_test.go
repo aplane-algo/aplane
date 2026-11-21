@@ -310,6 +310,7 @@ func TestFailedCosignerListShowsOnceOnTheManager(t *testing.T) {
 		}
 		if got := strings.Count(view, "the store is full"); got != 1 {
 			t.Errorf("standalone %v: the list error is on screen %d times:\n%s", standalone, got, view)
+			t.Log(stripANSI(m.renderStatusBar()))
 		}
 
 		// Left on the key list, the failure is in the status bar, and the
@@ -423,5 +424,26 @@ func TestStatusBarFitsEveryPartByRank(t *testing.T) {
 	lines = bar(short)
 	if !strings.HasSuffix(strings.TrimRight(lines[0], " "), "| Copied") || !strings.HasPrefix(lines[1], "Error: the signer refused") {
 		t.Errorf("a short notice stays on the line when a long error goes under it:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// A failed backup list is shown once on the Backups page, in the page's own
+// header, not again in the status bar; on another screen the bar reports it.
+func TestFailedBackupListShowsOnceOnTheBackupsPage(t *testing.T) {
+	const cause = "open /var/lib/aplane/apsigner-data/identities/default/backups: permission denied"
+	for _, standalone := range []bool{false, true} {
+		m := backupsModel(BackupInfo{FileName: "lab-signer.tar.gz", Size: 100})
+		m.standalone, m.connectionState = standalone, ConnectionConnected
+		m = sizedForTest(t, m, MinWidth, MinHeight)
+		m = updateModel(t, m, BackupsListMsg{Error: cause})
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		if got := strings.Count(view, "denied"); got != 1 {
+			t.Errorf("standalone %v: the list error is on screen %d times:\n%s", standalone, got, view)
+		}
+		m = press(t, m, "esc")
+		if view := stripANSI(m.View()); m.viewState != ViewKeyList || !strings.Contains(view, "Error: Backup list failed: open") {
+			t.Errorf("standalone %v: the key list does not report the failed list:\n%s", standalone, view)
+		}
 	}
 }

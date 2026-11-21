@@ -395,6 +395,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cosigner.loaded = true
 		if msg.Error != "" {
 			m.cosigner.listErr = msg.Error
+			// The status bar reports the failure on every other screen, such
+			// as the key list, which loads the list at unlock, and the
+			// Generate form, whose picker reads it; statusBarError leaves it
+			// out on the manager, which shows listErr itself.
 			m.lastError = msg.Error
 			if m.cosigner.managerStatus == "Refreshing..." {
 				m.cosigner.managerStatus = ""

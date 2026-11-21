@@ -164,13 +164,22 @@ func (m Model) openBackupView(info BackupInfo) Model {
 	return m
 }
 
+// backupListFailure is how a failed backup list reads, in the status bar
+// and on the Backups page.
+func backupListFailure(err string) string {
+	return "Backup list failed: " + err
+}
+
 // handleBackupsListed applies a fresh list: it keeps or moves the selection
 // and settles an import whose outcome was unknown.
 func (m Model) handleBackupsListed(msg BackupsListMsg) Model {
 	m.restore.backupsLoaded = true
 	if msg.Error != "" {
 		m.restore.backupsListErr = msg.Error
-		m.lastError = "Backup list failed: " + msg.Error
+		// The status bar reports the failure on any screen the reply finds
+		// the operator on; statusBarError leaves it out on the Backups page,
+		// which shows backupsListErr itself.
+		m.lastError = backupListFailure(msg.Error)
 		return m
 	}
 	m.restore.backupsListErr = ""
@@ -380,10 +389,10 @@ func (m Model) renderBackups() string {
 	listErr := m.restore.backupsListErr
 	switch {
 	case listErr != "" && count > 0:
-		header.WriteString(errorStyle.Render(wrapPlainText("Backup list failed: "+terminalSafe(listErr), width)))
+		header.WriteString(errorStyle.Render(wrapPlainText(backupListFailure(terminalSafe(listErr)), width)))
 		header.WriteString("\n" + subtitleStyle.Render("Showing the last list read."))
 	case listErr != "":
-		header.WriteString(errorStyle.Render(wrapPlainText("Backup list failed: "+terminalSafe(listErr), width)))
+		header.WriteString(errorStyle.Render(wrapPlainText(backupListFailure(terminalSafe(listErr)), width)))
 	default:
 		header.WriteString(subtitleStyle.Render(fmt.Sprintf("%d %s on this %s", count, noun, node)))
 	}
