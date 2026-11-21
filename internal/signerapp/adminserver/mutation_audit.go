@@ -11,8 +11,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-// Live policy and ASA set changes change what the node accepts, so each one
-// needs an audit record before it runs. After authorization, the handler
+// Live policy, ASA set and source token changes change what the node
+// accepts, so each one needs an audit record before it runs. After authorization, the handler
 // durably appends the request's intent; if the audit log is missing or the
 // write fails, the change is refused and the service is never called. After
 // the service returns, the handler appends exactly one outcome entry, best
@@ -33,6 +33,13 @@ type asaSetAudit interface {
 	LogASASetUpdateIntentDurableContext(SessionContext, string, string, string, string, uint64) error
 	LogASASetAddResultContext(SessionContext, string, adminproto.AddASARequest, adminproto.AddASAResult)
 	LogASASetRemoveResultContext(SessionContext, string, adminproto.RemoveASARequest, adminproto.RemoveASAResult)
+}
+
+// sourceTokenAudit records source token changes by selector and source
+// name. Neither method takes the token.
+type sourceTokenAudit interface {
+	LogSourceTokenChangeIntentDurableContext(ctx SessionContext, operationID, action, selector, source string) error
+	LogSourceTokenChangeResultContext(ctx SessionContext, operationID, action, selector, source string, result adminproto.SourceTokenChangeResult)
 }
 
 // recordMutationIntent runs record, which durably appends a change's intent,

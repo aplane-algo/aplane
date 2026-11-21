@@ -57,6 +57,7 @@ func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.Check
 	}
 	env := s.policyEnv(nil)
 	env.ASASet = set
+	env.SourceTokens = s.Runtime.SourceTokenNames()
 	return policyapply.Check(env, current, req)
 }
 

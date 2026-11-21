@@ -370,6 +370,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderKeyListView()
 	case ViewKeyDetails:
 		content = m.renderKeyDetails()
+	case ViewSourceTokens:
+		content = m.renderSourceTokens()
 	case ViewTEALFullDisplay:
 		content = m.renderTEALFullDisplay()
 	case ViewSigningPopup:

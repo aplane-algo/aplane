@@ -170,6 +170,9 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 		m.mnemonicExport.error = err.Error()
 		return m, nil
 	}
+	if next, ok := m.failPendingSourceTokens(id, err); ok {
+		return next, nil
+	}
 	if next, ok := m.failPendingPolicyExport(id, err); ok {
 		return next, nil
 	}
@@ -533,9 +536,9 @@ func (m Model) handleKeyDetailsMsg(msg KeyDetailsMsg) (tea.Model, tea.Cmd) {
 		m.details.policyLabel = msg.PolicyLabel
 		m.details.scrollOffset = 0 // Reset scroll on open
 		m.viewState = ViewKeyDetails
-	} else {
-		m.lastError = msg.Error
+		return m, m.requestSourceTokens()
 	}
+	m.lastError = msg.Error
 	return m, nil
 }
 

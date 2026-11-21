@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,12 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeAddASAResult,
 		MsgTypeRemoveASA,
 		MsgTypeRemoveASAResult,
+		MsgTypeSourceTokenSet,
+		MsgTypeSourceTokenSetResult,
+		MsgTypeSourceTokenRemove,
+		MsgTypeSourceTokenRemoveResult,
+		MsgTypeSourceTokenList,
+		MsgTypeSourceTokenListResult,
 		MsgTypeListCosignerReferences,
 		MsgTypeCosignerReferencesList,
 		MsgTypeGetCosignerReference,
@@ -152,6 +159,83 @@ func TestAdminProtocolVersionIsV8(t *testing.T) {
 	if AdminProtocolVersion != 8 {
 		t.Fatalf("AdminProtocolVersion = %d, want 8", AdminProtocolVersion)
 	}
+}
+
+// The source token messages: the set request carries its token as a
+// sensitive value, no result has a field that could carry one, and every
+// request is a request and every result a response.
+func TestSourceTokenMessageShapes(t *testing.T) {
+	var set SourceTokenSetMessage
+	if err := json.Unmarshal([]byte(`{"kind":"request","type":"source_token_set","id":"set-1","selector":"default","source":"screening","token":"tok-123"}`), &set); err != nil {
+		t.Fatal(err)
+	}
+	if set.Selector != "default" || set.Source != "screening" || string(set.Token) != "tok-123" {
+		t.Fatalf("set request = %+v", set)
+	}
+	if got := fmt.Sprintf("%v %+v", set.Token, set); strings.Contains(got, "tok-123") {
+		t.Fatalf("formatting a set request shows its token: %s", got)
+	}
+	set.Token.Zero()
+	if string(set.Token) == "tok-123" {
+		t.Fatal("Zero left the token intact")
+	}
+
+	list := SourceTokenListResultMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeSourceTokenListResult, ID: "list-1"},
+		Success:     true,
+		Selectors: []SourceTokenSelector{{
+			Selector: "default", Policy: SourceTokenPolicyOwn, Sources: []string{"screening"},
+			Tokens: []SourceTokenInfo{{Source: "screening", SetAt: "2026-11-21T01:00:00Z", State: SourceTokenInUse}},
+		}},
+	}
+	data, err := MarshalAdminMessage(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal(data, &shape); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"kind": "response", "type": MsgTypeSourceTokenListResult, "id": "list-1", "success": true,
+		"selectors": []any{map[string]any{
+			"selector": "default", "policy": "own", "sources": []any{"screening"},
+			"tokens": []any{map[string]any{"source": "screening", "set_at": "2026-11-21T01:00:00Z", "state": "in_use"}},
+		}},
+	}
+	if !reflect.DeepEqual(shape, want) {
+		t.Fatalf("list result shape\n got: %#v\nwant: %#v", shape, want)
+	}
+
+	for _, request := range []string{MsgTypeSourceTokenSet, MsgTypeSourceTokenRemove, MsgTypeSourceTokenList} {
+		if kind, ok := InferMessageKind(request); !ok || kind != MessageKindRequest {
+			t.Errorf("%s: kind %q, %v", request, kind, ok)
+		}
+	}
+	for _, response := range []string{MsgTypeSourceTokenSetResult, MsgTypeSourceTokenRemoveResult, MsgTypeSourceTokenListResult} {
+		if kind, ok := InferMessageKind(response); !ok || kind != MessageKindResponse {
+			t.Errorf("%s: kind %q, %v", response, kind, ok)
+		}
+	}
+	for _, result := range []any{SourceTokenChangeResultMessage{}, SourceTokenListResultMessage{}, SourceTokenSelector{}, SourceTokenInfo{}} {
+		if hasSensitiveField(reflect.TypeOf(result)) {
+			t.Errorf("%T can carry a sensitive value", result)
+		}
+	}
+}
+
+func hasSensitiveField(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Struct:
+		for i := range t.NumField() {
+			if hasSensitiveField(t.Field(i).Type) {
+				return true
+			}
+		}
+	case reflect.Slice:
+		return t == reflect.TypeFor[SensitiveBytes]() || (t.Elem().Kind() != reflect.Uint8 && hasSensitiveField(t.Elem()))
+	}
+	return false
 }
 
 func TestGenerationQuarantineJSONShapes(t *testing.T) {

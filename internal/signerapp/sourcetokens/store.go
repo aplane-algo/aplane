@@ -99,6 +99,47 @@ func ReadFile(active storepaths.GenPaths, selector string, kr *crypto.Keyring) (
 	return f, true, nil
 }
 
+// Listings reads the token files of the named selectors, or of every
+// selector with one when none is named, and returns each selector's tokens
+// by source name without their values. A named selector without a file is
+// left out. Each file must open as its own selector's, as LoadFiles requires;
+// every token decrypted is zeroed before Listings returns.
+func Listings(active storepaths.GenPaths, kr *crypto.Keyring, selectors ...string) (map[string][]Entry, error) {
+	if len(selectors) == 0 {
+		var err error
+		if selectors, err = Selectors(active); err != nil {
+			return nil, err
+		}
+	}
+	out := make(map[string][]Entry, len(selectors))
+	for _, selector := range selectors {
+		f, ok, err := ReadFile(active, selector, kr)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out[selector] = f.Listing()
+			f.Zero()
+		}
+	}
+	return out, nil
+}
+
+// Names is Listings reduced to the source names with a token, by selector.
+func Names(active storepaths.GenPaths, kr *crypto.Keyring) (map[string][]string, error) {
+	listings, err := Listings(active, kr)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(listings))
+	for selector, entries := range listings {
+		for _, entry := range entries {
+			out[selector] = append(out[selector], entry.Source)
+		}
+	}
+	return out, nil
+}
+
 // VerifyArchived opens one file of the deleted archive as the token file its
 // name says it is, and zeroes what it decrypted.
 func VerifyArchived(active storepaths.GenPaths, name string, kr *crypto.Keyring) error {

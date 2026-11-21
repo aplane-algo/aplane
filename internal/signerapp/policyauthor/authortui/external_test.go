@@ -93,7 +93,7 @@ func TestEditARuleAsJSON(t *testing.T) {
 }
 
 // TestTryWithExternalChecks: a permit under a document with external checks
-// names them, and says this build refuses.
+// names the checks that then decide.
 func TestTryWithExternalChecks(t *testing.T) {
 	ws, _ := workspace(t, map[string][]byte{"cosigner.json": fixture(t, externalFixture)})
 	m := New(ws, nil, nil)
@@ -105,12 +105,10 @@ func TestTryWithExternalChecks(t *testing.T) {
 		t.Fatalf("try: %+v err %q", m.try.result, m.try.err)
 	}
 	out := strings.Join(strings.Fields(view(m)), " ")
-	for _, want := range []string{
-		"permits the supplied transaction; then external checks ops-switch, screen-destination and daily-allowance decide",
-		"this build cannot keep a source's token, so every lookup to screening or treasury is refused",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("try view lacks %q:\n%s", want, view(m))
-		}
+	if want := "permits the supplied transaction; then external checks ops-switch, screen-destination and daily-allowance decide"; !strings.Contains(out, want) {
+		t.Fatalf("try view lacks %q:\n%s", want, view(m))
+	}
+	if strings.Contains(out, "cannot keep") {
+		t.Fatalf("try view says a token cannot be kept:\n%s", view(m))
 	}
 }

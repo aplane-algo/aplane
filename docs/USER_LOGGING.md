@@ -128,7 +128,7 @@ Maintenance records intent before destructive work and records its outcome:
 See [store maintenance](USER_STORE_MGMT.md) for restrictions and the current
 CLI limitation on deleted-archive pruning.
 
-### Policy and ASA Set Changes
+### Policy, ASA Set and Source Token Changes
 
 | Event | Description |
 |-------|-------------|
@@ -140,10 +140,15 @@ CLI limitation on deleted-archive pruning.
 | `ASA_SET_UPDATE_SUCCEEDED` | The ASA set change committed |
 | `ASA_SET_UPDATE_FAILED` | The change was refused or failed before committing |
 | `ASA_SET_UPDATE_COMMIT_UNCERTAIN` | As for a policy apply |
+| `SOURCE_TOKEN_CHANGE_INTENT` | A `source_token_set` or `source_token_remove` request was received; written and fsynced before the change runs, with `source_token_action`, `policy_selector` and `external_source` |
+| `SOURCE_TOKEN_SET` | A source's token was set |
+| `SOURCE_TOKEN_REMOVED` | A source's token was removed |
+| `SOURCE_TOKEN_CHANGE_FAILED` | The token change was refused or failed |
 
 Each change writes one intent and then one outcome, both with the admin
 session's attribution and the request ID as `operation_id`. Entries name
-documents by selector and assets by chain and ID, never document contents.
+documents by selector, assets by chain and ID, and tokens by selector and
+source name, never document contents or a token.
 Every string taken from the request or an error is cut to 128 bytes (1024
 for `reason`), with its original length noted, so a malformed request
 cannot write a large entry. An `operation_id` longer than 128 bytes, in any
@@ -259,7 +264,7 @@ the retained history out of the log:
   (`group_txids_omitted`), which a group of at most 16 transactions never
   reaches.
 - The policy and ASA set fields have their own, tighter bounds in
-  [Policy and ASA Set Changes](#policy-and-asa-set-changes).
+  [Policy, ASA Set and Source Token Changes](#policy-asa-set-and-source-token-changes).
 
 This keeps any one request from flushing the log, but not many requests:
 enough of them can still rotate older entries out of the 30 MB retained.

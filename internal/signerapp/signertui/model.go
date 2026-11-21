@@ -24,6 +24,7 @@ const (
 	ViewKeyDetails // Shows key metadata (parameters for generic LogicSigs)
 	ViewTEALFullDisplay
 	ViewMnemonicExport
+	ViewSourceTokens // Sets or removes a cosigner key's source tokens
 	ViewSigningPopup
 	ViewClientEnrollmentPopup // Client enrollment approval popup
 	ViewGenerateForm
@@ -525,6 +526,7 @@ type Model struct {
 	restore            restoreState
 	forms              formsState
 	mnemonicExport     mnemonicExportState
+	sourceTokens       sourceTokensState
 	cosigner           cosignerState
 	del                deleteConfirmState
 	admin              adminPanelState

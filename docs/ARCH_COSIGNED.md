@@ -855,8 +855,10 @@ standing statement, fixed in the program.
 A cosigner document may also define external checks: REST lookups whose
 JSON answers must satisfy rules the document states, run only on a request
 the policy would sign. They only refuse, and any lookup that fails refuses
-the request. A source's token cannot be kept yet, so a check on a source
-that declares one refuses. See
+the request. A source that declares a token is sent the one set for the
+document's selector with `apadmin source token set`, kept encrypted with the
+cosigner key; a check on a source whose token is not set refuses with
+`token_not_set`. See
 [ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks).
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific

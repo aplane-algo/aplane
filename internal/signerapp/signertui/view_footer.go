@@ -32,6 +32,9 @@ func (m Model) viewFooterText() string {
 		if m.isCosignerNode() && witness.IsKeyType(m.details.keyType) {
 			parts = append(parts, "e=export cosigner key")
 		}
+		if len(m.sourceTokens.rows) > 0 {
+			parts = append(parts, "o=source tokens")
+		}
 		if m.details.teal != "" {
 			parts = append(parts, "t=TEAL", "s=save")
 		}
@@ -39,6 +42,11 @@ func (m Model) viewFooterText() string {
 		return strings.Join(parts, " | ")
 	case ViewMnemonicExport:
 		return "Esc: close recovery phrase"
+	case ViewSourceTokens:
+		if m.sourceTokens.pendingAction != "" {
+			return "Esc: Back"
+		}
+		return "up/down: Source | Enter: Set token | ctrl+r: Remove token | Esc: Back"
 	case ViewTEALFullDisplay:
 		return pagerFooter(len(m.tealLines()), m.tealFullDisplayVisibleLines())
 	case ViewSigningPopup:

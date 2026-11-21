@@ -19,9 +19,7 @@ const externalFixture = "cosigner_key_external_checks.json"
 func TestExplainExternalChecks(t *testing.T) {
 	out := explainFixture(t, externalFixture, nil)
 	assertLines(t, out,
-		"External checks: asked only when this document would sign; a check can only refuse",
-		"This build cannot keep a source's token, so every lookup to screening or treasury is refused",
-		"Sources:\n  ops: http://127.0.0.1:8650, no token\n",
+		"External checks: asked only when this document would sign; a check can only refuse\nSources:\n  ops: http://127.0.0.1:8650, no token\n",
 		"  screening: https://screen.example.com/api, with a token\n",
 		"  treasury: https://treasury.internal.example:8443, with a token, pinned to 1 server key\n",
 		"  ops-switch: once per request, on any network\n    asks ops: GET /signing/{witness_key}\n    refuses unless /enabled is true\n",
@@ -31,8 +29,8 @@ func TestExplainExternalChecks(t *testing.T) {
 		"    asks treasury: GET /allowance/{source}/{asset}\n",
 		"      /request_id is the request ID the cosigner sent\n      /remaining is at least the movement's amount\n      /frozen is absent\n",
 	)
-	if strings.Count(out, "cannot keep a source's token") != 1 {
-		t.Errorf("the refusal in this build is not said exactly once:\n%s", out)
+	if strings.Contains(out, "cannot keep") || strings.Contains(out, "is refused") {
+		t.Errorf("the explanation says a token cannot be kept:\n%s", out)
 	}
 	if strings.Index(out, "External checks:") > strings.Index(out, "Routes match a transaction's sender") {
 		t.Errorf("the checks come after the closing line:\n%s", out)
@@ -412,18 +410,14 @@ func TestTryExternalChecksDecideAfterThePolicy(t *testing.T) {
 		txn   TryTxn
 		apply []string
 		next  string
-		// refusal is what the build cannot do for the checks that apply.
-		refusal string
 	}{
 		{"a mainnet payment", TryTxn{Network: "mainnet", Sender: tryAddr(1), Receiver: tryAddr(2), Amount: 5, Fee: 1000},
-			[]string{"ops-switch", "screen-destination", "daily-allowance"}, "then external checks ops-switch, screen-destination and daily-allowance decide",
-			", and this build cannot keep a source's token, so every lookup to screening or treasury is refused"},
-		// ops takes no token, so nothing stands in its check's way.
+			[]string{"ops-switch", "screen-destination", "daily-allowance"}, "then external checks ops-switch, screen-destination and daily-allowance decide"},
 		{"a testnet payment", TryTxn{Network: "testnet", Sender: tryAddr(1), Receiver: tryAddr(2), Amount: 5, Fee: 1000},
-			[]string{"ops-switch"}, "then external check ops-switch decides", ""},
+			[]string{"ops-switch"}, "then external check ops-switch decides"},
 		// An opt-in is a movement of a kind the movement checks leave out.
 		{"a mainnet opt-in", TryTxn{Network: "mainnet", Sender: tryAddr(1), Receiver: tryAddr(1), Asset: 7, Fee: 1000},
-			[]string{"ops-switch"}, "then external check ops-switch decides", ""},
+			[]string{"ops-switch"}, "then external check ops-switch decides"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := Try(f, tt.txn, BuiltinNetworks())
@@ -431,10 +425,10 @@ func TestTryExternalChecksDecideAfterThePolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			x := got.ExternalChecks
-			if got.Outcome != policyeval.Approve || x == nil || !slices.Equal(x.Apply, tt.apply) || x.Refusal != strings.TrimPrefix(tt.refusal, ", and ") {
+			if got.Outcome != policyeval.Approve || x == nil || !slices.Equal(x.Apply, tt.apply) {
 				t.Fatalf("Try() = %+v, external %+v; want approve, then %v", got, x, tt.apply)
 			}
-			if want := permits + "; " + tt.next + tt.refusal; got.Summary != want {
+			if want := permits + "; " + tt.next; got.Summary != want {
 				t.Fatalf("summary = %q, want %q", got.Summary, want)
 			}
 		})

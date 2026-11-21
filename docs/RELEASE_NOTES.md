@@ -2,7 +2,7 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v8.0; they are not current setup
+enrolled-key model and current admin protocol v8.1; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
@@ -21,9 +21,18 @@ before it was renamed `enroll`.
   strict JSON refuses the request. The requester is told which check
   refused; what the source answered stays in the cosigner's audit log. A
   lock ends lookups in flight at once.
-- **Sources that need a token cannot be used yet.** There is nowhere to
-  keep a token, so a check on such a source refuses with
-  `external_check:<id>:token_not_set`.
+- **`apadmin source token` keeps a source's token.** `set` prompts for
+  the token without echo, or reads it with `--token-stdin`; `remove` deletes
+  it; `list` shows, per selector, the sources with a token, when each was
+  set, and whether the policy document uses it (`in use`, `unused`,
+  `needed`). No command shows a token. Tokens are kept encrypted with the
+  cosigner key, and a check on a source whose token is not set refuses with
+  `external_check:<id>:token_not_set`; `apadmin policy apply` and `policy
+  rescue` warn of it. apadmin's Key Details for a cosigner key shows its
+  sources' token state and sets or removes a token. Removing a token does
+  not revoke it: earlier generations keep a copy until pruned. Backups do
+  not carry tokens yet, so set them again after a restore. The admin
+  protocol is now 8.1.
 
 ## This release is new-install only
 

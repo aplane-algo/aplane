@@ -95,6 +95,11 @@ type stubServices struct {
 	addASACalls            int
 	removeASACalls         int
 	addASAResult           adminproto.AddASAResult
+	sourceTokenCalls       []string // "set", "remove" and "list", in order
+	lastSourceToken        []byte   // a copy, taken while the service had the token
+	lastSourceTokenRequest adminproto.SetSourceTokenRequest
+	sourceTokenResult      adminproto.SourceTokenChangeResult
+	listSourceTokensResult adminproto.ListSourceTokensResult
 	removeASAResult        adminproto.RemoveASAResult
 	lastInstallTemplate    adminproto.InstallLibraryTemplateRequest
 	lastShowInstalled      adminproto.ShowInstalledTemplateRequest
@@ -229,6 +234,20 @@ func (s *stubServices) AddASA(req adminproto.AddASARequest) adminproto.AddASARes
 func (s *stubServices) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASAResult {
 	s.removeASACalls++
 	return s.removeASAResult
+}
+func (s *stubServices) SetSourceToken(req adminproto.SetSourceTokenRequest) adminproto.SourceTokenChangeResult {
+	s.sourceTokenCalls = append(s.sourceTokenCalls, "set")
+	s.lastSourceTokenRequest = req
+	s.lastSourceToken = append([]byte(nil), req.Token...)
+	return s.sourceTokenResult
+}
+func (s *stubServices) RemoveSourceToken(req adminproto.RemoveSourceTokenRequest) adminproto.SourceTokenChangeResult {
+	s.sourceTokenCalls = append(s.sourceTokenCalls, "remove")
+	return s.sourceTokenResult
+}
+func (s *stubServices) ListSourceTokens(req adminproto.ListSourceTokensRequest) adminproto.ListSourceTokensResult {
+	s.sourceTokenCalls = append(s.sourceTokenCalls, "list:"+req.Selector)
+	return s.listSourceTokensResult
 }
 func (s *stubServices) ListKeys() ([]adminproto.KeyInfo, error) {
 	return nil, nil

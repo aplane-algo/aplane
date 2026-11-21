@@ -1353,6 +1353,10 @@ Events:
 - `ASA_SET_UPDATE_SUCCEEDED`
 - `ASA_SET_UPDATE_FAILED`
 - `ASA_SET_UPDATE_COMMIT_UNCERTAIN`
+- `SOURCE_TOKEN_CHANGE_INTENT`
+- `SOURCE_TOKEN_SET`
+- `SOURCE_TOKEN_REMOVED`
+- `SOURCE_TOKEN_CHANGE_FAILED`
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
@@ -1570,6 +1574,13 @@ Store-management audit semantics:
   `operation_id` over 128 bytes, in any audit entry, is replaced by a
   32-byte prefix and the SHA-256 of the whole ID, so it stays small and an
   intent still correlates with its outcome.
+- source token changes (`source_token_set`, `source_token_remove`) follow
+  the same rule: a durable `SOURCE_TOKEN_CHANGE_INTENT` after
+  authorization, then one outcome, `SOURCE_TOKEN_SET`,
+  `SOURCE_TOKEN_REMOVED` or `SOURCE_TOKEN_CHANGE_FAILED`. Each records
+  `source_token_action`, `policy_selector` and `external_source`; no audit
+  method takes the token, so no entry can carry it. The refusal for a
+  missing audit log does not name rescue, which has no token commands.
 - every audit entry is normalized before it is written (`normalizeEntry`,
   in `Log` and `logDurable`): `reason` and `txn_details` are cut to 8 KiB,
   every other string field to 128 bytes, and every list to 64 members of
@@ -2101,6 +2112,11 @@ when memory protection is enabled, until the runtime reuses or frees it.
   pipe into aplane's buffer through `io.Copy`, whose 32 KiB buffer holds the
   passphrase and is dropped unzeroed. aplane's own buffer is fixed-size and
   zeroed after use.
+- **Source tokens.** The external check puts a token in a request header
+  as a Go string, and the HTTP transport copies it again; see
+  [External Source Tokens](#external-source-tokens). apadmin's batch prompt
+  reads a token typed without a terminal as a line string, as it reads a
+  passphrase.
 - **Generated LogicSig and rotating keys.** Their seed is derived from a fresh
   mnemonic, so generation makes the words as strings; they go no further than
   the generator. Native key generation no longer makes words at all: an export
@@ -2355,6 +2371,49 @@ transport), it takes an HTTP proxy from the environment (`HTTPS_PROXY`,
 `HTTP_PROXY`, `NO_PROXY`). A configured proxy sees which account is looked up
 and can answer as the Indexer, and for an `http://` Indexer it also sees the
 token in clear; use an `https://` Indexer when a proxy is in the path.
+
+### External Source Tokens
+
+A cosigner whose policy document has external checks makes REST lookups
+before it signs (see
+[ARCH_POLICY.md](ARCH_POLICY.md#external-sources-and-checks)). Each lookup is
+one `GET` of the source's `base_url` with the check's rendered path and query,
+which carry the facts the check names (an address, an asset, an amount), and
+these headers: `Accept: application/json`, `Cache-Control: no-store`,
+`User-Agent: apsigner/<version>`, `X-Aplane-Request-Id` (16 random bytes in
+hex, fresh per lookup), and, when the source declares a `token`, the token
+in the header the source names, after its prefix. Nothing is sent for a
+request the policy or the invariants refuse. An `https://` source takes the
+environment's proxy and the system roots, or its pins instead; an `http://`
+source takes no proxy and is reached only on a loopback address.
+
+A token's custody:
+
+- **At rest.** It is kept in the store, never in a policy document: one
+  term-encrypted file per policy selector under the store keyring, as a key
+  file is ([ARCH_STORE.md](ARCH_STORE.md#source-token-files)). It is
+  re-encrypted with the store on a passphrase change.
+- **In memory.** Only while the node is unlocked, in an immutable token
+  index the reload decrypts. Lock cleanup zeroes the index once every lookup
+  has been canceled and released, and a replaced index is zeroed when its
+  last reader releases it.
+- **Over the admin protocol.** It travels in one message,
+  `source_token_set`, as a sensitive value the server zeroes after use. No
+  admin message returns it, and no response, audit entry, log line or error
+  carries it; `source_token_list` reports names, set times and states. The
+  three messages require `policy.update` and are not open to `auth_only`
+  sessions. apadmin reads it from a no-echo prompt or stdin, never from the
+  command line.
+- **Removal.** Removing a token deletes it from the selected generation.
+  Generations minted while it was set keep a copy, encrypted, until they are
+  pruned, so revoking a token means revoking it at the service.
+
+The limit: a token placed in a request header is a Go string, which cannot
+be zeroed. That copy, and those the HTTP transport makes, live until the
+request is garbage collected. Zeroing covers the index and the admin
+buffers, not them. A source that is sent a token learns it, as any service
+that issues one does; whoever runs a proxy in the path of an `https://`
+source sees the destination but not the token.
 
 ### Defense in Depth
 

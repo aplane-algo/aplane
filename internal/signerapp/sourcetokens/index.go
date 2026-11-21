@@ -5,6 +5,7 @@ package sourcetokens
 
 import (
 	"bytes"
+	"slices"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -75,6 +76,22 @@ func (x *Index) TokenFor(selector, source string) (string, bool) {
 		return "", false
 	}
 	return string(value), true
+}
+
+// Names returns the source names with a token, by selector, each list
+// sorted. The caller holds a reader of x. A nil index has none.
+func (x *Index) Names() map[string][]string {
+	out := map[string][]string{}
+	if x == nil {
+		return out
+	}
+	for key := range x.tokens {
+		out[key.selector] = append(out[key.selector], key.source)
+	}
+	for _, names := range out {
+		slices.Sort(names)
+	}
+	return out
 }
 
 func (x *Index) acquire() {
@@ -171,6 +188,15 @@ func (h *Holder) Acquire() (*Index, func()) {
 	h.mu.Unlock()
 	var once sync.Once
 	return x, func() { once.Do(x.release) }
+}
+
+// Names reads the source names with a token from the current index, by
+// selector, holding a reader while it does. With no current index, as on a
+// locked node, it returns none.
+func (h *Holder) Names() map[string][]string {
+	x, release := h.Acquire()
+	defer release()
+	return x.Names()
 }
 
 // TokenFor reads one token from the current index, holding a reader for the

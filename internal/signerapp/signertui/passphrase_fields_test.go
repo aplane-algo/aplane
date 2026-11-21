@@ -198,6 +198,13 @@ func TestSecretCommandsZeroTheirCopyWhenNotConnected(t *testing.T) {
 		{"commit backup import", func(p []byte) tea.Cmd {
 			return m.sendCommitBackupImportCmd("commit-1", "upload-1", "backup.tar.gz", 10, "checksum", p)
 		}},
+		{"source token set", func(p []byte) tea.Cmd { return m.sendSourceTokenSetCmd("default", "screening", p, "token-1") }},
+		{"source token form", func(p []byte) tea.Cmd {
+			m := sourceTokensFormModel()
+			m.sourceTokens.token = append([]byte(nil), p...)
+			_, cmd := m.handleSourceTokensKeys(tea.KeyMsg{Type: tea.KeyEnter})
+			return cmd
+		}},
 		{"export key", func(p []byte) tea.Cmd {
 			m := Model{viewState: ViewMnemonicExport}
 			m.mnemonicExport.passphrase = append([]byte(nil), p...)

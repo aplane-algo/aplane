@@ -78,6 +78,10 @@ type KeyServices interface {
 	GenerateKey(ctx context.Context, req adminproto.GenerateKeyRequest) adminproto.GenerateKeyResult
 	DeleteKey(ctx context.Context, req adminproto.DeleteKeyRequest) adminproto.DeleteKeyResult
 	ImportKey(ctx context.Context, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult
+	// SetSourceToken copies req.Token; the caller zeroes it.
+	SetSourceToken(req adminproto.SetSourceTokenRequest) adminproto.SourceTokenChangeResult
+	RemoveSourceToken(req adminproto.RemoveSourceTokenRequest) adminproto.SourceTokenChangeResult
+	ListSourceTokens(req adminproto.ListSourceTokensRequest) adminproto.ListSourceTokensResult
 }
 
 type BackupServices interface {

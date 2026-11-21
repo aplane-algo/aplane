@@ -178,10 +178,13 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "m":
 		return m.openMnemonicExport()
+	case "o":
+		return m.openSourceTokens()
 	case "esc", "enter", " ", "q":
 		m.viewState = ViewKeyList
 		m.details.scrollOffset = 0 // Reset scroll on close
 		m.details.saveStatus = ""
+		m.clearSourceTokens()
 		return m, nil
 
 	case "s":

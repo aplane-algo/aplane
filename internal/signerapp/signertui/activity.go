@@ -54,6 +54,7 @@ func (m *Model) resetActivityState() {
 
 func (m *Model) applySignerLockedState() {
 	m.clearMnemonicExport()
+	m.clearSourceTokens()
 	m.clearRestorePassphrase()
 	m.clearPendingApprovals()
 	m.manualLock = manualLockState{returnView: ViewKeyList}
@@ -81,6 +82,7 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 // the restore passphrase must not outlive the session.
 func (m *Model) endAdminSession() {
 	m.clearMnemonicExport()
+	m.clearSourceTokens()
 	m.clearAuthPassphrase()
 	m.clearBackupPassphrases()
 	// The connection is gone: nothing more can be sent on it, and no reply
@@ -119,6 +121,7 @@ func (m *Model) enterRecovery() tea.Cmd {
 // until every marker is resolved.
 func (m *Model) applySignerRecoveryState() {
 	m.clearMnemonicExport()
+	m.clearSourceTokens()
 	m.clearRestorePassphrase()
 	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.signerState = signerRuntimeRecovery

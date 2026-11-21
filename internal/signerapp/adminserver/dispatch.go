@@ -78,6 +78,10 @@ var dispatchTable = map[string]dispatchFunc{
 	protocol.MsgTypeAddASA:            typed("add asa", (*Session).HandleAddASA),
 	protocol.MsgTypeRemoveASA:         typed("remove asa", (*Session).HandleRemoveASA),
 
+	protocol.MsgTypeSourceTokenSet:    typed("source token set", (*Session).HandleSetSourceToken),
+	protocol.MsgTypeSourceTokenRemove: typed("source token remove", (*Session).HandleRemoveSourceToken),
+	protocol.MsgTypeSourceTokenList:   typed("source token list", (*Session).HandleListSourceTokens),
+
 	protocol.MsgTypeListCosignerReferences: typed("list cosigner references", func(s *Session, m *protocol.ListCosignerReferencesMessage) {
 		s.HandleListCosignerReferences(m.ID)
 	}),

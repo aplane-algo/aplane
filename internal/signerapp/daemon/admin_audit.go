@@ -229,3 +229,26 @@ func (s signerAdminServices) LogASASetRemoveResultContext(
 		audit.LogASASetRemoveResultContext(ctx, operationID, req, result)
 	}
 }
+
+// Source token changes: as for policy and ASA set changes.
+
+func (s signerAdminServices) LogSourceTokenChangeIntentDurableContext(
+	ctx adminserver.SessionContext,
+	operationID, action, selector, source string,
+) error {
+	audit := s.signer.auditLog
+	if audit == nil {
+		return adminserver.ErrAuditUnavailable
+	}
+	return audit.LogSourceTokenChangeIntentDurableContext(ctx, operationID, action, selector, source)
+}
+
+func (s signerAdminServices) LogSourceTokenChangeResultContext(
+	ctx adminserver.SessionContext,
+	operationID, action, selector, source string,
+	result adminproto.SourceTokenChangeResult,
+) {
+	if audit := s.signer.auditLog; audit != nil {
+		audit.LogSourceTokenChangeResultContext(ctx, operationID, action, selector, source, result)
+	}
+}

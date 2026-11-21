@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -137,6 +138,13 @@ func (b *offlineBackend) reload() error {
 	}
 	if b.env.ASASet, err = asasetstore.Load(active, b.env.Keyring); err != nil {
 		return fmt.Errorf("verify active asa set: %w", err)
+	}
+	// Rescue unlocked the store, so it reads which sources have a token from
+	// the token files themselves, for the missing-token advisory.
+	if b.env.Role == noderole.RoleCosigner {
+		if b.env.SourceTokens, err = sourcetokens.Names(active, b.env.Keyring); err != nil {
+			return fmt.Errorf("read source tokens: %w", err)
+		}
 	}
 	b.env.HeldKeys, err = policyapply.HeldPolicyKeysInGeneration(b.env.Role, active)
 	return err

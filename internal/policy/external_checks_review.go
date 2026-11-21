@@ -25,6 +25,11 @@ const (
 	// ConfigAdvisoryExternalPlainHTTP reports a source reached over plain
 	// http on loopback.
 	ConfigAdvisoryExternalPlainHTTP = "external_check:plain_http_source"
+	// ConfigAdvisoryExternalTokenNotSet reports a source that takes a token
+	// the document's selector has none of, so every lookup to it refuses.
+	// Advisories cannot report it, having no knowledge of tokens: a live
+	// policy apply and a rescue add it, given the selector's token names.
+	ConfigAdvisoryExternalTokenNotSet = "external_check:token_not_set"
 )
 
 // externalCloseKinds are the movement kinds whose amount is not known when

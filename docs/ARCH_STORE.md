@@ -1657,7 +1657,10 @@ reads and writes, and the runtime index.
   the selected generation (temp file, fsync, rename, directory fsync) under
   the store mutation lock, on an unlocked cosigner node; it mints no
   generation. Setting needs `default` or a held cosigner key. Removing the
-  last token deletes the file; nothing is archived.
+  last token deletes the file; nothing is archived. The admin messages
+  `source_token_set`, `source_token_remove` and `source_token_list` drive
+  them ([ARCH_ADMIN.md](ARCH_ADMIN.md)); a listing reads the files, names and
+  set times only, and zeroes what it decrypts.
 - **Runtime index.** Reload decrypts every token file into an immutable
   index keyed by selector and source, published with the policy. A set or
   remove publishes a new index once its write is durable; a write whose

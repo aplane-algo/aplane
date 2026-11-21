@@ -5,6 +5,8 @@ package adminproto
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -1017,6 +1019,76 @@ type RemoveASAResult struct {
 	BlockingOmitted int
 	Code            string
 	Error           string
+}
+
+// SetSourceTokenRequest sets Source's token for a cosigner policy selector.
+// The service copies Token; the caller zeroes it.
+type SetSourceTokenRequest struct {
+	Selector string
+	Source   string
+	Token    []byte
+}
+
+// RemoveSourceTokenRequest removes Source's token from a selector.
+type RemoveSourceTokenRequest struct {
+	Selector string
+	Source   string
+}
+
+// SourceTokenChangeResult is the result of a token set or remove: the
+// selector's tokens after the change, without values.
+type SourceTokenChangeResult struct {
+	Success  bool
+	Selector string
+	Source   string
+	Tokens   []SourceTokenInfo
+	Code     string
+	Error    string
+}
+
+// ListSourceTokensRequest names one selector, or none for every selector
+// that has a token or needs one.
+type ListSourceTokensRequest struct {
+	Selector string
+}
+
+// ListSourceTokensResult lists token names. Omitted counts the selectors a
+// listing of every selector left out.
+type ListSourceTokensResult struct {
+	Success   bool
+	Selectors []SourceTokenSelector
+	Omitted   int
+	Code      string
+	Error     string
+}
+
+// SourceTokenSelector is one selector's tokens. Policy is
+// SourceTokenPolicyOwn or SourceTokenPolicyDefault, and Sources names the
+// sources of the selector's own document.
+type SourceTokenSelector struct {
+	Selector string
+	Policy   string
+	Sources  []string
+	Tokens   []SourceTokenInfo
+}
+
+// Source token states and selector policies: the wire values, named here for
+// the services that produce them.
+const (
+	SourceTokenInUse         = protocol.SourceTokenInUse
+	SourceTokenUnused        = protocol.SourceTokenUnused
+	SourceTokenNeeded        = protocol.SourceTokenNeeded
+	SourceTokenPolicyOwn     = protocol.SourceTokenPolicyOwn
+	SourceTokenPolicyDefault = protocol.SourceTokenPolicyDefault
+)
+
+// SourceTokenInfo is one token, or one a source needs, without its value.
+// SetAt is zero for a needed one. State is SourceTokenInUse,
+// SourceTokenUnused or SourceTokenNeeded.
+type SourceTokenInfo struct {
+	Source string
+	SetAt  time.Time
+	State  string
 }
 
 // PolicyNetwork is one network token and the chain it names on the node.

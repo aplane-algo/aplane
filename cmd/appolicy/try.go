@@ -36,8 +36,7 @@ type tryViolation struct {
 // tryExternalChecks is what follows a cosigner policy that would sign under a
 // document with external checks.
 type tryExternalChecks struct {
-	Apply   []string `json:"apply"`
-	Refusal string   `json:"refusal,omitempty"`
+	Apply []string `json:"apply"`
 }
 
 type tryReport struct {
@@ -115,7 +114,7 @@ func runTry(args []string, stdout, stderr io.Writer) int {
 		report.Violations = append(report.Violations, tryViolation{RuleID: v.RuleID, Message: v.Message})
 	}
 	if x := result.ExternalChecks; x != nil {
-		report.ExternalChecks = &tryExternalChecks{Apply: append([]string{}, x.Apply...), Refusal: x.Refusal}
+		report.ExternalChecks = &tryExternalChecks{Apply: append([]string{}, x.Apply...)}
 	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)

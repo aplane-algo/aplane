@@ -99,9 +99,6 @@ type TryExternalChecks struct {
 	// Apply are the IDs of the checks that would make a lookup for the
 	// transaction, in document order.
 	Apply []string
-	// Refusal, when set, says why the cosigner refuses the request whatever
-	// the checks would answer.
-	Refusal string
 }
 
 // Try asks what f's document decides for txn, as the signer's evaluator
@@ -146,7 +143,7 @@ func Try(f *File, txn TryTxn, networks Networks) (TryResult, error) {
 	if f.Role == noderole.RoleCosigner && verdict.Outcome == policyeval.Approve && len(f.Document.ExternalChecks) > 0 {
 		network, _ := networks.Resolver.NetworkForGenesisHashBytes(built.GenesisHash[:])
 		apply := applicableExternalChecks(f.Document, network, built)
-		result.ExternalChecks = &TryExternalChecks{Apply: apply, Refusal: externalChecksRefusal(f.Document, apply)}
+		result.ExternalChecks = &TryExternalChecks{Apply: apply}
 	}
 	result.Summary = trySummary(result)
 	result.Assumes = tryAssumptions(f.Role, txn, built, networks)
@@ -257,9 +254,6 @@ func trySummary(r TryResult) string {
 			next = "then external check " + x.Apply[0] + " decides"
 		default:
 			next = "then external checks " + joinAnd(x.Apply) + " decide"
-		}
-		if x.Refusal != "" {
-			next += ", and " + x.Refusal
 		}
 		return permits + "; " + next
 	}

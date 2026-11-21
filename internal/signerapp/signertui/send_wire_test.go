@@ -85,6 +85,11 @@ func TestSendCommandsWriteTheirMessages(t *testing.T) {
 		{"get policy context", func(m Model) tea.Cmd { return m.sendGetPolicyContextCmd("ctx-1") }, `{"type":"get_policy_context","id":"ctx-1","kind":"request"}`},
 		{"check policy", func(m Model) tea.Cmd { return m.sendCheckPolicyCmd(doc, "check-1") }, `{"type":"check_policy","id":"check-1","documents":[{"key":"default","document":"{\"schema\":\"aplane.policy.v1\"}"}],"kind":"request"}`},
 		{"apply policy", func(m Model) tea.Cmd { return m.sendApplyPolicyCmd(doc, "set", "snap", "apply-1") }, `{"type":"apply_policy","id":"apply-1","documents":[{"key":"default","document":"{\"schema\":\"aplane.policy.v1\"}"}],"expected_policy_set_sha256":"set","expected_snapshot_sha256":"snap","kind":"request"}`},
+		{"list source tokens", func(m Model) tea.Cmd { return m.sendSourceTokenListCmd("default", "tokens-1") }, `{"type":"source_token_list","id":"tokens-1","selector":"default","kind":"request"}`},
+		{"set source token", func(m Model) tea.Cmd {
+			return m.sendSourceTokenSetCmd("default", "screening", []byte("tok"), "tokens-2")
+		}, `{"type":"source_token_set","id":"tokens-2","selector":"default","source":"screening","token":"tok","kind":"request"}`},
+		{"remove source token", func(m Model) tea.Cmd { return m.sendSourceTokenRemoveCmd("default", "screening", "tokens-3") }, `{"type":"source_token_remove","id":"tokens-3","selector":"default","source":"screening","kind":"request"}`},
 		{"delete backup", func(m Model) tea.Cmd { return m.sendDeleteBackupCmd("del-b-1", "a.tar.gz") }, `{"type":"delete_backup","id":"del-b-1","archive_path":"a.tar.gz","kind":"request"}`},
 		{"commit backup import", func(m Model) tea.Cmd {
 			return m.sendCommitBackupImportCmd("commit-1", "up-1", "a.tar.gz", 10, "sum", []byte("pass"))

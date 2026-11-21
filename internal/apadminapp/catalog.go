@@ -62,14 +62,20 @@ type Catalog struct {
 	Client  Requester
 	Streams Streams
 	Confirm func(prompt string) bool
-	Now     func() time.Time
-	Sleep   func(time.Duration)
+	// ReadSecret prompts for a secret, such as a source token, without
+	// echoing it. The caller zeroes what it returns.
+	ReadSecret func(prompt string) ([]byte, error)
+	Now        func() time.Time
+	Sleep      func(time.Duration)
 }
 
 func (c Catalog) normalized() Catalog {
 	c.Streams = c.Streams.normalized()
 	if c.Confirm == nil {
 		c.Confirm = func(string) bool { return false }
+	}
+	if c.ReadSecret == nil {
+		c.ReadSecret = func(string) ([]byte, error) { return nil, errors.New("no terminal to read a secret from") }
 	}
 	if c.Now == nil {
 		c.Now = time.Now
@@ -99,7 +105,7 @@ func unlockedCommand(run func(Catalog) error) catalogCommand {
 // CatalogCommands names every command Run accepts. cmd/apadmin routes each of
 // them; a test keeps the two lists in step.
 var CatalogCommands = []string{
-	"template", "keytype", "cosigner", "asa", "clients", "endpoint", "generations", "archive",
+	"template", "keytype", "cosigner", "asa", "clients", "endpoint", "generations", "archive", "source",
 }
 
 // parseCatalogCommand is the one grammar of the catalog commands.
@@ -123,13 +129,16 @@ func parseCatalogCommand(command string, args []string) (catalogCommand, error) 
 		return parseGenerations(args)
 	case "archive":
 		return parseArchive(args)
+	case "source":
+		return parseSource(args)
 	}
 	return catalogCommand{}, fmt.Errorf("unknown apadmin command %q", command)
 }
 
 // CatalogReadsStdin reports whether a catalog command reads its input from
-// stdin, which it does for an import whose path is "-". The caller must then
-// take the passphrase from somewhere else. A malformed command reads nothing.
+// stdin, which it does for an import whose path is "-" and for a source token
+// set with --token-stdin. The caller must then take the passphrase from
+// somewhere else. A malformed command reads nothing.
 func CatalogReadsStdin(command string, args []string) bool {
 	cmd, err := parseCatalogCommand(command, args)
 	return err == nil && cmd.readsStdin

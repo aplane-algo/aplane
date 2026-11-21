@@ -290,6 +290,9 @@ Client to Server:
 - `lookup_asa`
 - `add_asa`
 - `remove_asa`
+- `source_token_set`
+- `source_token_remove`
+- `source_token_list`
 
 Server to Client:
 
@@ -304,6 +307,9 @@ Server to Client:
 - `lookup_asa_result`
 - `add_asa_result`
 - `remove_asa_result`
+- `source_token_set_result`
+- `source_token_remove_result`
+- `source_token_list_result`
 
 #### Cosigner References And Store Inventory
 
@@ -693,7 +699,7 @@ Apply rules, the same on both node roles:
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
 - Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring before it publishes unlocked, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
-- `apply_policy`, `add_asa`, and `remove_asa` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
+- `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, and `source_token_remove` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.
 
@@ -755,6 +761,52 @@ ASA set result codes include `policy_unavailable`, `unknown_network`,
 `asa_builtin`, `asa_already_confirmed`, `lookup_failed`,
 `confirmation_stale`, `asa_referenced`, `not_found`, `identity_locked`,
 `recovery_blocked`, `asa_commit_uncertain`, and `asa_reload_failed`.
+
+Source token messages. A cosigner node keeps the tokens of the external
+sources its policy documents name, one encrypted file per policy selector (a
+Witness Key ID, or `default`), as [ARCH_STORE.md](ARCH_STORE.md) describes. A
+selector's tokens serve the document keyed by it: a key with a document of
+its own uses its own tokens, and a key that follows the node default uses the
+tokens of `default`. The three messages require `policy.update`, the
+authorization of `apply_policy`, reading as well as changing, and none is
+open to `auth_only` sessions. No message returns a token: an admin session
+can replace a token but never read one.
+
+- token info: `source`, optional `set_at` (RFC 3339 UTC; absent for a needed
+  token), and `state`: `in_use` (a source of the selector's document takes a
+  token, and one is set), `unused` (a token is set that no source of the
+  selector's document takes), or `needed` (a source takes a token, and none
+  is set; every lookup to it refuses with `token_not_set`).
+- `source_token_set`: `selector`, `source`, `token` ->
+  `source_token_set_result`: `success`, `selector`, `source`, `tokens[]` (the
+  selector's token info after the change), optional `code`, optional
+  `error`. The token is 1 to 1024 bytes of visible ASCII and replaces any the
+  source had; the selector must be `default` or a cosigner key the node
+  holds. The request carries the token as a sensitive value: the server
+  zeroes its copy once the service has taken it, whether or not the change
+  runs, and puts it in no response, audit entry, log line or error.
+- `source_token_remove`: `selector`, `source` -> `source_token_remove_result`:
+  the same fields. Removing the last token deletes the selector's file;
+  nothing is archived. Generations minted while the token was set keep their
+  copy until they are pruned, so a removed token is revoked at the service,
+  not here.
+- `source_token_list`: optional `selector` -> `source_token_list_result`:
+  `success`, `selectors[]`, optional `omitted`, optional `code`, optional
+  `error`. Each selector carries `selector`, `policy` (`own` when the node has
+  a document keyed by it, always so for `default`, or `default` when it is a
+  key that follows the node default), `sources[]` (the source names of its
+  own document) and `tokens[]`. With a `selector`, the list holds it, and then
+  `default` when it follows the node default. Without one, it holds every
+  selector with a token or with a source that needs one, `default` first, at
+  most 512, and `omitted` counts the rest.
+
+Set and remove are in-place writes of the selected generation under the
+store mutation lock, as key generation is; they mint nothing, and the runtime
+token index is published once the write is durable. List reads the token
+files under the same lock and zeroes every token it decrypts. All three
+need an unlocked cosigner node: a signer node refuses them with
+`invalid_request`, a locked node with `signer_locked`, and a key the node
+does not hold, or a source with no token to remove, with `key_not_found`.
 
 Policy selection semantics:
 
@@ -1017,6 +1069,7 @@ signer; the session cannot resume administrative work in-process.
 | Enrolled-client list, revocation, and import | yes | yes (`clients`) | no | no | no |
 | Key-type, template, cosigner-reference, generation, and endpoint administration | yes | yes (`keytype`, `template`, `cosigner`, `generations`, `endpoint`) | no | no | no |
 | Policy view and apply | yes | yes (`policy`) | no | no | no |
+| Source tokens | yes (Key Details) | yes (`source token`) | no | no | no |
 | Admin settings | yes | no | no | no | no |
 | Async notifications | yes | no | limited | limited | no |
 
@@ -1353,7 +1406,17 @@ place, and any other change of view closes it.
 identifies the current screen. The enum has families for:
 
 - Authentication and unlock (`ViewAuth`, `ViewUnlock`)
-- Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`)
+- Key list and details (`ViewKeyList`, `ViewKeyDetails`, `ViewTEALFullDisplay`).
+  On a cosigner node, Key Details for a cosigner key asks `source_token_list`
+  for the key and shows one `Sources:` line: each source of the document that
+  governs the key (its own, or the node default it follows) with `token
+  set`, `token needed` or `no token`. `o` opens `ViewSourceTokens`, which
+  sets the selected source's token (typed masked, Enter) or removes it
+  (`ctrl+r`) on that document's selector. Every printable key is part of the
+  token, so the form's commands are Enter, `ctrl+r`, the arrows, Tab and
+  `Esc`; the typed token is zeroed on every way out of the form, on lock and
+  on disconnect, and after a remove the form says that earlier generations
+  keep a copy until they are pruned.
 - Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
 - Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
   list): the enrollment requests waiting for approval (`a` approve, `x`

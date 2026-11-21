@@ -393,6 +393,14 @@ func (ir *Runtime) SourceTokenFor(selector, source string) (string, bool) {
 	return ir.sourceTokens.TokenFor(selector, source)
 }
 
+// SourceTokenNames returns the source names with a token, by cosigner policy
+// selector, from the index published at the time of the call: the live
+// tokens a policy apply's missing-token advisory checks a document against.
+// A locked signer has none.
+func (ir *Runtime) SourceTokenNames() map[string][]string {
+	return ir.sourceTokens.Names()
+}
+
 // StatusAlerts are every alert a status report carries for this identity:
 // rotating account alerts, then policy admission alerts.
 func (ir *Runtime) StatusAlerts() []string {

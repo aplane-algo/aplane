@@ -713,7 +713,8 @@ could not be judged:
 
 - `unavailable`: the lookup failed, or the node cannot run checks;
 - `missing_fact`: the unit lacks a fact the check uses;
-- `token_not_set`: the source declares a token and the key has none for it;
+- `token_not_set`: the source declares a token and the document's selector
+  has none set for it (`apadmin source token set` sets one);
 - `too_many_lookups`: the request would need more than 32 lookups.
 
 See [External Sources and Checks](#external-sources-and-checks).
@@ -1158,10 +1159,15 @@ rule of every check that applies must hold for it to be signed. They can
 never allow what the policy rejects. Any lookup that cannot be made or read
 refuses the request.
 
-**Status.** Lookups run. A source's token cannot be kept yet, so a check
-on a source that declares one refuses with
-`external_check:<id>:token_not_set`. A node that cannot run checks at all
-refuses with `external_check:<id>:unavailable`.
+**Tokens.** A source that declares a `token` is sent the token its
+selector holds: the document's key, `default` for the node default. Tokens
+are set with `apadmin source token set` and kept encrypted in the store with
+the key, never in a document (see
+[ARCH_STORE.md](ARCH_STORE.md#source-token-files)). A check on a source that
+declares a token the selector has none of refuses with
+`external_check:<id>:token_not_set`, and a live apply or a rescue warns of it
+(`external_check:token_not_set`, see [Advisories](#advisories)). A node that
+cannot run checks at all refuses with `external_check:<id>:unavailable`.
 
 ```json
 "external_sources": {
@@ -1431,6 +1437,7 @@ would change to resolve it:
 | `external_check:fact_absent_for_covered_units` | A check uses a fact some of the units it covers never have, so it refuses every one of them: `amount` on a close-out kind, `asset_source` on a kind other than `clawback`, or `rekey_to`, which only a rekey has |
 | `external_check:network_without_route` | A check names a network no route covers, so no transfer there reaches it |
 | `external_check:plain_http_source` | A source is reached over plain `http://` on loopback; its answers and any token are not encrypted |
+| `external_check:token_not_set` | A source declares a `token` and the document's selector has none set, so every lookup to it refuses. Only a live `apadmin policy apply` (against the token index) and `apadmin policy rescue` (against the token files) report it, at `/external_sources/<name>/token`; the document alone does not say which tokens are set |
 
 ## Embedded Defaults
 

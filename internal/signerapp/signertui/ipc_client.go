@@ -458,6 +458,15 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return KeysListMsg{Keys: keys}
 	}),
 	protocol.MsgTypeExportResult: decodeAs(func(result protocol.ExportResultMessage) tea.Msg { return nativeMnemonicResultMsg(result) }),
+	protocol.MsgTypeSourceTokenListResult: decodeAs(func(result protocol.SourceTokenListResultMessage) tea.Msg {
+		return sourceTokenListMsg(result)
+	}),
+	protocol.MsgTypeSourceTokenSetResult: decodeAs(func(result protocol.SourceTokenChangeResultMessage) tea.Msg {
+		return sourceTokenChangeMsg(result)
+	}),
+	protocol.MsgTypeSourceTokenRemoveResult: decodeAs(func(result protocol.SourceTokenChangeResultMessage) tea.Msg {
+		return sourceTokenChangeMsg(result)
+	}),
 	MsgTypeGenerateResult: decodeAs(func(genResult GenerateResultMessage) tea.Msg {
 		return GenerateResultMsg{
 			ID:       genResult.ID,
