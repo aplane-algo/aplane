@@ -547,13 +547,10 @@ func TestCosignerListSuccessClearsItsFailureFromTheBar(t *testing.T) {
 }
 
 // The policy editor keeps the cursor's line in view when an error takes rows
-// from it, focused or not: the next key edits a line the operator can see.
-// Update fits it; drawing it changes nothing.
+// from it: the next key edits a line the operator can see. Update fits it;
+// drawing it changes nothing.
 func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
-	for _, tc := range []struct {
-		standalone, blurred bool
-	}{{false, false}, {true, false}, {false, true}, {true, true}} {
-		standalone := tc.standalone
+	for _, standalone := range []bool{false, true} {
 		m := cosignerPoliciesModel("default")
 		m.standalone, m.connectionState = standalone, ConnectionConnected
 		m = openEditorForKeyOnDefault(t, sizedForTest(t, m, MinWidth, MinHeight))
@@ -571,13 +568,10 @@ func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
 		if view := stripANSI(m.View()); !strings.Contains(view, "line-059") {
 			t.Fatalf("standalone %v: the cursor's last line is not on screen before the error:\n%s", standalone, view)
 		}
-		if tc.blurred {
-			m.policies.apply.edit.input.Blur()
-		}
 		value := m.policies.apply.edit.input.Value()
 		m = updateModel(t, m, ErrorMsg{Error: errors.New(longDaemonError)})
 		view := stripANSI(m.View())
-		name := fmt.Sprintf("standalone %v blurred %v", standalone, tc.blurred)
+		name := fmt.Sprintf("standalone %v", standalone)
 		checkBodyFits(t, name, m)
 		if !strings.Contains(view, "line-059") {
 			t.Errorf("%s: the cursor's line is hidden after the error:\n%s", name, view)
@@ -585,7 +579,7 @@ func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
 		if again := stripANSI(m.View()); again != view {
 			t.Errorf("%s: drawing the editor again draws it differently", name)
 		}
-		if edit := m.policies.apply.edit.input; edit.Value() != value || edit.Focused() == tc.blurred {
+		if edit := m.policies.apply.edit.input; edit.Value() != value || !edit.Focused() {
 			t.Errorf("%s: fitting changed the text or the focus", name)
 		}
 	}

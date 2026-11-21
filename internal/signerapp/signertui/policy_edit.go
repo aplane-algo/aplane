@@ -420,17 +420,9 @@ func (m Model) fitPolicyEditor() Model {
 	if m.viewState != ViewPolicyEdit || edit.loading {
 		return m
 	}
-	input := m.sizedPolicyEditor()
-	// The text area scrolls to its cursor in an update, but only when it is
-	// focused.
-	if input.Focused() {
-		input, _ = input.Update(nil)
-	} else {
-		input.Focus()
-		input, _ = input.Update(nil)
-		input.Blur()
-	}
-	edit.input = input
+	// An update scrolls the text area to its cursor; the editor is focused
+	// from the moment it opens.
+	edit.input, _ = m.sizedPolicyEditor().Update(nil)
 	return m
 }
 
