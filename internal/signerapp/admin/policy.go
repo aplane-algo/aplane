@@ -5,6 +5,7 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -105,6 +106,15 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	if ir.IsRecovery() {
 		return policyapply.Error{Code: protocol.ResultCodeRecoveryBlocked, Msg: "the store is in recovery mode; reconcile, roll back, or restore it before applying policy"}
 	}
+	// An unlock in flight on another connection opens the keyring before it
+	// publishes unlocked, outside this lock, so an open keyring does not mean
+	// an unlocked signer. A commit then would meet a locked signer if its
+	// reload failed, where SetRecovery does nothing and leaves the session
+	// generation TryUnlock's fence compares where it was, and the unlock
+	// would publish unlocked over a generation the runtime had not followed.
+	if !ir.IsUnlocked() {
+		return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
+	}
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		var err error
 		*outcome, err = policyapply.Commit(s.policyEnv(kr), req)
@@ -119,12 +129,6 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 		if outcome.Uncertain {
 			ir.SetRecovery()
 			_, _ = ir.Reload()
-			// Again after the reload. SetRecovery does nothing on a locked
-			// signer, and an unlock in flight on another connection opens
-			// the keyring this commit used before it publishes unlocked,
-			// outside the store mutation lock, so it can publish while the
-			// reload runs.
-			ir.SetRecovery()
 		}
 		return err
 	}

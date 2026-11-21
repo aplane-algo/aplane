@@ -139,6 +139,41 @@ func TestDecodePolicyV1ReportsJSONPointer(t *testing.T) {
 	})
 }
 
+// A route whose limits name several networks or assets it does not cover is
+// refused for the first in sorted order, networks by name and assets with
+// algo first and then by ASA ID, so the same document always gives the same
+// error. The limits are a map, and the error once named whichever its
+// iteration reached first.
+func TestRouteLimitsCoverageNamesTheFirstUncoveredInSortedOrder(t *testing.T) {
+	route := `{"id":"r","networks":["testnet"],"sources":["*"],"assets":["algo"],"destinations":["*"],"limits":%s}`
+	for _, tc := range []struct {
+		name   string
+		limits string
+		want   string
+	}{
+		{
+			name:   "networks",
+			limits: `{"mainnet":{"algo":{"reject_above":"1"}},"localnet":{"algo":{"reject_above":"1"}},"betanet":{"algo":{"reject_above":"1"}}}`,
+			want:   `/transfer_policy/routes/0/limits/betanet: route does not cover network "betanet"`,
+		},
+		{
+			name:   "assets",
+			limits: `{"testnet":{"asa:10":{"reject_above":"1"},"asa:9":{"reject_above":"1"},"asa:7000":{"reject_above":"1"}}}`,
+			want:   `/transfer_policy/routes/0/limits/testnet/asa:9: route does not cover asa:9 on testnet`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := signerJSON(t, DefaultKey, fmt.Sprintf(`{"transfer_policy":{"routes":[`+route+`]}}`, tc.limits))
+			for range 50 {
+				_, err := DecodePolicyV1(doc, DefaultKey, noderole.RoleSigner)
+				if err == nil || err.Error() != tc.want {
+					t.Fatalf("DecodePolicyV1() error = %v, want %s", err, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func assertDocumentError(t *testing.T, err error, pointer, msg string) {
 	t.Helper()
 	var docErr *DocumentError

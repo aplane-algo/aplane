@@ -326,3 +326,72 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 		t.Fatalf("logs for a damaged store root = %q, want an error line with the cause", got)
 	}
 }
+
+// An unlock in flight when a store change on another connection ends in
+// doubt does not publish over the recovery that change entered. It publishes
+// nothing and answers from the state the signer is then in: recovery_blocked
+// while the recovery lasts, as an unlock that finds the store needing
+// recovery does; a plain success once a reconcile on a third connection has
+// lifted it; and a lost race once a lock has come in. The answer once said
+// recovery_blocked whatever the state.
+func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		after func(*productruntime.Runtime)
+		want  func(t *testing.T, success bool, keyCount int, errMsg, code string)
+		state signerruntime.SignerState
+	}{
+		{
+			name:  "still in recovery",
+			after: func(*productruntime.Runtime) {},
+			want: func(t *testing.T, success bool, keyCount int, errMsg, code string) {
+				if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
+					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
+				}
+			},
+			state: signerruntime.SignerStateRecovery,
+		},
+		{
+			name:  "a reconcile lifted it",
+			after: func(ir *productruntime.Runtime) { ir.PromoteRecoveryToUnlocked() },
+			want: func(t *testing.T, success bool, keyCount int, errMsg, code string) {
+				if !success || errMsg != "" || code != "" {
+					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want a plain success", success, keyCount, errMsg, code)
+				}
+			},
+			state: signerruntime.SignerStateUnlocked,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, cleanup := setupTestSigner(t)
+			defer cleanup()
+			ir := server.productRuntime()
+			ir.SetUnlocked()
+			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+				if passphrase != nil {
+					ir.SetRecovery() // the store change, while the unlock reloads
+					tc.after(ir)
+				}
+				return &signertemplates.ReloadReport{}, nil
+			})
+
+			success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+			tc.want(t, success, keyCount, errMsg, code)
+			if got := ir.GetState(); got != tc.state {
+				t.Fatalf("state = %v, want %v", got, tc.state)
+			}
+		})
+	}
+}
+
+// A fenced unlock that finds the signer locked, by a lock that came in after
+// the fence, answers as an unlock that lost to a lock.
+func TestAFencedUnlockAnswersALockThatCameAfter(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ir.Lock()
+	if success, _, errMsg, code := answerFencedUnlock(ir, signerruntime.RecoveryDuringUnlockMessage); success || errMsg != signerruntime.LockedDuringUnlockMessage || code != protocol.ErrCodeUnlockFailed {
+		t.Fatalf("answerFencedUnlock(locked) = (%v, %q, %q), want the lost-race answer", success, errMsg, code)
+	}
+}

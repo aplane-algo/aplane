@@ -474,6 +474,10 @@ func (ir *Runtime) FinishStoreMaintenance(
 func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, string) {
 	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase), onUnlocked)
 	if ok {
+		// Only now, once the fence let the attempt publish: an attempt
+		// that lost to a lock or met a recovery loaded keys but unlocked
+		// nothing.
+		fmt.Printf("🔓 Signer unlocked (%d keys loaded)\n", keyCount)
 		ir.WakeStageWork()
 	}
 	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
@@ -1639,8 +1643,8 @@ func (ir *Runtime) UnlockedGeneration() (uint64, bool) {
 }
 
 // LockGeneration returns the lock runtime's session generation, advanced by
-// every lock and maintenance transition and by every entry into recovery from
-// the unlocked state. Per-session state is keyed by it.
+// every lock and maintenance transition and by every entry into recovery, one
+// from recovery included. Per-session state is keyed by it.
 func (ir *Runtime) LockGeneration() uint64 {
 	return ir.lockRuntime.LockGeneration()
 }
@@ -1655,9 +1659,7 @@ func (ir *Runtime) performUnlock(passphrase []byte) func() (int, error) {
 			return 0, fmt.Errorf("failed to load keys: %v", err)
 		}
 
-		keyCount := ir.KeyCount()
-		fmt.Printf("🔓 Signer unlocked (%d keys loaded)\n", keyCount)
-		return keyCount, nil
+		return ir.KeyCount(), nil
 	}
 }
 
