@@ -2,7 +2,7 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v8.1; they are not current setup
+enrolled-key model and current admin protocol v8.0; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
@@ -79,7 +79,7 @@ before it was renamed `enroll`.
   document, names only, and `appolicy check` warns of a source whose token
   the document's key lacked at the export. A token set after the export does
   not make the export stale.
-- **The admin protocol is now 8.1.** It adds `source_token_set`,
+- **The admin protocol gains messages; its version stays 8.** It adds `source_token_set`,
   `source_token_remove` and `source_token_list`, the source names in a
   `restore_preview` key and a `restore_backup_result`, and, on an unlocked
   cosigner, the source names of a `policy_document`.
