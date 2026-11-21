@@ -48,7 +48,7 @@ func TestEmptyConfigFileIsRefused(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		want := "config file " + path + " is empty; delete it to use the defaults, or write {}"
+		want := "config file " + path + " is empty"
 		if _, err := LoadServerConfig(dataDir); err == nil || err.Error() != want {
 			t.Errorf("%q: LoadServerConfig error = %v, want %q", body, err, want)
 		}

@@ -29,7 +29,7 @@ func UnmarshalKnownFields(data []byte, out interface{}) error {
 func DecodeConfigFile(path string, data []byte, out any) error {
 	if err := UnmarshalKnownFields(data, out); err != nil {
 		if errors.Is(err, io.EOF) {
-			return fmt.Errorf("config file %s is empty; delete it to use the defaults, or write {}", path)
+			return fmt.Errorf("config file %s is empty", path)
 		}
 		return fmt.Errorf("failed to parse config file %s: %w", path, wrapUnknownConfigFieldError(err))
 	}
