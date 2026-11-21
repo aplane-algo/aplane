@@ -4,8 +4,10 @@
 package storevalidate_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/asasetstore"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -163,4 +166,134 @@ func TestCandidateKeepsDocumentsTheNodeWouldNotAdmit(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Candidate() with a legacy document = %v, want it valid", err)
 	}
+}
+
+// A template repair is refused for any damage it does not repair: the
+// template record defects of the key types it names are all it may skip.
+func TestTemplateRepairDestinationSkipsOnlyTheRepairedRecords(t *testing.T) {
+	clientreg.RegisterClient()
+	const orphan, other = "test.repair-orphan.v1", "test.repair-other.v1"
+	setup := func(t *testing.T) (storevalidate.Options, func()) {
+		t.Helper()
+		root := t.TempDir()
+		paths := storepaths.NewPaths(root)
+		passphrase := []byte("storevalidate-test-passphrase")
+		if _, err := storeinit.Initialize(passphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration,
+			DataDir: root, Paths: paths, Role: noderole.RoleSigner,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// An enabled record with no template file: an orphaned record.
+		if err := keytypestate.PutActive(active, keytypestate.Record{
+			KeyType: orphan, Source: keytypestate.SourceYAMLGeneric, State: keytypestate.StateEnabled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return storevalidate.Options{
+			Paths: paths, Candidate: active, Keyring: kr,
+			ExpectedRole: noderole.RoleSigner, DataDir: root,
+			Config: &serverconfig.ServerConfig{},
+		}, kr.Zero
+	}
+
+	opts, done := setup(t)
+	defer done()
+	if err := storevalidate.Candidate(opts); err == nil || !strings.Contains(err.Error(), orphan) {
+		t.Fatalf("Candidate() error = %v, want the orphaned record", err)
+	}
+	if scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err != nil || scan == nil {
+		t.Fatalf("TemplateRepairDestination(the orphan) = %v, %v; want the scan and no error", scan, err)
+	}
+	if _, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{other: true}); err == nil || !strings.Contains(err.Error(), orphan) {
+		t.Fatalf("TemplateRepairDestination(another key type) error = %v, want the orphaned record", err)
+	}
+	if _, err := storevalidate.TemplateRepairDestination(opts, nil); err == nil {
+		t.Fatal("TemplateRepairDestination(nothing) accepted a repair that names no key type")
+	}
+
+	damage := map[string]func(t *testing.T, active storepaths.GenPaths){
+		"policy sidecar": func(t *testing.T, active storepaths.GenPaths) {
+			writeDamage(t, active.DefaultPolicyIntegritySidecar())
+		},
+		"credential": func(t *testing.T, active storepaths.GenPaths) {
+			writeDamage(t, filepath.Join(active.KeysDir(), "DAMAGED.key"))
+		},
+		"another template record": func(t *testing.T, active storepaths.GenPaths) {
+			if err := keytypestate.PutActive(active, keytypestate.Record{
+				KeyType: other, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateDisabled,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"key-type namespace": func(t *testing.T, active storepaths.GenPaths) {
+			writeDamage(t, filepath.Join(active.KeyTypeRecordsDir(), "notes.txt"))
+		},
+	}
+	for name, damage := range damage {
+		t.Run(name, func(t *testing.T) {
+			opts, done := setup(t)
+			defer done()
+			damage(t, opts.Candidate)
+			if _, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err == nil {
+				t.Fatal("TemplateRepairDestination() accepted damage the repair does not cover")
+			}
+		})
+	}
+
+	// Unlock never opens a deleted-archive member, so the gate leaves a
+	// damaged one to CommitOnlyDamage, which every commit's Candidate check
+	// also refuses, and names the member.
+	t.Run("deleted archive member", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const member = "deleted/keytypes/test.repair-archived.v1.template"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(member)))
+		scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true})
+		if err != nil {
+			t.Fatalf("TemplateRepairDestination() error = %v, want the archive member left to commit validation", err)
+		}
+		var damaged *storevalidate.DeletedArchiveMemberError
+		if err := storevalidate.CommitOnlyDamage(opts, scan); !errors.As(err, &damaged) || damaged.Path != member {
+			t.Fatalf("CommitOnlyDamage() error = %v, want the member %s", err, member)
+		}
+		if err := storevalidate.Candidate(opts); !errors.As(err, &damaged) || damaged.Path != member {
+			t.Fatalf("Candidate() error = %v, want the member %s", err, member)
+		}
+		if !reflect.DeepEqual(damaged.Prune, []string{member}) {
+			t.Fatalf("member prune selection = %q, want %q", damaged.Prune, member)
+		}
+	})
+	// An archived policy document is pruned together with its sidecar.
+	t.Run("archived policy document", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const document = "deleted/policies/K.json"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(document)))
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(document+".hmac")))
+		var damaged *storevalidate.DeletedArchiveMemberError
+		err := storevalidate.Candidate(opts)
+		if !errors.As(err, &damaged) || !reflect.DeepEqual(damaged.Prune, []string{document, document + ".hmac"}) {
+			t.Fatalf("Candidate() error = %v (%+v), want the document and its sidecar to prune", err, damaged)
+		}
+	})
+	// A file whose name no member takes is not prunable, and says so by type.
+	t.Run("stray file", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const stray = "deleted/keys/notes.txt"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(stray)))
+		scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var strayErr *storevalidate.DeletedArchiveStrayError
+		if err := storevalidate.CommitOnlyDamage(opts, scan); !errors.As(err, &strayErr) || strayErr.Path != stray ||
+			err.Error() != `deleted archive: unsupported deleted credential "`+stray+`"` {
+			t.Fatalf("CommitOnlyDamage() error = %v, want the stray %s", err, stray)
+		}
+	})
 }

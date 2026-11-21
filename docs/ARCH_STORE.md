@@ -234,6 +234,7 @@ aggregate has no identity ID or selectable runtime registry.
 | `apstore generations prune` | Offline pruning of retained authoritative generations; non-authoritative quarantine deletion is a separate authenticated live operation |
 | `apstore permissions` | Offline bootstrap, audit, and ownership migration |
 | `apstore keys list` | Offline credential inventory for recovery diagnostics |
+| `apstore template repair` | Offline repair of template record defects (re-pin or drop), committed as a `template-repair` generation; its preview takes the same exclusive store lock |
 | `appass` | Offline root/service-owner mutation of startup credentials and `unlock.yaml` |
 
 Offline mutations require a stopped daemon, exclusive store lock, no-follow
@@ -243,8 +244,11 @@ installer-owned `install/` metadata artifacts.
 
 Root-run `apadmin policy rescue apply` and `remove` hold one exclusive lock
 across the policy generation commit and managed-store ownership normalization,
-so a daemon cannot start between publication and repair. They commit through
-the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
+so a daemon cannot start between publication and repair, and they normalize on
+every outcome, a mint that failed after publication included. Like
+`apstore template repair`, they reconcile the generation store first
+(`genstore.ReconcileStoreRoot`), since no unlock precedes them. They commit
+through the same `internal/signerapp/policyapply` rules as the daemon. Rescue reads
 (`status`, `export`, `check`, `diff`, `template`) hold the shared store lock.
 
 #### External-file-only operations
@@ -542,8 +546,9 @@ they are immutable except for explicit generation pruning.
 ### Ordinary generation commit
 
 Credential restore, restore rollback reconstruction, initialization, rebuild,
-passphrase change, policy apply, and ASA set updates (operation
-`asa-set-update`) mint generations. A policy apply or
+passphrase change, policy apply, ASA set updates (operation
+`asa-set-update`), and the offline template repair (operation
+`template-repair`, `apstore template repair`) mint generations. A policy apply or
 removal that changes the policy set, online or rescue, mints one generation
 with operation `policy-apply` (`internal/signerapp/policyapply`), so each
 committed apply leaves a retained generation until explicit generation
@@ -789,6 +794,9 @@ damage when all destination authority outside those credentials validates.
 Damage to policy, node-role integrity, key types/templates, deleted archives,
 unselected credentials, or the selected directory itself is not repaired by
 inventing authority; restore refuses and directs the operator to rebuild.
+Template record defects alone, an external edit or a record without its
+template file, are repaired offline by `apstore template repair`, which
+refuses a generation with any other damage in the same way.
 
 Filesystem restoration of `identities/default/` is stopped-signer and
 all-or-nothing. Restoring only `store-root.enc`, only generation directories,
@@ -975,7 +983,9 @@ subject to the node role gate above.
 | Signer library YAML only | Plaintext YAML exists under `library/templates/`; no identity install exists. | No. | No effect on existing keys. | Install/import template into identity. |
 | YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by node role. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Disable or remove, if no stored key uses it. |
 | YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Enable, remove, or explicit template restore may re-enable. |
-| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No. | No for any key; reload fails the selected generation into recovery mode (signing blocked for all keys) until the operator repairs or reinstalls the template. | Reimport through `apadmin template import` while the signer is unlocked. A store already in recovery has no in-product repair; see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
+| YAML fingerprint mismatch | Encrypted `.template` decrypts and parses, but the state record pins another fingerprint: an external edit. | No. | No for any key; reload fails the selected generation into recovery mode (signing blocked for all keys) until the operator repairs the record. | With `apsigner` stopped, `apstore template repair` re-pins the record to the stored template or drops it; while the signer is unlocked, `apadmin template import` also re-pins it. See [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
+| YAML record without template file | An enabled or disabled YAML state record has no `.template`: an orphaned record. | No. | No for any key; reload fails the selected generation into recovery mode. | With `apsigner` stopped, `apstore template repair` drops the record. |
+| YAML template unreadable or invalid | Encrypted `.template` cannot decrypt, or parses to incompatible metadata. | No. | No for any key; reload fails the selected generation into recovery mode. | Not a record defect, so the template repair refuses the store; rebuild from a backup archive and import the templates again. |
 | YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall/import template. |
 
 Registration-semantics outcomes are not content defects and do not block other
@@ -995,7 +1005,8 @@ another fingerprint version is an external edit like any other difference.
 | Enable YAML template | Encrypted `.template` and state record are valid. | Set state record to `enabled`, reload identity. | Template is visible for generation. |
 | Remove YAML template | No active key file in the identity uses that key type. | Delete state record and move `.template` to `deleted/keytypes/`. | Template leaves active scans. |
 | Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload warns that the record conflicts. | Generation stays available; valid existing keys are not rewritten; `apadmin keytype enable` re-pins the record. |
-| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths while the signer is unlocked; for a store in recovery see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
+| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair a record defect with `apstore template repair`, or through supported install/enable paths while the signer is unlocked; see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
+| Repair a template record (offline) | `apsigner` stopped (the exclusive store lock), and the generation store reconciled first, as an unlock does (`genstore.ReconcileStoreRoot`); every key type named is a classified record defect (an external edit, or a record with no template file), every defect is named, only an external edit is re-pinned, nothing else unlock refuses is damaged (`storevalidate.TemplateRepairDestination`), and nothing only a commit refuses is (`storevalidate.CommitOnlyDamage`: a deleted-archive member that does not verify, which unlock never opens, is pruned with `apadmin archive prune` in recovery). | Mint a `template-repair` generation over the current one: a re-pin rewrites only the record's `fingerprint`, to the one the stored template computes; a drop deletes the record and moves an existing `.template` to `deleted/keytypes/`, with the archive capacity check. The candidate passes `storevalidate.Candidate` with no exclusions before the root moves. | Unlock succeeds; the damaged generation is kept as the parent. Key files are unchanged: after a re-pin a key whose recorded fingerprint differs reads `conflict`; after a drop its keys read `unavailable`. |
 
 Fingerprint comparisons are exact. The compatibility fingerprint is
 identifier-independent (it hashes behavior-bearing fields and a YAML template's
@@ -1024,12 +1035,16 @@ for writes to encrypted template files and key-type state records.
 primitive persistence operations; feature packages do not call those writers
 directly.
 
-There are two supported mutation contexts:
+There are three supported mutation contexts:
 
 - live administrative operations are owned by
   `internal/signerapp/templateadmin`, which holds the store mutation lock,
   calls `templatelibrary`, then asks the read-only
   `internal/signerapp/templates` runtime owner to reload;
+- the offline template repair, `internal/signerapp/templaterepair` under
+  `apstore template repair`, holds the exclusive store lock with the signer
+  stopped and calls `templatelibrary.RepinTemplateRecordActive` or
+  `DropTemplateRecordActive` on the staged generation of a `genstore.Mint`;
 - store initialization installs no key types or templates; the first
   generation carries no `keytypes/` records.
 
@@ -1824,14 +1839,17 @@ Product key-type filtering:
 - `ComposedExternalEditKeyTypes`
 - `GenericOrphanedKeyTypes`
 - `ComposedOrphanedKeyTypes`
+- `DisabledOrphanedKeyTypes`
 - `CompiledIdempotentKeyTypes`
 - `CompiledConflictingKeyTypes`
 - `GenericErr`
 - `ComposedErr`
 - `NamespaceDefects`
 
-The invalid, invalid-state-record, compiled-invalid, external-edit, orphaned,
-and `NamespaceDefects` buckets are content defects that fail reload.
+The invalid, invalid-state-record, compiled-invalid, external-edit, orphaned
+(enabled and disabled), and `NamespaceDefects` buckets are content defects that
+fail reload. The external-edit and orphaned buckets are the template record
+defects (`RecordDefects`) an offline `apstore template repair` acts on.
 
 Admin library template install verifies activation from the product-store
 `ReloadReport`: the installed key type must appear in the activated or
@@ -1887,6 +1905,7 @@ Lifecycle:
 | `apadmin keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
 | `apadmin template import` | Installs encrypted template and enabled state. | None. | Active after reload. |
 | `apadmin template remove` | Deletes state and archives `.template` after unused-key guard. | None. | Removed template leaves active scans. |
+| `apstore template repair` | With the signer stopped, re-pins an externally edited record's fingerprint to its stored template, or deletes a defective record and archives its `.template`, in a new `template-repair` generation. | None. | No unused-key guard: a dropped type's keys keep signing from stored metadata. |
 | Key generation | Requires discoverable/generatable key type allowed by node role. | Writes new encrypted key. | LogicSig key stores signing authority at creation time. |
 | Key deletion | None. | Archives active key file. | Archived keys are not signable. |
 | Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |

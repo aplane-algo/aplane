@@ -31,6 +31,7 @@ var storeOwningPackages = []string{
 	"internal/storepass",
 	"internal/asasetstore",
 	"internal/signerapp/backupadmin",
+	"internal/signerapp/templaterepair",
 	"internal/signerapp/productruntime",
 	"internal/signerapp/daemon",
 	"cmd/apstore",

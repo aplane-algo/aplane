@@ -554,21 +554,106 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 	if err != nil {
 		return result, err
 	}
-	if err := keytypestate.Delete(paths, result.KeyType); err != nil {
+	active, err := genstore.Resolve(paths)
+	if err != nil {
 		return result, err
 	}
-	archivePath, err := archiveInstalled(paths, result.KeyType)
+	archivePath, err := removeInstalledActive(active, result.KeyType, rec, hadState)
 	if err != nil {
-		if hadState {
-			if rollbackErr := keytypestate.Put(paths, rec); rollbackErr != nil {
-				return result, fmt.Errorf("%w (state rollback failed: %v)", err, rollbackErr)
-			}
-		}
 		return result, err
 	}
 	result.OutputPath = archivePath
 	result.Removed = true
 	return result, nil
+}
+
+// removeInstalledActive deletes keyType's state record and moves its template
+// file to deleted/keytypes/, putting the record back when the move fails. A
+// template removal and a template repair's drop share it.
+func removeInstalledActive(active storepaths.GenPaths, keyType string, rec keytypestate.Record, hadState bool) (string, error) {
+	if err := keytypestate.DeleteActive(active, keyType); err != nil {
+		return "", err
+	}
+	archivePath, err := archiveInstalledActive(active, keyType)
+	if err != nil {
+		if hadState {
+			if rollbackErr := keytypestate.PutActive(active, rec); rollbackErr != nil {
+				return "", fmt.Errorf("%w (state rollback failed: %v)", err, rollbackErr)
+			}
+		}
+		return "", err
+	}
+	return archivePath, nil
+}
+
+// StoredTemplateFingerprintActive returns the compatibility fingerprint of
+// keyType's installed template in active, as an install computes it. The
+// template's envelope is opened as keyType's under the current term, so
+// another key type's template never yields keyType's fingerprint. The
+// envelope binds the key type and the term, not the generation or the
+// definition: any template sealed for keyType in the current term opens, an
+// earlier definition's from a prior generation or the deleted archive
+// included.
+func StoredTemplateFingerprintActive(active storepaths.GenPaths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (string, error) {
+	data, err := templatestore.LoadTemplateFromPath(templatestore.GetTemplateFilePathActive(active, keyType), kr)
+	if err != nil {
+		return "", err
+	}
+	return semanticFingerprint(templateType, data)
+}
+
+// RepinTemplateRecordActive is a template repair's re-pin, on an unpublished
+// staged generation: it rewrites only the fingerprint of keyType's YAML
+// record, to the value its installed template computes, and keeps the
+// record's state and activated_at. It returns the rewritten record.
+func RepinTemplateRecordActive(staged storepaths.GenPaths, keyType string, kr *crypto.Keyring) (keytypestate.Record, error) {
+	rec, ok, err := keytypestate.GetActive(staged, keyType)
+	if err != nil {
+		return keytypestate.Record{}, err
+	}
+	if !ok {
+		return keytypestate.Record{}, fmt.Errorf("key type %s has no state record", keyType)
+	}
+	templateType, ok := templatestore.TemplateTypeForSource(rec.Source)
+	if !ok {
+		return keytypestate.Record{}, fmt.Errorf("key type %s is not a YAML template record", rec.KeyType)
+	}
+	fingerprint, err := StoredTemplateFingerprintActive(staged, rec.KeyType, templateType, kr)
+	if err != nil {
+		return keytypestate.Record{}, fmt.Errorf("fingerprint the installed template of %s: %w", rec.KeyType, err)
+	}
+	rec.Fingerprint = fingerprint
+	if err := keytypestate.PutActive(staged, rec); err != nil {
+		return keytypestate.Record{}, err
+	}
+	return rec, nil
+}
+
+// DropTemplateRecordActive is a template repair's drop, on an unpublished
+// staged generation: it deletes keyType's YAML record and, when its template
+// file is there, archives the template to deleted/keytypes/ as a template
+// removal does. It returns the archive path, or "" when there was no
+// template file to archive.
+func DropTemplateRecordActive(staged storepaths.GenPaths, keyType string) (string, error) {
+	rec, ok, err := keytypestate.GetActive(staged, keyType)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("key type %s has no state record", keyType)
+	}
+	if _, ok := templatestore.TemplateTypeForSource(rec.Source); !ok {
+		return "", fmt.Errorf("key type %s is not a YAML template record", rec.KeyType)
+	}
+	_, statErr := os.Lstat(templatestore.GetTemplateFilePathActive(staged, rec.KeyType))
+	switch {
+	case statErr == nil:
+		return removeInstalledActive(staged, rec.KeyType, rec, true)
+	case os.IsNotExist(statErr):
+		return "", keytypestate.DeleteActive(staged, rec.KeyType)
+	default:
+		return "", fmt.Errorf("inspect the template file of %s: %w", rec.KeyType, statErr)
+	}
 }
 
 // RollbackInstalledTemplateFile removes only the newly written encrypted
@@ -590,11 +675,7 @@ func rollbackInstalledTemplateFileActive(active storepaths.GenPaths, keyType str
 	return nil
 }
 
-func archiveInstalled(paths storepaths.Paths, keyType string) (string, error) {
-	active, err := genstore.Resolve(paths)
-	if err != nil {
-		return "", err
-	}
+func archiveInstalledActive(active storepaths.GenPaths, keyType string) (string, error) {
 	sourcePath := templatestore.GetTemplateFilePathActive(active, keyType)
 	if _, err := genstore.PreflightDeletedArchiveAppend(active, sourcePath); err != nil {
 		return "", err

@@ -195,7 +195,8 @@ Fingerprint authoring rules:
   new-install-only release or with a one-release window that verifies each
   stored record under the old version and rewrites it to the new one; key files
   need their own answer, such as a provenance rewrite or accepting the
-  conflict.
+  conflict. A store that reaches recovery this way is repaired by one
+  `apstore template repair repin` run naming every record, apsigner stopped.
 - A base-key-type or provider-identifier rename is a separate compatibility
   event from the fingerprint: key files store the raw `base_key_type`, so the
   renamed identifier needs a retained registry alias or those keys cannot sign.

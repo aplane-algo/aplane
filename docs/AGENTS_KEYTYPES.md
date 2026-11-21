@@ -185,7 +185,8 @@ the fingerprint formula:
   a new-install-only release or with a one-release window that verifies each
   stored record under the old version and rewrites it to the new one; key
   files need their own answer, such as a provenance rewrite or accepting the
-  conflict.
+  conflict. A store that reaches recovery this way is repaired by one
+  `apstore template repair repin` run naming every record, apsigner stopped.
 - Do not add a new-account restriction to `ValidateTemplateSpec`,
   `validateBoundedConfig`, or the bounded metadata helpers. Installed templates
   reach them on load, and an error changes the fingerprint and fails the store's

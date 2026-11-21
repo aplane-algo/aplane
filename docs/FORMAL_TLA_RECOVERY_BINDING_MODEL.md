@@ -39,6 +39,15 @@ The transitions transcribe the post-commit reload and the recovery paths:
   (`mutateASASet`), the restore and rollback paths in
   `internal/signerapp/backupadmin`, and the recovery reconcile in
   `internal/signerapp/daemon/admin_services.go`.
+- The offline template repair (`internal/signerapp/templaterepair`, run by
+  `apstore template repair`) is outside `Next`: it commits with no runtime.
+  apstore's exclusive store lock refuses a running signer, so no binding or
+  key cache exists to fall behind the root, and nothing can `Serve` or
+  `Maintain` until a signer starts. That signer is locked until its first
+  unlock, whose reload binds the authenticated root selection before anything
+  can fail (`BindStoreRootSelection`, as `ReloadBind`), so it begins as `Init`
+  does, with the repaired generation, or the old one after a repair that did
+  not commit, as `root`.
 - `ReloadBind` is the reload's first step in
   `internal/signerapp/templates/reload.go`: `BindStoreRootSelection`
   authenticates a fresh exact root read and binds what it selects before
@@ -109,7 +118,9 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   change are refused unless the runtime is unlocked
   (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
   only restore and rollback commit from recovery. A refused mutation never
-  takes `CommitRoot`, a run the model already has. A passphrase change
+  takes `CommitRoot`, a run the model already has. The offline template
+  repair, outside `Next`, repairs a store whose unlock entered recovery,
+  and an uncertain repair is settled by the next unlock. A passphrase change
   withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
   the runtime locked rather than in recovery; locked refuses signing as
   recovery does, so RB2 and RB3 hold for it in substance. The same holds for

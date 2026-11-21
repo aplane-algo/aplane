@@ -34,7 +34,12 @@ The transitions transcribe the commit protocol in `internal/genstore`:
 - `Publish`, `SyncPublication`, and `SealOutgoing` are the staged mint in
   `internal/genstore/commit.go`: validate the complete candidate copy, sync
   the tree bottom-up, rename into `generations/`, sync the parent directory,
-  then seal the outgoing generation.
+  then seal the outgoing generation. Every ordinary successor mint takes
+  them: credential restore and rollback (`internal/signerapp/backupadmin`),
+  policy apply (`internal/signerapp/policyapply`), ASA set updates
+  (`internal/signerapp/admin/asaset.go`), and the offline template repair
+  (`internal/signerapp/templaterepair`), which mints under apstore's
+  exclusive store lock with the signer stopped.
 - `SubstituteInput`, `BuildCandidate`, `RenameRoot`, and `SyncRoot` are
   `internal/genstore/root_commit.go`: `ValidateSealed` before a fresh exact
   reread, `AuthenticateStoreRoot`, the outgoing-generation equality check,
@@ -47,7 +52,13 @@ The transitions transcribe the commit protocol in `internal/genstore`:
   complete non-current, unsealed publication is quarantined intact — never
   deleted, resumed, or adopted. (The current generation's declared parent is
   retained instead: it was committed once, so a missing seal on it is damage
-  outside the model.) `RestoreAuthenticOldRoot`
+  outside the model.) `ReconcileOldRoot` stands for each caller of
+  `genstore.ReconcileStoreRoot`: every unlock and the recovery reconcile in
+  the daemon, `apstore generations prune` (`CollectGarbageStoreRoot`), and
+  the two offline mints, the template repair
+  (`internal/signerapp/templaterepair`) and `apadmin policy rescue apply` and
+  `remove` (`internal/signerapp/policycmd/rescue.go`), which reconcile before
+  they mint because no signer runs to do it. `RestoreAuthenticOldRoot`
   additionally models an operator restoring an older authentic root file
   after a successor committed; the newer complete directory then has the
   same shape as a crashed-mint publication and must be quarantined.
