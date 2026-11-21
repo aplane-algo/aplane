@@ -268,9 +268,21 @@ type approver struct {
 	// for the first request must not approve the second. Each shown request
 	// gets a fresh code, so an approval names the request it was meant for.
 	headCode string
+	// headShownNarrow reports that the request at the head of the queue was
+	// shown on a terminal too narrow to review it, so its identity only: it
+	// is shown whole, with a fresh code, before an answer is taken.
+	headShownNarrow bool
 	// newCode makes approval codes; tests replace it.
 	newCode func() string
 }
+
+// minReviewWidth is the narrowest terminal apapprover takes an answer on,
+// the width apadmin lays out for: every field row of a request fits it
+// whole, so none is cut short of what the operator must check.
+const minReviewWidth = 80
+
+// terminalTooNarrow says why apapprover takes no answer.
+const terminalTooNarrow = "terminal too narrow to review this request (needs 80 columns)"
 
 // showHead displays the request at the head of the queue with a fresh
 // approval code.
@@ -284,11 +296,21 @@ func (a *approver) showHead() {
 		code = gen()
 	}
 	a.headCode = code
-	displayRequest(a.queue[0], len(a.queue))
+	width := terminalWidth()
+	a.headShownNarrow = width < minReviewWidth
+	if a.headShownNarrow {
+		displayNarrow(a.queue[0])
+	} else {
+		displayRequest(a.queue[0], len(a.queue), width)
+	}
 	a.prompt()
 }
 
 func (a *approver) prompt() {
+	if a.headShownNarrow {
+		fmt.Print("Widen the terminal to 80 columns, then press Enter: ")
+		return
+	}
 	fmt.Print(approvalPrompt(a.headCode))
 }
 
@@ -305,6 +327,18 @@ func newApprovalCode() string {
 // queue. A request stays queued if its response cannot be delivered.
 func (a *approver) handleInput(input string) {
 	if len(a.queue) == 0 {
+		return
+	}
+	// No answer is taken on a terminal too narrow to review the request,
+	// and none for a request shown only narrow: it is shown whole first.
+	if terminalWidth() < minReviewWidth {
+		fmt.Println(terminalTooNarrow)
+		a.headShownNarrow = true
+		a.prompt()
+		return
+	}
+	if a.headShownNarrow {
+		a.showHead()
 		return
 	}
 	approved, code, reason, ok := parseApprovalInput(input)
@@ -615,13 +649,34 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 }
 
 // displayRequest shows an approval request to the user.
-func displayRequest(req approvalRequest, queueLen int) {
+func displayRequest(req approvalRequest, queueLen, width int) {
 	switch req.kind {
 	case approvalKindClientEnrollment:
-		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen, terminalWidth())
+		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen, width)
 	default:
 		displaySignRequest(req.signRequest, queueLen)
 	}
+}
+
+// displayNarrow shows which request waits, on a terminal too narrow to
+// review it: its identity, whole, and why it cannot be answered here. The
+// identity is the signer's own text, a key's fingerprint or an account's
+// address, so the terminal's wrap of it cannot be steered.
+func displayNarrow(req approvalRequest) {
+	fmt.Println()
+	switch req.kind {
+	case approvalKindClientEnrollment:
+		fmt.Println("CLIENT ENROLLMENT REQUEST")
+		fmt.Println(termsafe.Line(req.enrollmentRequest.SSHFingerprint))
+	default:
+		fmt.Println("SIGNING REQUEST")
+		account := req.signRequest.TxnSender
+		if account == "" {
+			account = req.signRequest.Address
+		}
+		fmt.Println(termsafe.Line(account))
+	}
+	fmt.Println(terminalTooNarrow)
 }
 
 // displaySignRequest shows a signing request to the user.
@@ -721,9 +776,9 @@ func confinedLines(line string, width int) []string {
 }
 
 // terminalWidth is the width of the terminal apapprover prints to, or 80
-// when it cannot tell.
-func terminalWidth() int {
-	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width >= 20 {
+// when it cannot tell; tests replace it.
+var terminalWidth = func() int {
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width > 0 {
 		return width
 	}
 	return 80

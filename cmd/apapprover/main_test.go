@@ -676,3 +676,65 @@ func TestEnrollmentRequestLabelCannotImitateAField(t *testing.T) {
 		}
 	}
 }
+
+// useTerminalWidth makes the terminal width columns for the test.
+func useTerminalWidth(t *testing.T, columns *int) {
+	t.Helper()
+	saved := terminalWidth
+	terminalWidth = func() int { return *columns }
+	t.Cleanup(func() { terminalWidth = saved })
+}
+
+// On a terminal narrower than 80 columns apapprover shows which request
+// waits, its identity whole, and takes no answer, approval or rejection,
+// since a field row would be cut short of what the operator must check. A
+// request shown that way is shown whole, with a fresh code, once the
+// terminal is wide enough, before any answer is taken.
+func TestApproverTakesNoAnswerOnANarrowTerminal(t *testing.T) {
+	const fingerprint = "SHA256:RealRealRealRealRealRealRealRealRealReal123"
+	requests := map[string]approvalRequest{
+		"enrollment": {kind: approvalKindClientEnrollment, enrollmentRequest: &protocol.ClientEnrollmentRequestMessage{
+			BaseMessage: protocol.BaseMessage{ID: "token-1"}, SSHFingerprint: fingerprint, Label: "laptop", RemoteAddr: "[2001:db8::1]:51234"}},
+		"signing": {kind: approvalKindSign, signRequest: &protocol.SignRequestMessage{
+			BaseMessage: protocol.BaseMessage{ID: "sign-1"}, Address: "SGCU7MLRXQ4H227YCRTTT6MHL2N64WGJPHH3OTPID2CK4JNGJU6DITLIUQ", Description: "Payment"}},
+	}
+	for name, req := range requests {
+		for _, width := range []int{20, 60, 79, 80} {
+			columns := width
+			useTerminalWidth(t, &columns)
+			var sent []any
+			a := &approver{send: func(v any) error { sent = append(sent, v); return nil }}
+			a.answer = enrollmentReply(t, &sent, "")
+			shown := captureStdout(t, func() { a.enqueue(req) })
+			code := a.headCode
+			out := captureStdout(t, func() {
+				a.handleInput("y " + code)
+				a.handleInput("n")
+			})
+			if width < minReviewWidth {
+				identity := fingerprint
+				if req.signRequest != nil {
+					identity = req.signRequest.Address
+				}
+				if !strings.Contains(shown, identity+"\n") || !strings.Contains(shown, terminalTooNarrow) || strings.Contains(shown, "Approve current request?") {
+					t.Errorf("%s at %d columns: shown as:\n%s", name, width, shown)
+				}
+				if len(sent) != 0 || len(a.queue) != 1 || strings.Count(out, terminalTooNarrow) != 2 {
+					t.Errorf("%s at %d columns: an answer was taken: sent %v, output:\n%s", name, width, sent, out)
+				}
+				// Widened, the first line shows the request whole with a
+				// fresh code; only then is an answer taken.
+				columns = minReviewWidth
+				reshown := captureStdout(t, func() { a.handleInput("y " + code) })
+				if len(sent) != 0 || a.headCode == code || !strings.Contains(reshown, "Approve current request?") {
+					t.Errorf("%s widened: answered or not shown whole: sent %v:\n%s", name, sent, reshown)
+				}
+				code = a.headCode
+				_ = captureStdout(t, func() { a.handleInput("y " + code) })
+			}
+			if len(sent) != 1 || len(a.queue) != 0 {
+				t.Errorf("%s at %d columns: the approval was not taken once wide enough: sent %v", name, width, sent)
+			}
+		}
+	}
+}
