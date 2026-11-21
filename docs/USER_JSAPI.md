@@ -864,7 +864,11 @@ Returns:
 }
 ```
 
-`plugin()` runs the plugin as the `apshell` command does. An argument that is
+`plugin()` runs the plugin as the `apshell` command does. `name` is a plugin
+command, as typed at the prompt, or the manifest name of a plugin that
+declares one command, which runs that command: `plugin("algokit-localnet",
+"status")` runs `localnet status`. The name of a plugin with several commands
+is refused; name one of its commands instead. An argument that is
 an `arg:` word, such as `"arg:preimage=text:x"` or
 `"arg:alice:preimage=text:x"`, is a LogicSig argument for the first step's
 transactions, as on the command line (see
