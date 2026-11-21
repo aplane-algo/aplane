@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -475,18 +476,13 @@ func parameterRequirementLabel(label string, required bool) string {
 	return label + " (optional)"
 }
 
+// fixedWidthFieldLine cuts or pads line to width columns, as the terminal
+// draws them.
 func fixedWidthFieldLine(line string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(line)
-	if len(runes) > width {
-		return string(runes[:width])
-	}
-	if len(runes) < width {
-		return line + strings.Repeat(" ", width-len(runes))
-	}
-	return line
+	return padRight(ansi.Truncate(line, width, ""), width)
 }
 
 func (m Model) constrainParameterFieldWidth(width int) int {

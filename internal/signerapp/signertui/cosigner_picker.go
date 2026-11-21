@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -17,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // isCosignerSelectorParam reports whether the picker fills param. A type that
@@ -563,7 +563,7 @@ func (m Model) cosignerSelectionDisplay(witnessKeyID string) string {
 func (m Model) cosignerPickerAliasWidth() int {
 	longest, rest := 0, 0
 	for _, choice := range m.cosigner.choices {
-		longest = max(longest, utf8.RuneCountInString(choice.PrimaryAlias))
+		longest = max(longest, ansi.StringWidth(choice.PrimaryAlias))
 		used := len("> ") + len("  ") + len(apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
 		if len(choice.Aliases) > 1 {
 			used += len(fmt.Sprintf("  (%d aliases)", len(choice.Aliases)))
@@ -586,8 +586,8 @@ func (m Model) renderCosignerPicker() string {
 		if index == m.cosigner.selected {
 			prefix = "> "
 		}
-		row := fmt.Sprintf("%s%-*s  %s", prefix, aliasWidth, ellipsizeMiddle(choice.PrimaryAlias, aliasWidth),
-			apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
+		row := prefix + padRight(ellipsizeMiddle(choice.PrimaryAlias, aliasWidth), aliasWidth) + "  " +
+			apadminapp.CompactWitnessKeyID(choice.WitnessKeyID)
 		if len(choice.Aliases) > 1 {
 			row += fmt.Sprintf("  (%d aliases)", len(choice.Aliases))
 		}

@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // renderEnrolledClients lists the enrollment requests waiting for approval
@@ -101,10 +102,10 @@ const (
 func (m Model) clientLabelWidth() int {
 	longest := 0
 	for _, req := range m.clients.pending {
-		longest = max(longest, utf8.RuneCountInString(terminalSafe(req.Label)))
+		longest = max(longest, ansi.StringWidth(terminalSafe(req.Label)))
 	}
 	for _, key := range m.clients.keys {
-		longest = max(longest, utf8.RuneCountInString(terminalSafe(key.Label)))
+		longest = max(longest, ansi.StringWidth(terminalSafe(key.Label)))
 	}
 	const cursorAndGaps = 2 + 2 + 2
 	room := m.tableWidth() - cursorAndGaps - clientFingerprintWidth - len(clientConnectedFlag)
@@ -112,8 +113,8 @@ func (m Model) clientLabelWidth() int {
 }
 
 func clientRow(cursor, fingerprint, label string, labelWidth int) string {
-	return fmt.Sprintf("%s%-*s  %-*s", cursor, clientFingerprintWidth, fingerprint,
-		labelWidth, ellipsizeMiddle(terminalSafe(label), labelWidth))
+	return fmt.Sprintf("%s%-*s  %s", cursor, clientFingerprintWidth, fingerprint,
+		padRight(ellipsizeMiddle(terminalSafe(label), labelWidth), labelWidth))
 }
 
 // selectedClientDetails describes the selected row below the list.

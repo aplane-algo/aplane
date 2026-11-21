@@ -470,6 +470,12 @@ func keyAddressWidth(rowWidth int, prefix, suffix string) int {
 	return width
 }
 
+// padRight pads s with spaces to width columns, as the terminal draws them,
+// and leaves a string as wide or wider as it is: "%-*s" counted in columns.
+func padRight(s string, width int) string {
+	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
+}
+
 // ellipsizeMiddle cuts s to width columns, as the terminal draws them, in
 // the middle: its start, "...", then its end, when width has room for more
 // than the dots.

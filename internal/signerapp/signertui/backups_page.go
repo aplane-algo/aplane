@@ -434,7 +434,7 @@ func (m Model) renderBackups() string {
 			fileTimes = true
 		}
 		name := ellipsizeMiddle(terminalSafe(item.FileName), nameWidth)
-		line := fmt.Sprintf("%-*s  %-*s  %*s", timeWidth, stamp, nameWidth, name, sizeWidth, backup.FormatFileSize(item.Size))
+		line := fmt.Sprintf("%-*s  %s  %*s", timeWidth, stamp, padRight(name, nameWidth), sizeWidth, backup.FormatFileSize(item.Size))
 		if i == m.restore.selectedBackup {
 			rows[i] = selectedStyle.Render("> " + line)
 		} else {

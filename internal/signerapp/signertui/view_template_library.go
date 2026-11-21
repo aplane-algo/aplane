@@ -65,10 +65,8 @@ func (m Model) renderTemplateLibrary() string {
 			prefix = "> "
 		}
 		status := templateLibraryStatus(tmpl)
-		line := fmt.Sprintf("%s%-*s %-*s %s", prefix,
-			libraryNameColumnWidth, templateLibraryTitle(tmpl),
-			libraryTypeColumnWidth, libraryTypeColumn(tmpl),
-			status)
+		line := prefix + padRight(templateLibraryTitle(tmpl), libraryNameColumnWidth) + " " +
+			padRight(libraryTypeColumn(tmpl), libraryTypeColumnWidth) + " " + status
 		if i == selected {
 			sb.WriteString(selectedStyle.Render(line))
 		} else if tmpl.Invalid != "" || tmpl.Conflict != "" {

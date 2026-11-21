@@ -8,8 +8,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // approvalArmDelay is how long a newly shown signing or enrollment request
@@ -169,63 +171,38 @@ func (m *Model) resizeSigningViewport() {
 	m.signing.viewport.SetYOffset(offset)
 }
 
-// wrapText wraps each line of text to fit within the given width.
-// Preserves leading whitespace on continuation lines for readability.
+// wrapText wraps each line of text to fit within width columns, as the
+// terminal draws them, at a space where it can. Preserves leading whitespace
+// on continuation lines for readability.
 func wrapText(text string, width int) string {
 	if width <= 0 {
 		return text
 	}
 	var result strings.Builder
 	for _, line := range strings.Split(text, "\n") {
-		// Work in runes: descriptions contain multi-byte characters (e.g. the
-		// ⚠ violation marker) and byte indexing would split them mid-rune.
-		runes := []rune(line)
-		if len(runes) <= width {
+		if ansi.StringWidth(line) <= width {
 			result.WriteString(line)
 			result.WriteByte('\n')
 			continue
 		}
 		// Detect leading whitespace to preserve indent on wrapped lines
-		indentLen := 0
-		for indentLen < len(runes) && runes[indentLen] == ' ' {
-			indentLen++
-		}
-		wrapIndent := string(runes[:indentLen]) + "  "
-		remaining := runes
+		wrapIndent := line[:len(line)-len(strings.TrimLeft(line, " "))] + "  "
+		remaining := line
 		first := true
-		for len(remaining) > 0 {
+		for remaining != "" {
 			prefix := ""
 			w := width
-			if !first {
-				if len(wrapIndent) < width {
-					prefix = wrapIndent
-					w = width - len(prefix)
-				}
+			if !first && len(wrapIndent) < width {
+				prefix = wrapIndent
+				w = width - len(prefix)
 			}
-			if w < 1 {
-				w = 1
-			}
-			if len(remaining) <= w {
-				result.WriteString(prefix)
-				result.WriteString(string(remaining))
-				result.WriteByte('\n')
+			if ansi.StringWidth(remaining) <= w {
+				result.WriteString(prefix + remaining + "\n")
 				break
 			}
-			// Find last space within width to break at word boundary
-			breakAt := w
-			for i := w; i > 0; i-- {
-				if remaining[i] == ' ' {
-					breakAt = i
-					break
-				}
-			}
-			result.WriteString(prefix)
-			result.WriteString(string(remaining[:breakAt]))
-			result.WriteByte('\n')
-			remaining = remaining[breakAt:]
-			for len(remaining) > 0 && remaining[0] == ' ' {
-				remaining = remaining[1:]
-			}
+			breakAt := wrapTextBreak(remaining, w)
+			result.WriteString(prefix + remaining[:breakAt] + "\n")
+			remaining = strings.TrimLeft(remaining[breakAt:], " ")
 			first = false
 		}
 	}
@@ -235,4 +212,21 @@ func wrapText(text string, width int) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// wrapTextBreak is where wrapText breaks s, wider than w columns: at the
+// last space after its start that leaves at most w columns before it, else
+// after the most that fit, and after at least one character.
+func wrapTextBreak(s string, w int) int {
+	fit := len(ansi.Truncate(s, w, ""))
+	if fit < len(s) && s[fit] == ' ' {
+		return fit
+	}
+	if space := strings.LastIndexByte(s[:fit], ' '); space > 0 {
+		return space
+	}
+	if fit == 0 {
+		_, fit = utf8.DecodeRuneInString(s)
+	}
+	return fit
 }

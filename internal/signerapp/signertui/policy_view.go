@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The policies view lists the node's active policy documents and shows their
@@ -336,7 +336,7 @@ func (m Model) renderPolicies() string {
 		if i == m.policies.selected {
 			cursor = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s%-*s  %s", cursor, labelWidth, ellipsizeMiddle(terminalSafe(row.key), labelWidth), policyRowStatus(row.key, row.status)))
+		lines = append(lines, cursor+padRight(ellipsizeMiddle(terminalSafe(row.key), labelWidth), labelWidth)+"  "+policyRowStatus(row.key, row.status))
 	}
 
 	var footer strings.Builder
@@ -369,7 +369,7 @@ func (m Model) policyLabelWidth(rows []policyRow) int {
 	const cursorAndGap = 2 + 2
 	longest := 0
 	for _, row := range rows {
-		longest = max(longest, utf8.RuneCountInString(terminalSafe(row.key)))
+		longest = max(longest, ansi.StringWidth(terminalSafe(row.key)))
 	}
 	return min(longest, max(m.tableWidth()-cursorAndGap-policyStatusColumnWidth, 8))
 }
