@@ -32,9 +32,10 @@ func TestAliasCacheResolveAddressNeverRedirectsAnAddress(t *testing.T) {
 	}
 }
 
-// An address-named alias already in the cache, from an older version or
-// planted to redirect the address, is ignored when the cache loads.
-func TestLoadAliasCacheIgnoresAddressNamedAliases(t *testing.T) {
+// The cache loads as stored: the alias command refuses an address-named
+// alias, and load does not filter one. Should the file hold one anyway, the
+// address it is named for still resolves as itself.
+func TestLoadAliasCacheDoesNotFilterAndAnAddressStillResolvesAsItself(t *testing.T) {
 	cache := LoadAliasCacheFromStore(NewStore(t.TempDir()))
 	cache.Aliases["alice"] = aliasTestAddress(3)
 	cache.Aliases[strings.ToLower(aliasTestAddress(1))] = aliasTestAddress(2)
@@ -43,11 +44,11 @@ func TestLoadAliasCacheIgnoresAddressNamedAliases(t *testing.T) {
 	}
 
 	reloaded := LoadAliasCacheFromStore(cache.store)
-	if want := map[string]string{"alice": aliasTestAddress(3)}; !reflect.DeepEqual(reloaded.Aliases, want) {
-		t.Fatalf("reloaded aliases = %v, want %v", reloaded.Aliases, want)
+	if !reflect.DeepEqual(reloaded.Aliases, cache.Aliases) {
+		t.Fatalf("reloaded aliases = %v, want %v", reloaded.Aliases, cache.Aliases)
 	}
-	if got := reloaded.GetAliasForAddress(aliasTestAddress(2)); got != "" {
-		t.Fatalf("GetAliasForAddress(target) = %q, want no label", got)
+	if got, err := reloaded.ResolveAddress(aliasTestAddress(1)); err != nil || got != aliasTestAddress(1) {
+		t.Fatalf("ResolveAddress(address) = %q, %v; want the address itself", got, err)
 	}
 }
 

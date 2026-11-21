@@ -43,17 +43,10 @@ func ValidateAlias(name string) error {
 	if err := validate("alias", name, reservedAliasNames); err != nil {
 		return err
 	}
-	if IsAddress(name) {
+	if _, err := types.DecodeAddress(strings.ToUpper(name)); err == nil {
 		return fmt.Errorf("alias name %q is an Algorand address; an alias can't be named like one", name)
 	}
 	return nil
-}
-
-// IsAddress reports whether name, in either case, is a valid Algorand
-// address.
-func IsAddress(name string) bool {
-	_, err := types.DecodeAddress(strings.ToUpper(name))
-	return err == nil
 }
 
 // ValidateSet validates a persisted set name.
