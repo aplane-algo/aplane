@@ -404,6 +404,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cosigner.references = append([]CosignerReferenceInfo(nil), msg.References...)
 			m.cosigner.invalid = append([]InvalidCosignerReferenceInfo(nil), msg.Invalid...)
 			m.clampCosignerManagerScroll(m.cosignerManagerRows())
+			// The delete hint is about the row it was given for, which the
+			// list may have removed or moved from under the cursor.
+			if bad, ok := m.selectedInvalidCosignerReference(); !ok || bad.Removable || bad.Path != m.cosigner.deleteHint {
+				m.cosigner.deleteHint = ""
+			}
 			if m.viewState == ViewCosignerReferences && m.cosigner.managerStatus == "Refreshing..." {
 				m.cosigner.managerStatus = ""
 			}

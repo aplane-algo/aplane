@@ -671,3 +671,40 @@ func TestCosignerManagerGivesUpRowsForALongStatus(t *testing.T) {
 		}
 	}
 }
+
+// The hint stays only while the selected row is still the file it names. The
+// operator deletes the file and refreshes, so the cursor lands on bad.json;
+// a reference sorted ahead of the rows, as an import adds, moves another row
+// under the cursor. A list that leaves the file under the cursor keeps it.
+func TestCosignerDeleteHintFollowsItsRowAcrossAList(t *testing.T) {
+	aaa := CosignerReferenceInfo{Name: "aaa", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"}
+	for _, tc := range []struct {
+		name     string
+		list     func(Model) CosignerReferencesMsg
+		wantHint bool
+	}{
+		{"file deleted", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: m.cosigner.references, Invalid: m.cosigner.invalid[:1]}
+		}, false},
+		{"rows moved", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: append(append([]CosignerReferenceInfo(nil), m.cosigner.references...), aaa), Invalid: m.cosigner.invalid}
+		}, false},
+		{"same rows", func(m Model) CosignerReferencesMsg {
+			return CosignerReferencesMsg{References: m.cosigner.references, Invalid: m.cosigner.invalid}
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := invalidCosignerReferencesModel(t)
+			m = press(t, m, "down", "down", "down", "enter", "r")
+			if !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+				t.Fatalf("no hint after enter:\n%s", stripANSI(m.View()))
+			}
+			m = updateModel(t, m, tc.list(m))
+			view := stripANSI(m.View())
+			checkFitsMinSize(t, view)
+			if got := strings.Contains(view, "delete it to clear it"); got != tc.wantHint {
+				t.Fatalf("hint shown %v, want %v, with the cursor on row %d:\n%s", got, tc.wantHint, m.cosigner.managerSelected, view)
+			}
+		})
+	}
+}
