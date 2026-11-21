@@ -1828,14 +1828,17 @@ Product key-type filtering:
 - `ComposedExternalEditKeyTypes`
 - `GenericOrphanedKeyTypes`
 - `ComposedOrphanedKeyTypes`
+- `DisabledOrphanedKeyTypes`
 - `CompiledIdempotentKeyTypes`
 - `CompiledConflictingKeyTypes`
 - `GenericErr`
 - `ComposedErr`
 - `NamespaceDefects`
 
-The invalid, invalid-state-record, compiled-invalid, external-edit, orphaned,
-and `NamespaceDefects` buckets are content defects that fail reload.
+The invalid, invalid-state-record, compiled-invalid, external-edit, orphaned
+(enabled and disabled), and `NamespaceDefects` buckets are content defects that
+fail reload. The external-edit and orphaned buckets are the template record
+defects (`RecordDefects`) an offline `apstore template repair` acts on.
 
 Admin library template install verifies activation from the product-store
 `ReloadReport`: the installed key type must appear in the activated or

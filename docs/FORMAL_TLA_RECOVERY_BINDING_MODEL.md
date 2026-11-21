@@ -38,13 +38,16 @@ The transitions transcribe the post-commit reload and the recovery paths:
   confirm/remove mint in `internal/signerapp/admin/asaset.go`
   (`mutateASASet`), the restore and rollback paths in
   `internal/signerapp/backupadmin`, and the recovery reconcile in
-  `internal/signerapp/daemon/admin_services.go`. `CommitRoot` also stands for
-  the offline template repair (`internal/signerapp/templaterepair`, run by
-  `apstore template repair`), taken with no runtime at all: apstore's
-  exclusive store lock refuses a running signer, so no binding or key cache
-  exists to fall behind the root, and the signer started afterwards is locked
-  until its first unlock, which is the reload (`BeginReload`, `ReloadBind`,
-  then `ReloadSucceed` or `ReloadFail`).
+  `internal/signerapp/daemon/admin_services.go`.
+- The offline template repair (`internal/signerapp/templaterepair`, run by
+  `apstore template repair`) is outside `Next`: it commits with no runtime.
+  apstore's exclusive store lock refuses a running signer, so no binding or
+  key cache exists to fall behind the root, and nothing can `Serve` or
+  `Maintain` until a signer starts. That signer is locked until its first
+  unlock, whose reload binds the authenticated root selection before anything
+  can fail (`BindStoreRootSelection`, as `ReloadBind`), so it begins as `Init`
+  does, with the repaired generation, or the old one after a repair that did
+  not commit, as `root`.
 - `ReloadBind` is the reload's first step in
   `internal/signerapp/templates/reload.go`: `BindStoreRootSelection`
   authenticates a fresh exact root read and binds what it selects before
@@ -100,16 +103,16 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
-- `CommitRoot` stands for policy apply, the ASA set, restore, rollback, and
-  the offline template repair, and also for a commit whose outcome is uncertain: the candidate is visible
+- `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
+  and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches
   neither the old record nor the candidate (`genstore.RootCommitUncertain`). The caller
   cannot tell whether the root moved, so it takes the path of a commit that
   did, and its reload or recovery follows. Policy apply is
   refused while the runtime is in recovery (`admin/policy.go::commitAndReload`),
   so only restore and rollback commit from recovery; the offline template
-  repair commits a store whose unlock enters recovery, but with no runtime,
-  and an uncertain one is reported for the next unlock to settle. A passphrase change
+  repair, outside `Next`, commits a store whose unlock enters recovery, and
+  an uncertain one is settled by the next unlock. A passphrase change
   withdraws signing up front (`BeginStoreMaintenance`) and a failure leaves
   the runtime locked rather than in recovery; locked refuses signing as
   recovery does, so RB2 and RB3 hold for it in substance. The same holds for

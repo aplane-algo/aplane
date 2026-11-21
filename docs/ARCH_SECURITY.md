@@ -1579,7 +1579,8 @@ Store-management audit semantics:
   failed write says to repair and retry. The release
   history reader skips any audit line over 1 MiB rather than failing, so
   one oversized entry cannot hide rotating releases at unlock.
-  Offline rescue and `apstore policy sign` are not audited.
+  Offline rescue, `apstore policy sign` and `apstore template repair` are
+  not audited.
 - `CLIENT_ENROLLMENT_REQUESTED` is emitted when a new `enroll` request is queued (a repeat that refreshes an existing entry is not audited again); its principal and requester are `client:<fingerprint>`, and it carries the remote address and `client_label`
 - `CLIENT_ENROLLED` is emitted when an admin session enrolls a key, by approving its queued request or by importing the public key; it carries the key fingerprint, the `client_label` recorded, the request's remote address (empty for an import), and the admin session attribution
 - `CLIENT_ENROLLMENT_REJECTED` is emitted when an admin session rejects a queued request; it carries the fingerprint, `client_label`, and admin session attribution
