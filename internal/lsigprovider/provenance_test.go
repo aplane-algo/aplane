@@ -52,24 +52,6 @@ func TestTemplateFingerprintComparison(t *testing.T) {
 	}
 }
 
-// TestTemplateFingerprintCrossVersionIsBenign pins the forward-format guard:
-// a stored fingerprint from a different (future) formula version must read as
-// unavailable, never as a conflict, so a formula bump cannot false-flag keys.
-func TestTemplateFingerprintCrossVersionIsBenign(t *testing.T) {
-	keyType := "fingerprint-test-crossversion-v1"
-	fpA := "1:" + strings.Repeat("a", 64)
-	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
-	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
-
-	status, note := lsigprovider.CompareTemplateFingerprint(keyType, "2:"+strings.Repeat("a", 64))
-	if status != lsigprovider.TemplateProvenanceStatusUnavailable {
-		t.Fatalf("lsigprovider.CompareTemplateFingerprint(cross-version) status = %q, want %q", status, lsigprovider.TemplateProvenanceStatusUnavailable)
-	}
-	if note == "" {
-		t.Fatal("lsigprovider.CompareTemplateFingerprint(cross-version) note is empty")
-	}
-}
-
 func TestTemplateFingerprintComparisonUnavailable(t *testing.T) {
 	status, note := lsigprovider.CompareTemplateFingerprint("missing-fingerprint-test-v1", "semantic-a")
 	if status != lsigprovider.TemplateProvenanceStatusUnavailable {
@@ -89,7 +71,6 @@ func TestTemplateFingerprintComparisonOfARecordedValue(t *testing.T) {
 		fixedKeyType  = "fingerprint-test-recorded-v1"
 		perKeyKeyType = "fingerprint-test-recorded-per-key-v1"
 		conflictNote  = "creation template fingerprint differs from the currently registered definition"
-		formatNote    = "stored template fingerprint uses an incompatible format and cannot be compared to the currently registered definition"
 	)
 	live := "1:" + strings.Repeat("a", 64)
 	hash := strings.Repeat("a", 64)
@@ -105,11 +86,11 @@ func TestTemplateFingerprintComparisonOfARecordedValue(t *testing.T) {
 		{name: "matching", stored: live},
 		{name: "nothing recorded"},
 		{name: "mismatching", stored: "1:" + strings.Repeat("b", 64), wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
-		{name: "unversioned", stored: hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
-		{name: "version 0", stored: "0:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
-		{name: "noncanonical prefix", stored: "01:" + hash},
-		{name: "cross-version", stored: "2:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
-		{name: "malformed hash", stored: "1:" + hash[:63], wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
+		{name: "unversioned", stored: hash, wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
+		{name: "version 0", stored: "0:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
+		{name: "noncanonical prefix", stored: "01:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
+		{name: "cross-version", stored: "2:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
+		{name: "malformed hash", stored: "1:" + hash[:63], wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if status, note := lsigprovider.CompareTemplateFingerprint(fixedKeyType, test.stored); status != test.wantStatus || note != test.wantNote {

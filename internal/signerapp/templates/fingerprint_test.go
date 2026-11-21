@@ -76,11 +76,11 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 		"matching":            {accepted, accepted},
 		"nothing recorded":    {accepted, accepted},
 		"mismatching":         {externalEdit, externalEdit},
-		"unversioned":         {accepted, accepted},
-		"version 0":           {accepted, accepted},
-		"noncanonical prefix": {accepted, accepted},
-		"cross-version":       {accepted, accepted},
-		"malformed hash":      {accepted, accepted},
+		"unversioned":         {externalEdit, externalEdit},
+		"version 0":           {externalEdit, externalEdit},
+		"noncanonical prefix": {externalEdit, externalEdit},
+		"cross-version":       {externalEdit, externalEdit},
+		"malformed hash":      {externalEdit, externalEdit},
 	}
 	for index, recordedName := range recordedFingerprintNames {
 		want, ok := cases[recordedName]
@@ -187,17 +187,17 @@ func (p noFingerprintTestProvider) BuildArgs([]byte, map[string][]byte) ([][]byt
 // not fail on.
 func TestReloadRequiresTheRecordedCompiledFingerprintExactly(t *testing.T) {
 	live := "1:" + strings.Repeat("a", 64)
-	// Whether the record conflicts, with a provider that has a fingerprint and
-	// with one that has none.
+	// Whether the record conflicts, with a provider whose fingerprint is live
+	// and with one that has none, which only a record of none matches.
 	cases := map[string]struct{ fingerprinted, none bool }{
-		"matching":            {false, false},
+		"matching":            {false, true},
 		"nothing recorded":    {false, false},
-		"mismatching":         {true, false},
-		"unversioned":         {false, false},
-		"version 0":           {false, false},
-		"noncanonical prefix": {false, false},
-		"cross-version":       {false, false},
-		"malformed hash":      {false, false},
+		"mismatching":         {true, true},
+		"unversioned":         {true, true},
+		"version 0":           {true, true},
+		"noncanonical prefix": {true, true},
+		"cross-version":       {true, true},
+		"malformed hash":      {true, true},
 	}
 	for index, recordedName := range recordedFingerprintNames {
 		want, ok := cases[recordedName]

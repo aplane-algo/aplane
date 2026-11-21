@@ -40,15 +40,10 @@ func CompareTemplateFingerprint(keyType, storedFingerprint string) (status, note
 	return compareFingerprints(storedFingerprint, liveFingerprint)
 }
 
+// compareFingerprints reports a stored fingerprint that is not, byte for byte,
+// the one the registered definition computes.
 func compareFingerprints(storedFingerprint, liveFingerprint string) (status, note string) {
-	match, comparable := FingerprintsMatch(storedFingerprint, liveFingerprint)
-	if !comparable {
-		// Different fingerprint formats (a future formula version, or an
-		// unparseable value) are not a behavior conflict — provenance
-		// simply cannot be established across formats.
-		return TemplateProvenanceStatusUnavailable, "stored template fingerprint uses an incompatible format and cannot be compared to the currently registered definition"
-	}
-	if !match {
+	if storedFingerprint != liveFingerprint {
 		return TemplateProvenanceStatusConflict, "creation template fingerprint differs from the currently registered definition"
 	}
 	return "", ""

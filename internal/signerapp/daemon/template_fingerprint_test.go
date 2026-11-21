@@ -34,11 +34,11 @@ func TestTemplateInstallAndImportWithARecordedFingerprint(t *testing.T) {
 	}{
 		{name: "matching", record: func(live string) string { return live }, another: succeeds},
 		{name: "mismatching", record: func(string) string { return "1:" + strings.Repeat("b", 64) }, another: fails},
-		{name: "unversioned", record: func(live string) string { return strings.TrimPrefix(live, "1:") }, another: succeeds},
-		{name: "version 0", record: func(live string) string { return "0:" + strings.TrimPrefix(live, "1:") }, another: succeeds},
-		{name: "noncanonical prefix", record: func(live string) string { return "01:" + strings.TrimPrefix(live, "1:") }, another: succeeds},
-		{name: "cross-version", record: func(live string) string { return "2:" + strings.TrimPrefix(live, "1:") }, another: succeeds},
-		{name: "malformed hash", record: func(live string) string { return live[:len(live)-1] }, another: succeeds},
+		{name: "unversioned", record: func(live string) string { return strings.TrimPrefix(live, "1:") }, another: fails},
+		{name: "version 0", record: func(live string) string { return "0:" + strings.TrimPrefix(live, "1:") }, another: fails},
+		{name: "noncanonical prefix", record: func(live string) string { return "01:" + strings.TrimPrefix(live, "1:") }, another: fails},
+		{name: "cross-version", record: func(live string) string { return "2:" + strings.TrimPrefix(live, "1:") }, another: fails},
+		{name: "malformed hash", record: func(live string) string { return live[:len(live)-1] }, another: fails},
 	} {
 		for _, operation := range []string{"reimport", "import another", "install another"} {
 			t.Run(test.name+"/"+operation, func(t *testing.T) {
