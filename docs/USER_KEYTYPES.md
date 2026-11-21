@@ -1228,16 +1228,24 @@ The repair commits a new generation (operation `template-repair`) whose parent
 is the damaged generation, which is kept, sealed, until generation pruning;
 `apadmin restore rollback` does not return to it. Key files are never touched. Start and unlock `apsigner` afterwards; it unlocks normally.
 
-The repair is refused, and changes nothing, for a key type that is not a
-template record defect, a re-pin of a record with no template file, a defect
-left unnamed, or a generation with any other damage: a malformed key file, an
-unreadable template, a damaged policy or node-role sidecar. Damage like that
-alongside a template record defect is repaired by moving the store aside and
-rebuilding it from a backup archive with `apstore rebuild` (see
-[Rebuild an Absent Keystore](USER_STORE_MGMT.md#rebuild-an-absent-keystore)).
-A rebuilt store has the archive's credentials and per-key policies but no
-templates or key type state, so import the templates again after the first
-unlock.
+The repair is refused, and changes nothing but what reconciliation moved, for
+a key type that is not a template record defect, a re-pin of a record with no
+template file, or a defect left unnamed. It is also refused for damage it does
+not repair, and the preview names it:
+
+- **Damage unlock also refuses**, such as a malformed key file, an unreadable
+  template, or a damaged policy or node-role sidecar: the repair would not let
+  the signer unlock. Repair that damage first, or move the store aside and
+  rebuild it from a backup archive with `apstore rebuild` (see
+  [Rebuild an Absent Keystore](USER_STORE_MGMT.md#rebuild-an-absent-keystore)).
+  A rebuilt store has the archive's credentials and per-key policies but no
+  templates or key type state, so import the templates again after the first
+  unlock.
+- **Damage only a commit refuses**, such as a deleted-archive member that does
+  not verify. Unlock never opens the deleted archive, but every generation
+  commit verifies it. Start `apsigner`, which unlocks into recovery, remove
+  the member with `apadmin archive prune --confirm <deleted/path>`, stop
+  `apsigner`, and repair again.
 
 While the signer is unlocked, a reload after an install or after a change to
 the store's files can also find a defect without leaving the signer. A

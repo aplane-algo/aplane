@@ -54,6 +54,12 @@ func FirstGeneration(c storeinit.FirstGenerationCandidate) error {
 // Candidate verifies all destination authority and every managed credential
 // without publishing runtime state or registering process-global providers.
 func Candidate(opts Options) error {
+	if err := requireKeyring(opts); err != nil {
+		return err
+	}
+	if err := validateDeletedArchive(opts); err != nil {
+		return err
+	}
 	if err := validateDestinationAuthority(opts, nil); err != nil {
 		return err
 	}
@@ -65,6 +71,23 @@ func Candidate(opts Options) error {
 	return validateCredentialReport(opts.ExpectedRole, scan)
 }
 
+// DeletedArchiveMemberError is a deleted-archive member that does not
+// verify. Unlock never opens archive members, but every generation commit
+// does (Candidate), so it refuses a commit and not an unlock; `apadmin
+// archive prune` removes it.
+type DeletedArchiveMemberError struct {
+	// Path is the member's canonical path in the generation, such as
+	// deleted/keytypes/<key_type>.template.
+	Path string
+	Err  error
+}
+
+func (e *DeletedArchiveMemberError) Error() string {
+	return fmt.Sprintf("verify %s: %v", e.Path, e.Err)
+}
+
+func (e *DeletedArchiveMemberError) Unwrap() error { return e.Err }
+
 // RecoveryDestination proves that destination authority and every
 // unselected credential are healthy before a recovery-mode restore. Only the
 // authenticated selectors being replaced may be skipped; the completed staged
@@ -73,8 +96,14 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 	if len(repairedSelectors) == 0 {
 		return fmt.Errorf("recovery restore has no authenticated credential selection")
 	}
+	if err := requireKeyring(opts); err != nil {
+		return err
+	}
 	if err := genstore.ValidateCurrent(opts.Candidate); err != nil {
 		return fmt.Errorf("destination generation structure: %w", err)
+	}
+	if err := validateDeletedArchive(opts); err != nil {
+		return err
 	}
 	if err := validateDestinationAuthority(opts, nil); err != nil {
 		return err
@@ -86,43 +115,72 @@ func RecoveryDestination(opts Options, repairedSelectors map[string]bool) error 
 	return validateCredentialReport(opts.ExpectedRole, scan)
 }
 
-// TemplateRepairDestination proves that everything a template repair leaves
-// alone is healthy before it stages anything: the generation's structure,
-// its destination authority with only the template record defects of the
-// repaired key types excluded, and every credential. It is
-// RecoveryDestination with the exclusion moved from credentials to template
-// records. The completed staged candidate is subsequently passed through
-// Candidate with no exclusions.
-func TemplateRepairDestination(opts Options, repairedKeyTypes map[string]bool) error {
+// TemplateRepairDestination refuses what unlock would still refuse after a
+// template repair: the generation's structure and archive limits, its node
+// role, policy, ASA set and templates with only the template record defects
+// of the repaired key types excluded, and every credential's content and the
+// node role's key classes. It returns the credential scan it made, nil when
+// the structure check stopped it first, so the caller need not scan again.
+// What only a commit refuses is CommitOnlyDamage; the completed staged
+// candidate is subsequently passed through Candidate with no exclusions.
+func TemplateRepairDestination(opts Options, repairedKeyTypes map[string]bool) (*keys.KeyScanReport, error) {
 	if len(repairedKeyTypes) == 0 {
-		return fmt.Errorf("template repair names no key type")
+		return nil, fmt.Errorf("template repair names no key type")
+	}
+	if err := requireKeyring(opts); err != nil {
+		return nil, err
 	}
 	if err := genstore.ValidateCurrent(opts.Candidate); err != nil {
-		return fmt.Errorf("destination generation structure: %w", err)
-	}
-	if err := validateDestinationAuthority(opts, repairedKeyTypes); err != nil {
-		return err
+		return nil, fmt.Errorf("destination generation structure: %w", err)
 	}
 	scan, err := keys.ScanKeysDirectory(opts.Candidate, opts.Keyring, nil)
 	if err != nil {
-		return fmt.Errorf("credentials: %w", err)
+		return nil, fmt.Errorf("credentials: %w", err)
 	}
-	return validateCredentialReport(opts.ExpectedRole, scan)
+	if err := validateDestinationAuthority(opts, repairedKeyTypes); err != nil {
+		return scan, err
+	}
+	return scan, validateLoadableCredentials(opts.ExpectedRole, scan)
 }
 
-// validateDestinationAuthority checks everything in a generation but its
-// credentials. repairedTemplates names the key types whose template record
-// defects a template repair replaces; every other caller passes nil.
-func validateDestinationAuthority(opts Options, repairedTemplates map[string]bool) error {
+// CommitOnlyDamage is what every generation commit refuses (Candidate) and
+// unlock never reads: a deleted-archive member that does not verify (a
+// DeletedArchiveMemberError), and more cosigner credentials than a store
+// holds. scan is the generation's credential scan.
+func CommitOnlyDamage(opts Options, scan *keys.KeyScanReport) error {
+	if err := requireKeyring(opts); err != nil {
+		return err
+	}
+	if err := validateDeletedArchive(opts); err != nil {
+		return err
+	}
+	return validateCosignerCredentialLimit(scan)
+}
+
+func requireKeyring(opts Options) error {
 	if opts.Keyring == nil {
 		return fmt.Errorf("candidate keyring is required")
 	}
+	return nil
+}
+
+// validateDeletedArchive checks the deleted archive's limits and opens every
+// member.
+func validateDeletedArchive(opts Options) error {
 	if _, err := genstore.InspectDeletedArchive(opts.Candidate); err != nil {
 		return fmt.Errorf("deleted archive: %w", err)
 	}
 	if err := validateDeletedArchiveEnvelopes(opts.Candidate, opts.Keyring); err != nil {
 		return fmt.Errorf("deleted archive: %w", err)
 	}
+	return nil
+}
+
+// validateDestinationAuthority checks the node role, policy, ASA set and
+// templates of a generation: what reload reads besides its credentials.
+// repairedTemplates names the key types whose template record defects a
+// template repair replaces; every other caller passes nil.
+func validateDestinationAuthority(opts Options, repairedTemplates map[string]bool) error {
 	role, err := noderole.LoadAndVerifyGenerationWithKeyring(
 		opts.Paths, opts.Candidate, opts.Keyring,
 	)
@@ -199,7 +257,7 @@ func validateDeletedArchiveEnvelopes(candidate storepaths.GenPaths, kr *crypto.K
 		}
 		plaintext, err := kr.Open(data, ctx)
 		if err != nil {
-			return fmt.Errorf("verify %s: %w", entry.Path, err)
+			return &DeletedArchiveMemberError{Path: entry.Path, Err: err}
 		}
 		crypto.ZeroBytes(plaintext)
 	}
@@ -223,22 +281,43 @@ func verifyArchivedPolicy(candidate storepaths.GenPaths, relative string, kr *cr
 	}
 	sidecar, err := policy.LoadPolicyIntegritySidecar(policy.PolicyIntegritySidecarPath(path))
 	if err != nil {
-		return fmt.Errorf("verify %s: %w", relative, err)
+		return &DeletedArchiveMemberError{Path: relative, Err: err}
 	}
 	if err := policy.VerifyPolicyIntegrity(data, sidecar, kr); err != nil {
-		return fmt.Errorf("verify %s: %w", relative, err)
+		return &DeletedArchiveMemberError{Path: relative, Err: err}
 	}
 	return nil
 }
 
 func validateCredentialReport(role noderole.Role, scan *keys.KeyScanReport) error {
+	if err := validateLoadableCredentials(role, scan); err != nil {
+		return err
+	}
+	return validateCosignerCredentialLimit(scan)
+}
+
+// validateLoadableCredentials refuses what a reload refuses in a credential
+// scan: a credential it could not load, and a key class the node role
+// forbids.
+func validateLoadableCredentials(role noderole.Role, scan *keys.KeyScanReport) error {
 	if len(scan.Warnings) > 0 {
 		return fmt.Errorf("credential content defect: %s", scan.Warnings[0].Message())
 	}
 	keyTypes := make(map[string]string, len(scan.Keys))
-	cosignerKeys := 0
 	for selector, info := range scan.Keys {
 		keyTypes[selector] = info.KeyType
+	}
+	if err := keyclass.ValidateKeyTypesAllowedForNodeRole(role, keyTypes); err != nil {
+		return fmt.Errorf("credential inventory: %w", err)
+	}
+	return nil
+}
+
+// validateCosignerCredentialLimit is the commit-time cap on cosigner
+// credentials; a reload does not apply it.
+func validateCosignerCredentialLimit(scan *keys.KeyScanReport) error {
+	cosignerKeys := 0
+	for _, info := range scan.Keys {
 		if info.Category == keys.CategoryWitness {
 			cosignerKeys++
 		}
@@ -246,9 +325,6 @@ func validateCredentialReport(role noderole.Role, scan *keys.KeyScanReport) erro
 	if cosignerKeys > keys.MaxCosignerCredentials {
 		return fmt.Errorf("credential inventory: %w: %d cosigner credentials, limit %d",
 			keys.ErrCosignerCredentialLimit, cosignerKeys, keys.MaxCosignerCredentials)
-	}
-	if err := keyclass.ValidateKeyTypesAllowedForNodeRole(role, keyTypes); err != nil {
-		return fmt.Errorf("credential inventory: %w", err)
 	}
 	return nil
 }

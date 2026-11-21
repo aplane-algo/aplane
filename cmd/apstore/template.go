@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
 )
 
@@ -132,6 +134,7 @@ func runTemplateRepair(opts templaterepair.Options, actions map[string]templater
 		return fmt.Errorf("%w; start apsigner and unlock it to check which generation it selects", err)
 	}
 	if err != nil {
+		adviseRefusal(err)
 		return err
 	}
 	logInfof("template repair committed generation %s over %s, which is kept", result.GenerationID, result.Parent)
@@ -203,12 +206,13 @@ func printTemplateRepairPreview(w io.Writer, preview templaterepair.Preview) err
 			len(preview.Reconcile.Quarantined), len(preview.Reconcile.DiscardedStaging))
 	}
 	if preview.OtherDamage != nil {
-		logWarnf("a repair is refused while the generation has other damage: %v", preview.OtherDamage)
-		logWarnf("rebuild the store from a backup instead (apstore rebuild)")
+		logWarnf("a repair is refused while the generation has other damage, which unlock also refuses: %v", preview.OtherDamage)
+		logWarnf("%s", otherDamageAdvice)
 		return nil
 	}
 	if preview.CommitBlocked != nil {
-		logWarnf("a repair is refused: %v", preview.CommitBlocked)
+		logWarnf("a repair is refused: no generation can be committed over the current one: %v", preview.CommitBlocked)
+		adviseRefusal(preview.CommitBlocked)
 		return nil
 	}
 	logInfof("repair every defect in one run: apstore template repair repin <key_type>... drop <key_type>... --confirm")
@@ -229,6 +233,19 @@ func printExternalEditEvidence(defect templaterepair.Defect) {
 	if defect.KeysFromStoredTemplate > 0 {
 		logInfof("%s: %d of its %d key(s) were created from the stored template",
 			defect.KeyType, defect.KeysFromStoredTemplate, defect.Keys)
+	}
+}
+
+const otherDamageAdvice = "a repair would not let the signer unlock: repair that damage first and run the repair again, or rebuild the store from a backup (apstore rebuild)"
+
+// adviseRefusal says what clears the damage that refused a repair.
+func adviseRefusal(err error) {
+	var member *storevalidate.DeletedArchiveMemberError
+	switch {
+	case errors.As(err, &member):
+		logWarnf("unlock never opens the deleted archive, but every generation commit verifies it: start apsigner, remove the member with `apadmin archive prune --confirm %s`, stop apsigner, and repair again", member.Path)
+	case errors.Is(err, templaterepair.ErrOtherDamage):
+		logWarnf("%s", otherDamageAdvice)
 	}
 }
 

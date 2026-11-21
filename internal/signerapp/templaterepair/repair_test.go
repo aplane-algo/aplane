@@ -438,6 +438,18 @@ func TestRepairRefusalsChangeNothing(t *testing.T) {
 					t.Fatal(err)
 				}
 			}},
+		{name: "a damaged deleted archive member", actions: all(nil), want: templaterepair.ErrCommitBlocked,
+			detail: "verify deleted/keytypes/test.repair-archived.v1.template",
+			damage: func(t *testing.T, f *fixture) {
+				f.install(genericYAML("repair-archived"))
+				bound := genstoretest.BindActive(t, f.paths, f.opts.Current)
+				if _, err := templatelibrary.RemoveInstalledTemplate(bound, "test.repair-archived.v1", templatestore.TemplateTypeGeneric, f.opts.Keyring); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.opts.Current.DeletedKeyTypeTemplate("test.repair-archived.v1"), []byte("damaged"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}},
 		{name: "an invalid template beside the defects", actions: all(nil), want: templaterepair.ErrOtherDamage, detail: healthy,
 			damage: func(t *testing.T, f *fixture) {
 				if err := os.WriteFile(f.opts.Current.KeyTypeTemplate(healthy), []byte("damaged"), 0o600); err != nil {

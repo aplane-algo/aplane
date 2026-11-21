@@ -157,20 +157,27 @@ func Inspect(opts Options) (Preview, error) {
 	if len(recordDefects) == 0 {
 		return preview, nil
 	}
-	scan, err := keys.ScanKeysDirectory(opts.Current, opts.Keyring, nil)
-	if err != nil {
-		return Preview{}, fmt.Errorf("count keys: %w", err)
-	}
 	defective := make(map[string]bool, len(recordDefects))
+	for _, recordDefect := range recordDefects {
+		defective[recordDefect.KeyType] = true
+	}
+	current := validateOptions(opts, opts.Current)
+	// One scan, the gate's, serves the key counts too, so each damaged key
+	// file is reported once.
+	scan, damage := storevalidate.TemplateRepairDestination(current, defective)
+	preview.OtherDamage = damage
+	if scan == nil {
+		if scan, err = keys.ScanKeysDirectory(opts.Current, opts.Keyring, nil); err != nil {
+			return Preview{}, fmt.Errorf("count keys: %w", err)
+		}
+	}
 	for _, recordDefect := range recordDefects {
 		defect, err := describe(opts, recordDefect, scan)
 		if err != nil {
 			return Preview{}, err
 		}
 		preview.Defects = append(preview.Defects, defect)
-		defective[defect.KeyType] = true
 	}
-	preview.OtherDamage = storevalidate.TemplateRepairDestination(validateOptions(opts, opts.Current), defective)
 	if preview.Reconcile, err = genstore.InspectStoreRoot(opts.Paths, opts.Keyring); err != nil {
 		// Reconciliation refuses this store, and so does unlock.
 		if preview.OtherDamage == nil {
@@ -178,17 +185,22 @@ func Inspect(opts Options) (Preview, error) {
 		}
 		return preview, nil
 	}
-	preview.CommitBlocked = commitBlocked(opts, preview.Reconcile)
+	preview.CommitBlocked = commitBlocked(current, preview.Reconcile, scan)
 	return preview, nil
 }
 
-// commitBlocked is what refuses a mint over the current generation after
-// reconciliation, which a repair does not clear.
-func commitBlocked(opts Options, reconcile genstore.ReconcileReport) error {
+// commitBlocked is what refuses a mint over the current generation and
+// survives reconciliation: a parent that lost its seal, a generation too
+// large for a successor, and what every commit's candidate check refuses
+// though unlock never reads it.
+func commitBlocked(current storevalidate.Options, reconcile genstore.ReconcileReport, scan *keys.KeyScanReport) error {
 	if parent := reconcile.RetainedUnsealedParent; parent != "" {
 		return fmt.Errorf("the current generation's parent %s has lost its seal, which reconciliation keeps and every mint refuses; restore it from the same snapshot as the rest of the store, or remove it", parent)
 	}
-	return genstore.RequireSuccessorFits(opts.Current)
+	if err := genstore.RequireSuccessorFits(current.Candidate); err != nil {
+		return err
+	}
+	return storevalidate.CommitOnlyDamage(current, scan)
 }
 
 func describe(opts Options, recordDefect signertemplates.RecordDefect, scan *keys.KeyScanReport) (Defect, error) {

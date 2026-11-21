@@ -4,6 +4,7 @@
 package storevalidate_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,13 +204,13 @@ func TestTemplateRepairDestinationSkipsOnlyTheRepairedRecords(t *testing.T) {
 	if err := storevalidate.Candidate(opts); err == nil || !strings.Contains(err.Error(), orphan) {
 		t.Fatalf("Candidate() error = %v, want the orphaned record", err)
 	}
-	if err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err != nil {
-		t.Fatalf("TemplateRepairDestination(the orphan) error = %v", err)
+	if scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err != nil || scan == nil {
+		t.Fatalf("TemplateRepairDestination(the orphan) = %v, %v; want the scan and no error", scan, err)
 	}
-	if err := storevalidate.TemplateRepairDestination(opts, map[string]bool{other: true}); err == nil || !strings.Contains(err.Error(), orphan) {
+	if _, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{other: true}); err == nil || !strings.Contains(err.Error(), orphan) {
 		t.Fatalf("TemplateRepairDestination(another key type) error = %v, want the orphaned record", err)
 	}
-	if err := storevalidate.TemplateRepairDestination(opts, nil); err == nil {
+	if _, err := storevalidate.TemplateRepairDestination(opts, nil); err == nil {
 		t.Fatal("TemplateRepairDestination(nothing) accepted a repair that names no key type")
 	}
 
@@ -236,9 +237,30 @@ func TestTemplateRepairDestinationSkipsOnlyTheRepairedRecords(t *testing.T) {
 			opts, done := setup(t)
 			defer done()
 			damage(t, opts.Candidate)
-			if err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err == nil {
+			if _, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true}); err == nil {
 				t.Fatal("TemplateRepairDestination() accepted damage the repair does not cover")
 			}
 		})
 	}
+
+	// Unlock never opens a deleted-archive member, so the gate leaves a
+	// damaged one to CommitOnlyDamage, which every commit's Candidate check
+	// also refuses, and names the member.
+	t.Run("deleted archive member", func(t *testing.T) {
+		opts, done := setup(t)
+		defer done()
+		const member = "deleted/keytypes/test.repair-archived.v1.template"
+		writeDamage(t, filepath.Join(opts.Candidate.Dir(), filepath.FromSlash(member)))
+		scan, err := storevalidate.TemplateRepairDestination(opts, map[string]bool{orphan: true})
+		if err != nil {
+			t.Fatalf("TemplateRepairDestination() error = %v, want the archive member left to commit validation", err)
+		}
+		var damaged *storevalidate.DeletedArchiveMemberError
+		if err := storevalidate.CommitOnlyDamage(opts, scan); !errors.As(err, &damaged) || damaged.Path != member {
+			t.Fatalf("CommitOnlyDamage() error = %v, want the member %s", err, member)
+		}
+		if err := storevalidate.Candidate(opts); !errors.As(err, &damaged) || damaged.Path != member {
+			t.Fatalf("Candidate() error = %v, want the member %s", err, member)
+		}
+	})
 }

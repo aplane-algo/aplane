@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
+	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
@@ -268,6 +269,69 @@ func TestTemplateRepairReconcilesFirst(t *testing.T) {
 			}
 		}
 	})
+}
+
+// Damage unlock refuses is told apart from damage only a commit refuses: a
+// deleted-archive member does not stop an unlock, and the advice for it is
+// to prune it, not to rebuild. A damaged key file is reported once.
+func TestTemplateRepairAdvisesByDamage(t *testing.T) {
+	t.Run("deleted archive member", func(t *testing.T) {
+		withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+			current := currentGenerationForTest(t, passphrase)
+			const member = "deleted/keytypes/test.apstore-repair-archived.v1.template"
+			if err := os.WriteFile(filepath.Join(current.Dir(), filepath.FromSlash(member)), []byte("damaged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair"); err != nil {
+				t.Fatal(err)
+			}
+			want := "remove the member with `apadmin archive prune --confirm " + member + "`"
+			if !strings.Contains(log.String(), want) || strings.Contains(log.String(), "apstore rebuild") {
+				t.Fatalf("preview log = %q, want %q and no rebuild advice", log.String(), want)
+			}
+			log.Reset()
+			_, err := runTemplateCommand(t, string(passphrase)+"\n", "repair", "repin", repairEdited, "drop", repairOrphan, "--confirm")
+			if !errors.Is(err, templaterepair.ErrCommitBlocked) || !strings.Contains(log.String(), want) {
+				t.Fatalf("template repair --confirm = %v, log %q; want the commit refused with the prune advice", err, log.String())
+			}
+		})
+	})
+	t.Run("damaged key file", func(t *testing.T) {
+		withDamagedTemplateStore(t, func(passphrase []byte, _ string, log *bytes.Buffer) {
+			current := currentGenerationForTest(t, passphrase)
+			if err := os.WriteFile(filepath.Join(current.KeysDir(), "DAMAGED.key"), []byte("damaged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			stderr := captureStderr(t, func() {
+				if _, err := runTemplateCommand(t, string(passphrase)+"\n", "repair"); err != nil {
+					t.Error(err)
+				}
+			})
+			if got := strings.Count(stderr, "Warning: "); got != 1 {
+				t.Fatalf("stderr = %q: %d scan warnings, want 1", stderr, got)
+			}
+			if !strings.Contains(log.String(), "which unlock also refuses") || !strings.Contains(log.String(), "apstore rebuild") {
+				t.Fatalf("preview log = %q, want the unlock refusal and its advice", log.String())
+			}
+		})
+	})
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	file, err := os.CreateTemp(t.TempDir(), "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = file
+	defer func() { os.Stderr = saved }()
+	fn()
+	data, err := os.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestTemplateRepairReportsAnUncertainCommit(t *testing.T) {
