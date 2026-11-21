@@ -326,3 +326,28 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 		t.Fatalf("logs for a damaged store root = %q, want an error line with the cause", got)
 	}
 }
+
+// An unlock in flight when a store change on another connection ends in
+// doubt does not publish over the recovery that change entered: it answers
+// recovery_blocked, as an unlock that finds the store needing recovery does,
+// and the signer stays in recovery.
+func TestAnUnlockThatMeetsARecoveryAnswersRecoveryBlocked(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	ir.SetUnlocked()
+	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil {
+			ir.SetRecovery() // the store change, while the unlock reloads
+		}
+		return &signertemplates.ReloadReport{}, nil
+	})
+
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v, want recovery", ir.GetState())
+	}
+}

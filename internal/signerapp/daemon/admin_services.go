@@ -118,6 +118,12 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	if !success && errMsg == signerruntime.RecoveryDuringUnlockMessage {
+		// A store change on another connection ended in doubt while this
+		// unlock ran; the signer stays in recovery, as that change answered.
+		logWarnf("identity is recovery-blocked: %s", errMsg)
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
+	}
 	if !success && signertemplates.IsGenerationValidationError(errMsg) {
 		// Content defects in the selected generation are a recovery
 		// condition, not an unlock failure: the passphrase was right and

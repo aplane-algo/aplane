@@ -46,9 +46,11 @@ generation moved has lost to a lock, and its function may have loaded keys
 after that lock's cleanup, so it clears them. The other unlock may meanwhile
 have published a session those keys now serve, or may publish one before the
 loser's clear runs; so the loser locks the signer as a lock does before it
-clears.
+clears. UnlockStart reads the session generation too, and UnlockFinish
+compares it: an attempt that finds it moved with the lock generation unmoved
+met an entry into recovery, and publishes nothing.
 
-Seven guards are switchable:
+Eight guards are switchable:
 
   RegisterChecksLock  registration refuses once the state is locked. Without
                       it, a holder registering after DrainBegin gets a fresh,
@@ -75,6 +77,14 @@ Seven guards are switchable:
                       loaded (runtime.Runtime lockForCleanupLocked). Without it,
                       the cleanup runs in whatever state the signer is in, and
                       clears a session another unlock published.
+  UnlockFencesRecovery
+                      an unlock whose session generation moved while its
+                      unlock function ran publishes nothing and runs no
+                      cleanup (runtime.Runtime TryUnlock), and every entry
+                      into recovery moves the session, one from recovery
+                      included (enterRecoveryLocked). Without it, an unlock
+                      publishes unlocked over a recovery a store change
+                      entered after the unlock began.
 
 Properties:
 
@@ -82,7 +92,9 @@ Properties:
        begun after its sign started and before its final check;
   KU2  the session is never cleared while a key use is registered;
   KU3  an export never delivers after the session was cleared;
-  KU4  the session is never cleared while the signer is unlocked.
+  KU4  the session is never cleared while the signer is unlocked;
+  KU5  an unlock never publishes unlocked over a recovery entered after it
+       began.
 
 The final check and the return are separate in the code; a lock landing
 between them is indistinguishable from one landing just after the return, so
@@ -117,9 +129,11 @@ Code anchors:
   - UnlockStart's guard transcribes awaitCleanups in
     internal/signerapp/runtime/runtime.go, which TryUnlock and TryRecovery
     call before they read the lock generation (FinishMaintenance calls it
-    too, before it compares the generation its token recorded);
-    UnlockFinish transcribes the fence after the unlock function and, when
-    the generation moved, lockForCleanupLocked and the cleanup it decides.
+    too, before it compares the generation its token recorded), and its
+    read of the session with it; UnlockFinish transcribes the fence after
+    the unlock function: when the lock generation moved,
+    lockForCleanupLocked and the cleanup it decides, and otherwise, when
+    the session moved, the return with RecoveryDuringUnlockMessage.
     LockInactive transcribes Lock on a signer that is already locked or
     locking: the generation moves and no cleanup runs.
 
@@ -134,6 +148,7 @@ CONSTANTS
     RecoveryEndsSession, \* BOOLEAN: entering recovery moves the lock generation
     UnlockWaitsForCleanup, \* BOOLEAN: an unlock waits for the lock's cleanup
     LoserLocks,          \* BOOLEAN: an unlock that lost to a lock locks first
+    UnlockFencesRecovery, \* BOOLEAN: an unlock does not publish over a later recovery
     MaxLocks             \* bound on lock transitions (keeps the space finite)
 
 Holders == {"sign", "export"}
@@ -157,10 +172,13 @@ VARIABLES
                 \* without LoserLocks: "none" | "locking" | "draining"
     wipedLive,  \* ghost: the session was cleared while the signer was unlocked
     ul,         \* each unlock attempt: "idle" | "deriving"
-    ulStale     \* the lock generation moved after the attempt read it
+    ulStale,    \* the lock generation moved after the attempt read it
+    ulRecov,    \* recovery was entered after the attempt read the session
+    overRecovery \* ghost: an unlock published over a recovery entered after
+                 \* it began
 
 vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
-          lateExport, late, wipedLive, ul, ulStale>>
+          lateExport, late, wipedLive, ul, ulStale, ulRecov, overRecovery>>
 
 \* Steps at which a holder has a registered key use.
 SignHolds == {"held", "made"}
@@ -184,6 +202,8 @@ Init ==
     /\ wipedLive = FALSE
     /\ ul = [u \in Unlockers |-> "idle"]
     /\ ulStale = [u \in Unlockers |-> FALSE]
+    /\ ulRecov = [u \in Unlockers |-> FALSE]
+    /\ overRecovery = FALSE
 
 ----------------------------------------------------------------------------
 (* Registration (KeyUseContext), shared by both holders *)
@@ -325,13 +345,17 @@ LockInactive ==
     /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
                    wipedHeld, lateExport>>
 
-\* SetRecovery, or TryRecovery, from the unlocked state. The session ends for
-\* every holder in flight. Under RecoveryEndsSession the generation moves with
-\* it and every registered key use is cancelled (cancelKeyUses), so the
-\* session's work stops; nothing waits for it and nothing is cleared, because
-\* recovery keeps the keyring.
+\* SetRecovery, or TryRecovery, from the unlocked state or from recovery: a
+\* store change that ends in doubt, or a restore, rollback or reconcile that
+\* enters recovery again. The session ends for every holder in flight. Under
+\* RecoveryEndsSession the generation moves with it and every registered key
+\* use is cancelled (cancelKeyUses), so the session's work stops; nothing waits
+\* for it and nothing is cleared, because recovery keeps the keyring. The
+\* generation moving is also what every unlock attempt in flight later finds
+\* (ulRecov). From recovery there is no session left to end: every holder in
+\* flight started before the first entry.
 EnterRecovery ==
-    /\ life = "unlocked"
+    /\ life \in {"unlocked", "recovery"}
     /\ locks < MaxLocks
     /\ life' = "recovery"
     /\ locks' = locks + 1
@@ -340,6 +364,8 @@ EnterRecovery ==
                     stale[h] \/ (RecoveryEndsSession /\ pc[h] # "idle")]
     /\ cancelled' = [h \in Holders |->
                         cancelled[h] \/ (RecoveryEndsSession /\ Holding(h))]
+    /\ ulRecov' = [u \in Unlockers |->
+                      ulRecov[u] \/ (RecoveryEndsSession /\ ul[u] = "deriving")]
     /\ UNCHANGED <<pc, waited, leaked, wipedHeld, lateExport>>
 
 \* PromoteRecoveryToUnlocked: a reconcile succeeded.
@@ -363,10 +389,10 @@ Wipe ==
     /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
-\* TryUnlock reads the lock generation, then runs its unlock function. It
-\* waits for every cleanup in progress first, so it never starts while one
-\* runs; it may start on a signer already unlocked or in recovery. Without
-\* the wait it may also start between LockState and Wipe.
+\* TryUnlock reads the lock generation and the session, then runs its unlock
+\* function. It waits for every cleanup in progress first, so it never starts
+\* while one runs; it may start on a signer already unlocked or in recovery.
+\* Without the wait it may also start between LockState and Wipe.
 UnlockStart(u) ==
     /\ ul[u] = "idle"
     /\ IF UnlockWaitsForCleanup
@@ -374,11 +400,15 @@ UnlockStart(u) ==
        ELSE TRUE
     /\ ul' = [ul EXCEPT ![u] = "deriving"]
     /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+    /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
     /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
-                   wipedHeld, lateExport, late, wipedLive>>
+                   wipedHeld, lateExport, late, wipedLive, overRecovery>>
 
 \* The unlock function has returned. With the generation unchanged the
 \* attempt publishes a session; a cleanup it overtook carries on as `late`.
+\* Under UnlockFencesRecovery an attempt that met an entry into recovery
+\* (the session moved, the generation did not) publishes nothing and runs no
+\* cleanup instead; without it, it publishes over that recovery.
 \* With the generation moved the attempt lost to a lock and clears what it
 \* loaded: under LoserLocks it first locks as LockState does, moving the
 \* generation for the other attempt and the holders; otherwise its cleanup
@@ -386,22 +416,26 @@ UnlockStart(u) ==
 UnlockFinish(u) ==
     /\ ul[u] = "deriving"
     /\ ul' = [ul EXCEPT ![u] = "idle"]
+    /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
     /\ IF ~ulStale[u]
-       THEN /\ life \in {"locking", "draining"} => late = "none"
-            /\ late' = IF life \in {"locking", "draining"} THEN life ELSE late
-            /\ life' = "unlocked"
-            /\ UNCHANGED <<stale, ended, ulStale>>
+       THEN IF UnlockFencesRecovery /\ ulRecov[u]
+            THEN UNCHANGED <<life, late, stale, ended, ulStale, overRecovery>>
+            ELSE /\ life \in {"locking", "draining"} => late = "none"
+                 /\ late' = IF life \in {"locking", "draining"} THEN life ELSE late
+                 /\ life' = "unlocked"
+                 /\ overRecovery' = (overRecovery \/ (ulRecov[u] /\ life = "recovery"))
+                 /\ UNCHANGED <<stale, ended, ulStale>>
        ELSE IF LoserLocks
        THEN /\ life' = "locking"
             /\ stale' = [h \in Holders |-> stale[h] \/ pc[h] # "idle"]
             /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
             /\ ulStale' = [v \in Unlockers |->
                              IF v = u THEN FALSE ELSE GenerationMoves[v]]
-            /\ UNCHANGED late
+            /\ UNCHANGED <<late, overRecovery>>
        ELSE /\ late = "none"
             /\ late' = "locking"
             /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
-            /\ UNCHANGED <<life, stale, ended>>
+            /\ UNCHANGED <<life, stale, ended, overRecovery>>
     /\ UNCHANGED <<locks, pc, cancelled, waited, leaked, wipedHeld, lateExport,
                    wipedLive>>
 
@@ -426,16 +460,17 @@ LateWipe ==
 Next ==
     \/ /\ \/ SStart \/ SRegister \/ SMake \/ SRelease \/ SReturn
           \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
-          \/ DrainBegin \/ Wipe
-          \* Recovery moves the session generation, not the lock generation
-          \* the unlock fence compares.
-          \/ EnterRecovery \/ LeaveRecovery
-       /\ UNCHANGED <<late, wipedLive, ul, ulStale>>
+          \/ DrainBegin \/ Wipe \/ LeaveRecovery
+       /\ UNCHANGED <<late, wipedLive, ul, ulStale, ulRecov, overRecovery>>
+    \* Recovery moves the session generation, which the unlock's second fence
+    \* compares, not the lock generation its first one does.
+    \/ /\ EnterRecovery
+       /\ UNCHANGED <<late, wipedLive, ul, ulStale, overRecovery>>
     \/ /\ LockState \/ LockInactive
-       /\ UNCHANGED <<late, wipedLive, ul>>
+       /\ UNCHANGED <<late, wipedLive, ul, ulRecov, overRecovery>>
     \/ \E u \in Unlockers : UnlockStart(u) \/ UnlockFinish(u)
     \/ /\ LateDrainBegin \/ LateWipe
-       /\ UNCHANGED <<ul, ulStale>>
+       /\ UNCHANGED <<ul, ulStale, ulRecov, overRecovery>>
 
 Spec == Init /\ [][Next]_vars
 
@@ -453,6 +488,8 @@ TypeOK ==
     /\ late \in {"none", "locking", "draining"}
     /\ wipedLive \in BOOLEAN
     /\ \A u \in Unlockers : ul[u] \in {"idle", "deriving"} /\ ulStale[u] \in BOOLEAN
+    /\ \A u \in Unlockers : ulRecov[u] \in BOOLEAN
+    /\ overRecovery \in BOOLEAN
 
 \* KU1: no rotating signature is returned after a lock or a recovery began
 \* during its sign.
@@ -467,11 +504,16 @@ KU3_NoExportAfterWipe == ~lateExport
 \* KU4: the session is never cleared while the signer is unlocked.
 KU4_NoWipeWhileUnlocked == ~wipedLive
 
+\* KU5: an unlock never publishes unlocked over a recovery entered after it
+\* began.
+KU5_NoUnlockOverLaterRecovery == ~overRecovery
+
 Safety ==
     /\ TypeOK
     /\ KU1_NoSignatureAfterLock
     /\ KU2_NoKeyMaterialAtWipe
     /\ KU3_NoExportAfterWipe
     /\ KU4_NoWipeWhileUnlocked
+    /\ KU5_NoUnlockOverLaterRecovery
 
 =============================================================================

@@ -377,8 +377,11 @@ root.
 
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails,
-the result reports `success:true` with a zero key count and
-`code:"recovery_blocked"`. The signer store is unlocked for administration only;
+or when a store change on another connection ends in doubt and enters
+recovery while the unlock is still running (its passphrase checks and reload
+run outside the store mutation lock), the result reports `success:true` with
+a zero key count and `code:"recovery_blocked"`. The unlock then publishes
+nothing, so it never lifts a recovery entered after it began. The signer store is unlocked for administration only;
 signing stays blocked until the operator resolves the store from recovery
 mode. Clients must treat `recovery_blocked` as a store-integrity state
 distinct from both `unlock_failed` and credential rejection.

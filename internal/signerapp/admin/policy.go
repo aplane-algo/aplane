@@ -109,8 +109,9 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	// An unlock in flight on another connection opens the keyring before it
 	// publishes unlocked, outside this lock, so an open keyring does not mean
 	// an unlocked signer. A commit then would meet a locked signer if its
-	// reload failed, where SetRecovery does nothing, and the unlock would
-	// publish unlocked over a generation the runtime had not followed.
+	// reload failed, where SetRecovery does nothing and leaves the session
+	// generation TryUnlock's fence compares where it was, and the unlock
+	// would publish unlocked over a generation the runtime had not followed.
 	if !ir.IsUnlocked() {
 		return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
 	}
@@ -128,11 +129,6 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 		if outcome.Uncertain {
 			ir.SetRecovery()
 			_, _ = ir.Reload()
-			// Again after the reload: a second unlock of this unlocked
-			// signer, on another connection, publishes unlocked when its
-			// own reload returns, outside the store mutation lock, so it
-			// can publish while this reload runs.
-			ir.SetRecovery()
 		}
 		return err
 	}
