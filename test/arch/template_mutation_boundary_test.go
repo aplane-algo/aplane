@@ -148,7 +148,11 @@ func TestTemplateMutationCallsStayInLibrary(t *testing.T) {
 
 // TestTemplateRecordRepairsStayInTheOfflineRepair confines the record
 // repairs to internal/signerapp/templaterepair, and that package to
-// apstore, which runs it with the signer stopped.
+// apstore, which runs it with the signer stopped. templatelibrary itself may
+// not call them either: an unqualified call there would re-export them
+// under another name. A package between templaterepair and apstore that
+// wraps them is the one path the checks leave, since templaterepair may
+// export anything; that is reviewed by hand.
 func TestTemplateRecordRepairsStayInTheOfflineRepair(t *testing.T) {
 	root := repositoryRoot(t)
 	repairCalls := make(map[string]bool)
@@ -171,6 +175,15 @@ func TestTemplateRecordRepairsStayInTheOfflineRepair(t *testing.T) {
 			return err
 		}
 		packagePath := modulePrefix + "/" + filepath.ToSlash(filepath.Dir(relative))
+		if packagePath == templateLibraryPackage {
+			inPackage, err := unqualifiedReferencesInFile(path, templateRepairAPIs[templateLibraryPackage])
+			if err != nil {
+				return err
+			}
+			for _, call := range inPackage {
+				t.Errorf("%s:%d references %s from %q: templatelibrary may not call its record repairs itself", filepath.ToSlash(relative), call.position.Line, call.api, call.function)
+			}
+		}
 		calls, dotImports, err := templateLeafCallsInFile(path, templateRepairAPIs)
 		if err != nil {
 			return err
@@ -305,6 +318,44 @@ func templateLeafCallsInFile(path string, apis map[string]map[string]bool) ([]te
 		})
 	}
 	return calls, dotImports, nil
+}
+
+// unqualifiedReferencesInFile lists the references in path, a file of the
+// package that declares apis, to those apis by their bare names, other than
+// their own declarations.
+func unqualifiedReferencesInFile(path string, apis map[string]bool) ([]templateLeafCall, error) {
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, path, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	var references []templateLeafCall
+	for _, declaration := range file.Decls {
+		function := ""
+		var declared *ast.Ident
+		if decl, ok := declaration.(*ast.FuncDecl); ok {
+			function, declared = decl.Name.Name, decl.Name
+		}
+		var visit func(ast.Node) bool
+		visit = func(node ast.Node) bool {
+			if selector, ok := node.(*ast.SelectorExpr); ok {
+				// In x.Name, Name is a field, a method or another package's
+				// name, never this package's function.
+				ast.Inspect(selector.X, visit)
+				return false
+			}
+			ident, ok := node.(*ast.Ident)
+			if !ok || ident == declared || !apis[ident.Name] {
+				return true
+			}
+			references = append(references, templateLeafCall{
+				api: ident.Name, function: function, position: fileset.Position(ident.Pos()),
+			})
+			return true
+		}
+		ast.Inspect(declaration, visit)
+	}
+	return references, nil
 }
 
 // TestTemplateLeafCallParserResolvesAliases is a fast unit control for the

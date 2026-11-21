@@ -61,7 +61,11 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 // import. The live template commands moved to apadmin; apstore keeps only
 // the offline repair, run with apsigner stopped, and reaches templates
 // through internal/signerapp/templaterepair alone, so a template command
-// that installs, imports or removes cannot be added to it.
+// that installs, imports or removes cannot be added to it directly. The
+// check is on apstore's own imports, so a new package between apstore and
+// these that wraps a template mutation would pass it: an import check cannot
+// tell that package from templaterepair, which imports templatelibrary
+// itself. That path is reviewed by hand.
 var apstoreForbiddenTemplateImports = map[string]bool{
 	"github.com/aplane-algo/aplane/internal/templatelibrary":         true,
 	"github.com/aplane-algo/aplane/internal/templatestore":           true,
