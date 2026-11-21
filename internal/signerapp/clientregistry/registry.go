@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // Entry is one enrolled key.
@@ -58,16 +60,17 @@ const MaxLabelBytes = 64
 // NormalizeLabel trims label and checks that it is a bounded, printable,
 // single-line display text, the only form the registry writes: a label is
 // emitted verbatim after the key on its authorized_keys line, so a line
-// break would become a key line of its own.
+// break would become a key line of its own, and an operator reads it in
+// apadmin, so it is valid UTF-8 that prints as itself (termsafe.Printable),
+// with no control, format or other non-printing character. Printable
+// Unicode, such as CJK, is allowed.
 func NormalizeLabel(label string) (string, error) {
 	label = strings.TrimSpace(label)
 	if len(label) > MaxLabelBytes {
 		return "", fmt.Errorf("label exceeds %d bytes", MaxLabelBytes)
 	}
-	for _, r := range label {
-		if r < 0x20 || r == 0x7f {
-			return "", errors.New("label must be printable single-line text")
-		}
+	if !termsafe.Printable(label) {
+		return "", errors.New("label must be printable single-line text")
 	}
 	return label, nil
 }

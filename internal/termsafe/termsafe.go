@@ -20,6 +20,22 @@ import (
 	"unicode/utf8"
 )
 
+// Printable reports whether s is valid UTF-8 and every character in it
+// prints as itself on one line, so Line leaves it as it is: no control,
+// format or other non-printing character, and no invalid byte. Printable
+// Unicode, such as CJK, is printable.
+func Printable(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if !printsAs(r, false) {
+			return false
+		}
+	}
+	return true
+}
+
 // Line escapes s for printing on one line.
 func Line(s string) string { return escapeNonPrinting(s, false, false) }
 

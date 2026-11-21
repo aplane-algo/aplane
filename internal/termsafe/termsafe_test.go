@@ -3,7 +3,10 @@
 
 package termsafe
 
-import "testing"
+import (
+	"testing"
+	"unicode/utf8"
+)
 
 func TestEscaping(t *testing.T) {
 	tests := []struct {
@@ -54,5 +57,26 @@ func TestScreenKeepsStylingOnly(t *testing.T) {
 				t.Errorf("Screen(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// Printable holds exactly for text Line leaves as it is: printable Unicode,
+// CJK included, and no control, format or other non-printing character or
+// invalid byte.
+func TestPrintable(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want bool
+	}{
+		{"", true}, {"ops laptop", true}, {"田中のノートPC", true}, {"phone 😀", true},
+		{"a\nb", false}, {"a\tb", false}, {"a\x1b[2Jb", false}, {"a\x7fb", false},
+		{"a\u0085b", false}, {"a\u202eb", false}, {"a\u200bb", false}, {"a\u00a0b", false}, {"a\xffb", false},
+	} {
+		if got := Printable(tc.s); got != tc.want {
+			t.Errorf("Printable(%q) = %v, want %v", tc.s, got, tc.want)
+		}
+		if got := Line(tc.s) == tc.s && utf8.ValidString(tc.s); got != tc.want {
+			t.Errorf("Line(%q) leaves it as it is: %v, want %v", tc.s, got, tc.want)
+		}
 	}
 }

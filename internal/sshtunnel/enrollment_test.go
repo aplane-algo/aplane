@@ -61,13 +61,57 @@ func TestParseEnrollmentCommand(t *testing.T) {
 		{"enroll ", "", false},
 		{"enrollx", "", false},
 		{"provision", "", false},
-		{"enroll bad\x1bescape", "", false},
-		{"enroll " + strings.Repeat("a", maxEnrollmentLabelBytes+1), "", false},
+		// A label is checked when the request is admitted, which refuses
+		// it with a reason (validEnrollmentLabel).
+		{"enroll bad\x1bescape", "bad\x1bescape", true},
+		{"enroll " + strings.Repeat("a", maxEnrollmentLabelBytes+1), strings.Repeat("a", maxEnrollmentLabelBytes+1), true},
 	}
 	for _, tt := range tests {
 		label, ok := parseEnrollmentCommand(tt.command)
 		if ok != tt.ok || label != tt.label {
 			t.Fatalf("parseEnrollmentCommand(%q) = (%q, %v), want (%q, %v)", tt.command, label, ok, tt.label, tt.ok)
+		}
+	}
+}
+
+// An enrollment request carries a label only of bounded, valid UTF-8 that
+// prints as itself on one line, so the operator reads what the client sent:
+// printable Unicode, CJK included, is admitted, and control, format and
+// other non-printing characters and invalid bytes are not.
+func TestValidEnrollmentLabel(t *testing.T) {
+	for _, tc := range []struct {
+		label string
+		ok    bool
+	}{
+		{"", true}, {"laptop", true}, {"田中のノートPC", true}, {"phone 😀", true},
+		{strings.Repeat("a", maxEnrollmentLabelBytes), true},
+		{strings.Repeat("a", maxEnrollmentLabelBytes+1), false},
+		{"bad\x1bescape", false}, {"bad\x7f", false}, {"bad\xff", false},
+		{"bad\u0085c1", false}, {"bad\u202ebidi", false}, {"bad\u200bzero-width", false}, {"bad\u00a0space", false},
+	} {
+		if got := validEnrollmentLabel(tc.label); got != tc.ok {
+			t.Errorf("validEnrollmentLabel(%q) = %v, want %v", tc.label, got, tc.ok)
+		}
+	}
+}
+
+// A request whose label is not one an approver can read as sent is refused
+// with the reason, and nothing is recorded.
+func TestEnrollment_RefusesAnUnprintableLabel(t *testing.T) {
+	for _, label := range []string{"laptop\u202ebidi", "laptop\xff", "lap\u0085top"} {
+		srv, _ := testServer(t)
+		var requests []string
+		setEnrollmentHooks(srv, EnrollmentHooks{Request: pendingHook(&requests)})
+		clientSigner, _ := generateClientKey(t)
+		output, exitCode, err := runEnrollmentSessionWithCommand(t, srv, clientSigner, "enroll "+label)
+		if err != nil {
+			t.Fatalf("label %q: session error: %v", label, err)
+		}
+		if want := "ERROR: " + errInvalidEnrollmentLabel.Error() + "\n"; exitCode == 0 || output != want {
+			t.Errorf("label %q: exit %d output %q, want %q", label, exitCode, output, want)
+		}
+		if len(requests) != 0 {
+			t.Errorf("label %q: recorded %q", label, requests)
 		}
 	}
 }

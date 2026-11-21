@@ -152,6 +152,11 @@ func TestNormalizeLabel(t *testing.T) {
 		{name: "line break injects a key line", label: "lab\nssh-ed25519 AAAA evil"},
 		{name: "control character", label: "lab\x7fel"},
 		{name: "tab", label: "lab\tel"},
+		{name: "CJK", label: "田中のノートPC", want: "田中のノートPC", ok: true},
+		{name: "invalid UTF-8", label: "lab\xffel"},
+		{name: "C1 control", label: "lab\u0085el"},
+		{name: "bidirectional override", label: "lab\u202eel"},
+		{name: "no-break space", label: "lab\u00a0el"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

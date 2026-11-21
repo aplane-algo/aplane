@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -943,8 +944,8 @@ func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh
 }
 
 // parseEnrollmentCommand accepts "enroll" or "enroll <label>" and returns the
-// label. A label is bounded, printable, and single-line; anything else is
-// not an enrollment command.
+// label, trimmed; anything else is not an enrollment command. The label is
+// checked when the request is admitted (validEnrollmentLabel).
 func parseEnrollmentCommand(command string) (label string, ok bool) {
 	if command == enrollmentCommand {
 		return "", true
@@ -954,15 +955,23 @@ func parseEnrollmentCommand(command string) (label string, ok bool) {
 		return "", false
 	}
 	rest = strings.TrimSpace(rest)
-	if rest == "" || len(rest) > maxEnrollmentLabelBytes {
+	if rest == "" {
 		return "", false
 	}
-	for _, r := range rest {
-		if r < 0x20 || r == 0x7f {
-			return "", false
-		}
-	}
 	return rest, true
+}
+
+// errInvalidEnrollmentLabel refuses an enrollment request whose label is not
+// one validEnrollmentLabel admits.
+var errInvalidEnrollmentLabel = fmt.Errorf("enrollment label must be printable single-line text of at most %d bytes", maxEnrollmentLabelBytes)
+
+// validEnrollmentLabel reports whether label is one an enrollment request may
+// carry: at most maxEnrollmentLabelBytes bytes of valid UTF-8 that prints as
+// itself on one line (termsafe.Printable), with no control, format or other
+// non-printing character, so the operator reads it as the client sent it.
+// Printable Unicode, such as CJK, is allowed.
+func validEnrollmentLabel(label string) bool {
+	return len(label) <= maxEnrollmentLabelBytes && termsafe.Printable(label)
 }
 
 // requestEnrollment runs the connection's single enrollment request and
@@ -973,6 +982,11 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 	if _, already := s.enrollmentClaims.LoadOrStore(sshConn, struct{}{}); already {
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: only one enrollment request is allowed per connection\n", 1)
 		return false
+	}
+	if !validEnrollmentLabel(label) {
+		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v: %s\n", remoteAddr, fingerprint, errInvalidEnrollmentLabel, quoteClientText(label))
+		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+errInvalidEnrollmentLabel.Error()+"\n", 1)
+		return true
 	}
 
 	key, ok := enrollmentPublicKey(sshConn.Permissions)
