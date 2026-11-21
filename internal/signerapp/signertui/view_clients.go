@@ -7,9 +7,11 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/aplane-algo/aplane/internal/termsafe"
 )
 
 // renderEnrolledClients lists the enrollment requests waiting for approval
@@ -98,31 +100,40 @@ const (
 	clientLabelMinWidth    = 8
 )
 
+// clientLabelWidth sizes the label column for every label quoted in ASCII,
+// as clientRow draws it.
 func (m Model) clientLabelWidth() int {
 	longest := 0
 	for _, req := range m.clients.pending {
-		longest = max(longest, utf8.RuneCountInString(terminalSafe(req.Label)))
+		longest = max(longest, len(strconv.QuoteToASCII(req.Label)))
 	}
 	for _, key := range m.clients.keys {
-		longest = max(longest, utf8.RuneCountInString(terminalSafe(key.Label)))
+		longest = max(longest, len(strconv.QuoteToASCII(key.Label)))
 	}
 	const cursorAndGaps = 2 + 2 + 2
 	room := m.tableWidth() - cursorAndGaps - clientFingerprintWidth - len(clientConnectedFlag)
 	return min(longest, max(room, clientLabelMinWidth))
 }
 
+// clientRow is one row of the list. The label is the client's own text, so
+// it is quoted in ASCII and cut in its column (termsafe.QuotedField).
 func clientRow(cursor, fingerprint, label string, labelWidth int) string {
-	return fmt.Sprintf("%s%-*s  %-*s", cursor, clientFingerprintWidth, fingerprint,
-		labelWidth, ellipsizeMiddle(terminalSafe(label), labelWidth))
+	cell := ""
+	if label != "" {
+		cell = termsafe.QuotedField("", label, labelWidth)
+	}
+	return fmt.Sprintf("%s%-*s  %s", cursor, clientFingerprintWidth, fingerprint, padRight(cell, labelWidth))
 }
 
-// selectedClientDetails describes the selected row below the list.
+// selectedClientDetails describes the selected row below the list, each
+// field one row the client's text cannot leave (termsafe.Field).
 func (m Model) selectedClientDetails() []string {
-	field := func(label, value string) string { return fmt.Sprintf("%-11s%s", label+":", value) }
+	name := func(label string) string { return fmt.Sprintf("%-11s", label+":") }
+	field := func(label, value string) string { return termsafe.Field(name(label), value, m.tableWidth()) }
 	var lines []string
 	addLabel := func(label string) {
 		if label != "" {
-			lines = append(lines, field("Label", terminalSafe(label)))
+			lines = append(lines, termsafe.QuotedField(name("Label"), label, m.tableWidth()))
 		}
 	}
 	selected := m.clients.selected
@@ -131,7 +142,7 @@ func (m Model) selectedClientDetails() []string {
 		addLabel(req.Label)
 		lines = append(lines, field("Key type", req.KeyType))
 		if req.RemoteAddr != "" {
-			lines = append(lines, field("From", terminalSafe(req.RemoteAddr)))
+			lines = append(lines, field("From", req.RemoteAddr))
 		}
 		return append(lines, field("Requested", time.Unix(req.RequestedAt, 0).Local().Format("2006-01-02 15:04")))
 	}
@@ -154,10 +165,12 @@ func (m Model) renderRevokeClientConfirm() string {
 	} else {
 		sb.WriteString(errorStyle.Render("REVOKE CLIENT KEY"))
 		sb.WriteString("\n\n")
-		// The label is the client's own, sent before it was trusted.
-		sb.WriteString("Key: " + terminalSafe(m.clients.confirmKey) + "\n")
+		// The label is the client's own, sent before it was trusted, so each
+		// field is one row its text cannot leave, as on the enrollment popup.
+		width := m.popupBodyWidth(80)
+		sb.WriteString(termsafe.Field("Key: ", m.clients.confirmKey, width) + "\n")
 		if m.clients.confirmLabel != "" {
-			sb.WriteString("Label: " + terminalSafe(m.clients.confirmLabel) + "\n")
+			sb.WriteString(termsafe.QuotedField("Label: ", m.clients.confirmLabel, width) + "\n")
 		}
 		sb.WriteString("\n")
 		sb.WriteString(errorStyle.Render("This client's connections will be closed."))

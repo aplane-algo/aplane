@@ -167,3 +167,56 @@ func TestEnrolledClientsListFailuresAreShown(t *testing.T) {
 		t.Fatalf("lists after the failures:\n%s", view)
 	}
 }
+
+// The details screen takes only the reply to the read it waits on. A reply to
+// a read left with Esc, which arrives after the entry is opened again, is not
+// the new read's answer, and the new read's own reply is still taken.
+func TestLibraryDetailsTakeOnlyTheReplyToTheirOwnRead(t *testing.T) {
+	const keyType = "aplane.htlc.v1"
+	m := Model{viewState: ViewTemplateLibrary, width: 100, height: 30, library: libraryState{templates: []protocol.LibraryTemplateInfo{{
+		KeyType: keyType, TemplateType: "generic", SourcePath: "/library/aplane.htlc.v1.yaml",
+	}}}}
+	m = press(t, m, "t")
+	left := m.library.detailsRequestID
+	m = press(t, m, "esc", "t")
+	current := m.library.detailsRequestID
+	if left == "" || current == "" || left == current || m.viewState != ViewLibraryTemplateDetails {
+		t.Fatalf("reads %q then %q on view %v, want two reads with their own IDs", left, current, m.viewState)
+	}
+	reply := func(id string, success bool, body, errText string) tea.Msg {
+		return decodeSignerReply(t, protocol.ShowLibraryTemplateResultMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeShowLibraryTemplateResult, ID: id},
+			Success:     success, KeyType: keyType, TemplateType: "generic",
+			TemplateYAML: protocol.SensitiveBytes(body), Error: errText,
+		})
+	}
+	m = updateModel(t, m, reply(left, false, "", "template not found"))
+	if !m.library.detailsLoading || m.library.detailsError != "" {
+		t.Fatalf("the left read's reply settled the current read: loading %v error %q", m.library.detailsLoading, m.library.detailsError)
+	}
+	m = updateModel(t, m, reply(current, true, "schema_version: 2\n", ""))
+	if view := stripANSI(m.renderLibraryTemplateDetails()); m.library.detailsLoading || !strings.Contains(view, "schema_version: 2") {
+		t.Fatalf("the current read's reply was not taken: loading %v\n%s", m.library.detailsLoading, view)
+	}
+}
+
+// Opening details starts over: a read that never settled, such as one a lock
+// interrupted, is not waited on by the next details screen, so its reply
+// cannot replace a compiled provider's details.
+func TestLibraryDetailsForgetAReadThatNeverSettled(t *testing.T) {
+	m := Model{viewState: ViewTemplateLibrary, width: 100, height: 30, library: libraryState{
+		detailsLoading: true, detailsRequestID: "tmpl-show-library-interrupted", detailsKeyType: "aplane.htlc.v1",
+		templates: []protocol.LibraryTemplateInfo{{KeyType: "aplane.falcon1024.v1", TemplateType: libraryTypeCompiledProvider, Installed: true}},
+	}}
+	m = press(t, m, "t")
+	if m.viewState != ViewLibraryTemplateDetails || m.library.detailsLoading || m.library.detailsRequestID != "" {
+		t.Fatalf("compiled details: view %v loading %v waiting on %q", m.viewState, m.library.detailsLoading, m.library.detailsRequestID)
+	}
+	m = updateModel(t, m, decodeSignerReply(t, protocol.ShowLibraryTemplateResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeShowLibraryTemplateResult, ID: "tmpl-show-library-interrupted"},
+		Success:     true, KeyType: "aplane.htlc.v1", TemplateType: "generic", TemplateYAML: protocol.SensitiveBytes("schema_version: 2\n"),
+	}))
+	if view := stripANSI(m.renderLibraryTemplateDetails()); !strings.Contains(view, "Compiled provider: aplane.falcon1024.v1") || strings.Contains(view, "schema_version") {
+		t.Fatalf("the interrupted read's reply replaced the compiled details:\n%s", view)
+	}
+}

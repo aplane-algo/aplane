@@ -185,8 +185,8 @@ func TestEnrollmentChannelsAreCapped(t *testing.T) {
 // Unauthenticated client text is quoted and truncated before it is logged,
 // so terminal escapes cannot reach an operator's console.
 func TestQuoteClientTextEscapesAndTruncates(t *testing.T) {
-	if got := quoteClientText("\x1b[2Jfake\nline"); strings.ContainsAny(got, "\x1b\n") {
-		t.Fatalf("quoteClientText() = %q, want control characters escaped", got)
+	if got := quoteClientText("\x1b[2Jfake\nline\u7530"); strings.ContainsAny(got, "\x1b\n\u7530") {
+		t.Fatalf("quoteClientText() = %q, want control characters and all beyond ASCII escaped", got)
 	}
 	if got := quoteClientText(strings.Repeat("a", 500)); len(got) > maxLoggedClientTextBytes+8 {
 		t.Fatalf("quoteClientText() length = %d, want it truncated", len(got))

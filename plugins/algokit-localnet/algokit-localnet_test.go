@@ -20,9 +20,8 @@ func execute(t *testing.T, params ExecuteParams) *Response {
 	return handleExecute(&Request{Jsonrpc: "2.0", Method: "execute", Params: raw, ID: 1})
 }
 
-// The subcommand is the first argument, whatever command name the host
-// sends: the manifest's "localnet", or the plugin's own name, which JS
-// plugin("algokit-localnet", ...) sends.
+// The subcommand is the first argument of the manifest's one command,
+// "localnet".
 func TestExecuteTakesTheSubcommandFromTheArguments(t *testing.T) {
 	cfg.network = "localnet"
 	for _, tc := range []struct {
@@ -32,7 +31,6 @@ func TestExecuteTakesTheSubcommandFromTheArguments(t *testing.T) {
 	}{
 		{name: "manifest command", params: ExecuteParams{Command: "localnet", Args: []string{"help"}}},
 		{name: "no arguments", params: ExecuteParams{Command: "localnet"}},
-		{name: "plugin name", params: ExecuteParams{Command: "algokit-localnet", Args: []string{"help"}}},
 		{name: "unknown subcommand", params: ExecuteParams{Command: "localnet", Args: []string{"bogus"}}, unknown: "bogus"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

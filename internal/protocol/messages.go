@@ -693,6 +693,10 @@ type ImportClientKeyResultMessage struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Label       string `json:"label,omitempty"`
 	Added       bool   `json:"added"`
+	// CommentRefused reports that the key line's comment, taken for the
+	// label when none was given, is not a label the registry admits, so
+	// the key was enrolled without one.
+	CommentRefused bool `json:"comment_refused,omitempty"`
 }
 
 // ListEnrolledKeysMessage asks for the enrolled client keys.

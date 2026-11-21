@@ -105,16 +105,17 @@ func ProtocolRejectEnrollmentResultMessage(id, fingerprint string, err error) pr
 	return result
 }
 
-func ProtocolImportClientKeyResultMessage(id, fingerprint, label string, added bool, err error) protocol.ImportClientKeyResultMessage {
+func ProtocolImportClientKeyResultMessage(id string, imported ImportedClientKey, err error) protocol.ImportClientKeyResultMessage {
 	result := protocol.ImportClientKeyResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportClientKeyResult,
 			ID:   id,
 		},
-		Success:     err == nil,
-		Fingerprint: fingerprint,
-		Label:       label,
-		Added:       added,
+		Success:        err == nil,
+		Fingerprint:    imported.Fingerprint,
+		Label:          imported.Label,
+		Added:          imported.Added,
+		CommentRefused: imported.CommentRefused,
 	}
 	if err != nil {
 		result.Code = protocol.CodeForError(err)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -227,8 +228,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		return m.renderPopup(70, "Error: parameters not available")
 	}
 
+	// The title's margin is the gap above the fields.
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s Parameters", spec.DisplayName)))
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	params := spec.Params
 	sb.WriteString(scrollMoreAboveLine(m.forms.generateParamScrollOffset))
@@ -281,11 +283,11 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	return m.renderPopup(80, sb.String())
 }
 
-// visibleParamModalFields is how many parameter fields the modal renders at
-// the current terminal height.
+// visibleParamModalFields is how many parameter fields the modal renders in
+// the popup's height, which follows the status bar as drawn.
 func (m Model) visibleParamModalFields() int {
-	const reservedLines = 12 // title + button + help + error + margins
-	availableHeight := max(m.height-reservedLines, 12)
+	const reservedLines = 6 // title + button + help + error + margins
+	availableHeight := max(m.popupContentHeight()-reservedLines, 12)
 	return max(availableHeight/8, 1)
 }
 
@@ -474,18 +476,13 @@ func parameterRequirementLabel(label string, required bool) string {
 	return label + " (optional)"
 }
 
+// fixedWidthFieldLine cuts or pads line to width columns, as the terminal
+// draws them.
 func fixedWidthFieldLine(line string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(line)
-	if len(runes) > width {
-		return string(runes[:width])
-	}
-	if len(runes) < width {
-		return line + strings.Repeat(" ", width-len(runes))
-	}
-	return line
+	return padRight(ansi.Truncate(line, width, ""), width)
 }
 
 func (m Model) constrainParameterFieldWidth(width int) int {

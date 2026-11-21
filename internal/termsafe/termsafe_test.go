@@ -56,3 +56,21 @@ func TestScreenKeepsStylingOnly(t *testing.T) {
 		})
 	}
 }
+
+// PrintableASCII holds for printable ASCII only: no control, no character
+// beyond ASCII however printable, and no invalid byte.
+func TestPrintableASCII(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want bool
+	}{
+		{"", true}, {"ops laptop", true}, {` !"#~`, true},
+		{"\u7530\u4e2d", false}, {"phone \U0001f600", false}, {"a\u2e3bb", false}, {"e\u0301", false},
+		{"a\nb", false}, {"a\tb", false}, {"a\x1b[2Jb", false}, {"a\x7fb", false},
+		{"a\u0085b", false}, {"a\u202eb", false}, {"a\u00a0b", false}, {"a\xffb", false},
+	} {
+		if got := PrintableASCII(tc.s); got != tc.want {
+			t.Errorf("PrintableASCII(%q) = %v, want %v", tc.s, got, tc.want)
+		}
+	}
+}

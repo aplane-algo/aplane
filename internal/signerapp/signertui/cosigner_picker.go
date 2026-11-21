@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/apadminapp"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
@@ -17,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // isCosignerSelectorParam reports whether the picker fills param. A type that
@@ -179,7 +179,11 @@ func (m *Model) clearCosignerWorkflowState() {
 	m.cosigner.managerSelected = 0
 	m.cosigner.managerScroll = 0
 	m.cosigner.managerStatus = ""
+	m.cosigner.deleteHint = ""
+	m.cosigner.detailsName = ""
 	m.cosigner.removeFocus = 0
+	m.cosigner.removeName = ""
+	m.cosigner.removeInvalid = false
 	m.cosigner.generateTypeIndices = nil
 	m.cosigner.generateTypeSelected = 0
 	m.cosigner.generateFromManager = false
@@ -559,7 +563,7 @@ func (m Model) cosignerSelectionDisplay(witnessKeyID string) string {
 func (m Model) cosignerPickerAliasWidth() int {
 	longest, rest := 0, 0
 	for _, choice := range m.cosigner.choices {
-		longest = max(longest, utf8.RuneCountInString(choice.PrimaryAlias))
+		longest = max(longest, ansi.StringWidth(choice.PrimaryAlias))
 		used := len("> ") + len("  ") + len(apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
 		if len(choice.Aliases) > 1 {
 			used += len(fmt.Sprintf("  (%d aliases)", len(choice.Aliases)))
@@ -569,31 +573,31 @@ func (m Model) cosignerPickerAliasWidth() int {
 	return min(longest, max(m.popupBodyWidth(80)-rest, 8))
 }
 
+// renderCosignerPicker shows the cosigner choices, scrolled around the
+// selected one when they do not all fit, and under them the two actions,
+// which stay on screen; with an action selected, the list keeps its end in
+// view.
 func (m Model) renderCosignerPicker() string {
-	var body strings.Builder
-	body.WriteString(titleStyle.Render("Choose Cosigner"))
-	body.WriteString("\n\n")
-	body.WriteString(subtitleStyle.Render("Select a cosigner key"))
-	body.WriteString("\n\n")
+	header := titleStyle.Render("Choose Cosigner") + "\n\n" + subtitleStyle.Render("Select a cosigner key") + "\n\n"
 	aliasWidth := m.cosignerPickerAliasWidth()
+	rows := make([]string, len(m.cosigner.choices))
 	for index, choice := range m.cosigner.choices {
 		prefix := "  "
 		if index == m.cosigner.selected {
 			prefix = "> "
 		}
-		row := fmt.Sprintf("%s%-*s  %s", prefix, aliasWidth, ellipsizeMiddle(choice.PrimaryAlias, aliasWidth),
-			apadminapp.CompactWitnessKeyID(choice.WitnessKeyID))
+		row := prefix + padRight(ellipsizeMiddle(choice.PrimaryAlias, aliasWidth), aliasWidth) + "  " +
+			apadminapp.CompactWitnessKeyID(choice.WitnessKeyID)
 		if len(choice.Aliases) > 1 {
 			row += fmt.Sprintf("  (%d aliases)", len(choice.Aliases))
 		}
 		if index == m.cosigner.selected {
-			body.WriteString(selectedStyle.Render(row))
-		} else {
-			body.WriteString(row)
+			row = selectedStyle.Render(row)
 		}
-		body.WriteString("\n")
+		rows[index] = row
 	}
-	body.WriteString("\n")
+	var footer strings.Builder
+	footer.WriteString("\n")
 	for action, label := range [cosignerPickerActionRows]string{
 		cosignerPickerUseFileRow: "Use setup file...",
 		cosignerPickerPasteRow:   "Paste public JSON...",
@@ -602,12 +606,12 @@ func (m Model) renderCosignerPicker() string {
 		if m.cosigner.selected == len(m.cosigner.choices)+action {
 			row = selectedStyle.Render("> " + label)
 		}
-		body.WriteString(row + "\n")
+		footer.WriteString(row + "\n")
 	}
-	body.WriteString("\n")
-	body.WriteString(helpStyle.Render("↑/↓ navigate  Enter select  Esc cancel"))
-	body.WriteString("\n")
-	return m.renderPopup(80, body.String())
+	footer.WriteString("\n")
+	footer.WriteString(helpStyle.Render("↑/↓ navigate  Enter select  Esc cancel"))
+	footer.WriteString("\n")
+	return m.renderPopup(80, m.fitSelectionList(header, rows, m.cosigner.selected, footer.String(), 80))
 }
 
 func (m Model) renderCosignerImportForm() string {

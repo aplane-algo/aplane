@@ -228,7 +228,6 @@ type restoreState struct {
 	backupsLoaded       bool
 	backupsListErr      string // why the last list failed; a list that arrives clears it
 	selectedBackup      int
-	backupScrollOffset  int
 	archivePath         string
 	archiveCreatedAt    int64 // sealed creation time from the preview
 	passphrase          []byte
@@ -362,7 +361,19 @@ type cosignerState struct {
 	managerSelected int
 	managerScroll   int
 	managerStatus   string
-	removeFocus     int
+	// detailsName is the reference the details screen shows, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another row.
+	detailsName string
+	// deleteHint is the path of the selected reference file that remove
+	// does not reach, which the manager says to delete.
+	deleteHint  string
+	removeFocus int
+	// removeName is what the remove confirmation removes, fixed when it
+	// opens, so a list that arrives meanwhile cannot move it to another
+	// row; removeInvalid says it is a reference file that is not a valid
+	// reference.
+	removeName    string
+	removeInvalid bool
 
 	generateTypeIndices  []int
 	generateTypeSelected int
@@ -439,6 +450,7 @@ type manualLockState struct {
 
 // keyDetailsState is the key metadata viewer.
 type keyDetailsState struct {
+	requestID                string // the details read the key list waits on
 	address                  string
 	keyType                  string
 	publicKeyHex             string
@@ -545,6 +557,9 @@ type Model struct {
 	// Notice (shown in status bar): a completed action, not a problem.
 	lastNotice           string
 	lastNoticeGeneration uint64
+	// lastNoticeArming reports that the notice says why an approval was not
+	// taken yet (setApprovalArmingNotice).
+	lastNoticeArming bool
 
 	// Screen dimensions. sizeKnown is set by the first size message, so a
 	// zero dimension it carried (a one-row standalone terminal leaves height
@@ -779,6 +794,9 @@ type ImportClientKeyResultMsg struct {
 	Fingerprint string
 	Label       string
 	Added       bool
+	// CommentRefused reports that the key's comment was left out as its
+	// label: it is not a label the signer admits.
+	CommentRefused bool
 }
 
 // RevokeEnrolledKeyResultMsg is sent when a client key revocation completes.
@@ -930,6 +948,7 @@ type lockIdentitySendFailedMsg struct {
 
 // KeyDetailsMsg is sent when key details are retrieved
 type KeyDetailsMsg struct {
+	ID                       string
 	Success                  bool
 	Address                  string
 	KeyType                  string
@@ -957,6 +976,7 @@ type InstallLibraryTemplateResultMsg struct {
 }
 
 type ShowLibraryTemplateResultMsg struct {
+	ID            string
 	Success       bool
 	KeyType       string
 	TemplateType  string

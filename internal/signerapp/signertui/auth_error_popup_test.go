@@ -236,3 +236,27 @@ func TestInvalidPassphraseStaysInlineOnAuthView(t *testing.T) {
 		t.Fatalf("errorPopupMessage = %q, want empty", got.errorPopup.message)
 	}
 }
+
+// A failed login or unlock ends the wait once and always says it failed, even
+// when the signer gives no reason.
+func TestFailedLoginOrUnlockWithoutAReasonSaysItFailed(t *testing.T) {
+	for _, tc := range []struct {
+		view ViewState
+		msg  tea.Msg
+		want string
+	}{
+		{ViewAuth, AuthResultMsg{Success: false}, "Authentication failed"},
+		{ViewUnlock, UnlockResultMsg{Success: false}, "Unlock failed"},
+	} {
+		m := sizedForTest(t, Model{viewState: tc.view, connectionState: ConnectionConnected, auth: authState{loggingIn: true, passphraseMasked: true}}, MinWidth, MinHeight)
+		got := updateModel(t, m, tc.msg)
+		if got.auth.loggingIn || got.auth.passphraseError != tc.want {
+			t.Fatalf("%T: loggingIn %v error %q, want false and %q", tc.msg, got.auth.loggingIn, got.auth.passphraseError, tc.want)
+		}
+		view := stripANSI(got.View())
+		checkFitsMinSize(t, view)
+		if !strings.Contains(view, tc.want) {
+			t.Fatalf("%T: %q missing from:\n%s", tc.msg, tc.want, view)
+		}
+	}
+}

@@ -117,7 +117,7 @@ func TestRevokeDialogEscapesTheClientLabel(t *testing.T) {
 	if strings.ContainsAny(view, "\u202e\u009b") {
 		t.Fatalf("the revoke dialog draws the client's control characters raw:\n%q", view)
 	}
-	if !strings.Contains(view, `Label: ops\u202elaptop\u009b31m`) {
+	if !strings.Contains(view, `Label: "ops\u202elaptop\u009b31m"`) {
 		t.Fatalf("the revoke dialog does not show the label escaped:\n%q", view)
 	}
 

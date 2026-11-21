@@ -442,12 +442,12 @@ without overlays and bounds; neither takes mnemonic import.
 - `sign_request`: `address`, `txn_sender`, `description`, `timestamp`, `first_valid`, `last_valid`, optional `violations` (each a `field`, `value`, `message` and `severity`: `critical`, `warning`, or `notice`, a finding shown without alarm and not counted among the warnings, such as a rekey to an account the signer holds a valid aplane key for). The message `id` is a fresh, single-use prompt ID that apsigner generates for each prompt; it is never the HTTP client's `request_id`, so a `sign_response` can approve only the prompt the operator was shown. `first_valid` and `last_valid` are the rounds the request can be submitted in (for a group, the rounds every member is valid), or 0 when unknown; apadmin and apapprover both show them beside the description. Optional `review` (`aplane.review.v1`) is the same request as data, for a client that draws it; see "Sign Request Review" below.
 - `sign_request_canceled`: optional `reason`; server-originated notification that a delivered `sign_request` is no longer actionable. Reasons are `client_canceled`, `timeout`, `session_ended` (the signer locked, entered recovery, or began store maintenance, so no request from the ended session can sign), and `approver_disconnected` or `approver_displaced` (the session the prompt was shown to ended before answering; a displacement sends the notice to the replacement session, which ignores an ID it never showed, and dismisses a prompt it was shown in the moment before the displacement completed). Admin clients must remove a matching active or queued signing prompt and must not send a later `sign_response` for that request.
 - `sign_response`: `approved`, optional `reason`; server-side handling attaches the admin session's approver principal for audit attribution
-- `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`enroll` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded and printable, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
+- `client_enrollment_request`: `ssh_fingerprint`, optional `label`, `remote_addr`, `timestamp`; a client asked over SSH (`enroll` username, `enroll [<label>]` command) to have its key enrolled, and the request now waits in the signer's queue. Its ID is `enroll-<fingerprint>`. It is sent when a new request is queued and, for every request still waiting, when an admin session authenticates, so a client may see the same request announced more than once. The label is the client's requested display text, bounded printable ASCII, and carries no authority. The admin client answers with `approve_enrollment` or `reject_enrollment` by fingerprint; there is no response to this notification itself, and the SSH client is not waiting on it.
 - `enrollment_changed`: `reason`, optional `fingerprint`; server-originated notification that what `list_pending_enrollments` or `list_enrolled_keys` would return has changed, whatever made the change: a request arriving over SSH, an answer or import from this admin session or from another admin client, or an enrolled key's client connection opening or closing (the `connected` flag). `reason` is one of `requested`, `approved`, `rejected`, `imported`, `revoked`, `revoked_all`, `connected`, `disconnected`; `fingerprint` names the key concerned and is absent for `revoked_all`. It is sent once the change has taken effect in the live state, before the result of the request that made it, and is sent even when the write behind the change is not yet durable (the result reports that). A repeat request refreshes the waiting entry's label, address, and time, and an approval or import that only clears the request of a key already enrolled (the retry after a failed queue write) changes the queue, so both are announced. A refused operation, or one that changed nothing (an import of an enrolled key with no request waiting), is not announced, and neither is an enrollment-request connection, whose request is announced instead. It carries no list: an admin client showing the queue or the registry re-fetches it with `list_pending_enrollments` and `list_enrolled_keys`. There is no response to this notification.
 - `list_pending_enrollments` -> `pending_enrollments_list`: `requests[]`, oldest first, each with `fingerprint`, optional `label`, `key_type`, optional `remote_addr`, and `requested_at` (Unix seconds)
-- `approve_enrollment`: `fingerprint`, optional `label` -> `approve_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`, `label`; enrolls the waiting request's key in `identities/default/.ssh/authorized_keys` with the request's label (or `label`, which replaces it), removes the request, and audits `CLIENT_ENROLLED` with the admin session's attribution. No credential is issued, because the client's key is its credential. A fingerprint with no waiting request, or a `label` that is not printable single-line text of at most 64 bytes, fails with `code:"invalid_request"`. A registry write that took effect but is not yet durable still clears the request and audits the enrollment; the result then carries the durability failure.
+- `approve_enrollment`: `fingerprint`, optional `label` -> `approve_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`, `label`; enrolls the waiting request's key in `identities/default/.ssh/authorized_keys` with the request's label (or `label`, which replaces it), removes the request, and audits `CLIENT_ENROLLED` with the admin session's attribution. No credential is issued, because the client's key is its credential. A fingerprint with no waiting request, or a `label` that is not printable ASCII text of at most 64 bytes (the rule in ARCH_SECURITY.md, "Client Enrollment via SSH"), fails with `code:"invalid_request"`. A registry write that took effect but is not yet durable still clears the request and audits the enrollment; the result then carries the durability failure.
 - `reject_enrollment`: `fingerprint` -> `reject_enrollment_result`: `success`, optional `code`, `error`, `fingerprint`; removes the waiting request without enrolling its key and audits `CLIENT_ENROLLMENT_REJECTED`. A fingerprint with no waiting request fails with `code:"invalid_request"`, as does a request whose key is already enrolled (an approval that enrolled the key but could not clear its request): approving again clears it, or the key is revoked.
-- `import_client_key`: `public_key` (one OpenSSH public-key line), optional `label` -> `import_client_key_result`: `success`, optional `code`, `error`, `fingerprint`, `label`, `added`; enrolls the key directly (pre-enrollment), using the line's comment as the label when none is given, and clears a waiting request for the same key. `added` is false when the key was already enrolled. A malformed line, a line carrying authorized_keys options (`from=`, `restrict`, ...; this version implements none, so the key would otherwise be enrolled without the restriction asked for), more than one line, an unsupported key type, or a label (given or taken from the comment) that is not printable single-line text of at most 64 bytes fails with `code:"invalid_request"`.
+- `import_client_key`: `public_key` (one OpenSSH public-key line), optional `label` -> `import_client_key_result`: `success`, optional `code`, `error`, `fingerprint`, `label`, `added`, optional `comment_refused`; enrolls the key directly (pre-enrollment), using the line's comment as the label when none is given, and clears a waiting request for the same key. `added` is false when the key was already enrolled. A comment that is not printable ASCII text of at most 64 bytes is not the label: the key is enrolled without one and `comment_refused` is true, since the operator typed no label to refuse. A malformed line, a line carrying authorized_keys options (`from=`, `restrict`, ...; this version implements none, so the key would otherwise be enrolled without the restriction asked for), more than one line, an unsupported key type, or a `label` given that is not printable ASCII text of at most 64 bytes (the rule in ARCH_SECURITY.md, "Client Enrollment via SSH") fails with `code:"invalid_request"`.
 - `list_enrolled_keys` -> `enrolled_keys_list`: `keys[]`, each with `fingerprint`, optional `label`, `key_type`, and `connected` (the key has at least one live SSH connection); waiting requests are listed by `list_pending_enrollments`
 - `revoke_enrolled_key`: `fingerprint` -> `revoke_enrolled_key_result`: `success`, optional `code`, `error`, `closed_connections`; removes the key from the registry and closes every SSH connection it authenticated. An empty or unknown fingerprint fails with `code:"invalid_request"`.
 - `revoke_all_enrolled_keys` -> `revoke_all_enrolled_keys_result`: `success`, optional `code`, `error`, `revoked_count`, `closed_connections`; the emergency lever: empties the registry and closes every client connection
@@ -1290,7 +1290,24 @@ only a "Window too small" screen, which says when an approval request is
 waiting, and ignores every key but `ctrl+c`, so no key acts on a screen the
 operator cannot see. A selection list that cannot show every row scrolls
 around the selection and keeps the text and buttons below it on screen
-(`fitSelectionList`).
+(`fitSelectionList`). The status bar's parts share its line while they fit;
+an alert, error, warning or notice too long for it goes under it, wrapped to
+the window with a word wider than a line, such as a path, broken
+(`wrapCutLines`), and the screen above gives up the rows it takes. Every
+screen sizes itself from the window body under the bar as drawn
+(`windowBodyHeight`), so a list keeps its selected row in view and a pager
+its "more" markers. The bar takes at most three rows under its line. They go
+to the alerts first, lost notifications among them since a lost notification
+can be an approval request, then the error, the approval's "One moment..."
+(why a key pressed too soon after a request came into view was not taken),
+the warning and the notice, a row kept for each later part while rows last
+and one always for the error. The parts left without a row are counted on
+the line, which keeps room for the count ("+2 more: warning, notice"); on
+the widest line of connection and signer state the count follows a space,
+so it fits for up to 9999 parts. The bar leaves out a failed list that its screen, the cosigner
+manager or the Backups page, already shows (`statusBarError`). A part longer than its rows is cut in the middle, at an ellipsis: it
+keeps its start and the most of its end its last row holds, since a Go error
+ends in its cause.
 
 Every field that names a file on the machine running `apadmin` can also be
 filled from a file browser (`internal/signerapp/signertui/file_browser.go`):
@@ -1346,7 +1363,22 @@ identifies the current screen. The enum has families for:
   first must not approve the second. The enrollment popup does the same, from
   when each request comes into view, the next queued one included, and each
   request opens with Reject focused whatever the focus was on the request
-  before it; the client's label and address are drawn escaped. `apapprover` reads whole lines, which the
+  before it. Text the client sent can never draw a line that reads like a
+  field: every field row of the popup, the Enrolled Clients details, the
+  revoke dialog and `apapprover`'s enrollment output is drawn by
+  `termsafe.Field` or `termsafe.QuotedField`, exactly one line of printable
+  ASCII no wider than the screen, every other character escaped as Go
+  escapes it and a row too long cut with `...`, so its width is exact on
+  every terminal and no value can wrap onto a line of its own. The label is
+  an ASCII Go string literal (`strconv.QuoteToASCII`), cut in the middle by
+  cutting the text and quoting each part (`"head"..."tail"`), so a cut never
+  splits an escape; a label stored before labels were ASCII shows as `\u`
+  escapes. The client list quotes it the same way in its column, a status
+  line names it quoted and cut to 32 columns, and `apadmin clients list`
+  prints it quoted on a line of its own under its key. In the signing review a value that wraps, an asset's URL or
+  a note, marks each line it continues onto with `| ` (`reviewWrap`), and
+  `apapprover` cuts a request line longer than its terminal into pieces
+  marked the same way, so no value can start a line of its own. `apapprover` reads whole lines, which the
   terminal buffers until Enter, so instead of a delay it shows each request
   with a fresh four-digit code and approves only `y <code>` for the request on
   screen
@@ -1441,7 +1473,11 @@ screen shows the complete grouped ID, witness key type, public-key digest,
 import time, and all aliases for the same authority. It deliberately does not
 render the raw public-key hex. Imports reuse the full-ID enrollment review and
 return to the manager when they were started there. Removing a reference is an
-explicit alias-scoped mutation whose confirmation defaults to Cancel.
+explicit alias-scoped mutation whose confirmation defaults to Cancel. Reference
+files that are not valid references are listed after the references, each with
+why. Choosing one that `remove_cosigner_reference` clears (`removable`) asks the
+same confirmation and removes it by its `name`; choosing any other says to
+delete the file.
 
 From reference details, `Generate account` filters the signer-advertised key
 types to those whose `cosigner_component_key_types` include the reference's

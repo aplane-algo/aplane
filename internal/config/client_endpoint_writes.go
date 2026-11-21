@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
@@ -86,6 +87,17 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
 	}
 	existing, exists := registry.Endpoints[alias]
+	// An upsert writes routing. The SSH paths are the client's own settings,
+	// which an import or create never supplies, so the alias keeps its paths
+	// unless the upsert names new ones.
+	if exists {
+		if normalized.IdentityFile == "" {
+			normalized.IdentityFile = existing.IdentityFile
+		}
+		if normalized.KnownHostsPath == "" {
+			normalized.KnownHostsPath = existing.KnownHostsPath
+		}
+	}
 	for existingAlias, existingEndpoint := range registry.Endpoints {
 		if existingAlias == alias {
 			continue
@@ -151,18 +163,20 @@ func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) err
 		registry.Endpoints[alias] = normalized
 	}
 
-	signerAlias := ""
+	var signerAliases []string
 	cosignerCount := 0
 	for alias, endpoint := range registry.Endpoints {
 		switch endpoint.Role {
 		case ClientEndpointRoleCosigner:
 			cosignerCount++
 		case ClientEndpointRoleSigner:
-			if signerAlias != "" {
-				return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
-			}
-			signerAlias = alias
+			signerAliases = append(signerAliases, alias)
 		}
+	}
+	if len(signerAliases) > 1 {
+		// Sorted, so the refusal reads the same on every run.
+		slices.Sort(signerAliases)
+		return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAliases[0], signerAliases[1])
 	}
 	if cosignerCount > MaxClientCosignerEndpoints {
 		return fmt.Errorf("%s configures %d cosigner endpoints; maximum is %d; remove or consolidate endpoint profiles", ClientEndpointsFile, cosignerCount, MaxClientCosignerEndpoints)

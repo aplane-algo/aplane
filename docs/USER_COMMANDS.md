@@ -1125,7 +1125,8 @@ from `--host`, use explicit `--url`, or use the running daemon's configured
 `endpoint.advertise_url`; it reads endpoint defaults through authenticated
 admin IPC rather than traversing the private signer store. Without one of
 those inputs, export fails instead of guessing a client-reachable address.
-Re-importing with the same alias replaces that alias's endpoint data. The
+Re-importing with the same alias replaces that alias's role and URL; its
+`identity_file` and `known_hosts_path` are kept. The
 signer endpoint keeps `role: signer`: importing or creating its alias as a
 cosigner is refused.
 
@@ -1177,14 +1178,17 @@ apadmin clients revoke <fingerprint>
 apadmin clients import <public-key-file|-> [--label <text>]
 ```
 
-`list` prints the requests waiting for approval (fingerprint, key type, label,
-origin, and time) followed by the enrolled keys; it needs only a read-only
-session. The other verbs take an unlocked session. `approve` enrolls the key
+`list` prints the requests waiting for approval (fingerprint, key type,
+origin, and time) followed by the enrolled keys, each key's label on a line of
+its own under it, quoted in ASCII and cut to fit 80 columns; it needs only a
+read-only session. The other verbs take an unlocked session. `approve` enrolls the key
 of a waiting request, with `--label` replacing the label the client asked for;
 `reject` drops a waiting request; `revoke` removes an enrolled key and closes
 its connections. `import` pre-enrolls a client's key from a file holding one
 OpenSSH public-key line (such as `id_ed25519.pub`); the line's comment is the
-label unless `--label` is given. A line carrying authorized_keys options
+label unless `--label` is given, and a comment that is not printable ASCII of
+at most 64 bytes is left out, the key enrolled without a label. A label is
+printable ASCII of at most 64 bytes. A line carrying authorized_keys options
 (`from=`, `restrict`, ...) is refused: the signer implements none, so import
 the bare key instead. With `-` the line is read from stdin, which
 then requires `APSIGNER_PASSPHRASE` or a controlling terminal for the
@@ -1235,7 +1239,9 @@ The interactive signer-side `apadmin` TUI provides the same public-reference
 catalog under `e: Cosigners`. It uses aliases for navigation, shows the complete
 grouped Witness Key ID on trust screens, and can start generation of a
 compatible cosigned or bounded-cosigner account without exposing a raw Falcon
-public-key input. The account-generation cosigner field (**Optional cosigner**,
+public-key input. A reference file that is not a valid reference is listed
+after the references; choose it to remove it, as `apadmin cosigner remove`
+would, or to be told to delete the file when remove does not reach it. The account-generation cosigner field (**Optional cosigner**,
 or **Cosigner** where a preset requires one) also offers **Use key file...** and
 **Paste public JSON...**, which import a key in place and return to the form
 with it selected; a key that is already imported is offered under its existing

@@ -41,9 +41,19 @@ type ProductServices interface {
 	// RejectEnrollment drops a waiting request without enrolling its key.
 	RejectEnrollment(ctx SessionContext, fingerprint string) error
 	// ImportClientKey enrolls an OpenSSH public-key line the operator
-	// supplied, returning the key's fingerprint, the label recorded, and
-	// whether the key was new to the registry.
-	ImportClientKey(ctx SessionContext, publicKey, label string) (fingerprint, recordedLabel string, added bool, err error)
+	// supplied.
+	ImportClientKey(ctx SessionContext, publicKey, label string) (ImportedClientKey, error)
+}
+
+// ImportedClientKey is what an import recorded: the key's fingerprint, the
+// label, whether the key was new to the registry, and whether the key line's
+// comment, taken for the label when the operator gave none, was left out
+// because it is not a label the registry admits.
+type ImportedClientKey struct {
+	Fingerprint    string
+	Label          string
+	Added          bool
+	CommentRefused bool
 }
 
 type SettingsServices interface {

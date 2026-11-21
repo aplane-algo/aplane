@@ -58,7 +58,17 @@ func clearNoticeTickCmd(generation uint64) tea.Cmd {
 func (m *Model) setTransientNotice(notice string) tea.Cmd {
 	m.lastNoticeGeneration++
 	m.lastNotice = notice
+	m.lastNoticeArming = false
 	return clearNoticeTickCmd(m.lastNoticeGeneration)
+}
+
+// setApprovalArmingNotice says why an approval key was not taken: the
+// request came into view too recently. The approver acts on it, so the
+// status bar ranks it above warnings.
+func (m *Model) setApprovalArmingNotice() tea.Cmd {
+	cmd := m.setTransientNotice("One moment...")
+	m.lastNoticeArming = true
+	return cmd
 }
 
 // Update handles all TUI events and messages. A pending approval popup stays
@@ -91,7 +101,7 @@ func (m Model) updateOnTop(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	next, cmd := m.update(msg)
 	shown, heldCmd := next.(Model).showHeldResult()
-	return shown.keepApprovalOnTop(preferred), tea.Batch(cmd, heldCmd)
+	return shown.keepApprovalOnTop(preferred).fitPolicyEditor(), tea.Batch(cmd, heldCmd)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -395,15 +405,29 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cosigner.loaded = true
 		if msg.Error != "" {
 			m.cosigner.listErr = msg.Error
+			// The status bar reports the failure on every other screen, such
+			// as the key list, which loads the list at unlock, and the
+			// Generate form, whose picker reads it; statusBarError leaves it
+			// out on the manager, which shows listErr itself.
 			m.lastError = msg.Error
 			if m.cosigner.managerStatus == "Refreshing..." {
 				m.cosigner.managerStatus = ""
 			}
 		} else {
+			// The failure is over, in the status bar too; another error
+			// there stays.
+			if m.cosigner.listErr != "" && m.lastError == m.cosigner.listErr {
+				m.lastError = ""
+			}
 			m.cosigner.listErr = ""
 			m.cosigner.references = append([]CosignerReferenceInfo(nil), msg.References...)
 			m.cosigner.invalid = append([]InvalidCosignerReferenceInfo(nil), msg.Invalid...)
-			m.clampCosignerManagerScroll(len(msg.References))
+			m.clampCosignerManagerScroll(m.cosignerManagerRows())
+			// The delete hint is about the row it was given for, which the
+			// list may have removed or moved from under the cursor.
+			if bad, ok := m.selectedInvalidCosignerReference(); !ok || bad.Removable || bad.Path != m.cosigner.deleteHint {
+				m.cosigner.deleteHint = ""
+			}
 			if m.viewState == ViewCosignerReferences && m.cosigner.managerStatus == "Refreshing..." {
 				m.cosigner.managerStatus = ""
 			}

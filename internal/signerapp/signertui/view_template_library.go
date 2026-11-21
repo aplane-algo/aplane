@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 )
 
@@ -51,24 +53,20 @@ func (m Model) renderTemplateLibrary() string {
 	}
 
 	visible := m.templateLibraryVisibleHeight()
-	sb.WriteString(scrollMoreAboveLine(m.library.scrollOffset))
+	start := scrollToSelection(m.library.scrollOffset, selected, len(m.library.templates), visible)
+	sb.WriteString(scrollMoreAboveLine(start))
 	sb.WriteString("\n")
-	end := m.library.scrollOffset + visible
-	if end > len(m.library.templates) {
-		end = len(m.library.templates)
-	}
+	end := min(start+visible, len(m.library.templates))
 
-	for i := m.library.scrollOffset; i < end; i++ {
+	for i := start; i < end; i++ {
 		tmpl := m.library.templates[i]
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
 		}
 		status := templateLibraryStatus(tmpl)
-		line := fmt.Sprintf("%s%-*s %-*s %s", prefix,
-			libraryNameColumnWidth, templateLibraryTitle(tmpl),
-			libraryTypeColumnWidth, libraryTypeColumn(tmpl),
-			status)
+		line := prefix + padRight(templateLibraryTitle(tmpl), libraryNameColumnWidth) + " " +
+			padRight(libraryTypeColumn(tmpl), libraryTypeColumnWidth) + " " + status
 		if i == selected {
 			sb.WriteString(selectedStyle.Render(line))
 		} else if tmpl.Invalid != "" || tmpl.Conflict != "" {
@@ -134,18 +132,16 @@ func (m Model) renderTemplateDetails(tmpl LibraryTemplateInfo) string {
 	return sb.String()
 }
 
+// ellipsize cuts s to width columns, as the terminal draws them, ending the
+// cut in "..." when width has room for more than that.
 func ellipsize(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
-	}
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Truncate(s, width, "")
 	}
-	return string(runes[:width-3]) + "..."
+	return ansi.Truncate(s, width, "...")
 }
 
 // templateDetailsBoxLines lists a template's creation parameters and signing
@@ -298,15 +294,16 @@ func templateDetailField(label, value string) string {
 	return fmt.Sprintf("%-10s %s\n", label+":", value)
 }
 
+// templateLibraryVisibleHeight is how many entries the library list shows:
+// up to 12, in what the window body leaves beside the rest of the screen.
 func (m Model) templateLibraryVisibleHeight() int {
-	h := m.height - 18
-	if h < 4 {
-		h = 4
+	if m.height <= 0 {
+		return 4
 	}
-	if h > 12 {
-		h = 12
-	}
-	return h
+	// The title and its margin, the subtitle and its gap, the two "more"
+	// lines, the gap above the entry's details, and their four lines.
+	const chrome = 2 + 2 + 2 + 1 + 4
+	return min(max(m.windowBodyHeight()-chrome, 1), 12)
 }
 
 func templateLibraryTitle(tmpl LibraryTemplateInfo) string {

@@ -743,10 +743,11 @@ func (m Model) ensureParamVisible(paramIdx, maxVisibleParams int) Model {
 	return m
 }
 
-// getMaxVisibleParams returns max visible params based on terminal height.
+// getMaxVisibleParams returns max visible params based on the popup's
+// height, which follows the status bar as drawn.
 func (m Model) getMaxVisibleParams() int {
-	reservedLines := 18
-	availableHeight := m.height - reservedLines
+	reservedLines := 12
+	availableHeight := m.popupContentHeight() - reservedLines
 	if availableHeight < 8 {
 		availableHeight = 8
 	}
@@ -1128,18 +1129,14 @@ func (m *Model) selectKeyByAddress(address string) {
 		if k.Address == address {
 			m.keylist.cosignerKeys = m.isCosignerNode()
 			m.keylist.selectedKey = 0
-			for i, displayKey := range m.filteredKeys() {
+			displayKeys := m.filteredKeys()
+			for i, displayKey := range displayKeys {
 				if displayKey.Address == address {
 					m.keylist.selectedKey = i
 					break
 				}
 			}
-			visibleHeight := m.keyListVisibleHeight()
-			if m.keylist.selectedKey < m.keylist.scrollOffset {
-				m.keylist.scrollOffset = m.keylist.selectedKey
-			} else if m.keylist.selectedKey >= m.keylist.scrollOffset+visibleHeight {
-				m.keylist.scrollOffset = m.keylist.selectedKey - visibleHeight + 1
-			}
+			m.keylist.scrollOffset = m.keyListScrollOffset(len(displayKeys))
 			return
 		}
 	}

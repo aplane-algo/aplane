@@ -95,20 +95,13 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.keylist.selectedKey > 0 {
 			m.keylist.selectedKey--
-			// Scroll up if selected key is above visible area
-			if m.keylist.selectedKey < m.keylist.scrollOffset {
-				m.keylist.scrollOffset = m.keylist.selectedKey
-			}
+			m.keylist.scrollOffset = m.keyListScrollOffset(len(displayKeys))
 		}
 
 	case "down", "j":
 		if m.keylist.selectedKey < len(displayKeys)-1 {
 			m.keylist.selectedKey++
-			// Scroll down if selected key is below visible area
-			visibleHeight := m.keyListVisibleHeight()
-			if m.keylist.selectedKey >= m.keylist.scrollOffset+visibleHeight {
-				m.keylist.scrollOffset = m.keylist.selectedKey - visibleHeight + 1
-			}
+			m.keylist.scrollOffset = m.keyListScrollOffset(len(displayKeys))
 		}
 
 	case "g":
@@ -159,7 +152,8 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Show key details
 		if len(displayKeys) > 0 && m.keylist.selectedKey < len(displayKeys) {
-			return m, m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address)
+			m.details.requestID = newRequestID("details")
+			return m, m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address, m.details.requestID)
 		}
 	}
 

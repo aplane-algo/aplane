@@ -18,14 +18,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/adminipc"
 	"github.com/aplane-algo/aplane/internal/clientlog"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/transport"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -73,7 +76,7 @@ type enrollmentOutcome struct {
 func (o enrollmentOutcome) String() string {
 	switch {
 	case o.success && o.approved && o.label != "":
-		return fmt.Sprintf("✓ Client key %s enrolled (%s)", o.fingerprint, o.label)
+		return fmt.Sprintf("✓ Client key %s enrolled (%s)", o.fingerprint, termsafe.ResultLabel(o.label))
 	case o.success && o.approved:
 		return fmt.Sprintf("✓ Client key %s enrolled", o.fingerprint)
 	case o.success:
@@ -265,9 +268,23 @@ type approver struct {
 	// for the first request must not approve the second. Each shown request
 	// gets a fresh code, so an approval names the request it was meant for.
 	headCode string
+	// headShownWidth is the terminal's width when the request at the head of
+	// the queue was shown. Below minReviewWidth it was shown by its identity
+	// only; on a terminal narrower than it was shown at, its rows re-wrap.
+	// Either way it is shown again, at the terminal's width and with a fresh
+	// code, before an answer is taken.
+	headShownWidth int
 	// newCode makes approval codes; tests replace it.
 	newCode func() string
 }
+
+// minReviewWidth is the narrowest terminal apapprover takes an answer on,
+// the width apadmin lays out for: every field row of a request fits it
+// whole, so none is cut short of what the operator must check.
+const minReviewWidth = 80
+
+// terminalTooNarrow says why apapprover takes no answer.
+const terminalTooNarrow = "terminal too narrow to review this request (needs 80 columns)"
 
 // showHead displays the request at the head of the queue with a fresh
 // approval code.
@@ -281,11 +298,20 @@ func (a *approver) showHead() {
 		code = gen()
 	}
 	a.headCode = code
-	displayRequest(a.queue[0], len(a.queue))
+	a.headShownWidth = terminalWidth()
+	if a.headShownWidth < minReviewWidth {
+		displayNarrow(a.queue[0])
+	} else {
+		displayRequest(a.queue[0], len(a.queue), a.headShownWidth)
+	}
 	a.prompt()
 }
 
 func (a *approver) prompt() {
+	if a.headShownWidth < minReviewWidth {
+		fmt.Print("Widen the terminal to 80 columns, then press Enter: ")
+		return
+	}
 	fmt.Print(approvalPrompt(a.headCode))
 }
 
@@ -302,6 +328,24 @@ func newApprovalCode() string {
 // queue. A request stays queued if its response cannot be delivered.
 func (a *approver) handleInput(input string) {
 	if len(a.queue) == 0 {
+		return
+	}
+	// No answer is taken on a terminal too narrow to review the request,
+	// and none for a request shown at another width than the terminal's
+	// now: shown narrow, it was not shown whole, and on a narrower terminal
+	// its rows re-wrap, so it is shown again first.
+	switch width := terminalWidth(); {
+	case width < minReviewWidth:
+		fmt.Println(terminalTooNarrow)
+		a.headShownWidth = min(a.headShownWidth, width)
+		a.prompt()
+		return
+	case a.headShownWidth < minReviewWidth:
+		a.showHead()
+		return
+	case width < a.headShownWidth:
+		fmt.Println("\nThe terminal is narrower than when this request was shown; review it again.")
+		a.showHead()
 		return
 	}
 	approved, code, reason, ok := parseApprovalInput(input)
@@ -612,17 +656,39 @@ func buildApprovalResponse(req approvalRequest, approved bool, reason string) (i
 }
 
 // displayRequest shows an approval request to the user.
-func displayRequest(req approvalRequest, queueLen int) {
+func displayRequest(req approvalRequest, queueLen, width int) {
 	switch req.kind {
 	case approvalKindClientEnrollment:
-		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen)
+		displayClientEnrollmentRequest(req.enrollmentRequest, queueLen, width)
 	default:
-		displaySignRequest(req.signRequest, queueLen)
+		displaySignRequest(req.signRequest, queueLen, width)
 	}
 }
 
-// displaySignRequest shows a signing request to the user.
-func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
+// displayNarrow shows which request waits, on a terminal too narrow to
+// review it: its identity, whole, and why it cannot be answered here. The
+// identity is the signer's own text, a key's fingerprint or an account's
+// address, so the terminal's wrap of it cannot be steered.
+func displayNarrow(req approvalRequest) {
+	fmt.Println()
+	switch req.kind {
+	case approvalKindClientEnrollment:
+		fmt.Println("CLIENT ENROLLMENT REQUEST")
+		fmt.Println(termsafe.Line(req.enrollmentRequest.SSHFingerprint))
+	default:
+		fmt.Println("SIGNING REQUEST")
+		account := req.signRequest.TxnSender
+		if account == "" {
+			account = req.signRequest.Address
+		}
+		fmt.Println(termsafe.Line(account))
+	}
+	fmt.Println(terminalTooNarrow)
+}
+
+// displaySignRequest shows a signing request to the user on a terminal width
+// columns wide.
+func displaySignRequest(req *protocol.SignRequestMessage, queueLen, width int) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if queueLen > 1 {
 		fmt.Printf("🔐 SIGNING REQUEST (1 of %d pending)\n", queueLen)
@@ -646,7 +712,8 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 	}
 
 	if req.Description != "" {
-		fmt.Printf("\n%s\n", req.Description)
+		fmt.Println()
+		printConfined(req.Description, width)
 	}
 	if line := protocol.ValidityWindowLine(req.FirstValid, req.LastValid); line != "" {
 		fmt.Printf("\n%s\n", line)
@@ -670,11 +737,59 @@ func displaySignRequest(req *protocol.SignRequestMessage, queueLen int) {
 		}
 		fmt.Printf("\n%s (%d):\n", list.heading, len(list.items))
 		for _, v := range list.items {
-			fmt.Println(violationLine(v))
+			printConfined(violationLine(v), width)
 		}
 	}
 
 	fmt.Println(strings.Repeat("=", 60))
+}
+
+// continuationMark starts a line that continues the one above it.
+const continuationMark = "| "
+
+// printConfined prints text, each line cut at width columns, every piece
+// after a line's first marked as its continuation. Much of a request comes
+// from the client or the chain, an asset's URL or a note, so a value longer
+// than the terminal is wide would otherwise wrap onto a line it starts,
+// which could read like a field of its own.
+func printConfined(text string, width int) {
+	for _, line := range strings.Split(text, "\n") {
+		for _, piece := range confinedLines(line, width) {
+			fmt.Println(piece)
+		}
+	}
+}
+
+// confinedLines cuts line into pieces of at most width columns, every piece
+// after the first starting with continuationMark. A piece holds at least one
+// character, so a character wider than the room is a piece of its own.
+func confinedLines(line string, width int) []string {
+	if width <= len(continuationMark) || ansi.StringWidth(line) <= width {
+		return []string{line}
+	}
+	var pieces []string
+	for room := width; line != ""; room = width - len(continuationMark) {
+		piece := ansi.Truncate(line, room, "")
+		if piece == "" {
+			_, size := utf8.DecodeRuneInString(line)
+			piece = line[:size]
+		}
+		line = line[len(piece):]
+		if pieces != nil {
+			piece = continuationMark + piece
+		}
+		pieces = append(pieces, piece)
+	}
+	return pieces
+}
+
+// terminalWidth is the width of the terminal apapprover prints to, or 80
+// when it cannot tell; tests replace it.
+var terminalWidth = func() int {
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width > 0 {
+		return width
+	}
+	return 80
 }
 
 // violationLine is one warning or note of a signing request: its severity,
@@ -693,8 +808,9 @@ func violationLine(v protocol.PolicyViolation) string {
 	return line
 }
 
-// displayClientEnrollmentRequest shows a client enrollment request to the user.
-func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage, queueLen int) {
+// displayClientEnrollmentRequest shows a client enrollment request to the user
+// on a terminal width columns wide.
+func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage, queueLen, width int) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if queueLen > 1 {
 		fmt.Printf("🔑 CLIENT ENROLLMENT REQUEST (1 of %d pending)\n", queueLen)
@@ -702,12 +818,15 @@ func displayClientEnrollmentRequest(req *protocol.ClientEnrollmentRequestMessage
 		fmt.Println("🔑 CLIENT ENROLLMENT REQUEST")
 	}
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Printf("SSH Key:     %s\n", req.SSHFingerprint)
+	// Each field is one row its value cannot leave (termsafe.Field): the
+	// label is the client's own text, quoted in ASCII, and no value can wrap
+	// onto a line of its own that reads like a field.
+	fmt.Println(termsafe.Field("SSH Key:     ", req.SSHFingerprint, width))
 	if req.Label != "" {
-		fmt.Printf("Label:       %s\n", req.Label)
+		fmt.Println(termsafe.QuotedField("Label:       ", req.Label, width))
 	}
-	fmt.Printf("Remote Addr: %s\n", req.RemoteAddr)
-	fmt.Printf("Requested:   %s\n", time.Unix(req.Timestamp, 0).Format(time.RFC3339))
+	fmt.Println(termsafe.Field("Remote Addr: ", req.RemoteAddr, width))
+	fmt.Println(termsafe.Field("Requested:   ", time.Unix(req.Timestamp, 0).Format(time.RFC3339), width))
 	fmt.Println("Approving enrolls this key as a client; the client then connects on its own.")
 	fmt.Println(strings.Repeat("=", 60))
 }

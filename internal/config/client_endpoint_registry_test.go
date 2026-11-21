@@ -146,7 +146,7 @@ func TestClientEndpointRegistryLoadRefusals(t *testing.T) {
 		{
 			name:     "two signers",
 			contents: "schema_version: 2\nendpoints:\n  a:\n    role: signer\n    url: ssh://a.example\n  b:\n    role: signer\n    url: ssh://b.example\n",
-			wantErr:  `endpoints.yaml may contain at most one "signer" endpoint`,
+			wantErr:  `endpoints.yaml may contain at most one "signer" endpoint (found "a" and "b")`,
 		},
 		{
 			name:     "missing role",
@@ -167,9 +167,13 @@ func TestClientEndpointRegistryLoadRefusals(t *testing.T) {
 				"LoadStoredClientEndpointRegistry": LoadStoredClientEndpointRegistry,
 			}
 			for name, load := range loaders {
-				_, err := load(dataDir)
-				if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
-					t.Errorf("%s() error = %v, want %q", name, err, tt.wantErr)
+				// The refusal names aliases in sorted order, whatever order
+				// the map yields them in; repeat to see more than one.
+				for range 20 {
+					_, err := load(dataDir)
+					if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+						t.Fatalf("%s() error = %v, want %q", name, err, tt.wantErr)
+					}
 				}
 			}
 		})
