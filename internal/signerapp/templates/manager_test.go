@@ -123,7 +123,7 @@ func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.
 		t.Fatalf("CompiledConflictingKeyTypes = %#v, want %s", report.CompiledConflictingKeyTypes, keyType)
 	}
 	if !reflect.DeepEqual(report.Warnings(), []string{
-		"conflicting compiled key type records ignored on reload: [templates-compiled-conflict-v1] (restart apsigner to redefine)",
+		"conflicting compiled key type records ignored on reload: [templates-compiled-conflict-v1] (re-pin each with `apadmin keytype enable <key_type>`)",
 	}) {
 		t.Fatalf("Warnings() = %#v", report.Warnings())
 	}

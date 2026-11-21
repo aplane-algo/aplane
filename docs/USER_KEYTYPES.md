@@ -1128,7 +1128,7 @@ the daemon reloads the product runtime.
 Example:
 
 ```text
-conflicting compiled key type records ignored on reload: [aplane.ed25519.v1]
+conflicting compiled key type records ignored on reload: [aplane.ed25519.v1] (re-pin each with `apadmin keytype enable <key_type>`)
 ```
 
 This means the product has an enabled compiled-provider state record whose

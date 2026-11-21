@@ -233,7 +233,7 @@ func TestReloadRequiresTheRecordedCompiledFingerprintExactly(t *testing.T) {
 					if !reflect.DeepEqual(report.CompiledConflictingKeyTypes, []string{keyType}) || len(report.CompiledIdempotentKeyTypes) != 0 {
 						t.Fatalf("report = %+v, want %s conflicting", report.RegistrationReport, keyType)
 					}
-					wantWarning := "conflicting compiled key type records ignored on reload: [" + keyType + "] (restart apsigner to redefine)"
+					wantWarning := "conflicting compiled key type records ignored on reload: [" + keyType + "] (re-pin each with `apadmin keytype enable <key_type>`)"
 					if !reflect.DeepEqual(report.TemplateWarnings, []string{wantWarning}) {
 						t.Fatalf("TemplateWarnings = %q, want %q", report.TemplateWarnings, wantWarning)
 					}

@@ -121,7 +121,7 @@ func (r RegistrationReport) Warnings() []string {
 		warnings = append(warnings, fmt.Sprintf("invalid compiled key type records ignored on reload: %v", r.CompiledInvalidKeyTypes))
 	}
 	if len(r.CompiledConflictingKeyTypes) > 0 {
-		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (restart apsigner to redefine)", r.CompiledConflictingKeyTypes))
+		warnings = append(warnings, fmt.Sprintf("conflicting compiled key type records ignored on reload: %v (re-pin each with `apadmin keytype enable <key_type>`)", r.CompiledConflictingKeyTypes))
 	}
 	if len(r.GenericExternalEditKeyTypes) > 0 {
 		warnings = append(warnings, fmt.Sprintf("externally edited generic templates ignored on reload: %v "+repairHint, r.GenericExternalEditKeyTypes))
