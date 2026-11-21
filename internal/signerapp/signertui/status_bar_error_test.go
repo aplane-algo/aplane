@@ -252,3 +252,39 @@ func TestLibraryAndPolicyEditorFollowAWrappedStatusBar(t *testing.T) {
 		}
 	}
 }
+
+// A failed cosigner list is shown once on the manager, in the manager's own
+// block, not again in the status bar, so the manager keeps the rows for the
+// selected row and the whole path of the file remove does not reach. On
+// another screen the status bar still reports it.
+func TestFailedCosignerListShowsOnceOnTheManager(t *testing.T) {
+	const deep = "/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/nested/deeper/still-deeper/"
+	const name = "copy of the west cosigner reference from the old machine before the move"
+	for _, standalone := range []bool{false, true} {
+		m := fullInvalidCosignerReferencesModel(t, deep, name, standalone)
+		m = press(t, m, "enter")
+		m.cosigner.managerStatus = "Removed bad"
+		m = updateModel(t, m, CosignerReferencesMsg{Error: veryLongDaemonError})
+		view := stripANSI(m.View())
+		checkFitsMinSize(t, view)
+		checkBodyFits(t, fmt.Sprintf("standalone %v", standalone), m)
+		flat := strings.Join(strings.Fields(view), "")
+		if !strings.Contains(flat, strings.Join(strings.Fields(deep+name+".json"), "")) || !strings.Contains(view, "> copy of") {
+			t.Errorf("standalone %v: the file's path or the selected row is cut:\n%s", standalone, view)
+		}
+		if got := strings.Count(view, "the store is full"); got != 1 {
+			t.Errorf("standalone %v: the list error is on screen %d times:\n%s", standalone, got, view)
+		}
+
+		// Left on the key list, the failure is in the status bar, and the
+		// manager opened after it shows it once.
+		m = press(t, m, "esc")
+		if view := stripANSI(m.View()); !strings.Contains(view, "Error: the signer refused") {
+			t.Errorf("standalone %v: the key list does not report the failed list:\n%s", standalone, view)
+		}
+		m = press(t, m, "e")
+		if view := stripANSI(m.View()); m.viewState != ViewCosignerReferences || strings.Count(view, "the store is full") != 1 {
+			t.Errorf("standalone %v: the reopened manager shows the error %d times:\n%s", standalone, strings.Count(view, "the store is full"), view)
+		}
+	}
+}

@@ -669,7 +669,7 @@ func (m Model) renderStatusBar() string {
 
 	// An error too long for the line goes under it, wrapped to the window,
 	// so no screen grows wider than the window.
-	errorText := m.lastError
+	errorText := m.statusBarError()
 	errorUnder := false
 	if errorText != "" {
 		part := errorStyle.Render("Error: " + terminalSafe(errorText))
@@ -703,6 +703,16 @@ func (m Model) renderStatusBar() string {
 		return helpStyle.Render(errorBlock)
 	}
 	return helpStyle.Render(line + "\n" + errorBlock)
+}
+
+// statusBarError is the error the status bar shows: the last error, but not
+// on the cosigner manager while it is the failed list the manager shows in
+// its own block, so the error is on screen once.
+func (m Model) statusBarError() string {
+	if m.viewState == ViewCosignerReferences && m.lastError == m.cosigner.listErr {
+		return ""
+	}
+	return m.lastError
 }
 
 // maxErrorLines bounds a daemon error shown in the status bar or a screen, so

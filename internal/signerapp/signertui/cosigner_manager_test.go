@@ -655,7 +655,7 @@ func TestCosignerManagerGivesUpRowsForALongStatus(t *testing.T) {
 				m := fullInvalidCosignerReferencesModel(t, tc.dir, tc.file, standalone)
 				m = tc.after(press(t, m, "enter"))
 				quiet := m
-				quiet.cosigner.managerStatus, quiet.cosigner.deleteHint, quiet.cosigner.listErr = "", "", ""
+				quiet.cosigner.managerStatus, quiet.cosigner.deleteHint, quiet.cosigner.listErr, quiet.lastError = "", "", "", ""
 				if m.cosignerManagerVisibleRows() >= quiet.cosignerManagerVisibleRows() {
 					t.Fatalf("the list keeps %d rows, as many as with no status: the case does not need more room", m.cosignerManagerVisibleRows())
 				}
