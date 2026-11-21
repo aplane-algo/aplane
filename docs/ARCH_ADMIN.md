@@ -681,6 +681,7 @@ Apply rules, the same on both node roles:
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
+- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring before it publishes unlocked, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
 - `apply_policy`, `add_asa`, and `remove_asa` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.
@@ -733,6 +734,11 @@ policy context, so `list_asa_set` and `lookup_asa` require `policy.view` and
   `error`. Removal is refused while any stored document explicitly names
   the asset; a direct route term over several networks counts on each of
   them.
+- `add_asa` and `remove_asa` are refused with `recovery_blocked` in
+  recovery and with `identity_locked` (`identity is locked; unlock the
+  signer before changing the ASA set`) on any other runtime that is not
+  unlocked, an unlock still in flight included, both checked under the store
+  mutation lock, as for `apply_policy`.
 
 ASA set result codes include `policy_unavailable`, `unknown_network`,
 `asa_builtin`, `asa_already_confirmed`, `lookup_failed`,

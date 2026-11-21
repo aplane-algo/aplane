@@ -564,6 +564,12 @@ read-only `status`, `export`, and `check` commands unlock it before reading
 policy state and are therefore not guaranteed to preserve the daemon's lock
 state.
 
+An online apply, and a change to the node's ASA set, needs the signer
+unlocked when it runs. While it is locked, an unlock still in progress on
+another connection included, the change is refused with `identity_locked`
+and nothing is written; once the unlock completes, apply again. A stopped
+signer takes `apadmin policy rescue` instead.
+
 ### The node's ASA set
 
 A node keeps an ASA set: the built-in asset table plus the assets you confirm

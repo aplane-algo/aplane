@@ -79,6 +79,16 @@ func (c *fakeASAChain) ReadAsset(_ context.Context, genesisHash []byte, assetID 
 // set together, as the daemon does, with private-dev mapped in its config.
 func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChain) {
 	t.Helper()
+	svc, ir, chain := setupUnpublishedASAAdmin(t)
+	ir.SetUnlocked()
+	return svc, ir, chain
+}
+
+// setupUnpublishedASAAdmin is setupASAAdmin with the keyring open and policy
+// loaded but the runtime not yet published unlocked, as an unlock in flight
+// leaves it.
+func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChain) {
+	t.Helper()
 	clientreg.RegisterClient()
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
@@ -95,7 +105,6 @@ func setupASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *fakeASAChai
 	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetUnlocked()
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return &signertemplates.ReloadReport{}, ir.KeyStore().WithKeyring(func(kr *crypto.Keyring) error {
 			active, err := genstore.ResolveStoreRootWithKeyring(paths, kr)
@@ -166,6 +175,40 @@ func TestAddASAMintsAndReloads(t *testing.T) {
 	again := confirmASA9Again(t, svc)
 	if again.Code != "asa_already_confirmed" || currentGeneration(t, svc, ir) != added.GenerationID {
 		t.Fatalf("second add = %+v", again)
+	}
+}
+
+// An ASA set change during an unlock in flight on another connection is
+// refused, as a policy apply is: the unlock opens the keyring before it
+// publishes unlocked, outside the store mutation lock, and a change that
+// committed in between and failed its reload once left the unlock to
+// publish unlocked over it.
+func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
+	svc, ir, _ := setupUnpublishedASAAdmin(t)
+	before := currentGeneration(t, svc, ir)
+	if ir.IsUnlocked() || ir.IsRecovery() {
+		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
+	}
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, errors.New("reload failed")
+	})
+
+	added := confirmASA9(t, svc)
+	removed := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
+	ir.SetUnlocked() // the unlock in flight publishes
+
+	if after := currentGeneration(t, svc, ir); after != before && ir.IsUnlocked() {
+		t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (add answered %s)", after, added.Code)
+	}
+	const want = "identity is locked; unlock the signer before changing the ASA set"
+	if added.Success || added.Code != "identity_locked" || added.Error != want || added.CommitUncertain || added.GenerationID != "" {
+		t.Fatalf("AddASA() during an unlock = %+v, want identity_locked: %s", added, want)
+	}
+	if removed.Success || removed.Code != "identity_locked" || removed.Error != want || removed.CommitUncertain || removed.GenerationID != "" {
+		t.Fatalf("RemoveASA() during an unlock = %+v, want identity_locked: %s", removed, want)
+	}
+	if after := currentGeneration(t, svc, ir); after != before {
+		t.Fatalf("an ASA set change during an unlock committed %s -> %s", before, after)
 	}
 }
 

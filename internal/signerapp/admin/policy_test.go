@@ -435,21 +435,55 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 }
 
 // An unlock on another connection opens the keyring before it publishes the
-// runtime unlocked, and runs outside the store mutation lock, so a policy
-// apply can commit in between. An uncertain commit then meets a locked
-// signer, on which SetRecovery does nothing, and the unlock publishes while
-// the apply's best-effort reload runs. The apply must still leave the signer
-// in recovery, as its answer says.
-func TestUncertainPolicyCommitDuringAnUnlockInFlightEntersRecovery(t *testing.T) {
-	svc, ir, reload := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
+// runtime unlocked, and runs outside the store mutation lock. A policy apply
+// in between once committed, met a locked signer when its reload failed, on
+// which SetRecovery does nothing, and the unlock then published unlocked over
+// a generation the runtime had not followed. The apply is refused instead:
+// it needs an unlocked signer, checked under the lock.
+func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
+	svc, ir, _ := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
 	view := svc.GetPolicy()
 	snapshot := svc.GetPolicyContext().SnapshotSHA256
+	before := currentGeneration(t, svc, ir)
 	if ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
 	}
+	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		return nil, fmt.Errorf("reload failed")
+	})
+
+	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
+		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
+		ExpectedPolicySetSHA256: view.PolicySetSHA256,
+		ExpectedSnapshotSHA256:  snapshot,
+	})
+	ir.SetUnlocked() // the unlock in flight publishes
+
+	if after := currentGeneration(t, svc, ir); after != before && ir.IsUnlocked() {
+		t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (apply answered %s)", after, result.Code)
+	}
+	const want = "identity is locked; unlock the signer before applying policy"
+	if result.Success || result.Code != "identity_locked" || result.Error != want || result.CommitUncertain || result.GenerationID != "" {
+		t.Fatalf("ApplyPolicy() during an unlock = %+v, want identity_locked: %s", result, want)
+	}
+	if after := currentGeneration(t, svc, ir); after != before {
+		t.Fatalf("an apply during an unlock committed %s -> %s", before, after)
+	}
+}
+
+// A second unlock of an unlocked signer, on another connection, publishes
+// unlocked again when its reload returns, without the store mutation lock.
+// An uncertain policy commit meanwhile enters recovery, and the unlock can
+// publish while the apply's best-effort reload runs: the apply must still
+// leave the signer in recovery, as its answer says.
+func TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
+	svc, ir, reload := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
+	ir.SetUnlocked()
+	view := svc.GetPolicy()
+	snapshot := svc.GetPolicyContext().SnapshotSHA256
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		report, err := reload(passphrase, session)
-		ir.SetUnlocked() // the unlock in flight publishes meanwhile
+		ir.SetUnlocked() // the second unlock publishes meanwhile
 		return report, err
 	})
 
@@ -472,6 +506,6 @@ func TestUncertainPolicyCommitDuringAnUnlockInFlightEntersRecovery(t *testing.T)
 		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
 	}
 	if !ir.IsRecovery() || ir.IsUnlocked() {
-		t.Fatalf("state after an uncertain commit during an unlock = %s, want recovery", ir.GetState())
+		t.Fatalf("state after an uncertain commit during a second unlock = %s, want recovery", ir.GetState())
 	}
 }
