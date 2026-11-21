@@ -45,14 +45,39 @@ func TestApstoreHasNoLiveAdminTransport(t *testing.T) {
 	assertFileOmits(t, filepath.Join(root, "main.go"), "adminSocketPath")
 	assertFileOmits(t, filepath.Join(root, "dispatch.go"),
 		`case "backup":`, `case "restore":`, `case "changepass":`,
-		`case "template":`, `case "keytype":`, `case "cosigner":`, `case "endpoint":`,
+		`case "keytype":`, `case "cosigner":`, `case "endpoint":`,
 	)
 	assertFileOmits(t, filepath.Join(root, "usage.go"),
-		"apstore backup", "apstore restore", "apstore changepass", "apstore template",
+		"apstore backup", "apstore restore", "apstore changepass",
 		"apstore keytype", "apstore cosigner", "apstore endpoint", "generations <list",
 	)
 	assertFileOmits(t, filepath.Join(root, "generations.go"), `case "list":`)
+	// The live template commands moved to apadmin. apstore keeps only the
+	// offline repair, run with apsigner stopped.
+	assertTemplateOnlyRepairs(t, filepath.Join(root, "usage.go"))
+	assertTemplateOnlyRepairs(t, filepath.Join(root, "template.go"))
 }
+
+var templateSubcommand = regexp.MustCompile(`\bapstore\b[^\n]*?\btemplate\s+([a-z-]+)`)
+
+// assertTemplateOnlyRepairs requires every apstore template command line in
+// path to name the offline repair.
+func assertTemplateOnlyRepairs(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, match := range templateSubcommand.FindAllSubmatch(data, -1) {
+		if string(match[1]) != "repair" {
+			t.Errorf("%s names apstore template %s; only the offline repair stays in apstore", filepath.Base(path), match[1])
+		}
+	}
+}
+
+// offlineTemplateRepair is the one apstore template command: the offline
+// repair, which the retired-command pattern would otherwise match.
+var offlineTemplateRepair = regexp.MustCompile(`^template\s+repair\b`)
 
 func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -87,8 +112,12 @@ func TestOperatorGuidanceUsesApadminForLiveOperations(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if match := retired.Find(data); match != nil {
-			t.Errorf("%s retains retired live command %q", rel, match)
+		for _, span := range retired.FindAllIndex(data, -1) {
+			if offlineTemplateRepair.Match(data[span[1]-len("template"):]) {
+				continue
+			}
+			t.Errorf("%s retains retired live command %q", rel, data[span[0]:span[1]])
+			break
 		}
 		return nil
 	})

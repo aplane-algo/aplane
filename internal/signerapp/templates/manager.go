@@ -143,9 +143,10 @@ type RegistrationReport struct {
 	CompiledConflictingKeyTypes  []string
 }
 
-// repairHint is what repairs a template record defect. The import needs an
-// unlocked signer, and a defect found at unlock leaves the store in recovery.
-const repairHint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+// repairHint is what repairs a template record defect. It works whether the
+// defect was found at unlock, which leaves the store in recovery, or by a
+// reload of an unlocked signer.
+const repairHint = "(stop apsigner and repair with `apstore template repair`; see docs/USER_KEYTYPES.md)"
 
 func (r RegistrationReport) Warnings() []string {
 	var warnings []string

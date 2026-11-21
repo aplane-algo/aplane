@@ -150,7 +150,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 					if !reflect.DeepEqual(report.GenericExternalEditKeyTypes, []string{keyType}) {
 						t.Fatalf("GenericExternalEditKeyTypes = %v, want %s", report.GenericExternalEditKeyTypes, keyType)
 					}
-					wantWarning := "externally edited generic templates ignored on reload: [" + keyType + "] (reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+					wantWarning := "externally edited generic templates ignored on reload: [" + keyType + "] (stop apsigner and repair with `apstore template repair`; see docs/USER_KEYTYPES.md)"
 					if !reflect.DeepEqual(report.Warnings(), []string{wantWarning}) {
 						t.Fatalf("Warnings() = %q, want %q", report.Warnings(), wantWarning)
 					}
@@ -250,9 +250,8 @@ func TestReloadRequiresTheRecordedCompiledFingerprintExactly(t *testing.T) {
 	}
 }
 
-// A template record defect is repaired by a reimport only while the signer is
-// unlocked; the warning says so and points a store in recovery to the manual
-// repair.
+// A template record defect is repaired offline by apstore, whether reload
+// found it at unlock or while the signer was unlocked; the warning names it.
 func TestRegistrationReportWarningsNameTheRepair(t *testing.T) {
 	report := RegistrationReport{
 		GenericExternalEditKeyTypes:  []string{"test.edited-generic.v1"},
@@ -261,7 +260,7 @@ func TestRegistrationReportWarningsNameTheRepair(t *testing.T) {
 		ComposedOrphanedKeyTypes:     []string{"test.orphan-composed.v1"},
 		DisabledOrphanedKeyTypes:     []string{"test.orphan-disabled.v1"},
 	}
-	const hint = "(reimport with `apadmin template import` while the signer is unlocked; for a store in recovery see docs/USER_KEYTYPES.md)"
+	const hint = "(stop apsigner and repair with `apstore template repair`; see docs/USER_KEYTYPES.md)"
 	want := []string{
 		"externally edited generic templates ignored on reload: [test.edited-generic.v1] " + hint,
 		"externally edited composed templates ignored on reload: [test.edited-composed.v1] " + hint,

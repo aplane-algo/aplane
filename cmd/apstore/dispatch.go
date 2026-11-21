@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"os"
+	"slices"
 )
 
 func dispatchApstoreCommand(args []string) {
@@ -68,6 +69,18 @@ func dispatchApstoreCommand(args []string) {
 
 	case "keys":
 		if err := cmdKeys(args[1:]); err != nil {
+			exitWithError(err)
+		}
+
+	case "template":
+		run := func() error {
+			return cmdTemplate(args[1:])
+		}
+		if slices.Contains(args[1:], "--confirm") {
+			if err := runStoreMutatingCommand(command, run); err != nil {
+				exitWithError(err)
+			}
+		} else if err := run(); err != nil {
 			exitWithError(err)
 		}
 
