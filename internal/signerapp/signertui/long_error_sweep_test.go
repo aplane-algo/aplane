@@ -181,9 +181,8 @@ func longErrorStatusMessages() []statusMessages {
 			alert:   "the store root could not be verified against the generation on disk, so signing is held: verify failed",
 			notice:  "Copied the address " + address + " to the clipboard for the operator: copied",
 			warning: "the policy for key " + address + " was applied but its sidecar is stale: stale sidecar",
-			// The count of the warning and notice left out keeps its room on
-			// the line, so the lost notifications go under it.
-			lost: 2, ends: []string{"notifications lost", "verify failed", "+2 more: warning, notice", "permission denied"}},
+			// The notice gets no row: the line counts it.
+			lost: 2, ends: []string{"notifications lost", "verify failed", "stale sidecar", "| +1", "permission denied"}},
 	}
 }
 

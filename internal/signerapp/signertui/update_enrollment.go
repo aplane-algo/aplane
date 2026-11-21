@@ -107,7 +107,7 @@ func (m Model) handleClientEnrollmentPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 			// approve the one that replaces it. Rejecting is always
 			// immediate.
 			if approved && signingNow().Sub(m.enrollmentApproval.shownAt) < approvalArmDelay {
-				return m, m.setTransientNotice("One moment...")
+				return m, m.setApprovalArmingNotice()
 			}
 			answer := m.sendRejectEnrollmentCmd(fingerprint)
 			if approved {

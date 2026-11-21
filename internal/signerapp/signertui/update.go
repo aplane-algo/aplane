@@ -58,7 +58,17 @@ func clearNoticeTickCmd(generation uint64) tea.Cmd {
 func (m *Model) setTransientNotice(notice string) tea.Cmd {
 	m.lastNoticeGeneration++
 	m.lastNotice = notice
+	m.lastNoticeArming = false
 	return clearNoticeTickCmd(m.lastNoticeGeneration)
+}
+
+// setApprovalArmingNotice says why an approval key was not taken: the
+// request came into view too recently. The approver acts on it, so the
+// status bar ranks it above warnings.
+func (m *Model) setApprovalArmingNotice() tea.Cmd {
+	cmd := m.setTransientNotice("One moment...")
+	m.lastNoticeArming = true
+	return cmd
 }
 
 // Update handles all TUI events and messages. A pending approval popup stays

@@ -557,6 +557,9 @@ type Model struct {
 	// Notice (shown in status bar): a completed action, not a problem.
 	lastNotice           string
 	lastNoticeGeneration uint64
+	// lastNoticeArming reports that the notice says why an approval was not
+	// taken yet (setApprovalArmingNotice).
+	lastNoticeArming bool
 
 	// Screen dimensions. sizeKnown is set by the first size message, so a
 	// zero dimension it carried (a one-row standalone terminal leaves height

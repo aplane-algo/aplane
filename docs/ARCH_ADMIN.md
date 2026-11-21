@@ -1298,10 +1298,13 @@ screen sizes itself from the window body under the bar as drawn
 (`windowBodyHeight`), so a list keeps its selected row in view and a pager
 its "more" markers. The bar takes at most three rows under its line. They go
 to the alerts first, lost notifications among them since a lost notification
-can be an approval request, then the error, the warning and the notice, a row
-kept for each later part while rows last and one always for the error. The
-parts left without a row are counted on the line, which keeps room for the
-count ("+2 more: warning, notice"). The bar leaves out a failed list that its screen, the cosigner
+can be an approval request, then the error, the approval's "One moment..."
+(why a key pressed too soon after a request came into view was not taken),
+the warning and the notice, a row kept for each later part while rows last
+and one always for the error. The parts left without a row are counted on
+the line, which keeps room for the count ("+2 more: warning, notice"); on
+the widest line of connection and signer state the count follows a space,
+so it fits for up to 9999 parts. The bar leaves out a failed list that its screen, the cosigner
 manager or the Backups page, already shows (`statusBarError`). A part longer than its rows is cut in the middle, at an ellipsis: it
 keeps its start and the most of its end its last row holds, since a Go error
 ends in its cause.

@@ -625,6 +625,7 @@ const (
 	rankLine statusRank = iota // connection and signer state, always on the line
 	rankAlert
 	rankError
+	rankArming // why an approval key was not taken yet
 	rankWarning
 	rankNotice
 )
@@ -678,7 +679,11 @@ func (m Model) statusParts() (parts []statusPart, settingAt int) {
 		parts = append(parts, statusPart{"ALERT: " + terminalSafe(warning), errorStyle, rankAlert, "alert"})
 	}
 	if m.lastNotice != "" {
-		parts = append(parts, statusPart{terminalSafe(m.lastNotice), statusConnectedStyle, rankNotice, "notice"})
+		rank := rankNotice
+		if m.lastNoticeArming {
+			rank = rankArming
+		}
+		parts = append(parts, statusPart{terminalSafe(m.lastNotice), statusConnectedStyle, rank, "notice"})
 	}
 	if m.lastWarning != "" {
 		parts = append(parts, statusPart{"Warning: " + terminalSafe(m.lastWarning), warningStyle, rankWarning, "warning"})
@@ -699,9 +704,15 @@ type statusLayout struct {
 	used    int   // the columns the line's parts take
 }
 
-// statusCountRoom is the room the line keeps for the count of the parts
-// left out when there are any: " | +99".
-const statusCountRoom = len(" | +99")
+// statusCountRoom is the room the line keeps for the count of the parts left
+// out when there are any: " | +" and the digits of the most there can be.
+// The connection and signer state stay on the line whatever room is kept,
+// and where they leave too little for " | " the count follows a space
+// (statusCount): beside the widest of them, 74 columns, it fits for up to
+// 9999 parts.
+func statusCountRoom(parts int) int {
+	return len(" | +") + len(strconv.Itoa(parts))
+}
 
 // layoutStatusParts places parts on a line of lineWidth columns while they
 // fit, by rank, the connection and signer state always, and the rest in at
@@ -755,9 +766,10 @@ func layoutStatusParts(parts []statusPart, width, lineWidth int) statusLayout {
 	return layout
 }
 
-// statusCount is the line's count of the parts left out, naming their kinds
-// when room allows.
-func statusCount(parts []statusPart, dropped []int, room int) string {
+// statusCount is the line's count of the parts left out, and the separator
+// before it, in room columns: after " | " as a part, with their kinds named
+// when room allows, or, when nothing else fits, "+N" after a space.
+func statusCount(parts []statusPart, dropped []int, room int) (sep, count string) {
 	var kinds []string
 	for _, i := range dropped {
 		if !slices.Contains(kinds, parts[i].kind) {
@@ -765,12 +777,12 @@ func statusCount(parts []statusPart, dropped []int, room int) string {
 		}
 	}
 	short := fmt.Sprintf("+%d", len(dropped))
-	for _, text := range []string{short + " more: " + strings.Join(kinds, ", "), short + " more"} {
-		if lipgloss.Width(text) <= room {
-			return text
+	for _, text := range []string{short + " more: " + strings.Join(kinds, ", "), short + " more", short} {
+		if len(" | ")+lipgloss.Width(text) <= room {
+			return " | ", text
 		}
 	}
-	return short
+	return " ", short
 }
 
 // renderStatusBar renders the bottom status bar (layoutStatusParts), so no
@@ -781,7 +793,7 @@ func (m Model) renderStatusBar() string {
 	parts, settingAt := m.statusParts()
 	layout := layoutStatusParts(parts, width, width)
 	if len(layout.dropped) > 0 {
-		layout = layoutStatusParts(parts, width, width-statusCountRoom)
+		layout = layoutStatusParts(parts, width, width-statusCountRoom(len(parts)))
 	}
 
 	var line, blocks []string
@@ -797,21 +809,26 @@ func (m Model) renderStatusBar() string {
 			blocks = append(blocks, part.style.Render(strings.Join(layout.rows[i], "\n")))
 		}
 	}
-	used := layout.used
+	used, count := layout.used, ""
 	if len(layout.dropped) > 0 {
 		style := warningStyle
 		if parts[layout.dropped[0]].rank <= rankError {
 			style = errorStyle
 		}
-		count := statusCount(parts, layout.dropped, width-used-len(" | "))
-		line = append(line, style.Render(count))
-		used += len(" | ") + lipgloss.Width(count)
+		sep, text := statusCount(parts, layout.dropped, width-used)
+		if used == 0 {
+			sep = ""
+		}
+		count = sep + style.Render(text)
+		used += lipgloss.Width(count)
 	}
 	if setting := m.settingWarningPart(width, used); setting != "" {
 		line = slices.Insert(line, settingSlot, setting)
 	}
-	if len(line) > 0 {
-		blocks = append([]string{strings.Join(line, " | ")}, blocks...)
+	if text := strings.Join(line, " | ") + count; text != "" {
+		// The line's own parts always fit at the minimum width; in a
+		// narrower window, which shows no status bar, they are cut.
+		blocks = append([]string{ellipsize(text, width)}, blocks...)
 	}
 	return helpStyle.Render(strings.Join(blocks, "\n"))
 }

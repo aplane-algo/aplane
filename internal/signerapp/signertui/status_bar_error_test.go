@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -466,26 +467,28 @@ func TestStatusBarCountsWhatItLeavesOut(t *testing.T) {
 		alerts []string
 		conn   ConnectionState
 		state  signerRuntimeState
-		count  string
 	}{
-		{"a short alert and two long ones", []string{"store health: archive member bad", alert(1), alert(2)},
-			ConnectionConnected, signerRuntimeUnlocked, "| +4 more: alert, warning, notice"},
-		{"disconnected and in recovery with two alerts", []string{alert(0), alert(1)},
-			ConnectionDisconnected, signerRuntimeRecovery, "| +3"},
-		{"three long alerts", []string{alert(0), alert(1), alert(2)},
-			ConnectionConnected, signerRuntimeUnlocked, "| +4 more: alert, warning, notice"},
-		{"five alerts", []string{alert(0), alert(1), alert(2), alert(3), alert(4)},
-			ConnectionConnected, signerRuntimeUnlocked, "| +6 more: alert, warning, notice"},
+		{"a short alert and two long ones", []string{"store health: archive member bad", alert(1), alert(2)}, ConnectionConnected, signerRuntimeUnlocked},
+		{"disconnected and in recovery with two alerts", []string{alert(0), alert(1)}, ConnectionDisconnected, signerRuntimeRecovery},
+		{"three long alerts", []string{alert(0), alert(1), alert(2)}, ConnectionConnected, signerRuntimeUnlocked},
+		{"five alerts", []string{alert(0), alert(1), alert(2), alert(3), alert(4)}, ConnectionConnected, signerRuntimeUnlocked},
 	} {
 		m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: tc.conn, signerStatusKnown: true, signerState: tc.state, keyCount: 123,
 			signerWarnings: tc.alerts, notificationsLost: 2, lastError: longDaemonError, lastWarning: "the policy was applied but its sidecar is stale",
 			lastNotice: "Copied the address to the clipboard"}, MinWidth, MinHeight)
 		lines := strings.Split(stripANSI(m.renderStatusBar()), "\n")
 		bar := strings.Join(lines, "\n")
-		if len(lines) != 1+maxErrorLines || !strings.HasSuffix(strings.TrimRight(lines[0], " "), tc.count) ||
+		missing := 0
+		for _, text := range append(append([]string(nil), tc.alerts...), "sidecar is stale", "Copied the address") {
+			if !strings.Contains(bar, strings.Join(strings.Fields(text)[:2], " ")) {
+				missing++
+			}
+		}
+		counted := statusCountRE.FindStringSubmatch(strings.TrimRight(lines[0], " "))
+		if len(lines) != 1+maxErrorLines || counted == nil || counted[1] != fmt.Sprint(missing) ||
 			!strings.Contains(bar, "Warning: 2 signer notifications lost") || !strings.Contains(bar, "ALERT: ") ||
 			!strings.HasSuffix(strings.TrimRight(lines[len(lines)-1], " "), "permission denied") {
-			t.Errorf("%s: want the lost notifications, an alert, the error, and %q on the line:\n%s", tc.name, tc.count, bar)
+			t.Errorf("%s: want the lost notifications, an alert, the error, and a count of the %d left out on the line:\n%s", tc.name, missing, bar)
 		}
 		for _, line := range lines {
 			if lipgloss.Width(line) > MinWidth {
@@ -494,6 +497,10 @@ func TestStatusBarCountsWhatItLeavesOut(t *testing.T) {
 		}
 	}
 }
+
+// statusCountRE matches the count that ends a status line, after " | " or,
+// on a full line, a space.
+var statusCountRE = regexp.MustCompile(`(?: \| | )\+(\d+)(?: more(?:: [a-z ,]+)?)?$`)
 
 // A cosigner list that succeeds after a failed one clears the failure from
 // the status bar as well as from the manager, so the bar does not bring back
@@ -559,5 +566,48 @@ func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
 		if edit := m.policies.apply.edit.input; edit.Value() != value || edit.Focused() == tc.blurred {
 			t.Errorf("%s: fitting changed the text or the focus", name)
 		}
+	}
+}
+
+// The count fits the line however many parts it counts, and the line never
+// runs past the window.
+func TestStatusBarCountFitsForAnyNumberOfParts(t *testing.T) {
+	for _, count := range []int{9, 99, 100, 150, 1000} {
+		alerts := make([]string, count)
+		for i := range alerts {
+			alerts[i] = fmt.Sprintf("policy %d names a network this node does not know; the document keeps working", i)
+		}
+		m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: ConnectionDisconnected, signerStatusKnown: true,
+			signerState: signerRuntimeRecovery, signerWarnings: alerts, lastError: longDaemonError}, MinWidth, MinHeight)
+		lines := strings.Split(stripANSI(m.renderStatusBar()), "\n")
+		for _, line := range lines {
+			if lipgloss.Width(line) > MinWidth {
+				t.Errorf("%d alerts: line wider than the window: %q", count, line)
+			}
+		}
+		// Two alerts take rows beside the error.
+		if count < 1000 && !strings.HasSuffix(strings.TrimRight(lines[0], " "), fmt.Sprintf(" +%d", count-2)) {
+			t.Errorf("%d alerts: the line does not count the %d left out: %q", count, count-2, lines[0])
+		}
+	}
+}
+
+// The notice that says why an approval key was not taken ranks above
+// warnings, so a crowded status bar still shows it.
+func TestApprovalArmingNoticeRanksAboveWarnings(t *testing.T) {
+	alert := func(i int) string {
+		return fmt.Sprintf("policy %d names network testnet-%d, which this node does not know; the document keeps working", i, i)
+	}
+	m := sizedForTest(t, Model{viewState: ViewKeyList, connectionState: ConnectionDisconnected, signerStatusKnown: true,
+		signerState: signerRuntimeRecovery, signerWarnings: []string{alert(0)}, lastError: longDaemonError,
+		lastWarning: "the policy was applied but its sidecar is stale; " + strings.Repeat("re-apply it to rewrite the sidecar ", 2)}, MinWidth, MinHeight)
+	_ = m.setApprovalArmingNotice()
+	bar := stripANSI(m.renderStatusBar())
+	if !strings.Contains(bar, "One moment...") || !strings.Contains(bar, "+1") {
+		t.Fatalf("the arming notice is not shown ahead of the warning:\n%s", bar)
+	}
+	_ = m.setTransientNotice("Copied")
+	if bar := stripANSI(m.renderStatusBar()); strings.Contains(bar, "Copied") {
+		t.Fatalf("a plain notice ranks with the arming notice:\n%s", bar)
 	}
 }
