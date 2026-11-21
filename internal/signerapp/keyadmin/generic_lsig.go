@@ -74,7 +74,7 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 
 	salted, err := template.CompileWithSalt(ctx, parameters, algodClient)
 	if err != nil {
-		return "", fmt.Errorf("%s generation failed: %v", template.DisplayName(), err)
+		return "", fmt.Errorf("%s generation failed: %w", template.DisplayName(), err)
 	}
 	bytecode := salted.Bytecode
 	address := salted.Address.String()
