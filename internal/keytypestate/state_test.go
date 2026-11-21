@@ -422,6 +422,33 @@ func TestCompareForReload(t *testing.T) {
 			registryFingerprint: fp,
 			want:                OutcomeIdempotent,
 		},
+		{
+			name:            "unversioned record before registration",
+			rec:             Record{Source: SourceYAMLGeneric, Fingerprint: strings.Repeat("a", 64)},
+			fileFingerprint: fp,
+			want:            OutcomeRegister,
+		},
+		{
+			name:                "unversioned record after registration",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: strings.Repeat("a", 64)},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeRegister,
+		},
+		{
+			name:                "version 0 record",
+			rec:                 Record{Source: SourceYAMLComposed, Fingerprint: "0:" + strings.Repeat("a", 64)},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeRegister,
+		},
+		{
+			name:                "cross-version record",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fpV2},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
+			want:                OutcomeRegister,
+		},
 	}
 
 	for _, tt := range tests {

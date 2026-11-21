@@ -79,3 +79,45 @@ func TestTemplateFingerprintComparisonUnavailable(t *testing.T) {
 		t.Fatal("lsigprovider.CompareTemplateFingerprint(unavailable) note is empty")
 	}
 }
+
+// A key's recorded provenance agrees with the registered definition only when
+// it is that definition's fingerprint byte for byte; nothing recorded reports
+// nothing. Any other value is a conflict, for a provider with one fixed
+// contract and for one whose contract varies by key.
+func TestTemplateFingerprintComparisonOfARecordedValue(t *testing.T) {
+	const (
+		fixedKeyType  = "fingerprint-test-recorded-v1"
+		perKeyKeyType = "fingerprint-test-recorded-per-key-v1"
+		conflictNote  = "creation template fingerprint differs from the currently registered definition"
+		formatNote    = "stored template fingerprint uses an incompatible format and cannot be compared to the currently registered definition"
+	)
+	live := "1:" + strings.Repeat("a", 64)
+	hash := strings.Repeat("a", 64)
+	registerForTest(t, fingerprintTestProvider{keyType: fixedKeyType, fingerprint: live})
+	registerForTest(t, perKeyProvider{
+		fingerprintTestProvider: fingerprintTestProvider{keyType: perKeyKeyType, fingerprint: instanceFingerprintC},
+		shapes:                  map[string]string{"list": live},
+	})
+
+	for _, test := range []struct {
+		name, stored, wantStatus, wantNote string
+	}{
+		{name: "matching", stored: live},
+		{name: "nothing recorded"},
+		{name: "mismatching", stored: "1:" + strings.Repeat("b", 64), wantStatus: lsigprovider.TemplateProvenanceStatusConflict, wantNote: conflictNote},
+		{name: "unversioned", stored: hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
+		{name: "version 0", stored: "0:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
+		{name: "noncanonical prefix", stored: "01:" + hash},
+		{name: "cross-version", stored: "2:" + hash, wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
+		{name: "malformed hash", stored: "1:" + hash[:63], wantStatus: lsigprovider.TemplateProvenanceStatusUnavailable, wantNote: formatNote},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if status, note := lsigprovider.CompareTemplateFingerprint(fixedKeyType, test.stored); status != test.wantStatus || note != test.wantNote {
+				t.Fatalf("CompareTemplateFingerprint() = (%q, %q), want (%q, %q)", status, note, test.wantStatus, test.wantNote)
+			}
+			if status, note := lsigprovider.CompareAccountProvenance(perKeyKeyType, test.stored, map[string]string{"shape": "list"}, nil); status != test.wantStatus || note != test.wantNote {
+				t.Fatalf("CompareAccountProvenance() = (%q, %q), want (%q, %q)", status, note, test.wantStatus, test.wantNote)
+			}
+		})
+	}
+}
