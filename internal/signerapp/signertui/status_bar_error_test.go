@@ -279,8 +279,12 @@ func TestLibraryAndPolicyEditorFollowAWrappedStatusBar(t *testing.T) {
 			ed.standalone = standalone
 			ed = sizedForTest(t, ed, MinWidth, MinHeight)
 			ed = openEditorForKeyOnDefault(t, ed)
-			ed.lastError = errText
 			ed.policies.apply.err = "the check refused the document"
+			// Delivered as the program delivers them, so the editor refits.
+			ed = sizedForTest(t, ed, MinWidth, MinHeight)
+			if errText != "" {
+				ed = updateModel(t, ed, ErrorMsg{Error: errors.New(errText)})
+			}
 			checkBodyFits(t, "editor "+name, ed)
 			if view := stripANSI(ed.View()); !strings.Contains(view, "the check refused the document") {
 				t.Errorf("editor %s: the message under the text is cut:\n%s", name, view)
@@ -514,9 +518,13 @@ func TestCosignerListSuccessClearsItsFailureFromTheBar(t *testing.T) {
 }
 
 // The policy editor keeps the cursor's line in view when an error takes rows
-// from it: the next key edits a line the operator can see.
+// from it, focused or not: the next key edits a line the operator can see.
+// Update fits it; drawing it changes nothing.
 func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
-	for _, standalone := range []bool{false, true} {
+	for _, tc := range []struct {
+		standalone, blurred bool
+	}{{false, false}, {true, false}, {false, true}, {true, true}} {
+		standalone := tc.standalone
 		m := cosignerPoliciesModel("default")
 		m.standalone, m.connectionState = standalone, ConnectionConnected
 		m = openEditorForKeyOnDefault(t, sizedForTest(t, m, MinWidth, MinHeight))
@@ -534,11 +542,22 @@ func TestPolicyEditorKeepsTheCursorLineUnderALongError(t *testing.T) {
 		if view := stripANSI(m.View()); !strings.Contains(view, "line-059") {
 			t.Fatalf("standalone %v: the cursor's last line is not on screen before the error:\n%s", standalone, view)
 		}
+		if tc.blurred {
+			m.policies.apply.edit.input.Blur()
+		}
+		value := m.policies.apply.edit.input.Value()
 		m = updateModel(t, m, ErrorMsg{Error: errors.New(longDaemonError)})
 		view := stripANSI(m.View())
-		checkBodyFits(t, fmt.Sprintf("standalone %v", standalone), m)
+		name := fmt.Sprintf("standalone %v blurred %v", standalone, tc.blurred)
+		checkBodyFits(t, name, m)
 		if !strings.Contains(view, "line-059") {
-			t.Errorf("standalone %v: the cursor's line is hidden after the error:\n%s", standalone, view)
+			t.Errorf("%s: the cursor's line is hidden after the error:\n%s", name, view)
+		}
+		if again := stripANSI(m.View()); again != view {
+			t.Errorf("%s: drawing the editor again draws it differently", name)
+		}
+		if edit := m.policies.apply.edit.input; edit.Value() != value || edit.Focused() == tc.blurred {
+			t.Errorf("%s: fitting changed the text or the focus", name)
 		}
 	}
 }

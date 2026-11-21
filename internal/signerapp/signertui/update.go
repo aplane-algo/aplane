@@ -91,7 +91,7 @@ func (m Model) updateOnTop(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	next, cmd := m.update(msg)
 	shown, heldCmd := next.(Model).showHeldResult()
-	return shown.keepApprovalOnTop(preferred), tea.Batch(cmd, heldCmd)
+	return shown.keepApprovalOnTop(preferred).fitPolicyEditor(), tea.Batch(cmd, heldCmd)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {

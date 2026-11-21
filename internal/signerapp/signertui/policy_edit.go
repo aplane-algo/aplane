@@ -407,13 +407,31 @@ func (m Model) sizedPolicyEditor() textarea.Model {
 	}
 	input.SetWidth(m.policyApplyReviewWidth())
 	input.SetHeight(max(height, 5))
-	// The text area moves its view to the cursor only in an update, over
-	// the lines it last drew, and a status bar that grew since the last key
-	// leaves it fewer rows: drawn at the new height, then updated with no
-	// message, it keeps the cursor's line in view.
-	_ = input.View()
-	input, _ = input.Update(nil)
 	return input
+}
+
+// fitPolicyEditor keeps the open editor at its size and the cursor's line in
+// view. Update runs it after every message, as it keeps an approval on top,
+// since what a message changes, a status bar that grows above all, can take
+// rows from the editor, and the text area moves its view to the cursor only
+// when it is updated. Drawing then reads the fitted editor.
+func (m Model) fitPolicyEditor() Model {
+	edit := &m.policies.apply.edit
+	if m.viewState != ViewPolicyEdit || edit.loading {
+		return m
+	}
+	input := m.sizedPolicyEditor()
+	// The text area scrolls to its cursor in an update, but only when it is
+	// focused.
+	if input.Focused() {
+		input, _ = input.Update(nil)
+	} else {
+		input.Focus()
+		input, _ = input.Update(nil)
+		input.Blur()
+	}
+	edit.input = input
+	return m
 }
 
 // policyEditHeader is what the editor draws above the text.
@@ -443,7 +461,7 @@ func (m Model) renderPolicyEdit() string {
 		return sb.String()
 	}
 	sb.WriteString(m.policyEditHeader(width))
-	sb.WriteString(m.sizedPolicyEditor().View())
+	sb.WriteString(m.policies.apply.edit.input.View())
 	sb.WriteString("\n")
 	for _, line := range m.policyEditMessages() {
 		if line.attention {
