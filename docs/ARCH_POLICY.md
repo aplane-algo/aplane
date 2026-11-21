@@ -1589,10 +1589,11 @@ the same rules as the daemon (the shared `internal/signerapp/policyapply`
 package). It reads root `node.yaml` for the role, verifies the policy
 sidecars with the store passphrase, and rejects `--ipc-path`. Read verbs hold
 the shared store lock; `apply` and `remove` hold the exclusive store mutation
-lock and therefore require a stopped daemon. On a systemd store, offline use
-requires root. A root-run rescue change of a production store restores the
-owner recorded in root-controlled `install/service-principal.json` before
-returning. Online and
+lock and therefore require a stopped daemon; they reconcile the generation
+store first, as an unlock does. On a systemd store, offline use requires
+root. A root-run rescue change of a production store restores the owner
+recorded in root-controlled `install/service-principal.json` before returning,
+whatever the outcome. Online and
 rescue policy commands read the passphrase from `APSIGNER_PASSPHRASE`, a
 terminal, or one stdin line; when the document is read from stdin the
 passphrase must come from `APSIGNER_PASSPHRASE` or the controlling terminal.

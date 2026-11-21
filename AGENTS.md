@@ -50,8 +50,8 @@ for the address).
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
 - `cmd/apstore/`: Stopped-daemon initialize/policy/verify/rebuild operations,
-  offline generation pruning and key inventory, and permission audit/migration;
-  it has no live admin transport
+  offline generation pruning, template record repair and key inventory, and
+  permission audit/migration; it has no live admin transport
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
@@ -287,8 +287,8 @@ so a PR that changes modeled code keeps the correspondence itself.
 |---|---|
 | `internal/signerapp/approval/` | `approval_coordinator.tla`, `approval_composition.tla` |
 | `internal/signerapp/daemon/ipc.go`, `internal/signerapp/adminserver/session.go`, `displacement.go` | `session_ownership.tla` |
-| `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go` | `store_root_commit.tla` |
-| store-commit callers (`internal/signerapp/admin/`, `backupadmin/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
+| `internal/genstore/` (commit, root commit, reconcile, quarantine), `internal/storepass/rotate.go`, `internal/crypto/store_root.go`, `internal/signerapp/templaterepair/repair.go`, `internal/signerapp/policycmd/rescue.go`, `internal/signerapp/storevalidate/validate.go` | `store_root_commit.tla` |
+| store-commit callers (`internal/signerapp/admin/`, `backupadmin/`, `templaterepair/`, `policycmd/`), `internal/signerapp/templates/reload.go`, `internal/keystore/file.go`, `daemon/admin_services.go` | `recovery_binding.tla` |
 | `internal/signerapp/enrollqueue/`, `enrollment/service.go`, `productruntime/runtime.go` (registry and queue publication), `daemon/server.go` (approve/reject/import) | `enrollment_queue.tla` |
 | `internal/signerapp/signing/bounded_cosigner.go`, `component_assemble.go` (passthrough), `internal/engine/cosigned/submit.go` | `bounded_cosigner.tla` |
 | `internal/engine/plugin_*.go`, `internal/apshellcli/external_plugins.go`, `plugin_group_review.go`, `internal/apshellapp/submission.go`, `internal/engine/accounts.go` (`CurrentKeys`, `RekeyTargetsFromKeys`) | `plugin_signing.tla` |

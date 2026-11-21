@@ -160,7 +160,15 @@ func Delete(paths storepaths.Paths, keyType string) error {
 	if err != nil {
 		return err
 	}
-	keyType, err = normalizeKeyType(keyType)
+	return DeleteActive(active, keyType)
+}
+
+// DeleteActive is Delete against resolved active-store paths, or an
+// unpublished staged generation.
+//
+// CONTRACT: product callers MUST hold Signer.storeMutationLock.
+func DeleteActive(active storepaths.GenPaths, keyType string) error {
+	keyType, err := normalizeKeyType(keyType)
 	if err != nil {
 		return err
 	}

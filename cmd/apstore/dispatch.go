@@ -10,6 +10,13 @@ import (
 
 func dispatchApstoreCommand(args []string) {
 	command := args[0]
+	var templateRequest templateRepairRequest
+	if command == "template" {
+		var err error
+		if templateRequest, err = parseTemplateCommand(args[1:]); err != nil {
+			exitWithError(err)
+		}
+	}
 	if err := enforceApstoreExecutionMode(dataDirectory, args); err != nil {
 		exitWithError(err)
 	}
@@ -68,6 +75,18 @@ func dispatchApstoreCommand(args []string) {
 
 	case "keys":
 		if err := cmdKeys(args[1:]); err != nil {
+			exitWithError(err)
+		}
+
+	case "template":
+		run := func() error {
+			return cmdTemplateRepair(templateRequest)
+		}
+		if templateRequest.confirm {
+			if err := runStoreMutatingCommand(command, run); err != nil {
+				exitWithError(err)
+			}
+		} else if err := run(); err != nil {
 			exitWithError(err)
 		}
 
