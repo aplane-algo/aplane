@@ -406,7 +406,8 @@ before it enters recovery, and answers from a session published meanwhile
 instead of ending it.
 
 An unlock can also succeed into recovery mode: when the passphrase verifies
-but generation reconciliation or validation of the selected generation fails,
+but generation reconciliation or validation of the selected generation fails
+or it holds two key files for one signing address,
 or when a store change on another connection ends in doubt and enters
 recovery while the unlock is still running (the unlock reads its session
 generations before it takes the store mutation lock to check the state and

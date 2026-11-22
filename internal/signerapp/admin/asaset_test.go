@@ -227,7 +227,7 @@ func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	}
 
 	var result adminproto.AddASAResult
-	outcome, loads := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, outcome := secondUnlockMeeting(t, svc, ir, reload, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
 	})
@@ -235,8 +235,8 @@ func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	if result.Success || !result.CommitUncertain || result.Code != "asa_commit_uncertain" {
 		t.Fatalf("AddASA(durability unknown) = %+v", result)
 	}
-	if outcome != signerruntime.RecoveryDuringUnlockMessage {
-		t.Fatalf("the second unlock = %q, want %q", outcome, signerruntime.RecoveryDuringUnlockMessage)
+	if !errors.Is(outcome, signerruntime.ErrRecoveryDuringUnlock) {
+		t.Fatalf("the second unlock = %v, want %v", outcome, signerruntime.ErrRecoveryDuringUnlock)
 	}
 	if loads != 1 {
 		t.Fatalf("the second unlock loaded %d time(s), want once: it found the signer in recovery", loads)

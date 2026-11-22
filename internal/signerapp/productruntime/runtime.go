@@ -496,7 +496,11 @@ func (ir *Runtime) PromoteRecoveryToUnlocked() bool {
 	return ok
 }
 
-// SetUnlocked marks this identity as unlocked without side effects.
+// SetUnlocked marks this identity as unlocked without the fence an unlock
+// attempt passes. No production path calls it: an unlock request publishes
+// through Unlock, and a reconcile leaves recovery through
+// PromoteRecoveryToUnlocked. Tests use it to set up an unlocked runtime;
+// test/arch keeps it out of production code.
 func (ir *Runtime) SetUnlocked() {
 	ir.lockRuntime.SetUnlocked()
 	ir.WakeStageWork()
@@ -535,22 +539,22 @@ func (ir *Runtime) endSignRequests() {
 
 // TryRecoveryUnlock opens the keyring without scanning or publishing
 // active credentials, then enters recovery state.
-func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) (bool, string) {
-	ok, msg := ir.lockRuntime.TryRecovery(func() error {
+func (ir *Runtime) TryRecoveryUnlock(passphrase []byte) error {
+	err := ir.lockRuntime.TryRecovery(func() error {
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
 		return unlockFailure(ir.keyStore.Unlock(passphrase))
 	})
-	if ok {
+	if err == nil {
 		// As SetRecovery: a session that was unlocked until now is over.
 		ir.cancelKeyUses()
 		ir.endSignRequests()
 	}
-	if !ok && msg == signerruntime.LockedDuringUnlockMessage {
+	if errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
 		// A lock overtook the attempt, which then locked the runtime.
 		ir.notifyLocked()
 	}
-	return ok, msg
+	return err
 }
 
 // Lock transitions this identity to the locked state.
@@ -581,9 +585,9 @@ func (ir *Runtime) FinishStoreMaintenance(
 	return false
 }
 
-// TryUnlock attempts to unlock with the given passphrase.
-// Returns (success, keyCount, errorMessage).
-// The passphrase bytes are NOT zeroed by this function.
+// TryUnlock attempts to unlock with the given passphrase, and returns the
+// key count it published. The passphrase bytes are NOT zeroed by this
+// function.
 //
 // An attempt that finds the signer already unlocked answers from the session
 // (AnswerFromSession): it verifies the passphrase and answers with the
@@ -614,22 +618,22 @@ func (ir *Runtime) FinishStoreMaintenance(
 // from the session ended at its check, before the fence: it loaded nothing,
 // so it has nothing to publish over a later lock or recovery and nothing for
 // a loser's cleanup to clear.
-func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, string) {
+func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (int, error) {
 	ir.unlockMu.Lock()
 	defer ir.unlockMu.Unlock()
 	var fromSession SessionAnswer
-	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase, &fromSession), onUnlocked)
+	keyCount, err := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase, &fromSession), onUnlocked)
 	if fromSession.Answered {
-		return fromSession.ErrMsg == "", fromSession.KeyCount, fromSession.ErrMsg
+		return fromSession.KeyCount, fromSession.Err
 	}
-	if ok {
+	if err == nil {
 		// Only now, once the fence let the attempt publish: an attempt
 		// that lost to a lock or met a recovery loaded keys but unlocked
 		// nothing.
 		fmt.Printf("🔓 Signer unlocked (%d keys loaded)\n", keyCount)
 		ir.WakeStageWork()
 	}
-	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
+	if errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
 		ir.notifyLocked()
 	}
 	// An attempt the fence refused for a recovery entered after it began
@@ -639,7 +643,7 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	// lookup uses it until the signer is unlocked, since the external check
 	// step reads tokens inside a key use, and SourceTokenNamesFor answers
 	// only while the signer is unlocked.
-	return ok, keyCount, errMsg
+	return keyCount, err
 }
 
 // SessionAnswer is an unlock request's answer from the session in service.
@@ -648,9 +652,9 @@ type SessionAnswer struct {
 	// the signer was not unlocked, or its session ended during the check.
 	Answered bool
 	KeyCount int
-	// ErrMsg is set when the passphrase does not open the store root, as
+	// Err is set when the passphrase does not open the store root, as
 	// TryUnlock reports it.
-	ErrMsg string
+	Err error
 }
 
 // AnswerFromSession answers an unlock request from the session in service,
@@ -671,7 +675,7 @@ func (ir *Runtime) AnswerFromSession(passphrase []byte) SessionAnswer {
 		return SessionAnswer{}
 	}
 	if err := verifyUnlockPassphrase(passphrase, ir.keyPaths); err != nil {
-		return SessionAnswer{Answered: true, ErrMsg: err.Error()}
+		return SessionAnswer{Answered: true, Err: err}
 	}
 	keyCount := ir.KeyCount()
 	if !ir.IsUnlockedIn(generation) {
@@ -686,7 +690,7 @@ func (ir *Runtime) AnswerFromSession(passphrase []byte) SessionAnswer {
 // reconcile's promotion out of recovery and a passphrase change's republish
 // hold the same lock, so neither lands between the check and the reconcile.
 // An unlock's publish does not hold it, so another request may publish
-// meanwhile; the caller checks again before it enters recovery on a failed
+// meanwhile; Unlock checks again before it enters recovery on a failed
 // reconcile, and TryUnlock checks again before it loads.
 func (ir *Runtime) AnswerIfUnlocked(passphrase []byte, reconcile func() error) (SessionAnswer, error) {
 	release := ir.lockStoreMutation()
@@ -695,6 +699,108 @@ func (ir *Runtime) AnswerIfUnlocked(passphrase []byte, reconcile func() error) (
 		return answer, nil
 	}
 	return SessionAnswer{}, reconcile()
+}
+
+// UnlockOutcome is how an unlock request that did not fail ended.
+type UnlockOutcome struct {
+	// Recovery is set when the request left the signer in recovery: its
+	// reconcile or its load found the store needing it, an entry into
+	// recovery on another connection fenced it, or the reconcile of changes
+	// seen while locked, run once it published, entered recovery.
+	Recovery bool
+	// KeyCount is the published key count of an unlocked signer.
+	KeyCount int
+	// Cause is why the request entered recovery, or why it would have where
+	// another request's session answered it (KeptSession). It is nil when
+	// the reload of changes seen while locked entered recovery, which told
+	// the admin session and the log itself.
+	Cause error
+	// KeptSession is set when the request's reconcile or load found the store
+	// needing recovery and a session another request published since then
+	// answered it: that session stands.
+	KeptSession bool
+}
+
+// Unlock runs an unlock request: the answer from a session in service, or
+// the reconcile, the fenced load and publish, and the fall back into recovery
+// when the reconcile or the load finds the store needing it. reconcile runs
+// under the store mutation lock and opens the store root with the
+// passphrase; onUnlocked runs once the attempt has published. It returns the
+// outcome, or the error of a request that neither unlocked the signer nor
+// entered recovery: one that lost to a lock has locked it, and a failed load
+// from locked has closed the keyring it opened. A passphrase that does not
+// open the store root ends the request where it is found. The passphrase
+// bytes are not zeroed.
+func (ir *Runtime) Unlock(passphrase []byte, reconcile func() error, onUnlocked func()) (UnlockOutcome, error) {
+	answer, reconcileErr := ir.AnswerIfUnlocked(passphrase, reconcile)
+	if answer.Answered {
+		return UnlockOutcome{KeyCount: answer.KeyCount}, answer.Err
+	}
+	if reconcileErr != nil {
+		if errors.Is(reconcileErr, crypto.ErrInvalidPassphrase) {
+			return UnlockOutcome{}, unlockFailure(reconcileErr)
+		}
+		return ir.enterRecoveryUnlessUnlocked(passphrase, reconcileErr)
+	}
+	// TryUnlock takes the store mutation lock again for its check and load.
+	// Another request may publish, or a reconcile promote, in the gap
+	// between the two holds; TryUnlock's check then answers from that
+	// session, and the reconcile this request ran is not undone.
+	keyCount, err := ir.TryUnlock(passphrase, onUnlocked)
+	switch {
+	case errors.Is(err, signerruntime.ErrRecoveryDuringUnlock):
+		return ir.answerFencedUnlock(err)
+	case IsContentDefect(err):
+		// Content defects in the selected generation are a recovery
+		// condition, not an unlock failure: the passphrase was right and
+		// the operator resolves the store from recovery mode.
+		return ir.enterRecoveryUnlessUnlocked(passphrase, err)
+	case err != nil:
+		return UnlockOutcome{}, err
+	}
+	// The publish ran onUnlocked, whose reconcile of changes seen while
+	// locked can find a defect that appeared after this request's own load
+	// and enter recovery. That reload told the admin session itself.
+	if ir.IsRecovery() {
+		return UnlockOutcome{Recovery: true}, nil
+	}
+	return UnlockOutcome{KeyCount: keyCount}, nil
+}
+
+// enterRecoveryUnlessUnlocked enters recovery for an unlock request whose
+// reconcile or load found the store needing it (cause), unless the signer is
+// unlocked by now: another request may have published since this one found
+// it not unlocked. That session answers the request (AnswerFromSession), as
+// it answers one that finds the signer unlocked, and is not ended by an
+// entry into recovery. The check and TryRecoveryUnlock are separate steps,
+// so a publish between them is still ended; that gap is accepted.
+func (ir *Runtime) enterRecoveryUnlessUnlocked(passphrase []byte, cause error) (UnlockOutcome, error) {
+	if answer := ir.AnswerFromSession(passphrase); answer.Answered {
+		if answer.Err != nil {
+			return UnlockOutcome{}, answer.Err
+		}
+		return UnlockOutcome{KeyCount: answer.KeyCount, Cause: cause, KeptSession: true}, nil
+	}
+	if err := ir.TryRecoveryUnlock(passphrase); err != nil {
+		return UnlockOutcome{}, err
+	}
+	return UnlockOutcome{Recovery: true, Cause: cause}, nil
+}
+
+// answerFencedUnlock answers an unlock that met an entry into recovery and
+// so published nothing, from the state the signer is in now: a reconcile on
+// another connection may have lifted that recovery, or a lock come in, since.
+func (ir *Runtime) answerFencedUnlock(fenced error) (UnlockOutcome, error) {
+	switch ir.GetState() {
+	case signerruntime.SignerStateRecovery:
+		// A store change on another connection ended in doubt while this
+		// unlock ran; the signer stays in recovery, as that change answered.
+		return UnlockOutcome{Recovery: true, Cause: fenced}, nil
+	case signerruntime.SignerStateUnlocked:
+		return UnlockOutcome{KeyCount: ir.KeyCount()}, nil
+	default:
+		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
+	}
 }
 
 // --- Approval ---
@@ -1776,21 +1882,29 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// InvalidPassphraseMessage is the unlock failure for a wrong passphrase. The lock
-// runtime passes unlock failures on as text, so admin services match this
-// constant to attach invalid_passphrase; see signerruntime.LockedDuringUnlockMessage.
-const InvalidPassphraseMessage = "invalid passphrase"
+// ErrInvalidPassphrase is an unlock's failure for the request's passphrase:
+// it does not open the store root. It reads "invalid passphrase", the text
+// the admin client shows, and is crypto.ErrInvalidPassphrase to errors.Is.
+// A load that fails because the store root no longer opens with a passphrase
+// already checked wraps crypto.ErrInvalidPassphrase but is not this: it is a
+// failed unlock, not a wrong passphrase.
+var ErrInvalidPassphrase error = invalidPassphrase{}
 
-// unlockFailure classifies a store-root open error for the lock runtime: a
-// passphrase that does not open the root becomes InvalidPassphraseMessage, and
-// any other failure (an unreadable or damaged root) keeps its cause, so it is
-// reported as a failed unlock rather than a wrong passphrase.
+type invalidPassphrase struct{}
+
+func (invalidPassphrase) Error() string { return "invalid passphrase" }
+func (invalidPassphrase) Unwrap() error { return crypto.ErrInvalidPassphrase }
+
+// unlockFailure classifies a store-root open error for an unlock: a
+// passphrase that does not open the root is ErrInvalidPassphrase, and any other
+// failure (an unreadable or damaged root) keeps its cause, so it is reported
+// as a failed unlock rather than a wrong passphrase.
 func unlockFailure(err error) error {
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, crypto.ErrInvalidPassphrase):
-		return errors.New(InvalidPassphraseMessage)
+		return ErrInvalidPassphrase
 	default:
 		return fmt.Errorf("store root could not be opened: %w", err)
 	}
@@ -1948,7 +2062,7 @@ func (ir *Runtime) performUnlock(passphrase []byte, answer *SessionAnswer) func(
 			return 0, err
 		}
 		if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
-			return 0, fmt.Errorf("failed to load keys: %v", err)
+			return 0, fmt.Errorf("failed to load keys: %w", err)
 		}
 		return ir.KeyCount(), nil
 	}

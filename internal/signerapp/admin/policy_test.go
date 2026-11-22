@@ -493,11 +493,15 @@ func (g *beforeUnlockCheck) Lock() {
 
 func (g *beforeUnlockCheck) Unlock() { g.mu.Unlock() }
 
+// errPublishedUnlocked is secondUnlockMeeting's outcome for an unlock that
+// published.
+var errPublishedUnlocked = errors.New("published unlocked")
+
 // secondUnlockMeeting runs an unlock of the unlocked signer, as a second
 // admin connection does, with between landing after the unlock has read its
-// session generations and before it checks the state. It returns the
-// unlock's outcome and how many times it loaded.
-func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, reload policyReload, between func()) (outcome string, loads int) {
+// session generations and before it checks the state. It returns how many
+// times the unlock loaded and its outcome.
+func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, reload policyReload, between func()) (loads int, outcome error) {
 	t.Helper()
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		if passphrase != nil {
@@ -507,11 +511,11 @@ func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, 
 	})
 	gate := &beforeUnlockCheck{mu: &svc.Deps.(*fakeDeps).mu, between: between}
 	ir.SetReloadMutationLock(func() sync.Locker { return gate })
-	ok, _, msg := ir.TryUnlock([]byte(adminPolicyPassphrase), nil)
-	if ok {
-		msg = "published unlocked"
+	_, err := ir.TryUnlock([]byte(adminPolicyPassphrase), nil)
+	if err == nil {
+		err = errPublishedUnlocked
 	}
-	return msg, loads
+	return loads, err
 }
 
 // failIdentityDirSync makes the commit's durability unknown: the identity
@@ -544,7 +548,7 @@ func TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	snapshot := svc.GetPolicyContext().SnapshotSHA256
 
 	var result adminproto.ApplyPolicyResult
-	outcome, loads := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, outcome := secondUnlockMeeting(t, svc, ir, reload, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 			Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
@@ -556,8 +560,8 @@ func TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	if result.Success || !result.CommitUncertain || result.Code != "policy_commit_uncertain" {
 		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
 	}
-	if outcome != signerruntime.RecoveryDuringUnlockMessage {
-		t.Fatalf("the second unlock = %q, want %q", outcome, signerruntime.RecoveryDuringUnlockMessage)
+	if !errors.Is(outcome, signerruntime.ErrRecoveryDuringUnlock) {
+		t.Fatalf("the second unlock = %v, want %v", outcome, signerruntime.ErrRecoveryDuringUnlock)
 	}
 	if loads != 1 {
 		t.Fatalf("the second unlock loaded %d time(s), want once: it found the signer in recovery", loads)

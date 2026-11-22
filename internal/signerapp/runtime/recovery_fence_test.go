@@ -4,13 +4,14 @@
 package runtime
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 )
 
 type unlockOutcome struct {
 	ok  bool
-	msg string
+	err error
 }
 
 // startBlockedUnlock starts a TryUnlock whose unlock function waits for
@@ -20,12 +21,12 @@ func startBlockedUnlock(rt *Runtime) (release chan struct{}, done chan unlockOut
 	release = make(chan struct{})
 	done = make(chan unlockOutcome, 1)
 	go func() {
-		ok, _, msg := rt.TryUnlock(func() (int, error) {
+		_, err := rt.TryUnlock(func() (int, error) {
 			close(entered)
 			<-release
 			return 1, nil
 		}, nil)
-		done <- unlockOutcome{ok, msg}
+		done <- unlockOutcome{err == nil, err}
 	}()
 	<-entered
 	return release, done
@@ -62,8 +63,8 @@ func TestAnUnlockInFlightDoesNotPublishOverALaterRecovery(t *testing.T) {
 			name:  "begun locked, beside an unlock whose reconcile failed",
 			start: func(*Runtime) {},
 			enter: func(rt *Runtime) {
-				if ok, msg := rt.TryRecovery(func() error { return nil }); !ok {
-					t.Fatalf("TryRecovery: %s", msg)
+				if err := rt.TryRecovery(func() error { return nil }); err != nil {
+					t.Fatalf("TryRecovery: %v", err)
 				}
 			},
 		},
@@ -77,8 +78,8 @@ func TestAnUnlockInFlightDoesNotPublishOverALaterRecovery(t *testing.T) {
 			tc.enter(rt)
 			close(release)
 			got := <-done
-			if got.ok || got.msg != RecoveryDuringUnlockMessage {
-				t.Fatalf("TryUnlock = ok %v, %q; want %q", got.ok, got.msg, RecoveryDuringUnlockMessage)
+			if got.ok || !errors.Is(got.err, ErrRecoveryDuringUnlock) {
+				t.Fatalf("TryUnlock = ok %v, %v; want %v", got.ok, got.err, ErrRecoveryDuringUnlock)
 			}
 			if !rt.IsRecovery() {
 				t.Fatalf("state = %v, want recovery", rt.GetState())
@@ -99,6 +100,6 @@ func TestSetRecoveryDuringAFirstUnlockLetsItPublish(t *testing.T) {
 	rt.SetRecovery()
 	close(release)
 	if got := <-done; !got.ok || !rt.IsUnlocked() {
-		t.Fatalf("TryUnlock = ok %v, %q, state %v; want unlocked", got.ok, got.msg, rt.GetState())
+		t.Fatalf("TryUnlock = ok %v, %v, state %v; want unlocked", got.ok, got.err, rt.GetState())
 	}
 }

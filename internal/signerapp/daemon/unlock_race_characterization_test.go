@@ -125,8 +125,8 @@ func TestAnUnlockThatHasLostToALockStillLoads(t *testing.T) {
 	if !locked {
 		t.Fatal("the lock did not land: the unlock no longer takes the store mutation lock a second time for its load")
 	}
-	if success || errMsg != signerruntime.LockedDuringUnlockMessage {
-		t.Fatalf("UnlockIdentity() = (%v, %q), want %q", success, errMsg, signerruntime.LockedDuringUnlockMessage)
+	if success || errMsg != signerruntime.ErrLockedDuringUnlock.Error() {
+		t.Fatalf("UnlockIdentity() = (%v, %q), want %q", success, errMsg, signerruntime.ErrLockedDuringUnlock)
 	}
 	if got := ir.GetState(); got != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v, want the lock to stand", got)

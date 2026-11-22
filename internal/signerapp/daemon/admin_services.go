@@ -104,129 +104,56 @@ func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
 
 func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
 	ir := s.ProductRuntime()
-	// One hold of the store mutation lock covers the check and the
-	// reconcile. A signer already unlocked answers from the session in
-	// service: the passphrase is checked, and nothing is reconciled, loaded
-	// or published, since a reconcile that failed would enter recovery and
-	// end that session. Reconciliation authenticates the sole store root
-	// before it relocates or deletes residue. A valid root with damaged
-	// selected content still opens the keyring and enters recovery; no
-	// generation is selected heuristically.
-	answer, reconcileErr := ir.AnswerIfUnlocked(passphrase, func() error {
+	// Reconciliation authenticates the sole store root before it relocates
+	// or deletes residue. A valid root with damaged selected content still
+	// opens the keyring and enters recovery; no generation is selected
+	// heuristically.
+	outcome, err := ir.Unlock(passphrase, func() error {
 		return s.reconcileGenerationsWithPassphraseLocked(ir, passphrase)
-	})
-	if answer.Answered {
-		return answerFromSession(answer)
-	}
-	if reconcileErr != nil {
-		return enterRecoveryUnlessUnlocked(ir, passphrase, reconcileErr.Error())
-	}
-	// TryUnlock takes the store mutation lock again for its check and load.
-	// Another request may publish, or a reconcile promote, in the gap
-	// between the two holds; TryUnlock's check then answers from that
-	// session, and the reconcile this request ran is not undone. The gap is
-	// accepted: closing it would take the lock before TryUnlock reads its
-	// session generations.
-	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
+	}, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
-	if !success && errMsg == signerruntime.RecoveryDuringUnlockMessage {
-		return answerFencedUnlock(ir, errMsg)
+	if err != nil {
+		return failedUnlock(err)
 	}
-	if !success && signertemplates.IsGenerationValidationError(errMsg) {
-		// Content defects in the selected generation are a recovery
-		// condition, not an unlock failure: the passphrase was right and
-		// the operator resolves the store from recovery mode.
-		return enterRecoveryUnlessUnlocked(ir, passphrase, errMsg)
-	}
-	if !success {
-		return failedUnlock(errMsg)
-	}
-	// The publish ran the dirty reconciliation (EnsureKeyWatcher), whose
-	// reload can find a defect that appeared after this unlock's own load
-	// and enter recovery; it pushed that state already, so the answer says
-	// it too, as answerFencedUnlock's does, rather than leave apadmin on an
-	// unlocked signer.
-	if ir.IsRecovery() {
+	logUnlockOutcome(outcome)
+	if outcome.Recovery {
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
-	return true, keyCount, "", ""
+	return true, outcome.KeyCount, "", ""
 }
 
-// answerFromSession answers an unlock request the session in service
-// answered: a success with its key count, or a refused passphrase.
-func answerFromSession(answer productruntime.SessionAnswer) (bool, int, string, string) {
-	if answer.ErrMsg != "" {
-		return failedUnlock(answer.ErrMsg)
-	}
-	return true, answer.KeyCount, "", ""
-}
-
-// enterRecoveryUnlessUnlocked enters recovery for an unlock request whose
-// reconcile or load found the store needing it (cause), unless the signer is
-// unlocked by now: another request may have published since this one found
-// it not unlocked. That session answers the request (AnswerFromSession), as
-// it answers one that finds the signer unlocked, and is not ended by an
-// entry into recovery. The check and TryRecoveryUnlock are separate steps,
-// so a publish between them is still ended; that gap is accepted.
-func enterRecoveryUnlessUnlocked(ir *productruntime.Runtime, passphrase []byte, cause string) (bool, int, string, string) {
-	if answer := ir.AnswerFromSession(passphrase); answer.Answered {
-		// The session in service stands, but what this request found is
-		// not dropped: the operator is told the store needs a look.
-		logWarnf("an unlock request found the store needing recovery and left the session in service: %s", cause)
-		return answerFromSession(answer)
-	}
-	success, errMsg := ir.TryRecoveryUnlock(passphrase)
-	if !success {
-		return failedUnlock(errMsg)
-	}
-	logWarnf("identity is recovery-blocked: %s", cause)
-	return true, 0, "", protocol.ResultCodeRecoveryBlocked
-}
-
-// answerFencedUnlock answers an unlock that met an entry into recovery and
-// so published nothing, from the state the signer is in now: a reconcile on
-// another connection may have lifted that recovery, or a lock come in, since.
-func answerFencedUnlock(ir *productruntime.Runtime, errMsg string) (bool, int, string, string) {
-	switch ir.GetState() {
-	case signerruntime.SignerStateRecovery:
-		// A store change on another connection ended in doubt while this
-		// unlock ran; the signer stays in recovery, as that change answered.
-		logWarnf("identity is recovery-blocked: %s", errMsg)
-		return true, 0, "", protocol.ResultCodeRecoveryBlocked
-	case signerruntime.SignerStateUnlocked:
-		return true, ir.KeyCount(), "", ""
-	default:
-		return failedUnlock(signerruntime.LockedDuringUnlockMessage)
+// logUnlockOutcome logs what an unlock request found that its answer does
+// not carry: why it entered recovery, or that it found the store needing
+// recovery and left another request's session in service.
+func logUnlockOutcome(outcome productruntime.UnlockOutcome) {
+	switch {
+	case outcome.KeptSession:
+		logWarnf("an unlock request found the store needing recovery and left the session in service: %v", outcome.Cause)
+	case outcome.Recovery && outcome.Cause != nil:
+		logWarnf("identity is recovery-blocked: %v", outcome.Cause)
 	}
 }
 
-// failedUnlock answers an unlock that failed with errMsg. A failure other
-// than a wrong passphrase, such as a store root that cannot be opened, is
-// logged with its cause; an unlock that lost a race to a lock or a store
+// failedUnlock answers an unlock that failed with err. A failure other than
+// a wrong passphrase, such as a store root that cannot be opened, is logged
+// with its cause; an unlock that lost a race to a lock or a store
 // maintenance is expected and logged below error.
-func failedUnlock(errMsg string) (bool, int, string, string) {
-	code := unlockFailureCode(errMsg)
+func failedUnlock(err error) (bool, int, string, string) {
+	code := unlockFailureCode(err)
 	switch {
 	case code != protocol.ErrCodeUnlockFailed:
-	case errMsg == signerruntime.LockedDuringUnlockMessage, errMsg == signerruntime.MaintenanceInProgressMessage:
-		logInfof("unlock did not complete: %s", errMsg)
+	case errors.Is(err, signerruntime.ErrLockedDuringUnlock), errors.Is(err, signerruntime.ErrMaintenanceInProgress):
+		logInfof("unlock did not complete: %v", err)
 	default:
-		logErrorf("unlock failed: %s", errMsg)
+		logErrorf("unlock failed: %v", err)
 	}
-	return false, 0, errMsg, code
+	return false, 0, err.Error(), code
 }
 
-// reconcileGenerations opens the authenticated root under the store mutation
-// lock and validates the selected generation fail-closed.
-func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, passphrase []byte) error {
-	return s.withStoreMutation(func() error {
-		return s.reconcileGenerationsWithPassphraseLocked(ir, passphrase)
-	})
-}
-
-// reconcileGenerationsWithPassphraseLocked is reconcileGenerations' work, for
-// a caller that holds the store mutation lock.
+// reconcileGenerationsWithPassphraseLocked opens the authenticated root with
+// the passphrase and validates the selected generation fail-closed, for an
+// unlock request: the caller holds the store mutation lock.
 func (s signerAdminServices) reconcileGenerationsWithPassphraseLocked(ir *productruntime.Runtime, passphrase []byte) error {
 	_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
 	if err != nil {
@@ -236,9 +163,9 @@ func (s signerAdminServices) reconcileGenerationsWithPassphraseLocked(ir *produc
 	return s.reconcileGenerationsLocked(ir, kr)
 }
 
-// reconcileGenerationsLocked performs reconciliation without acquiring the
-// store mutation lock. Callers either use reconcileGenerations or hold the
-// lock across a larger validate/reload/state-transition sequence.
+// reconcileGenerationsLocked reconciles the store root with an open keyring.
+// The caller holds the store mutation lock, across the reload and state
+// change that follow.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
 	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr)
 	if err != nil {
@@ -285,15 +212,11 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 	return err
 }
 
-func unlockFailureCode(errMsg string) string {
-	switch errMsg {
-	case "":
-		return ""
-	case productruntime.InvalidPassphraseMessage:
+func unlockFailureCode(err error) string {
+	if errors.Is(err, productruntime.ErrInvalidPassphrase) {
 		return protocol.ErrCodeInvalidPassphrase
-	default:
-		return protocol.ErrCodeUnlockFailed
 	}
+	return protocol.ErrCodeUnlockFailed
 }
 
 func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {

@@ -6,7 +6,6 @@ package templates
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -76,16 +75,8 @@ type ReloadService struct {
 var ErrGenerationValidation = errors.New("generation validation failed")
 
 // IsGenerationValidationErr reports whether err wraps ErrGenerationValidation.
-// Prefer this wherever the actual error value is available.
 func IsGenerationValidationErr(err error) bool {
 	return errors.Is(err, ErrGenerationValidation)
-}
-
-// IsGenerationValidationError is the flattened-string form for boundaries
-// that only carry the error message (runtime.TryUnlock flattens the reload
-// error to a string before it reaches the daemon).
-func IsGenerationValidationError(errMsg string) bool {
-	return strings.Contains(errMsg, ErrGenerationValidation.Error())
 }
 
 func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {

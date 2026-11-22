@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"errors"
 	"sync"
 )
 
@@ -16,13 +17,18 @@ const (
 	SignerStateRecovery
 )
 
-const MaintenanceInProgressMessage = "store maintenance in progress"
+// ErrMaintenanceInProgress refuses an unlock attempt that began during a
+// store maintenance.
+var ErrMaintenanceInProgress = errors.New("store maintenance in progress")
 
-const LockedDuringUnlockMessage = "signer locked during unlock"
+// ErrLockedDuringUnlock is an unlock attempt's answer when a lock, or the
+// start of a store maintenance, came while it ran: the lock won, and the
+// attempt cleared what it loaded.
+var ErrLockedDuringUnlock = errors.New("signer locked during unlock")
 
-// RecoveryDuringUnlockMessage is TryUnlock's answer when the signer entered
+// ErrRecoveryDuringUnlock is TryUnlock's answer when the signer entered
 // recovery while the attempt ran: the attempt published nothing.
-const RecoveryDuringUnlockMessage = "signer entered recovery during unlock"
+var ErrRecoveryDuringUnlock = errors.New("signer entered recovery during unlock")
 
 func (s SignerState) String() string {
 	switch s {
@@ -142,7 +148,10 @@ func (r *Runtime) IsUnlocked() bool {
 	return r.GetState() == SignerStateUnlocked
 }
 
-// SetUnlocked marks the signer as unlocked without performing side effects.
+// SetUnlocked marks the signer as unlocked without the fence an unlock
+// attempt passes. No production path calls it: an unlock publishes through
+// TryUnlock, and leaves recovery through PromoteRecoveryToUnlocked. Tests use
+// it to set up an unlocked runtime (test/arch guards the production code).
 func (r *Runtime) SetUnlocked() {
 	r.stateMu.Lock()
 	if r.activeMaintenanceID == 0 {
@@ -363,17 +372,17 @@ func (r *Runtime) FinishMaintenance(
 // reconcile unlocked the signer after the request last checked), it ends the
 // session as SetRecovery does. Like TryUnlock, it waits for a lock's cleanup
 // in progress before it starts.
-func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
+func (r *Runtime) TryRecovery(unlockFn func() error) error {
 	r.awaitCleanups(false)
 	if r.activeMaintenanceID != 0 {
 		r.stateMu.RUnlock()
-		return false, MaintenanceInProgressMessage
+		return ErrMaintenanceInProgress
 	}
 	gen := r.lockGen
 	r.stateMu.RUnlock()
 
 	if err := unlockFn(); err != nil {
-		return false, err.Error()
+		return err
 	}
 
 	r.stateMu.Lock()
@@ -381,11 +390,11 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 		onLock := r.lockForCleanupLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
-		return false, LockedDuringUnlockMessage
+		return ErrLockedDuringUnlock
 	}
 	r.enterRecoveryLocked()
 	r.stateMu.Unlock()
-	return true, ""
+	return nil
 }
 
 // TryUnlock runs the supplied unlock function and, on success, transitions to
@@ -399,7 +408,7 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 // publishing would lift that recovery without the reconcile it needs. The
 // attempt publishes nothing and leaves the state as it is, in recovery with
 // the keyring recovery administration needs unless a reconcile has lifted
-// it since, and answers RecoveryDuringUnlockMessage.
+// it since, and answers ErrRecoveryDuringUnlock.
 //
 // It first waits for any lock cleanup in progress. A Lock moves lockGen and
 // then runs its cleanup outside the state mutex; an unlock that read lockGen
@@ -412,18 +421,18 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 // recovery's keyring open, which recovery keeps. The product runtime also
 // ends this way an attempt that found the signer already unlocked and loaded
 // nothing, which has nothing to publish and nothing to clear.
-func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bool, int, string) {
+func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (int, error) {
 	r.awaitCleanups(false)
 	if r.activeMaintenanceID != 0 {
 		r.stateMu.RUnlock()
-		return false, 0, MaintenanceInProgressMessage
+		return 0, ErrMaintenanceInProgress
 	}
 	gen, session := r.lockGen, r.session
 	r.stateMu.RUnlock()
 
 	keyCount, err := unlockFn()
 	if err != nil {
-		return false, 0, err.Error()
+		return 0, err
 	}
 
 	r.stateMu.Lock()
@@ -431,12 +440,12 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 		onLock := r.lockForCleanupLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
-		return false, 0, LockedDuringUnlockMessage
+		return 0, ErrLockedDuringUnlock
 	}
 	// lockGen held, so only an entry into recovery moved the session.
 	if r.session != session {
 		r.stateMu.Unlock()
-		return false, 0, RecoveryDuringUnlockMessage
+		return 0, ErrRecoveryDuringUnlock
 	}
 	r.state = SignerStateUnlocked
 	r.stateMu.Unlock()
@@ -445,5 +454,5 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 		onUnlocked()
 	}
 
-	return true, keyCount, ""
+	return keyCount, nil
 }

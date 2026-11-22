@@ -257,7 +257,7 @@ func TestATemplateInstallWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	result := server.adminServices().templateServices().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: renderGenericTemplateYAML(family, 1, "Defect Install", "installed over a stray file"),
 	})
-	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !signertemplates.IsGenerationValidationError(result.Error) || !strings.Contains(result.Error, "junk.txt") {
+	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.Contains(result.Error, signertemplates.ErrGenerationValidation.Error()) || !strings.Contains(result.Error, "junk.txt") {
 		t.Fatalf("ImportInstalledTemplate() = %+v, want recovery_blocked naming the stray file", result)
 	}
 	requireRecoveryPushed(t, session)
