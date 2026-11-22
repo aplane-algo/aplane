@@ -71,8 +71,9 @@ The transitions transcribe the post-commit reload and the recovery paths:
   `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
-  A reload with no commit that finds the selected generation failing
-  validation enters recovery itself, in `productruntime.Runtime.Reload`,
+  A reload with no commit that finds a content defect in the selected
+  generation (a failed validation, or two key files that resolve to one
+  address) enters recovery itself, in `productruntime.Runtime.Reload`,
   before its caller releases the lock; it once published an empty key
   snapshot and left the signer unlocked.
   Policy apply and the ASA set change commit only on an unlocked signer,
@@ -131,12 +132,12 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
 - `ReloadFail` always enters recovery. A reload with no commit (the
-  watcher's, an in-place write's) enters it only when the selected
-  generation fails validation; any other failure, an unreadable `keys/` for
+  watcher's, an in-place write's) enters it only for a content defect in the
+  selected generation; any other failure, an unreadable `keys/` for
   one, leaves the signer unlocked on the view it had. No commit moved the
   root, so that view's key cache is the root's generation, and RB2 and RB3
   hold for both outcomes. The property the entry exists for, that a
-  generation which fails validation is never served, is not checked: the
+  generation with a content defect is never served, is not checked: the
   model has no generation content. A recovery entered by a reload with no
   commit, for content found defective, is a model-extension candidate.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,

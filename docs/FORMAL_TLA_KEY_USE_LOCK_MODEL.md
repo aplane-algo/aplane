@@ -121,8 +121,9 @@ waits for it; KU2 and KU3 cover that case.
   that promotes hold the store mutation lock (`commitAndReload`,
   `mutateASASet`, restore, rollback, `reconcileLocked`, and
   `productruntime.Runtime.Reload`, which enters recovery when a reload
-  without the passphrase finds the selected generation failing validation,
-  under the lock its callers hold: the watcher's `reloadFromWatcher`, key
+  without the passphrase finds a content defect in the selected generation,
+  a failed validation or an address collision, under the lock its callers
+  hold: the watcher's `reloadFromWatcher`, key
   and template administration, and the callers above), so neither action
   lands while an unlock loads under that lock. Recovery keeps the keyring:
   nothing drains and nothing is cleared. It ends the unlocked session: the

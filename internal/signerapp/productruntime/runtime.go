@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -1561,7 +1562,8 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // Admin mutation paths call this directly while holding the store mutation lock;
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
 //
-// A reload that finds the selected generation failing validation has
+// A reload that finds a content defect in the selected generation, one that
+// fails its validation or two key files that resolve to one address, has
 // published an empty key snapshot, and it enters recovery before it returns,
 // so before its caller releases the store mutation lock: an unlocked signer
 // left serving that snapshot says it can sign with none of its keys.
@@ -1575,7 +1577,7 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()
 	report, err := ir.reloadLocked(nil)
 	ir.passphraseLock.RUnlock()
-	if signertemplates.IsGenerationValidationErr(err) {
+	if signertemplates.IsGenerationValidationErr(err) || errors.Is(err, apkeys.ErrAddressCollision) {
 		ir.SetRecovery()
 	}
 	return report, err
