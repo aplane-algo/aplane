@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 )
@@ -11,19 +12,17 @@ import (
 // raceUnlock starts an attempt whose unlock function blocks until release is
 // closed, and returns once the function is running. done is closed when the
 // attempt returns.
-func raceUnlock(attempt func(unlockFn func() error) (bool, string)) (release chan struct{}, done chan struct{}, result *struct {
-	ok  bool
-	msg string
+func raceUnlock(attempt func(unlockFn func() error) error) (release chan struct{}, done chan struct{}, result *struct {
+	err error
 }) {
 	started := make(chan struct{})
 	release, done = make(chan struct{}), make(chan struct{})
 	result = &struct {
-		ok  bool
-		msg string
+		err error
 	}{}
 	go func() {
 		defer close(done)
-		result.ok, result.msg = attempt(func() error {
+		result.err = attempt(func() error {
 			close(started)
 			<-release
 			return nil
@@ -33,10 +32,10 @@ func raceUnlock(attempt func(unlockFn func() error) (bool, string)) (release cha
 	return release, done, result
 }
 
-func tryUnlock(r *Runtime) func(func() error) (bool, string) {
-	return func(unlockFn func() error) (bool, string) {
-		ok, _, msg := r.TryUnlock(func() (int, error) { return 1, unlockFn() }, nil)
-		return ok, msg
+func tryUnlock(r *Runtime) func(func() error) error {
+	return func(unlockFn func() error) error {
+		_, err := r.TryUnlock(func() (int, error) { return 1, unlockFn() }, nil)
+		return err
 	}
 }
 
@@ -55,14 +54,14 @@ func TestLosingUnlockLocksASessionANewerUnlockPublished(t *testing.T) {
 
 	release, done, first := raceUnlock(tryUnlock(r))
 	r.Lock() // a lock lands while the first unlock is still deriving
-	if ok, _, msg := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); !ok {
-		t.Fatalf("second unlock failed: %s", msg)
+	if _, err := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
+		t.Fatalf("second unlock failed: %v", err)
 	}
 	close(release)
 	<-done
 
-	if first.ok || first.msg != LockedDuringUnlockMessage {
-		t.Fatalf("first unlock = (%v, %q), want it to lose", first.ok, first.msg)
+	if !errors.Is(first.err, ErrLockedDuringUnlock) {
+		t.Fatalf("first unlock = %v, want it to lose", first.err)
 	}
 	if r.IsUnlocked() || keysLoaded.Load() || unlockedDuringCleanup.Load() {
 		t.Fatalf("unlocked=%v keys=%v unlocked during a cleanup=%v; want the runtime locked before its keys are cleared",
@@ -88,13 +87,13 @@ func TestLosingUnlockFencesAnUnlockStillInFlight(t *testing.T) {
 
 	releaseFirst, firstDone, first := raceUnlock(tryUnlock(r))
 	r.Lock()
-	releaseSecond, secondDone, second := raceUnlock(func(unlockFn func() error) (bool, string) {
-		ok, _, msg := r.TryUnlock(func() (int, error) {
+	releaseSecond, secondDone, second := raceUnlock(func(unlockFn func() error) error {
+		_, err := r.TryUnlock(func() (int, error) {
 			err := unlockFn()
 			keysLoaded.Store(true)
 			return 1, err
 		}, nil)
-		return ok, msg
+		return err
 	})
 
 	// The first unlock loses and its cleanup starts, then waits.
@@ -107,7 +106,7 @@ func TestLosingUnlockFencesAnUnlockStillInFlight(t *testing.T) {
 	close(finishCleanup)
 	<-firstDone
 
-	if first.ok || second.ok || second.msg != LockedDuringUnlockMessage {
+	if first.err == nil || !errors.Is(second.err, ErrLockedDuringUnlock) {
 		t.Fatalf("first = %+v, second = %+v; want both to lose", *first, *second)
 	}
 	if r.IsUnlocked() || keysLoaded.Load() {
@@ -124,14 +123,14 @@ func TestLosingRecoveryLocksASessionANewerUnlockPublished(t *testing.T) {
 
 	release, done, first := raceUnlock(r.TryRecovery)
 	r.Lock()
-	if ok, _, msg := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); !ok {
-		t.Fatalf("unlock failed: %s", msg)
+	if _, err := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
+		t.Fatalf("unlock failed: %v", err)
 	}
 	close(release)
 	<-done
 
-	if first.ok || first.msg != LockedDuringUnlockMessage {
-		t.Fatalf("recovery = (%v, %q), want it to lose", first.ok, first.msg)
+	if !errors.Is(first.err, ErrLockedDuringUnlock) {
+		t.Fatalf("recovery = %v, want it to lose", first.err)
 	}
 	if r.IsUnlocked() || r.IsRecovery() || keysLoaded.Load() {
 		t.Fatalf("unlocked=%v recovery=%v keys=%v; want the runtime locked and its keys cleared",

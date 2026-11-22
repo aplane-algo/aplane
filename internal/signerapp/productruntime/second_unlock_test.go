@@ -4,6 +4,7 @@
 package productruntime
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -81,9 +82,9 @@ func TestAnUnlockThatFindsTheSignerUnlockedEndsAtItsCheck(t *testing.T) {
 	mutation.afterRelease = ir.Lock // after the check, where the fence would be
 
 	unlockedCalls := 0
-	ok, keyCount, msg := ir.TryUnlock([]byte(secondUnlockPassphrase), func() { unlockedCalls++ })
-	if !ok || msg != "" || keyCount != 0 {
-		t.Fatalf("TryUnlock() = (%v, %d, %q), want the session's answer", ok, keyCount, msg)
+	keyCount, err := ir.TryUnlock([]byte(secondUnlockPassphrase), func() { unlockedCalls++ })
+	if err != nil || keyCount != 0 {
+		t.Fatalf("TryUnlock() = (%d, %v), want the session's answer", keyCount, err)
 	}
 	if got := loads.Load(); got != 0 {
 		t.Fatalf("the attempt loaded %d time(s), want none", got)
@@ -112,13 +113,13 @@ func TestAnUnlockOfAnUnlockedSignerChecksThePassphrase(t *testing.T) {
 	reconciles := 0
 	reconcile := func() error { reconciles++; return nil }
 	wrong := []byte("not the passphrase")
-	if ok, _, msg := ir.TryUnlock(wrong, nil); ok || msg != InvalidPassphraseMessage {
-		t.Fatalf("TryUnlock(wrong) = (%v, %q), want %q", ok, msg, InvalidPassphraseMessage)
+	if _, err := ir.TryUnlock(wrong, nil); !errors.Is(err, crypto.ErrInvalidPassphrase) {
+		t.Fatalf("TryUnlock(wrong) = %v, want an invalid passphrase", err)
 	}
-	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); !answer.Answered || answer.ErrMsg != InvalidPassphraseMessage {
-		t.Fatalf("AnswerIfUnlocked(wrong) = %+v, want %q", answer, InvalidPassphraseMessage)
+	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); !answer.Answered || !errors.Is(answer.Err, crypto.ErrInvalidPassphrase) {
+		t.Fatalf("AnswerIfUnlocked(wrong) = %+v, want an invalid passphrase", answer)
 	}
-	if answer, _ := ir.AnswerIfUnlocked([]byte(secondUnlockPassphrase), reconcile); !answer.Answered || answer.ErrMsg != "" || answer.KeyCount != ir.KeyCount() {
+	if answer, _ := ir.AnswerIfUnlocked([]byte(secondUnlockPassphrase), reconcile); !answer.Answered || answer.Err != nil || answer.KeyCount != ir.KeyCount() {
 		t.Fatalf("AnswerIfUnlocked() = %+v, want the session's key count", answer)
 	}
 	if loads.Load() != 0 || reconciles != 0 || !ir.IsUnlockedIn(generation) {
@@ -166,8 +167,8 @@ func TestALockDuringThePassphraseCheckIsNotAnsweredFromTheSession(t *testing.T) 
 
 	ir.SetUnlocked()
 	lockDuringPassphraseCheck(t, ir)
-	if ok, _, msg := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); ok || msg != signerruntime.LockedDuringUnlockMessage {
-		t.Fatalf("TryUnlock() = (%v, %q) after a lock during the check, want %q", ok, msg, signerruntime.LockedDuringUnlockMessage)
+	if _, err := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+		t.Fatalf("TryUnlock() = %v after a lock during the check, want %v", err, signerruntime.ErrLockedDuringUnlock)
 	}
 	if got := loads.Load(); got != 1 {
 		t.Fatalf("the attempt loaded %d time(s), want once: the session it found had ended", got)
@@ -196,8 +197,8 @@ func TestAnUnlockLoadsUnderTheStoreMutationLock(t *testing.T) {
 	})
 	stateAtRelease := signerruntime.SignerStateUnlocked
 	mutation.afterRelease = func() { stateAtRelease = ir.GetState() }
-	if ok, _, msg := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); !ok {
-		t.Fatalf("TryUnlock() from recovery = %q, want a publish", msg)
+	if _, err := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); err != nil {
+		t.Fatalf("TryUnlock() from recovery = %v, want a publish", err)
 	}
 	if !heldDuringLoad {
 		t.Fatal("the load ran without the store mutation lock")

@@ -467,7 +467,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"policy":    "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"scan":      "unlock_failed -> locked keyring=closed generation=none policy=replaced keys=0",
-		"collision": "unlock_failed -> locked keyring=closed generation=none policy=replaced keys=0",
+		"collision": "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"unlock from recovery": {
@@ -475,7 +475,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"policy":    "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=replaced keys=1",
-		"collision": "unlock_failed -> recovery keyring=open generation=selected policy=replaced keys=0",
+		"collision": "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"startup unlock": {
@@ -483,7 +483,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"policy":    "started=false -> locked keyring=closed generation=none policy=kept keys=0",
 		"keytype":   "started=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"scan":      "started=false -> locked keyring=closed generation=none policy=replaced keys=0",
-		"collision": "started=false -> locked keyring=closed generation=none policy=replaced keys=0",
+		"collision": "started=true -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "started=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"passphrase change": {

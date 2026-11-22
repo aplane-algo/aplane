@@ -38,20 +38,18 @@ func TestTryUnlockFailureKeepsRuntimeLocked(t *testing.T) {
 	rt := New()
 	var unlockedCalls atomic.Int32
 
-	ok, keyCount, errMsg := rt.TryUnlock(func() (int, error) {
-		return 0, errors.New("unlock failed")
+	failure := errors.New("unlock failed")
+	keyCount, err := rt.TryUnlock(func() (int, error) {
+		return 0, failure
 	}, func() {
 		unlockedCalls.Add(1)
 	})
 
-	if ok {
-		t.Fatal("TryUnlock() success = true, want false")
-	}
 	if keyCount != 0 {
 		t.Fatalf("TryUnlock() keyCount = %d, want 0", keyCount)
 	}
-	if errMsg != "unlock failed" {
-		t.Fatalf("TryUnlock() errMsg = %q, want %q", errMsg, "unlock failed")
+	if !errors.Is(err, failure) {
+		t.Fatalf("TryUnlock() error = %v, want the unlock function's %v", err, failure)
 	}
 	if state := rt.GetState(); state != SignerStateLocked {
 		t.Fatalf("state after failed unlock = %v, want %v", state, SignerStateLocked)
@@ -65,20 +63,17 @@ func TestTryUnlockSuccessUnlocksAndCallsOnUnlocked(t *testing.T) {
 	rt := New()
 	var unlockedCalls atomic.Int32
 
-	ok, keyCount, errMsg := rt.TryUnlock(func() (int, error) {
+	keyCount, err := rt.TryUnlock(func() (int, error) {
 		return 7, nil
 	}, func() {
 		unlockedCalls.Add(1)
 	})
 
-	if !ok {
-		t.Fatal("TryUnlock() success = false, want true")
+	if err != nil {
+		t.Fatalf("TryUnlock() error = %v, want none", err)
 	}
 	if keyCount != 7 {
 		t.Fatalf("TryUnlock() keyCount = %d, want 7", keyCount)
-	}
-	if errMsg != "" {
-		t.Fatalf("TryUnlock() errMsg = %q, want empty string", errMsg)
 	}
 	if state := rt.GetState(); state != SignerStateUnlocked {
 		t.Fatalf("state after successful unlock = %v, want %v", state, SignerStateUnlocked)
@@ -98,16 +93,13 @@ func TestTryUnlockLosesToRacingLock(t *testing.T) {
 	r.SetOnLock(func() { lockCalls++ })
 	r.SetUnlocked() // so the racing Lock takes the unlocked->locked path
 
-	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+	_, err := r.TryUnlock(func() (int, error) {
 		r.Lock() // races the in-flight unlock
 		return 3, nil
 	}, nil)
 
-	if ok {
-		t.Fatal("TryUnlock succeeded despite racing Lock")
-	}
-	if errMsg == "" {
-		t.Fatal("TryUnlock returned no error message")
+	if !errors.Is(err, ErrLockedDuringUnlock) {
+		t.Fatalf("TryUnlock() error = %v despite a racing Lock, want %v", err, ErrLockedDuringUnlock)
 	}
 	if r.GetState() != SignerStateLocked {
 		t.Fatalf("state = %v, want locked", r.GetState())
@@ -121,9 +113,9 @@ func TestTryUnlockLosesToRacingLock(t *testing.T) {
 // TestTryUnlockSucceedsWithoutRacingLock pins the happy path.
 func TestTryUnlockSucceedsWithoutRacingLock(t *testing.T) {
 	r := New()
-	ok, keyCount, errMsg := r.TryUnlock(func() (int, error) { return 5, nil }, nil)
-	if !ok || keyCount != 5 || errMsg != "" {
-		t.Fatalf("TryUnlock = (%v, %d, %q), want (true, 5, \"\")", ok, keyCount, errMsg)
+	keyCount, err := r.TryUnlock(func() (int, error) { return 5, nil }, nil)
+	if err != nil || keyCount != 5 {
+		t.Fatalf("TryUnlock = (%d, %v), want (5, nil)", keyCount, err)
 	}
 	if r.GetState() != SignerStateUnlocked {
 		t.Fatalf("state = %v, want unlocked", r.GetState())
@@ -176,29 +168,19 @@ func TestMaintenanceRejectsUnlockAndRecoveryWithoutRunningCallbacks(t *testing.T
 	unlockRan := false
 	recoveryRan := false
 
-	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+	_, err := r.TryUnlock(func() (int, error) {
 		unlockRan = true
 		return 1, nil
 	}, nil)
-	if ok || errMsg != MaintenanceInProgressMessage || unlockRan {
-		t.Fatalf(
-			"TryUnlock during maintenance = (%v, %q, ran=%v)",
-			ok,
-			errMsg,
-			unlockRan,
-		)
+	if !errors.Is(err, ErrMaintenanceInProgress) || unlockRan {
+		t.Fatalf("TryUnlock during maintenance = (%v, ran=%v)", err, unlockRan)
 	}
-	recoveryOK, recoveryErr := r.TryRecovery(func() error {
+	recoveryErr := r.TryRecovery(func() error {
 		recoveryRan = true
 		return nil
 	})
-	if recoveryOK || recoveryErr != MaintenanceInProgressMessage || recoveryRan {
-		t.Fatalf(
-			"TryRecovery during maintenance = (%v, %q, ran=%v)",
-			recoveryOK,
-			recoveryErr,
-			recoveryRan,
-		)
+	if !errors.Is(recoveryErr, ErrMaintenanceInProgress) || recoveryRan {
+		t.Fatalf("TryRecovery during maintenance = (%v, ran=%v)", recoveryErr, recoveryRan)
 	}
 	if r.FinishMaintenance(token, false) {
 		t.Fatal("failed maintenance unexpectedly republished runtime")
@@ -214,12 +196,12 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	r.SetOnLock(func() { cleanups++ })
 	var token MaintenanceToken
 
-	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+	_, err := r.TryUnlock(func() (int, error) {
 		token = r.BeginMaintenance()
 		return 1, nil
 	}, nil)
-	if ok || errMsg != LockedDuringUnlockMessage {
-		t.Fatalf("TryUnlock racing maintenance = (%v, %q)", ok, errMsg)
+	if !errors.Is(err, ErrLockedDuringUnlock) {
+		t.Fatalf("TryUnlock racing maintenance = %v, want %v", err, ErrLockedDuringUnlock)
 	}
 	if r.GetState() != SignerStateLocked {
 		t.Fatalf("state after racing maintenance = %v, want locked", r.GetState())
@@ -267,9 +249,8 @@ func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 	r := New()
 	var lockCalls atomic.Int32
 	r.SetOnLock(func() { lockCalls.Add(1) })
-	ok, errMsg := r.TryRecovery(func() error { return nil })
-	if !ok || errMsg != "" {
-		t.Fatalf("TryRecovery() = (%v, %q)", ok, errMsg)
+	if err := r.TryRecovery(func() error { return nil }); err != nil {
+		t.Fatalf("TryRecovery() = %v", err)
 	}
 	if !r.IsRecovery() || r.IsUnlocked() || r.GetState().String() != "recovery" {
 		t.Fatalf("recovery state = %v unlocked=%v", r.GetState(), r.IsUnlocked())
@@ -288,8 +269,8 @@ func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
 	r := New()
 	g0 := r.LockGeneration()
-	if ok, _, _ := r.TryUnlock(func() (int, error) { return 1, nil }, nil); !ok {
-		t.Fatal("unlock failed")
+	if _, err := r.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+		t.Fatalf("unlock failed: %v", err)
 	}
 	if r.LockGeneration() != g0 {
 		t.Fatal("unlock changed the lock generation")
@@ -299,8 +280,8 @@ func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
 	if g1 != g0+1 {
 		t.Fatalf("generation after lock = %d, want %d", g1, g0+1)
 	}
-	if ok, _, _ := r.TryUnlock(func() (int, error) { return 1, nil }, nil); !ok {
-		t.Fatal("second unlock failed")
+	if _, err := r.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+		t.Fatalf("second unlock failed: %v", err)
 	}
 	token := r.BeginMaintenance()
 	if r.LockGeneration() != g1+1 {
@@ -423,9 +404,8 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 
 	// An unlock that runs while the signer is locked is not made to lose.
 	rt.Lock()
-	ok, _, msg := rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
-	if !ok {
-		t.Fatalf("unlock after a lock: %s", msg)
+	if _, err := rt.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+		t.Fatalf("unlock after a lock: %v", err)
 	}
 }
 
@@ -436,8 +416,8 @@ func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	rt := New()
 	rt.SetUnlocked()
 	session := rt.LockGeneration()
-	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok {
-		t.Fatalf("TryRecovery: %s", msg)
+	if err := rt.TryRecovery(func() error { return nil }); err != nil {
+		t.Fatalf("TryRecovery: %v", err)
 	}
 	if !rt.IsRecovery() || rt.LockGeneration() == session {
 		t.Fatalf("state %v, generation %d (was %d); want recovery in a new generation", rt.GetState(), rt.LockGeneration(), session)
@@ -447,8 +427,8 @@ func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	// recovery it enters.
 	rt.Lock()
 	locked := rt.LockGeneration()
-	if ok, msg := rt.TryRecovery(func() error { return nil }); !ok || !rt.IsRecovery() || rt.LockGeneration() == locked {
-		t.Fatalf("TryRecovery from locked: ok %v (%s), state %v, generation %d -> %d", ok, msg, rt.GetState(), locked, rt.LockGeneration())
+	if err := rt.TryRecovery(func() error { return nil }); err != nil || !rt.IsRecovery() || rt.LockGeneration() == locked {
+		t.Fatalf("TryRecovery from locked: %v, state %v, generation %d -> %d", err, rt.GetState(), locked, rt.LockGeneration())
 	}
 }
 
@@ -460,15 +440,15 @@ func TestUnlockOverlappingRecoveryDoesNotRunTheLockCleanup(t *testing.T) {
 	var lockCalls atomic.Int32
 	rt.SetOnLock(func() { lockCalls.Add(1) })
 	rt.SetUnlocked()
-	ok, _, msg := rt.TryUnlock(func() (int, error) {
+	_, err := rt.TryUnlock(func() (int, error) {
 		rt.SetRecovery()
 		return 1, nil
 	}, nil)
-	if msg == LockedDuringUnlockMessage || lockCalls.Load() != 0 {
-		t.Fatalf("an unlock overlapping recovery was treated as losing to a lock: ok %v, %q, %d cleanup(s)", ok, msg, lockCalls.Load())
+	if errors.Is(err, ErrLockedDuringUnlock) || lockCalls.Load() != 0 {
+		t.Fatalf("an unlock overlapping recovery was treated as losing to a lock: %v, %d cleanup(s)", err, lockCalls.Load())
 	}
-	if ok || msg != RecoveryDuringUnlockMessage || !rt.IsRecovery() {
-		t.Fatalf("an unlock overlapping recovery = ok %v, %q, state %v; want it to publish nothing and leave recovery", ok, msg, rt.GetState())
+	if !errors.Is(err, ErrRecoveryDuringUnlock) || !rt.IsRecovery() {
+		t.Fatalf("an unlock overlapping recovery = %v, state %v; want it to publish nothing and leave recovery", err, rt.GetState())
 	}
 }
 
@@ -520,11 +500,11 @@ func TestTryUnlockWaitsForALockCleanupInProgress(t *testing.T) {
 
 	var cleanupsAtUnlock atomic.Int32
 	cleanupsAtUnlock.Store(-1)
-	var ok bool
+	var attemptErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ok, _, _ = rt.TryUnlock(func() (int, error) {
+		_, attemptErr = rt.TryUnlock(func() (int, error) {
 			cleanupsAtUnlock.Store(returned.Load())
 			return 1, nil
 		}, nil)
@@ -536,8 +516,8 @@ func TestTryUnlockWaitsForALockCleanupInProgress(t *testing.T) {
 	}
 	close(release)
 	expectDone(t, done, "TryUnlock")
-	if !ok || !rt.IsUnlocked() {
-		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, rt.IsUnlocked())
+	if attemptErr != nil || !rt.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: %v, unlocked=%v; want an unlocked signer", attemptErr, rt.IsUnlocked())
 	}
 	if got := cleanupsAtUnlock.Load(); got != 1 {
 		t.Fatalf("cleanups finished when the unlock function ran = %d, want 1", got)
@@ -553,11 +533,11 @@ func TestTryRecoveryWaitsForALockCleanupInProgress(t *testing.T) {
 
 	var cleanupsAtUnlock atomic.Int32
 	cleanupsAtUnlock.Store(-1)
-	var ok bool
+	var attemptErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ok, _ = rt.TryRecovery(func() error {
+		attemptErr = rt.TryRecovery(func() error {
 			cleanupsAtUnlock.Store(returned.Load())
 			return nil
 		})
@@ -569,8 +549,8 @@ func TestTryRecoveryWaitsForALockCleanupInProgress(t *testing.T) {
 	}
 	close(release)
 	expectDone(t, done, "TryRecovery")
-	if !ok || !rt.IsRecovery() {
-		t.Fatalf("recovery after the cleanup: ok=%v recovery=%v, want both true", ok, rt.IsRecovery())
+	if attemptErr != nil || !rt.IsRecovery() {
+		t.Fatalf("recovery after the cleanup: %v, recovery=%v; want recovery", attemptErr, rt.IsRecovery())
 	}
 	if got := cleanupsAtUnlock.Load(); got != 1 {
 		t.Fatalf("cleanups finished when the unlock function ran = %d, want 1", got)
@@ -623,24 +603,24 @@ func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
 	loser := make(chan struct{})
 	go func() {
 		defer close(loser)
-		rt.TryUnlock(func() (int, error) {
+		_, _ = rt.TryUnlock(func() (int, error) {
 			rt.Lock() // already locked: moves the generation, runs no cleanup
 			return 1, nil
 		}, nil)
 	}()
 	<-entered
 
-	var ok bool
+	var attemptErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ok, _, _ = rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
+		_, attemptErr = rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
 	}()
 	expectBlocked(t, done, "TryUnlock")
 	close(release)
 	expectDone(t, done, "TryUnlock")
 	<-loser
-	if !ok || !rt.IsUnlocked() {
-		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, rt.IsUnlocked())
+	if attemptErr != nil || !rt.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: %v, unlocked=%v; want an unlocked signer", attemptErr, rt.IsUnlocked())
 	}
 }

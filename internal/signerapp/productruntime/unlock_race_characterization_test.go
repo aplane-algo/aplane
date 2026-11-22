@@ -35,13 +35,13 @@ func TestAFailedReconcilesRecoveryEndsASessionPublishedAfterItsCheck(t *testing.
 		t.Fatalf("AnswerFromSession() = %+v on a locked signer, want no answer", answer)
 	}
 	// Another request publishes.
-	if ok, _, msg := ir.TryUnlock(passphrase, nil); !ok {
-		t.Fatalf("the other request's TryUnlock() = %q, want a publish", msg)
+	if _, err := ir.TryUnlock(passphrase, nil); err != nil {
+		t.Fatalf("the other request's TryUnlock() = %v, want a publish", err)
 	}
 	published, _ := ir.UnlockedGeneration()
 	// The request enters recovery.
-	if ok, msg := ir.TryRecoveryUnlock(passphrase); !ok {
-		t.Fatalf("TryRecoveryUnlock() = %q, want the entry as the code stands", msg)
+	if err := ir.TryRecoveryUnlock(passphrase); err != nil {
+		t.Fatalf("TryRecoveryUnlock() = %v, want the entry as the code stands", err)
 	}
 
 	// The property to keep: an unlock request's entry into recovery does
@@ -75,11 +75,11 @@ func TestALockDuringARedundantUnlocksCheckIsUndoneByThatUnlock(t *testing.T) {
 	if got := ir.GetState(); got != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v after the lock, want locked", got)
 	}
-	ok, _, msg := ir.TryUnlock(passphrase, nil)
+	_, err = ir.TryUnlock(passphrase, nil)
 
 	// The property to keep: a lock that lands during an unlock request
 	// stands, though the request found the signer unlocked.
-	if !ok || !ir.IsUnlocked() || loads.Load() != 1 {
-		t.Fatalf("TryUnlock() = (%v, %q), state %v, %d load(s); want a load and a publish as the code stands", ok, msg, ir.GetState(), loads.Load())
+	if err != nil || !ir.IsUnlocked() || loads.Load() != 1 {
+		t.Fatalf("TryUnlock() = %v, state %v, %d load(s); want a load and a publish as the code stands", err, ir.GetState(), loads.Load())
 	}
 }

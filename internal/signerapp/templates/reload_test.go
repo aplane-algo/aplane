@@ -169,7 +169,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 	report, err := service.Reload(nil)
 	// Content defects fail closed: the invalid composed template aborts the
 	// reload with a generation-validation error naming the defect.
-	if err == nil || !IsGenerationValidationError(err.Error()) {
+	if err == nil || !IsGenerationValidationErr(err) {
 		t.Fatalf("Reload() error = %v, want generation validation failure", err)
 	}
 	if report != nil {
@@ -220,7 +220,7 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 		},
 	}
 
-	if _, err := service.Reload(nil); err != nil && !IsGenerationValidationError(err.Error()) {
+	if _, err := service.Reload(nil); err != nil && !IsGenerationValidationErr(err) {
 		t.Fatalf("Reload() error = %v", err)
 	}
 	want := []string{"before", "templates", "scan", "publish"}
@@ -572,7 +572,7 @@ func TestReloadAuditsLogicSigInvariantScanWarnings(t *testing.T) {
 		AuditLog:        audit,
 	}
 
-	if _, err := service.Reload(nil); err == nil || !IsGenerationValidationError(err.Error()) {
+	if _, err := service.Reload(nil); err == nil || !IsGenerationValidationErr(err) {
 		t.Fatalf("Reload() error = %v, want fail-closed reload over malformed keys", err)
 	}
 	if len(audit.rejected) != 2 {

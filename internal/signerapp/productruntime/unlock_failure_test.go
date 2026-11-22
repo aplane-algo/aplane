@@ -4,11 +4,13 @@
 package productruntime
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -30,17 +32,17 @@ func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	ir := New(Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
-	attempts := map[string]func([]byte) (bool, string){
-		"unlock": func(p []byte) (bool, string) {
-			ok, _, msg := ir.TryUnlock(p, nil)
-			return ok, msg
+	attempts := map[string]func([]byte) error{
+		"unlock": func(p []byte) error {
+			_, err := ir.TryUnlock(p, nil)
+			return err
 		},
 		"recovery unlock": ir.TryRecoveryUnlock,
 	}
 
 	for name, try := range attempts {
-		if ok, msg := try([]byte("wrong passphrase")); ok || msg != InvalidPassphraseMessage {
-			t.Fatalf("%s with a wrong passphrase = (%t, %q), want %q", name, ok, msg, InvalidPassphraseMessage)
+		if err := try([]byte("wrong passphrase")); !errors.Is(err, crypto.ErrInvalidPassphrase) || err.Error() != "invalid passphrase" {
+			t.Fatalf("%s with a wrong passphrase = %v, want invalid passphrase", name, err)
 		}
 	}
 
@@ -49,9 +51,9 @@ func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, try := range attempts {
-		ok, msg := try(passphrase)
-		if ok || msg == InvalidPassphraseMessage || !strings.Contains(msg, "parse store root") {
-			t.Fatalf("%s of a damaged store root = (%t, %q), want a failure that names the cause", name, ok, msg)
+		err := try(passphrase)
+		if err == nil || errors.Is(err, crypto.ErrInvalidPassphrase) || !strings.Contains(err.Error(), "parse store root") {
+			t.Fatalf("%s of a damaged store root = %v, want a failure that names the cause", name, err)
 		}
 	}
 }

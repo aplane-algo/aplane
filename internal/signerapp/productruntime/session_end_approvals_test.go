@@ -124,8 +124,8 @@ func TestARecoveryUnlockWithdrawsAWaitingApproval(t *testing.T) {
 	}()
 	<-shown
 
-	if ok, msg := ir.TryRecoveryUnlock(passphrase); !ok {
-		t.Fatalf("TryRecoveryUnlock() failed: %s", msg)
+	if err := ir.TryRecoveryUnlock(passphrase); err != nil {
+		t.Fatalf("TryRecoveryUnlock() failed: %v", err)
 	}
 	select {
 	case err := <-result:

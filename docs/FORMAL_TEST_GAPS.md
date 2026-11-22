@@ -31,7 +31,7 @@ a future transport model must describe this enrolled-key boundary.
 **Model drift: lock-during-unlock race handling.**
 The runtime lock state machine gained a lock-generation counter: `TryUnlock`
 detects a `Lock()` that raced the unlock sequence, re-runs lock cleanup, and
-fails with `LockedDuringUnlockMessage` (`internal/signerapp/runtime/runtime.go`).
+fails with `ErrLockedDuringUnlock` (`internal/signerapp/runtime/runtime.go`).
 The current formal inventory deliberately omits the lock/unlock state machine,
 so no modeled invariant is affected; a future lock-state model must include
 this generation-counter transition.

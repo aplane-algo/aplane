@@ -134,10 +134,10 @@ func TestUnlockDuringTheDrainWaitsForTheCleanup(t *testing.T) {
 
 	var revAtUnlock atomic.Uint64
 	unlockDone := make(chan struct{})
-	var ok bool
+	var unlockErr error
 	go func() {
 		defer close(unlockDone)
-		ok, _, _ = ir.lockRuntime.TryUnlock(func() (int, error) {
+		_, unlockErr = ir.lockRuntime.TryUnlock(func() (int, error) {
 			revAtUnlock.Store(ir.KeysetRevision())
 			return 0, nil
 		}, nil)
@@ -158,8 +158,8 @@ func TestUnlockDuringTheDrainWaitsForTheCleanup(t *testing.T) {
 	holderRelease()
 	waitClosed(t, lockDone, "Lock to return after the key use released")
 	waitClosed(t, unlockDone, "the unlock to finish after the cleanup")
-	if !ok || !ir.IsUnlocked() {
-		t.Fatalf("unlock after the cleanup: ok=%v unlocked=%v, want both true", ok, ir.IsUnlocked())
+	if unlockErr != nil || !ir.IsUnlocked() {
+		t.Fatalf("unlock after the cleanup: %v, unlocked=%v; want an unlocked signer", unlockErr, ir.IsUnlocked())
 	}
 	if got := revAtUnlock.Load(); got != revBefore+1 {
 		t.Fatalf("KeysetRevision when the unlock ran = %d, want %d (after the cleanup)", got, revBefore+1)

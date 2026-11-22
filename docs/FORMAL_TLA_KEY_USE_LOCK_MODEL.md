@@ -215,7 +215,7 @@ The guards are constants:
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `TryRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 | `UnlockWaitsForCleanup` | TRUE: `TryUnlock` and `TryRecovery` wait (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then read the lock generation; `FinishMaintenance` waits the same way before it compares the generation its token recorded | Without it an unlock that begins between a lock's state change and its session clear passes the unlock fence, and the cleanup clears the session it published |
 | `LoserLocks` | TRUE: a losing `TryUnlock` or `TryRecovery` locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published |
-| `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `RecoveryDuringUnlockMessage` without publishing or cleaning up | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
+| `UnlockFencesRecovery` | TRUE: `TryUnlock` reads the session with `lockGen` and, when only the session moved, returns `ErrRecoveryDuringUnlock` without publishing or cleaning up | Without it an unlock publishes unlocked over a recovery a store change entered after the unlock began, lifting it without the reconcile it needs |
 | `RecoveryReentryMovesSession` | TRUE: `enterRecoveryLocked` moves the session on every entry, one from recovery included | Without it an unlock begun in recovery misses a restore, rollback or reconcile that entered recovery again, and publishes over it |
 | `AnswersFromSession` | TRUE: `performUnlock` asks the session before it loads (`AnswerFromSession`), and an attempt the session answers loads nothing; `UnlockIdentity` asks first too, in the same hold of the store mutation lock as its reconcile (`AnswerIfUnlocked`), so a request on an unlocked signer reconciles nothing either | Without it an unlock of an unlocked signer loads under the session in service |
 | `AnswerEndsAtCheck` | TRUE: such an attempt returns `errAnsweredFromSession`, and `runtime.Runtime.TryUnlock` returns before its fence | Without it the attempt goes on to the fence with nothing loaded, and when a lock came in after its check it locks the signer and runs a cleanup as a loser does |
@@ -373,7 +373,7 @@ for each.
   does not take the store mutation lock, so another request can publish
   while this one reconciles. A request whose reconcile failed, or whose
   load failed validation, asks the session again before it enters recovery
-  (`enterRecoveryUnlessUnlocked`), and answers from a session published
+  (`productruntime.Runtime.enterRecoveryUnlessUnlocked`), and answers from a session published
   meanwhile instead of ending it
   (`TestAFailedReconcileLeavesASessionPublishedBesideIt`). The second ask
   and `TryRecoveryUnlock` are separate steps, so a publish between them is
@@ -384,9 +384,9 @@ for each.
   the store mutation lock from `BeginStoreMaintenance` to its finish.
   Republication is not modeled (see above), so this is a Go-level contract;
   `TestAnUnlockLoadsUnderTheStoreMutationLock` pins that the load holds the
-  lock. The startup unlock (`Signer.unlockAtStartup`) reloads and publishes
-  with `SetUnlocked` outside `TryUnlock`, before the admin listener starts,
-  so no attempt runs beside it.
+  lock. The startup unlock (`Signer.unlockAtStartup`) runs the request an
+  admin unlock runs (`productruntime.Runtime.Unlock`), through `TryUnlock`'s
+  fence, before the admin listener starts, so no attempt runs beside it.
 - An unlock function that fails returns before the fence and changes no
   modeled state; a load that fails after the keyring opened closes it
   itself. KU6 is what keeps that close off a session in service. The

@@ -273,15 +273,12 @@ func TestTryUnlockInvalidPassphraseLeavesSignerLocked(t *testing.T) {
 	server.lock()
 
 	ir := server.productRuntime()
-	success, keyCount, errMsg := ir.TryUnlock([]byte("wrong-passphrase"), nil)
-	if success {
-		t.Fatal("success = true, want false")
-	}
+	keyCount, err := ir.TryUnlock([]byte("wrong-passphrase"), nil)
 	if keyCount != 0 {
 		t.Fatalf("keyCount = %d, want 0", keyCount)
 	}
-	if errMsg != "invalid passphrase" {
-		t.Fatalf("errMsg = %q, want %q", errMsg, "invalid passphrase")
+	if err == nil || err.Error() != "invalid passphrase" {
+		t.Fatalf("error = %v, want invalid passphrase", err)
 	}
 	if server.isUnlocked() {
 		t.Fatal("signer should remain locked after invalid passphrase")

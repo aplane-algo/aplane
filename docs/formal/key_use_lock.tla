@@ -196,7 +196,7 @@ Code anchors:
     transcribe the fences after the unlock function: when the lock
     generation moved, lockForCleanupLocked and the cleanup it decides, and
     otherwise, for TryUnlock, when the session moved, the return with
-    RecoveryDuringUnlockMessage, and for TryRecovery enterRecoveryLocked.
+    ErrRecoveryDuringUnlock, and for TryRecovery enterRecoveryLocked.
     LockInactive transcribes Lock on a signer that is already locked or
     locking: the generation moves and no cleanup runs.
 

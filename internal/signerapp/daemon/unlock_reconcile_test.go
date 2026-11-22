@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -317,9 +316,9 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
 
 	capture()
-	for _, msg := range []string{signerruntime.LockedDuringUnlockMessage, signerruntime.MaintenanceInProgressMessage} {
-		if _, _, _, code := failedUnlock(msg); code != protocol.ErrCodeUnlockFailed {
-			t.Fatalf("failedUnlock(%q) code = %q, want unlock_failed", msg, code)
+	for _, lost := range []error{signerruntime.ErrLockedDuringUnlock, signerruntime.ErrMaintenanceInProgress} {
+		if _, _, _, code := failedUnlock(lost); code != protocol.ErrCodeUnlockFailed {
+			t.Fatalf("failedUnlock(%v) code = %q, want unlock_failed", lost, code)
 		}
 	}
 	if got := logs.String(); strings.Contains(got, "[ERROR]") || !strings.Contains(got, "[INFO] unlock did not complete") {
@@ -327,7 +326,7 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 	}
 
 	capture()
-	if _, _, _, code := failedUnlock(productruntime.InvalidPassphraseMessage); code != protocol.ErrCodeInvalidPassphrase {
+	if _, _, _, code := failedUnlock(fmt.Errorf("invalid passphrase: %w", crypto.ErrInvalidPassphrase)); code != protocol.ErrCodeInvalidPassphrase {
 		t.Fatalf("failedUnlock(wrong passphrase) code = %q", code)
 	}
 	if got := logs.String(); got != "" {
@@ -335,7 +334,7 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 	}
 
 	capture()
-	failedUnlock("store root could not be opened: parse store root: invalid character")
+	failedUnlock(errors.New("store root could not be opened: parse store root: invalid character"))
 	if got := logs.String(); !strings.Contains(got, "[ERROR] unlock failed: store root could not be opened") {
 		t.Fatalf("logs for a damaged store root = %q, want an error line with the cause", got)
 	}
@@ -504,18 +503,6 @@ func TestAnUnlockThatMeetsARecoveryAnswersFromTheState(t *testing.T) {
 				t.Fatalf("the index still holds %q after a lock, want it zeroed", kept)
 			}
 		})
-	}
-}
-
-// A fenced unlock that finds the signer locked, by a lock that came in after
-// the fence, answers as an unlock that lost to a lock.
-func TestAFencedUnlockAnswersALockThatCameAfter(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-	ir := server.productRuntime()
-	ir.Lock()
-	if success, _, errMsg, code := answerFencedUnlock(ir, signerruntime.RecoveryDuringUnlockMessage); success || errMsg != signerruntime.LockedDuringUnlockMessage || code != protocol.ErrCodeUnlockFailed {
-		t.Fatalf("answerFencedUnlock(locked) = (%v, %q, %q), want the lost-race answer", success, errMsg, code)
 	}
 }
 

@@ -1890,8 +1890,11 @@ reconcile, restore and rollback recovery needs still run. Unlock attempts run on
 reload, from locked or recovery, holds the store mutation lock from its state
 check to the end of the reload, as watcher-driven reloads and admin
 mutations do, and the unlock publishes the unlocked state after releasing
-it. The startup unlock of a headless signer reloads before the admin
-listener starts.
+it. The startup unlock of a headless signer runs the unlock an admin request
+runs (`productruntime.Runtime.Unlock`), with the same fence and the same
+fall back into recovery, before the admin listener starts. A passphrase that
+does not open the store root ends an unlock at the reconcile that finds it,
+with no entry into recovery, and at startup the daemon does not start.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
@@ -1913,8 +1916,8 @@ an in-place write's reload as it was, and the caller reports it; a caller
 after a store-root commit enters recovery on any failure. Two key files in
 `keys/` that resolve to one signing address (`keys.ErrAddressCollision`) are
 a content defect too: the reload publishes an empty snapshot, and a reload
-without the passphrase enters recovery for it as for a validation failure.
-An unlock that meets one still answers a failed unlock. Entries
+without the passphrase enters recovery for it as for a validation failure,
+and so does an unlock (`productruntime.IsContentDefect`). Entries
 are not dropped from an otherwise published snapshot. A
 source token file that cannot be read, opened or decoded as its selector's,
 and an entry of `source_tokens/` that is not a token file, are damage of the
