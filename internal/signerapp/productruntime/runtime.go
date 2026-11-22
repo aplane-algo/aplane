@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -1622,6 +1623,35 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 		}
 	}
 	return report, err
+}
+
+// FollowCommit brings the runtime onto what a store-root commit left the
+// root selecting (genstore.MintOutcomeOf). The caller holds the store
+// mutation lock, and calls it after its WithKeyring callback has returned: a
+// reload can zero the keyring, which waits for the callbacks using it.
+//
+// After an uncertain commit it enters recovery first, so no request signs
+// against the generation being replaced, and then reloads, so the keystore
+// follows whatever the root selects; signing stays blocked whatever the
+// reload finds. After a commit that landed it reloads, and enters recovery
+// when the reload fails, before the caller releases the lock: until a
+// reload succeeds the runtime may still serve the superseded generation. It
+// returns the reload's report and, for a commit that landed, its error. A
+// commit that did not happen needs nothing.
+func (ir *Runtime) FollowCommit(outcome genstore.MintOutcome) (*signertemplates.ReloadReport, error) {
+	switch outcome {
+	case genstore.Uncertain:
+		ir.SetRecovery()
+		report, _ := ir.Reload()
+		return report, nil
+	case genstore.Committed:
+		report, err := ir.Reload()
+		if err != nil {
+			ir.SetRecovery()
+		}
+		return report, err
+	}
+	return nil, nil
 }
 
 // IsContentDefect reports whether a reload failed for a content defect in

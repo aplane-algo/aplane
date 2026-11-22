@@ -103,7 +103,9 @@ type restoreRun struct {
 	// committedGeneration is the generation the restore published, or empty
 	// while nothing has been.
 	committedGeneration string
-	hints               map[string]backup.RotatingStageHint
+	// commitUncertain is set when the root may select committedGeneration.
+	commitUncertain bool
+	hints           map[string]backup.RotatingStageHint
 }
 
 // mutate is the whole store mutation: load and commit under the keyring,
@@ -122,11 +124,8 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	}
 	prepareErr := ir.WithKeyring(r.loadAndCommit)
 	if prepareErr != nil {
-		// If publication may have occurred, reload the visible generation
-		// outside WithKeyring: a reload can zero the keyring, which waits
-		// for the callbacks using it, this one included.
-		if r.committedGeneration != "" {
-			_, _ = ir.Reload()
+		if r.commitUncertain {
+			_, _ = ir.FollowCommit(genstore.Uncertain)
 		}
 		return prepareErr
 	}
@@ -158,8 +157,10 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	}
 
 	reloadErr := testcheckpoint.Reach("restore.reload_started")
-	if reloadErr == nil {
-		report, err := ir.Reload()
+	if reloadErr != nil {
+		ir.SetRecovery()
+	} else {
+		report, err := ir.FollowCommit(genstore.Committed)
 		reloadErr = err
 		if report != nil {
 			result.KeyCount = report.KeyCount
@@ -168,7 +169,6 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	if reloadErr == nil {
 		return nil
 	}
-	ir.SetRecovery()
 	return restoreFailure(
 		protocol.ResultCodeRestoreRollbackFailed,
 		"restore committed as generation %s but runtime reload failed; signing is blocked pending recovery: %v",
@@ -344,12 +344,7 @@ func (r *restoreRun) commit(
 		RollbackCapability: rollbackCapability,
 		CreatedAt:          time.Now(),
 		Integrity:          masterKey,
-		ValidateCandidate: func(staged storepaths.GenPaths) error {
-			return storevalidate.Candidate(storevalidate.Options{
-				Paths: s.Deps.KeyPaths(), Candidate: staged, Keyring: masterKey,
-				ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-			})
-		},
+		ValidateCandidate:  storevalidate.StandardCandidate(s.Deps.KeyPaths(), ir.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), masterKey),
 		Apply: func(staged storepaths.GenPaths) error {
 			for i := range classification.Policies {
 				entry := classification.Policies[i]
@@ -375,13 +370,13 @@ func (r *restoreRun) commit(
 		},
 	})
 	if mintErr != nil {
-		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), masterKey)
-		if genstore.RootCommitUncertain(mintErr) ||
-			(visibleErr == nil && visible.GenerationID() == generationID) {
+		if genstore.MintOutcomeOf(mintErr) == genstore.Uncertain {
+			// The caller enters recovery once WithKeyring has returned
+			// (FollowCommit), before the store mutation lock is released.
 			r.committedGeneration = generationID
+			r.commitUncertain = true
 			result.GenerationID = generationID
 			result.CommitUncertain = true
-			ir.SetRecovery()
 			return restoreFailure(
 				protocol.ResultCodeRestoreRollbackFailed,
 				"restore may have committed as generation %s; signing is blocked pending reconciliation: %v",

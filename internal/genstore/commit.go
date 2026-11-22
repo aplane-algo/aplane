@@ -6,6 +6,7 @@ package genstore
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -278,14 +279,75 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		}
 	}
 	if commitErr != nil {
-		return storepaths.GenPaths{}, commitErr
+		return storepaths.GenPaths{}, &mintError{outcome: failedCommitOutcome(paths, req, commitErr), err: commitErr}
 	}
 	if req.AfterRootCommit != nil {
 		if err := req.AfterRootCommit(); err != nil {
-			return storepaths.GenPaths{}, err
+			return storepaths.GenPaths{}, &mintError{outcome: Committed, err: err}
 		}
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
+}
+
+// MintOutcome is what a mint left the store root selecting.
+type MintOutcome int
+
+const (
+	// NotCommitted: the root still selects the parent. Every failure before
+	// the root replacement is one, and so is a replacement that failed with
+	// the old root proven in place.
+	NotCommitted MintOutcome = iota
+	// Committed: the root selects the new generation.
+	Committed
+	// Uncertain: the root may select either. The replacement's durability
+	// could not be confirmed, its outcome could not be classified, or the
+	// root reads back as the new generation after a replacement error. The
+	// caller blocks signing first and then follows the root, as for a commit
+	// that landed.
+	Uncertain
+)
+
+// mintError is a Mint failure that came at or after the root replacement,
+// with what it left the root selecting.
+type mintError struct {
+	outcome MintOutcome
+	err     error
+}
+
+func (e *mintError) Error() string { return e.err.Error() }
+func (e *mintError) Unwrap() error { return e.err }
+
+// MintOutcomeOf reports what the Mint call that returned err left the store
+// root selecting: Committed for a nil error, and for an error what Mint
+// classified, NotCommitted when it failed before the root replacement.
+func MintOutcomeOf(err error) MintOutcome {
+	if err == nil {
+		return Committed
+	}
+	var failed *mintError
+	if errors.As(err, &failed) {
+		return failed.outcome
+	}
+	return NotCommitted
+}
+
+// failedCommitOutcome classifies a root replacement that returned err. A
+// replacement whose outcome the commit itself could not settle is
+// uncertain; otherwise the root is read back, with the keyring that
+// authenticates the root the replacement wrote, and one that selects the new
+// generation is uncertain too: the error came after it landed.
+func failedCommitOutcome(paths storepaths.Paths, req MintRequest, err error) MintOutcome {
+	if RootCommitUncertain(err) {
+		return Uncertain
+	}
+	readBack := req.Integrity
+	if req.replacesRoot() {
+		readBack = req.ReplacementKeyring
+	}
+	if visible, visibleErr := ResolveStoreRootWithKeyring(paths, readBack); visibleErr == nil && visible.GenerationID() == req.GenerationID {
+		return Uncertain
+	}
+	return NotCommitted
 }
 
 // replacesRoot reports whether the mint replaces the store root's keyring,

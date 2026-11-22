@@ -39,6 +39,19 @@ type Options struct {
 	Config       *serverconfig.ServerConfig
 }
 
+// StandardCandidate is the candidate validation of a store-root commit on a
+// node: Candidate with the node's paths, role, data directory and
+// configuration, and the keyring the candidate is written under. Every
+// commit that mints on top of a node's store uses it, live or offline.
+func StandardCandidate(paths storepaths.Paths, role noderole.Role, dataDir string, cfg *serverconfig.ServerConfig, kr *crypto.Keyring) func(storepaths.GenPaths) error {
+	return func(staged storepaths.GenPaths) error {
+		return Candidate(Options{
+			Paths: paths, Candidate: staged, Keyring: kr,
+			ExpectedRole: role, DataDir: dataDir, Config: cfg,
+		})
+	}
+}
+
 // FirstGeneration validates a store's staged first generation, for
 // initialization and apstore rebuild.
 func FirstGeneration(c storeinit.FirstGenerationCandidate) error {

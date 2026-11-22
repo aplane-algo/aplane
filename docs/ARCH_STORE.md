@@ -589,7 +589,11 @@ A failure before root replacement leaves the old root authoritative. A visible
 candidate after a replacement or directory-sync error is commit-uncertain and
 enters recovery; callers do not blindly retry. So is a root that cannot be
 read back after the error, or that matches neither the old record nor the
-candidate (`genstore.RootCommitUncertain`): the candidate may have landed. Once the one root rename is
+candidate (`genstore.RootCommitUncertain`): the candidate may have landed.
+`genstore.Mint` classifies its own failure (`MintOutcomeOf`: not committed,
+committed, or uncertain, reading the root back after a failed replacement),
+and every live commit caller follows it with
+`productruntime.Runtime.FollowCommit`. Once the one root rename is
 visible and directory-durable, there is no second witness or publication step.
 
 ### Passphrase and term rotation

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -123,29 +124,20 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	if !ir.IsUnlocked() {
 		return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
 	}
-	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+	err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		var err error
 		*outcome, err = policyapply.Commit(s.policyEnv(kr), req)
 		return err
-	}); err != nil {
-		// An uncertain commit may already be the visible root. Block signing
-		// first, then rebind the runtime to it, as restore does, so the
-		// keystore never trails the store and no request signs against the
-		// generation being replaced. Reload runs outside WithKeyring: a
-		// reload can zero the keyring, which waits for the callbacks using
-		// it, this one included.
-		if outcome.Uncertain {
-			ir.SetRecovery()
-			_, _ = ir.Reload()
-		}
+	})
+	switch {
+	case outcome.Uncertain:
+		_, _ = ir.FollowCommit(genstore.Uncertain)
+		return err
+	case err != nil, outcome.GenerationID == "":
 		return err
 	}
-	if outcome.GenerationID == "" {
-		return nil
-	}
-	if _, err := ir.Reload(); err != nil {
+	if _, err := ir.FollowCommit(genstore.Committed); err != nil {
 		outcome.Uncertain = true
-		ir.SetRecovery()
 		return policyapply.Error{Code: "policy_reload_failed", Msg: "policy committed as generation " +
 			outcome.GenerationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
 	}
