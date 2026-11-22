@@ -4,10 +4,12 @@
 package keystore_test
 
 import (
-	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -103,5 +105,84 @@ func TestScanClearsBindingWhenRootStopsAuthenticating(t *testing.T) {
 	}
 	if active, err := ks.ActivePaths(); err == nil {
 		t.Fatalf("ActivePaths() = %s after the root stopped authenticating, want no binding", active.GenerationID())
+	}
+}
+
+// A scan that fails keeps the key cache it found: the view in service may
+// still be signing from it, and only a scan that succeeds replaces it.
+func TestAFailedScanKeepsTheKeyCache(t *testing.T) {
+	passphrase := []byte("scan-binding-passphrase")
+	paths := initializedStore(t, passphrase)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	if err := ks.Unlock(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	active, err := ks.ActivePaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks.SeedCacheForTest("ADDR", "ADDR.key")
+	keysDir := active.KeysDir()
+	if err := os.Chmod(keysDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(keysDir, 0o700) })
+
+	if err := ks.Scan(); err == nil {
+		t.Fatal("Scan() succeeded on an unreadable keys directory")
+	}
+	if got := ks.GetCache(); got["ADDR"] != "ADDR.key" {
+		t.Fatalf("GetCache() after a failed scan = %v, want the cache it found", got)
+	}
+}
+
+// An unlock keeps the key cache and its scan warnings, which the reload's
+// scan that follows replaces, and zeroes the keyring it replaced. An unlock begun in recovery
+// whose reload then fails leaves recovery the cache its runtime key maps were
+// built from.
+func TestUnlockKeepsTheKeyCacheAndZeroesTheKeyringItReplaced(t *testing.T) {
+	passphrase := []byte("scan-binding-passphrase")
+	paths := initializedStore(t, passphrase)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	if err := ks.Unlock(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	var replaced *crypto.Keyring
+	if err := ks.WithKeyring(func(kr *crypto.Keyring) error { replaced = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if replaced.CurrentTerm() == 0 {
+		t.Fatal("the first keyring has no current term")
+	}
+	ks.SeedCacheForTest("ADDR", "ADDR.key")
+
+	if err := ks.Unlock(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	if got := ks.GetCache(); got["ADDR"] != "ADDR.key" {
+		t.Fatalf("GetCache() after an unlock = %v, want the cache kept", got)
+	}
+	if got := ks.GetScanWarnings(); len(got) != 1 || got[0].KeyFile != "keys/stray.key" {
+		t.Fatalf("GetScanWarnings() after an unlock = %v, want the warning kept", got)
+	}
+	if replaced.CurrentTerm() != 0 {
+		t.Fatal("the keyring the unlock replaced was not zeroed")
+	}
+}
+
+// A lock empties the key cache with the keyring. A key load on a locked
+// signer answers locked before it reaches the store: the lock destroys the
+// key session first.
+func TestClearKeysEmptiesTheKeyCache(t *testing.T) {
+	passphrase := []byte("scan-binding-passphrase")
+	paths := initializedStore(t, passphrase)
+	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	if err := ks.Unlock(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	ks.SeedCacheForTest("ADDR", "ADDR.key")
+	ks.ClearKeys()
+	if got := ks.GetCache(); len(got) != 0 {
+		t.Fatalf("GetCache() after a lock = %v, want it empty", got)
 	}
 }

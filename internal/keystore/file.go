@@ -69,22 +69,87 @@ func NewAtomicFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 // A successful unwrap is the passphrase check, so there is no separate
 // verifier to consult. Callers receive no key material: the keyring hands out
 // operations, not bytes.
+//
+// It binds the generation the root selects and keeps the key cache, which
+// the reload's scan that follows replaces. An unlock begun in recovery whose
+// reload then fails leaves recovery the cache its runtime key maps were
+// built from.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	resolved, kr, err := genstore.OpenStoreRootSelection(f.paths, passphrase)
 	if err != nil {
 		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
 	f.cacheLock.Lock()
-	previous := f.replaceKeyringLocked(kr)
-	f.active = &resolved
+	previous := f.installLocked(kr, Contents{Selection: &resolved, Keys: f.cache, Warnings: f.scanWarnings})
 	f.cacheLock.Unlock()
-	previous.zeroWhenUnused()
+	previous.ZeroWhenUnused()
 	return nil
 }
 
-// Scan populates the internal cache by scanning the keys directory with the
-// keyring Unlock opened. Each key is decrypted only once to extract address,
-// type, and path.
+// Contents is what the store holds besides its keyring: the generation it
+// is bound to and the key cache scanned from it. It owns no key material.
+type Contents struct {
+	// Selection is the generation the store root selected, authenticated;
+	// nil when the root did not authenticate.
+	Selection *storepaths.GenPaths
+	Keys      map[string]keys.KeyScanInfo
+	Warnings  []keys.KeyScanWarning
+}
+
+// ScanSelection authenticates what the store root selects with kr and scans
+// that generation, and installs nothing: the store's keyring, binding and
+// cache are as they were. Each key is decrypted once. The scan itself
+// creates keys/ when it is missing and prints each scan warning to stderr.
+// On a failure it still returns the selection when the root authenticated,
+// so a caller can bind what the root selects whatever the generation holds;
+// a root that does not authenticate gives none.
+func (f *FileKeyStore) ScanSelection(kr *crypto.Keyring) (Contents, error) {
+	selected, err := genstore.AuthenticateStoreRootSelection(f.paths, kr)
+	if err != nil {
+		return Contents{}, fmt.Errorf("failed to resolve active key store layout: authenticate store root selection: %w", err)
+	}
+	contents := Contents{Selection: &selected}
+	if err := genstore.ValidateStoreRootSelection(selected); err != nil {
+		return contents, fmt.Errorf("failed to resolve active key store layout: %w", err)
+	}
+	report, err := keys.ScanKeysDirectory(selected, kr, nil)
+	if err != nil {
+		return contents, fmt.Errorf("failed to scan keys directory: %w", err)
+	}
+	contents.Keys = report.Keys
+	contents.Warnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
+	return contents, nil
+}
+
+// Install replaces the store's keyring with kr, which may be nil to close
+// it, and its contents, together under the cache lock: a reader sees all of
+// the old or all of the new. It returns the keyring it replaced, which the
+// caller zeroes with ZeroWhenUnused once it has released its own locks; it
+// is not zeroed while a WithKeyring callback still uses it.
+func (f *FileKeyStore) Install(kr *crypto.Keyring, contents Contents) DetachedKeyring {
+	f.cacheLock.Lock()
+	defer f.cacheLock.Unlock()
+	return f.installLocked(kr, contents)
+}
+
+func (f *FileKeyStore) installLocked(kr *crypto.Keyring, contents Contents) DetachedKeyring {
+	previous := f.replaceKeyringLocked(kr)
+	f.active = contents.Selection
+	f.cache = contents.Keys
+	if f.cache == nil {
+		f.cache = make(map[string]keys.KeyScanInfo)
+	}
+	f.scanWarnings = contents.Warnings
+	return previous
+}
+
+// Scan scans the generation the store root selects with the keyring Unlock
+// opened, and installs the result. It binds what the authenticated root
+// selects even when that generation then fails validation, as Unlock does: a
+// failed reload must never leave the store bound to a superseded, sealed
+// generation. A root that no longer authenticates leaves no authority to
+// bind. A scan that fails keeps the key cache it found, which the view in
+// service may still be signing from.
 func (f *FileKeyStore) Scan() error {
 	// Hold RLock through the entire scan to prevent ClearKeys() from zeroing
 	// the terms mid-operation.
@@ -94,21 +159,7 @@ func (f *FileKeyStore) Scan() error {
 		f.cacheLock.RUnlock()
 		return fmt.Errorf("keystore not unlocked and no passphrase provided")
 	}
-	// Authenticate a fresh exact root read once per scan, so every reload
-	// after a root commit rebuilds against the newly selected generation.
-	selected, selectErr := genstore.AuthenticateStoreRootSelection(f.paths, keyring)
-	if selectErr != nil {
-		selectErr = fmt.Errorf("authenticate store root selection: %w", selectErr)
-	}
-	var report *keys.KeyScanReport
-	var err error
-	if selectErr != nil {
-		err = fmt.Errorf("failed to resolve active key store layout: %w", selectErr)
-	} else if validateErr := genstore.ValidateStoreRootSelection(selected); validateErr != nil {
-		err = fmt.Errorf("failed to resolve active key store layout: %w", validateErr)
-	} else if report, err = keys.ScanKeysDirectory(selected, keyring, nil); err != nil {
-		err = fmt.Errorf("failed to scan keys directory: %w", err)
-	}
+	contents, err := f.ScanSelection(keyring)
 	f.cacheLock.RUnlock()
 
 	f.cacheLock.Lock()
@@ -120,20 +171,12 @@ func (f *FileKeyStore) Scan() error {
 		}
 		return err
 	}
-	// Bind what the authenticated root selects even when that generation
-	// then fails validation, as Unlock does: a failed reload must never leave
-	// the store bound to a superseded, sealed generation. A root that no
-	// longer authenticates leaves no authority to bind.
-	if selectErr != nil {
-		f.active = nil
-	} else {
-		f.active = &selected
-	}
 	if err != nil {
+		f.active = contents.Selection
 		return err
 	}
-	f.cache = report.Keys
-	f.scanWarnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
+	// The keyring is the one installed, so nothing is detached.
+	f.installLocked(keyring, contents)
 	return nil
 }
 
@@ -161,25 +204,25 @@ func (f *FileKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	return fn(kr)
 }
 
-// detachedKeyring is a keyring taken off the store, with the WithKeyring
+// DetachedKeyring is a keyring taken off the store, with the WithKeyring
 // callbacks still using it.
-type detachedKeyring struct {
+type DetachedKeyring struct {
 	keyring *crypto.Keyring
 	users   *sync.WaitGroup
 }
 
 // replaceKeyringLocked installs kr, which may be nil, and returns the keyring
 // it replaces. The caller holds cacheLock for writing and, once it has
-// released it, zeroes what was returned with zeroWhenUnused. Readers that
+// released it, zeroes what was returned with ZeroWhenUnused. Readers that
 // use the keyring under the lock (Get, Scan, BindStoreRootSelection) are
 // done with it by then; the lock excluded them.
-func (f *FileKeyStore) replaceKeyringLocked(kr *crypto.Keyring) detachedKeyring {
+func (f *FileKeyStore) replaceKeyringLocked(kr *crypto.Keyring) DetachedKeyring {
 	if kr != nil && kr == f.keyring {
 		// Installing the keyring already installed changes nothing, and
 		// returning it would zero the live keyring.
-		return detachedKeyring{}
+		return DetachedKeyring{}
 	}
-	previous := detachedKeyring{keyring: f.keyring, users: f.keyringUsers}
+	previous := DetachedKeyring{keyring: f.keyring, users: f.keyringUsers}
 	f.keyring, f.keyringUsers = kr, nil
 	if kr != nil {
 		f.keyringUsers = &sync.WaitGroup{}
@@ -187,9 +230,9 @@ func (f *FileKeyStore) replaceKeyringLocked(kr *crypto.Keyring) detachedKeyring 
 	return previous
 }
 
-// zeroWhenUnused waits for the callbacks still using the keyring, then
+// ZeroWhenUnused waits for the callbacks still using the keyring, then
 // zeroes it. It is called without the cache lock, which they may need.
-func (d detachedKeyring) zeroWhenUnused() {
+func (d DetachedKeyring) ZeroWhenUnused() {
 	if d.keyring == nil {
 		return
 	}
@@ -197,16 +240,13 @@ func (d detachedKeyring) zeroWhenUnused() {
 	d.keyring.Zero()
 }
 
-// ClearKeys securely zeros every term key and drops the keyring. Called when
-// the signer locks so no key material remains resident. It returns once the
-// keyring is zeroed, after any WithKeyring callback still using it returns;
-// meanwhile the store reads as locked.
+// ClearKeys securely zeros every term key and drops the keyring, the
+// binding and the key cache. Called when the signer locks so no key material
+// remains resident. It returns once the keyring is zeroed, after any
+// WithKeyring callback still using it returns; meanwhile the store reads as
+// locked.
 func (f *FileKeyStore) ClearKeys() {
-	f.cacheLock.Lock()
-	previous := f.replaceKeyringLocked(nil)
-	f.active = nil
-	f.cacheLock.Unlock()
-	previous.zeroWhenUnused()
+	f.Install(nil, Contents{}).ZeroWhenUnused()
 }
 
 // BindStoreRootSelection binds the keystore to the generation store-root.enc
@@ -396,9 +436,13 @@ func loadWitnessKeyMaterial(payload *keys.Payload, keyType string, signingMeta k
 func (f *FileKeyStore) GetCache() map[string]string {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
+	return Contents{Keys: f.cache}.KeyFiles()
+}
 
-	result := make(map[string]string, len(f.cache))
-	for k, v := range f.cache {
+// KeyFiles is the address -> key file path map of the scanned keys.
+func (c Contents) KeyFiles() map[string]string {
+	result := make(map[string]string, len(c.Keys))
+	for k, v := range c.Keys {
 		result[k] = v.KeyFile
 	}
 	return result
@@ -415,9 +459,13 @@ func (f *FileKeyStore) GetScanWarnings() []keys.KeyScanWarning {
 func (f *FileKeyStore) GetKeyTypes() map[string]string {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
+	return Contents{Keys: f.cache}.KeyTypes()
+}
 
-	result := make(map[string]string, len(f.cache))
-	for k, v := range f.cache {
+// KeyTypes is the address -> key type map of the scanned keys.
+func (c Contents) KeyTypes() map[string]string {
+	result := make(map[string]string, len(c.Keys))
+	for k, v := range c.Keys {
 		result[k] = v.KeyType
 	}
 	return result
@@ -430,9 +478,14 @@ func (f *FileKeyStore) GetKeyTypes() map[string]string {
 func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
+	return Contents{Keys: f.cache}.SigningSummaries()
+}
 
-	result := make(map[string]SigningSummary, len(f.cache))
-	for k, v := range f.cache {
+// SigningSummaries is the address -> non-sensitive signing metadata map of
+// the scanned keys, freshly built and owned by the caller.
+func (c Contents) SigningSummaries() map[string]SigningSummary {
+	result := make(map[string]SigningSummary, len(c.Keys))
+	for k, v := range c.Keys {
 		summary := SigningSummary{
 			Category:             v.Category,
 			BaseKeyType:          v.BaseKeyType,
@@ -458,9 +511,14 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
+	return Contents{Keys: f.cache}.PublicKeyHexes()
+}
 
-	result := make(map[string]string, len(f.cache))
-	for k, v := range f.cache {
+// PublicKeyHexes is the address -> public key hex map of the scanned keys;
+// empty for generic LogicSig keys.
+func (c Contents) PublicKeyHexes() map[string]string {
+	result := make(map[string]string, len(c.Keys))
+	for k, v := range c.Keys {
 		result[k] = v.PublicKeyHex
 	}
 	return result
