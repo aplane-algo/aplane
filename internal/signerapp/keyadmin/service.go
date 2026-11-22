@@ -520,9 +520,10 @@ func (s Service) DeleteKey(ctx context.Context, address string) (*DeleteResult, 
 	// A rotating account's stage address table is a cache derived from the
 	// key that just left; it goes with it. A reload that succeeded took the
 	// key out of the published inventory, and one that found a defect
-	// published none, so a fill racing this deletion is refused when it asks
-	// for the table. Nothing depends on the table, so a failure here is
-	// reported, not fatal.
+	// published none. A reload that failed for another reason leaves the old
+	// snapshot, so a fill racing this deletion can rebuild the table until
+	// the next reload. Nothing depends on the table, so that is harmless,
+	// and a failure here is reported, not fatal.
 	if tables := ir.StageTables(); tables != nil && storepaths.ValidateStageSelector(address) == nil {
 		if tableErr := tables.Delete(address); tableErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: key %s was deleted but its stage table was not: %v\n", address, tableErr)
