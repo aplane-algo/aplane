@@ -683,3 +683,51 @@ func dispatchIPCMessage(t *testing.T, session *adminserver.Session, msg any) {
 	}
 	session.Dispatch(data)
 }
+
+// A template the reload would not load is refused at install, before it
+// writes anything, and the signer keeps its state: the reload an install runs
+// next finds a clean store. Installed, the template was the content defect
+// that reload found, the signer entered recovery, and the install's rollback
+// then removed the files that caused it, leaving a clean store in recovery.
+// The install here runs as an admin install does, with the one such template
+// admission cannot produce: one stored under a key type not its own.
+func TestATemplateTheReloadWouldNotLoadLeavesTheSignerAsItWas(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	generateTestKey(t, server, "ed25519")
+	parsed, err := templatelibrary.ParseYAML("prepare.yaml", renderGenericTemplateYAML("ipc-prepare-refusal", 1, "Prepare Refusal", "stored under another key type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.KeyType = testTemplateKeyType("ipc-stored-elsewhere")
+	paths := mustActiveKeyPaths(t, server)
+
+	err = server.adminServices().withStoreMutation(func() error {
+		var installErr error
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			_, installErr = templatelibrary.InstallParsed(paths, parsed, kr)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if installErr != nil {
+			return installErr
+		}
+		_, reloadErr := ir.Reload()
+		return reloadErr
+	})
+	if err == nil || !strings.Contains(err.Error(), "would not load") {
+		t.Fatalf("install = %v, want the refusal before anything is written", err)
+	}
+	if !ir.IsUnlocked() || ir.KeyCount() != 1 {
+		t.Fatalf("after the refused install: state %v, %d key(s); want unlocked with 1", ir.GetState(), ir.KeyCount())
+	}
+	assertInstalledTemplateRemoved(t, server, parsed.KeyType, templatestore.TemplateTypeGeneric)
+	if _, ok, err := keytypestate.Get(paths, parsed.KeyType); err != nil || ok {
+		t.Fatalf("key type state exists=%v err=%v after the refused install, want none", ok, err)
+	}
+	if _, err := ir.Reload(); err != nil || !ir.IsUnlocked() {
+		t.Fatalf("Reload() after the refused install = %v, state %v; want a clean reload", err, ir.GetState())
+	}
+}

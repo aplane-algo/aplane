@@ -385,17 +385,20 @@ func TestInstallParsedExistingTemplateCanRollbackStateChange(t *testing.T) {
 
 func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 	paths := newLibraryTestPaths(t)
-	parsed := ParsedTemplate{
-		TemplateRef: TemplateRef{
-			KeyType:      "test.install-rollback.v1",
-			TemplateType: templatestore.TemplateTypeGeneric,
-		},
-		YAMLData: []byte("template_type: generic\nteal: ["),
+	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("install-rollback", "Install Rollback"))
+	active, err := genstore.Resolve(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the state record goes: the template file is
+	// written, and the state record then cannot be read or written.
+	recordPath := active.KeyTypeRecord(parsed.KeyType)
+	if err := os.Mkdir(recordPath, 0o700); err != nil {
+		t.Fatal(err)
 	}
 
-	_, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
-	if err == nil {
-		t.Fatal("InstallParsed() error = nil, want fingerprint/state failure")
+	if _, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey())); err == nil {
+		t.Fatal("InstallParsed() error = nil, want the state write failure")
 	}
 	templatePath, pathErr := templatestore.GetTemplateFilePathForPaths(paths, parsed.KeyType)
 	if pathErr != nil {
@@ -404,8 +407,51 @@ func TestInstallParsedRollsBackTemplateWhenStateWriteFails(t *testing.T) {
 	if _, statErr := os.Stat(templatePath); !os.IsNotExist(statErr) {
 		t.Fatalf("installed template stat error = %v, want removed rollback file", statErr)
 	}
+	if err := os.Remove(recordPath); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok, stateErr := keytypestate.Get(paths, parsed.KeyType); stateErr != nil || ok {
-		t.Fatalf("key type state exists=%v err=%v, want rollback to remove state", ok, stateErr)
+		t.Fatalf("key type state exists=%v err=%v, want none written", ok, stateErr)
+	}
+}
+
+// A new template passes the preparation the reload after its install runs
+// before anything is written. One that fails it would be the content defect
+// that reload finds: the signer would enter recovery, and the install's
+// rollback would then remove the files that caused it. Admission covers the
+// rest of preparation, so the failure left is a template stored under a key
+// type that is not its own, which only a hand-built ParsedTemplate has.
+func TestInstallParsedRefusesATemplateTheReloadWouldNotLoad(t *testing.T) {
+	falcon.RegisterClient()
+	for _, tc := range []struct {
+		name string
+		yaml []byte
+	}{
+		{name: "generic", yaml: testGenericTemplateYAML("prepare-refusal", "Prepare Refusal")},
+		{name: "composed", yaml: testComposedTemplateYAML("prepare-refusal", "Prepare Refusal")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := newLibraryTestPaths(t)
+			parsed := mustParseYAML(t, tc.name+".yaml", tc.yaml)
+			parsed.KeyType = "test.stored-elsewhere.v1"
+
+			_, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
+			if err == nil || !strings.Contains(err.Error(), "template test.stored-elsewhere.v1 would not load") ||
+				!strings.Contains(err.Error(), `does not match state key type "test.stored-elsewhere.v1"`) {
+				t.Fatalf("InstallParsed() error = %v, want the preparation refusal", err)
+			}
+			active, err := genstore.Resolve(paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries, err := os.ReadDir(active.KeyTypeRecordsDir())
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("the refused install left %d entries in keytypes/, want none", len(entries))
+			}
+		})
 	}
 }
 

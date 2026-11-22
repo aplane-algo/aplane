@@ -256,6 +256,9 @@ func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyri
 	if err := validateRegisteredProviderConflict(tmpl); err != nil {
 		return result, err
 	}
+	if err := prepareAsReloadWould(tmpl); err != nil {
+		return result, err
+	}
 
 	outputPath, err := templatestore.SaveTemplateActive(active, tmpl.YAMLData, tmpl.KeyType, tmpl.TemplateType, kr)
 	if err != nil {
@@ -857,6 +860,32 @@ func validateRegisteredProviderConflict(tmpl ParsedTemplate) error {
 		return fmt.Errorf("key type %s is already registered by a conflicting provider", tmpl.KeyType)
 	}
 	return fmt.Errorf("key type %s is already registered as a built-in provider", tmpl.KeyType)
+}
+
+// prepareAsReloadWould runs on a new template the preparation the reload
+// after its install runs (templates.DefaultTemplateRegistrars), for the key
+// type its record will hold, and registers nothing. The reload counts a
+// template that fails it as a content defect and enters recovery, and the
+// install's rollback would then remove the files that caused it. Admission
+// (ParseYAML) covers all of it but one check: that the template is stored
+// under its own key type, which only a ParsedTemplate built by hand can miss.
+func prepareAsReloadWould(tmpl ParsedTemplate) error {
+	keyType, err := keytypestate.NormalizeKeyType(tmpl.KeyType)
+	if err != nil {
+		return err
+	}
+	switch tmpl.TemplateType {
+	case templatestore.TemplateTypeGeneric:
+		_, err = generictemplate.PrepareKeystoreTemplateRegistration(keyType, tmpl.YAMLData)
+	case templatestore.TemplateTypeComposed:
+		_, err = composeddsa.PrepareKeystoreTemplateRegistration(keyType, tmpl.YAMLData)
+	default:
+		return fmt.Errorf("unsupported template_type %q", tmpl.TemplateType)
+	}
+	if err != nil {
+		return fmt.Errorf("template %s would not load: %w", keyType, err)
+	}
+	return nil
 }
 
 func semanticFingerprint(templateType templatestore.TemplateType, data []byte) (string, error) {
