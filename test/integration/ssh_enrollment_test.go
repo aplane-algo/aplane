@@ -754,12 +754,8 @@ func TestEnrollmentRejectsUnknownExecCommand(t *testing.T) {
 	if exitCode == 0 {
 		t.Fatalf("expected non-zero exit for unknown enrollment command, got output:\n%s", output)
 	}
-	logs, err := signerd.GetLogs()
-	if err != nil {
-		t.Fatalf("failed to read signer logs: %v", err)
-	}
-	if !strings.Contains(logs, "Unknown enrollment command from ") || !strings.Contains(logs, `"bogus"`) {
-		t.Fatalf("expected unknown-command log entry, got logs:\n%s", logs)
+	if logs, err := signerd.WaitForLog("Unknown enrollment command from ", `"bogus"`); err != nil {
+		t.Fatalf("expected unknown-command log entry: %v; got logs:\n%s", err, logs)
 	}
 	requireEnrolledKeys(t, env, 0)
 	if data := readFileIfExists(t, env.PendingPath); strings.Contains(data, mustClientKeyBlob(t, env.ClientPublicKeyPath)) {

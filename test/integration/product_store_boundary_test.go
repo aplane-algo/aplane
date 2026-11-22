@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -33,13 +32,8 @@ func TestExtraProductStoreEntryPreventsSignerStartup(t *testing.T) {
 		_ = signerd.Stop()
 		t.Fatal("apsigner started with an extra identity entry")
 	}
-	logs, err := signerd.GetLogs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(logs, `unsupported entry "alice" under identities`) ||
-		!strings.Contains(logs, `supports only the "default" product store`) {
-		t.Fatalf("startup logs did not report the product-store integrity boundary:\n%s", logs)
+	if logs, err := signerd.WaitForLog(`unsupported entry "alice" under identities`, `supports only the "default" product store`); err != nil {
+		t.Fatalf("startup logs did not report the product-store integrity boundary: %v\n%s", err, logs)
 	}
 
 	client := &http.Client{Timeout: 250 * time.Millisecond}
