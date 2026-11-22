@@ -70,15 +70,19 @@ func NewAtomicFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
 // verifier to consult. Callers receive no key material: the keyring hands out
 // operations, not bytes.
 //
-// It binds the generation the root selects and empties the key cache, which
-// was scanned under the keyring it replaces; the reload's scan that follows
-// fills it.
+// It binds the generation the root selects and keeps the key cache, which
+// the reload's scan that follows replaces. An unlock begun in recovery whose
+// reload then fails leaves recovery the cache its runtime key maps were
+// built from.
 func (f *FileKeyStore) Unlock(passphrase []byte) error {
 	resolved, kr, err := genstore.OpenStoreRootSelection(f.paths, passphrase)
 	if err != nil {
 		return fmt.Errorf("failed to unlock keystore: %w", err)
 	}
-	f.Install(kr, Contents{Selection: &resolved}).ZeroWhenUnused()
+	f.cacheLock.Lock()
+	previous := f.installLocked(kr, Contents{Selection: &resolved, Keys: f.cache, Warnings: f.scanWarnings})
+	f.cacheLock.Unlock()
+	previous.ZeroWhenUnused()
 	return nil
 }
 
@@ -93,8 +97,9 @@ type Contents struct {
 }
 
 // ScanSelection authenticates what the store root selects with kr and scans
-// that generation, and changes nothing on the store. Each key is decrypted
-// once. On a failure it still returns the selection when the root
+// that generation, and installs nothing: the store's keyring, binding and
+// cache are as they were. Each key is decrypted once. The scan itself
+// creates keys/ when it is missing and prints each scan warning to stderr. On a failure it still returns the selection when the root
 // authenticated, so a caller can bind what the root selects whatever the
 // generation holds; a root that does not authenticate gives none.
 func (f *FileKeyStore) ScanSelection(kr *crypto.Keyring) (Contents, error) {

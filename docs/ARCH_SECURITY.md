@@ -1803,7 +1803,7 @@ Term keys follow a strict lifecycle:
 
 1. **Unwrap** — at unlock the passphrase is fed to Argon2id to produce a KEK, which `crypto.OpenStoreRootStore` uses to unwrap the term keys and authenticate generation selection.
 2. **Held in signer memory** — the term keys are stored in `FileKeyStore.keyring` and are protected from swap when process memory locking is enabled successfully.
-3. **Zeroed on lock or shutdown** — `ClearKeys()` overwrites every term key with zeros and drops the keyring.
+3. **Zeroed on lock or shutdown** — `ClearKeys()` overwrites every term key with zeros and drops the keyring, the generation binding and the key cache together (`FileKeyStore.Install`).
 
 `WithKeyring` is the only accessor. `Unlock` returns no key material, and
 nothing hands out a term key's bytes: callers receive the keyring and ask it to

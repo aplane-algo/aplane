@@ -25,20 +25,24 @@ func contentsOf(paths storepaths.Paths, generation string, n int) Contents {
 	}
 }
 
-// Install sets the binding, the key cache and the warnings together: a
-// reader under the cache lock sees all of one installation, never a binding
-// from one and a cache from another.
+// Install sets the keyring, the binding, the key cache and the warnings
+// together: a reader under the cache lock sees all of one installation,
+// never a keyring or a binding from one and a cache from another.
 func TestInstallSetsTheContentsTogether(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	fs := storeWithKeyring(t)
 	const a, b = "gen-1753800000-aaaaaaaa", "gen-1753800001-bbbbbbbb"
 	installs := map[string]Contents{a: contentsOf(paths, a, 1), b: contentsOf(paths, b, 2)}
-	if err := fs.WithKeyring(func(kr *crypto.Keyring) error {
-		fs.Install(kr, installs[a])
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+	keyrings := map[string]*crypto.Keyring{}
+	for _, generation := range []string{a, b} {
+		kr, err := crypto.NewKeyring()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keyrings[generation] = kr
 	}
+	// The detached keyrings are not zeroed: the test installs them again.
+	fs.Install(keyrings[a], installs[a])
 
 	var stop atomic.Bool
 	var wg sync.WaitGroup
@@ -50,20 +54,17 @@ func TestInstallSetsTheContentsTogether(t *testing.T) {
 			if i%2 == 1 {
 				generation = b
 			}
-			_ = fs.WithKeyring(func(kr *crypto.Keyring) error {
-				fs.Install(kr, installs[generation])
-				return nil
-			})
+			fs.Install(keyrings[generation], installs[generation])
 		}
 	}()
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		generation, files, warnings := fs.contentsForTest()
+		kr, generation, files, warnings := fs.contentsForTest()
 		want := installs[generation]
-		if files["ADDR"] != generation+".key" || warnings != len(want.Warnings) {
+		if kr != keyrings[generation] || files["ADDR"] != generation+".key" || warnings != len(want.Warnings) {
 			stop.Store(true)
 			wg.Wait()
-			t.Fatalf("a reader saw generation %s with cache %v and %d warning(s): parts of two installations", generation, files, warnings)
+			t.Fatalf("a reader saw generation %s with cache %v, %d warning(s) and another installation's keyring: parts of two installations", generation, files, warnings)
 		}
 	}
 	stop.Store(true)

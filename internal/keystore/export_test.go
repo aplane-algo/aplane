@@ -3,7 +3,10 @@
 
 package keystore
 
-import "github.com/aplane-algo/aplane/internal/crypto"
+import (
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys"
+)
 
 // setKeyringForTest installs a single-term keyring holding key, standing in
 // for the unlock a real store performs against store-root.enc. It exists so tests
@@ -32,13 +35,22 @@ func (f *FileKeyStore) keyringIsLoaded() bool {
 	return f.keyring != nil
 }
 
-// contentsForTest reads the binding, the key cache and the warnings under one
-// hold of the cache lock, as one reader of the store sees them.
-func (f *FileKeyStore) contentsForTest() (generation string, files map[string]string, warnings int) {
+// contentsForTest reads the keyring, the binding, the key cache and the
+// warnings under one hold of the cache lock, as one reader of the store sees
+// them.
+func (f *FileKeyStore) contentsForTest() (kr *crypto.Keyring, generation string, files map[string]string, warnings int) {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
 	if f.active != nil {
 		generation = f.active.GenerationID()
 	}
-	return generation, Contents{Keys: f.cache}.KeyFiles(), len(f.scanWarnings)
+	return f.keyring, generation, Contents{Keys: f.cache}.KeyFiles(), len(f.scanWarnings)
+}
+
+// SeedCacheForTest puts one cached key for address on the store, as a scan
+// that found it would have.
+func (f *FileKeyStore) SeedCacheForTest(address, keyFile string) {
+	f.cacheLock.Lock()
+	defer f.cacheLock.Unlock()
+	f.cache = map[string]keys.KeyScanInfo{address: {KeyFile: keyFile}}
 }
