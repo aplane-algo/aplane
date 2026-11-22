@@ -332,6 +332,13 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 			result.State = signerruntime.SignerStateLocked.String()
 			return result
 		}
+		if errors.Is(err, productruntime.ErrReconcileStateChanged) {
+			// A lock overtook a reconcile that published cleanly: it
+			// entered no recovery, and the lock stands.
+			result.Code = protocol.ErrCodeSignerLocked
+			result.State = ir.GetState().String()
+			return result
+		}
 		// A reconcile that failed entered recovery before it released the
 		// store mutation lock.
 		result.Code = protocol.ResultCodeRecoveryBlocked
@@ -394,8 +401,12 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
 	report, err := s.reconcileReloadAndPromote(ir, false)
-	if errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery) {
+	switch {
+	case errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery):
 		logInfof("reconciliation rescan skipped: %v", err)
+		return nil, false
+	case errors.Is(err, productruntime.ErrReconcileStateChanged):
+		logInfof("reconciliation rescan overtaken by a lock: %v", err)
 		return nil, false
 	}
 	if err != nil {

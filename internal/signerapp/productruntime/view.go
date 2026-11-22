@@ -80,8 +80,9 @@ func (ir *Runtime) SetBuildFunc(fn BuildFunc, effects ReloadEffects) {
 }
 
 // ErrReconcileStateChanged reports a reconcile that published cleanly but
-// found the runtime no longer in recovery when it went to promote it: a lock
-// came first, and that state stands.
+// that a lock overtook: one begun in recovery found it could not promote,
+// and one begun unlocked found the signer no longer unlocked. The lock
+// stands, and no recovery was entered.
 var ErrReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
 
 // errBuildNotConfigured is the build failure of a runtime no build was

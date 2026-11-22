@@ -7,14 +7,18 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
@@ -134,5 +138,31 @@ func TestARestoreOrRollbackInRecoveryAnswersTheKeysItEndsWith(t *testing.T) {
 	rolled := server.adminServices().backupServices().RollbackRestore(adminproto.RollbackRestoreRequest{OperationID: "rollback"})
 	if !rolled.Success || !ir.IsUnlocked() || rolled.KeyCount != ir.KeyCount() {
 		t.Fatalf("RollbackRestore() in recovery = %+v, state %v, %d key(s); want unlocked, answering the keys it serves", rolled, ir.GetState(), ir.KeyCount())
+	}
+}
+
+// A reconcile that a lock overtakes during its build publishes, and the
+// lock's cleanup clears what it published: the answer is the locked signer's,
+// not recovery_blocked, since no recovery was entered.
+func TestAReconcileALockOvertookAnswersLocked(t *testing.T) {
+	server := characterizedSigner(t)
+	ir := server.productRuntime()
+	opts := testProductBuildOptions(server)
+	var lockDone sync.WaitGroup
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		lockDone.Add(1)
+		go func() {
+			defer lockDone.Done()
+			ir.Lock()
+		}()
+		for ir.GetState() != signerruntime.SignerStateLocked {
+			time.Sleep(time.Millisecond)
+		}
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
+	result := server.adminServices().backupServices().ReconcileStore()
+	lockDone.Wait()
+	if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.State != signerruntime.SignerStateLocked.String() {
+		t.Fatalf("ReconcileStore() overtaken by a lock = %+v, want the locked answer", result)
 	}
 }
