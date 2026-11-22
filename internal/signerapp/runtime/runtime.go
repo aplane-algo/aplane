@@ -408,7 +408,8 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 //
 // An unlock function that returns an error ends the attempt there, before
 // the fence: the state is left as it is and no cleanup runs. A function that
-// loaded keys and then failed clears them itself. The product runtime also
+// opened a keyring and then failed closes it itself, unless it found
+// recovery's keyring open, which recovery keeps. The product runtime also
 // ends this way an attempt that found the signer already unlocked and loaded
 // nothing, which has nothing to publish and nothing to clear.
 func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bool, int, string) {

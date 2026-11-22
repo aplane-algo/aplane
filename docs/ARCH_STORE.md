@@ -2040,7 +2040,9 @@ Mechanism:
   a content defect in the selected generation enters recovery
   ([Runtime reload behavior](#runtime-reload-behavior))
 - when locked or in recovery, the watcher remains running and marks the
-  product runtime dirty
+  product runtime dirty; a recovery a reload entered therefore does not lift
+  when the defect's file is removed, but at the reconcile or unlock that
+  follows
 - watcher-triggered reload obtains the product store mutation lock before scanning keys/templates
 - admin mutation paths that already hold the product store mutation lock call direct reload paths and must not call watcher-only reload entrypoints
 

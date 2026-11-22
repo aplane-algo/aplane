@@ -1007,6 +1007,25 @@ template YAML.
 **Solution**:
 1. Connect with the apadmin TUI to unlock (enter your passphrase)
 
+### Signer entered recovery while unlocked
+
+**Problem**: An unlocked signer moved to recovery mode, with signing blocked,
+after a key generation or deletion, a template change, or a change in its
+`keys/` directory. The reload that followed found a content defect in the
+selected generation: an unexpected or malformed file in `keys/`, two key files
+for one address, a damaged template record, or a damaged source token file.
+
+**Solution**:
+1. Fix the cause: remove the stray file, restore the damaged one from a
+   backup (`apadmin restore apply <backup> --replace-existing`), or repair a
+   template record (see [Template Management](#template-management)).
+2. Reconcile: press `r` on the apadmin recovery screen, or run
+   `./apadmin restore reconcile`. Locking and unlocking again works too.
+
+Removing the file alone does not lift recovery: in recovery the signer does
+not reload on file changes, and only a reconcile or an unlock reloads and
+validates the store again.
+
 ### Mnemonic Export Unavailable
 
 **Problem**: Key details do not offer `m` (Show recovery phrase).

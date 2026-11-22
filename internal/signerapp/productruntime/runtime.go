@@ -1563,11 +1563,13 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
 //
 // A reload that finds a content defect in the selected generation, one that
-// fails its validation or two key files that resolve to one address, has
-// published an empty key snapshot, and it enters recovery before it returns,
-// so before its caller releases the store mutation lock: an unlocked signer
-// left serving that snapshot says it can sign with none of its keys.
-// Recovery keeps the keyring for the reconcile that lifts it. A signer in
+// fails its validation or two key files that resolve to one address, enters
+// recovery before it returns, so before its caller releases the store
+// mutation lock. A defect the key scan finds has published an empty key
+// snapshot, and an unlocked signer left serving it says it can sign with none
+// of its keys; a damaged source token file fails the reload before the scan,
+// with the key snapshot as it was. Recovery blocks signing either way, and
+// keeps the keyring for the reconcile that lifts it. A signer in
 // recovery enters it again, which fences an unlock in flight there as any
 // re-entry does, and a locked one stays locked (SetRecovery). Any other
 // failure, such as a keys directory that cannot be read, leaves the state as
