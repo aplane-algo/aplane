@@ -169,7 +169,8 @@ func TestAWatcherReloadThatFindsADefectEntersRecovery(t *testing.T) {
 // a key generation over a stray file nothing had reloaded for. The answer
 // says the signer entered recovery and names the defect, where it once said
 // only "failed to refresh signer key cache", and the log names it once. The
-// write stands: the reconcile publishes the new key with the old one.
+// write stands: the reply names the key it created, the audit log records it
+// though the reload failed, and the reconcile publishes it with the old one.
 func TestAKeyWriteWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	server, address, stray, session := defectSigner(t)
 	logs := &syncBuffer{}
@@ -181,12 +182,67 @@ func TestAKeyWriteWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.HasPrefix(result.Error, wantPrefix) || !strings.Contains(result.Error, "junk.txt") {
 		t.Fatalf("GenerateKey() = %+v, want recovery_blocked naming the stray file", result)
 	}
+	if result.Address == "" || result.KeyType != "ed25519" {
+		t.Fatalf("GenerateKey() = %+v, want it to name the key it wrote", result)
+	}
+	requireAuditEvent(t, server, "KEY_GENERATED", result.Address)
 	if got := logs.String(); strings.Count(got, "[WARN] identity is recovery-blocked: generation validation failed: ") != 1 || !strings.Contains(got, "junk.txt") {
 		t.Fatalf("logs = %q, want one line naming the entry and its cause", got)
 	}
 	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
 	requireRepairLiftsRecovery(t, server, stray, address, 2)
+	if _, err := server.productRuntime().FindKeyFile(result.Address); err != nil {
+		t.Fatalf("the key the reply named is not published after the reconcile: %v", err)
+	}
+}
+
+// requireAuditEvent checks that the audit log holds an event of kind for
+// address.
+func requireAuditEvent(t *testing.T, server *Signer, kind, address string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(server.dataDir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, kind) && strings.Contains(line, address) {
+			return
+		}
+	}
+	t.Fatalf("the audit log has no %s for %s:\n%s", kind, address, raw)
+}
+
+// Key deletion's reload over the same defect: the key file is archived, so
+// the deletion is audited and the account's stage table removed though the
+// reload failed. Both once came only after a successful reload.
+func TestAKeyDeletionWhoseReloadFindsADefectIsAuditedAndDropsItsStageTable(t *testing.T) {
+	server, address, stray, _ := defectSigner(t)
+	table := server.keyPaths.StageTablePath(address)
+	if err := os.MkdirAll(filepath.Dir(table), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(table, []byte("stage table"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := server.adminServices().keyApp().DeleteKey(context.Background(), adminproto.DeleteKeyRequest{Address: address})
+	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.Contains(result.Error, "junk.txt") {
+		t.Fatalf("DeleteKey() = %+v, want recovery_blocked naming the stray file", result)
+	}
+	requireAuditEvent(t, server, "KEY_DELETED", address)
+	if _, err := os.Stat(table); !os.IsNotExist(err) {
+		t.Fatalf("stage table stat = %v after the deletion, want it removed", err)
+	}
+	if !server.productRuntime().IsRecovery() {
+		t.Fatalf("state = %v, want recovery", server.productRuntime().GetState())
+	}
+	if err := os.Remove(stray); err != nil {
+		t.Fatal(err)
+	}
+	if res := server.adminServices().backupServices().ReconcileStore(); !res.Success || server.productRuntime().KeyCount() != 0 {
+		t.Fatalf("ReconcileStore() = %+v with %d key(s), want unlocked with the key gone", res, server.productRuntime().KeyCount())
+	}
 }
 
 // Template administration's reload, after it installed a template: the

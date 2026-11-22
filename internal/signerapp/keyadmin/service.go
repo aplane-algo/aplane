@@ -219,15 +219,21 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 			return nil, &Error{Kind: ErrorInternal, Message: "generic lsig generator not configured"}
 		}
 		address, err := s.GenerateGenericLSig(compileCtx, keyType, params)
-		if err != nil {
+		if err != nil && address == "" {
 			return nil, mapGenerateError(err)
 		}
-		return &GenerateResult{
+		// An address comes back only once the key is written; an error
+		// beside it is the reload's after the write.
+		result := &GenerateResult{
 			Address:    address,
 			KeyType:    keyType,
 			Parameters: params,
 			Warnings:   warnings,
-		}, nil
+		}
+		if err != nil {
+			return result, mapGenerateError(err)
+		}
+		return result, nil
 	}
 
 	mut := storemut.New(activeKeyPaths)
@@ -240,23 +246,24 @@ func (s Service) GenerateReviewedKey(ctx context.Context, keyType string, params
 	if err != nil {
 		return nil, mapGenerateError(err)
 	}
-
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		return nil, reloadErr
-	}
-
+	// The key is written and stays written, whatever the reload after it
+	// finds, so its audit event is recorded first, and a failed reload is
+	// answered with the result beside it, naming the key it created.
 	if s.AuditLog != nil {
 		s.AuditLog.LogKeyGenerated(ctx, genResult.Address, genResult.KeyType)
 	}
-
-	return &GenerateResult{
+	result := &GenerateResult{
 		Address:      genResult.Address,
 		PublicKeyHex: genResult.PublicKeyHex,
 		KeyType:      genResult.KeyType,
 		IsWitnessKey: genResult.IsWitnessKey,
 		Parameters:   params,
 		Warnings:     warnings,
-	}, nil
+	}
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return result, reloadErr
+	}
+	return result, nil
 }
 
 // checkGenerationAllowed decides whether keyType may create an account. It must
@@ -503,24 +510,27 @@ func (s Service) DeleteKey(ctx context.Context, address string) (*DeleteResult, 
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed: " + err.Error()}
 	}
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		return nil, reloadErr
+	// The key file is archived and stays archived, whatever the reload
+	// after it finds, so its audit event is recorded first, and its stage
+	// table goes whether or not the reload succeeds.
+	if s.AuditLog != nil {
+		s.AuditLog.LogKeyDeleted(ctx, address, delResult.DeletedPath)
 	}
+	reloadErr := reloadKeys(ir)
 	// A rotating account's stage address table is a cache derived from the
-	// key that just left; it goes with it. The key is already out of the
-	// published inventory, so a fill racing this deletion is refused when it
-	// asks for the table. Nothing depends on the table, so a failure here is
+	// key that just left; it goes with it. A reload that succeeded took the
+	// key out of the published inventory, and one that found a defect
+	// published none, so a fill racing this deletion is refused when it asks
+	// for the table. Nothing depends on the table, so a failure here is
 	// reported, not fatal.
 	if tables := ir.StageTables(); tables != nil && storepaths.ValidateStageSelector(address) == nil {
 		if tableErr := tables.Delete(address); tableErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: key %s was deleted but its stage table was not: %v\n", address, tableErr)
 		}
 	}
-
-	if s.AuditLog != nil {
-		s.AuditLog.LogKeyDeleted(ctx, address, delResult.DeletedPath)
+	if reloadErr != nil {
+		return nil, reloadErr
 	}
-
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 

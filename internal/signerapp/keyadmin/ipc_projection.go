@@ -14,13 +14,19 @@ import (
 
 // ProjectGenerateIPC omits recovery material. Native mnemonic export is a
 // separate authenticated operation; other key classes use encrypted backups.
+// A failure with a result beside it is a reload's after the key was written:
+// the reply names the key.
 func ProjectGenerateIPC(result *GenerateResult, err *Error) adminproto.GenerateKeyResult {
 	if err != nil {
-		return adminproto.GenerateKeyResult{
+		failed := adminproto.GenerateKeyResult{
 			Success: false,
 			Code:    ipcCodeForErrorKind(err),
 			Error:   err.Message,
 		}
+		if result != nil {
+			failed.Address, failed.KeyType = result.Address, result.KeyType
+		}
+		return failed
 	}
 
 	return adminproto.GenerateKeyResult{
@@ -98,13 +104,19 @@ func ProjectKeyDetailsIPC(result *adminproto.GetKeyDetailsResult, err *Error) ad
 	return details
 }
 
+// ProjectImportIPC names the imported key in a failure with a result beside
+// it, a reload's after the key was written, as ProjectGenerateIPC does.
 func ProjectImportIPC(result *keymgmt.ImportResult, err *Error) adminproto.ImportKeyResult {
 	if err != nil {
-		return adminproto.ImportKeyResult{
+		failed := adminproto.ImportKeyResult{
 			Success: false,
 			Code:    ipcCodeForErrorKind(err),
 			Error:   err.Message,
 		}
+		if result != nil {
+			failed.Address, failed.KeyType = result.Address, result.KeyType
+		}
+		return failed
 	}
 	return adminproto.ImportKeyResult{
 		Success: true,

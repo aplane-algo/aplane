@@ -156,12 +156,14 @@ func (s Service) ImportKey(ctx context.Context, keyType string, mnemonic []byte,
 		return nil, mapGenerateError(err)
 	}
 
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		return nil, reloadErr
-	}
-
+	// The key is written and stays written, whatever the reload after it
+	// finds, so its audit event is recorded first, and a failed reload is
+	// answered with the result beside it.
 	if s.AuditLog != nil {
 		s.AuditLog.LogKeyImported(ctx, importResult.Address, keyType)
+	}
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return importResult, reloadErr
 	}
 	return importResult, nil
 }

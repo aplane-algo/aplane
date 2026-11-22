@@ -95,13 +95,14 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 		return "", fmt.Errorf("failed to save %s file: %w", template.DisplayName(), err)
 	}
 
-	if reloadErr := reloadKeys(ir); reloadErr != nil {
-		return "", reloadErr
-	}
-
+	// The key is written and stays written, whatever the reload after it
+	// finds, so its audit event is recorded first, and a failed reload is
+	// answered with the address beside it.
 	if g.AuditLog != nil {
 		g.AuditLog.LogKeyGenerated(ctx, address, keyType)
 	}
-
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return address, reloadErr
+	}
 	return address, nil
 }

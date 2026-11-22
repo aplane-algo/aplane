@@ -215,7 +215,7 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
 		m = m.settleGenerateReview(msg)
-		return m.showRecoveryBlockedReply("Key generation: " + msg.Error)
+		return m.showRecoveryBlockedReply(keyChangeCause("Key generation", msg.Address, msg.Error))
 	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
@@ -230,6 +230,16 @@ func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cm
 // would make it a late failure and drop it, cause and all.
 func (m Model) isRecoveryBlockedReply(id, code string) bool {
 	return code == protocol.ResultCodeRecoveryBlocked && id != "" && id == m.operation.id
+}
+
+// keyChangeCause is a recovery_blocked reply's cause for the recovery
+// screen: the change, the key it wrote or removed when the reply names one,
+// and the reply's error.
+func keyChangeCause(change, address, errText string) string {
+	if address != "" {
+		change += " of " + address
+	}
+	return change + ": " + errText
 }
 
 // showRecoveryBlockedReply ends the operation on the recovery screen with the
@@ -276,9 +286,10 @@ func (m Model) applyGenerateResult(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
 	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
+		cause := keyChangeCause("Key deletion", m.del.address, msg.Error)
 		m.del.address = ""
 		m.del.keyType = ""
-		return m.showRecoveryBlockedReply("Key deletion: " + msg.Error)
+		return m.showRecoveryBlockedReply(cause)
 	}
 	if !m.takeOperationReply(msg.ID) {
 		return m, nil
@@ -460,7 +471,7 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 		// it does on success.
 		m.forms.importMnemonicInput.SetValue("")
 		m.forms.importMnemonicInput.Blur()
-		return m.showRecoveryBlockedReply("Key import: " + msg.Error)
+		return m.showRecoveryBlockedReply(keyChangeCause("Key import", msg.Address, msg.Error))
 	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil

@@ -138,15 +138,16 @@ func TestAKeyChangeThatEnteredRecoveryEndsOnTheRecoveryScreen(t *testing.T) {
 		reply           func(id string) any
 		prefix          string
 	}{
+		// The key a generation or import wrote is named with the cause.
 		{"generate", ViewGenerateForm, ViewGenerating, func(id string) any {
-			return protocol.GenerateResultMessage{BaseMessage: base(protocol.MsgTypeGenerateResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
-		}, "Key generation: "},
+			return protocol.GenerateResultMessage{BaseMessage: base(protocol.MsgTypeGenerateResult, id), Address: "ADDRWRITTEN", Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "Key generation of ADDRWRITTEN: "},
 		{"delete", ViewDeleteConfirm, ViewDeleting, func(id string) any {
 			return protocol.DeleteResultMessage{BaseMessage: base(protocol.MsgTypeDeleteResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
 		}, "Key deletion: "},
 		{"import", ViewImportForm, ViewImporting, func(id string) any {
-			return protocol.ImportResultMessage{BaseMessage: base(protocol.MsgTypeImportResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
-		}, "Key import: "},
+			return protocol.ImportResultMessage{BaseMessage: base(protocol.MsgTypeImportResult, id), Address: "ADDRWRITTEN", Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "Key import of ADDRWRITTEN: "},
 		// The KeyType Library's actions, the review's probe: their replies
 		// went through finishLibraryAction, which dropped a late one.
 		{"template install", ViewTemplateInstallConfirm, ViewTemplateInstalling, func(id string) any {
