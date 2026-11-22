@@ -7,6 +7,20 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## The keystore installs its keyring, binding and key cache together
+
+- **`keystore.FileKeyStore.Install` replaces the keyring, the generation it
+  is bound to and the key cache in one step**, and returns the keyring it
+  replaced to be zeroed once no callback uses it. `ScanSelection` scans the
+  selected generation without touching the store, and the key maps and
+  signing summaries are built from a scan result (`Contents`). Unlock, a
+  scan that succeeds and a lock use `Install`.
+- **A lock now empties the keystore's key cache with its keyring**, as it
+  already empties the runtime's key maps, and an unlock starts from an empty
+  cache that its reload's scan fills. Neither cache was read for signing
+  while locked; a locked signer's keystore no longer lists keys a lock had
+  left behind.
+
 ## One sequence after a store-root commit
 
 - **Policy apply, the ASA set changes, restore and rollback follow a commit

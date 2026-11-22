@@ -22,7 +22,7 @@ func (f *FileKeyStore) setKeyringDirectlyForTest(kr *crypto.Keyring) {
 	f.cacheLock.Lock()
 	previous := f.replaceKeyringLocked(kr)
 	f.cacheLock.Unlock()
-	previous.zeroWhenUnused()
+	previous.ZeroWhenUnused()
 }
 
 // keyringIsLoaded reports whether a keyring is resident.
@@ -30,4 +30,15 @@ func (f *FileKeyStore) keyringIsLoaded() bool {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
 	return f.keyring != nil
+}
+
+// contentsForTest reads the binding, the key cache and the warnings under one
+// hold of the cache lock, as one reader of the store sees them.
+func (f *FileKeyStore) contentsForTest() (generation string, files map[string]string, warnings int) {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	if f.active != nil {
+		generation = f.active.GenerationID()
+	}
+	return generation, Contents{Keys: f.cache}.KeyFiles(), len(f.scanWarnings)
 }
