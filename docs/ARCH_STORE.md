@@ -1686,11 +1686,12 @@ reads and writes, and the runtime index.
   in service holds, and a set or remove beside it is the change that
   stands. An unlock reload, from locked or recovery, holds the store
   mutation lock, so no set or remove lands during it. An unlock reload that
-  fails clears the index when it closed the keyring, and leaves it when the
-  keyring stayed open, as recovery's does when the store root fails to open
-  at the reload. A node that goes from unlocked to recovery keeps its index
-  with the keyring, and so does an unlock the fence refuses; a recovery
-  entered because an unlock's own reload failed validation has none. A lock removes a kept index and a later reload
+  fails clears the index when it closed the keyring, and leaves it when a
+  keyring stayed open: one begun in recovery leaves recovery a keyring
+  whatever step failed. A node that goes from unlocked to recovery keeps its
+  index with the keyring, and so does an unlock the fence refuses; a recovery
+  entered because the reload of an unlock of a locked node failed validation
+  has none. A lock removes a kept index and a later reload
   replaces it. In recovery no lookup runs, and a policy check is answered
   no token names from the index. A token sent in a request
   header is a Go string, which cannot be zeroed; zeroing covers the index.
@@ -1875,11 +1876,17 @@ The relevant order is:
 `startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
 
 An unlock runs this order only when the signer is not already unlocked. A
-reload with the passphrase replaces the keyring at step 1, and one that fails
-after it closes the keyring again, so an unlock request on an unlocked signer
+reload with the passphrase replaces the keyring at step 1 and the policy,
+source token index and key indexes after it, and one that fails validation
+publishes an empty key snapshot, so an unlock request on an unlocked signer
 does not reload: it verifies the passphrase and answers with the session's
 key count, and the session in service keeps its keyring, policy, key indexes
-and source token index. Unlock attempts run one at a time. An unlock's
+and source token index. A reload with the passphrase that fails closes the
+keyring it opened only when none was open before, as in an unlock of a locked
+signer. An unlock begun in recovery finds recovery's keyring open; its reload
+replaces it with one opened from the same store root, and a failure leaves
+that one, with the generation binding and the source token index, so the
+reconcile, restore and rollback recovery needs still run. Unlock attempts run one at a time. An unlock's
 reload, from locked or recovery, holds the store mutation lock from its state
 check to the end of the reload, as watcher-driven reloads and admin
 mutations do, and the unlock publishes the unlocked state after releasing

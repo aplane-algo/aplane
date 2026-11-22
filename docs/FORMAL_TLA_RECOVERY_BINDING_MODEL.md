@@ -154,6 +154,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   entered after it began (KU5), but a commit can land between its reload
   and its publish, and which generation its own reload bound when it
   publishes is not checked by any model; it is a model-extension candidate.
+  Its reload replaces recovery's keyring with one opened from the same store
+  root. One that then fails keeps that keyring and the binding it made
+  (`ReloadBind`), so recovery maintenance and the reconcile still run; it
+  once closed the keyring, and with it the binding, leaving recovery unable
+  to act until a later unlock.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

@@ -37,13 +37,19 @@ type fakeKeyStore struct {
 	onScan       func()
 	bindCalled   bool
 	bindErr      error
+	// closed is a store with no keyring open: Unlock opens one and
+	// ClearKeys closes it.
+	closed bool
 }
 
-func (f *fakeKeyStore) Unlock(_ []byte) error { return nil }
+func (f *fakeKeyStore) Unlock(_ []byte) error { f.closed = false; return nil }
 func (f *fakeKeyStore) WithKeyring(fn func(kr *crypto.Keyring) error) error {
 	f.withMKCalled = true
 	if f.withMKErr != nil {
 		return f.withMKErr
+	}
+	if f.closed {
+		return keystore.ErrStoreLocked
 	}
 	if f.keyring != nil {
 		return fn(f.keyring)
@@ -69,7 +75,7 @@ func (f *fakeKeyStore) Scan() error {
 	}
 	return nil
 }
-func (f *fakeKeyStore) ClearKeys()                     { f.clearCount++ }
+func (f *fakeKeyStore) ClearKeys()                     { f.clearCount++; f.closed = true }
 func (f *fakeKeyStore) ClearCache()                    { f.clearCache++ }
 func (f *fakeKeyStore) GetCache() map[string]string    { return f.cache }
 func (f *fakeKeyStore) GetKeyTypes() map[string]string { return f.keyTypes }
@@ -302,6 +308,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 	store := &fakeKeyStore{
 		cache:    map[string]string{},
 		keyTypes: map[string]string{},
+		closed:   true,
 	}
 	service := &ReloadService{
 		KeyStore:        store,
@@ -328,6 +335,7 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 		cache:    map[string]string{},
 		keyTypes: map[string]string{},
 		scanErr:  wantErr,
+		closed:   true,
 	}
 	service := &ReloadService{
 		KeyStore:        store,
@@ -342,6 +350,47 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 	}
 	if store.clearCount != 1 {
 		t.Fatalf("ClearKeys() calls = %d, want 1", store.clearCount)
+	}
+}
+
+// A reload with a passphrase that finds a keyring open, as an unlock begun in
+// recovery does, leaves a keyring open when it fails: the one it opened, from
+// the store root recovery's came from. Closing it would leave recovery with no
+// keyring for the reconcile, restore and rollback it needs.
+func TestReloadWithAPassphraseKeepsAKeyringItFoundOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		beforeKeyScan error
+		scanErr       error
+		warnings      []keys.KeyScanWarning
+	}{
+		{name: "pre-scan hook", beforeKeyScan: errors.New("policy integrity failed")},
+		{name: "scan", scanErr: errors.New("scan failed")},
+		{name: "generation validation", warnings: []keys.KeyScanWarning{{KeyFile: "junk.txt", Code: keys.KeyScanWarningUnexpectedEntry}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeKeyStore{
+				cache:        map[string]string{},
+				keyTypes:     map[string]string{},
+				scanErr:      tc.scanErr,
+				scanWarnings: tc.warnings,
+			}
+			service := &ReloadService{
+				KeyStore:        store,
+				Session:         &fakeSession{},
+				TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+				BeforeKeyScan: func(*crypto.Keyring) error {
+					return tc.beforeKeyScan
+				},
+				PublishSnapshot: func(map[string]string, map[string]string) {},
+			}
+			if _, err := service.Reload([]byte("passphrase")); err == nil {
+				t.Fatal("Reload() succeeded, want the injected failure")
+			}
+			if store.clearCount != 0 || store.closed {
+				t.Fatalf("ClearKeys() calls = %d, keyring closed %v; want the keyring kept open", store.clearCount, store.closed)
+			}
+		})
 	}
 }
 

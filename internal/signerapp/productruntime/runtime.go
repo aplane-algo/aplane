@@ -574,9 +574,10 @@ func (ir *Runtime) FinishStoreMaintenance(
 // (AnswerFromSession): it verifies the passphrase and answers with the
 // session's key count, and loads, publishes and clears nothing. A load
 // replaces the keyring, the policy, the key maps and the source token index,
-// and one that then fails closes the keyring, so a load under the session in
-// service would leave a signer that says unlocked and cannot sign, and would
-// republish state that concurrent changes had moved on from. An attempt whose
+// and one that then fails validation publishes an empty key snapshot, so a
+// load under the session in service would leave a signer that says unlocked
+// and cannot sign, and would republish state that concurrent changes had
+// moved on from. An attempt whose
 // session ended during the passphrase check is not answered from it and
 // loads, as one that found the signer locked does.
 //
@@ -1573,13 +1574,14 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // before the admin listener starts, and a passphrase change reloads under
 // store maintenance, with the signer locked.
 //
-// When it fails, the source token index goes only if the keyring went: a
-// reload that fails after it opened the keyring closes it again, and tokens
-// must not outlive the keyring that decrypts them. A reload that fails
-// without touching the keyring, because the store root did not open, leaves
-// the index alone: an unlock begun in recovery then leaves recovery the
-// keyring and the index it had. An unlock the fence refuses did not fail, and
-// keeps its index too (TryUnlock).
+// When it fails, the source token index goes only if the keyring went:
+// tokens must not outlive the keyring that decrypts them. A reload that
+// opened a keyring where none was open, a first unlock's, closes it again.
+// One that found recovery's keyring open, in an unlock begun there, leaves
+// the one it opened from the same store root, and the index with it; so does
+// one that fails before it opens a keyring, because the store root did not
+// open. Recovery then keeps what its reconcile, restore and rollback need. An
+// unlock the fence refuses did not fail, and keeps its index too (TryUnlock).
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()

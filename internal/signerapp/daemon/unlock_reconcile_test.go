@@ -562,6 +562,97 @@ func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
 	}
 }
 
+// failLoadsAfterTheKeyringOpens makes the reloads that follow fail after a
+// reload with a passphrase has opened its keyring: the networks the
+// configuration names no longer pass the reload's policy verification, which
+// an unlock request's reconcile does not run. It returns the undo.
+func failLoadsAfterTheKeyringOpens(server *Signer) (undo func()) {
+	server.config.GenesisHashNetworks = map[string]string{"not-a-genesis-hash": "lab"}
+	return func() { server.config.GenesisHashNetworks = nil }
+}
+
+// An unlock begun in recovery whose load fails after it opened a keyring,
+// here at its policy verification, leaves recovery a keyring, the generation
+// binding and the source token index. The load replaced recovery's keyring
+// with one it opened from the same store root, and once closed that one on
+// every failure: the signer stayed in recovery with no keyring, and the
+// reconcile, restore and rollback recovery needs failed until an unlock got
+// past the cause. A load now closes the keyring only when it found none open.
+func TestAFailedUnlockLoadInRecoveryLeavesRecoveryAKeyring(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	defer ir.StopKeyWatcher()
+	file, err := sourcetokens.SetToken(nil, sourcetokens.DefaultSelector, "screening", []byte("tok-kept"), time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir.PublishSourceTokens(sourcetokens.NewIndex([]*sourcetokens.File{file}))
+	file.Zero()
+	ir.SetRecovery()
+	before, err := ir.ActivePaths()
+	if err != nil {
+		t.Fatalf("recovery has no generation binding before the unlock: %v", err)
+	}
+
+	undo := failLoadsAfterTheKeyringOpens(server)
+	success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	undo()
+	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "policy verification failed") {
+		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want the load's policy verification failure", success, errMsg, code)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v after a failed load in recovery, want recovery", ir.GetState())
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
+		t.Fatalf("recovery's keyring is closed: %v", err)
+	}
+	if active, err := ir.ActivePaths(); err != nil || active.GenerationID() != before.GenerationID() {
+		t.Fatalf("ActivePaths() = %v, %v; want the generation %s recovery was bound to", active.GenerationID(), err, before.GenerationID())
+	}
+	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-kept" {
+		t.Fatalf("SourceTokenFor() = %q, %v; want the index kept with the keyring", got, ok)
+	}
+
+	// The reconcile recovery needs runs on that keyring and lifts it.
+	if result := server.adminServices().backupServices().ReconcileStore(); !result.Success || !ir.IsUnlocked() {
+		t.Fatalf("ReconcileStore() = %+v, state %v; want a success that lifts recovery", result, ir.GetState())
+	}
+}
+
+// A first unlock of a locked signer whose load fails after it opened the
+// keyring closes that keyring again: the signer stays locked, with no keyring
+// and no generation binding, as before the attempt. Once the cause is gone
+// the unlock succeeds. (An unlock of an unlocked signer loads nothing:
+// TestASecondUnlockKeepsTheSessionInService.)
+func TestAFailedFirstUnlockLoadClosesTheKeyringItOpened(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	defer ir.StopKeyWatcher()
+	ir.Lock()
+
+	undo := failLoadsAfterTheKeyringOpens(server)
+	success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	undo()
+	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "policy verification failed") {
+		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want the load's policy verification failure", success, errMsg, code)
+	}
+	if got := ir.GetState(); got != signerruntime.SignerStateLocked {
+		t.Fatalf("state = %v after a failed first unlock, want locked", got)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("WithKeyring() = %v after a failed first unlock, want the keyring the load opened closed", err)
+	}
+	if _, err := ir.ActivePaths(); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("ActivePaths() error = %v after a failed first unlock, want no binding", err)
+	}
+
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success || !ir.IsUnlocked() {
+		t.Fatalf("UnlockIdentity() once the cause is gone = (%v, %q), state %v; want unlocked", success, errMsg, ir.GetState())
+	}
+}
+
 // An unlock request on a signer that is already unlocked verifies the
 // passphrase and answers, and reloads nothing: the session in service keeps
 // the keyring, policy, keys and tokens it has. A reload there once replaced
