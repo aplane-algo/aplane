@@ -131,12 +131,8 @@ func TestApadminChangepassUpdatesIdentityUnlockHelperAndSignerRestarts(t *testin
 		}
 	}
 
-	logs, err := signerd.GetLogs()
-	if err != nil {
-		t.Fatalf("failed to read signer logs: %v", err)
-	}
-	if !strings.Contains(logs, "passphrase loaded via passphrase command") {
-		t.Fatalf("signer logs do not show passphrase command startup:\n%s", logs)
+	if logs, err := signerd.WaitForLog("passphrase loaded via passphrase command"); err != nil {
+		t.Fatalf("signer logs do not show passphrase command startup: %v\n%s", err, logs)
 	}
 }
 

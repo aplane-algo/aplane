@@ -388,3 +388,38 @@ func (s *SignerHarness) GetLogs() (string, error) {
 	}
 	return string(data), nil
 }
+
+// logWaitTimeout bounds WaitForLog in the tests that check a line the
+// daemon writes as it answers.
+const logWaitTimeout = 10 * time.Second
+
+// WaitForLog returns the log once it contains every one of want, or the log
+// as it stands with an error after logWaitTimeout. The daemon's output
+// reaches the log through goroutines reading its pipes (captureOutput), so a
+// line it wrote before it answered a request, or before it exited, can land
+// in the log after the test has seen the answer.
+func (s *SignerHarness) WaitForLog(want ...string) (string, error) {
+	deadline := time.Now().Add(logWaitTimeout)
+	for {
+		logs, err := s.GetLogs()
+		if err == nil && containsAll(logs, want) {
+			return logs, nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return "", err
+			}
+			return logs, fmt.Errorf("signer log did not show %q within %v", want, logWaitTimeout)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func containsAll(s string, want []string) bool {
+	for _, w := range want {
+		if !strings.Contains(s, w) {
+			return false
+		}
+	}
+	return true
+}
