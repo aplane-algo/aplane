@@ -15,8 +15,9 @@ before it was renamed `enroll`.
   one that landed it reloads, and enters recovery if the reload fails.
   Answers and states are unchanged.
 - **`genstore.Mint` reports what it left the store root selecting** (not
-  committed, committed, or uncertain), reading the root back itself after a
-  failed replacement. The four callers' own read-backs are gone.
+  committed, committed, or uncertain). The four callers' own read-backs of
+  the root are gone: the root commit already reports a replacement it
+  cannot settle as uncertain.
 - A restore whose commit is uncertain enters recovery after its keyring
   callback returns, still before the store mutation lock is released, as the
   other callers do.

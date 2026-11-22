@@ -121,7 +121,7 @@ func (s Service) RollbackRestore(
 			return nil
 		})
 		if err != nil {
-			if genstore.MintOutcomeOf(err) == genstore.Uncertain {
+			if genstore.MintOutcomeOf(err) != genstore.NotCommitted {
 				mutated = true
 				result.GenerationID = generationID
 				result.CommitUncertain = true

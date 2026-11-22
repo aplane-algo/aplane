@@ -103,9 +103,7 @@ type restoreRun struct {
 	// committedGeneration is the generation the restore published, or empty
 	// while nothing has been.
 	committedGeneration string
-	// commitUncertain is set when the root may select committedGeneration.
-	commitUncertain bool
-	hints           map[string]backup.RotatingStageHint
+	hints               map[string]backup.RotatingStageHint
 }
 
 // mutate is the whole store mutation: load and commit under the keyring,
@@ -124,7 +122,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	}
 	prepareErr := ir.WithKeyring(r.loadAndCommit)
 	if prepareErr != nil {
-		if r.commitUncertain {
+		if result.CommitUncertain {
 			_, _ = ir.FollowCommit(genstore.Uncertain)
 		}
 		return prepareErr
@@ -314,8 +312,8 @@ func damagedSkippedRepairs(opts storevalidate.Options, repaired map[string]bool,
 }
 
 // commit mints the generation that holds the restored entries. A mint that
-// may have replaced the store root without proving it durable sets recovery
-// and reports the commit as uncertain.
+// may have replaced the store root without proving it durable reports the
+// commit as uncertain; the caller enters recovery once WithKeyring returns.
 func (r *restoreRun) commit(
 	current storepaths.GenPaths,
 	set *backup.RestoreSet,
@@ -370,11 +368,10 @@ func (r *restoreRun) commit(
 		},
 	})
 	if mintErr != nil {
-		if genstore.MintOutcomeOf(mintErr) == genstore.Uncertain {
+		if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 			// The caller enters recovery once WithKeyring has returned
 			// (FollowCommit), before the store mutation lock is released.
 			r.committedGeneration = generationID
-			r.commitUncertain = true
 			result.GenerationID = generationID
 			result.CommitUncertain = true
 			return restoreFailure(

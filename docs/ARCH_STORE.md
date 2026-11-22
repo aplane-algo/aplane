@@ -591,9 +591,10 @@ enters recovery; callers do not blindly retry. So is a root that cannot be
 read back after the error, or that matches neither the old record nor the
 candidate (`genstore.RootCommitUncertain`): the candidate may have landed.
 `genstore.Mint` classifies its own failure (`MintOutcomeOf`: not committed,
-committed, or uncertain, reading the root back after a failed replacement),
-and every live commit caller follows it with
-`productruntime.Runtime.FollowCommit`. Once the one root rename is
+committed, or uncertain), and policy apply, the ASA set, restore and
+rollback follow it with `productruntime.Runtime.FollowCommit`; the
+passphrase change reloads with the new passphrase under its store
+maintenance. Once the one root rename is
 visible and directory-durable, there is no second witness or publication step.
 
 ### Passphrase and term rotation

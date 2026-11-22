@@ -440,7 +440,7 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		ValidateCandidate: storevalidate.StandardCandidate(env.KeyPaths, env.Role, env.DataDir, env.Config, env.Keyring),
 	})
 	if mintErr != nil {
-		if genstore.MintOutcomeOf(mintErr) == genstore.Uncertain {
+		if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 			evidence.GenerationID, evidence.Uncertain = generationID, true
 			return evidence, Error{"policy_commit_uncertain", fmt.Sprintf(
 				"policy may have committed as generation %s; signing is blocked pending reconciliation: %v",

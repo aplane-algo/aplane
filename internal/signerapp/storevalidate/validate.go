@@ -41,8 +41,10 @@ type Options struct {
 
 // StandardCandidate is the candidate validation of a store-root commit on a
 // node: Candidate with the node's paths, role, data directory and
-// configuration, and the keyring the candidate is written under. Every
-// commit that mints on top of a node's store uses it, live or offline.
+// configuration, and the keyring the candidate is written under. The live
+// commits (policy apply, the ASA set, restore, rollback, the passphrase
+// change) and the offline policy rescue use it; the offline template repair
+// builds its own options.
 func StandardCandidate(paths storepaths.Paths, role noderole.Role, dataDir string, cfg *serverconfig.ServerConfig, kr *crypto.Keyring) func(storepaths.GenPaths) error {
 	return func(staged storepaths.GenPaths) error {
 		return Candidate(Options{

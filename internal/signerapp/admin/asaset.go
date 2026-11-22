@@ -238,7 +238,7 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 			id, mintErr := s.mintASASet(active, next, kr)
 			*generationID = id
 			if mintErr != nil {
-				if genstore.MintOutcomeOf(mintErr) == genstore.Uncertain {
+				if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 					*uncertain = true
 					return asaError{"asa_commit_uncertain", fmt.Sprintf("the ASA set may have committed as generation %s; signing is blocked pending reconciliation: %v", id, mintErr)}
 				}

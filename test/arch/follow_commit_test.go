@@ -15,7 +15,8 @@ import (
 // recovery before or after its reload as the outcome needs; four callers
 // once each wrote that sequence themselves, with their own read-back of the
 // root. The commit callers (policy apply, the ASA set, restore, rollback)
-// call neither Reload nor SetRecovery for a commit.
+// do not call Reload. The restore still enters recovery itself when one of
+// its test checkpoints between the commit and the reload fails.
 //
 // The one Reload left is a restore that found nothing new to commit while
 // the signer was in recovery: it reloads the current generation, which no

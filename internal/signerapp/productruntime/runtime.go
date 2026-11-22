@@ -1606,8 +1606,8 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // recovery enters it again, which fences an unlock in flight there as any
 // re-entry does, and a locked one stays locked (SetRecovery). Any other
 // failure, such as a keys directory that cannot be read, leaves the state as
-// it was, for the caller to answer; the callers after a store-root commit
-// enter recovery on every failure themselves. Once in recovery it calls the
+// it was, for the caller to answer; after a store-root commit FollowCommit
+// enters recovery on every failure. Once in recovery it calls the
 // hook SetReloadRecoveryHook set, which a lock that came first skips.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()

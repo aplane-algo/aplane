@@ -145,12 +145,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches
-  neither the old record nor the candidate (`genstore.RootCommitUncertain`),
-  or a replacement error after which the root reads back as the candidate.
-  `genstore.Mint` classifies all of these as `Uncertain` itself
-  (`MintOutcomeOf`), and `FollowCommit` takes the path of a commit that
-  landed, entering recovery first: the caller cannot tell whether the root
-  moved. Policy apply and the ASA set
+  neither the old record nor the candidate (`genstore.RootCommitUncertain`).
+  `genstore.Mint` classifies these as `Uncertain` itself (`MintOutcomeOf`),
+  and a caller treats any mint failure but `NotCommitted` as one it cannot
+  vouch for; `FollowCommit` takes the path of a commit that landed,
+  entering recovery first: the caller cannot tell whether the root moved. Policy apply and the ASA set
   change are refused unless the runtime is unlocked
   (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
   only restore and rollback commit from recovery. A refused mutation never
