@@ -980,6 +980,7 @@ type InstallLibraryTemplateResultMsg struct {
 	KeyType       string
 	TemplateType  string
 	AlreadyExists bool
+	Code          string
 	Error         string
 }
 
@@ -1000,6 +1001,7 @@ type ActivateKeyTypeResultMsg struct {
 	Success       bool
 	KeyType       string
 	AlreadyExists bool
+	Code          string
 	Error         string
 }
 
@@ -1008,6 +1010,7 @@ type DeactivateKeyTypeResultMsg struct {
 	Success bool
 	KeyType string
 	Removed bool
+	Code    string
 	Error   string
 }
 

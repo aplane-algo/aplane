@@ -120,10 +120,10 @@ func TestRollbackRefusalDoesNotInventRecoveryState(t *testing.T) {
 	}
 }
 
-// A key change whose reload found a content defect, the review's trigger:
-// the signer wrote the change, entered recovery and pushed a status naming
-// it while the reload ran, and the change's reply, recovery_blocked with the
-// defect, came after. The status opens the recovery screen, which offers the
+// A key or key type change whose reload found a content defect, the review's
+// trigger: the signer wrote the change, entered recovery and pushed a status
+// naming it while the reload ran, and the change's reply, recovery_blocked
+// with the defect, came after. The status opens the recovery screen, which offers the
 // reconcile, and the reply, by then a late failure, puts its cause there
 // instead of being dropped. A reply with no status before it opens the
 // screen itself.
@@ -147,6 +147,17 @@ func TestAKeyChangeThatEnteredRecoveryEndsOnTheRecoveryScreen(t *testing.T) {
 		{"import", ViewImportForm, ViewImporting, func(id string) any {
 			return protocol.ImportResultMessage{BaseMessage: base(protocol.MsgTypeImportResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
 		}, "Key import: "},
+		// The KeyType Library's actions, the review's probe: their replies
+		// went through finishLibraryAction, which dropped a late one.
+		{"template install", ViewTemplateInstallConfirm, ViewTemplateInstalling, func(id string) any {
+			return protocol.InstallLibraryTemplateResultMessage{BaseMessage: base(protocol.MsgTypeInstallLibraryTemplateResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "KeyType Library: "},
+		{"key type enable", ViewTemplateInstallConfirm, ViewTemplateInstalling, func(id string) any {
+			return protocol.ActivateKeyTypeResultMessage{BaseMessage: base(protocol.MsgTypeActivateKeyTypeResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "KeyType Library: "},
+		{"key type disable", ViewTemplateInstallConfirm, ViewTemplateInstalling, func(id string) any {
+			return protocol.DeactivateKeyTypeResultMessage{BaseMessage: base(protocol.MsgTypeDeactivateKeyTypeResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "KeyType Library: "},
 	} {
 		for _, pushed := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s pushed=%v", op.name, pushed), func(t *testing.T) {

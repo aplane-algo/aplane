@@ -5,17 +5,20 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
 // A reload without a passphrase, the watcher's or an in-place write's, that
@@ -184,4 +187,25 @@ func TestAKeyWriteWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
 	requireRepairLiftsRecovery(t, server, stray, address, 2)
+}
+
+// Template administration's reload, after it installed a template: the
+// answer is recovery_blocked with the defect, where it was reload_failed,
+// so apadmin's KeyType Library ends on its recovery screen with the cause.
+// The install rolls its own files back; the defect it met stays, and the
+// reconcile lifts recovery once it is gone.
+func TestATemplateInstallWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
+	server, address, stray, session := defectSigner(t)
+	family := fmt.Sprintf("ipc-defect-install-%d", time.Now().UnixNano())
+
+	result := server.adminServices().templateServices().ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
+		TemplateYAML: renderGenericTemplateYAML(family, 1, "Defect Install", "installed over a stray file"),
+	})
+	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !signertemplates.IsGenerationValidationError(result.Error) || !strings.Contains(result.Error, "junk.txt") {
+		t.Fatalf("ImportInstalledTemplate() = %+v, want recovery_blocked naming the stray file", result)
+	}
+	requireRecoveryPushed(t, session)
+	requireRecoveryWithKeyring(t, server, address)
+	assertInstalledTemplateRemoved(t, server, testTemplateKeyType(family), templatestore.TemplateTypeGeneric)
+	requireRepairLiftsRecovery(t, server, stray, address, 1)
 }

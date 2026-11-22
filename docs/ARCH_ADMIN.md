@@ -472,7 +472,8 @@ without overlays and bounds; neither takes mnemonic import.
 - `import_installed_template`: sensitive `template_yaml` -> `import_installed_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`; available through authenticated IPC admin sessions
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; available through authenticated IPC admin sessions
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apadmin` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
-- `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
+- `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates.
+- A template or key type change whose reload fails answers `code` `reload_failed`, or `recovery_blocked` when the reload found a content defect in the selected generation and entered recovery; `error` is the reload's failure, and in the second case the signer has pushed a `status` in recovery before the reply. An install or import has rolled its own files back by then. The `apadmin` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
 - `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror the HTTP `/keytypes` schema except that they omit `signing_flow` and `bounded_authorization`, and while the signer is locked list the same built-in key types only; both surfaces carry optional `cosigner_component_key_types`, the cosigner key types an account of the type can take, which `apadmin` uses to filter enrolled public cosigner references for cosigned-account generation
 
 #### Signing Approval and Client Enrollment
@@ -1584,8 +1585,9 @@ identifies the current screen. The enum has families for:
   unavailable, and the status bar shows "Signer Recovery (signing disabled)"
   until the visible store validates cleanly. The client preserves the server's three-way runtime state
   (`locked` / `recovery` / `unlocked`); recovery is never rendered as
-  unlocked. A generate, delete or import whose reply is `recovery_blocked`
-  ends on this screen with the reply's error, which names the defect to
+  unlocked. A generate, delete or import, or a KeyType Library install,
+  enable or disable, whose reply is `recovery_blocked` ends on this screen
+  with the reply's error, which names the defect to
   repair before the reconcile, whether the pushed `status` opened the screen
   first (making the reply late) or not.
 - Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewLockConfirm`, `ViewDisplaceConfirm`)

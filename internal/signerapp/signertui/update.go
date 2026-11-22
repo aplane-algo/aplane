@@ -387,20 +387,20 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLibraryTemplatesMsg(msg)
 
 	case InstallLibraryTemplateResultMsg:
-		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryEnableFailure)
+		return m.finishLibraryAction(msg.ID, msg.Success, msg.Code, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryEnableFailure)
 
 	case ShowLibraryTemplateResultMsg:
 		return m.handleShowLibraryTemplateResultMsg(msg)
 
 	case ActivateKeyTypeResultMsg:
-		return m.finishLibraryAction(msg.ID, msg.Success, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryEnableFailure)
+		return m.finishLibraryAction(msg.ID, msg.Success, msg.Code, libraryEnabledStatus(msg.KeyType, msg.AlreadyExists), msg.Error, libraryEnableFailure)
 
 	case DeactivateKeyTypeResultMsg:
 		status := displayKeyType(msg.KeyType) + " was already disabled"
 		if msg.Removed {
 			status = displayKeyType(msg.KeyType) + " " + keytypeux.NotAvailableToCreate
 		}
-		return m.finishLibraryAction(msg.ID, msg.Success, status, msg.Error, libraryDisableFailure)
+		return m.finishLibraryAction(msg.ID, msg.Success, msg.Code, status, msg.Error, libraryDisableFailure)
 
 	case KeyTypesMsg:
 		return m.handleKeyTypesMsg(msg)

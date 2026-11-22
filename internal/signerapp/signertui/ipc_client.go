@@ -593,6 +593,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			KeyType:       result.KeyType,
 			TemplateType:  result.TemplateType,
 			AlreadyExists: result.AlreadyExists,
+			Code:          result.Code,
 			Error:         result.Error,
 		}
 	}),
@@ -625,6 +626,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Success:       result.Success,
 			KeyType:       result.KeyType,
 			AlreadyExists: result.AlreadyExists,
+			Code:          result.Code,
 			Error:         result.Error,
 		}
 	}),
@@ -634,6 +636,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Success: result.Success,
 			KeyType: result.KeyType,
 			Removed: result.Removed,
+			Code:    result.Code,
 			Error:   result.Error,
 		}
 	}),
