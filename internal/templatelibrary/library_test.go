@@ -1418,8 +1418,8 @@ func TestEnableInstalledTemplateRefusesARecordTheReloadWouldNotLoad(t *testing.T
 
 	_, err = EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, kr)
 	if err == nil || !strings.Contains(err.Error(), "an external edit") || !strings.Contains(err.Error(), stored) ||
-		!strings.Contains(err.Error(), "apadmin template import") {
-		t.Fatalf("EnableInstalledTemplate() error = %v, want the external edit with the fingerprint the template computes and the import that repins it", err)
+		!strings.Contains(err.Error(), "apadmin template import") || !strings.Contains(err.Error(), "docs/USER_KEYTYPES.md, Invalid or externally edited YAML template") {
+		t.Fatalf("EnableInstalledTemplate() error = %v, want the external edit with the fingerprint the template computes, the import that repins it, and the section that says so", err)
 	}
 	after, _, _ := keytypestate.Get(paths, parsed.KeyType)
 	if after != drifted {

@@ -100,10 +100,13 @@ const (
 	ResultCodeAuditUnavailable     = "audit_unavailable"
 	ResultCodeAuditWriteFailed     = "audit_write_failed"
 	ResultCodeConfirmationRequired = "confirmation_required"
-	// ResultCodeRecoveryBlocked reports an unlock that succeeded into
-	// recovery mode: the passphrase was right, but the store failed
-	// reconciliation or generation validation, so signing is blocked until
-	// the operator resolves the store from recovery.
+	// ResultCodeRecoveryBlocked reports a signer left in recovery mode, with
+	// signing blocked until the operator resolves the store from recovery:
+	// an unlock that succeeded into it (the passphrase was right, but the
+	// store failed reconciliation or generation validation, or the reload
+	// its publish ran found a content defect), and a key or template change
+	// that was written and whose reload then found a content defect in the
+	// selected generation and entered it.
 	ResultCodeRecoveryBlocked = "recovery_blocked"
 	// ResultCodePassphraseChangeFailed reports a change_store_passphrase
 	// that failed for a reason other than its passphrases, including a store

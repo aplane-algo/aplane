@@ -918,7 +918,7 @@ func checkEnableAsReloadWould(rec keytypestate.Record, templateType templatestor
 	if keytypestate.CompareForReload(rec, fingerprint, "") == keytypestate.OutcomeExternalEdit {
 		return fmt.Errorf("template %s would not load once enabled: its record pins fingerprint %s and its stored template computes %s, an external edit; "+
 			"import the template again from a file you trust (`apadmin template import`), which pins the record to that definition and enables it "+
-			"(see docs/USER_KEYTYPES.md, Repairing a template record)", rec.KeyType, rec.Fingerprint, fingerprint)
+			"(see docs/USER_KEYTYPES.md, Invalid or externally edited YAML template)", rec.KeyType, rec.Fingerprint, fingerprint)
 	}
 	return nil
 }
