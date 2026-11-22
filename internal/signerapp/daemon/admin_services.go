@@ -444,7 +444,8 @@ var errReconcileStateChanged = errors.New("runtime state changed while store rec
 // RecoveryBeforeRelease transcribes (RB2). The recovery-exit rescan passes
 // false: it starts in recovery, so a failure leaves it there, and a lock
 // that came in meanwhile stands (SetRecovery leaves a locked signer locked
-// too, so this is belt and braces). A
+// too, so this is belt and braces). A reload that fails validation enters
+// recovery itself either way (productruntime.Runtime.Reload). A
 // promotion refused after a clean reload (errReconcileStateChanged) enters
 // no recovery either way.
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (*signertemplates.ReloadReport, error) {

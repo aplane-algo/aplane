@@ -38,7 +38,12 @@ The transitions transcribe the post-commit reload and the recovery paths:
   confirm/remove mint in `internal/signerapp/admin/asaset.go`
   (`mutateASASet`), the restore and rollback paths in
   `internal/signerapp/backupadmin`, and the recovery reconcile in
-  `internal/signerapp/daemon/admin_services.go`. Restore and rollback write a
+  `internal/signerapp/daemon/admin_services.go`. `BeginReload` also stands
+  for the reloads with no commit that run on an unlocked signer: the
+  watcher's (`productruntime.Runtime.reloadFromWatcher`) and an in-place
+  write's (key generation and deletion in `internal/signerapp/keyadmin`,
+  template administration in `internal/signerapp/templateadmin`), each under
+  the store mutation lock. Restore and rollback write a
   restored cosigner key's source token file inside their mint, beside its
   credential and per-key policy, so the token file is one more member of the
   generation they commit and the reload that follows publishes it; the
@@ -66,6 +71,10 @@ The transitions transcribe the post-commit reload and the recovery paths:
   `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
+  A reload with no commit that finds the selected generation failing
+  validation enters recovery itself, in `productruntime.Runtime.Reload`,
+  before its caller releases the lock; it once published an empty key
+  snapshot and left the signer unlocked.
   Policy apply and the ASA set change commit only on an unlocked signer,
   and restore, rollback and the recovery reconcile run only on one unlocked
   or in recovery, each checked under the lock: an unlock in flight on another connection, which
@@ -121,6 +130,15 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
+- `ReloadFail` always enters recovery. A reload with no commit (the
+  watcher's, an in-place write's) enters it only when the selected
+  generation fails validation; any other failure, an unreadable `keys/` for
+  one, leaves the signer unlocked on the view it had. No commit moved the
+  root, so that view's key cache is the root's generation, and RB2 and RB3
+  hold for both outcomes. The property the entry exists for, that a
+  generation which fails validation is never served, is not checked: the
+  model has no generation content. A recovery entered by a reload with no
+  commit, for content found defective, is a model-extension candidate.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches

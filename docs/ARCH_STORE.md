@@ -1898,7 +1898,17 @@ snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
 undecryptable, unsupported, or unexpected entry in `keys/`, and any
 template/key-type content defect, fails reload with a generation-validation
 error: the runtime publishes an empty snapshot and enters recovery with signing
-blocked. Entries are not dropped from an otherwise published snapshot. A
+blocked, whichever reload found it. An unlock enters it through its recovery
+unlock. A reload without the passphrase (the watcher's, an in-place write's
+such as key generation or deletion, a template administration's, a
+reconcile's, or one after a store-root commit) enters it before it returns,
+under the store mutation lock its caller holds (`productruntime.Runtime.Reload`),
+and recovery keeps the keyring for the reconcile that lifts it once the
+generation is repaired. A reload failure of another kind, such as a `keys/`
+directory that cannot be read, leaves the runtime state of the watcher's and
+an in-place write's reload as it was, and the caller reports it; a caller
+after a store-root commit enters recovery on any failure. Entries
+are not dropped from an otherwise published snapshot. A
 source token file that cannot be read, opened or decoded as its selector's,
 and an entry of `source_tokens/` that is not a token file, are damage of the
 same kind (`sourcetokens.ErrDamaged`): the reload fails with a
@@ -2022,8 +2032,11 @@ Mechanism:
   re-arm or restart, so only store-root replacement triggers a reload for
   out-of-band file edits in that window
 - missing key and key type directories are tracked and added later when created
-- when unlocked, qualifying changes trigger immediate reload
-- when locked, the watcher remains running and marks the product runtime dirty
+- when unlocked, qualifying changes trigger immediate reload; one that finds
+  the selected generation failing validation enters recovery
+  ([Runtime reload behavior](#runtime-reload-behavior))
+- when locked or in recovery, the watcher remains running and marks the
+  product runtime dirty
 - watcher-triggered reload obtains the product store mutation lock before scanning keys/templates
 - admin mutation paths that already hold the product store mutation lock call direct reload paths and must not call watcher-only reload entrypoints
 

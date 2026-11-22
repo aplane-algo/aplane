@@ -465,9 +465,11 @@ EnterRecoveryFrom(from, self) ==
                          ELSE ulSawRecov[u] \/ InFlight(u)]
 
 \* SetRecovery from the unlocked state or from recovery: a store change that
-\* ends in doubt, or a restore, rollback or reconcile that enters recovery
-\* again. Each holds the store mutation lock, so under LoadHoldsStoreLock none
-\* lands while an unlock loads. From recovery there is no session left to
+\* ends in doubt, a restore, rollback or reconcile that enters recovery
+\* again, or a reload without the passphrase that finds the selected
+\* generation failing validation (productruntime's Reload, for the watcher
+\* and the in-place writes). Each holds the store mutation lock, so under
+\* LoadHoldsStoreLock none lands while an unlock loads. From recovery there is no session left to
 \* end: every holder in flight started before the first entry. A recovery
 \* unlock's entry is RecoveryFinish.
 EnterRecovery ==
