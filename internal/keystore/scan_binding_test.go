@@ -136,8 +136,8 @@ func TestAFailedScanKeepsTheKeyCache(t *testing.T) {
 	}
 }
 
-// An unlock keeps the key cache, which the reload's scan that follows
-// replaces, and zeroes the keyring it replaced. An unlock begun in recovery
+// An unlock keeps the key cache and its scan warnings, which the reload's
+// scan that follows replaces, and zeroes the keyring it replaced. An unlock begun in recovery
 // whose reload then fails leaves recovery the cache its runtime key maps were
 // built from.
 func TestUnlockKeepsTheKeyCacheAndZeroesTheKeyringItReplaced(t *testing.T) {
@@ -161,6 +161,9 @@ func TestUnlockKeepsTheKeyCacheAndZeroesTheKeyringItReplaced(t *testing.T) {
 	}
 	if got := ks.GetCache(); got["ADDR"] != "ADDR.key" {
 		t.Fatalf("GetCache() after an unlock = %v, want the cache kept", got)
+	}
+	if got := ks.GetScanWarnings(); len(got) != 1 || got[0].KeyFile != "keys/stray.key" {
+		t.Fatalf("GetScanWarnings() after an unlock = %v, want the warning kept", got)
 	}
 	if replaced.CurrentTerm() != 0 {
 		t.Fatal("the keyring the unlock replaced was not zeroed")

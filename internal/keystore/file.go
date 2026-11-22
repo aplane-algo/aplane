@@ -99,9 +99,10 @@ type Contents struct {
 // ScanSelection authenticates what the store root selects with kr and scans
 // that generation, and installs nothing: the store's keyring, binding and
 // cache are as they were. Each key is decrypted once. The scan itself
-// creates keys/ when it is missing and prints each scan warning to stderr. On a failure it still returns the selection when the root
-// authenticated, so a caller can bind what the root selects whatever the
-// generation holds; a root that does not authenticate gives none.
+// creates keys/ when it is missing and prints each scan warning to stderr.
+// On a failure it still returns the selection when the root authenticated,
+// so a caller can bind what the root selects whatever the generation holds;
+// a root that does not authenticate gives none.
 func (f *FileKeyStore) ScanSelection(kr *crypto.Keyring) (Contents, error) {
 	selected, err := genstore.AuthenticateStoreRootSelection(f.paths, kr)
 	if err != nil {

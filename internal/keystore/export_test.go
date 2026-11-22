@@ -47,10 +47,11 @@ func (f *FileKeyStore) contentsForTest() (kr *crypto.Keyring, generation string,
 	return f.keyring, generation, Contents{Keys: f.cache}.KeyFiles(), len(f.scanWarnings)
 }
 
-// SeedCacheForTest puts one cached key for address on the store, as a scan
-// that found it would have.
+// SeedCacheForTest puts one cached key for address on the store, and one
+// scan warning, as a scan that found them would have.
 func (f *FileKeyStore) SeedCacheForTest(address, keyFile string) {
 	f.cacheLock.Lock()
 	defer f.cacheLock.Unlock()
 	f.cache = map[string]keys.KeyScanInfo{address: {KeyFile: keyFile}}
+	f.scanWarnings = []keys.KeyScanWarning{{KeyFile: "keys/stray.key"}}
 }
