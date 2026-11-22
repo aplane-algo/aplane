@@ -78,7 +78,8 @@ The transitions transcribe the post-commit reload and the recovery paths:
   snapshot and left the signer unlocked.
   Policy apply and the ASA set change commit only on an unlocked signer,
   and restore, rollback and the recovery reconcile run only on one unlocked
-  or in recovery, each checked under the lock: an unlock in flight on another connection, which
+  or in recovery, each checked under the lock, as the watcher's reload and
+  the in-place writes run only on one unlocked: an unlock in flight on another connection, which
   the model does not have, opens the keyring under the lock and publishes
   unlocked only after releasing it, and would otherwise publish over a
   commit whose reload failed, where `SetRecovery` did nothing on the

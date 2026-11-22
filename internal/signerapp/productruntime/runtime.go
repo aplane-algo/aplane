@@ -1663,9 +1663,10 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 // EnsureKeyWatcher starts the file watcher if not already running.
 // Watches the keys directory and key type state/template records.
 // The watcher stays running across lock/unlock transitions: when unlocked
-// it reloads immediately; when locked it marks the identity dirty for
-// reconciliation on the next unlock.
-// If the identity was marked dirty while locked, triggers an immediate reload.
+// it reloads immediately; when locked or in recovery it marks the identity
+// dirty for reconciliation on the next unlock (reloadFromWatcher).
+// If the identity was marked dirty, it reconciles at once on an unlocked
+// signer and leaves it marked otherwise.
 func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	ir.watcherMu.Lock()
 	wasDirty := ir.dirty
@@ -1702,13 +1703,11 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 		fmt.Println("Only store-root replacement will trigger a key reload")
 	}
 
-	// The reload callback either reloads (if unlocked) or marks dirty (if locked)
+	// The reload callback either reloads (if unlocked) or marks dirty
+	// (otherwise), deciding under the store mutation lock.
 	reloadOrDirty := func() error {
-		if ir.IsUnlocked() {
-			return ir.reloadFromWatcher()
-		}
-		ir.MarkDirty()
-		return nil
+		_, err := ir.reloadFromWatcher()
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1737,18 +1736,31 @@ func (ir *Runtime) MarkDirty() {
 }
 
 func (ir *Runtime) reconcileDirty() {
-	if err := ir.reloadFromWatcher(); err != nil {
+	switch reloaded, err := ir.reloadFromWatcher(); {
+	case err != nil:
 		fmt.Printf("⚠️  Dirty-state reconciliation failed for product store: %v\n", err)
-	} else {
+	case reloaded:
 		fmt.Println("✓ Reconciled pending filesystem changes for product store")
 	}
 }
 
-func (ir *Runtime) reloadFromWatcher() error {
+// reloadFromWatcher reloads for a change the watcher saw, or, on a signer
+// not unlocked, marks the store dirty for the next unlock that publishes to
+// reconcile. It reports whether it reloaded. It checks the state under the
+// store mutation lock, as every other caller of Reload does: a lock, then an
+// unlock that has loaded but not yet published, can land while it waits for
+// the lock, and a reload there that found a defect would publish its empty
+// key snapshot on the locked signer, where SetRecovery does nothing, for the
+// unlock to publish over.
+func (ir *Runtime) reloadFromWatcher() (bool, error) {
 	release := ir.lockStoreMutation()
 	defer release()
+	if !ir.IsUnlocked() {
+		ir.MarkDirty()
+		return false, nil
+	}
 	_, err := ir.Reload()
-	return err
+	return true, err
 }
 
 // StopKeyWatcher stops the file watcher if running.
