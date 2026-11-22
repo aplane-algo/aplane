@@ -1014,6 +1014,9 @@ after a key generation or deletion, a template change, or a change in its
 `keys/` directory. The reload that followed found a content defect in the
 selected generation: an unexpected or malformed file in `keys/`, two key files
 for one address, a damaged template record, or a damaged source token file.
+apadmin opens its recovery screen, with the cause when a key change of its
+own found it, and the signer's log names the cause
+(`identity is recovery-blocked: ...`).
 
 **Solution**:
 1. Fix the cause: remove the stray file, restore the damaged one from a

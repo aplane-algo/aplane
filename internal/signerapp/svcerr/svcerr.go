@@ -4,8 +4,8 @@
 // Package svcerr is the single kinded service-error model for signer-side
 // application services. Kinds map one-to-one onto the stable wire codes in
 // pkg/signerapi and onto HTTP status at the adapter edge, so error message
-// wording never needs to carry machine meaning. KindInvalidPassphrase alone
-// is admin-only and carries an IPC code.
+// wording never needs to carry machine meaning. KindInvalidPassphrase and
+// KindRecoveryBlocked are admin-only and carry IPC codes.
 package svcerr
 
 import (
@@ -38,6 +38,11 @@ const (
 	// KindInvalidPassphrase is admin-only: no HTTP route takes a passphrase,
 	// so it has no HTTP code or status, and its value is the IPC code.
 	KindInvalidPassphrase Kind = protocol.ErrCodeInvalidPassphrase
+	// KindRecoveryBlocked is admin-only: a key change was written and the
+	// reload after it entered recovery. Its value is the IPC code; the REST
+	// adapter answers it as KindCacheRefresh, the HTTP API's code for a
+	// change written whose key cache did not refresh.
+	KindRecoveryBlocked Kind = protocol.ResultCodeRecoveryBlocked
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.

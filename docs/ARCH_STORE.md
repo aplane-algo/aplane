@@ -1904,7 +1904,10 @@ such as key generation or deletion, a template administration's, a
 reconcile's, or one after a store-root commit) enters it before it returns,
 under the store mutation lock its caller holds (`productruntime.Runtime.Reload`),
 and recovery keeps the keyring for the reconcile that lifts it once the
-generation is repaired. A reload failure of another kind, such as a `keys/`
+generation is repaired. The daemon logs the entry with its cause and pushes a
+`status` in recovery to the admin session, since no reply reports it; a key
+change's reply is `recovery_blocked` with the cause
+([ARCH_ADMIN.md](ARCH_ADMIN.md)). A reload failure of another kind, such as a `keys/`
 directory that cannot be read, leaves the runtime state of the watcher's and
 an in-place write's reload as it was, and the caller reports it; a caller
 after a store-root commit enters recovery on any failure. Two key files in

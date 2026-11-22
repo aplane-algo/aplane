@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -116,5 +117,67 @@ func TestRollbackRefusalDoesNotInventRecoveryState(t *testing.T) {
 	}})
 	if got.signerState != signerRuntimeUnlocked || got.viewState != ViewKeyList {
 		t.Fatalf("rollback refusal = state %v view %v, want unlocked key list", got.signerState, got.viewState)
+	}
+}
+
+// A key change whose reload found a content defect, the review's trigger:
+// the signer wrote the change, entered recovery and pushed a status naming
+// it while the reload ran, and the change's reply, recovery_blocked with the
+// defect, came after. The status opens the recovery screen, which offers the
+// reconcile, and the reply, by then a late failure, puts its cause there
+// instead of being dropped. A reply with no status before it opens the
+// screen itself.
+func TestAKeyChangeThatEnteredRecoveryEndsOnTheRecoveryScreen(t *testing.T) {
+	const cause = "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: generation validation failed: keys/junk.txt"
+	base := func(msgType, id string) protocol.BaseMessage {
+		return protocol.BaseMessage{Kind: protocol.MessageKindResponse, Type: msgType, ID: id}
+	}
+	for _, op := range []struct {
+		name            string
+		start, progress ViewState
+		reply           func(id string) any
+		prefix          string
+	}{
+		{"generate", ViewGenerateForm, ViewGenerating, func(id string) any {
+			return protocol.GenerateResultMessage{BaseMessage: base(protocol.MsgTypeGenerateResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "Key generation: "},
+		{"delete", ViewDeleteConfirm, ViewDeleting, func(id string) any {
+			return protocol.DeleteResultMessage{BaseMessage: base(protocol.MsgTypeDeleteResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "Key deletion: "},
+		{"import", ViewImportForm, ViewImporting, func(id string) any {
+			return protocol.ImportResultMessage{BaseMessage: base(protocol.MsgTypeImportResult, id), Code: protocol.ResultCodeRecoveryBlocked, Error: cause}
+		}, "Key import: "},
+	} {
+		for _, pushed := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s pushed=%v", op.name, pushed), func(t *testing.T) {
+				input := newImportMnemonicInput()
+				input.SetValue("w01 w02 w03")
+				m := Model{viewState: op.start, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+					forms: formsState{importMnemonicInput: input}}
+				id := m.beginOperation(op.progress)
+				if pushed {
+					m = updateModel(t, m, fromListener(decodeSignerReply(t, protocol.StatusMessage{
+						BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindNotification, Type: protocol.MsgTypeStatus},
+						State:       "recovery",
+					})))
+					if m.viewState != ViewStoreRecovery {
+						t.Fatalf("the pushed status left view %v, want the recovery screen", m.viewState)
+					}
+				}
+				m = updateModel(t, m, fromListener(decodeSignerReply(t, op.reply(id))))
+				if m.viewState != ViewStoreRecovery || m.signerState != signerRuntimeRecovery {
+					t.Fatalf("view %v state %v, want the recovery screen in recovery", m.viewState, m.signerState)
+				}
+				if m.restore.recoveryError != op.prefix+cause {
+					t.Fatalf("recovery screen error = %q, want the reply's cause", m.restore.recoveryError)
+				}
+				if m.operation != (pendingOperation{}) || m.heldResult != nil {
+					t.Fatalf("operation %+v held %v, want the operation ended", m.operation, m.heldResult != nil)
+				}
+				if m.forms.importMnemonicInput.Value() != "" && op.name == "import" {
+					t.Fatal("the imported key's recovery phrase stayed in the form")
+				}
+			})
+		}
 	}
 }

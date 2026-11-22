@@ -23,7 +23,8 @@ import (
 // Recovery keeps the keyring, for the reconcile that lifts it. A signer
 // already in recovery stays there, and a locked one stays locked. Any other
 // failure, such as a keys directory that cannot be read, leaves the state as
-// it was, for the caller to answer.
+// it was, for the caller to answer. Each entry is passed to the hook the
+// process root set, which tells the admin session and the log.
 func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 	validation := fmt.Errorf("%w: 1 malformed key file(s)", signertemplates.ErrGenerationValidation)
 	// As the reload wraps the scan's collision error.
@@ -49,6 +50,13 @@ func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 			ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 				return nil, tc.err
 			})
+			var told []error
+			ir.SetReloadRecoveryHook(func(cause error) {
+				if ir.GetState() != signerruntime.SignerStateRecovery {
+					t.Errorf("the hook ran in state %v, before the entry into recovery", ir.GetState())
+				}
+				told = append(told, cause)
+			})
 
 			mutation.Lock() // as every caller of Reload holds it
 			_, err := ir.Reload()
@@ -60,6 +68,13 @@ func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 			}
 			if state != tc.want {
 				t.Fatalf("state = %v when Reload returned, want %v", state, tc.want)
+			}
+			// The hook is told of each entry into recovery, once, with the
+			// defect; a lock that came first, and a failure of another
+			// kind, tell it nothing.
+			wantTold := tc.want == signerruntime.SignerStateRecovery
+			if (len(told) == 1 && errors.Is(told[0], tc.err)) != wantTold || len(told) > 1 {
+				t.Fatalf("the hook was told %v, want it told of the defect: %v", told, wantTold)
 			}
 			if state == signerruntime.SignerStateLocked {
 				return

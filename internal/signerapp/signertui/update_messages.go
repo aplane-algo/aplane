@@ -213,10 +213,36 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 }
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
+	if m.isKeyChangeRecovery(msg.ID, msg.Code) {
+		m = m.settleGenerateReview(msg)
+		return m.showKeyChangeRecovery("Key generation: " + msg.Error)
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}
 	return m.applyGenerateResult(msg)
+}
+
+// isKeyChangeRecovery reports a reply to this session's generate, delete or
+// import that the signer wrote and whose reload then found a content defect
+// and entered recovery. The signer pushes its new state while that reload
+// runs, so the recovery screen is usually open when the reply arrives, which
+// would make it a late failure and drop it, cause and all.
+func (m Model) isKeyChangeRecovery(id, code string) bool {
+	return code == protocol.ResultCodeRecoveryBlocked && id != "" && id == m.operation.id
+}
+
+// showKeyChangeRecovery ends the operation on the recovery screen with the
+// reply's cause, which names what to repair before the reconcile, as a policy
+// apply that ended in recovery does.
+func (m Model) showKeyChangeRecovery(cause string) (tea.Model, tea.Cmd) {
+	m.operation = pendingOperation{}
+	var cmd tea.Cmd
+	if m.viewState != ViewStoreRecovery {
+		cmd = m.enterRecovery()
+	}
+	m.restore.recoveryError = cause
+	return m, cmd
 }
 
 // applyGenerateResult shows a generation's result.
@@ -244,6 +270,11 @@ func (m Model) applyGenerateResult(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
+	if m.isKeyChangeRecovery(msg.ID, msg.Code) {
+		m.del.address = ""
+		m.del.keyType = ""
+		return m.showKeyChangeRecovery("Key deletion: " + msg.Error)
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m, nil
 	}
@@ -419,6 +450,13 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 }
 
 func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
+	if m.isKeyChangeRecovery(msg.ID, msg.Code) {
+		// The key was imported: its recovery phrase leaves the form, as
+		// it does on success.
+		m.forms.importMnemonicInput.SetValue("")
+		m.forms.importMnemonicInput.Blur()
+		return m.showKeyChangeRecovery("Key import: " + msg.Error)
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}

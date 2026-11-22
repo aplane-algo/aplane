@@ -474,6 +474,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Address:  genResult.Address,
 			KeyType:  genResult.KeyType,
 			Warnings: genResult.Warnings,
+			Code:     genResult.Code,
 			Error:    genResult.Error,
 		}
 	}),
@@ -519,6 +520,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 		return DeleteResultMsg{
 			ID:      delResult.ID,
 			Success: delResult.Success,
+			Code:    delResult.Code,
 			Error:   delResult.Error,
 		}
 	}),
@@ -559,6 +561,7 @@ var signerMessageDecoders = map[string]func(raw []byte) (tea.Msg, error){
 			Success: impResult.Success,
 			Address: impResult.Address,
 			KeyType: impResult.KeyType,
+			Code:    impResult.Code,
 			Error:   impResult.Error,
 		}
 	}),

@@ -49,6 +49,7 @@ const (
 	ErrorLocked            = svcerr.KindLocked
 	ErrorNotFound          = svcerr.KindNotFound
 	ErrorCacheRefresh      = svcerr.KindCacheRefresh
+	ErrorRecoveryBlocked   = svcerr.KindRecoveryBlocked
 	ErrorInternal          = svcerr.KindInternal
 )
 
@@ -565,6 +566,10 @@ func (s Service) lockMutation() func() {
 var tealCompileTimeout = 15 * time.Second
 
 func mapGenerateError(err error) *Error {
+	var kinded *Error
+	if errors.As(err, &kinded) {
+		return kinded
+	}
 	if isLockedStateError(err) {
 		return &Error{Kind: ErrorLocked, Message: "signer is locked"}
 	}
@@ -577,20 +582,25 @@ func mapGenerateError(err error) *Error {
 	if errors.Is(err, errBadRequest) {
 		return &Error{Kind: ErrorInvalidInput, Message: strings.TrimPrefix(err.Error(), errBadRequest.Error()+": ")}
 	}
-	if errors.Is(err, errCacheRefresh) {
-		return &Error{Kind: ErrorCacheRefresh, Message: errCacheRefresh.Error()}
-	}
 	return &Error{Kind: ErrorInternal, Message: "key generation failed"}
 }
 
+// reloadKeys reloads after a key change was written and answers a reload
+// that failed. One that found a content defect entered recovery, and the
+// answer says so with the defect, since the operator has to repair the store
+// and reconcile it.
 func reloadKeys(ir *productruntime.Runtime) *Error {
-	if _, err := ir.Reload(); err != nil {
-		if isLockedStateError(err) {
-			return &Error{Kind: ErrorLocked, Message: "signer is locked"}
-		}
+	_, err := ir.Reload()
+	switch {
+	case err == nil:
+		return nil
+	case isLockedStateError(err):
+		return &Error{Kind: ErrorLocked, Message: "signer is locked"}
+	case productruntime.IsContentDefect(err) && ir.IsRecovery():
+		return &Error{Kind: ErrorRecoveryBlocked, Message: "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: " + err.Error()}
+	default:
 		return &Error{Kind: ErrorCacheRefresh, Message: "failed to refresh signer key cache"}
 	}
-	return nil
 }
 
 func isLockedStateError(err error) bool {

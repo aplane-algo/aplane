@@ -21,10 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-var (
-	errBadRequest   = errors.New("bad request")
-	errCacheRefresh = errors.New("failed to refresh signer key cache")
-)
+var errBadRequest = errors.New("bad request")
 
 type GenericLSigGenerator struct {
 	Config    *serverconfig.ServerConfig
@@ -98,11 +95,8 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 		return "", fmt.Errorf("failed to save %s file: %w", template.DisplayName(), err)
 	}
 
-	if _, err := ir.Reload(); err != nil {
-		if errors.Is(err, keystore.ErrStoreLocked) {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %v", errCacheRefresh, err)
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return "", reloadErr
 	}
 
 	if g.AuditLog != nil {

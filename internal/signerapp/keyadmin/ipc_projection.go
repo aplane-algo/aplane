@@ -121,6 +121,8 @@ func ipcCodeForErrorKind(err *Error) string {
 		return protocol.ErrCodeInvalidPassphrase
 	case ErrorLocked:
 		return protocol.ErrCodeSignerLocked
+	case ErrorRecoveryBlocked:
+		return protocol.ResultCodeRecoveryBlocked
 	case ErrorNotFound:
 		return protocol.ErrCodeKeyNotFound
 	default:

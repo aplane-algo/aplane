@@ -353,7 +353,11 @@ Server to Client:
 - `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
   signer raised on its own, currently rotating account alerts; each `status`
   message replaces the previous set, and the signer pushes a new `status`
-  whenever the set changes)
+  whenever the set changes). The signer also pushes one when it leaves
+  recovery after a clean rescan, and when a reload without the passphrase (a
+  watcher event, or the reload after a key, template or key type change)
+  enters recovery for a content defect, which no reply reports to a client
+  that did not ask
 - `error`: optional `code`, `error`
 - `signer_locked`: `reason`
 - `displaced`: `reason`
@@ -434,7 +438,7 @@ interlocks.
 
 - `prepare_generate_key`: `key_type`, optional `parameters` -> `prepare_generate_result`: `success`, optional `key_type`, `base_key_type`, `parameters`, `fingerprint`, `review_fingerprint`, `boundary_digest`, `bounded`, `cosigner_key_id`, `warnings`, `code`, `error`. `base_key_type` names the spending key's signature base when the key type composes over one (a plain host is its own; a composed template names one), so the review can say whether that key is post-quantum. Local IPC only, under `keys.generate`. It runs generation's checks and reports the resolved request so apadmin can review it. It creates no key, changes no store state, and has no address, because the spending key does not exist yet. A reference name resolves to its public key in `parameters`, and `bounded` carries `contract` (`bounded2`, or `plain1` for a plain host account without bounds), `spend_effects`, `max_fee` (absent on `plain1`, which has no fee ceiling), `rekey` (`refused` or `spending_key`), optional `rekey_list` (true when the account has a rekey-to list, whose entries are `parameters.rekey_to`: *only these* under `rekey: refused`, a rekey only to a listed address; *plus cosigned* under `rekey: spending_key` with `cosigner_required`, a listed address with the spending key alone and any other with the cosigner too; there is no root yet, because it depends on the spending key), `layer3_policy`, `cosigner_required`, and optional `cosigner_key_type` (the cosigner's key type, when there is one, so the review can say whether it is post-quantum). A reference name resolves to its type too: `parameters.cosigner_key_type` when the type is not the default, Falcon-1024. `warnings` is an optional list of strings, the signer's notes for the reviewer (today, a bounded fee limit below what the account's own transactions cost, a cosigner key this signer also holds as an account's key, and a rekey-to list that names the account's own Ed25519 cosigner's address); a warning refuses nothing and `success` stays true
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
-- `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `warnings`, `code`, `error`. `warnings` is an optional list of strings, the signer's notes about the account it created, left out when there are none. They are the same kinds as `prepare_generate_result.warnings`, computed again at generation, so the list can differ from the review's when the signer's keys changed in between. A warning refused nothing and `success` stays true
+- `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `warnings`, `code`, `error`. `code` is `recovery_blocked` when the key was written but the reload after it found a content defect in the selected generation and entered recovery; `error` then names the defect, and the signer has pushed a `status` in recovery before the reply. `delete_result` and `import_result` answer the same way. `warnings` is an optional list of strings, the signer's notes about the account it created, left out when there are none. They are the same kinds as `prepare_generate_result.warnings`, computed again at generation, so the list can differ from the review's when the signer's keys changed in between. A warning refused nothing and `success` stays true
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
 - `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. A session not on the local IPC socket gets `authorization_denied`, as for `import_key`, `prepare_generate_key` and `initialize_store`: the server that accepts a connection states its origin, and these run only for a local one. Other key classes return `forbidden`. Every native key is eligible, since every native Falcon credential keeps its recovery entropy. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. apadmin key details offers `m` for a native key type (`ed25519`, `falcon1024`) and no other; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
@@ -1580,7 +1584,10 @@ identifies the current screen. The enum has families for:
   unavailable, and the status bar shows "Signer Recovery (signing disabled)"
   until the visible store validates cleanly. The client preserves the server's three-way runtime state
   (`locked` / `recovery` / `unlocked`); recovery is never rendered as
-  unlocked.
+  unlocked. A generate, delete or import whose reply is `recovery_blocked`
+  ends on this screen with the reply's error, which names the defect to
+  repair before the reconcile, whether the pushed `status` opened the screen
+  first (making the reply late) or not.
 - Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeClientConfirm`, `ViewLockConfirm`, `ViewDisplaceConfirm`)
 - Policies (`ViewPolicies`, `ViewPolicyDocument`, `ViewPolicyApplyForm`,
   `ViewPolicyApplyReview`, `ViewPolicyEdit`)

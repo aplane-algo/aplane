@@ -203,6 +203,9 @@ type Runtime struct {
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
+	// onReloadRecovery is called with the defect after Reload entered
+	// recovery for one (SetReloadRecoveryHook). Guarded by watcherMu.
+	onReloadRecovery func(cause error)
 }
 
 // StoreMaintenanceToken is an opaque authorization to republish an identity
@@ -323,6 +326,17 @@ func (ir *Runtime) SetReloadFunc(fn func(passphrase []byte, session *keystore.Ke
 func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 	ir.watcherMu.Lock()
 	ir.reloadLock = fn
+	ir.watcherMu.Unlock()
+}
+
+// SetReloadRecoveryHook sets the function Reload calls once it has entered
+// recovery for a content defect, with the defect. Nothing else tells anyone:
+// the reload ran for a watcher event or as one step of an admin change, with
+// no request that reports the state. The process root logs the entry and
+// pushes the state to the admin session.
+func (ir *Runtime) SetReloadRecoveryHook(fn func(cause error)) {
+	ir.watcherMu.Lock()
+	ir.onReloadRecovery = fn
 	ir.watcherMu.Unlock()
 }
 
@@ -1574,15 +1588,29 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // re-entry does, and a locked one stays locked (SetRecovery). Any other
 // failure, such as a keys directory that cannot be read, leaves the state as
 // it was, for the caller to answer; the callers after a store-root commit
-// enter recovery on every failure themselves.
+// enter recovery on every failure themselves. Once in recovery it calls the
+// hook SetReloadRecoveryHook set, which a lock that came first skips.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()
 	report, err := ir.reloadLocked(nil)
 	ir.passphraseLock.RUnlock()
-	if signertemplates.IsGenerationValidationErr(err) || errors.Is(err, apkeys.ErrAddressCollision) {
+	if IsContentDefect(err) {
 		ir.SetRecovery()
+		ir.watcherMu.Lock()
+		hook := ir.onReloadRecovery
+		ir.watcherMu.Unlock()
+		if hook != nil && ir.IsRecovery() {
+			hook(err)
+		}
 	}
 	return report, err
+}
+
+// IsContentDefect reports whether a reload failed for a content defect in
+// the selected generation: one that fails its validation, or two key files
+// that resolve to one address. Reload enters recovery for one.
+func IsContentDefect(err error) bool {
+	return signertemplates.IsGenerationValidationErr(err) || errors.Is(err, apkeys.ErrAddressCollision)
 }
 
 // ReloadWithPassphrase opens the keyring with the passphrase and scans keys.

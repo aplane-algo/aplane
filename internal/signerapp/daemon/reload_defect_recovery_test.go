@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -22,15 +23,23 @@ import (
 // key snapshot and entered nothing: the signer said unlocked and could sign
 // with none of its keys. It now enters recovery, as an unlock that finds the
 // defect does: signing is refused, the keyring stays for the reconcile, and
-// once the defect is gone the reconcile lifts recovery.
+// once the defect is gone the reconcile lifts recovery. The entry is pushed
+// to the admin session as a status, which takes apadmin to its recovery
+// screen and so to the reconcile, and the log names its cause.
 
-// defectSigner is an unlocked test signer with one key it signs with, and a
-// stray file in the selected generation's keys/, which fails that
-// generation's validation. It returns the key's address and the stray path.
-func defectSigner(t *testing.T) (server *Signer, address, stray string) {
+// defectSigner is an unlocked test signer with one key it signs with, an
+// admin session whose messages are recorded, and a stray file in the
+// selected generation's keys/, which fails that generation's validation. The
+// file's name is one the watcher ignores, so nothing reloads until the test
+// does. It returns the key's address, the stray path and the session's
+// recorder.
+func defectSigner(t *testing.T) (server *Signer, address, stray string, session *ipcJSONRecorderConn) {
 	t.Helper()
 	server, cleanup := setupTestSigner(t)
 	t.Cleanup(cleanup)
+	session = &ipcJSONRecorderConn{}
+	server.ipcServer = newIPCServerWithActiveConn(session)
+	server.hub = server.ipcServer
 	ir := server.productRuntime()
 	t.Cleanup(ir.StopKeyWatcher)
 	server.config.UserAutoApprove = true
@@ -47,7 +56,22 @@ func defectSigner(t *testing.T) (server *Signer, address, stray string) {
 	if err := os.WriteFile(stray, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return server, address, stray
+	return server, address, stray, session
+}
+
+// requireRecoveryPushed checks that the admin session was told of the entry
+// into recovery: a status naming the recovery state, with no keys.
+func requireRecoveryPushed(t *testing.T, session *ipcJSONRecorderConn) {
+	t.Helper()
+	for _, msg := range session.messages(t) {
+		if msg["type"] == protocol.MsgTypeStatus && msg["state"] == signerruntime.SignerStateRecovery.String() {
+			if count, _ := msg["key_count"].(float64); count != 0 {
+				t.Fatalf("pushed status = %v, want no keys", msg)
+			}
+			return
+		}
+	}
+	t.Fatalf("the admin session was sent %v, want a status in recovery", session.messages(t))
 }
 
 // requireRecoveryWithKeyring checks what a reload that found the defect
@@ -93,7 +117,7 @@ func requireRepairLiftsRecovery(t *testing.T, server *Signer, stray, address str
 // mutation lock (RB2's order), so no request between the release and a later
 // entry sees the empty snapshot as unlocked.
 func TestAReloadThatFindsADefectEntersRecoveryUnderTheLock(t *testing.T) {
-	server, address, stray := defectSigner(t)
+	server, address, stray, session := defectSigner(t)
 	ir := server.productRuntime()
 
 	var underLock signerruntime.SignerState
@@ -108,13 +132,14 @@ func TestAReloadThatFindsADefectEntersRecoveryUnderTheLock(t *testing.T) {
 	if underLock != signerruntime.SignerStateRecovery {
 		t.Fatalf("state = %v before the store mutation lock was released, want recovery", underLock)
 	}
+	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
 	requireRepairLiftsRecovery(t, server, stray, address, 1)
 }
 
 // The watcher's reload, run as a change in keys/ runs it.
 func TestAWatcherReloadThatFindsADefectEntersRecovery(t *testing.T) {
-	server, address, stray := defectSigner(t)
+	server, address, stray, session := defectSigner(t)
 	ir := server.productRuntime()
 	var onChange func() error
 	ir.EnsureKeyWatcher(func(_ []string, _ context.Context, reload func() error) error {
@@ -128,6 +153,7 @@ func TestAWatcherReloadThatFindsADefectEntersRecovery(t *testing.T) {
 	if err := onChange(); !signertemplates.IsGenerationValidationErr(err) {
 		t.Fatalf("watcher reload error = %v, want a generation validation failure", err)
 	}
+	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
 	// In recovery a change marks the store dirty and reloads nothing.
 	if err := onChange(); err != nil || !ir.IsRecovery() {
@@ -136,15 +162,26 @@ func TestAWatcherReloadThatFindsADefectEntersRecovery(t *testing.T) {
 	requireRepairLiftsRecovery(t, server, stray, address, 1)
 }
 
-// Key administration's reload, after it wrote a key. The write stands: the
-// reconcile publishes the new key with the old one.
+// Key administration's reload, after it wrote a key, the review's trigger:
+// a key generation over a stray file nothing had reloaded for. The answer
+// says the signer entered recovery and names the defect, where it once said
+// only "failed to refresh signer key cache", and the log names it once. The
+// write stands: the reconcile publishes the new key with the old one.
 func TestAKeyWriteWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
-	server, address, stray := defectSigner(t)
+	server, address, stray, session := defectSigner(t)
+	logs := &syncBuffer{}
+	appLogger.SetOutput(logs)
+	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
 
 	result := server.adminServices().keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
-	if result.Success || result.Code != protocol.ErrCodeInternal || result.Error != "failed to refresh signer key cache" {
-		t.Fatalf("GenerateKey() = %+v, want the cache refresh failure", result)
+	const wantPrefix = "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: generation validation failed: "
+	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.HasPrefix(result.Error, wantPrefix) || !strings.Contains(result.Error, "junk.txt") {
+		t.Fatalf("GenerateKey() = %+v, want recovery_blocked naming the stray file", result)
 	}
+	if got := logs.String(); strings.Count(got, "[WARN] identity is recovery-blocked: generation validation failed: ") != 1 || !strings.Contains(got, "junk.txt") {
+		t.Fatalf("logs = %q, want one line naming the entry and its cause", got)
+	}
+	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
 	requireRepairLiftsRecovery(t, server, stray, address, 2)
 }

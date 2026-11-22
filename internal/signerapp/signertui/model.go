@@ -748,6 +748,7 @@ type GenerateResultMsg struct {
 	KeyType string // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
 	// Warnings are the signer's notes about the account it created.
 	Warnings []string
+	Code     string
 	Error    string
 }
 
@@ -760,6 +761,7 @@ type PrepareGenerateResultMsg struct {
 type DeleteResultMsg struct {
 	ID      string
 	Success bool
+	Code    string
 	Error   string
 }
 
@@ -879,6 +881,7 @@ type ImportResultMsg struct {
 	Success bool
 	Address string
 	KeyType string
+	Code    string
 	Error   string
 }
 
