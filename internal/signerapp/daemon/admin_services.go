@@ -108,8 +108,8 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	// or deletes residue. A valid root with damaged selected content still
 	// opens the keyring and enters recovery; no generation is selected
 	// heuristically.
-	outcome, err := ir.Unlock(passphrase, func() error {
-		return s.reconcileGenerationsWithPassphraseLocked(ir, passphrase)
+	outcome, err := ir.Unlock(passphrase, func(kr *crypto.Keyring) error {
+		return s.reconcileGenerationsLocked(ir, kr)
 	}, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
@@ -123,27 +123,23 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	return true, outcome.KeyCount, "", ""
 }
 
-// logUnlockOutcome logs what an unlock request found that its answer does
-// not carry: why it entered recovery, or that it found the store needing
-// recovery and left another request's session in service.
+// logUnlockOutcome logs why an unlock request entered recovery, which its
+// answer does not carry.
 func logUnlockOutcome(outcome productruntime.UnlockOutcome) {
-	switch {
-	case outcome.KeptSession:
-		logWarnf("an unlock request found the store needing recovery and left the session in service: %v", outcome.Cause)
-	case outcome.Recovery && outcome.Cause != nil:
+	if outcome.Recovery && outcome.Cause != nil {
 		logWarnf("identity is recovery-blocked: %v", outcome.Cause)
 	}
 }
 
 // failedUnlock answers an unlock that failed with err. A failure other than
 // a wrong passphrase, such as a store root that cannot be opened, is logged
-// with its cause; an unlock that lost a race to a lock or a store
-// maintenance is expected and logged below error.
+// with its cause; an unlock that lost a race to a lock is expected and
+// logged below error.
 func failedUnlock(err error) (bool, int, string, string) {
 	code := unlockFailureCode(err)
 	switch {
 	case code != protocol.ErrCodeUnlockFailed:
-	case errors.Is(err, signerruntime.ErrLockedDuringUnlock), errors.Is(err, signerruntime.ErrMaintenanceInProgress):
+	case errors.Is(err, signerruntime.ErrLockedDuringUnlock):
 		logInfof("unlock did not complete: %v", err)
 	default:
 		logErrorf("unlock failed: %v", err)
@@ -151,21 +147,11 @@ func failedUnlock(err error) (bool, int, string, string) {
 	return false, 0, err.Error(), code
 }
 
-// reconcileGenerationsWithPassphraseLocked opens the authenticated root with
-// the passphrase and validates the selected generation fail-closed, for an
-// unlock request: the caller holds the store mutation lock.
-func (s signerAdminServices) reconcileGenerationsWithPassphraseLocked(ir *productruntime.Runtime, passphrase []byte) error {
-	_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
-	if err != nil {
-		return err
-	}
-	defer kr.Zero()
-	return s.reconcileGenerationsLocked(ir, kr)
-}
-
-// reconcileGenerationsLocked reconciles the store root with an open keyring.
-// The caller holds the store mutation lock, across the reload and state
-// change that follow.
+// reconcileGenerationsLocked reconciles the store root with an open keyring:
+// it authenticates the root, quarantines what it does not select, and
+// validates the selected generation fail-closed. The caller holds the store
+// mutation lock, across the reload and state change that follow: an unlock
+// request, with the keyring its passphrase opened, or a reconcile.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
 	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr)
 	if err != nil {
@@ -394,10 +380,9 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 //
 // It refuses a signer neither unlocked nor in recovery first, before it
 // reloads or enters recovery, as restore and rollback do. The handler's
-// state check ran before the request queued on the lock, and a lock and a
-// new unlock since can leave the keyring open on a signer not yet published
-// unlocked: a reload there that failed would call SetRecovery on a locked
-// signer, which does nothing, and the unlock would then publish over it.
+// state check ran before the request queued on the lock, and a lock since
+// then leaves the keyring open until its cleanup has run: a reload there
+// that failed would call SetRecovery on a locked signer, which does nothing.
 func (s signerAdminServices) reconcileLocked(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (report *signertemplates.ReloadReport, err error) {
 	if err := ir.RequireUnlockedOrRecovery(); err != nil {
 		return nil, err

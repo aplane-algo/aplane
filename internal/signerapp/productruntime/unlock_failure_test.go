@@ -19,7 +19,7 @@ import (
 // Only a passphrase that does not open the store root is reported as an
 // invalid passphrase. A store root the right passphrase cannot open, here one
 // that no longer parses, is a failed unlock that keeps its cause, for both
-// the unlock and the recovery unlock.
+// an unlock from locked and one from recovery.
 func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 	root := t.TempDir()
 	paths := storepaths.NewPaths(root)
@@ -32,12 +32,19 @@ func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	ir := New(Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
+	reconcile := func(*crypto.Keyring) error { return nil }
 	attempts := map[string]func([]byte) error{
-		"unlock": func(p []byte) error {
-			_, err := ir.TryUnlock(p, nil)
+		"unlock from locked": func(p []byte) error {
+			ir.Lock()
+			_, err := ir.Unlock(p, reconcile, nil)
 			return err
 		},
-		"recovery unlock": ir.TryRecoveryUnlock,
+		"unlock from recovery": func(p []byte) error {
+			ir.SetUnlocked()
+			ir.SetRecovery()
+			_, err := ir.Unlock(p, reconcile, nil)
+			return err
+		},
 	}
 
 	for name, try := range attempts {

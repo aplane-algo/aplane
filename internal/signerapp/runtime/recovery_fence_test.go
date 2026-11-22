@@ -21,7 +21,7 @@ func startBlockedUnlock(rt *Runtime) (release chan struct{}, done chan unlockOut
 	release = make(chan struct{})
 	done = make(chan unlockOutcome, 1)
 	go func() {
-		_, err := rt.TryUnlock(func() (int, error) {
+		_, err := tryUnlock(rt, func() (int, error) {
 			close(entered)
 			<-release
 			return 1, nil
@@ -63,7 +63,7 @@ func TestAnUnlockInFlightDoesNotPublishOverALaterRecovery(t *testing.T) {
 			name:  "begun locked, beside an unlock whose reconcile failed",
 			start: func(*Runtime) {},
 			enter: func(rt *Runtime) {
-				if err := rt.TryRecovery(func() error { return nil }); err != nil {
+				if err := tryRecovery(rt, func() error { return nil }); err != nil {
 					t.Fatalf("TryRecovery: %v", err)
 				}
 			},

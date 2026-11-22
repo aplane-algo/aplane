@@ -32,7 +32,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -213,12 +212,12 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	}
 }
 
-// An uncertain ASA set commit between a second unlock's read of its session
-// generations and its state check ends in recovery too, as a policy commit
-// does (TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery). The ASA
-// set calls SetRecovery once, before its best-effort reload; the unlock then
-// loads in recovery and once published unlocked over it.
-func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
+// An uncertain ASA set commit as a second unlock reaches the store mutation
+// lock lands wholly before it, as a policy commit does
+// (TestUncertainPolicyCommitBeforeASecondUnlockIsReconciledByIt): the unlock
+// begins in recovery and reconciles before it publishes. The ASA set calls
+// SetRecovery once, before its best-effort reload.
+func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) {
 	svc, ir, _, reload := setupUnpublishedASAAdmin(t)
 	ir.SetUnlocked()
 	looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
@@ -227,7 +226,7 @@ func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	}
 
 	var result adminproto.AddASAResult
-	loads, outcome := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, reload, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
 	})
@@ -235,15 +234,7 @@ func TestUncertainASASetCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	if result.Success || !result.CommitUncertain || result.Code != "asa_commit_uncertain" {
 		t.Fatalf("AddASA(durability unknown) = %+v", result)
 	}
-	if !errors.Is(outcome, signerruntime.ErrRecoveryDuringUnlock) {
-		t.Fatalf("the second unlock = %v, want %v", outcome, signerruntime.ErrRecoveryDuringUnlock)
-	}
-	if loads != 1 {
-		t.Fatalf("the second unlock loaded %d time(s), want once: it found the signer in recovery", loads)
-	}
-	if !ir.IsRecovery() {
-		t.Fatalf("state after an uncertain ASA set commit during a second unlock = %s, want recovery", ir.GetState())
-	}
+	requireReconciledInRecovery(t, ir, loads, reconciledIn, err)
 }
 
 func confirmASA9Again(t *testing.T, svc Service) adminproto.LookupASAResult {

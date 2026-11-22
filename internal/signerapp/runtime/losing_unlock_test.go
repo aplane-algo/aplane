@@ -32,9 +32,9 @@ func raceUnlock(attempt func(unlockFn func() error) error) (release chan struct{
 	return release, done, result
 }
 
-func tryUnlock(r *Runtime) func(func() error) error {
+func unlockWith(r *Runtime) func(func() error) error {
 	return func(unlockFn func() error) error {
-		_, err := r.TryUnlock(func() (int, error) { return 1, unlockFn() }, nil)
+		_, err := tryUnlock(r, func() (int, error) { return 1, unlockFn() }, nil)
 		return err
 	}
 }
@@ -52,9 +52,9 @@ func TestLosingUnlockLocksASessionANewerUnlockPublished(t *testing.T) {
 		keysLoaded.Store(false)
 	})
 
-	release, done, first := raceUnlock(tryUnlock(r))
+	release, done, first := raceUnlock(unlockWith(r))
 	r.Lock() // a lock lands while the first unlock is still deriving
-	if _, err := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
+	if _, err := tryUnlock(r, func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
 		t.Fatalf("second unlock failed: %v", err)
 	}
 	close(release)
@@ -85,10 +85,10 @@ func TestLosingUnlockFencesAnUnlockStillInFlight(t *testing.T) {
 		keysLoaded.Store(false)
 	})
 
-	releaseFirst, firstDone, first := raceUnlock(tryUnlock(r))
+	releaseFirst, firstDone, first := raceUnlock(unlockWith(r))
 	r.Lock()
 	releaseSecond, secondDone, second := raceUnlock(func(unlockFn func() error) error {
-		_, err := r.TryUnlock(func() (int, error) {
+		_, err := tryUnlock(r, func() (int, error) {
 			err := unlockFn()
 			keysLoaded.Store(true)
 			return 1, err
@@ -121,9 +121,9 @@ func TestLosingRecoveryLocksASessionANewerUnlockPublished(t *testing.T) {
 	var keysLoaded atomic.Bool
 	r.SetOnLock(func() { keysLoaded.Store(false) })
 
-	release, done, first := raceUnlock(r.TryRecovery)
+	release, done, first := raceUnlock(func(open func() error) error { return tryRecovery(r, open) })
 	r.Lock()
-	if _, err := r.TryUnlock(func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
+	if _, err := tryUnlock(r, func() (int, error) { keysLoaded.Store(true); return 1, nil }, nil); err != nil {
 		t.Fatalf("unlock failed: %v", err)
 	}
 	close(release)

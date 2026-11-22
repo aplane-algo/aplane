@@ -70,30 +70,37 @@ func unlockedRuntimeForTest(t *testing.T) (ir *Runtime, mutation *hookedLock, lo
 	return ir, mutation, loads, locks
 }
 
-// An unlock attempt that finds the signer unlocked answers from the session
-// at its check and ends there, before the fence. A lock that comes after the
-// check stands, and the attempt runs no cleanup of its own: it loaded
-// nothing. Through the fence, an attempt that saw the lock generation move
-// would lock again and clear, and could clear a session a passphrase change
-// had republished in between.
+// countReconciles is an unlock request's reconcile that counts its runs and
+// succeeds.
+func countReconciles() (reconcile func(*crypto.Keyring) error, runs *int) {
+	runs = new(int)
+	return func(*crypto.Keyring) error { *runs++; return nil }, runs
+}
+
+// An unlock request that finds the signer unlocked answers from the session
+// and ends there. A lock that comes after it stands, and the request runs no
+// cleanup of its own: it loaded nothing. Through the fence, a request that
+// saw the lock generation move would lock again and clear, and could clear a
+// session a passphrase change had republished in between.
 func TestAnUnlockThatFindsTheSignerUnlockedEndsAtItsCheck(t *testing.T) {
 	ir, mutation, loads, locks := unlockedRuntimeForTest(t)
 	before := ir.LockGeneration()
-	mutation.afterRelease = ir.Lock // after the check, where the fence would be
+	mutation.afterRelease = ir.Lock // after the answer, as soon as the lock is free
+	reconcile, reconciles := countReconciles()
 
 	unlockedCalls := 0
-	keyCount, err := ir.TryUnlock([]byte(secondUnlockPassphrase), func() { unlockedCalls++ })
-	if err != nil || keyCount != 0 {
-		t.Fatalf("TryUnlock() = (%d, %v), want the session's answer", keyCount, err)
+	outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, func() { unlockedCalls++ })
+	if err != nil || outcome.Recovery || outcome.KeyCount != 0 {
+		t.Fatalf("Unlock() = %+v, %v; want the session's answer", outcome, err)
 	}
-	if got := loads.Load(); got != 0 {
-		t.Fatalf("the attempt loaded %d time(s), want none", got)
+	if got := loads.Load(); got != 0 || *reconciles != 0 {
+		t.Fatalf("the request loaded %d time(s) and reconciled %d, want neither", got, *reconciles)
 	}
 	if unlockedCalls != 0 {
-		t.Fatal("the attempt ran the unlocked callback, which only a publish runs")
+		t.Fatal("the request ran the unlocked callback, which only a publish runs")
 	}
 	if ir.GetState() != signerruntime.SignerStateLocked {
-		t.Fatalf("state = %v, want the lock that came after the check to stand", ir.GetState())
+		t.Fatalf("state = %v, want the lock that came after the answer to stand", ir.GetState())
 	}
 	if got := ir.LockGeneration(); got != before+1 {
 		t.Fatalf("the session generation moved by %d, want 1 (the lock's): a loser's cleanup moves it again", got-before)
@@ -103,34 +110,30 @@ func TestAnUnlockThatFindsTheSignerUnlockedEndsAtItsCheck(t *testing.T) {
 	}
 }
 
-// A wrong passphrase on an unlocked signer is refused, by TryUnlock and by
-// AnswerIfUnlocked, and leaves the session as it was. The right one answers
-// with the session's key count, and neither runs the reconcile; on a signer
-// that is not unlocked, AnswerIfUnlocked does not answer and runs it.
+// A wrong passphrase on an unlocked signer is refused and leaves the session
+// as it was. The right one answers with the session's key count. Neither
+// reconciles or loads. On a signer that is not unlocked a wrong passphrase
+// ends the request where the store root does not open, before the reconcile.
 func TestAnUnlockOfAnUnlockedSignerChecksThePassphrase(t *testing.T) {
 	ir, _, loads, _ := unlockedRuntimeForTest(t)
 	generation, _ := ir.UnlockedGeneration()
-	reconciles := 0
-	reconcile := func() error { reconciles++; return nil }
+	reconcile, reconciles := countReconciles()
 	wrong := []byte("not the passphrase")
-	if _, err := ir.TryUnlock(wrong, nil); !errors.Is(err, crypto.ErrInvalidPassphrase) {
-		t.Fatalf("TryUnlock(wrong) = %v, want an invalid passphrase", err)
+	if _, err := ir.Unlock(wrong, reconcile, nil); !errors.Is(err, ErrInvalidPassphrase) {
+		t.Fatalf("Unlock(wrong) = %v, want %v", err, ErrInvalidPassphrase)
 	}
-	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); !answer.Answered || !errors.Is(answer.Err, crypto.ErrInvalidPassphrase) {
-		t.Fatalf("AnswerIfUnlocked(wrong) = %+v, want an invalid passphrase", answer)
+	if outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil); err != nil || outcome.KeyCount != ir.KeyCount() {
+		t.Fatalf("Unlock() = %+v, %v; want the session's key count", outcome, err)
 	}
-	if answer, _ := ir.AnswerIfUnlocked([]byte(secondUnlockPassphrase), reconcile); !answer.Answered || answer.Err != nil || answer.KeyCount != ir.KeyCount() {
-		t.Fatalf("AnswerIfUnlocked() = %+v, want the session's key count", answer)
-	}
-	if loads.Load() != 0 || reconciles != 0 || !ir.IsUnlockedIn(generation) {
+	if loads.Load() != 0 || *reconciles != 0 || !ir.IsUnlockedIn(generation) {
 		t.Fatal("a refused or answered unlock loaded, reconciled or ended the session")
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
 		t.Fatalf("the session's keyring is closed: %v", err)
 	}
 	ir.Lock()
-	if answer, _ := ir.AnswerIfUnlocked(wrong, reconcile); answer.Answered || reconciles != 1 {
-		t.Fatalf("AnswerIfUnlocked() on a locked signer = %+v with %d reconcile(s), want no answer and one", answer, reconciles)
+	if _, err := ir.Unlock(wrong, reconcile, nil); !errors.Is(err, ErrInvalidPassphrase) || *reconciles != 0 || loads.Load() != 0 {
+		t.Fatalf("Unlock(wrong) on a locked signer = %v with %d reconcile(s) and %d load(s), want %v and neither", err, *reconciles, loads.Load(), ErrInvalidPassphrase)
 	}
 }
 
@@ -148,40 +151,30 @@ func lockDuringPassphraseCheck(t *testing.T, ir *Runtime) {
 	}
 }
 
-// An unlock request is answered from the session only when the signer was
-// unlocked in it from before the passphrase check to after it. A lock that
-// lands during the check ends that session, and the request is not answered
-// from it: the answer from the session once said success, with the key count
-// of a session that had ended, on a signer that had locked. An attempt goes
-// on to load, as one that found the signer locked does, and its fence then
-// answers that the signer locked during the unlock.
+// A lock that lands during the passphrase check of a request that found the
+// signer unlocked wins: the request is answered that the signer locked, and
+// does not unlock it again. It loads nothing. The request once went on to
+// load and publish as one that found the signer locked does, and the
+// operator's lock was followed at once by an unlocked signer.
 func TestALockDuringThePassphraseCheckIsNotAnsweredFromTheSession(t *testing.T) {
 	ir, _, loads, _ := unlockedRuntimeForTest(t)
 	lockDuringPassphraseCheck(t, ir)
-	if answer := ir.AnswerFromSession([]byte(secondUnlockPassphrase)); answer.Answered {
-		t.Fatalf("AnswerFromSession() = %+v after a lock during the check, want no answer", answer)
+	reconcile, reconciles := countReconciles()
+	if outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+		t.Fatalf("Unlock() = %+v, %v after a lock during the check, want %v", outcome, err, signerruntime.ErrLockedDuringUnlock)
 	}
-	if ir.GetState() != signerruntime.SignerStateLocked {
-		t.Fatalf("state = %v, want the lock to stand", ir.GetState())
-	}
-
-	ir.SetUnlocked()
-	lockDuringPassphraseCheck(t, ir)
-	if _, err := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
-		t.Fatalf("TryUnlock() = %v after a lock during the check, want %v", err, signerruntime.ErrLockedDuringUnlock)
-	}
-	if got := loads.Load(); got != 1 {
-		t.Fatalf("the attempt loaded %d time(s), want once: the session it found had ended", got)
+	if got := loads.Load(); got != 0 || *reconciles != 0 {
+		t.Fatalf("the request loaded %d time(s) and reconciled %d, want neither", got, *reconciles)
 	}
 	if ir.GetState() != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v, want the lock to stand", ir.GetState())
 	}
 }
 
-// An unlock from recovery checks the state and loads under the store
-// mutation lock, which a reconcile holds across its promotion out of
-// recovery, so no promotion lands between the check and the end of the load.
-// It publishes only after it has released the lock.
+// An unlock from recovery holds the store mutation lock from its state read
+// to its publish, so no store change, reconcile or passphrase change lands
+// inside it. The watcher starts after the lock is released, since its reload
+// of changes seen while locked takes the lock.
 func TestAnUnlockLoadsUnderTheStoreMutationLock(t *testing.T) {
 	ir, mutation, _, _ := unlockedRuntimeForTest(t)
 	ir.SetRecovery()
@@ -195,18 +188,25 @@ func TestAnUnlockLoadsUnderTheStoreMutationLock(t *testing.T) {
 		}
 		return &signertemplates.ReloadReport{}, nil
 	})
-	stateAtRelease := signerruntime.SignerStateUnlocked
+	stateAtRelease := signerruntime.SignerStateRecovery
 	mutation.afterRelease = func() { stateAtRelease = ir.GetState() }
-	if _, err := ir.TryUnlock([]byte(secondUnlockPassphrase), nil); err != nil {
-		t.Fatalf("TryUnlock() from recovery = %v, want a publish", err)
+	heldInCallback := true
+	reconcile, _ := countReconciles()
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, func() {
+		heldInCallback = !mutation.TryLock()
+		if !heldInCallback {
+			mutation.Mutex.Unlock()
+		}
+	}); err != nil {
+		t.Fatalf("Unlock() from recovery = %v, want a publish", err)
 	}
 	if !heldDuringLoad {
 		t.Fatal("the load ran without the store mutation lock")
 	}
-	if stateAtRelease != signerruntime.SignerStateRecovery {
-		t.Fatalf("state when the lock was released = %v, want recovery: the publish comes after", stateAtRelease)
+	if stateAtRelease != signerruntime.SignerStateUnlocked {
+		t.Fatalf("state when the lock was released = %v, want unlocked: the publish comes before", stateAtRelease)
 	}
-	if !ir.IsUnlocked() {
-		t.Fatalf("state = %v, want unlocked", ir.GetState())
+	if heldInCallback {
+		t.Fatal("the unlocked callback ran under the store mutation lock")
 	}
 }
