@@ -132,11 +132,15 @@ type Runtime struct {
 
 	keySession     *keystore.KeySession
 	passphraseLock sync.RWMutex
-	keys           map[string]string // address -> keyfile path
-	keyTypes       map[string]string // address -> key type
-	keyMetadata    map[string]KeyPublicMetadata
-	keysetRev      atomic.Uint64 // Process-local revision of the published key snapshot.
-	keysLock       sync.RWMutex
+	// providers is the LogicSig provider registry this runtime's reloads
+	// register templates in: the process-wide one, which every identity in
+	// the process shares (see ProviderRegistry).
+	providers   signertemplates.ProviderRegistry
+	keys        map[string]string // address -> keyfile path
+	keyTypes    map[string]string // address -> key type
+	keyMetadata map[string]KeyPublicMetadata
+	keysetRev   atomic.Uint64 // Process-local revision of the published key snapshot.
+	keysLock    sync.RWMutex
 
 	watcherCancel   context.CancelFunc
 	watcherMu       sync.Mutex
@@ -265,6 +269,7 @@ func New(cfg Config) *Runtime {
 	}
 
 	ir := &Runtime{
+		providers:    lsigprovider.ProcessRegistry{},
 		keyStore:     cfg.KeyStore,
 		keyPaths:     cfg.KeyPaths,
 		stageTables:  stagetable.NewStore(cfg.KeyPaths),
@@ -1367,6 +1372,14 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 }
 
 // --- KeyStore access ---
+
+// ProviderRegistry is the LogicSig provider registry this runtime's reloads
+// register templates in and read from. It is the process-wide registry: key
+// type names are shared by every identity in the process. A reload reaches
+// the registry through it alone, so a registry per identity can replace it.
+func (ir *Runtime) ProviderRegistry() signertemplates.ProviderRegistry {
+	return ir.providers
+}
 
 // KeyStore returns the underlying file key store.
 func (ir *Runtime) KeyStore() *keystore.FileKeyStore {

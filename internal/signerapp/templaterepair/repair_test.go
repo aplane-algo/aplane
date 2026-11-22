@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -349,7 +350,7 @@ func TestRepairCommitsAGenerationThatValidates(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("Candidate(repaired) error = %v", err)
 			}
-			manager := signertemplates.NewManager(f.paths)
+			manager := signertemplates.NewManager(f.paths, lsigprovider.ProcessRegistry{})
 			manager.ActivePaths = repaired
 			report, err := manager.RegisterKeystoreTemplates(f.opts.Keyring)
 			for _, keyType := range []string{healthy, editedGeneric, editedComposed} {

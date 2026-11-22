@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -321,7 +322,7 @@ func validateDestinationAuthority(opts Options, repairedTemplates map[string]boo
 		return fmt.Errorf("asa set: %w", err)
 	}
 
-	manager := signertemplates.NewManager(opts.Paths)
+	manager := signertemplates.NewManager(opts.Paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = opts.Candidate
 	report, err := manager.ValidateKeystoreTemplates(opts.Keyring)
 	if err != nil {

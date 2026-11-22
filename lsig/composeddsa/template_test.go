@@ -854,7 +854,7 @@ teal: |
 	if err != nil {
 		t.Fatalf("PrepareKeystoreTemplateRegistration() error = %v", err)
 	}
-	if added := prepared.Register(); added {
+	if added := lsigprovider.RegisterIfAbsent(prepared.Provider); added {
 		t.Fatal("Register() = true, want false for existing provider")
 	}
 }

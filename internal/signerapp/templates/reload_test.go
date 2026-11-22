@@ -131,7 +131,8 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 		KeyStore: store,
 		Session:  session,
 		TemplateManager: &Manager{
-			Paths: paths,
+			Registry: memoryRegistry{},
+			Paths:    paths,
 			Registrars: []TemplateRegistrar{
 				{
 					Name:         "generic",
@@ -140,7 +141,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 					Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 						return templatepolicy.PreparedTemplateRegistration{
 							Fingerprint: "incoming-" + keyType,
-							Register:    func() bool { return true },
+							Provider:    templatesTestProvider{keyType: keyType, fingerprint: "incoming-" + keyType},
 						}, nil
 					},
 				},
@@ -734,7 +735,7 @@ teal: |
 	service := &ReloadService{
 		KeyStore:        &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}},
 		Session:         &fakeSession{},
-		TemplateManager: NewManager(paths),
+		TemplateManager: NewManager(paths, lsigprovider.ProcessRegistry{}),
 		PublishSnapshot: func(map[string]string, map[string]string) { published = true },
 		Info:            func(string) {},
 		Warn:            func(string) {},

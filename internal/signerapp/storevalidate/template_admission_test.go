@@ -376,7 +376,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 		t.Cleanup(func() { signertemplates.UnregisterProductProvider(keyType) })
 	}
 
-	manager := signertemplates.NewManager(paths)
+	manager := signertemplates.NewManager(paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = active
 	activated := func(report signertemplates.RegistrationReport, templateType templatestore.TemplateType) []string {
 		if templateType == templatestore.TemplateTypeComposed {

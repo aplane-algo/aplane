@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -228,7 +229,7 @@ func registerGenericTemplateProviderForTest(t *testing.T, yamlData []byte) {
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec() error = %v", err)
 	}
-	if !genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec)) {
+	if !lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec)) {
 		t.Fatalf("template %q already registered", spec.KeyType())
 	}
 }

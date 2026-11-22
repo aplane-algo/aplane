@@ -170,35 +170,89 @@ func ConfigureAlgodClient(client *algod.Client) {
 	}
 }
 
+// validateProviderContract panics when p breaks the provider contract, and
+// returns its normalized key type. Compiled providers register at process
+// start, where a broken one is a build defect.
 func validateProviderContract(p LSigProvider) string {
+	keyType, err := CheckContract(p)
+	if err != nil {
+		panic(err.Error())
+	}
+	return keyType
+}
+
+// CheckContract reports whether p keeps the provider contract every
+// registered provider keeps, and returns its normalized key type. A
+// template's preparation runs it, so a template whose provider breaks it is
+// refused there instead of panicking at registration.
+func CheckContract(p LSigProvider) (string, error) {
 	rawKeyType := strings.TrimSpace(p.KeyType())
 	if rawKeyType == "" {
-		panic("LSig provider has empty key type")
+		return "", fmt.Errorf("LSig provider has empty key type")
 	}
 	if strings.ContainsAny(rawKeyType, " \t\r\n") {
-		panic("LSig provider key type contains whitespace: " + rawKeyType)
+		return "", fmt.Errorf("LSig provider key type contains whitespace: %s", rawKeyType)
 	}
 
 	family := strings.TrimSpace(p.RoutingFamily())
 	if family == "" {
-		panic("LSig provider has empty family for key type: " + rawKeyType)
+		return "", fmt.Errorf("LSig provider has empty family for key type: %s", rawKeyType)
 	}
 	if strings.ContainsAny(family, " \t\r\n") {
-		panic("LSig provider family contains whitespace: " + family)
+		return "", fmt.Errorf("LSig provider family contains whitespace: %s", family)
 	}
 
 	if p.Version() <= 0 {
-		panic(fmt.Sprintf("LSig provider has invalid version %d for key type: %s", p.Version(), rawKeyType))
+		return "", fmt.Errorf("LSig provider has invalid version %d for key type: %s", p.Version(), rawKeyType)
 	}
 
 	switch category := p.Category(); category {
 	case CategoryGenericLsig, CategoryDSALsig:
 		// OK
 	default:
-		panic(fmt.Sprintf("LSig provider has invalid category %q for key type: %s", category, rawKeyType))
+		return "", fmt.Errorf("LSig provider has invalid category %q for key type: %s", category, rawKeyType)
 	}
 
-	return normalize(rawKeyType)
+	return normalize(rawKeyType), nil
+}
+
+// RegisterBatchIfAbsent registers each provider whose key type is not yet
+// present, all under one hold of the registration lock, and reports for each
+// whether it was newly registered. A batch with a provider that breaks the
+// contract registers nothing.
+func RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
+	registerMu.Lock()
+	defer registerMu.Unlock()
+	keyTypes := make([]string, len(batch))
+	for i, p := range batch {
+		keyType, err := CheckContract(p)
+		if err != nil {
+			return nil, err
+		}
+		keyTypes[i] = keyType
+	}
+	registered := make([]bool, len(batch))
+	for i, p := range batch {
+		if providers.Set(keyTypes[i], p) {
+			registered[i] = true
+			applyStoredClientIfNeeded(p)
+		}
+	}
+	return registered, nil
+}
+
+// ProcessRegistry is the process-wide provider registry, as the handle a
+// runtime is given: a reload registers its templates and reads the providers
+// registered before it through that handle, not through the package
+// functions. A registry per identity would replace it.
+type ProcessRegistry struct{}
+
+// Get returns the registered provider for keyType, or nil.
+func (ProcessRegistry) Get(keyType string) LSigProvider { return Get(keyType) }
+
+// RegisterBatchIfAbsent is the package's RegisterBatchIfAbsent.
+func (ProcessRegistry) RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
+	return RegisterBatchIfAbsent(batch)
 }
 
 // applyStoredClientIfNeeded runs with registerMu held.

@@ -206,3 +206,30 @@ func TestConcurrentRegisterAndConfigureAlgodClient(t *testing.T) {
 		t.Fatal("late-registered provider did not receive stored algod client after concurrent configuration")
 	}
 }
+
+// A batch is registered under one hold of the registration lock, and only
+// once every provider in it keeps the contract: one that breaks it registers
+// nothing, so a reload's templates are registered all or none. A provider
+// whose key type is already registered is reported as not newly registered.
+func TestABatchWithAnInvalidProviderRegistersNothing(t *testing.T) {
+	good := stubProvider{keyType: "batch-good", family: "batch-good"}
+	bad := stubProvider{keyType: "batch-bad", family: ""}
+	t.Cleanup(func() { Unregister(good.keyType); Unregister(bad.keyType) })
+
+	if registered, err := RegisterBatchIfAbsent([]LSigProvider{good, bad}); err == nil {
+		t.Fatalf("RegisterBatchIfAbsent() = %v, want the broken contract refused", registered)
+	}
+	if Has(good.keyType) {
+		t.Fatal("a batch with an invalid provider registered its valid one")
+	}
+
+	already := stubProvider{keyType: "batch-already", family: "batch-already"}
+	t.Cleanup(func() { Unregister(already.keyType) })
+	if !RegisterIfAbsent(already) {
+		t.Fatal("RegisterIfAbsent() did not register")
+	}
+	registered, err := RegisterBatchIfAbsent([]LSigProvider{good, already})
+	if err != nil || len(registered) != 2 || !registered[0] || registered[1] {
+		t.Fatalf("RegisterBatchIfAbsent() = %v, %v; want the new one registered and the present one not", registered, err)
+	}
+}

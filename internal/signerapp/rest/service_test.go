@@ -22,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -865,7 +864,7 @@ teal: |
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec() error = %v", err)
 	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
 		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
 		return saveErr
@@ -1038,7 +1037,7 @@ func registerRestGenericTemplateYAML(t *testing.T, yamlData []byte) {
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec() error = %v", err)
 	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 }
 
 func restGenericMatrixTemplateYAML(family, displayName string) []byte {
@@ -1263,7 +1262,7 @@ func registerRestGenericTemplate(t *testing.T) {
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec(rest generic template) error = %v", err)
 	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 }
 
 func restGenericTemplateYAML() []byte {

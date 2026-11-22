@@ -7,6 +7,20 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A reload registers its templates as one batch
+
+- **Every template is prepared and checked before any is registered**, and
+  the ones to activate are registered together under one hold of the
+  provider registry's lock (`lsigprovider.RegisterBatchIfAbsent`). A
+  template whose provider breaks the provider contract is refused at
+  preparation, by install, import and reload alike, where it once panicked
+  at registration.
+- **The reload reaches the provider registry through the runtime**
+  (`productruntime.Runtime.ProviderRegistry`). It is still the process-wide
+  registry; the handle is what a registry per identity would replace. The
+  key scan's signature-size lookups still read the process-wide registry
+  directly.
+
 ## The keystore installs its keyring, binding and key cache together
 
 - **`keystore.FileKeyStore.Install` replaces the keyring, the generation it

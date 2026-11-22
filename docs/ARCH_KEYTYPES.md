@@ -892,7 +892,7 @@ signer's inventory reports.
 │  internal/lsigprovider/     Single registry for ALL LogicSig providers      │
 │    ├── provider.go          Interface definitions (LSigProvider, etc.)      │
 │    ├── types.go             ParameterDef, RuntimeArgDef, constants          │
-│    └── registry.go          Register(), RegisterIfAbsent(), Get(), GetAll() │
+│    └── registry.go          Register(), RegisterBatchIfAbsent(), Get()...   │
 └─────────────────────────────────────────────────────────────────────────────┘
          ▲                                              ▲
          │ registers                                    │ registers
@@ -1151,9 +1151,13 @@ lsig/signerreg.RegisterSigner()
         stage cryptography, and generator (outside lsigprovider)
 ```
 
-Runtime templates (from keystore) are loaded after unlock:
+Runtime templates (from keystore) are loaded by every reload, before its key
+scan. Each template is prepared first, which returns its provider and checks
+the provider contract (`lsigprovider.CheckContract`); the ones to activate
+are then registered as one batch (`lsigprovider.RegisterBatchIfAbsent`),
+through the registry the runtime hands the reload:
 ```go
-signertemplates.NewManager(paths).RegisterKeystoreTemplates(keyring)
+signertemplates.NewManager(paths, ir.ProviderRegistry()).RegisterKeystoreTemplates(keyring)
 ```
 
 ### Algod client configuration

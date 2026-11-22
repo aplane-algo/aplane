@@ -235,17 +235,30 @@ func (r RegistrationReport) Notices() []string {
 	return notices
 }
 
+// ProviderRegistry is the LogicSig provider registry a reload registers its
+// templates in and reads the providers registered before it from. The
+// runtime hands it over (productruntime.Runtime.ProviderRegistry); the reload
+// reaches the registry through it alone, so a registry per identity can
+// replace the process-wide one without touching the reload.
+type ProviderRegistry interface {
+	Get(keyType string) lsigprovider.LSigProvider
+	RegisterBatchIfAbsent(batch []lsigprovider.LSigProvider) ([]bool, error)
+}
+
 // Manager owns keystore template registration ordering for signer reloads.
 type Manager struct {
 	Paths       storepaths.Paths
 	ActivePaths storepaths.GenPaths
 	Registrars  []TemplateRegistrar
+	Registry    ProviderRegistry
 }
 
-func NewManager(paths storepaths.Paths) *Manager {
+// NewManager is a manager over paths that registers in registry.
+func NewManager(paths storepaths.Paths, registry ProviderRegistry) *Manager {
 	return &Manager{
 		Paths:      paths,
 		Registrars: DefaultTemplateRegistrars(),
+		Registry:   registry,
 	}
 }
 
@@ -290,6 +303,10 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 	if err != nil {
 		return RegistrationReport{}, err
 	}
+	registry := m.Registry
+	if registry == nil {
+		registry = lsigprovider.ProcessRegistry{}
+	}
 
 	report := RegistrationReport{}
 	// Bind every record and template read to one caller-authenticated
@@ -315,14 +332,23 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 	}
 
 	// Reload is state-record driven: stray encrypted .template files without a
-	// matching key type state record are intentionally invisible.
+	// matching key type state record are intentionally invisible. Every
+	// template is prepared and checked first; the ones to activate are then
+	// registered as one batch.
+	var pending []pendingRegistration
 	for _, rec := range records {
 		registrar, ok := registrarsBySource[rec.Source]
 		if !ok {
 			continue
 		}
-		outcome := processTemplateRecord(active, kr, rec, registrar, register)
+		outcome, provider := processTemplateRecord(active, kr, rec, registrar, registry, register)
 		appendOutcome(&report, registrar.Source, outcome)
+		if provider != nil {
+			pending = append(pending, pendingRegistration{source: registrar.Source, keyType: rec.KeyType, provider: provider})
+		}
+	}
+	if err := registerPending(&report, registry, pending); err != nil {
+		return report, err
 	}
 
 	if invalid, listErr := keytypestate.ListInvalidActive(active); listErr == nil {
@@ -475,7 +501,45 @@ func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, regi
 	return nil
 }
 
-func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, register bool) templatepolicy.RegistrationOutcome {
+// pendingRegistration is a prepared template a reload activates, once every
+// template has been prepared.
+type pendingRegistration struct {
+	source   keytypestate.Source
+	keyType  string
+	provider lsigprovider.LSigProvider
+}
+
+// registerPending registers the pending templates as one batch. One whose
+// key type another registration took meanwhile is a conflict, as one found
+// registered at preparation is.
+func registerPending(report *RegistrationReport, registry ProviderRegistry, pending []pendingRegistration) error {
+	if len(pending) == 0 {
+		return nil
+	}
+	batch := make([]lsigprovider.LSigProvider, len(pending))
+	for i, p := range pending {
+		batch[i] = p.provider
+	}
+	registered, err := registry.RegisterBatchIfAbsent(batch)
+	if err != nil {
+		return fmt.Errorf("failed to register keystore templates: %w", err)
+	}
+	for i, p := range pending {
+		var outcome templatepolicy.RegistrationOutcome
+		if registered[i] {
+			outcome.ActivatedKeyTypes = []string{p.keyType}
+		} else {
+			outcome.ConflictingKeyTypes = []string{p.keyType}
+		}
+		appendOutcome(report, p.source, outcome)
+	}
+	return nil
+}
+
+// processTemplateRecord decides one template record's outcome. A template
+// to activate, when register is set, is returned as its provider for the
+// caller to register with the rest, its outcome left to that registration.
+func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, registry ProviderRegistry, register bool) (templatepolicy.RegistrationOutcome, lsigprovider.LSigProvider) {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType)
 	if _, err := os.Stat(path); err != nil {
@@ -483,51 +547,51 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 			if rec.State == keytypestate.StateEnabled {
 				outcome.OrphanedKeyTypes = append(outcome.OrphanedKeyTypes, rec.KeyType)
 			}
-			return outcome
+			return outcome, nil
 		}
 		outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
 	if rec.State == keytypestate.StateDisabled {
 		outcome.DisabledKeyTypes = append(outcome.DisabledKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
 
 	data, err := templatestore.LoadTemplateFromPath(path, kr)
 	if err != nil {
 		outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
 	prepared, err := registrar.Prepare(rec.KeyType, data)
 	if err != nil {
 		outcome.InvalidKeyTypes = append(outcome.InvalidKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
 
 	incomingFingerprint := prepared.Fingerprint
 	registryFingerprint := ""
-	existing := lsigprovider.Get(rec.KeyType)
+	existing := registry.Get(rec.KeyType)
 	if existing != nil {
 		var ok bool
 		registryFingerprint, ok = lsigprovider.CompatibilityFingerprintOf(existing)
 		if !ok {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
-			return outcome
+			return outcome, nil
 		}
 	}
 	switch keytypestate.CompareForReload(rec, incomingFingerprint, registryFingerprint) {
 	case keytypestate.OutcomeExternalEdit:
 		outcome.ExternalEditKeyTypes = append(outcome.ExternalEditKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	case keytypestate.OutcomeOrphanedRecord:
 		outcome.OrphanedKeyTypes = append(outcome.OrphanedKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	case keytypestate.OutcomeConflict:
 		outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	case keytypestate.OutcomeIdempotent:
 		outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
 
 	if existing != nil {
@@ -536,19 +600,17 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 		} else {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 		}
-		return outcome
+		return outcome, nil
 	}
 	if !register {
 		outcome.ActivatedKeyTypes = append(outcome.ActivatedKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
-
-	if prepared.Register == nil || !prepared.Register() {
+	if prepared.Provider == nil {
 		outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
-		return outcome
+		return outcome, nil
 	}
-	outcome.ActivatedKeyTypes = append(outcome.ActivatedKeyTypes, rec.KeyType)
-	return outcome
+	return outcome, prepared.Provider
 }
 
 func validateCompiledProviderRecords(records []keytypestate.Record) templatepolicy.RegistrationOutcome {

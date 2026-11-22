@@ -36,7 +36,7 @@ teal: |
 		t.Fatal(err)
 	}
 	lsigprovider.Unregister(keyType)
-	if !prepared.Register() {
+	if !lsigprovider.RegisterIfAbsent(prepared.Provider) {
 		t.Fatalf("%s did not register", keyType)
 	}
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
@@ -100,7 +100,7 @@ teal: |
 		t.Fatal(err)
 	}
 	lsigprovider.Unregister(undeclared)
-	if !prepared.Register() {
+	if !lsigprovider.RegisterIfAbsent(prepared.Provider) {
 		t.Fatalf("%s did not register", undeclared)
 	}
 	t.Cleanup(func() { lsigprovider.Unregister(undeclared) })
