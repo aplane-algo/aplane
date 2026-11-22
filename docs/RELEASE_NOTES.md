@@ -7,6 +7,21 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## One sequence after a store-root commit
+
+- **Policy apply, the ASA set changes, restore and rollback follow a commit
+  the same way** (`productruntime.Runtime.FollowCommit`): after one whose
+  outcome is uncertain the signer enters recovery and then reloads; after
+  one that landed it reloads, and enters recovery if the reload fails.
+  Answers and states are unchanged.
+- **`genstore.Mint` reports what it left the store root selecting** (not
+  committed, committed, or uncertain). The four callers' own read-backs of
+  the root are gone: the root commit already reports a replacement it
+  cannot settle as uncertain.
+- A restore whose commit is uncertain enters recovery after its keyring
+  callback returns, still before the store mutation lock is released, as the
+  other callers do.
+
 ## An unlock runs in one hold of the store mutation lock, and a lock always wins
 
 - **A lock that lands during an unlock request stands.** The request answers

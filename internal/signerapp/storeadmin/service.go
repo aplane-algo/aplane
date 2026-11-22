@@ -170,10 +170,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 		rotation, rotateErr = storepass.Rotate(s.Deps.KeyPaths(), req.CurrentPassphrase, req.NewPassphrase, storepass.RotateOptions{
 			Logf: s.Deps.Logf,
 			ValidateCandidate: func(staged storepaths.GenPaths, successor *crypto.Keyring) error {
-				return storevalidate.Candidate(storevalidate.Options{
-					Paths: s.Deps.KeyPaths(), Candidate: staged, Keyring: successor,
-					ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-				})
+				return storevalidate.StandardCandidate(s.Deps.KeyPaths(), ir.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), successor)(staged)
 			},
 			AfterRootCommit: func() error {
 				if passphraseCmdCfg == nil {

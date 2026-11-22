@@ -66,11 +66,12 @@ The transitions transcribe the post-commit reload and the recovery paths:
 - `ReloadSucceed` rebuilds the key cache from the root's generation and lifts
   recovery. `ReloadFail` leaves the cache on the generation it last scanned
   and, with `RecoveryBeforeRelease`, enters recovery in the same step the
-  lock is released (`commitAndReload` sets `Uncertain` and calls
-  `SetRecovery` itself, inside `ApplyPolicy`'s `WithStoreMutation`, as
-  `mutateASASet` does for the ASA set; restore does the same, and so does
-  the recovery reconcile, whose locked work `reconcileLocked` enters recovery
-  itself; it once did so only after `ReconcileStore` had released the lock).
+  lock is released. After a commit that is
+  `productruntime.Runtime.FollowCommit`, which policy apply, the ASA set,
+  restore and rollback call once their `WithKeyring` callback has returned,
+  inside their `WithStoreMutation`; the recovery reconcile's locked work,
+  `reconcileLocked`, enters recovery itself (it once did so only after
+  `ReconcileStore` had released the lock).
   A reload with no commit that finds a content defect in the selected
   generation (a failed validation, or two key files that resolve to one
   address) enters recovery itself, in `productruntime.Runtime.Reload`,
@@ -144,9 +145,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches
-  neither the old record nor the candidate (`genstore.RootCommitUncertain`). The caller
-  cannot tell whether the root moved, so it takes the path of a commit that
-  did, and its reload or recovery follows. Policy apply and the ASA set
+  neither the old record nor the candidate (`genstore.RootCommitUncertain`).
+  `genstore.Mint` classifies these as `Uncertain` itself (`MintOutcomeOf`),
+  and a caller treats any mint failure but `NotCommitted` as one it cannot
+  vouch for; `FollowCommit` takes the path of a commit that landed,
+  entering recovery first: the caller cannot tell whether the root moved. Policy apply and the ASA set
   change are refused unless the runtime is unlocked
   (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
   only restore and rollback commit from recovery. A refused mutation never

@@ -12,7 +12,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -103,18 +102,13 @@ func (s Service) RollbackRestore(
 			// The successor does not record the source again: its ParentID
 			// names current, whose manifest's rollback capability names it.
 			_, mintErr := genstore.Mint(paths, genstore.MintRequest{
-				GenerationID: generationID,
-				Parent:       current.GenerationID(),
-				Operation:    genstore.OperationCredentialRestoreRollback,
-				OperationID:  req.OperationID,
-				CreatedAt:    time.Now(),
-				Integrity:    masterKey,
-				ValidateCandidate: func(staged storepaths.GenPaths) error {
-					return storevalidate.Candidate(storevalidate.Options{
-						Paths: paths, Candidate: staged, Keyring: masterKey,
-						ExpectedRole: ir.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-					})
-				},
+				GenerationID:      generationID,
+				Parent:            current.GenerationID(),
+				Operation:         genstore.OperationCredentialRestoreRollback,
+				OperationID:       req.OperationID,
+				CreatedAt:         time.Now(),
+				Integrity:         masterKey,
+				ValidateCandidate: storevalidate.StandardCandidate(paths, ir.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), masterKey),
 				Apply: func(staged storepaths.GenPaths) error {
 					return populateRollbackGeneration(source, ir.NodeRole(), staged, masterKey)
 				},
@@ -127,23 +121,16 @@ func (s Service) RollbackRestore(
 			return nil
 		})
 		if err != nil {
-			if rollbackMayHaveCommitted(ir, paths, generationID, err) {
+			if genstore.MintOutcomeOf(err) != genstore.NotCommitted {
 				mutated = true
 				result.GenerationID = generationID
 				result.CommitUncertain = true
-			}
-			if mutated {
-				ir.SetRecovery()
-				// The root may name the new generation: reload so the keystore
-				// follows it, as restore and policy apply do. Signing stays
-				// blocked either way.
-				_, _ = ir.Reload()
+				_, _ = ir.FollowCommit(genstore.Uncertain)
 			}
 			return err
 		}
-		report, err := ir.Reload()
+		report, err := ir.FollowCommit(genstore.Committed)
 		if err != nil {
-			ir.SetRecovery()
 			return fmt.Errorf("restore rollback committed as generation %s but reload failed: %w", generationID, err)
 		}
 		if report != nil {
@@ -173,25 +160,4 @@ func (s Service) RollbackRestore(
 		result.GenerationID,
 	)
 	return result
-}
-
-// rollbackMayHaveCommitted reports whether a rollback that failed after it
-// chose generationID may have left the root selecting that generation: the
-// root reads back as it, or the commit's outcome could not be confirmed
-// (genstore.RootCommitUncertain), which includes a root that cannot be read
-// back at all.
-func rollbackMayHaveCommitted(ir *productruntime.Runtime, paths storepaths.Paths, generationID string, err error) bool {
-	if generationID == "" {
-		return false
-	}
-	if genstore.RootCommitUncertain(err) {
-		return true
-	}
-	landed := false
-	_ = ir.WithKeyring(func(masterKey *crypto.Keyring) error {
-		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(paths, masterKey)
-		landed = visibleErr == nil && visible.GenerationID() == generationID
-		return nil
-	})
-	return landed
 }

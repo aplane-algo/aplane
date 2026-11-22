@@ -6,6 +6,7 @@ package genstore
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -278,14 +279,75 @@ func Mint(paths storepaths.Paths, req MintRequest) (storepaths.GenPaths, error) 
 		}
 	}
 	if commitErr != nil {
-		return storepaths.GenPaths{}, commitErr
+		outcome := NotCommitted
+		if RootCommitUncertain(commitErr) {
+			outcome = Uncertain
+		}
+		return storepaths.GenPaths{}, &mintError{outcome: outcome, err: commitErr}
 	}
 	if req.AfterRootCommit != nil {
 		if err := req.AfterRootCommit(); err != nil {
-			return storepaths.GenPaths{}, err
+			return storepaths.GenPaths{}, &mintError{outcome: Committed, err: err}
 		}
 	}
 	return paths.GenerationPaths(req.GenerationID), nil
+}
+
+// MintOutcome is what a mint left the store root selecting.
+type MintOutcome int
+
+const (
+	// NotCommitted: the root still selects the parent. Every failure before
+	// the root replacement is one, and so is a replacement that failed with
+	// the old root proven in place (the root commit returns a plain error
+	// only then).
+	NotCommitted MintOutcome = iota
+	// Committed: the root selects the new generation. With an error, a step
+	// after the root replacement failed.
+	Committed
+	// Uncertain: the root may select either. The replacement's durability
+	// could not be confirmed, or its outcome could not be classified
+	// (RootCommitUncertain).
+	Uncertain
+)
+
+func (o MintOutcome) String() string {
+	switch o {
+	case NotCommitted:
+		return "not committed"
+	case Committed:
+		return "committed"
+	case Uncertain:
+		return "uncertain"
+	}
+	return "unknown"
+}
+
+// mintError is a Mint failure that came at or after the root replacement,
+// with what it left the root selecting.
+type mintError struct {
+	outcome MintOutcome
+	err     error
+}
+
+func (e *mintError) Error() string { return e.err.Error() }
+func (e *mintError) Unwrap() error { return e.err }
+
+// MintOutcomeOf reports what the Mint call that returned err left the store
+// root selecting: Committed for a nil error, and for an error what Mint
+// classified, NotCommitted when it failed before the root replacement. A
+// caller whose mint failed treats anything but NotCommitted as a commit it
+// cannot vouch for: the root may have moved, or did and something after it
+// failed.
+func MintOutcomeOf(err error) MintOutcome {
+	if err == nil {
+		return Committed
+	}
+	var failed *mintError
+	if errors.As(err, &failed) {
+		return failed.outcome
+	}
+	return NotCommitted
 }
 
 // replacesRoot reports whether the mint replaces the store root's keyring,

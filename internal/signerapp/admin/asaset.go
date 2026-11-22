@@ -238,8 +238,7 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 			id, mintErr := s.mintASASet(active, next, kr)
 			*generationID = id
 			if mintErr != nil {
-				visible, visibleErr := genstore.ResolveStoreRootWithKeyring(s.Deps.KeyPaths(), kr)
-				if genstore.RootCommitUncertain(mintErr) || (visibleErr == nil && visible.GenerationID() == id) {
+				if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 					*uncertain = true
 					return asaError{"asa_commit_uncertain", fmt.Sprintf("the ASA set may have committed as generation %s; signing is blocked pending reconciliation: %v", id, mintErr)}
 				}
@@ -249,16 +248,14 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 			return nil
 		})
 		if *uncertain {
-			ir.SetRecovery()
-			_, _ = ir.Reload()
+			_, _ = ir.FollowCommit(genstore.Uncertain)
 			return err
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := ir.Reload(); err != nil {
+		if _, err := ir.FollowCommit(genstore.Committed); err != nil {
 			*uncertain = true
-			ir.SetRecovery()
 			return asaError{"asa_reload_failed", "the ASA set committed as generation " + *generationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
 		}
 		return nil
@@ -285,12 +282,7 @@ func (s Service) mintASASet(active storepaths.GenPaths, set *asaset.Set, kr *cry
 		Apply: func(staged storepaths.GenPaths) error {
 			return asasetstore.Write(staged, set, kr, now)
 		},
-		ValidateCandidate: func(staged storepaths.GenPaths) error {
-			return storevalidate.Candidate(storevalidate.Options{
-				Paths: s.Deps.KeyPaths(), Candidate: staged, Keyring: kr,
-				ExpectedRole: s.Runtime.NodeRole(), DataDir: s.Deps.DataDir(), Config: s.Deps.Config(),
-			})
-		},
+		ValidateCandidate: storevalidate.StandardCandidate(s.Deps.KeyPaths(), s.Runtime.NodeRole(), s.Deps.DataDir(), s.Deps.Config(), kr),
 	})
 	return generationID, err
 }

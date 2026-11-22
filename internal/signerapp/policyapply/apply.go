@@ -437,17 +437,10 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		Apply: func(staged storepaths.GenPaths) error {
 			return writeChange(staged, env.Role, req, env.Keyring, now)
 		},
-		ValidateCandidate: func(staged storepaths.GenPaths) error {
-			return storevalidate.Candidate(storevalidate.Options{
-				Paths: env.KeyPaths, Candidate: staged, Keyring: env.Keyring,
-				ExpectedRole: env.Role, DataDir: env.DataDir, Config: env.Config,
-			})
-		},
+		ValidateCandidate: storevalidate.StandardCandidate(env.KeyPaths, env.Role, env.DataDir, env.Config, env.Keyring),
 	})
 	if mintErr != nil {
-		visible, visibleErr := genstore.ResolveStoreRootWithKeyring(env.KeyPaths, env.Keyring)
-		if genstore.RootCommitUncertain(mintErr) ||
-			(visibleErr == nil && visible.GenerationID() == generationID) {
+		if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 			evidence.GenerationID, evidence.Uncertain = generationID, true
 			return evidence, Error{"policy_commit_uncertain", fmt.Sprintf(
 				"policy may have committed as generation %s; signing is blocked pending reconciliation: %v",

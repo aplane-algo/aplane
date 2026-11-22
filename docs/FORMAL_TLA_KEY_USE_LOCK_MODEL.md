@@ -133,8 +133,10 @@ waits for it; KU2 and KU3 cover that case.
   `SetRecovery` does nothing on a locked signer, as `EnterRecovery`'s guard
   requires: a store mutation that a lock overtook calls it after the lock,
   and the signer stays locked. Every `SetRecovery` caller and the reconcile
-  that promotes hold the store mutation lock (`commitAndReload`,
-  `mutateASASet`, restore, rollback, `reconcileLocked`, and
+  that promotes hold the store mutation lock
+  (`productruntime.Runtime.FollowCommit`, for policy apply, the ASA set,
+  restore and rollback; the restore's checkpoint failures;
+  `reconcileLocked`; and
   `productruntime.Runtime.Reload`, which enters recovery when a reload
   without the passphrase finds a content defect in the selected generation,
   a failed validation or an address collision, under the lock its callers

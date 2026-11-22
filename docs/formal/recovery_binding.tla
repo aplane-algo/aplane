@@ -34,7 +34,9 @@ the sealed rollback target while the root selects the new generation
 Code anchors:
   - CommitRoot/BeginReload/ReloadBind/ReloadSucceed/ReloadFail transcribe
     internal/signerapp/admin/policy.go ApplyPolicy and commitAndReload,
-    internal/signerapp/backupadmin/direct_restore.go, and the reload order
+    internal/signerapp/backupadmin/direct_restore.go, with
+    internal/signerapp/productruntime/runtime.go FollowCommit after each
+    commit, and the reload order
     in internal/signerapp/templates/reload.go (BindStoreRootSelection first)
     with internal/keystore/file.go Scan and BindStoreRootSelection over
     internal/genstore/store_root.go AuthenticateStoreRootSelection and
