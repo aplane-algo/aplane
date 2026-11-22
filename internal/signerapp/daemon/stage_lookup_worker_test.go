@@ -299,7 +299,7 @@ func TestLockDuringTheProbePublishesNothing(t *testing.T) {
 	idx.txns = []map[string]any{indexerSpendFrom(t, secret, account, 8)}
 	node.set(stage9.String(), 900)
 	idx.before = func(*http.Request) error {
-		ir.SetRecovery()
+		ir.EnterRecovery(nil)
 		return nil
 	}
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableIdleInterval {

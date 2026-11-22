@@ -234,9 +234,102 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 	return svc
 }
 
-// WireReloadFunc configures the reload function, the watcher reload mutation
-// lock and the hook for a reload's entry into recovery on a product runtime.
+// Build builds the generation the store root selects with kr, for a
+// reload's publish (productruntime.BuildFunc), and changes no live state. It
+// reads the store root once. The order is the one a failure needs: the
+// selection first, so a failure after a root commit still says what the
+// root selects; then the policy and the ASA set, so the recovery a later
+// failure enters shows them; then the tokens, the templates, the key scan and
+// the role check on its key types.
+func Build(ir *productruntime.Runtime, opts ProductBuildOptions, kr *crypto.Keyring) (*productruntime.Loaded, error) {
+	loaded := &productruntime.Loaded{}
+	selected, err := genstore.AuthenticateStoreRootSelection(opts.KeyPaths, kr)
+	if err != nil {
+		return loaded, fmt.Errorf("failed to resolve active key store layout: authenticate store root selection: %w", err)
+	}
+	loaded.Selection = &selected
+	if err := genstore.ValidateStoreRootSelection(selected); err != nil {
+		return loaded, fmt.Errorf("authenticate active product generation: %w", err)
+	}
+	if verifiedRole, err := noderole.LoadAndVerifyGenerationWithKeyring(opts.KeyPaths, selected, kr); err != nil {
+		return loaded, fmt.Errorf("node role verification failed for product store: %w", err)
+	} else if verifiedRole.Role != ir.NodeRole() {
+		return loaded, fmt.Errorf("node role verification failed: runtime role %q does not match verified role %q", ir.NodeRole(), verifiedRole.Role)
+	}
+	nodePolicy, err := policyruntime.Load(ir.NodeRole(), opts.Config, selected, kr)
+	if err != nil {
+		return loaded, fmt.Errorf("policy verification failed for product store: %w", err)
+	}
+	// A present ASA set must authenticate: a damaged one is an integrity
+	// failure, never the built-ins only.
+	set, err := asasetstore.Load(selected, kr)
+	if err != nil {
+		return loaded, fmt.Errorf("asa set verification failed for product store: %w", err)
+	}
+	loaded.Policy, loaded.ASASet = nodePolicy, set
+	loaded.Alerts = storedAdmissionAlerts(ir.NodeRole(), opts.Config, set, nodePolicy)
+	loaded.PolicyVerified = true
+
+	// A damaged token file is damage in the selected generation, a
+	// generation validation failure, which a restore can replace. One on a
+	// signer node is a role conflict.
+	tokens, err := sourcetokens.LoadIndex(selected, ir.NodeRole(), kr)
+	if err != nil {
+		if errors.Is(err, sourcetokens.ErrDamaged) && !errors.Is(err, keyclass.ErrNodeRoleConflict) {
+			return loaded, fmt.Errorf("%w: source token verification failed for product store: %w",
+				signertemplates.ErrGenerationValidation, err)
+		}
+		return loaded, fmt.Errorf("source token verification failed for product store: %w", err)
+	}
+	loaded.Tokens = tokens
+
+	manager := signertemplates.NewManager(opts.KeyPaths, ir.ProviderRegistry())
+	manager.ActivePaths = selected
+	prepared, err := manager.PrepareKeystoreTemplates(kr)
+	if err != nil {
+		return loaded, fmt.Errorf("failed to register keystore templates: %w", err)
+	}
+	loaded.Templates = prepared
+
+	contents, err := keystore.ScanGeneration(selected, kr)
+	loaded.Contents = contents
+	if err != nil {
+		return loaded, fmt.Errorf("failed to rescan keys directory: %w", err)
+	}
+	// The selected generation is the committed state, and a malformed or
+	// undecryptable entry in it means the generation fails validation:
+	// recovery, not a warning-tolerant reload (docs/ARCH_STORE.md, "Runtime
+	// reload behavior").
+	if defects := prepared.Report().ContentDefectKeyTypes(); len(contents.Warnings) > 0 || len(defects) > 0 {
+		detail := ""
+		if len(contents.Warnings) > 0 {
+			detail = contents.Warnings[0].Message()
+		} else {
+			detail = "key type " + defects[0]
+		}
+		return loaded, fmt.Errorf("%w: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
+			signertemplates.ErrGenerationValidation, len(contents.Warnings), len(defects), detail)
+	}
+	if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), contents.KeyTypes()); err != nil {
+		return loaded, fmt.Errorf("key snapshot rejected: %w", err)
+	}
+	return loaded, nil
+}
+
+// WireReloadFunc configures the reload's build and the reload function, the
+// watcher reload mutation lock and the hook for a reload's entry into
+// recovery on a product runtime.
 func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks) {
+	effects := productruntime.ReloadEffects{
+		Audit:             hooks.ReloadAuditLog,
+		NotifyKeysChanged: hooks.NotifyKeysChanged,
+		Info:              hooks.Info,
+		Warn:              hooks.Warn,
+		NodeFailClosed:    hooks.NodeFailClosed,
+	}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		return Build(ir, opts, kr)
+	}, effects)
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
 		return svc.Reload(passphrase)

@@ -35,7 +35,7 @@ func TestQueuedKeyWriteRefusesAfterRecovery(t *testing.T) {
 		done <- outcome{result, err}
 	}()
 	time.Sleep(50 * time.Millisecond) // let the request queue on the lock
-	ir.SetRecovery()                  // the commit's reload failed
+	ir.EnterRecovery(nil)             // the commit's reload failed
 	mu.Unlock()
 
 	got := <-done

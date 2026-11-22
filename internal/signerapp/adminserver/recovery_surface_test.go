@@ -65,7 +65,7 @@ func TestWhichAdminRequestsASessionInRecoveryIsAnswered(t *testing.T) {
 	for msgType, handle := range dispatchTable {
 		ir := productruntime.New(productruntime.Config{})
 		ir.SetUnlocked()
-		ir.SetRecovery()
+		ir.EnterRecovery(nil)
 		svc := &stubServices{runtime: ir}
 		conn := &queueConn{}
 		session := NewSession(conn, SessionDeps{

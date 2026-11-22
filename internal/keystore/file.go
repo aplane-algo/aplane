@@ -108,10 +108,17 @@ func (f *FileKeyStore) ScanSelection(kr *crypto.Keyring) (Contents, error) {
 	if err != nil {
 		return Contents{}, fmt.Errorf("failed to resolve active key store layout: authenticate store root selection: %w", err)
 	}
-	contents := Contents{Selection: &selected}
 	if err := genstore.ValidateStoreRootSelection(selected); err != nil {
-		return contents, fmt.Errorf("failed to resolve active key store layout: %w", err)
+		return Contents{Selection: &selected}, fmt.Errorf("failed to resolve active key store layout: %w", err)
 	}
+	return ScanGeneration(selected, kr)
+}
+
+// ScanGeneration scans selected, a generation the caller authenticated and
+// validated, with kr, and installs nothing. It returns the selection on a
+// failure too.
+func ScanGeneration(selected storepaths.GenPaths, kr *crypto.Keyring) (Contents, error) {
+	contents := Contents{Selection: &selected}
 	report, err := keys.ScanKeysDirectory(selected, kr, nil)
 	if err != nil {
 		return contents, fmt.Errorf("failed to scan keys directory: %w", err)

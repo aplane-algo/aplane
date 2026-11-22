@@ -40,3 +40,39 @@ func TestNoProductionCodePublishesUnlockedWithoutTheFence(t *testing.T) {
 		}
 	})
 }
+
+// TestNoProductionCodeEntersRecoveryWithoutTheView keeps the state-only
+// recovery entry out of production code: every entry into recovery publishes
+// the recovery view, which holds no keys and no source token index
+// (productruntime.Runtime.EnterRecovery and the reload's failure rule). Tests
+// use productruntime.Runtime.SetRecovery to land a recovery inside an
+// unlock's held load, which production cannot.
+//
+// The calls allowed are the lock runtime's SetRecovery from the recovery
+// view's entries (a reload's, and one for a store in doubt, which enters
+// before it builds and installs the view after) and from the test-only
+// SetRecovery.
+func TestNoProductionCodeEntersRecoveryWithoutTheView(t *testing.T) {
+	allowed := map[string]map[string]bool{
+		"internal/signerapp/productruntime/view.go":    {"enterRecoveryViewLocked": true, "reloadViewLocked": true},
+		"internal/signerapp/productruntime/runtime.go": {"SetRecovery": true},
+	}
+	forEachProductionFile(t, func(rel string, parsed *ast.File) {
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || allowed[rel][fn.Name.Name] {
+				continue
+			}
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "SetRecovery" {
+					t.Errorf("%s: %s calls SetRecovery; an entry into recovery publishes the recovery view", rel, fn.Name.Name)
+				}
+				return true
+			})
+		}
+	})
+}

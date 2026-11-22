@@ -174,7 +174,7 @@ func TestSourceTokensAreRefusedOnASignerNode(t *testing.T) {
 func TestSourceTokenChangesRefuseWhileLocked(t *testing.T) {
 	for name, leave := range map[string]func(svc Service){
 		"locked":   func(svc Service) { svc.Runtime.Lock() },
-		"recovery": func(svc Service) { svc.Runtime.SetRecovery() },
+		"recovery": func(svc Service) { svc.Runtime.EnterRecovery(nil) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, keyID := cosignerWithKey(t)

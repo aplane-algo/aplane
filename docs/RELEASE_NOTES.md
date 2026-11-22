@@ -7,6 +7,36 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## After a store-root commit and in a reconcile, a reload builds first and publishes last
+
+- **The reload that follows a policy apply, an ASA set change, a restore or
+  a rollback, and a reconcile's, builds the whole view before it installs
+  any of it** (`startup.Build`, `productruntime.Runtime.reloadView`). A
+  build that fails changes nothing live: no provider is registered, no
+  policy or token index is published, and the binding does not move.
+- **One failure rule, decided by facts.** A role conflict fails the node
+  closed; a store in doubt, a root that moved off the bound generation or
+  does not authenticate, and a content defect enter recovery; anything else
+  keeps the view in service. After a commit every failure enters recovery,
+  as before.
+- **Recovery publishes no keys and no source tokens**, however it was
+  entered. Its view keeps the keyring, is bound to the generation the store
+  root selects, shows the policy the build verified or none, and stops the
+  key session: a request already signing whose next key load comes after the
+  entry answers `locked`. In recovery the key count is 0 and every per-key
+  policy document shows as not held. A restore or a rollback begun in
+  recovery publishes its keys at the reconcile that follows, not before.
+  Recovery once kept the key maps and the token index it was entered with,
+  and a policy from before a commit stayed visible when the reload failed
+  before verifying the new one.
+- **An uncertain commit still enters recovery before its build**, so no
+  request signs against the generation being replaced while the build runs.
+- **A reload that a lock overtook sends no keys-changed notification** and
+  does not wake the stage table worker.
+- **Every entry into recovery outside an unlock logs its cause and pushes a
+  recovery `status` to the admin session**, as a reload's entry for a content
+  defect already did.
+
 ## A reload registers its templates as one batch
 
 - **Every template is prepared and checked before any is registered**, and

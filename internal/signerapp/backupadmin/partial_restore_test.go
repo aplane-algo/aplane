@@ -464,7 +464,7 @@ func TestRecoveryRestoreNamesASkippedRepair(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(before.KeysDir(), damaged+".key"), []byte("damaged"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 
 	fresh, freshJSON := keystest.Ed25519KeyJSON(t)
 	result := service.RestoreBackup(adminproto.RestoreBackupRequest{

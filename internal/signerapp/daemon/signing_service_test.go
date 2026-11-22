@@ -134,7 +134,7 @@ func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
 		roundTrip func(ir *productruntime.Runtime)
 	}{
 		{"recovery and reconcile", func(ir *productruntime.Runtime) {
-			ir.SetRecovery()
+			ir.EnterRecovery(nil)
 			if !ir.PromoteRecoveryToUnlocked() {
 				t.Fatal("reconcile did not promote the signer")
 			}
@@ -180,7 +180,7 @@ func TestSigningServiceBegunInRecoveryIsRefused(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetVerifiedPolicyState(&policyruntime.NodePolicy{Role: ir.NodeRole(), Default: policy.DefaultConfig()}, nil, nil)
 	ir.SetUnlocked()
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 
 	svc := signer.newSigningServiceWithAudit(ir, nil)
 	if !ir.PromoteRecoveryToUnlocked() {

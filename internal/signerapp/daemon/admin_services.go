@@ -345,66 +345,33 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	return result
 }
 
-// errReconcileStateChanged reports a reconcile that reloaded cleanly but
-// found the runtime no longer in recovery when it went to promote it: a lock
-// or another session's unlock came first, and that state stands.
-var errReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
-
 // reconcileReloadAndPromote keeps strict validation, key publication, and the
 // recovery-to-unlocked transition under one store mutation lock. This
 // prevents a concurrent admin mutation from landing between validation and
 // the runtime snapshot that authorizes signing.
 //
-// With enterRecoveryOnFailure (the explicit reconcile, which may start
-// unlocked), a reconcile that fails enters recovery before the lock is
-// released, the order recovery_binding.tla's ReloadFail with
-// RecoveryBeforeRelease transcribes (RB2). The recovery-exit rescan passes
-// false: it starts in recovery, so a failure leaves it there, and a lock
-// that came in meanwhile stands (SetRecovery leaves a locked signer locked
-// too, so this is belt and braces). A reload that finds a content defect
-// enters recovery itself either way (productruntime.Runtime.Reload). A
-// promotion refused after a clean reload (errReconcileStateChanged) enters
-// no recovery either way.
-func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (*signertemplates.ReloadReport, error) {
+// With explicit (the explicit reconcile, which may start unlocked), a
+// reconcile that fails enters recovery before the lock is released, the order
+// recovery_binding.tla's ReloadFail with RecoveryBeforeRelease transcribes
+// (RB2). The recovery-exit rescan passes false: it starts in recovery, so a
+// failure leaves it there. A promotion refused after a clean publish
+// (productruntime.ErrReconcileStateChanged) enters no recovery either way
+// (productruntime.Runtime.Reconcile).
+func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, explicit bool) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport
 	err := s.withStoreMutation(func() (err error) {
-		report, err = s.reconcileLocked(ir, enterRecoveryOnFailure)
+		// The handler's state check ran before the request queued on the
+		// lock; a lock since then leaves the keyring open until its cleanup
+		// has run, and a reconcile there must not run.
+		if err := ir.RequireUnlockedOrRecovery(); err != nil {
+			return err
+		}
+		report, err = ir.Reconcile(func(kr *crypto.Keyring) error {
+			return s.reconcileGenerationsLocked(ir, kr)
+		}, explicit)
 		return err
 	})
 	return report, err
-}
-
-// reconcileLocked is reconcileReloadAndPromote's work, run under the store
-// mutation lock; it enters recovery on failure itself, so that happens
-// before the lock is released.
-//
-// It refuses a signer neither unlocked nor in recovery first, before it
-// reloads or enters recovery, as restore and rollback do. The handler's
-// state check ran before the request queued on the lock, and a lock since
-// then leaves the keyring open until its cleanup has run: a reload there
-// that failed would call SetRecovery on a locked signer, which does nothing.
-func (s signerAdminServices) reconcileLocked(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (report *signertemplates.ReloadReport, err error) {
-	if err := ir.RequireUnlockedOrRecovery(); err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil && enterRecoveryOnFailure && !errors.Is(err, errReconcileStateChanged) {
-			ir.SetRecovery()
-		}
-	}()
-	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-		return s.reconcileGenerationsLocked(ir, kr)
-	}); err != nil {
-		return nil, err
-	}
-	report, err = ir.Reload()
-	if err != nil {
-		return nil, fmt.Errorf("current generation failed credential reload: %w", err)
-	}
-	if ir.IsRecovery() && !ir.PromoteRecoveryToUnlocked() {
-		return report, errReconcileStateChanged
-	}
-	return report, nil
 }
 
 // rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current

@@ -1451,7 +1451,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.sshRuntimeMu` | SSH runtime swaps |
 | `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
-| `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
+| `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, `buildFn` and `reloadEffects`, unlock-sensitive ops; held for reading by a reload on the keyring in service from its build to the end of its install |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
 | `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |
@@ -1478,6 +1478,8 @@ storeMutationLock -> passphraseLock -> keysLock (and the key session,
                                        sourceTokens)
 storeMutationLock -> stateMu           (an unlock attempt's reading, checks
                                         and fence)
+passphraseLock    -> stateMu           (an entry into recovery during a
+                                        reload on the keyring in service)
 keyUseMu          -> stateMu (read)
 stateMu (read)    -> rotatingStatusMu, sourceTokens
 ```
@@ -1501,6 +1503,14 @@ The rules that order depends on:
    run after it is released.
 5. The watcher starts after the unlock releases `storeMutationLock`: its
    reload of changes seen while locked takes that lock.
+6. A reload on the keyring in service (`productruntime.Runtime.reloadView`,
+   after a store-root commit and in a reconcile) holds `passphraseLock` for
+   reading from taking the keyring to the end of its install, so a lock's
+   cleanup, which takes it for writing, lands wholly before or after, and
+   never returns with a built token index still in memory. It builds,
+   publishes or installs recovery's view, and enters recovery under that
+   hold; the zeroing of a replaced keyring, a promotion, the end of key uses
+   and approvals, audit, logs and notifications follow its release.
 
 Goroutines:
 

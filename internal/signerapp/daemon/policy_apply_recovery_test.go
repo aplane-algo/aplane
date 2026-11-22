@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 )
 
 // An uncertain policy commit must block signing before the runtime reloads:
@@ -26,7 +27,8 @@ func TestUncertainPolicyCommitBlocksExecutionBeforeReload(t *testing.T) {
 	app := server.adminServices().adminApp()
 	view := app.GetPolicy()
 	var reloaded, executionAllowed bool
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	opts := testProductBuildOptions(server)
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
 		reloaded = true
 		// This is the production execution gate a concurrent signing request uses.
 		release, err := server.newSigningServiceWithAudit(ir, nil).BeforeExecute()
@@ -34,8 +36,8 @@ func TestUncertainPolicyCommitBlocksExecutionBeforeReload(t *testing.T) {
 		if release != nil {
 			release()
 		}
-		return &signertemplates.ReloadReport{}, nil
-	})
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
 	identityDir := server.keyPaths.ProductDir()
 	fsutil.TestHook = func(op fsutil.HookOp, path string) error {
 		if op == fsutil.OpDirSync && path == identityDir {

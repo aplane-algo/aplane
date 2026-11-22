@@ -23,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
@@ -49,9 +48,7 @@ func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productrunti
 		KeyStore: keyStore, KeyPaths: paths,
 		NodeRole: noderole.RoleCosigner,
 	})
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return &signertemplates.ReloadReport{}, nil
-	})
+	wireBuild(ir, paths, nil)
 	ir.SetUnlocked()
 	return ir
 }

@@ -887,7 +887,7 @@ func TestRestoreEndedByALockStaysHeld(t *testing.T) {
 			// Read during recovery the generation is the current one, so only
 			// the signer's state says the restore cannot finish.
 			if strings.Contains(mode, "recovery") {
-				ir.SetRecovery()
+				ir.EnterRecovery(nil)
 			} else {
 				ir.Lock()
 			}
@@ -938,7 +938,7 @@ func TestRecoveryDuringARestoreKeepsTheAccountHeld(t *testing.T) {
 	server.rotatingReleases.Reset()
 	svc := &signersigning.Service{Planner: server.newPlannerWithAudit(nil), Rotating: server.rotatingDeps(ir)}
 
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	// The cancellation reaches the context a moment after the transition.
 	select {
 	case <-ctx.Done():
@@ -988,7 +988,7 @@ func TestRecoveryRoundTripHoldsTheMemoryForANewRestore(t *testing.T) {
 	if !server.rebuildReleaseMemory(context.Background(), ir, before) || releaseMemoryHeld(server, account) {
 		t.Fatal("the first restore did not open the wait")
 	}
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	if !ir.PromoteRecoveryToUnlocked() {
 		t.Fatal("recovery did not promote")
 	}

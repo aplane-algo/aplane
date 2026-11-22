@@ -89,7 +89,7 @@ func TestIdempotentRecoveryRestoreReloadsBeforePromotion(t *testing.T) {
 		t.Fatalf("initial restore = %+v", first)
 	}
 	before := reloads.Load()
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	result := service.RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-idempotent-recovery",
 		ArchivePath:      archivePath,
@@ -272,7 +272,7 @@ func TestRecoveryRestoreRejectsInvalidCurrentGenerationBeforeMint(t *testing.T) 
 	if err := os.RemoveAll(before.KeyTypeRecordsDir()); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 
 	result := directRestoreTestService(paths, ir).RestoreBackup(adminproto.RestoreBackupRequest{
 		OperationID:      "restore-over-invalid-current",

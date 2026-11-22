@@ -26,7 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -177,11 +177,29 @@ func testUnpublishedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, 
 		NodeRole:        noderole.RoleSigner,
 		UserAutoApprove: &autoApprove,
 	})
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		reloads.Add(1)
-		return &signertemplates.ReloadReport{}, nil
-	})
+	wireBuild(ir, paths, reloads)
 	return ir
+}
+
+// wireBuild gives ir the reload's own build over paths, counting each build
+// in builds when it is not nil.
+func wireBuild(ir *productruntime.Runtime, paths storepaths.Paths, builds *atomic.Int64) {
+	cfg := serverconfig.DefaultServerConfig()
+	opts := signerstartup.ProductBuildOptions{KeyPaths: paths, Config: &cfg}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		if builds != nil {
+			builds.Add(1)
+		}
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
+}
+
+// failBuild makes every reload's build of ir fail, having established
+// nothing.
+func failBuild(ir *productruntime.Runtime) {
+	ir.SetBuildFunc(func(*crypto.Keyring) (*productruntime.Loaded, error) {
+		return nil, errors.New("build failed")
+	}, productruntime.ReloadEffects{})
 }
 
 func initializeAtomicTestStore(t *testing.T, paths storepaths.Paths, passphrase []byte) string {

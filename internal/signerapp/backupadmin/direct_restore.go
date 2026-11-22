@@ -107,9 +107,9 @@ type restoreRun struct {
 }
 
 // mutate is the whole store mutation: load and commit under the keyring,
-// then bring the runtime up on what was committed. Every path that leaves
-// the runtime behind the store root sets recovery before it returns, which
-// is before the store lock is released.
+// then bring the runtime up on what was committed (FollowCommit). Every path
+// that leaves the runtime behind the store root enters recovery before it
+// returns, which is before the store lock is released.
 func (r *restoreRun) mutate() (restoreErr error) {
 	s, ir, result := r.s, r.s.Runtime, r.result
 	defer func() {
@@ -131,9 +131,11 @@ func (r *restoreRun) mutate() (restoreErr error) {
 		if !r.wasRecovery {
 			return nil // canonical-plaintext idempotent no-op
 		}
-		report, reloadErr := ir.Reload()
+		// Nothing was committed, but the reload is a commit's: in recovery it
+		// publishes recovery's view, and the reconcile that follows the
+		// restore publishes the keys.
+		report, reloadErr := ir.FollowCommit(genstore.Committed)
 		if reloadErr != nil {
-			ir.SetRecovery()
 			return restoreFailure(
 				protocol.ResultCodeRecoveryBlocked,
 				"idempotent restore left signing blocked because the current generation failed reload: %v",
@@ -146,7 +148,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 		return nil
 	}
 	if checkpointErr := testcheckpoint.Reach("restore.store_root_replaced"); checkpointErr != nil {
-		ir.SetRecovery()
+		_, _ = ir.FollowCommit(genstore.Uncertain)
 		return restoreFailure(
 			protocol.ResultCodeRestoreRollbackFailed,
 			"restore committed as generation %s but cleanup was interrupted; signing is blocked pending reconciliation: %v",
@@ -156,7 +158,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 
 	reloadErr := testcheckpoint.Reach("restore.reload_started")
 	if reloadErr != nil {
-		ir.SetRecovery()
+		_, _ = ir.FollowCommit(genstore.Uncertain)
 	} else {
 		report, err := ir.FollowCommit(genstore.Committed)
 		reloadErr = err

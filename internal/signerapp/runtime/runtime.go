@@ -186,12 +186,16 @@ func (r *Runtime) PromoteRecoveryToUnlocked() bool {
 // reconciles the store and enters recovery itself if the store needs it. A
 // store mutation a lock overtook calls this after the lock, and must not
 // turn the operator's lock into recovery.
-func (r *Runtime) SetRecovery() {
+//
+// It reports whether the signer is in recovery after the call.
+func (r *Runtime) SetRecovery() bool {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
 	if r.activeMaintenanceID == 0 && r.state != SignerStateLocked {
 		r.enterRecoveryLocked()
+		return true
 	}
+	return false
 }
 
 // enterRecoveryLocked moves the state to recovery and advances the session,

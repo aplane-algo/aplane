@@ -122,7 +122,7 @@ func TestAnUnlockThatHasLostToALockLoadsNothing(t *testing.T) {
 func TestALockDuringAnUnlocksFailedReconcileStands(t *testing.T) {
 	server := characterizedSigner(t)
 	ir := server.productRuntime()
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	lockDone, landed := lockAtTheQuarantine(t, server, errors.New("injected quarantine failure"))
 
 	success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)

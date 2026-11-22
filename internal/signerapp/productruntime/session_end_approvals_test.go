@@ -22,7 +22,7 @@ func TestEverySessionEndWithdrawsAWaitingApproval(t *testing.T) {
 		end  func(ir *Runtime)
 	}{
 		{"lock", func(ir *Runtime) { ir.Lock() }},
-		{"recovery", func(ir *Runtime) { ir.SetRecovery() }},
+		{"recovery", func(ir *Runtime) { ir.EnterRecovery(nil) }},
 		{"store maintenance", func(ir *Runtime) { ir.FinishStoreMaintenance(ir.BeginStoreMaintenance(), false) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

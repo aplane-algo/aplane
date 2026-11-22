@@ -1204,8 +1204,10 @@ end:
   passthrough key lookup answers `internal` instead). A signature whose key
   was already decrypted is not stopped: the cleanup does not wait for it, and
   a request whose last key was already decrypted returns its signatures.
-- An entry into recovery clears neither the key session nor the keyring, so
-  such a request goes on loading its keys and signs to completion.
+- An entry into recovery keeps the keyring and stops the key session, with
+  recovery's view, which holds no keys. A key load after the entry fails and
+  the request answers `locked`, as after a lock; a signature whose key was
+  already decrypted is not stopped.
 
 A session end that comes after an operator answered overrides an approval,
 which could no longer sign, but not a rejection, which is recorded as the

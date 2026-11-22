@@ -177,7 +177,7 @@ func TestALockDuringThePassphraseCheckIsNotAnsweredFromTheSession(t *testing.T) 
 // of changes seen while locked takes the lock.
 func TestAnUnlockLoadsUnderTheStoreMutationLock(t *testing.T) {
 	ir, mutation, _, _ := unlockedRuntimeForTest(t)
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	heldDuringLoad := false
 	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		if passphrase != nil {

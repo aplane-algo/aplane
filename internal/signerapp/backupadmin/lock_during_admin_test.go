@@ -70,7 +70,7 @@ func TestALockDuringAnAdminOperationUnderTheKeyringCompletes(t *testing.T) {
 	// The operation's failure path enters recovery to block signing from a
 	// cache behind the root. The lock already did: the signer stays locked,
 	// not in a recovery with no keyring.
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	if ir.IsRecovery() || ir.IsUnlocked() {
 		t.Fatalf("after a lock overtook an admin operation the state is %v, want locked", ir.GetState())
 	}

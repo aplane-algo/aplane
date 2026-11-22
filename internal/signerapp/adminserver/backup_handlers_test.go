@@ -116,7 +116,7 @@ func TestRecoveryStatePermitsRestoreReadApplyRollbackAndReconcile(t *testing.T) 
 	// Recovery is entered from the unlocked state; a locked signer stays
 	// locked.
 	ir.SetUnlocked()
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	svc := &stubServices{}
 	audit := &recordingCredentialRestoreAudit{}
 	deps := svc.backupDeps()

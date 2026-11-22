@@ -241,15 +241,15 @@ func TestAFailedReconcileEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	defer cleanup()
 	ir := server.runtime
 	ir.SetUnlocked()
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, errors.New("simulated reload failure")
-	})
+	ir.SetBuildFunc(func(*crypto.Keyring) (*productruntime.Loaded, error) {
+		return nil, errors.New("simulated build failure")
+	}, productruntime.ReloadEffects{})
 
-	// reconcileLocked is the work reconcileReloadAndPromote runs under the
-	// store mutation lock: the runtime must be in recovery when it returns,
-	// before the lock around it is released.
-	if _, err := server.adminServices().reconcileLocked(ir, true); err == nil {
-		t.Fatal("the reconcile succeeded though its reload failed")
+	// Reconcile is the work reconcileReloadAndPromote runs under the store
+	// mutation lock: the runtime must be in recovery when it returns, before
+	// the lock around it is released.
+	if _, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true); err == nil {
+		t.Fatal("the reconcile succeeded though its build failed")
 	}
 	if !ir.IsRecovery() {
 		t.Fatalf("state = %v when the locked work returned, want recovery", ir.GetState())
@@ -269,7 +269,7 @@ func TestARecoveryExitRescanKeepsALockThatCameFirst(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.runtime
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	ir.Lock()
 	if ir.GetState() != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v after Lock, want locked", ir.GetState())
@@ -419,19 +419,22 @@ func TestAStoreChangeLandsBeforeOrAfterAWholeUnlock(t *testing.T) {
 			server, cleanup := setupTestSigner(t)
 			defer cleanup()
 			ir := server.productRuntime()
-			ir.SetRecovery() // the unlock begins in recovery
+			ir.EnterRecovery(nil) // the unlock begins in recovery
 			loads := 0
 			failReconcile := false
 			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 				if passphrase != nil {
 					loads++
-					return &signertemplates.ReloadReport{}, nil
-				}
-				if failReconcile {
-					return nil, errors.New("simulated reconcile reload failure")
 				}
 				return &signertemplates.ReloadReport{}, nil
 			})
+			opts := testProductBuildOptions(server)
+			ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+				if failReconcile {
+					return nil, errors.New("simulated reconcile build failure")
+				}
+				return signerstartup.Build(ir, opts, kr)
+			}, productruntime.ReloadEffects{})
 			storeChange := func() {
 				failReconcile = true
 				if _, err := server.adminServices().reconcileReloadAndPromote(ir, true); err == nil {
@@ -462,14 +465,15 @@ func TestAStoreChangeLandsBeforeOrAfterAWholeUnlock(t *testing.T) {
 }
 
 // An unlock begun in recovery whose load fails without touching the keyring
-// leaves recovery the keyring and the source token index it had: tokens go
-// only with the keyring that decrypts them. The real load fails that way when
-// the store root does not open at its start, after the passphrase check
-// passed (a read failure); the reload here fails as that one does. A load
-// with a passphrase no longer runs under a session in service: an unlock of
-// an unlocked signer loads nothing. Under one, the index was once cleared on
-// every failure, leaving the signer unlocked with no tokens.
-func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
+// leaves recovery the keyring it had. The real load fails that way when the
+// store root does not open at its start, after the passphrase check passed
+// (a read failure); the reload here fails as that one does. Recovery holds
+// no source token index, before the unlock or after it: its view drops the
+// index it was entered with. A load with a passphrase no longer runs under a
+// session in service: an unlock of an unlocked signer loads nothing. Under
+// one, the index was once cleared on every failure, leaving the signer
+// unlocked with no tokens.
+func TestAFailedReloadThatKeepsTheKeyringLeavesRecoveryItsKeyring(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.productRuntime()
@@ -480,7 +484,7 @@ func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
 	index := sourcetokens.NewIndex([]*sourcetokens.File{file})
 	file.Zero()
 	ir.PublishSourceTokens(index)
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 
 	loads := 0
 	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
@@ -501,8 +505,8 @@ func TestAFailedReloadThatKeepsTheKeyringKeepsTheSourceTokens(t *testing.T) {
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
 		t.Fatalf("recovery's keyring is closed: %v", err)
 	}
-	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-live" {
-		t.Fatalf("SourceTokenFor() = %q, %v after a failed load that kept the keyring; want the tokens kept", got, ok)
+	if _, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); ok {
+		t.Fatal("recovery serves a source token, want its view to hold none")
 	}
 }
 
@@ -516,8 +520,9 @@ func failLoadsAfterTheKeyringOpens(server *Signer) (undo func()) {
 }
 
 // An unlock begun in recovery whose load fails after it opened a keyring,
-// here at its policy verification, leaves recovery a keyring, the generation
-// binding and the source token index. The load replaced recovery's keyring
+// here at its policy verification, leaves recovery a keyring and the
+// generation binding, and no source token index, as recovery's view holds
+// none. The load replaced recovery's keyring
 // with one it opened from the same store root, and once closed that one on
 // every failure: the signer stayed in recovery with no keyring, and the
 // reconcile, restore and rollback recovery needs failed until an unlock got
@@ -533,7 +538,7 @@ func TestAFailedUnlockLoadInRecoveryLeavesRecoveryAKeyring(t *testing.T) {
 	}
 	ir.PublishSourceTokens(sourcetokens.NewIndex([]*sourcetokens.File{file}))
 	file.Zero()
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 	before, err := ir.ActivePaths()
 	if err != nil {
 		t.Fatalf("recovery has no generation binding before the unlock: %v", err)
@@ -554,8 +559,8 @@ func TestAFailedUnlockLoadInRecoveryLeavesRecoveryAKeyring(t *testing.T) {
 	if active, err := ir.ActivePaths(); err != nil || active.GenerationID() != before.GenerationID() {
 		t.Fatalf("ActivePaths() = %v, %v; want the generation %s recovery was bound to", active.GenerationID(), err, before.GenerationID())
 	}
-	if got, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); !ok || got != "tok-kept" {
-		t.Fatalf("SourceTokenFor() = %q, %v; want the index kept with the keyring", got, ok)
+	if _, ok := ir.SourceTokenFor(sourcetokens.DefaultSelector, "screening"); ok {
+		t.Fatal("recovery serves a source token, want its view to hold none")
 	}
 
 	// The reconcile recovery needs runs on that keyring and lifts it.
