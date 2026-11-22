@@ -178,11 +178,9 @@ func TestAddASAMintsAndReloads(t *testing.T) {
 	}
 }
 
-// An ASA set change during an unlock in flight on another connection is
-// refused, as a policy apply is: the unlock opens the keyring under the store
-// mutation lock and publishes unlocked only after releasing it, and a change
-// that committed in between and failed its reload once left the unlock to
-// publish unlocked over it.
+// An ASA set change on a locked signer whose keyring is still open is
+// refused, as a policy apply is (TestPolicyApplyDuringAnUnlockInFlightIsRefused):
+// it needs an unlocked signer, checked under the store mutation lock.
 func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	svc, ir, _, _ := setupUnpublishedASAAdmin(t)
 	before := currentGeneration(t, svc, ir)

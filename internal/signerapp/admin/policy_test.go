@@ -435,11 +435,11 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 	}
 }
 
-// An unlock on another connection opens the keyring under the store mutation
-// lock, and publishes the runtime unlocked only after releasing it. A policy
-// apply in between once committed, met a locked signer when its reload
-// failed, on which SetRecovery does nothing, and the unlock then published
-// unlocked over a generation the runtime had not followed. The apply is
+// A locked signer can still have its keyring open: a lock that landed while
+// the request waited for the store mutation lock clears it only once its
+// cleanup has run. A policy apply there would commit, meet a locked signer
+// when its reload failed, on which SetRecovery does nothing, and leave the
+// next unlock to follow a generation the runtime had not. The apply is
 // refused instead: it needs an unlocked signer, checked under the lock.
 func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	svc, ir, _ := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)

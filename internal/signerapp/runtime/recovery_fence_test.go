@@ -14,7 +14,7 @@ type unlockOutcome struct {
 	err error
 }
 
-// startBlockedUnlock starts a TryUnlock whose unlock function waits for
+// startBlockedUnlock starts an unlock attempt whose load waits for
 // release, and returns once the function is running.
 func startBlockedUnlock(rt *Runtime) (release chan struct{}, done chan unlockOutcome) {
 	entered := make(chan struct{})

@@ -162,8 +162,8 @@ func TestMaintenanceRepublishLosesToRacingLock(t *testing.T) {
 }
 
 // An attempt during a store maintenance has lost, as one a lock overtook
-// has: it publishes nothing and enters no recovery, and a recovery entry
-// opens no keyring. No unlock request meets a maintenance in production: a
+// has: it publishes nothing and enters no recovery; what it opened is cleared
+// by its cleanup. No unlock request meets a maintenance in production: a
 // passphrase change holds the store mutation lock across it, and an unlock
 // request holds that lock across its attempt.
 func TestMaintenanceRejectsUnlockAndRecoveryWithoutRunningCallbacks(t *testing.T) {
@@ -179,8 +179,8 @@ func TestMaintenanceRejectsUnlockAndRecoveryWithoutRunningCallbacks(t *testing.T
 		recoveryRan = true
 		return nil
 	})
-	if !errors.Is(recoveryErr, ErrLockedDuringUnlock) || recoveryRan {
-		t.Fatalf("a recovery entry during maintenance = (%v, opened=%v), want %v with nothing opened", recoveryErr, recoveryRan, ErrLockedDuringUnlock)
+	if !errors.Is(recoveryErr, ErrLockedDuringUnlock) || !recoveryRan || r.IsRecovery() {
+		t.Fatalf("a recovery entry during maintenance = (%v, opened=%v, state %v), want %v at the fence", recoveryErr, recoveryRan, r.GetState(), ErrLockedDuringUnlock)
 	}
 	if r.FinishMaintenance(token, false) {
 		t.Fatal("failed maintenance unexpectedly republished runtime")
@@ -206,7 +206,7 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	if r.GetState() != SignerStateLocked {
 		t.Fatalf("state after racing maintenance = %v, want locked", r.GetState())
 	}
-	// BeginMaintenance clears the old session; the losing TryUnlock clears
+	// BeginMaintenance clears the old session; the losing attempt clears
 	// whatever its callback may have loaded.
 	if cleanups != 2 {
 		t.Fatalf("maintenance race cleanups = %d, want 2", cleanups)
@@ -409,9 +409,10 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 	}
 }
 
-// TryRecovery is the other way into recovery, and it too can start from the
-// unlocked state: an unlock request on a signer already unlocked, whose store
-// then fails validation. It ends the session as SetRecovery does.
+// An entry into recovery through EnterRecovery from the unlocked state ends
+// the session as SetRecovery does. No unlock request enters from there (one
+// that finds the signer unlocked is answered from the session); the lock
+// runtime keeps the transition sound for any caller.
 func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	rt := New()
 	rt.SetUnlocked()
@@ -622,5 +623,33 @@ func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
 	<-loser
 	if attemptErr != nil || !rt.IsUnlocked() {
 		t.Fatalf("unlock after the cleanup: %v, unlocked=%v; want an unlocked signer", attemptErr, rt.IsUnlocked())
+	}
+}
+
+// The recovery end fences on the attempt's own reading, taken at its start:
+// a lock that lands after the reading and before the entry wins, though the
+// entry itself begins after the lock. The attempt locks the runtime for its
+// cleanup, which clears what open opened. An entry into recovery once read
+// the lock generation when it was called, so a lock that landed during the
+// attempt's reconcile or load passed its fence, and the attempt moved the
+// locked signer into recovery.
+func TestARecoveryEntryFencesOnTheAttemptsReading(t *testing.T) {
+	rt := New()
+	var cleanups atomic.Int32
+	rt.SetOnLock(func() { cleanups.Add(1) })
+	attempt := rt.BeginAttempt()
+	rt.Lock() // lands during the attempt, before its recovery entry
+	before := cleanups.Load()
+
+	opened := false
+	err := rt.EnterRecovery(attempt, func() error { opened = true; return nil })
+	if !errors.Is(err, ErrLockedDuringUnlock) {
+		t.Fatalf("EnterRecovery() = %v after a lock during the attempt, want %v", err, ErrLockedDuringUnlock)
+	}
+	if rt.GetState() != SignerStateLocked {
+		t.Fatalf("state = %v, want the lock to stand", rt.GetState())
+	}
+	if !opened || cleanups.Load() != before+1 {
+		t.Fatalf("opened %v, %d cleanup(s) by the entry; want what it opened cleared by one", opened, cleanups.Load()-before)
 	}
 }

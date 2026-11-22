@@ -386,44 +386,35 @@ after passphrase verification, through
 root.
 
 An `unlock` request on a signer that is already unlocked verifies the
-passphrase and answers `unlock_result{success:true}` with the session's
-current `key_count`. It reloads nothing: it does not reconcile generations,
-reopen the keyring, or republish the policy, the key maps or the source
-token index, so the session in service keeps all of them. A wrong passphrase
-is refused with `invalid_passphrase` and leaves the session as it is. The
-answer comes only from a session the signer stays unlocked in from before
-the passphrase verification to after it: a request whose session a lock or
-an entry into recovery ends during the verification is not answered from it,
-and goes on as an unlock of a signer that is not unlocked does. Unlock
-requests run one at a time, and the check, the passphrase verification and
-the load run under the store mutation lock, so a request that arrives while
-another is loading waits for it and then answers from the session that one
-published. A request that finds the signer not unlocked reconciles in the
-same hold of the lock as its check. An unlock publishes after it releases
-the lock, so another request can publish while this one reconciles: a
-request whose reconcile fails, or whose load fails validation, checks again
-before it enters recovery, and answers from a session published meanwhile
-instead of ending it.
+passphrase and answers `unlock_result{success:true}` with the session's key
+count; it reconciles, reloads and publishes nothing, so the session in
+service keeps its keyring, policy, key indexes and source token index. A
+wrong passphrase is refused with `invalid_passphrase` and changes nothing.
+
+An unlock request runs wholly under the store mutation lock, from its state
+read to its publish, as every store change, reconcile and passphrase change
+does, so none of them lands inside an unlock. A request that arrives while
+another unlock, a store change or a passphrase change holds the lock waits
+for it: after another unlock it answers from the session that one
+published, and after a passphrase change it meets the new store root, so the
+old passphrase is refused and the new one answers. A lock wins at any point
+of a request: a request that a lock overtook answers `unlock_failed` with
+`signer locked during unlock`, and leaves the signer locked whichever way it
+would have ended, into the unlocked state or into recovery.
 
 An unlock can also succeed into recovery mode: when the passphrase verifies
 but generation reconciliation or validation of the selected generation fails
-or it holds two key files for one signing address,
-or when a store change on another connection ends in doubt and enters
-recovery while the unlock is still running (the unlock reads its session
-generations before it takes the store mutation lock to check the state and
-load, and publishes after releasing it, so the change lands in one of those
-gaps), the result reports `success:true` with a zero key count and
-`code:"recovery_blocked"`. The unlock then publishes
-nothing, so it never lifts a recovery entered after it began, and it answers
-from the state it finds: if a reconcile on another connection has lifted that
-recovery meanwhile, it answers as an ordinary unlock, and if a lock has come
-in, as an unlock that lost to one. An unlock that published answers
-`recovery_blocked` the same way when the reload its publish runs for
-filesystem changes seen while locked finds a content defect and enters
-recovery; the signer has pushed a `status` in recovery before the reply. The signer store is unlocked for administration only;
-signing stays blocked until the operator resolves the store from recovery
-mode. Clients must treat `recovery_blocked` as a store-integrity state
-distinct from both `unlock_failed` and credential rejection.
+or it holds two key files for one signing address, the result reports
+`success:true` with a zero key count and `code:"recovery_blocked"`. An unlock
+that published answers `recovery_blocked` the same way when the reload its
+publish runs for filesystem changes seen while locked finds a content
+defect and enters recovery, or when a store change on another connection
+ends in doubt just after the request and before its answer; the signer has
+pushed a `status` in recovery before the reply. The signer store is unlocked
+for administration only; signing stays blocked until the operator resolves
+the store from recovery mode. Clients must treat `recovery_blocked` as a
+store-integrity state distinct from both `unlock_failed` and credential
+rejection.
 
 The pre-auth `auth_only` request performs the same passphrase verification and
 runtime binding but never authorizes or invokes `identity.unlock`. It is a
@@ -741,7 +732,7 @@ Apply rules, the same on both node roles:
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
-- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one whose unlock is still in flight on another connection: the unlock opens the keyring under the store mutation lock and publishes unlocked only after releasing it, and a commit in between whose reload failed would leave the unlock to publish unlocked over a generation the runtime had not followed. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
+- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one a lock reached while the request waited for the store mutation lock, whose keyring stays open until the lock's cleanup has run: a commit there whose reload failed would call `SetRecovery` on a locked signer, which does nothing. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
 - `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, and `source_token_remove` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.

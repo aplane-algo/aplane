@@ -629,7 +629,7 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		outcome, err := ir.answerFromSession(attempt, passphrase)
 		return outcome, false, err
 	}
-	kr, _, err := crypto.OpenStoreRootStore(ir.keyPaths.ProductDir(), passphrase)
+	kr, _, err := openStoreRoot(ir.keyPaths.ProductDir(), passphrase)
 	if err != nil {
 		return UnlockOutcome{}, false, unlockFailure(err)
 	}
@@ -665,8 +665,6 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		// included: recovery keeps the keyring, which decrypts every token
 		// file. No lookup uses it until the signer is unlocked.
 		return UnlockOutcome{Recovery: true, Cause: err}, false, nil
-	case err != nil:
-		return UnlockOutcome{}, false, err
 	}
 	return UnlockOutcome{KeyCount: ir.KeyCount()}, true, nil
 }
@@ -692,7 +690,9 @@ func (ir *Runtime) answerFromSession(attempt signerruntime.Attempt, passphrase [
 // enterRecovery ends a request whose reconcile or load found the store
 // needing recovery (cause) by entering it, with a keyring opened from the
 // store root: the passphrase opens the root again for it. A lock since the
-// request began wins, as it does against a publish.
+// request began wins, as it does against a publish: an attempt that has
+// already lost opens nothing, and one a lock overtakes during the open loses
+// at EnterRecovery's fence.
 func (ir *Runtime) enterRecovery(attempt signerruntime.Attempt, passphrase []byte, cause error) (UnlockOutcome, error) {
 	if ir.lockRuntime.LostToLock(attempt) {
 		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
@@ -1950,6 +1950,11 @@ func (ir *Runtime) UnlockedGeneration() (uint64, bool) {
 func (ir *Runtime) LockGeneration() uint64 {
 	return ir.lockRuntime.LockGeneration()
 }
+
+// openStoreRoot opens the store root with an unlock request's passphrase: the
+// request's passphrase check for a signer that is not unlocked. Tests replace
+// it to land a transition during the open.
+var openStoreRoot = crypto.OpenStoreRootStore
 
 // verifyUnlockPassphrase checks an unlock's passphrase against the store
 // root, classified for the lock runtime as unlockFailure does. Tests replace

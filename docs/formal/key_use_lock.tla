@@ -38,39 +38,39 @@ LockState and Wipe, so an unlock could otherwise read the generation the lock
 had already moved, pass the unlock fence, and publish a session that the
 cleanup still running would then clear.
 
-An unlock (TryUnlock) is four steps, because its unlock function (the
-passphrase check, a check of the state, and the key load) runs outside the
-state mutex: UnlockStart reads the lock generation and the session
-generation; UnlockCheck takes the store mutation lock and checks the state;
-UnlockLoaded is the end of the load, where that lock is released; and
-UnlockFinish compares the generations. An attempt that finds the signer
-already unlocked at its check answers from the session in service and ends
-there: it loads nothing, publishes nothing and clears nothing. The code
-answers only for a session the signer stayed unlocked in across the
-passphrase check, and UnlockCheck is the step that confirms it: an attempt
-whose session ended during the passphrase check loads, as one that found
-the signer locked does. The load
-replaces the keyring and the key maps, and a load that fails validation
-publishes an empty key snapshot, so a load under a session in service could
-leave a signer that says unlocked and cannot sign.
-Unlock attempts run one at a time (unlockMu), and the check and the load
-hold the store mutation lock, which a store change holds when it enters
-recovery and a reconcile holds when it lifts one; so no other way to the
-unlocked state lands between an attempt's check and the end of its load.
+An unlock request is one attempt, and the attempt holds the store mutation
+lock from its start to its end (productruntime's Unlock). AttemptStart
+takes the lock, waits for any lock cleanup in progress, and reads the lock
+generation, the session generation and the state once
+(runtime.Runtime.BeginAttempt): every later check and both of the attempt's
+ends compare that reading. An attempt that finds the signer unlocked checks
+the passphrase and answers from the session in service, or, when a lock
+came during the check, that the signer locked; either way it ends there
+(AnswerCheck): it loads nothing, publishes nothing and clears nothing. A
+load replaces the keyring and the key maps, and a load that fails
+validation publishes an empty key snapshot, so a load under a session in
+service could leave a signer that says unlocked and cannot sign.
 
-A recovery unlock (TryRecovery, from productruntime's Unlock when a reconcile or the
-selected generation fails) is two steps, RecoveryStart and RecoveryFinish,
-and does not take unlockMu, so it may run beside an unlock or another
-recovery unlock. It opens the keyring and enters recovery; its keyring open
-replaces nothing when it fails, so a failure closes nothing.
+An attempt on a signer locked or in recovery opens the store root and
+reconciles (Reconcile), loads (Load) and publishes (Publish), or, when the
+reconcile or the load finds the store needing it, takes its second end and
+enters recovery (RecoveryOpen, RecoveryFinish), opening the keyring again
+for it. Before the reconcile, before the load and before the recovery
+open it checks its reading, and an attempt that has lost to a lock stops
+there with nothing to clear.
 
-An attempt of either kind that finds the lock generation moved has lost to
-a lock, and its function may have loaded keys after that lock's cleanup, so
-it clears them. The other attempt may meanwhile have published a session
-those keys now serve, or may publish one before the loser's clear runs; so
-the loser locks the signer as a lock does before it clears. An unlock that
-finds the session generation moved with the lock generation unmoved met an
-entry into recovery, and publishes nothing.
+Every entry into recovery and every reconcile's promotion out of it hold
+the store mutation lock too, as does a passphrase change's republish, so
+none lands inside an attempt, and two attempts never overlap. The fences
+compare the session as well as the lock generation; under the hold no entry
+into recovery reaches them, so they are layered guards, and their negative
+controls switch the hold off.
+
+An attempt that finds the lock generation moved at a fence has lost to a
+lock, and may have loaded keys, or opened a keyring, after that lock's
+cleanup ran, so it clears them; it locks the signer as a lock does first.
+An attempt that finds the session generation moved with the lock
+generation unmoved met an entry into recovery, and publishes nothing.
 
 Thirteen guards are switchable:
 
@@ -86,11 +86,11 @@ Thirteen guards are switchable:
                       unlock in between still refuse.
   RecoveryEndsSession entering recovery from the unlocked state moves the
                       session generation (runtime.Runtime.SetRecovery and
-                      TryRecovery) and cancels the registered key uses, so a
-                      recovery and a reconcile in between refuse as well.
+                      EnterRecovery) and cancels the registered key uses, so
+                      a recovery and a reconcile in between refuse as well.
   UnlockWaitsForCleanup
                       an attempt starts only once the lock's cleanup has
-                      returned (runtime.Runtime.TryUnlock, TryRecovery and
+                      returned (runtime.Runtime.BeginAttempt and
                       FinishMaintenance wait for it). Without it, an attempt
                       may land between LockState and Wipe, and the rest of
                       that cleanup runs against the new session.
@@ -100,37 +100,42 @@ Thirteen guards are switchable:
                       the cleanup runs in whatever state the signer is in, and
                       clears a session another attempt published.
   UnlockFencesRecovery
-                      an unlock whose session generation moved while its
-                      unlock function ran publishes nothing and runs no
-                      cleanup (runtime.Runtime TryUnlock). Without it, an
-                      unlock publishes unlocked over a recovery a store
-                      change entered after the unlock began.
+                      an attempt whose session generation moved since its
+                      reading publishes nothing and runs no
+                      cleanup (runtime.Runtime PublishUnlocked). Without it,
+                      and without the hold, an unlock publishes unlocked over
+                      a recovery a store change entered after it began.
   RecoveryReentryMovesSession
                       an entry into recovery from recovery moves the session
                       too (enterRecoveryLocked), not only one from the
-                      unlocked state. Without it, an unlock begun in
-                      recovery misses a restore, rollback or reconcile that
-                      entered recovery again, and publishes over it.
-  AnswersFromSession  an unlock checks the state before it loads, and one
-                      that finds the signer unlocked loads nothing
-                      (productruntime performUnlock, AnswerFromSession).
-                      Without it, the attempt loads under the session in
-                      service.
+                      unlocked state. Without it, and without the hold, an
+                      unlock begun in recovery misses a restore, rollback or
+                      reconcile that entered recovery again, and publishes
+                      over it.
+  AnswersFromSession  an attempt that finds the signer unlocked answers
+                      from the session and loads nothing (productruntime
+                      answerFromSession). Without it, the attempt loads
+                      under the session in service.
   AnswerEndsAtCheck   an attempt that answered from the session ends at its
-                      check, before the fence (errAnsweredFromSession).
+                      check, before the fence (answerFromSession compares
+                      the reading itself).
                       Without it, the attempt goes on to the fence with
                       nothing loaded, and when a lock came in after its
                       check it locks the signer and runs a cleanup as a
                       loser does, which can end a session published since.
-  UnlocksOneAtATime   an unlock starts only when no other unlock is in
-                      flight (productruntime unlockMu). Without it, a second
-                      unlock checks while the first has loaded and not yet
-                      published, loads, and the first publishes under it.
-  LoadHoldsStoreLock  the check and the load hold the store mutation lock,
-                      so no store change enters recovery and no reconcile
-                      lifts one between them. Without it, a reconcile
-                      promotes the signer out of recovery during an unlock's
-                      load.
+  AttemptHoldsStoreLock
+                      the attempt holds the store mutation lock from its
+                      start to its end (productruntime Unlock), so no other
+                      attempt runs, no store change enters recovery and no
+                      reconcile lifts one inside it. Without it, a second
+                      attempt loads under the session the first published,
+                      and a first attempt's entry into recovery ends a
+                      session a second published.
+  ExitsShareReading   the recovery end compares the attempt's reading taken
+                      at its start (runtime.Runtime EnterRecovery), not one
+                      of its own. Without it, a lock that lands during the
+                      reconcile or the load passes the recovery end's fence,
+                      and the attempt moves the locked signer into recovery.
 
 Properties:
 
@@ -144,7 +149,11 @@ Properties:
   KU6  an unlock never loads keys while the signer is unlocked: no load runs
        under a session in service;
   KU7  an unlock that answered from the session never locks the signer or
-       runs a cleanup.
+       runs a cleanup;
+  KU8  a lock that lands during an attempt stands: the attempt neither
+       publishes unlocked nor enters recovery after it;
+  KU9  an attempt's entry into recovery never ends a session another
+       attempt published while it ran.
 
 The final check and the return are separate in the code; a lock landing
 between them is indistinguishable from one landing just after the return, so
@@ -171,32 +180,27 @@ Code anchors:
   - EStart/ERegister/ERead/EDeliver/ERelease transcribe
     internal/signerapp/keyadmin/export.go ExportKey.
   - LockState transcribes internal/signerapp/runtime/runtime.go Lock and
-    BeginMaintenance; EnterRecovery transcribes SetRecovery, RecoveryStart
-    and RecoveryFinish TryRecovery, and LeaveRecovery
+    BeginMaintenance; EnterRecovery transcribes SetRecovery,
+    RecoveryFinish EnterRecovery, and LeaveRecovery
     PromoteRecoveryToUnlocked, there, with productruntime's cancelKeyUses on
-    the way in; DrainBegin and Wipe transcribe
+    SetRecovery's way in. An attempt's own entry (RecoveryFinish) cancels
+    nothing in the code: it begins locked or in recovery, where no key use
+    is registered, so the model's cancellation there changes nothing; DrainBegin and Wipe transcribe
     internal/signerapp/productruntime/runtime.go drainKeyUsers and
     performLockCleanup; registration transcribes KeyUseContext.
-  - UnlockStart's and RecoveryStart's guard transcribes awaitCleanups in
-    internal/signerapp/runtime/runtime.go, which TryUnlock and TryRecovery
-    call before they read the lock generation (FinishMaintenance calls it
-    too, before it compares the generation its token recorded), and
-    UnlockStart's read of the session with it; UnlockStart's other guard
-    is productruntime's unlockMu, which TryUnlock holds across the attempt.
-    UnlockCheck and UnlockLoaded transcribe productruntime's performUnlock:
-    lockStoreMutation and AnswerFromSession, which reads the session
-    generation, checks the passphrase and confirms the signer is still
-    unlocked in that session, and, when it is, the return of
-    errAnsweredFromSession, which ends the attempt before the fence;
-    otherwise the passphrase check, ReloadWithPassphrase, and the release
-    of the store mutation lock. UnlockCheck is that confirmation, or the
-    read when the signer was not unlocked: under unlockMu and the store
-    mutation lock nothing returns the signer to unlocked between it and the
-    end of the load. UnlockFinish and RecoveryFinish
-    transcribe the fences after the unlock function: when the lock
-    generation moved, lockForCleanupLocked and the cleanup it decides, and
-    otherwise, for TryUnlock, when the session moved, the return with
-    ErrRecoveryDuringUnlock, and for TryRecovery enterRecoveryLocked.
+  - AttemptStart transcribes productruntime's Unlock taking the store
+    mutation lock (lockStoreMutation) and runtime.Runtime.BeginAttempt:
+    awaitCleanups, then the reading. AnswerCheck transcribes
+    answerFromSession: the passphrase check and the comparison with the
+    reading. Reconcile transcribes unlockHeld's store root open, its first
+    LostToLock check and the reconcile; Load its second check and
+    ReloadWithPassphrase; Publish runtime.Runtime.PublishUnlocked;
+    RecoveryOpen productruntime's enterRecovery (its LostToLock check and the
+    keyring open) and RecoveryFinish the fence of runtime.Runtime
+    EnterRecovery. At the fences, when the lock generation moved,
+    lockForCleanupLocked and the cleanup it decides; otherwise, for the
+    publish, when the session moved, the return with
+    ErrRecoveryDuringUnlock, and for the recovery end enterRecoveryLocked.
     LockInactive transcribes Lock on a signer that is already locked or
     locking: the generation moves and no cleanup runs.
 
@@ -215,22 +219,23 @@ CONSTANTS
     RecoveryReentryMovesSession, \* BOOLEAN: an entry from recovery moves the session
     AnswersFromSession,  \* BOOLEAN: an unlock of an unlocked signer loads nothing
     AnswerEndsAtCheck,   \* BOOLEAN: such an unlock ends before the fence
-    UnlocksOneAtATime,   \* BOOLEAN: unlocks run one at a time
-    LoadHoldsStoreLock,  \* BOOLEAN: the check and the load hold the store lock
+    AttemptHoldsStoreLock, \* BOOLEAN: an attempt holds the store lock throughout
+    ExitsShareReading,   \* BOOLEAN: the recovery end fences on the attempt's reading
     MaxLocks             \* bound on lock transitions (keeps the space finite)
 
 Holders == {"sign", "export"}
 
-\* Two attempts that may overlap: each is an unlock (TryUnlock) or a recovery
-\* unlock (TryRecovery), chosen when it starts.
+\* Two unlock requests, which under AttemptHoldsStoreLock never overlap.
 Unlockers == {"u1", "u2"}
 
-\* An unlock's steps between its start and its fence: "deriving" until it
-\* checks the state, "loading" while it loads under the store mutation lock,
-\* "loaded" once it has released it, and "answered" for an attempt that found
-\* the signer unlocked and, without AnswerEndsAtCheck, goes on to the fence.
-\* "recovering" is a recovery unlock in flight.
-UnlockSteps == {"deriving", "loading", "loaded", "answered"}
+\* An attempt's steps: "checking" for one that found the signer unlocked,
+\* until its answer; "reconciling" for one that found it locked or in
+\* recovery, until its reconcile; "loading" until its load ends; "loaded"
+\* until its publish; "answered" for one that answered from the session and,
+\* without AnswerEndsAtCheck, goes on to the fence; "recovering" and "opened"
+\* on its way into recovery, before and after the keyring open.
+UnlockSteps == {"checking", "reconciling", "loading", "loaded", "answered",
+                "recovering", "opened"}
 
 VARIABLES
     life,       \* "unlocked" | "recovery" | "locking" | "draining" | "locked"
@@ -247,18 +252,28 @@ VARIABLES
                 \* state: one an early unlock overtook, or a losing unlock's
                 \* without LoserLocks: "none" | "locking" | "draining"
     wipedLive,  \* ghost: the session was cleared while the signer was unlocked
-    ul,         \* each attempt: "idle", one of UnlockSteps, or "recovering"
+    ul,         \* each attempt: "idle" or one of UnlockSteps
     ulStale,    \* the lock generation moved after the attempt read it
     ulRecov,    \* the session moved after the attempt read it (the guard's flag)
     ulSawRecov, \* ghost: recovery was entered after the attempt began
     overRecovery, \* ghost: an unlock published over a recovery entered after
                   \* it began
-    answeredDisturbed \* ghost: an unlock that answered from the session
+    answeredDisturbed, \* ghost: an unlock that answered from the session
                       \* locked the signer or ran a cleanup
+    ulLocked,   \* ghost: a lock landed after the attempt began
+    lockUndone, \* ghost: an attempt published or entered recovery after a
+                \* lock landed during it
+    ulSawPublish, \* ghost: another attempt published while this one ran
+    endedPublished \* ghost: an attempt's entry into recovery ended a session
+                   \* another attempt published while it ran
 
 vars == <<life, locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld,
           lateExport, late, wipedLive, ul, ulStale, ulRecov, ulSawRecov,
-          overRecovery, answeredDisturbed>>
+          overRecovery, answeredDisturbed, ulLocked, lockUndone, ulSawPublish,
+          endedPublished>>
+
+\* The ghosts KU8 and KU9 read, which only the attempt actions change.
+attemptGhosts == <<ulLocked, lockUndone, ulSawPublish, endedPublished>>
 
 \* Steps at which a holder has a registered key use.
 SignHolds == {"held", "made"}
@@ -286,6 +301,10 @@ Init ==
     /\ ulSawRecov = [u \in Unlockers |-> FALSE]
     /\ overRecovery = FALSE
     /\ answeredDisturbed = FALSE
+    /\ ulLocked = [u \in Unlockers |-> FALSE]
+    /\ lockUndone = FALSE
+    /\ ulSawPublish = [u \in Unlockers |-> FALSE]
+    /\ endedPublished = FALSE
 
 ----------------------------------------------------------------------------
 (* Registration (KeyUseContext), shared by both holders *)
@@ -401,14 +420,16 @@ ERelease ==
 \* An attempt is in flight from its start to its finish.
 InFlight(u) == ul[u] # "idle"
 
-\* An unlock (TryUnlock) is in flight.
-Unlocking(u) == ul[u] \in UnlockSteps
-
-\* An unlock is loading: it holds the store mutation lock and passphraseLock.
-Loading == \E u \in Unlockers : ul[u] = "loading"
+\* Under AttemptHoldsStoreLock an attempt in flight holds the store mutation
+\* lock, which every entry into recovery and every promotion out of it take.
+StoreLockFree ==
+    AttemptHoldsStoreLock => \A u \in Unlockers : ~InFlight(u)
 
 \* Every attempt in flight finds the lock generation moved.
 GenerationMoves == [u \in Unlockers |-> ulStale[u] \/ InFlight(u)]
+
+\* The ghost of the same: a lock landed during every attempt in flight.
+LockLands == [u \in Unlockers |-> ulLocked[u] \/ InFlight(u)]
 
 \* The state locks and the generation moves for every holder in flight. A
 \* signer in recovery locks the same way. From the locked state this is
@@ -426,6 +447,7 @@ LockState ==
     /\ stale' = [h \in Holders |-> stale[h] \/ pc[h] # "idle"]
     /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
     /\ ulStale' = GenerationMoves
+    /\ ulLocked' = LockLands
     /\ UNCHANGED <<pc, cancelled, waited, leaked, wipedHeld, lateExport>>
 
 \* A Lock on a signer already locked or locking: the generation still moves,
@@ -433,6 +455,7 @@ LockState ==
 LockInactive ==
     /\ life \in {"locking", "draining", "locked"}
     /\ ulStale' = GenerationMoves
+    /\ ulLocked' = LockLands
     /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
                    wipedHeld, lateExport>>
 
@@ -447,8 +470,8 @@ SessionMoves(from) ==
 \* stops; nothing waits for it and nothing is cleared, because recovery
 \* keeps the keyring. The generation moving is also what every other attempt
 \* in flight later finds (ulRecov); ulSawRecov records every entry, whatever
-\* moved, for KU5. self is the recovery unlock that enters, which finishes
-\* with the step.
+\* moved, for KU5. self is the attempt whose recovery end enters, which
+\* finishes with the step.
 EnterRecoveryFrom(from, self) ==
     /\ life' = "recovery"
     /\ locks' = locks + 1
@@ -468,14 +491,15 @@ EnterRecoveryFrom(from, self) ==
 \* ends in doubt, a restore, rollback or reconcile that enters recovery
 \* again, or a reload without the passphrase that finds a content defect in
 \* the selected generation, a failed validation or an address collision
-\* (productruntime's Reload, for the watcher and the in-place writes). Each holds the store mutation lock, so under
-\* LoadHoldsStoreLock none lands while an unlock loads. From recovery there is no session left to
-\* end: every holder in flight started before the first entry. A recovery
-\* unlock's entry is RecoveryFinish.
+\* (productruntime's Reload, for the watcher and the in-place writes). Each
+\* holds the store mutation lock, so under AttemptHoldsStoreLock none lands
+\* inside an attempt. From recovery there is no session left to end: every
+\* holder in flight started before the first entry. An attempt's own entry
+\* is RecoveryFinish.
 EnterRecovery ==
     /\ life \in {"unlocked", "recovery"}
     /\ locks < MaxLocks
-    /\ LoadHoldsStoreLock => ~Loading
+    /\ StoreLockFree
     /\ EnterRecoveryFrom(life, "none")
     /\ UNCHANGED <<pc, waited, leaked, wipedHeld, lateExport>>
 
@@ -483,7 +507,7 @@ EnterRecovery ==
 \* store mutation lock from its reload to the promotion.
 LeaveRecovery ==
     /\ life = "recovery"
-    /\ LoadHoldsStoreLock => ~Loading
+    /\ StoreLockFree
     /\ life' = "unlocked"
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, wipedHeld, lateExport>>
 
@@ -502,66 +526,83 @@ Wipe ==
     /\ wipedHeld' = (wipedHeld \/ \E h \in Holders : Holding(h))
     /\ UNCHANGED <<locks, pc, stale, ended, cancelled, waited, leaked, lateExport>>
 
-\* TryUnlock and TryRecovery wait for every cleanup in progress first, so an
-\* attempt never starts while one runs; it may start on a signer already
-\* unlocked or in recovery. Without the wait it may also start between
-\* LockState and Wipe.
+\* An attempt waits for every cleanup in progress first (awaitCleanups), so it
+\* never starts while one runs; it may start on a signer already unlocked or
+\* in recovery. Without the wait it may also start between LockState and
+\* Wipe.
 CleanupsDone ==
     UnlockWaitsForCleanup =>
         (life \in {"locked", "unlocked", "recovery"} /\ late = "none")
 
-\* An attempt starts: it reads the lock generation and the session.
-StartAttempt(u, step) ==
-    /\ ul[u] = "idle"
-    /\ CleanupsDone
-    /\ ul' = [ul EXCEPT ![u] = step]
+\* An attempt in flight returns to idle with its flags cleared.
+Finish(u) ==
+    /\ ul' = [ul EXCEPT ![u] = "idle"]
     /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
     /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
     /\ ulSawRecov' = [ulSawRecov EXCEPT ![u] = FALSE]
-    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
-                   wipedHeld, lateExport, late, wipedLive, overRecovery,
-                   answeredDisturbed>>
+    /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
+    /\ ulSawPublish' = [ulSawPublish EXCEPT ![u] = FALSE]
 
-\* TryUnlock begins. Under UnlocksOneAtATime it holds unlockMu across the
-\* attempt, so it starts only when no other unlock is in flight; a recovery
-\* unlock does not take it.
-UnlockStart(u) ==
-    /\ UnlocksOneAtATime => \A v \in Unlockers \ {u} : ~Unlocking(v)
-    /\ StartAttempt(u, "deriving")
+\* Holders, the lock's cleanup and the counters an attempt step leaves.
+HolderVars == <<locks, pc, cancelled, waited, leaked, wipedHeld, lateExport,
+                wipedLive>>
 
-\* TryRecovery begins.
-RecoveryStart(u) == StartAttempt(u, "recovering")
+\* The attempt takes the store mutation lock, waits for cleanups, and reads
+\* the lock state.
+AttemptStart(u) ==
+    /\ ul[u] = "idle"
+    /\ StoreLockFree
+    /\ CleanupsDone
+    /\ ul' = [ul EXCEPT ![u] = IF life = "unlocked" THEN "checking" ELSE "reconciling"]
+    /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+    /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
+    /\ ulSawRecov' = [ulSawRecov EXCEPT ![u] = FALSE]
+    /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
+    /\ ulSawPublish' = [ulSawPublish EXCEPT ![u] = FALSE]
+    /\ UNCHANGED <<life, HolderVars, stale, ended, late, overRecovery,
+                   answeredDisturbed, lockUndone, endedPublished>>
 
-\* The unlock function takes the store mutation lock, which another unlock's
-\* load holds (and passphraseLock with it, whatever LoadHoldsStoreLock says),
-\* checks the passphrase and the state, and loads unless the signer is
-\* unlocked. Under AnswersFromSession an attempt that finds it unlocked loads
-\* nothing; under AnswerEndsAtCheck it ends here, answering from the session,
-\* and otherwise goes on to the fence with nothing loaded.
-UnlockCheck(u) ==
-    /\ ul[u] = "deriving"
-    /\ ~Loading
-    /\ IF AnswersFromSession /\ life = "unlocked"
+\* An attempt that found the signer unlocked checks the passphrase and
+\* answers: from the session, or, when its reading moved during the check,
+\* that the signer locked. Under AnswersFromSession it loads nothing; under
+\* AnswerEndsAtCheck it ends here, and otherwise it goes on to the fence with
+\* nothing loaded.
+AnswerCheck(u) ==
+    /\ ul[u] = "checking"
+    /\ IF AnswersFromSession
        THEN IF AnswerEndsAtCheck
-            THEN /\ ul' = [ul EXCEPT ![u] = "idle"]
-                 /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
-                 /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
-                 /\ ulSawRecov' = [ulSawRecov EXCEPT ![u] = FALSE]
+            THEN Finish(u)
             ELSE /\ ul' = [ul EXCEPT ![u] = "answered"]
-                 /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov>>
+                 /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
        ELSE /\ ul' = [ul EXCEPT ![u] = "loading"]
-            /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov>>
-    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
-                   wipedHeld, lateExport, late, wipedLive, overRecovery,
-                   answeredDisturbed>>
+            /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
+    /\ UNCHANGED <<life, HolderVars, stale, ended, late, overRecovery,
+                   answeredDisturbed, lockUndone, endedPublished>>
 
-\* The load ends and the store mutation lock is released.
-UnlockLoaded(u) ==
+\* The store root opened and the reading checked, the reconcile runs. An
+\* attempt that lost to a lock stops with nothing to clear. A reconcile that
+\* passes leads to the load, one that fails to the recovery end.
+Reconcile(u) ==
+    /\ ul[u] = "reconciling"
+    /\ IF ulStale[u]
+       THEN Finish(u)
+       ELSE /\ \/ ul' = [ul EXCEPT ![u] = "loading"]
+               \/ ul' = [ul EXCEPT ![u] = "recovering"]
+            /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
+    /\ UNCHANGED <<life, HolderVars, stale, ended, late, overRecovery,
+                   answeredDisturbed, lockUndone, endedPublished>>
+
+\* The reading checked again, the load runs and ends: it may find a content
+\* defect, which leads to the recovery end.
+Load(u) ==
     /\ ul[u] = "loading"
-    /\ ul' = [ul EXCEPT ![u] = "loaded"]
-    /\ UNCHANGED <<life, locks, pc, stale, ended, cancelled, waited, leaked,
-                   wipedHeld, lateExport, late, wipedLive, ulStale, ulRecov,
-                   ulSawRecov, overRecovery, answeredDisturbed>>
+    /\ IF ulStale[u]
+       THEN Finish(u)
+       ELSE /\ \/ ul' = [ul EXCEPT ![u] = "loaded"]
+               \/ ul' = [ul EXCEPT ![u] = "recovering"]
+            /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
+    /\ UNCHANGED <<life, HolderVars, stale, ended, late, overRecovery,
+                   answeredDisturbed, lockUndone, endedPublished>>
 
 \* An attempt that lost to a lock clears what it loaded: under LoserLocks it
 \* first locks as LockState does, moving the generation for the other
@@ -574,58 +615,90 @@ LoseToLock(u) ==
          /\ ended' = [h \in Holders |-> ended[h] \/ pc[h] # "idle"]
          /\ ulStale' = [v \in Unlockers |->
                           IF v = u THEN FALSE ELSE GenerationMoves[v]]
+         /\ ulLocked' = [v \in Unlockers |->
+                           IF v = u THEN FALSE ELSE LockLands[v]]
          /\ UNCHANGED late
     ELSE /\ late = "none"
          /\ late' = "locking"
          /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+         /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
          /\ UNCHANGED <<life, stale, ended>>
 
-\* The unlock function has returned. With the generation unchanged the
-\* attempt publishes a session; a cleanup it overtook carries on as `late`.
-\* Under UnlockFencesRecovery an attempt that met an entry into recovery
-\* (the session moved, the generation did not) publishes nothing and runs no
-\* cleanup instead; without it, it publishes over that recovery.
-\* With the generation moved the attempt lost to a lock (LoseToLock). One
-\* that answered from the session and came here without AnswerEndsAtCheck
-\* loaded nothing, and its loss disturbs whatever session there is by then.
-UnlockFinish(u) ==
+\* The publish and its fence. With the reading unmoved the attempt publishes
+\* a session; a cleanup it overtook carries on as `late`. Under
+\* UnlockFencesRecovery an attempt that met an entry into recovery (the
+\* session moved, the generation did not) publishes nothing and runs no
+\* cleanup instead; without it, it publishes over that recovery. With the
+\* generation moved the attempt lost to a lock (LoseToLock). One that
+\* answered from the session and came here without AnswerEndsAtCheck loaded
+\* nothing, and its loss disturbs whatever session there is by then.
+Publish(u) ==
     /\ ul[u] \in {"loaded", "answered"}
     /\ ul' = [ul EXCEPT ![u] = "idle"]
     /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
     /\ ulSawRecov' = [ulSawRecov EXCEPT ![u] = FALSE]
+    /\ ulSawPublish' = [v \in Unlockers |->
+                          IF v = u THEN FALSE
+                          ELSE ulSawPublish[v] \/ (InFlight(v) /\ ~ulStale[u]
+                                                    /\ ~(UnlockFencesRecovery /\ ulRecov[u]))]
     /\ IF ~ulStale[u]
        THEN IF UnlockFencesRecovery /\ ulRecov[u]
-            THEN UNCHANGED <<life, late, stale, ended, ulStale, overRecovery,
-                             answeredDisturbed>>
+            THEN /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
+                 /\ UNCHANGED <<life, late, stale, ended, ulStale, overRecovery,
+                                answeredDisturbed, lockUndone>>
             ELSE /\ life \in {"locking", "draining"} => late = "none"
                  /\ late' = IF life \in {"locking", "draining"} THEN life ELSE late
                  /\ life' = "unlocked"
                  /\ overRecovery' = (overRecovery \/ (ulSawRecov[u] /\ life = "recovery"))
+                 /\ lockUndone' = (lockUndone \/ ulLocked[u])
+                 /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
                  /\ UNCHANGED <<stale, ended, ulStale, answeredDisturbed>>
        ELSE /\ LoseToLock(u)
             /\ answeredDisturbed' = (answeredDisturbed \/ ul[u] = "answered")
-            /\ UNCHANGED overRecovery
+            /\ UNCHANGED <<overRecovery, lockUndone>>
     /\ UNCHANGED <<locks, pc, cancelled, waited, leaked, wipedHeld, lateExport,
-                   wipedLive>>
+                   wipedLive, endedPublished>>
 
-\* TryRecovery's keyring unlock has returned. With the generation unchanged
-\* it enters recovery (enterRecoveryLocked, whatever the state, the locked
-\* one included); a cleanup it overtook carries on as `late`. With the
-\* generation moved it lost to a lock, as an unlock does.
-RecoveryFinish(u) ==
+\* The recovery end's check and keyring open. Under ExitsShareReading it
+\* checks the attempt's reading, and an attempt that lost to a lock stops
+\* with nothing opened. Without it, the end reads the lock state anew, as
+\* an entry into recovery that took its own reading did, and a lock that
+\* came before is missed.
+RecoveryOpen(u) ==
     /\ ul[u] = "recovering"
+    /\ IF ExitsShareReading
+       THEN IF ulStale[u]
+            THEN Finish(u)
+            ELSE /\ ul' = [ul EXCEPT ![u] = "opened"]
+                 /\ UNCHANGED <<ulStale, ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
+       ELSE /\ ul' = [ul EXCEPT ![u] = "opened"]
+            /\ ulStale' = [ulStale EXCEPT ![u] = FALSE]
+            /\ UNCHANGED <<ulRecov, ulSawRecov, ulLocked, ulSawPublish>>
+    /\ UNCHANGED <<life, HolderVars, stale, ended, late, overRecovery,
+                   answeredDisturbed, lockUndone, endedPublished>>
+
+\* The recovery end's fence. With the generation unchanged it enters recovery
+\* (enterRecoveryLocked, whatever the state, the locked one included); a
+\* cleanup it overtook carries on as `late`. With the generation moved it
+\* lost to a lock, as a publish does.
+RecoveryFinish(u) ==
+    /\ ul[u] = "opened"
     /\ ul' = [ul EXCEPT ![u] = "idle"]
+    /\ ulSawPublish' = [ulSawPublish EXCEPT ![u] = FALSE]
     /\ IF ~ulStale[u]
        THEN /\ locks < MaxLocks
             /\ life \in {"locking", "draining"} => late = "none"
             /\ late' = IF life \in {"locking", "draining"} THEN life ELSE late
             /\ EnterRecoveryFrom(life, u)
+            /\ lockUndone' = (lockUndone \/ ulLocked[u])
+            /\ endedPublished' = (endedPublished \/ (life = "unlocked" /\ ulSawPublish[u]))
+            /\ ulLocked' = [ulLocked EXCEPT ![u] = FALSE]
             /\ UNCHANGED ulStale
        ELSE /\ LoseToLock(u)
             /\ UNCHANGED locks
             /\ ulRecov' = [ulRecov EXCEPT ![u] = FALSE]
             /\ ulSawRecov' = [ulSawRecov EXCEPT ![u] = FALSE]
-            /\ UNCHANGED cancelled
+            /\ UNCHANGED <<cancelled, lockUndone, endedPublished>>
     /\ UNCHANGED <<pc, waited, leaked, wipedHeld, lateExport, wipedLive,
                    overRecovery, answeredDisturbed>>
 
@@ -652,19 +725,21 @@ Next ==
           \/ EStart \/ ERegister \/ ERead \/ EDeliver \/ ERelease
           \/ DrainBegin \/ Wipe \/ LeaveRecovery
        /\ UNCHANGED <<late, wipedLive, ul, ulStale, ulRecov, ulSawRecov,
-                      overRecovery, answeredDisturbed>>
+                      overRecovery, answeredDisturbed, attemptGhosts>>
     \* Recovery moves the session generation, which the unlock's second fence
     \* compares, not the lock generation its first one does.
     \/ /\ EnterRecovery
-       /\ UNCHANGED <<late, wipedLive, ul, ulStale, overRecovery, answeredDisturbed>>
+       /\ UNCHANGED <<late, wipedLive, ul, ulStale, overRecovery, answeredDisturbed,
+                      attemptGhosts>>
     \/ /\ LockState \/ LockInactive
        /\ UNCHANGED <<late, wipedLive, ul, ulRecov, ulSawRecov, overRecovery,
-                      answeredDisturbed>>
+                      answeredDisturbed, lockUndone, ulSawPublish, endedPublished>>
     \/ \E u \in Unlockers :
-          \/ UnlockStart(u) \/ UnlockCheck(u) \/ UnlockLoaded(u) \/ UnlockFinish(u)
-          \/ RecoveryStart(u) \/ RecoveryFinish(u)
+          \/ AttemptStart(u) \/ AnswerCheck(u) \/ Reconcile(u) \/ Load(u)
+          \/ Publish(u) \/ RecoveryOpen(u) \/ RecoveryFinish(u)
     \/ /\ LateDrainBegin \/ LateWipe
-       /\ UNCHANGED <<ul, ulStale, ulRecov, ulSawRecov, overRecovery, answeredDisturbed>>
+       /\ UNCHANGED <<ul, ulStale, ulRecov, ulSawRecov, overRecovery, answeredDisturbed,
+                      attemptGhosts>>
 
 Spec == Init /\ [][Next]_vars
 
@@ -681,11 +756,13 @@ TypeOK ==
     /\ leaked \in BOOLEAN /\ wipedHeld \in BOOLEAN /\ lateExport \in BOOLEAN
     /\ late \in {"none", "locking", "draining"}
     /\ wipedLive \in BOOLEAN
-    /\ \A u \in Unlockers : ul[u] \in {"idle", "recovering"} \cup UnlockSteps
+    /\ \A u \in Unlockers : ul[u] \in {"idle"} \cup UnlockSteps
     /\ \A u \in Unlockers : ulStale[u] \in BOOLEAN
     /\ \A u \in Unlockers : ulRecov[u] \in BOOLEAN /\ ulSawRecov[u] \in BOOLEAN
     /\ overRecovery \in BOOLEAN
     /\ answeredDisturbed \in BOOLEAN
+    /\ \A u \in Unlockers : ulLocked[u] \in BOOLEAN /\ ulSawPublish[u] \in BOOLEAN
+    /\ lockUndone \in BOOLEAN /\ endedPublished \in BOOLEAN
 
 \* KU1: no rotating signature is returned after a lock or a recovery began
 \* during its sign.
@@ -715,6 +792,14 @@ KU6_NoLoadUnderSession ==
 \* runs a cleanup: it loaded nothing for a cleanup to clear.
 KU7_AnsweredUnlockLeavesSession == ~answeredDisturbed
 
+\* KU8: a lock that lands during an attempt stands: the attempt neither
+\* publishes unlocked nor enters recovery after it.
+KU8_LockStands == ~lockUndone
+
+\* KU9: an attempt's entry into recovery never ends a session another attempt
+\* published while it ran.
+KU9_RecoveryKeepsAnotherSession == ~endedPublished
+
 Safety ==
     /\ TypeOK
     /\ KU1_NoSignatureAfterLock
@@ -724,5 +809,7 @@ Safety ==
     /\ KU5_NoUnlockOverLaterRecovery
     /\ KU6_NoLoadUnderSession
     /\ KU7_AnsweredUnlockLeavesSession
+    /\ KU8_LockStands
+    /\ KU9_RecoveryKeepsAnotherSession
 
 =============================================================================

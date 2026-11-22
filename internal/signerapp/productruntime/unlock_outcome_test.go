@@ -37,7 +37,7 @@ func countPassphraseChecks(t *testing.T) *int {
 // nor loads, and enters no recovery. An unlock request once reconciled
 // first, and went on from the failed reconcile to an entry into recovery,
 // which opened the root again before it failed.
-func TestAWrongPassphraseEndsAnUnlockAtTheReconcile(t *testing.T) {
+func TestAWrongPassphraseEndsAnUnlockAtTheStoreRootOpen(t *testing.T) {
 	ir, _, loads, _ := unlockedRuntimeForTest(t)
 	ir.Lock()
 	checks := countPassphraseChecks(t)
@@ -99,10 +99,14 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		recovery  bool                    // the request begins in recovery
+		open      func(ir *Runtime)       // what happens while the request opens the store root
 		reconcile func(ir *Runtime) error // what the request's reconcile does and returns
 		load      func(ir *Runtime) error // what its load does and returns
 		after     func(ir *Runtime)       // onUnlocked
 		want      want
+		// notified is how many lock notifications the request itself sends:
+		// one when it lost at a fence and locked the runtime for its cleanup.
+		notified int32
 	}{
 		{name: "unlocks", want: want{state: signerruntime.SignerStateUnlocked}},
 		{name: "reconcile fails", reconcile: func(*Runtime) error { return reconcileFailure },
@@ -113,7 +117,13 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 			want: want{recovery: true, cause: apkeys.ErrAddressCollision, state: signerruntime.SignerStateRecovery}},
 		{name: "load fails otherwise", load: func(*Runtime) error { return transient },
 			want: want{err: transient, state: signerruntime.SignerStateLocked}},
+		{name: "lost to a lock during the store root open", open: func(ir *Runtime) { ir.Lock() },
+			want: want{err: signerruntime.ErrLockedDuringUnlock, state: signerruntime.SignerStateLocked}},
 		{name: "lost to a lock during the load", load: func(ir *Runtime) error { ir.Lock(); return nil },
+			want: want{err: signerruntime.ErrLockedDuringUnlock, state: signerruntime.SignerStateLocked}, notified: 1},
+		// The load finds a content defect after a lock landed in it: the
+		// request enters no recovery.
+		{name: "lost to a lock during a load that fails", load: func(ir *Runtime) error { ir.Lock(); return validation },
 			want: want{err: signerruntime.ErrLockedDuringUnlock, state: signerruntime.SignerStateLocked}},
 		{name: "lost to a lock during the reconcile", reconcile: func(ir *Runtime) error { ir.Lock(); return nil },
 			want: want{err: signerruntime.ErrLockedDuringUnlock, state: signerruntime.SignerStateLocked}},
@@ -127,12 +137,23 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 			want: want{recovery: true, state: signerruntime.SignerStateRecovery}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ir, _, _, _ := unlockedRuntimeForTest(t)
+			ir, _, _, locks := unlockedRuntimeForTest(t)
 			if tc.recovery {
 				ir.SetRecovery()
 			} else {
 				ir.Lock()
 			}
+			reconciles := 0
+			if tc.open != nil {
+				open := openStoreRoot
+				t.Cleanup(func() { openStoreRoot = open })
+				openStoreRoot = func(dir string, passphrase []byte) (*crypto.Keyring, crypto.StoreRootSelection, error) {
+					kr, selection, err := open(dir, passphrase)
+					tc.open(ir)
+					return kr, selection, err
+				}
+			}
+			notifiedBefore := locks.Load()
 			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 				if passphrase != nil && tc.load != nil {
 					if err := tc.load(ir); err != nil {
@@ -147,6 +168,7 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 				onUnlocked = func() { tc.after(ir) }
 			}
 			reconcile := func(*crypto.Keyring) error {
+				reconciles++
 				if tc.reconcile == nil {
 					return nil
 				}
@@ -169,6 +191,12 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 			}
 			if got := ir.GetState(); got != tc.want.state {
 				t.Fatalf("state = %v, want %v", got, tc.want.state)
+			}
+			if got := locks.Load() - notifiedBefore; got != tc.notified {
+				t.Fatalf("the request sent %d lock notification(s), want %d", got, tc.notified)
+			}
+			if tc.open != nil && reconciles != 0 {
+				t.Fatalf("the request reconciled %d time(s) after it lost at the store root open, want none", reconciles)
 			}
 			// A request that lost to a lock leaves no keyring: it opened
 			// none, or its cleanup closed the one it opened.

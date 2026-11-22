@@ -56,8 +56,8 @@
   {
     "spec": "key_use_lock",
     "cfg": "key_use_lock_deep",
-    "distinct_states": 43105,
-    "depth": 22
+    "distinct_states": 5682,
+    "depth": 16
   },
   {
     "spec": "signer_invariants",

@@ -101,7 +101,7 @@ The guards are constants:
 | `CutRestoreHolds` | TRUE: the wait opens only after `rebuildReleaseMemory` sees a restore finish, bound to the generation read before its context and session | Without it a restore a lock cut short opens the wait with the history missing |
 | `SeqGuard` | TRUE: `rec.Seq > r.ObservedSeq` skips the clear | Without it, and without `NextStageGuard`, a pass that read the chain before a release erases it |
 | `NextStageGuard` | TRUE: `RotatingStatus` clears only when `r.Authorizer == rec.NextAddr` | Without it a read from a node that is behind, made after the release, shows an earlier stage and erases the live stage's history |
-| `RecoveryEndsSession` | TRUE: an entry into recovery (`SetRecovery`, `TryRecovery`) advances the session generation, and the memory serves only the session named by `ServeSession` | Without it an account that was absent at the restore and came back through a recovery signs with its history missing and the wait open |
+| `RecoveryEndsSession` | TRUE: an entry into recovery (`SetRecovery`, `EnterRecovery`) advances the session generation, and the memory serves only the session named by `ServeSession` | Without it an account that was absent at the restore and came back through a recovery signs with its history missing and the wait open |
 
 `NextStageGuard` covers what `SeqGuard` covers in this model: a read made
 before a release shows the stage the account was at then, which is never the

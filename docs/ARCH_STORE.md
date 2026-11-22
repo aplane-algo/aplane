@@ -1886,15 +1886,15 @@ keyring it opened only when none was open before, as in an unlock of a locked
 signer. An unlock begun in recovery finds recovery's keyring open; its reload
 replaces it with one opened from the same store root, and a failure leaves
 that one, with the generation binding and the source token index, so the
-reconcile, restore and rollback recovery needs still run. Unlock attempts run one at a time. An unlock's
-reload, from locked or recovery, holds the store mutation lock from its state
-check to the end of the reload, as watcher-driven reloads and admin
-mutations do, and the unlock publishes the unlocked state after releasing
-it. The startup unlock of a headless signer runs the unlock an admin request
+reconcile, restore and rollback recovery needs still run. An unlock request
+holds the store mutation lock from its state read to its publish, as
+watcher-driven reloads and admin mutations do, so unlock requests run one at
+a time and no store change lands inside one; the watcher starts after the
+lock is released. The startup unlock of a headless signer runs the unlock an admin request
 runs (`productruntime.Runtime.Unlock`), with the same fence and the same
 fall back into recovery, before the admin listener starts. A passphrase that
-does not open the store root ends an unlock at the reconcile that finds it,
-with no entry into recovery. At startup the unlock plan has already checked
+does not open the store root ends an unlock where it opens the root, before
+its reconcile, with no entry into recovery. At startup the unlock plan has already checked
 the passphrase it was given, and the daemon does not start on a wrong one.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory

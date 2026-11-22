@@ -79,17 +79,17 @@ The transitions transcribe the post-commit reload and the recovery paths:
   Policy apply and the ASA set change commit only on an unlocked signer,
   and restore, rollback and the recovery reconcile run only on one unlocked
   or in recovery, each checked under the lock, as the watcher's reload and
-  the in-place writes run only on one unlocked: an unlock in flight on another connection, which
-  the model does not have, opens the keyring under the lock and publishes
-  unlocked only after releasing it, and would otherwise publish over a
-  commit whose reload failed, where `SetRecovery` did nothing on the
-  still-locked signer. A second unlock of an unlocked signer answers from
+  the in-place writes run only on one unlocked: a lock that landed while the
+  request waited for the lock leaves the keyring open until its cleanup has
+  run, and a commit there whose reload failed would call `SetRecovery` on a
+  locked signer, which does nothing. A second unlock of an unlocked signer answers from
   the session and loads nothing (KU6 in
   [the key-use model](FORMAL_TLA_KEY_USE_LOCK_MODEL.md)), so it rebinds
-  nothing. One that found the signer not unlocked at its check, or that
-  began in recovery, does not publish over a recovery entered after it
-  began: `TryUnlock` compares the session generation, which every entry
-  into recovery moves (KU5).
+  nothing. One that found the signer locked or in recovery holds the store
+  mutation lock from its state read to its publish, as every entry into
+  recovery does, so it never publishes over a recovery entered after it
+  began, and its fence (`PublishUnlocked`) compares the session generation,
+  which every entry into recovery moves, as well (KU5).
 - `Serve` is a signing request or key write, gated by the runtime state
   (`IsUnlocked`; recovery is a distinct state that refuses both). A key write
   is an in-place write of the selected generation that mints nothing: key
@@ -167,13 +167,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   the successful reload lifting recovery; the race with a concurrent lock is
   a Go-level contract pinned by `internal/signerapp/runtime` tests.
 - An unlock that begins in recovery is a second way out of it, not modeled
-  here: it checks the state and reconciles under one hold of the store
-  mutation lock, releases it, takes it again to check the state and reload,
-  and publishes after releasing it.
-  No commit lands during its reload, and it cannot publish over a recovery
-  entered after it began (KU5), but a commit can land between its reload
-  and its publish, and which generation its own reload bound when it
-  publishes is not checked by any model; it is a model-extension candidate.
+  here: it reconciles, reloads and publishes under one hold of the store
+  mutation lock, so no commit lands inside it and it cannot publish over a
+  recovery entered after it began (KU5). Which generation its own reload
+  bound when it publishes is not checked by any model; it is a
+  model-extension candidate.
   Its reload replaces recovery's keyring with one opened from the same store
   root. One that then fails keeps that keyring and the binding it made
   (`ReloadBind`), so recovery maintenance and the reconcile still run; it

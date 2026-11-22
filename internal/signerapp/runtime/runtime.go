@@ -394,13 +394,20 @@ func (r *Runtime) LostToLock(a Attempt) bool {
 	return r.lostLocked(a)
 }
 
+// lostLocked is LostToLock under stateMu. An active maintenance counts as a
+// lock: BeginMaintenance moves lockGen, so this only adds a maintenance that
+// began before the attempt and is still running, which an unlock request
+// cannot meet (a passphrase change holds the store mutation lock across its
+// maintenance, and the request holds it across its attempt). It is a layered
+// guard for a caller that does not hold that lock.
 func (r *Runtime) lostLocked(a Attempt) bool {
 	return r.lockGen != a.lockGen || r.activeMaintenanceID != 0
 }
 
 // Unchanged reports whether the signer is still in the state and the session
 // the attempt found: nothing locked it, and no entry into recovery ended the
-// session, since.
+// session, since. Under the store mutation lock only a lock can move the
+// reading; the session and state comparisons are a layered guard.
 func (r *Runtime) Unchanged(a Attempt) bool {
 	r.stateMu.RLock()
 	defer r.stateMu.RUnlock()
@@ -438,17 +445,16 @@ func (r *Runtime) PublishUnlocked(a Attempt) error {
 	return nil
 }
 
-// EnterRecovery ends an attempt by entering recovery. open opens the keyring
-// recovery needs; it runs only for an attempt that has not lost to a lock,
-// and a lock that lands while it runs wins as it does against a publish:
-// the attempt locks the runtime, the cleanup clears what open opened, and it
-// answers ErrLockedDuringUnlock. A lock that came before it is answered
-// ErrLockedDuringUnlock with nothing opened. From the unlocked state the
-// entry ends the session as SetRecovery does.
+// EnterRecovery ends an attempt by entering recovery, with the keyring open
+// opens. Its fence compares the attempt's own reading, as PublishUnlocked's
+// does: a lock at any point since the attempt began, before open or during
+// it, wins. The attempt then locks the runtime, the cleanup clears what open
+// opened, and it answers ErrLockedDuringUnlock. The caller checks LostToLock
+// first, so that an attempt that has already lost opens nothing. Entered
+// from the unlocked state, the entry would end the session as SetRecovery
+// does; an unlock request never enters from there, since one that finds the
+// signer unlocked is answered from the session.
 func (r *Runtime) EnterRecovery(a Attempt, open func() error) error {
-	if r.LostToLock(a) {
-		return ErrLockedDuringUnlock
-	}
 	if err := open(); err != nil {
 		return err
 	}
