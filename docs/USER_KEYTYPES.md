@@ -1156,6 +1156,15 @@ fingerprint format version. This is a content defect; see
 
 Do not edit installed `.template` files in place.
 
+A disabled template's record is not checked against its template until you
+enable it: a reload compares only an enabled record's fingerprint. An enable
+whose record no longer matches the stored template is refused with nothing
+changed, and names the fingerprint each holds. The offline repair does not
+see such a record. Import the template again from a file you trust with
+`apadmin template import`, which pins the record to that file's definition
+and enables it; if the file's definition differs from the stored template,
+remove the template with `apadmin template remove` first.
+
 ### State record without template file
 
 Reload reports this as an orphaned installed template, also a content defect;

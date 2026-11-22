@@ -782,7 +782,7 @@ func TestDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 		t.Fatalf("disabled template list item = %+v, want installed but not enabled", item)
 	}
 
-	enabled, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType)
+	enabled, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, testMasterKey()))
 	if err != nil {
 		t.Fatalf("EnableInstalledTemplate() error = %v", err)
 	}
@@ -935,7 +935,7 @@ func TestInstalledTemplateLifecycleMatrix(t *testing.T) {
 				if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("DisableInstalledTemplate() error = %v", err)
 				}
-				if _, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType); err != nil {
+				if _, err := EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, cryptotest.Keyring(t, masterKey)); err != nil {
 					t.Fatalf("EnableInstalledTemplate() error = %v", err)
 				}
 			},
@@ -1386,5 +1386,43 @@ teal: |
 		if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
 			t.Errorf("%q: ParseYAML() error = %v, want %q", tt.line, err, tt.wantErr)
 		}
+	}
+}
+
+// A disabled record whose fingerprint no longer matches its stored template
+// passes every reload, which compares an enabled record's fingerprint only,
+// until it is enabled. The enable runs the reload's checks first and refuses
+// such a record with nothing changed: enabled, the reload after it would find
+// an external edit and enter recovery, and the enable's rollback would then
+// remove the cause.
+func TestEnableInstalledTemplateRefusesARecordTheReloadWouldNotLoad(t *testing.T) {
+	paths := newLibraryTestPaths(t)
+	kr := cryptotest.Keyring(t, testMasterKey())
+	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("enable-drift", "Enable Drift"))
+	if _, err := InstallParsed(paths, parsed, kr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DisableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, kr); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := keytypestate.Get(paths, parsed.KeyType)
+	if err != nil || !ok {
+		t.Fatalf("record: %v %v", ok, err)
+	}
+	stored := rec.Fingerprint
+	rec.Fingerprint = "1:" + strings.Repeat("b", 64)
+	if err := keytypestate.Put(paths, rec); err != nil {
+		t.Fatal(err)
+	}
+	drifted, _, _ := keytypestate.Get(paths, parsed.KeyType)
+
+	_, err = EnableInstalledTemplate(paths, parsed.KeyType, parsed.TemplateType, kr)
+	if err == nil || !strings.Contains(err.Error(), "an external edit") || !strings.Contains(err.Error(), stored) ||
+		!strings.Contains(err.Error(), "apadmin template import") {
+		t.Fatalf("EnableInstalledTemplate() error = %v, want the external edit with the fingerprint the template computes and the import that repins it", err)
+	}
+	after, _, _ := keytypestate.Get(paths, parsed.KeyType)
+	if after != drifted {
+		t.Fatalf("record after the refused enable = %+v, want it unchanged: %+v", after, drifted)
 	}
 }

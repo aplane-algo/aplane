@@ -484,7 +484,12 @@ func (s Service) ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminpro
 }
 
 func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
-	installResult, err := templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType)
+	var installResult templatelibrary.InstallResult
+	err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		var enableErr error
+		installResult, enableErr = templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, kr)
+		return enableErr
+	})
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
