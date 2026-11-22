@@ -138,13 +138,6 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 			want: "false unlock_failed signer locked during unlock"},
 		{name: "met a recovery", recovery: true, load: func(ir *productruntime.Runtime) error { ir.SetRecovery(); return nil },
 			want: "true recovery_blocked "},
-		{name: "maintenance in progress",
-			before: func(t *testing.T, server *Signer) {
-				ir := server.productRuntime()
-				token := ir.BeginStoreMaintenance()
-				t.Cleanup(func() { ir.FinishStoreMaintenance(token, false) })
-			},
-			want: "false unlock_failed store maintenance in progress"},
 		{name: "store root unreadable",
 			before: func(t *testing.T, server *Signer) {
 				if err := os.WriteFile(server.keyPaths.StoreRootPath(), []byte("damaged"), 0o600); err != nil {
@@ -185,4 +178,13 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 			}
 		})
 	}
+}
+
+// unlockForTest runs an unlock request through productruntime.Unlock with
+// the reconcile the admin unlock passes, and no watcher.
+func unlockForTest(server *Signer, passphrase []byte) (productruntime.UnlockOutcome, error) {
+	ir := server.productRuntime()
+	return ir.Unlock(passphrase, func(kr *crypto.Keyring) error {
+		return server.adminServices().reconcileGenerationsLocked(ir, kr)
+	}, nil)
 }

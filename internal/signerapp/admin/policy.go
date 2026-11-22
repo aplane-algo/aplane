@@ -115,13 +115,11 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	if ir.IsRecovery() {
 		return policyapply.Error{Code: protocol.ResultCodeRecoveryBlocked, Msg: "the store is in recovery mode; reconcile, roll back, or restore it before applying policy"}
 	}
-	// An unlock in flight on another connection opens the keyring under this
-	// lock but publishes unlocked only after releasing it, so an open keyring
-	// does not mean an unlocked signer. A commit then would meet a locked
-	// signer if its reload failed, where SetRecovery does nothing and leaves
-	// the session generation TryUnlock's fence compares where it was, and the
-	// unlock would publish unlocked over a generation the runtime had not
-	// followed.
+	// The handler's state check ran before the request queued on this lock,
+	// and a lock since then leaves the keyring open until its cleanup has
+	// run, so an open keyring does not mean an unlocked signer. A commit there
+	// whose reload failed would call SetRecovery on a locked signer, which
+	// does nothing.
 	if !ir.IsUnlocked() {
 		return fmt.Errorf("signer is not unlocked: %w", keystore.ErrStoreLocked)
 	}

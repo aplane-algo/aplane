@@ -7,6 +7,25 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## An unlock runs in one hold of the store mutation lock, and a lock always wins
+
+- **A lock that lands during an unlock request stands.** The request answers
+  `unlock_failed` with `signer locked during unlock` and leaves the signer
+  locked, whichever way it would have ended. A lock during the passphrase
+  check of an unlock of an unlocked signer was once followed by that
+  unlock's load and publish, and a lock during an unlock's reconcile that
+  then failed was undone by the request's entry into recovery.
+- **An unlock request runs wholly under the store mutation lock**, from its
+  state read to its publish. A store change that ends in doubt lands before
+  or after it, never inside: an unlock begun in recovery no longer publishes
+  over a recovery entered after its reconcile, which let the signer sign
+  without the reconcile recovery needs. An unlock whose reconcile fails no
+  longer ends a session another request published beside it.
+- **An unlock that arrives during a passphrase change waits for it**, then
+  is refused with the old passphrase and unlocks with the new one.
+- **A good unlock of a locked signer derives from the passphrase twice**, a
+  wrong passphrase once. An attempt that has lost to a lock loads nothing.
+
 ## An address collision on unlock enters recovery; startup unlocks as an admin request does
 
 - **An unlock that finds two key files for one signing address enters
@@ -15,8 +34,7 @@ before it was renamed `enroll`.
   start. Once the duplicate file is removed, a reconcile lifts recovery.
 - **The startup unlock of a headless signer runs the unlock an admin request
   runs**, with the same fence against a lock and the same fall back into
-  recovery. It published the unlocked state without the fence. A good unlock
-  at startup now checks the passphrase once more before it loads.
+  recovery. It published the unlocked state without the fence.
 - **A wrong passphrase ends an unlock at the reconcile that finds it.** It
   went on to an entry into recovery, which opened the store root again
   before it failed.

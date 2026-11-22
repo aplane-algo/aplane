@@ -29,7 +29,7 @@ header credential. Existing formal models do not model the SSH handshake;
 a future transport model must describe this enrolled-key boundary.
 
 **Model drift: lock-during-unlock race handling.**
-The runtime lock state machine gained a lock-generation counter: `TryUnlock`
+The runtime lock state machine gained a lock-generation counter: an unlock attempt's fence (now `PublishUnlocked`)
 detects a `Lock()` that raced the unlock sequence, re-runs lock cleanup, and
 fails with `ErrLockedDuringUnlock` (`internal/signerapp/runtime/runtime.go`).
 The current formal inventory deliberately omits the lock/unlock state machine,
@@ -41,7 +41,7 @@ The same lock state machine has since grown from a boolean to three states
 (`SignerStateLocked`, `SignerStateUnlocked`, `SignerStateRecovery`) plus a
 maintenance fence (`activeMaintenanceID` paired with the lock generation) in
 `internal/signerapp/runtime/runtime.go`. Recovery is entered by
-`TryRecoveryUnlock` when generation reconciliation or generation validation
+an unlock request (now `productruntime.Runtime.Unlock`) when generation reconciliation or generation validation
 fails during unlock: the store root opens but signing stays
 blocked, and `PromoteRecoveryToUnlocked` is the only upward exit.
 `BeginMaintenance`/`FinishMaintenance` bracket a store-wide passphrase change,

@@ -435,11 +435,11 @@ func TestPolicyApplyUncertainCommitReloadsAndEntersRecovery(t *testing.T) {
 	}
 }
 
-// An unlock on another connection opens the keyring under the store mutation
-// lock, and publishes the runtime unlocked only after releasing it. A policy
-// apply in between once committed, met a locked signer when its reload
-// failed, on which SetRecovery does nothing, and the unlock then published
-// unlocked over a generation the runtime had not followed. The apply is
+// A locked signer can still have its keyring open: a lock that landed while
+// the request waited for the store mutation lock clears it only once its
+// cleanup has run. A policy apply there would commit, meet a locked signer
+// when its reload failed, on which SetRecovery does nothing, and leave the
+// next unlock to follow a generation the runtime had not. The apply is
 // refused instead: it needs an unlocked signer, checked under the lock.
 func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	svc, ir, _ := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
@@ -474,10 +474,9 @@ func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
 
 // beforeUnlockCheck is the store mutation lock as the product runtime takes
 // it (SetReloadMutationLock), running between once, on the taking goroutine,
-// before the first acquisition. An unlock takes it after it has read its
-// session generations, to check the state and verify the passphrase under
-// it, so between lands a transition in that gap without a sleep. The
-// service's own mutations take the same mutex directly (fakeDeps).
+// before the first acquisition: as the unlock reaches the lock, before it
+// takes it and reads the lock state. The service's own mutations take the
+// same mutex directly (fakeDeps).
 type beforeUnlockCheck struct {
 	mu      *sync.Mutex
 	between func()
@@ -493,15 +492,13 @@ func (g *beforeUnlockCheck) Lock() {
 
 func (g *beforeUnlockCheck) Unlock() { g.mu.Unlock() }
 
-// errPublishedUnlocked is secondUnlockMeeting's outcome for an unlock that
-// published.
-var errPublishedUnlocked = errors.New("published unlocked")
-
 // secondUnlockMeeting runs an unlock of the unlocked signer, as a second
-// admin connection does, with between landing after the unlock has read its
-// session generations and before it checks the state. It returns how many
-// times the unlock loaded and its outcome.
-func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, reload policyReload, between func()) (loads int, outcome error) {
+// admin connection does, with between landing as the unlock reaches the
+// store mutation lock. The unlock holds that lock from its state read to its
+// publish, so a store change lands wholly before it or after it, never
+// inside. It returns how many times the unlock loaded, the state its
+// reconcile ran in ("" for none), and its error.
+func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, reload policyReload, between func()) (loads int, reconciledIn string, err error) {
 	t.Helper()
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		if passphrase != nil {
@@ -511,11 +508,23 @@ func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, 
 	})
 	gate := &beforeUnlockCheck{mu: &svc.Deps.(*fakeDeps).mu, between: between}
 	ir.SetReloadMutationLock(func() sync.Locker { return gate })
-	_, err := ir.TryUnlock([]byte(adminPolicyPassphrase), nil)
-	if err == nil {
-		err = errPublishedUnlocked
+	_, err = ir.Unlock([]byte(adminPolicyPassphrase), func(*crypto.Keyring) error {
+		reconciledIn = ir.GetState().String()
+		return nil
+	}, nil)
+	return loads, reconciledIn, err
+}
+
+// requireReconciledInRecovery checks that a second unlock met a recovery
+// entered before it: it reconciled in recovery, loaded once and published.
+func requireReconciledInRecovery(t *testing.T, ir *productruntime.Runtime, loads int, reconciledIn string, err error) {
+	t.Helper()
+	if err != nil || reconciledIn != signerruntime.SignerStateRecovery.String() || loads != 1 {
+		t.Fatalf("the second unlock = %v, reconciled in %q, %d load(s); want a reconcile in recovery, one load and a publish", err, reconciledIn, loads)
 	}
-	return loads, err
+	if !ir.IsUnlocked() {
+		t.Fatalf("state = %s, want the unlock to have published after its reconcile", ir.GetState())
+	}
 }
 
 // failIdentityDirSync makes the commit's durability unknown: the identity
@@ -531,24 +540,21 @@ func failIdentityDirSync(svc Service) (restore func()) {
 	return func() { fsutil.TestHook = nil }
 }
 
-// A second unlock of the unlocked signer reads its session generations, then
-// takes the store mutation lock to verify the passphrase and check the state.
-// An uncertain policy commit on another connection enters recovery in
-// between: the unlock finds a signer that is not unlocked and loads, in
-// recovery. It once published unlocked over that recovery. It now publishes
-// nothing, the signer stays in recovery as the apply's answer says, and the
-// unlock answers that it found recovery. An unlock that finds the signer
-// still unlocked loads nothing (TestAnUnlockOfAnUnlockedSignerReloadsNothing
-// in the daemon package), and its load holds the store mutation lock, so the
-// commit cannot land during it.
-func TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
+// An uncertain policy commit on another connection, as a second unlock of the
+// unlocked signer reaches the store mutation lock, lands wholly before the
+// unlock: the commit enters recovery, and the unlock begins in recovery,
+// reconciles there and loads, and only then publishes. It once read its
+// session generations before it took the lock, and the commit landed between
+// that read and its check: the unlock loaded in recovery and once published
+// unlocked over it without the reconcile recovery needs.
+func TestUncertainPolicyCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) {
 	svc, ir, reload := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
 	ir.SetUnlocked()
 	view := svc.GetPolicy()
 	snapshot := svc.GetPolicyContext().SnapshotSHA256
 
 	var result adminproto.ApplyPolicyResult
-	loads, outcome := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, reload, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 			Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},
@@ -560,13 +566,5 @@ func TestUncertainPolicyCommitDuringASecondUnlockEntersRecovery(t *testing.T) {
 	if result.Success || !result.CommitUncertain || result.Code != "policy_commit_uncertain" {
 		t.Fatalf("ApplyPolicy(durability unknown) = %+v", result)
 	}
-	if !errors.Is(outcome, signerruntime.ErrRecoveryDuringUnlock) {
-		t.Fatalf("the second unlock = %v, want %v", outcome, signerruntime.ErrRecoveryDuringUnlock)
-	}
-	if loads != 1 {
-		t.Fatalf("the second unlock loaded %d time(s), want once: it found the signer in recovery", loads)
-	}
-	if !ir.IsRecovery() {
-		t.Fatalf("state after an uncertain commit during a second unlock = %s, want recovery", ir.GetState())
-	}
+	requireReconciledInRecovery(t, ir, loads, reconciledIn, err)
 }

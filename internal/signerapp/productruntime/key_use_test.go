@@ -137,10 +137,9 @@ func TestUnlockDuringTheDrainWaitsForTheCleanup(t *testing.T) {
 	var unlockErr error
 	go func() {
 		defer close(unlockDone)
-		_, unlockErr = ir.lockRuntime.TryUnlock(func() (int, error) {
-			revAtUnlock.Store(ir.KeysetRevision())
-			return 0, nil
-		}, nil)
+		attempt := ir.lockRuntime.BeginAttempt()
+		revAtUnlock.Store(ir.KeysetRevision())
+		unlockErr = ir.lockRuntime.PublishUnlocked(attempt)
 	}()
 
 	select {

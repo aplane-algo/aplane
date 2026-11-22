@@ -17,16 +17,12 @@ const (
 	SignerStateRecovery
 )
 
-// ErrMaintenanceInProgress refuses an unlock attempt that began during a
-// store maintenance.
-var ErrMaintenanceInProgress = errors.New("store maintenance in progress")
-
 // ErrLockedDuringUnlock is an unlock attempt's answer when a lock, or the
 // start of a store maintenance, came while it ran: the lock won, and the
 // attempt cleared what it loaded.
 var ErrLockedDuringUnlock = errors.New("signer locked during unlock")
 
-// ErrRecoveryDuringUnlock is TryUnlock's answer when the signer entered
+// ErrRecoveryDuringUnlock is PublishUnlocked's answer when the signer entered
 // recovery while the attempt ran: the attempt published nothing.
 var ErrRecoveryDuringUnlock = errors.New("signer entered recovery during unlock")
 
@@ -48,7 +44,7 @@ type Runtime struct {
 	state SignerState
 	// lockGen increments on every Lock, on every maintenance fence and its
 	// end without republication, and when an unlock attempt loses to a lock
-	// (lockForCleanupLocked). TryUnlock and maintenance completion re-check it
+	// (lockForCleanupLocked). An unlock attempt and maintenance completion re-check it
 	// before publishing unlocked state, so a racing lock wins instead of
 	// leaving the runtime reporting unlocked over a destroyed key session.
 	lockGen uint64
@@ -56,7 +52,7 @@ type Runtime struct {
 	// to lockGen and on every entry into recovery, one from recovery
 	// included. It is kept apart from lockGen because recovery destroys
 	// nothing: an unlock that raced an entry into recovery has not lost to a
-	// lock, and must not run the lock's cleanup. TryUnlock compares it too,
+	// lock, and must not run the lock's cleanup. PublishUnlocked compares it too,
 	// so such an unlock does not publish over that recovery either.
 	session uint64
 	stateMu sync.RWMutex
@@ -103,7 +99,7 @@ func (r *Runtime) SetOnLock(fn func()) {
 // under the state mutex, on every Lock and BeginMaintenance transition, on a
 // maintenance that ends without republishing, on an unlock attempt that
 // loses to a lock, and on every entry into recovery, one from recovery
-// included (SetRecovery, TryRecovery). Two unlocked sessions never share a generation, and a
+// included (SetRecovery, EnterRecovery). Two unlocked sessions never share a generation, and a
 // session ends whenever the signer leaves the unlocked state, so per-session
 // state can be keyed by it and a transition that was observed late cannot be
 // mistaken for the current one.
@@ -150,7 +146,7 @@ func (r *Runtime) IsUnlocked() bool {
 
 // SetUnlocked marks the signer as unlocked without the fence an unlock
 // attempt passes. No production path calls it: an unlock publishes through
-// TryUnlock, and leaves recovery through PromoteRecoveryToUnlocked. Tests use
+// PublishUnlocked, and leaves recovery through PromoteRecoveryToUnlocked. Tests use
 // it to set up an unlocked runtime (test/arch guards the production code).
 func (r *Runtime) SetUnlocked() {
 	r.stateMu.Lock()
@@ -366,27 +362,104 @@ func (r *Runtime) FinishMaintenance(
 	return false
 }
 
-// TryRecovery runs the keyring unlock function and enters recovery state
-// unless a concurrent lock wins. Entered from the unlocked state (an unlock
-// request whose reconcile or load failed, when another request or a
-// reconcile unlocked the signer after the request last checked), it ends the
-// session as SetRecovery does. Like TryUnlock, it waits for a lock's cleanup
-// in progress before it starts.
-func (r *Runtime) TryRecovery(unlockFn func() error) error {
-	r.awaitCleanups(false)
-	if r.activeMaintenanceID != 0 {
-		r.stateMu.RUnlock()
-		return ErrMaintenanceInProgress
-	}
-	gen := r.lockGen
-	r.stateMu.RUnlock()
+// Attempt is an unlock request's reading of the lock state at its start: the
+// lock generation, the session and the state, read together. Every later
+// check and both of the attempt's ends compare it, so a lock that lands at
+// any point after the reading wins, whichever way the attempt would have
+// ended.
+type Attempt struct {
+	lockGen uint64
+	session uint64
+	state   SignerState
+}
 
-	if err := unlockFn(); err != nil {
+// State is the signer's state when the attempt began.
+func (a Attempt) State() SignerState { return a.state }
+
+// BeginAttempt starts an unlock attempt. It first waits for any lock cleanup
+// in progress: a Lock moves lockGen and then runs its cleanup outside the
+// state mutex, and an attempt that read lockGen in between would pass the
+// fence and publish a session that cleanup was still about to destroy.
+func (r *Runtime) BeginAttempt() Attempt {
+	r.awaitCleanups(false)
+	defer r.stateMu.RUnlock()
+	return Attempt{lockGen: r.lockGen, session: r.session, state: r.state}
+}
+
+// LostToLock reports whether a lock, or the start of a store maintenance,
+// came since the attempt began: the attempt has lost, and goes no further.
+func (r *Runtime) LostToLock(a Attempt) bool {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	return r.lostLocked(a)
+}
+
+// lostLocked is LostToLock under stateMu. An active maintenance counts as a
+// lock: BeginMaintenance moves lockGen, so this only adds a maintenance that
+// began before the attempt and is still running, which an unlock request
+// cannot meet (a passphrase change holds the store mutation lock across its
+// maintenance, and the request holds it across its attempt). It is a layered
+// guard for a caller that does not hold that lock.
+func (r *Runtime) lostLocked(a Attempt) bool {
+	return r.lockGen != a.lockGen || r.activeMaintenanceID != 0
+}
+
+// Unchanged reports whether the signer is still in the state and the session
+// the attempt found: nothing locked it, and no entry into recovery ended the
+// session, since. Under the store mutation lock only a lock can move the
+// reading; the session and state comparisons are a layered guard.
+func (r *Runtime) Unchanged(a Attempt) bool {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	return r.lockGen == a.lockGen && r.session == a.session && r.state == a.state
+}
+
+// PublishUnlocked ends an attempt that loaded by publishing the unlocked
+// state, unless the signer moved since the attempt began.
+//
+// A lock, or the start of a store maintenance, since then wins: the attempt
+// locks the runtime (lockForCleanupLocked) and the lock callback runs again
+// to destroy what the attempt loaded, which a lock whose cleanup ran before
+// the load would otherwise leave. It answers ErrLockedDuringUnlock.
+//
+// An entry into recovery wins too, without the cleanup: a store change since
+// the attempt began ended in doubt, and publishing would lift that recovery
+// without the reconcile it needs. The attempt publishes nothing and answers
+// ErrRecoveryDuringUnlock. An unlock request holds the store mutation lock
+// across its attempt, as every entry into recovery does, so none lands in
+// one; the comparison is a layered guard.
+func (r *Runtime) PublishUnlocked(a Attempt) error {
+	r.stateMu.Lock()
+	if r.lostLocked(a) {
+		onLock := r.lockForCleanupLocked()
+		r.stateMu.Unlock()
+		r.runCleanup(onLock)
+		return ErrLockedDuringUnlock
+	}
+	if r.session != a.session {
+		r.stateMu.Unlock()
+		return ErrRecoveryDuringUnlock
+	}
+	r.state = SignerStateUnlocked
+	r.stateMu.Unlock()
+	return nil
+}
+
+// EnterRecovery ends an attempt by entering recovery, with the keyring open
+// opens. Its fence compares the attempt's own reading, as PublishUnlocked's
+// does: a lock at any point since the attempt began, before open or during
+// it, wins. The attempt then locks the runtime, the cleanup clears what open
+// opened, and it answers ErrLockedDuringUnlock. The caller checks LostToLock
+// first, so that an attempt that has already lost opens nothing. Entered
+// from the unlocked state, the entry would end the session as SetRecovery
+// does; an unlock request never enters from there, since one that finds the
+// signer unlocked is answered from the session.
+func (r *Runtime) EnterRecovery(a Attempt, open func() error) error {
+	if err := open(); err != nil {
 		return err
 	}
-
 	r.stateMu.Lock()
-	if r.lockGen != gen || r.activeMaintenanceID != 0 {
+	if r.lostLocked(a) {
 		onLock := r.lockForCleanupLocked()
 		r.stateMu.Unlock()
 		r.runCleanup(onLock)
@@ -395,64 +468,4 @@ func (r *Runtime) TryRecovery(unlockFn func() error) error {
 	r.enterRecoveryLocked()
 	r.stateMu.Unlock()
 	return nil
-}
-
-// TryUnlock runs the supplied unlock function and, on success, transitions to
-// unlocked - unless a Lock call raced the unlock function, in which case the
-// lock wins: the attempt locks the runtime (lockForCleanupLocked), the lock
-// callback runs again to destroy whatever the unlock function loaded, and the
-// unlock reports failure.
-//
-// An entry into recovery while the unlock function ran wins too, without the
-// cleanup: a store change since the attempt began ended in doubt, and
-// publishing would lift that recovery without the reconcile it needs. The
-// attempt publishes nothing and leaves the state as it is, in recovery with
-// the keyring recovery administration needs unless a reconcile has lifted
-// it since, and answers ErrRecoveryDuringUnlock.
-//
-// It first waits for any lock cleanup in progress. A Lock moves lockGen and
-// then runs its cleanup outside the state mutex; an unlock that read lockGen
-// in between would pass the fence above and publish a session that cleanup
-// was still about to destroy.
-//
-// An unlock function that returns an error ends the attempt there, before
-// the fence: the state is left as it is and no cleanup runs. A function that
-// opened a keyring and then failed closes it itself, unless it found
-// recovery's keyring open, which recovery keeps. The product runtime also
-// ends this way an attempt that found the signer already unlocked and loaded
-// nothing, which has nothing to publish and nothing to clear.
-func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (int, error) {
-	r.awaitCleanups(false)
-	if r.activeMaintenanceID != 0 {
-		r.stateMu.RUnlock()
-		return 0, ErrMaintenanceInProgress
-	}
-	gen, session := r.lockGen, r.session
-	r.stateMu.RUnlock()
-
-	keyCount, err := unlockFn()
-	if err != nil {
-		return 0, err
-	}
-
-	r.stateMu.Lock()
-	if r.lockGen != gen || r.activeMaintenanceID != 0 {
-		onLock := r.lockForCleanupLocked()
-		r.stateMu.Unlock()
-		r.runCleanup(onLock)
-		return 0, ErrLockedDuringUnlock
-	}
-	// lockGen held, so only an entry into recovery moved the session.
-	if r.session != session {
-		r.stateMu.Unlock()
-		return 0, ErrRecoveryDuringUnlock
-	}
-	r.state = SignerStateUnlocked
-	r.stateMu.Unlock()
-
-	if onUnlocked != nil {
-		onUnlocked()
-	}
-
-	return keyCount, nil
 }

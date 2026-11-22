@@ -1452,7 +1452,6 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
 | `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
-| `productruntime.Runtime.unlockMu` | Unlock attempts (`TryUnlock`), run one at a time from the state check to the publish |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
 | `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |
@@ -1466,15 +1465,42 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `AuditLogger.mu` | Audit file writes |
 | SSH server locks | Product hooks, client connections by fingerprint, enrollment claims, listener |
 
-An unlock takes these in one order. `productruntime.Runtime.TryUnlock` takes
-`unlockMu` first, with nothing else held, and holds it across the attempt.
-Its unlock function then takes `Signer.storeMutationLock` (the runtime's
-reload mutation lock), reads `Runtime.stateMu` to check the state, and, when
-the signer is not unlocked, takes `passphraseLock` for the reload, which
-takes `keysLock`; the fence takes `Runtime.stateMu` after the unlock function
-has released the others. A lock, an entry into recovery, the lock cleanup and
-store maintenance never wait for `unlockMu`, and nothing that holds
-`storeMutationLock` or `passphraseLock` waits for it.
+An unlock request holds `Signer.storeMutationLock` (the runtime's reload
+mutation lock) from its state read to its publish
+(`productruntime.Runtime.Unlock`). Under it the request waits for any lock
+cleanup in progress and reads the lock state (`Runtime.stateMu`,
+`BeginAttempt`), takes `passphraseLock` for the reload, which takes
+`keysLock`, and takes `Runtime.stateMu` again at its fence. The order:
+
+```text
+storeMutationLock -> passphraseLock -> keysLock (and the key session,
+                                       the keystore cache, policyMu,
+                                       sourceTokens)
+storeMutationLock -> stateMu           (an unlock attempt's reading, checks
+                                        and fence)
+keyUseMu          -> stateMu (read)
+stateMu (read)    -> rotatingStatusMu, sourceTokens
+```
+
+The rules that order depends on:
+
+1. An unlock request, every entry into recovery, every reconcile's
+   promotion out of it and a passphrase change hold `storeMutationLock`
+   throughout, so none lands inside another, and an unlock that arrives
+   during a passphrase change waits for it and meets the new store root.
+2. An unlock request waits for a lock's cleanup while it holds
+   `storeMutationLock`, so nothing a lock's cleanup waits for may wait for
+   that lock. A mnemonic export takes it before it registers its key use,
+   the other key users take none, and a `WithKeyring` callback under it
+   was started by the lock's own holder.
+3. The wait for cleanups never runs inside a `WithKeyring` callback or
+   under `passphraseLock`: the cleanup waits for the first and takes the
+   second.
+4. `stateMu` sections stay a few assignments. Nothing that holds `stateMu`
+   waits for another lock; key-use cancellation and the end of approvals
+   run after it is released.
+5. The watcher starts after the unlock releases `storeMutationLock`: its
+   reload of changes seen while locked takes that lock.
 
 Goroutines:
 

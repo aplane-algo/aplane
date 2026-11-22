@@ -39,7 +39,7 @@ func TestTryUnlockFailureKeepsRuntimeLocked(t *testing.T) {
 	var unlockedCalls atomic.Int32
 
 	failure := errors.New("unlock failed")
-	keyCount, err := rt.TryUnlock(func() (int, error) {
+	keyCount, err := tryUnlock(rt, func() (int, error) {
 		return 0, failure
 	}, func() {
 		unlockedCalls.Add(1)
@@ -63,7 +63,7 @@ func TestTryUnlockSuccessUnlocksAndCallsOnUnlocked(t *testing.T) {
 	rt := New()
 	var unlockedCalls atomic.Int32
 
-	keyCount, err := rt.TryUnlock(func() (int, error) {
+	keyCount, err := tryUnlock(rt, func() (int, error) {
 		return 7, nil
 	}, func() {
 		unlockedCalls.Add(1)
@@ -93,7 +93,7 @@ func TestTryUnlockLosesToRacingLock(t *testing.T) {
 	r.SetOnLock(func() { lockCalls++ })
 	r.SetUnlocked() // so the racing Lock takes the unlocked->locked path
 
-	_, err := r.TryUnlock(func() (int, error) {
+	_, err := tryUnlock(r, func() (int, error) {
 		r.Lock() // races the in-flight unlock
 		return 3, nil
 	}, nil)
@@ -113,7 +113,7 @@ func TestTryUnlockLosesToRacingLock(t *testing.T) {
 // TestTryUnlockSucceedsWithoutRacingLock pins the happy path.
 func TestTryUnlockSucceedsWithoutRacingLock(t *testing.T) {
 	r := New()
-	keyCount, err := r.TryUnlock(func() (int, error) { return 5, nil }, nil)
+	keyCount, err := tryUnlock(r, func() (int, error) { return 5, nil }, nil)
 	if err != nil || keyCount != 5 {
 		t.Fatalf("TryUnlock = (%d, %v), want (5, nil)", keyCount, err)
 	}
@@ -161,26 +161,26 @@ func TestMaintenanceRepublishLosesToRacingLock(t *testing.T) {
 	}
 }
 
+// An attempt during a store maintenance has lost, as one a lock overtook
+// has: it publishes nothing and enters no recovery; what it opened is cleared
+// by its cleanup. No unlock request meets a maintenance in production: a
+// passphrase change holds the store mutation lock across it, and an unlock
+// request holds that lock across its attempt.
 func TestMaintenanceRejectsUnlockAndRecoveryWithoutRunningCallbacks(t *testing.T) {
 	r := New()
 	r.SetUnlocked()
 	token := r.BeginMaintenance()
-	unlockRan := false
 	recoveryRan := false
 
-	_, err := r.TryUnlock(func() (int, error) {
-		unlockRan = true
-		return 1, nil
-	}, nil)
-	if !errors.Is(err, ErrMaintenanceInProgress) || unlockRan {
-		t.Fatalf("TryUnlock during maintenance = (%v, ran=%v)", err, unlockRan)
+	if _, err := tryUnlock(r, func() (int, error) { return 1, nil }, nil); !errors.Is(err, ErrLockedDuringUnlock) {
+		t.Fatalf("an unlock during maintenance = %v, want %v", err, ErrLockedDuringUnlock)
 	}
-	recoveryErr := r.TryRecovery(func() error {
+	recoveryErr := tryRecovery(r, func() error {
 		recoveryRan = true
 		return nil
 	})
-	if !errors.Is(recoveryErr, ErrMaintenanceInProgress) || recoveryRan {
-		t.Fatalf("TryRecovery during maintenance = (%v, ran=%v)", recoveryErr, recoveryRan)
+	if !errors.Is(recoveryErr, ErrLockedDuringUnlock) || !recoveryRan || r.IsRecovery() {
+		t.Fatalf("a recovery entry during maintenance = (%v, opened=%v, state %v), want %v at the fence", recoveryErr, recoveryRan, r.GetState(), ErrLockedDuringUnlock)
 	}
 	if r.FinishMaintenance(token, false) {
 		t.Fatal("failed maintenance unexpectedly republished runtime")
@@ -196,7 +196,7 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	r.SetOnLock(func() { cleanups++ })
 	var token MaintenanceToken
 
-	_, err := r.TryUnlock(func() (int, error) {
+	_, err := tryUnlock(r, func() (int, error) {
 		token = r.BeginMaintenance()
 		return 1, nil
 	}, nil)
@@ -206,7 +206,7 @@ func TestInFlightUnlockLosesToRacingMaintenance(t *testing.T) {
 	if r.GetState() != SignerStateLocked {
 		t.Fatalf("state after racing maintenance = %v, want locked", r.GetState())
 	}
-	// BeginMaintenance clears the old session; the losing TryUnlock clears
+	// BeginMaintenance clears the old session; the losing attempt clears
 	// whatever its callback may have loaded.
 	if cleanups != 2 {
 		t.Fatalf("maintenance race cleanups = %d, want 2", cleanups)
@@ -249,7 +249,7 @@ func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 	r := New()
 	var lockCalls atomic.Int32
 	r.SetOnLock(func() { lockCalls.Add(1) })
-	if err := r.TryRecovery(func() error { return nil }); err != nil {
+	if err := tryRecovery(r, func() error { return nil }); err != nil {
 		t.Fatalf("TryRecovery() = %v", err)
 	}
 	if !r.IsRecovery() || r.IsUnlocked() || r.GetState().String() != "recovery" {
@@ -269,7 +269,7 @@ func TestTryRecoveryBlocksSigningAndLockRunsCleanup(t *testing.T) {
 func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
 	r := New()
 	g0 := r.LockGeneration()
-	if _, err := r.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+	if _, err := tryUnlock(r, func() (int, error) { return 1, nil }, nil); err != nil {
 		t.Fatalf("unlock failed: %v", err)
 	}
 	if r.LockGeneration() != g0 {
@@ -280,7 +280,7 @@ func TestLockGenerationAdvancesOnEveryLockTransition(t *testing.T) {
 	if g1 != g0+1 {
 		t.Fatalf("generation after lock = %d, want %d", g1, g0+1)
 	}
-	if _, err := r.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+	if _, err := tryUnlock(r, func() (int, error) { return 1, nil }, nil); err != nil {
 		t.Fatalf("second unlock failed: %v", err)
 	}
 	token := r.BeginMaintenance()
@@ -404,19 +404,20 @@ func TestRecoveryEndsTheUnlockedSession(t *testing.T) {
 
 	// An unlock that runs while the signer is locked is not made to lose.
 	rt.Lock()
-	if _, err := rt.TryUnlock(func() (int, error) { return 1, nil }, nil); err != nil {
+	if _, err := tryUnlock(rt, func() (int, error) { return 1, nil }, nil); err != nil {
 		t.Fatalf("unlock after a lock: %v", err)
 	}
 }
 
-// TryRecovery is the other way into recovery, and it too can start from the
-// unlocked state: an unlock request on a signer already unlocked, whose store
-// then fails validation. It ends the session as SetRecovery does.
+// An entry into recovery through EnterRecovery from the unlocked state ends
+// the session as SetRecovery does. No unlock request enters from there (one
+// that finds the signer unlocked is answered from the session); the lock
+// runtime keeps the transition sound for any caller.
 func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	rt := New()
 	rt.SetUnlocked()
 	session := rt.LockGeneration()
-	if err := rt.TryRecovery(func() error { return nil }); err != nil {
+	if err := tryRecovery(rt, func() error { return nil }); err != nil {
 		t.Fatalf("TryRecovery: %v", err)
 	}
 	if !rt.IsRecovery() || rt.LockGeneration() == session {
@@ -427,7 +428,7 @@ func TestTryRecoveryFromUnlockedEndsTheSession(t *testing.T) {
 	// recovery it enters.
 	rt.Lock()
 	locked := rt.LockGeneration()
-	if err := rt.TryRecovery(func() error { return nil }); err != nil || !rt.IsRecovery() || rt.LockGeneration() == locked {
+	if err := tryRecovery(rt, func() error { return nil }); err != nil || !rt.IsRecovery() || rt.LockGeneration() == locked {
 		t.Fatalf("TryRecovery from locked: %v, state %v, generation %d -> %d", err, rt.GetState(), locked, rt.LockGeneration())
 	}
 }
@@ -440,7 +441,7 @@ func TestUnlockOverlappingRecoveryDoesNotRunTheLockCleanup(t *testing.T) {
 	var lockCalls atomic.Int32
 	rt.SetOnLock(func() { lockCalls.Add(1) })
 	rt.SetUnlocked()
-	_, err := rt.TryUnlock(func() (int, error) {
+	_, err := tryUnlock(rt, func() (int, error) {
 		rt.SetRecovery()
 		return 1, nil
 	}, nil)
@@ -504,7 +505,7 @@ func TestTryUnlockWaitsForALockCleanupInProgress(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, attemptErr = rt.TryUnlock(func() (int, error) {
+		_, attemptErr = tryUnlock(rt, func() (int, error) {
 			cleanupsAtUnlock.Store(returned.Load())
 			return 1, nil
 		}, nil)
@@ -537,7 +538,7 @@ func TestTryRecoveryWaitsForALockCleanupInProgress(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		attemptErr = rt.TryRecovery(func() error {
+		attemptErr = tryRecovery(rt, func() error {
 			cleanupsAtUnlock.Store(returned.Load())
 			return nil
 		})
@@ -603,7 +604,7 @@ func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
 	loser := make(chan struct{})
 	go func() {
 		defer close(loser)
-		_, _ = rt.TryUnlock(func() (int, error) {
+		_, _ = tryUnlock(rt, func() (int, error) {
 			rt.Lock() // already locked: moves the generation, runs no cleanup
 			return 1, nil
 		}, nil)
@@ -614,7 +615,7 @@ func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, attemptErr = rt.TryUnlock(func() (int, error) { return 1, nil }, nil)
+		_, attemptErr = tryUnlock(rt, func() (int, error) { return 1, nil }, nil)
 	}()
 	expectBlocked(t, done, "TryUnlock")
 	close(release)
@@ -622,5 +623,33 @@ func TestTryUnlockWaitsForALosingUnlocksCleanup(t *testing.T) {
 	<-loser
 	if attemptErr != nil || !rt.IsUnlocked() {
 		t.Fatalf("unlock after the cleanup: %v, unlocked=%v; want an unlocked signer", attemptErr, rt.IsUnlocked())
+	}
+}
+
+// The recovery end fences on the attempt's own reading, taken at its start:
+// a lock that lands after the reading and before the entry wins, though the
+// entry itself begins after the lock. The attempt locks the runtime for its
+// cleanup, which clears what open opened. An entry into recovery once read
+// the lock generation when it was called, so a lock that landed during the
+// attempt's reconcile or load passed its fence, and the attempt moved the
+// locked signer into recovery.
+func TestARecoveryEntryFencesOnTheAttemptsReading(t *testing.T) {
+	rt := New()
+	var cleanups atomic.Int32
+	rt.SetOnLock(func() { cleanups.Add(1) })
+	attempt := rt.BeginAttempt()
+	rt.Lock() // lands during the attempt, before its recovery entry
+	before := cleanups.Load()
+
+	opened := false
+	err := rt.EnterRecovery(attempt, func() error { opened = true; return nil })
+	if !errors.Is(err, ErrLockedDuringUnlock) {
+		t.Fatalf("EnterRecovery() = %v after a lock during the attempt, want %v", err, ErrLockedDuringUnlock)
+	}
+	if rt.GetState() != SignerStateLocked {
+		t.Fatalf("state = %v, want the lock to stand", rt.GetState())
+	}
+	if !opened || cleanups.Load() != before+1 {
+		t.Fatalf("opened %v, %d cleanup(s) by the entry; want what it opened cleared by one", opened, cleanups.Load()-before)
 	}
 }

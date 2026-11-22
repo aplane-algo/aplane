@@ -173,7 +173,7 @@ func TestStageTableWorkerBoundsAnUnknownAuthorizer(t *testing.T) {
 	// by the lock generation, so the worker never has to notice the lock
 	// for the allowance to be renewed.
 	server.lock()
-	if _, err := ir.TryUnlock(testPassphrase, nil); err != nil {
+	if _, err := unlockForTest(server, testPassphrase); err != nil {
 		t.Fatalf("unlock failed: %v", err)
 	}
 	if wait := server.fillStageTables(context.Background(), ir); wait != stageTableBusyInterval {

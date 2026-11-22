@@ -9,10 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/keystore"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/storeinit"
-	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // Every way the signer's session ends withdraws an approval waiting on the
@@ -92,47 +89,4 @@ func TestALockWithdrawsApprovalsBeforeItsDrain(t *testing.T) {
 	}
 	releaseKeyUse()
 	<-locked
-}
-
-// A recovery unlock on a signer that was unlocked ends its session, and
-// withdraws the approval waiting on the operator's screen as SetRecovery does.
-func TestARecoveryUnlockWithdrawsAWaitingApproval(t *testing.T) {
-	root := t.TempDir()
-	paths := storepaths.NewPaths(root)
-	passphrase := []byte("session-end-passphrase")
-	if _, err := storeinit.Initialize(append([]byte(nil), passphrase...), storeinit.Options{
-		ValidateCandidate: func(storeinit.FirstGenerationCandidate) error { return nil },
-		DataDir:           root,
-		Paths:             paths,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	ir := New(Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
-	ir.SetUnlocked()
-	shown := make(chan struct{}, 1)
-	ir.SetApprovalCoordinator(signerapproval.New(
-		func() bool { return true },
-		func(*signerapproval.SignRequest) bool { shown <- struct{}{}; return true },
-		func(*signerapproval.SignRequestCanceled) bool { return true },
-	))
-	ctx, finish := ir.BeginSigningRequest(context.Background(), "sign-1")
-	defer finish()
-	result := make(chan error, 1)
-	go func() {
-		_, err := ir.RequestSigningApprovalPrompt(ctx, signerapproval.Prompt{RequestID: "sign-1", Address: "A", TxnSender: "A", Description: "d"}, time.Minute)
-		result <- err
-	}()
-	<-shown
-
-	if err := ir.TryRecoveryUnlock(passphrase); err != nil {
-		t.Fatalf("TryRecoveryUnlock() failed: %v", err)
-	}
-	select {
-	case err := <-result:
-		if !errors.Is(err, signerapproval.ErrSessionEnded) {
-			t.Fatalf("approval error = %v, want the session-ended withdrawal", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("the approval was still waiting after the recovery unlock")
-	}
 }

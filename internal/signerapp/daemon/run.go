@@ -340,8 +340,8 @@ func (s *Signer) unlockAtStartup(ir *productruntime.Runtime, passphrase []byte) 
 	// is started later, by the lifecycle plan.
 	adminServices := s.adminServices()
 	logInfof("scanning keys directory for private keys")
-	outcome, err := ir.Unlock(passphrase, func() error {
-		return adminServices.reconcileGenerationsWithPassphraseLocked(ir, passphrase)
+	outcome, err := ir.Unlock(passphrase, func(kr *crypto.Keyring) error {
+		return adminServices.reconcileGenerationsLocked(ir, kr)
 	}, nil)
 	if err != nil {
 		logErrorf("error unlocking the store: %v", err)
