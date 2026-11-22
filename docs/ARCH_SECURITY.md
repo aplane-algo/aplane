@@ -2400,11 +2400,12 @@ A token's custody:
 - **In memory.** Only while the keyring is open, in an immutable token
   index a reload decrypts. The node holds it while it is unlocked; an unlock
   request on a node already unlocked reloads nothing, so it neither replaces
-  nor clears the index. Recovery holds none: an entry into recovery
-  drops the index with the key maps, though the keyring that decrypts the
-  token files stays open, and the reconcile that lifts recovery publishes it
-  again. No lookup runs in recovery, since a lookup runs only inside a key
-  use, which recovery refuses. Lock cleanup zeroes the index once every lookup
+  nor clears the index. An entry into recovery outside an unlock drops the
+  index with the key maps, though the keyring that decrypts the token files
+  stays open, and the reconcile that lifts recovery publishes it again; an
+  unlock begun in recovery whose load fails after reading the token files
+  leaves the index it published. No lookup runs in recovery, since a lookup
+  runs only inside a key use, which recovery refuses. Lock cleanup zeroes the index once every lookup
   has been canceled and released, and a replaced index is zeroed when its
   last reader releases it.
 - **Over the admin protocol.** It travels in one message,

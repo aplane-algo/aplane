@@ -58,11 +58,17 @@ func viewInService(t *testing.T) (ir *Runtime, bound storepaths.GenPaths, p0 *po
 	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
 		return &Loaded{Selection: &bound, PolicyVerified: true, Policy: p0, Tokens: viewTokens(t, "tok-0"), Contents: viewKeys(bound)}, nil
 	}, ReloadEffects{})
+	epoch := ir.stageTables.Epoch()
 	if _, err := ir.FollowCommit(genstore.Committed); err != nil {
 		t.Fatal(err)
 	}
 	if ir.KeyCount() != 1 || ir.NodePolicy() != p0 {
 		t.Fatalf("setup: %d key(s), policy %p; want the published view", ir.KeyCount(), ir.NodePolicy())
+	}
+	// The stage tables holding the old inventory close before the new one
+	// is published.
+	if ir.stageTables.Epoch() == epoch {
+		t.Fatal("the publish left the stage tables open")
 	}
 	return ir, bound, p0
 }
@@ -131,6 +137,7 @@ func TestTheFailureRuleDecidesWhatAFailedBuildLeaves(t *testing.T) {
 			if tc.uncertain {
 				outcome = genstore.Uncertain
 			}
+			epoch := ir.stageTables.Epoch()
 			_, err := ir.FollowCommit(outcome)
 			if !tc.uncertain && !errors.Is(err, tc.err) {
 				t.Fatalf("FollowCommit() = %v, want %v", err, tc.err)
@@ -152,6 +159,11 @@ func TestTheFailureRuleDecidesWhatAFailedBuildLeaves(t *testing.T) {
 			}
 			if value, _ := built.TokenFor(sourcetokens.DefaultSelector, "screening"); value == "tok-built" {
 				t.Fatal("the build's token index was not zeroed")
+			}
+			// The stage tables close on any install, so none serves the
+			// old inventory; a kept view installs nothing.
+			if moved := ir.stageTables.Epoch() != epoch; moved != ir.IsRecovery() {
+				t.Fatalf("stage tables invalidated = %v in state %v; want them closed exactly when recovery's view was installed", moved, ir.GetState())
 			}
 			_, loadErr := ir.SnapshotKeySession().GetKeyWithContext(context.Background(), "ADDR")
 			if inRecovery := ir.IsRecovery(); inRecovery != errors.Is(loadErr, keystore.ErrStoreLocked) {
@@ -343,5 +355,108 @@ func TestAReloadALockOvertookSendsNoNotification(t *testing.T) {
 	}
 	if ir.KeyCount() != 0 {
 		t.Fatalf("%d key(s) after the lock, want its cleanup to clear the publish", ir.KeyCount())
+	}
+}
+
+// A reconcile runs its step, builds, publishes and promotes. A step that
+// fails leaves the store in doubt for the explicit reconcile, which enters
+// recovery's view; the rescan after a restore, which begins in recovery,
+// stays in recovery's view as it was. A lock that overtakes either keeps the
+// signer locked, and the reconcile answers that the state changed.
+func TestAReconcileEndsAsItsStepAndALockDecide(t *testing.T) {
+	stepFailed := errors.New("injected reconcile failure")
+	t.Run("an explicit reconcile whose step fails enters recovery", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		told := false
+		ir.SetReloadRecoveryHook(func(cause error) { told = errors.Is(cause, stepFailed) })
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+		}, ReloadEffects{})
+		if _, err := ir.Reconcile(func(*crypto.Keyring) error { return stepFailed }, true); !errors.Is(err, stepFailed) {
+			t.Fatalf("Reconcile() = %v, want the step's failure", err)
+		}
+		if !ir.IsRecovery() || ir.KeyCount() != 0 || !told {
+			t.Fatalf("state %v, %d key(s), told %v; want recovery's view, the hook told the step's failure", ir.GetState(), ir.KeyCount(), told)
+		}
+	})
+	t.Run("a rescan whose step fails stays in recovery", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		ir.EnterRecovery(nil)
+		built := false
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			built = true
+			return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+		}, ReloadEffects{})
+		if _, err := ir.Reconcile(func(*crypto.Keyring) error { return stepFailed }, false); !errors.Is(err, stepFailed) || built || !ir.IsRecovery() {
+			t.Fatalf("Reconcile() = %v, built %v, state %v; want the step's failure, no build and recovery", err, built, ir.GetState())
+		}
+	})
+	for _, fromRecovery := range []bool{false, true} {
+		t.Run(fmt.Sprintf("a lock overtakes, from recovery %v", fromRecovery), func(t *testing.T) {
+			ir, bound, _ := viewInService(t)
+			if fromRecovery {
+				ir.EnterRecovery(nil)
+			}
+			var lockDone sync.WaitGroup
+			ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+				lockDone.Add(1)
+				go func() {
+					defer lockDone.Done()
+					ir.Lock()
+				}()
+				for ir.GetState() != signerruntime.SignerStateLocked {
+					time.Sleep(time.Millisecond)
+				}
+				return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+			}, ReloadEffects{})
+			_, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true)
+			lockDone.Wait()
+			if !errors.Is(err, ErrReconcileStateChanged) || ir.GetState() != signerruntime.SignerStateLocked {
+				t.Fatalf("Reconcile() = %v, state %v; want ErrReconcileStateChanged and the lock standing", err, ir.GetState())
+			}
+		})
+	}
+}
+
+// A store in doubt on a signer a lock has already moved out of service
+// builds nothing and installs nothing: the lock stands. The test holds the
+// passphrase lock for reading, as the reload does, so the lock's state moves
+// at once and its cleanup waits, with the keyring still open: the window in
+// which only the refusal keeps the reload from building and installing
+// recovery's view on a locked signer.
+func TestAStoreInDoubtOnALockedSignerBuildsNothing(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	built := false
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		built = true
+		return &Loaded{Selection: &bound}, nil
+	}, ReloadEffects{})
+	ir.passphraseLock.RLock()
+	locked := make(chan struct{})
+	go func() {
+		defer close(locked)
+		ir.Lock()
+	}()
+	for ir.GetState() != signerruntime.SignerStateLocked {
+		time.Sleep(time.Millisecond)
+	}
+	end := ir.reloadViewLocked(reloadMode{inDoubt: true, cause: errCommitUncertain})
+	ir.passphraseLock.RUnlock()
+	<-locked
+	if built || end.recovery || !errors.Is(end.err, ErrNeitherUnlockedNorRecovery) {
+		t.Fatalf("built %v, recovery %v, err %v; want no build, no recovery and the locked refusal", built, end.recovery, end.err)
+	}
+}
+
+// A runtime with no build wired fails every build closed: a commit that
+// landed, or one in doubt, enters recovery with nothing bound.
+func TestARuntimeWithNoBuildFailsClosed(t *testing.T) {
+	for _, outcome := range []genstore.MintOutcome{genstore.Committed, genstore.Uncertain} {
+		ir, _, _ := viewInService(t)
+		ir.SetBuildFunc(nil, ReloadEffects{})
+		_, _ = ir.FollowCommit(outcome)
+		if _, err := ir.ActivePaths(); !ir.IsRecovery() || err == nil {
+			t.Fatalf("%v with no build: state %v, binding error %v; want recovery bound to nothing", outcome, ir.GetState(), err)
+		}
 	}
 }

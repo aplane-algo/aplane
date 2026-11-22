@@ -19,12 +19,14 @@ before it was renamed `enroll`.
   does not authenticate, and a content defect enter recovery; anything else
   keeps the view in service. After a commit every failure enters recovery,
   as before.
-- **Recovery publishes no keys and no source tokens**, however it was
-  entered. Its view keeps the keyring, is bound to the generation the store
+- **Recovery publishes no keys and no source tokens** when it is entered
+  outside an unlock. Its view keeps the keyring, is bound to the generation the store
   root selects, shows the policy the build verified or none, and stops the
   key session: a request already signing whose next key load comes after the
   entry answers `locked`. In recovery the key count is 0 and every per-key
-  policy document shows as not held. A restore or a rollback begun in
+  policy document shows as not held. An unlock begun in recovery whose load
+  fails after reading the token files still leaves the token index that load
+  published. A restore or a rollback begun in
   recovery publishes its keys at the reconcile that follows, not before.
   Recovery once kept the key maps and the token index it was entered with,
   and a policy from before a commit stayed visible when the reload failed

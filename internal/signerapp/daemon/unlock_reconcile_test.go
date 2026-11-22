@@ -468,8 +468,9 @@ func TestAStoreChangeLandsBeforeOrAfterAWholeUnlock(t *testing.T) {
 // leaves recovery the keyring it had. The real load fails that way when the
 // store root does not open at its start, after the passphrase check passed
 // (a read failure); the reload here fails as that one does. Recovery holds
-// no source token index, before the unlock or after it: its view drops the
-// index it was entered with. A load with a passphrase no longer runs under a
+// no source token index before the unlock, since its view drops the one it
+// was entered with, nor after it, since this load fails before it reads the
+// token files. A load with a passphrase no longer runs under a
 // session in service: an unlock of an unlocked signer loads nothing. Under
 // one, the index was once cleared on every failure, leaving the signer
 // unlocked with no tokens.

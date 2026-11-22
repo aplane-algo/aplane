@@ -306,7 +306,7 @@ func Snapshot(env Env, np *policyruntime.NodePolicy) (*policycontext.Context, st
 // surface.
 func ContextView(env Env, np *policyruntime.NodePolicy) adminproto.PolicyContextView {
 	if np == nil || env.ASASet == nil {
-		return adminproto.PolicyContextView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.PolicyContextView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	ctx, snapshot, err := Snapshot(env, np)
 	if err != nil {
@@ -476,7 +476,7 @@ func writeChange(staged storepaths.GenPaths, role noderole.Role, req adminproto.
 // View projects a node's policy for the admin surface.
 func View(np *policyruntime.NodePolicy, held map[string]bool, generationID string) adminproto.PolicyView {
 	if np == nil {
-		return adminproto.PolicyView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.PolicyView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	view := adminproto.PolicyView{
 		Success:         true,
@@ -497,7 +497,7 @@ func View(np *policyruntime.NodePolicy, held map[string]bool, generationID strin
 // policy.DefaultKey for the node default.
 func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumentResult {
 	if np == nil {
-		return adminproto.PolicyDocumentResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.PolicyDocumentResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	if key == "" {
 		return adminproto.PolicyDocumentResult{Code: "policy_document_not_found", Error: "name the document: \"default\" or a key"}

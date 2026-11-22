@@ -271,11 +271,12 @@ func Build(ir *productruntime.Runtime, opts ProductBuildOptions, kr *crypto.Keyr
 	loaded.PolicyVerified = true
 
 	// A damaged token file is damage in the selected generation, a
-	// generation validation failure, which a restore can replace. One on a
-	// signer node is a role conflict.
+	// generation validation failure, which a restore can replace. A token
+	// file on a node that is not a cosigner is a role conflict instead
+	// (keyclass.ErrNodeRoleConflict), which the reload fails closed.
 	tokens, err := sourcetokens.LoadIndex(selected, ir.NodeRole(), kr)
 	if err != nil {
-		if errors.Is(err, sourcetokens.ErrDamaged) && !errors.Is(err, keyclass.ErrNodeRoleConflict) {
+		if errors.Is(err, sourcetokens.ErrDamaged) {
 			return loaded, fmt.Errorf("%w: source token verification failed for product store: %w",
 				signertemplates.ErrGenerationValidation, err)
 		}

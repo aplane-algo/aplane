@@ -84,6 +84,10 @@ func (ir *Runtime) SetBuildFunc(fn BuildFunc, effects ReloadEffects) {
 // came first, and that state stands.
 var ErrReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
 
+// errBuildNotConfigured is the build failure of a runtime no build was
+// wired into.
+var errBuildNotConfigured = errors.New("build function not configured")
+
 // errCommitUncertain is the cause of the recovery an uncertain store-root
 // commit enters.
 var errCommitUncertain = errors.New("the store-root commit may or may not have landed")
@@ -95,8 +99,10 @@ type reloadMode struct {
 	inDoubt bool
 	cause   error
 	// reconcile: a reconcile's reload, which publishes the whole view in
-	// recovery too and then promotes recovery to unlocked.
-	reconcile bool
+	// recovery too, and then promotes recovery to unlocked when it began in
+	// recovery (fromRecovery) or finds the signer still unlocked.
+	reconcile    bool
+	fromRecovery bool
 	// failureInDoubt: a build that fails leaves the store in doubt (an
 	// explicit reconcile's).
 	failureInDoubt bool
@@ -107,11 +113,9 @@ type reloadMode struct {
 type reloadEnd struct {
 	report *signertemplates.ReloadReport
 	err    error
-	// published: the whole view, with keyCount keys. wasRecovery: the signer
-	// was in recovery when it was published.
-	published   bool
-	wasRecovery bool
-	keyCount    int
+	// published: the whole view, with keyCount keys.
+	published bool
+	keyCount  int
 	// recovery: the reload entered recovery, for cause.
 	recovery   bool
 	cause      error
@@ -152,16 +156,19 @@ func (ir *Runtime) FollowCommit(outcome genstore.MintOutcome) (*signertemplates.
 // there leaves the store in doubt, and it ends in recovery, with the recovery
 // view of what the root selects, before the lock is released (RB2). The
 // rescan after a restore passes false: it starts in recovery and stays there
-// on a failure. A promotion refused after a clean publish is
-// ErrReconcileStateChanged and enters no recovery.
+// on a failure. A clean publish that a lock overtook, so that the promotion
+// is refused or the signer is no longer unlocked, is ErrReconcileStateChanged
+// and enters no recovery: the lock stands.
 func (ir *Runtime) Reconcile(step func(*crypto.Keyring) error, explicit bool) (*signertemplates.ReloadReport, error) {
+	// Under the store mutation lock the state can only move to locked.
+	fromRecovery := ir.IsRecovery()
 	if err := ir.WithKeyring(step); err != nil {
 		if explicit {
 			_, _ = ir.reloadView(reloadMode{inDoubt: true, cause: err})
 		}
 		return nil, err
 	}
-	report, err := ir.reloadView(reloadMode{reconcile: true, failureInDoubt: explicit})
+	report, err := ir.reloadView(reloadMode{reconcile: true, fromRecovery: fromRecovery, failureInDoubt: explicit})
 	if err != nil && !errors.Is(err, ErrReconcileStateChanged) {
 		return report, fmt.Errorf("current generation failed credential reload: %w", err)
 	}
@@ -221,8 +228,14 @@ func (ir *Runtime) reloadView(mode reloadMode) (*signertemplates.ReloadReport, e
 		detached.ZeroWhenUnused()
 	}
 	end.detached = nil
-	if mode.reconcile && end.published && end.wasRecovery && !ir.PromoteRecoveryToUnlocked() {
-		end.err = ErrReconcileStateChanged
+	if mode.reconcile && end.published {
+		promoted := ir.IsUnlocked()
+		if mode.fromRecovery {
+			promoted = ir.PromoteRecoveryToUnlocked()
+		}
+		if !promoted {
+			end.err = ErrReconcileStateChanged
+		}
 	}
 	ir.afterReload(end)
 	return end.report, end.err
@@ -233,8 +246,14 @@ func (ir *Runtime) reloadView(mode reloadMode) (*signertemplates.ReloadReport, e
 // lock's cleanup, which takes it for writing, lands wholly before or after,
 // and never finds a built token index left in memory.
 func (ir *Runtime) reloadViewLocked(mode reloadMode) reloadEnd {
-	if ir.buildFn == nil || ir.keyStore == nil {
-		return reloadEnd{err: errors.New("build function not configured")}
+	if ir.keyStore == nil {
+		return reloadEnd{err: errBuildNotConfigured}
+	}
+	// A runtime with no build fails every build, having established
+	// nothing, so the failure rule fails it closed.
+	build := ir.buildFn
+	if build == nil {
+		build = func(*crypto.Keyring) (*Loaded, error) { return nil, errBuildNotConfigured }
 	}
 	if mode.inDoubt {
 		// The state first: signing does not take the store mutation lock,
@@ -250,7 +269,7 @@ func (ir *Runtime) reloadViewLocked(mode reloadMode) reloadEnd {
 	var buildErr error
 	if err := ir.keyStore.WithKeyring(func(inService *crypto.Keyring) error {
 		kr = inService
-		loaded, buildErr = ir.buildFn(inService)
+		loaded, buildErr = build(inService)
 		return nil
 	}); err != nil {
 		return reloadEnd{err: fmt.Errorf("signer is locked: %w", err)}
@@ -268,7 +287,7 @@ func (ir *Runtime) reloadViewLocked(mode reloadMode) reloadEnd {
 		var detached keystore.DetachedKeyring
 		end.report, detached = ir.publishLocked(kr, loaded)
 		end.detached = append(end.detached, detached)
-		end.published, end.wasRecovery, end.keyCount = true, inRecovery, end.report.KeyCount
+		end.published, end.keyCount = true, end.report.KeyCount
 		end.notices, end.warnings = end.report.TemplateNotices, end.report.TemplateWarnings
 		return end
 	}

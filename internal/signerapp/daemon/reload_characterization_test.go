@@ -216,8 +216,8 @@ func rootSelection(server *Signer) (string, bool) {
 // is open; whether the runtime is bound to the generation the store root
 // selects, to one the root has left (superseded), or to none; whether the
 // policy is the one served before; and the key count. The source tokens are
-// recorded apart (TestAFailedReloadKeepsACosignersSourceTokens): a signer
-// node's store holds none.
+// recorded apart (TestAFailedReconcileLeavesRecoveryNoSourceTokens): a
+// signer node's store holds none.
 func (before servedView) describe(server *Signer) string {
 	ir := server.productRuntime()
 	keyring := "open"

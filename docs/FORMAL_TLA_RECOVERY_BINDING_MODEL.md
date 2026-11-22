@@ -150,13 +150,25 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   either action, under the keep guard, so it checks the root fact, which is
   what the invariants depend on. A reload with no commit that is not yet
   built and published (the watcher's, an in-place write's) enters recovery
-  only for a content defect and keeps the view otherwise; no commit moved
-  the root, so its keep meets the guard. The property a content defect's
+  only for a content defect and keeps the view otherwise. No commit moved
+  the root, so its keep meets the guard, except when the root stops
+  authenticating: that reload keeps the view with the binding cleared and
+  its keys served (the `watcher`/`root` row of the reload characterization
+  table), where the model takes `ReloadFail`. No invariant reads a cleared
+  binding (RB4 is about a binding that is present), and no commit moved the
+  root, so RB2 and RB3 hold for it; that path is a model-extension
+  candidate until it follows the failure rule. The property a content defect's
   entry exists for, that a generation with a content defect is never served,
   is not checked: the model has no generation content. A recovery entered
   for content found defective is a model-extension candidate. Recovery's
   view holds no keys and no source token index; the model keeps
   `cacheGen` and checks that recovery refuses to serve from it.
+- `ReloadSucceed` lifts recovery, which in the code only a reconcile's
+  publish does: a commit's build that succeeds in recovery (a restore or a
+  rollback begun there) publishes recovery's view and stays in recovery
+  until the reconcile that follows. The model over-approximates by letting
+  any successful reload leave recovery; every invariant it checks still
+  holds, and the code's path is one of the runs the model allows.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches

@@ -303,7 +303,11 @@ func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequ
 	wasRecovery := ir.IsRecovery()
 	result := s.Service.RollbackRestore(req)
 	if result.Success && wasRecovery {
-		s.daemon.exitRecoveryIfReconciled(ir)
+		// A rollback begun in recovery publishes recovery's view, with no
+		// keys; the reconcile that lifts recovery publishes them.
+		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
+			result.KeyCount = report.KeyCount
+		}
 	}
 	s.daemon.rearmWatcherAfterGenerationFlip(ir)
 	return result

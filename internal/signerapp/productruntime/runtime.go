@@ -531,8 +531,8 @@ func (ir *Runtime) SetRecovery() {
 // not interrupted here: the session check refuses one that has not passed it,
 // and the cut of its key use refuses a rotating sign. Ordinary and component
 // signing register no key use, so one already past the check is stopped only
-// by a key load after the lock cleanup cleared the session, and not at all by
-// an entry into recovery (ARCH_SIGNING.md, session end).
+// by a key load after the lock cleanup cleared the session, or after an
+// entry into recovery stopped it (ARCH_SIGNING.md, session end).
 // The lock cleanup calls it first, before it waits for key users, so a lock,
 // the start of store maintenance and an unlock that lost to a lock withdraw
 // at once; entering recovery, which runs no cleanup, calls it directly.

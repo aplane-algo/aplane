@@ -1693,9 +1693,11 @@ reads and writes, and the runtime index.
   mutation lock, so no set or remove lands during it. An unlock reload that
   fails clears the index when it closed the keyring, and leaves it when a
   keyring stayed open: one begun in recovery leaves recovery a keyring
-  whatever step failed. Recovery holds no index, however it was entered:
-  its view drops the index with the key maps, and the reconcile that lifts
-  it publishes the index again from the token files. An unlock the fence
+  whatever step failed. An entry into recovery outside an unlock drops the
+  index with the key maps, and the reconcile that lifts recovery publishes
+  it again from the token files. An unlock begun in recovery whose load
+  fails after reading the token files leaves recovery the index that load
+  published. An unlock the fence
   refuses keeps the index its reload published; under the one-hold unlock no
   entry into recovery reaches that fence. A lock removes a kept index and a
   later reload replaces it. In recovery no lookup runs, and a policy check is answered
@@ -1913,7 +1915,10 @@ succeeds while the signer is in recovery (a restore or a rollback begun
 there) publishes recovery's view of the new generation, and the reconcile
 that follows publishes the whole view as it promotes. Every entry into
 recovery outside an unlock publishes that view, so in recovery the key
-count is 0 and every per-key policy document shows as not held. The
+count is 0 and every per-key policy document shows as not held. A reload
+not yet built this way that finds the store root no longer authenticating
+keeps the view in service with no binding: the watcher's and an in-place
+write's. The
 watcher's and an in-place write's reloads, and an unlock's, still run the
 order above.
 
