@@ -29,7 +29,7 @@ var AcquireSharedStoreLock = storelock.AcquireShared
 // store. Reads hold the shared store lock; apply and remove hold the
 // exclusive lock and commit through the same rules as the daemon. With no
 // signer running, nothing else reconciles the generation store, so apply
-// and remove reconcile it first, as every unlock does.
+// and remove reconcile it first, as an unlock from locked or recovery does.
 type RescueRunner struct{}
 
 // Run runs a validated command that needs the node, as OnlineRunner.Run

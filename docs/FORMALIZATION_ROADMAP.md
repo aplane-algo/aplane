@@ -19,7 +19,7 @@ contracts; these models cover narrower security-critical transitions.
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
-| `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release |
+| `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release; what an unlock may publish, load and clear beside a lock, a recovery and a session in service |
 | `setting_publish.tla` | when a writable setting's change takes effect relative to its save: restrictive before, anything else after |
 | `signer_invariants.tla` | the signer invariants ahead of the policy verdict, the positions each one judges, and a cosigner document's external checks after the verdict |
 
@@ -916,6 +916,45 @@ runs are unchanged at 6748 states at depth 18 and, deep, 10957 at depth 19;
 `key_use_lock_negative_recovery.cfg` grows to 1366 states at depth 8, where
 the ghost and the fence's flag now differ, and still fails KU1. `make
 formal-test` now has 39 runs, twenty-three of them negative controls.
+
+Changed 2026-11-21: an unlock request on a signer already unlocked ran a
+full reload under the session in service. The reload replaced the keyring,
+and one that failed after opening it closed it again, so the signer said
+unlocked and could not sign; it also republished the policy, the key maps
+and the source token index over changes made since it read them.
+`UnlockIdentity` now answers such a request from the session
+(`AnswerIfUnlocked`, which holds the store mutation lock across the check and
+the request's reconcile, and `AnswerFromSession`, which answers only for a
+session the signer stays unlocked in from before the passphrase check to
+after it; nothing is reconciled, loaded or published), and a request whose
+reconcile or load fails asks the session again before it enters recovery.
+`productruntime.TryUnlock` runs attempts one at a time (`unlockMu`), asks
+the session again under the store mutation lock before it loads, and holds
+that lock to the end of the load; an attempt the session answers ends
+there, before the fence (`errAnsweredFromSession`). `UnlockCheck` is the
+confirmation that the session still holds. The recovery reconcile's locked
+work (`reconcileLocked`) now refuses a signer neither unlocked nor in
+recovery, as restore and rollback do.
+`key_use_lock.tla` splits the unlock into `UnlockStart`, `UnlockCheck`,
+`UnlockLoaded` and `UnlockFinish`, gives `TryRecovery` actions of its own
+(`RecoveryStart`, `RecoveryFinish`, the branch from the locked state
+included), which run outside `unlockMu`, and gains the guards
+`AnswersFromSession`, `AnswerEndsAtCheck`, `UnlocksOneAtATime` and
+`LoadHoldsStoreLock`, the properties KU6 (no load runs under a session in
+service) and KU7 (an unlock that answered from the session never locks or
+clears), and four negative controls: `key_use_lock_negative_answer.cfg`
+(KU6, 35 states at depth 3), `key_use_lock_negative_serial.cfg` (KU6, 6247
+at depth 8), `key_use_lock_negative_storelock.cfg` (KU6, 423 at depth 5) and
+`key_use_lock_negative_answer_fence.cfg` (KU7, 498 at depth 5). The header's
+"Two unlocks may run at once" is gone: two unlocks no longer overlap, and the
+`LoserLocks` and `UnlockWaitsForCleanup` controls now fail through recovery
+unlocks. The positive runs grow to 25296 states at depth 22 and, deep, 43105
+at depth 22; KU1 to KU5 still hold, and every earlier negative control still
+fails on its own property (counts in `metrics.json`). `recovery_binding.tla`
+is unchanged; its companion now says that a second unlock of an unlocked
+signer rebinds nothing, and that an unlock begun in recovery reloads under
+the store mutation lock and publishes after releasing it. `make formal-test`
+now has 44 runs, twenty-eight of them negative controls.
 
 Changed 2026-11-20: `signer_invariants.tla` gains a cosigner document's
 external checks, the last gate of `runCosignerGates`

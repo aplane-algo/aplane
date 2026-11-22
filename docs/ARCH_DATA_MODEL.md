@@ -1003,6 +1003,10 @@ projections of shell application results, not a separate backend model.
 Template registration precedes key scan so generation/discovery state is
 current. Existing key signing still depends on key files.
 
+An unlock runs these steps only from locked or recovery. On a signer that is
+already unlocked it verifies the passphrase and answers with the session's
+key count, and nothing above is reopened or republished.
+
 ### Key Type And Template Lifecycle
 
 | Operation | Durable change | Runtime effect |

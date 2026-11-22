@@ -359,9 +359,10 @@ func (r *Runtime) FinishMaintenance(
 
 // TryRecovery runs the keyring unlock function and enters recovery state
 // unless a concurrent lock wins. Entered from the unlocked state (an unlock
-// request on a signer already unlocked, whose store then fails validation),
-// it ends the session as SetRecovery does. Like TryUnlock, it waits for a
-// lock's cleanup in progress before it starts.
+// request whose reconcile or load failed, when another request or a
+// reconcile unlocked the signer after the request last checked), it ends the
+// session as SetRecovery does. Like TryUnlock, it waits for a lock's cleanup
+// in progress before it starts.
 func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 	r.awaitCleanups(false)
 	if r.activeMaintenanceID != 0 {
@@ -404,6 +405,12 @@ func (r *Runtime) TryRecovery(unlockFn func() error) (bool, string) {
 // then runs its cleanup outside the state mutex; an unlock that read lockGen
 // in between would pass the fence above and publish a session that cleanup
 // was still about to destroy.
+//
+// An unlock function that returns an error ends the attempt there, before
+// the fence: the state is left as it is and no cleanup runs. A function that
+// loaded keys and then failed clears them itself. The product runtime also
+// ends this way an attempt that found the signer already unlocked and loaded
+// nothing, which has nothing to publish and nothing to clear.
 func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bool, int, string) {
 	r.awaitCleanups(false)
 	if r.activeMaintenanceID != 0 {

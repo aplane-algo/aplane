@@ -212,6 +212,8 @@ func Run(dataDir string) int {
 		return 1
 	}
 
+	// The admin listener starts only after the startup unlock has published
+	// its state, so no admin login or unlock can run beside that reload.
 	if err := startIPCServer(server, config.IPCPath); err != nil {
 		logErrorf("failed to start IPC server: %v", err)
 		return 1

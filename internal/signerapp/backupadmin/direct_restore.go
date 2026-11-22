@@ -117,7 +117,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 			backup.PublishRotatingHints(ir.StageTables(), r.hints, s.Deps.Logf)
 		}
 	}()
-	if err := requireUnlockedOrRecovery(ir); err != nil {
+	if err := ir.RequireUnlockedOrRecovery(); err != nil {
 		return err
 	}
 	prepareErr := ir.WithKeyring(r.loadAndCommit)

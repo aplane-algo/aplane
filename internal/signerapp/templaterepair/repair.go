@@ -10,7 +10,8 @@
 // The caller holds the exclusive store lock for the whole repair, so no
 // signer runs and nothing can race it (docs/ARCH_STORE.md, "Offline bootstrap
 // and rescue"). With no signer running, nothing else reconciles the
-// generation store, so a repair reconciles it first, as every unlock does.
+// generation store, so a repair reconciles it first, as an unlock from locked
+// or recovery does.
 package templaterepair
 
 import (

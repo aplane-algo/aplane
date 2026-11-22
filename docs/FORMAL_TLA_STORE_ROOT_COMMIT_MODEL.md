@@ -53,8 +53,10 @@ The transitions transcribe the commit protocol in `internal/genstore`:
   deleted, resumed, or adopted. (The current generation's declared parent is
   retained instead: it was committed once, so a missing seal on it is damage
   outside the model.) `ReconcileOldRoot` stands for each caller of
-  `genstore.ReconcileStoreRoot`: every unlock and the recovery reconcile in
-  the daemon, `apstore generations prune` (`CollectGarbageStoreRoot`), and
+  `genstore.ReconcileStoreRoot`: every unlock from locked or recovery (an
+  unlock request on an unlocked signer answers from the session and
+  reconciles nothing), the startup unlock and the recovery reconcile in the
+  daemon, `apstore generations prune` (`CollectGarbageStoreRoot`), and
   the two offline mints, the template repair
   (`internal/signerapp/templaterepair`) and `apadmin policy rescue apply` and
   `remove` (`internal/signerapp/policycmd/rescue.go`), which reconcile before

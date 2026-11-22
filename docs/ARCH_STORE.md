@@ -1681,12 +1681,16 @@ reads and writes, and the runtime index.
   durability is uncertain publishes what the file then holds. A replaced
   index is zeroed when its last reader has released, never while one may
   hold it. Lock cleanup zeroes the index after the key users have drained;
-  a locked node has none. An unlock reload that fails clears the index
-  when it closed the keyring, and leaves it when the keyring stayed open,
-  as it does for a session in service. A node that goes from unlocked to
-  recovery keeps its index with the keyring, and so does an unlock the
-  fence refuses; a recovery entered because an unlock's own reload failed
-  validation has none. A lock removes a kept index and a later reload
+  a locked node has none. An unlock request on a node already unlocked
+  reloads nothing, so it neither replaces nor clears the index the session
+  in service holds, and a set or remove beside it is the change that
+  stands. An unlock reload, from locked or recovery, holds the store
+  mutation lock, so no set or remove lands during it. An unlock reload that
+  fails clears the index when it closed the keyring, and leaves it when the
+  keyring stayed open, as recovery's does when the store root fails to open
+  at the reload. A node that goes from unlocked to recovery keeps its index
+  with the keyring, and so does an unlock the fence refuses; a recovery
+  entered because an unlock's own reload failed validation has none. A lock removes a kept index and a later reload
   replaces it. In recovery no lookup runs, and a policy check is answered
   no token names from the index. A token sent in a request
   header is a Go string, which cannot be zeroed; zeroing covers the index.
@@ -1869,6 +1873,18 @@ The relevant order is:
 
 `productruntime.Runtime.reloadLocked` runs this through the function wired by
 `startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
+
+An unlock runs this order only when the signer is not already unlocked. A
+reload with the passphrase replaces the keyring at step 1, and one that fails
+after it closes the keyring again, so an unlock request on an unlocked signer
+does not reload: it verifies the passphrase and answers with the session's
+key count, and the session in service keeps its keyring, policy, key indexes
+and source token index. Unlock attempts run one at a time. An unlock's
+reload, from locked or recovery, holds the store mutation lock from its state
+check to the end of the reload, as watcher-driven reloads and admin
+mutations do, and the unlock publishes the unlocked state after releasing
+it. The startup unlock of a headless signer reloads before the admin
+listener starts.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
