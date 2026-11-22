@@ -59,6 +59,17 @@ func (fs *Signer) productBuildHooks() signerstartup.ProductBuildHooks {
 				hub.NotifyKeysChanged(adminproto.KeysChangedNotification{KeyCount: keyCount})
 			}
 		},
+		// No request reports a recovery a reload entered, so the admin
+		// session is told the state, which moves apadmin to its recovery
+		// screen and so to the reconcile, and the log names the cause, as
+		// it does for an unlock that enters recovery.
+		NotifyReloadRecovery: func(cause error) {
+			logWarnf("identity is recovery-blocked: %v", cause)
+			if hub := fs.adminHub(); hub != nil {
+				ir := fs.productRuntime()
+				hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
+			}
+		},
 		ReloadAuditLog: lazyReloadAuditLogger{fs: fs},
 		NodeFailClosed: func(err error) {
 			if fs.nodeFailState != nil {

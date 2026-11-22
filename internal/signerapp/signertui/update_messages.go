@@ -213,10 +213,51 @@ func (m Model) handleFailure(id string, err error) (Model, tea.Cmd) {
 }
 
 func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
+	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
+		m = m.settleGenerateReview(msg)
+		return m.showRecoveryBlockedReply(keyChangeCause("Key generation", msg.Address, msg.Error))
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}
 	return m.applyGenerateResult(msg)
+}
+
+// isRecoveryBlockedReply reports a reply to this session's generate, delete or
+// import, or to a KeyType Library action, whose reload found a content defect
+// and entered recovery. The signer pushes its new state while that reload
+// runs, so the recovery screen is usually open when the reply arrives, which
+// would make it a late failure and drop it, cause and all.
+func (m Model) isRecoveryBlockedReply(id, code string) bool {
+	return code == protocol.ResultCodeRecoveryBlocked && id != "" && id == m.operation.id
+}
+
+// keyChangeCause is a recovery_blocked reply's cause for the recovery
+// screen: the change, the key it wrote or removed when the reply names one,
+// and the reply's error.
+func keyChangeCause(change, address, errText string) string {
+	if address != "" {
+		change += " of " + address
+	}
+	return change + ": " + errText
+}
+
+// showRecoveryBlockedReply ends the operation on the recovery screen with the
+// reply's cause, which names what to repair before the reconcile, as a policy
+// apply that ended in recovery does. A lock that came after the recovery,
+// before the reply, stands, as it does for a reconcile's or a rollback's
+// reply: the next unlock finds the recovery.
+func (m Model) showRecoveryBlockedReply(cause string) (tea.Model, tea.Cmd) {
+	m.operation = pendingOperation{}
+	if m.signerKnownLocked() {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	if m.viewState != ViewStoreRecovery {
+		cmd = m.enterRecovery()
+	}
+	m.restore.recoveryError = cause
+	return m, cmd
 }
 
 // applyGenerateResult shows a generation's result.
@@ -244,6 +285,12 @@ func (m Model) applyGenerateResult(msg GenerateResultMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteResultMsg(msg DeleteResultMsg) (tea.Model, tea.Cmd) {
+	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
+		cause := keyChangeCause("Key deletion", m.del.address, msg.Error)
+		m.del.address = ""
+		m.del.keyType = ""
+		return m.showRecoveryBlockedReply(cause)
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m, nil
 	}
@@ -419,6 +466,13 @@ func (m Model) handleReconcileStoreResultMsg(msg ReconcileStoreResultMsg) (tea.M
 }
 
 func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
+	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
+		// The key was imported: its recovery phrase leaves the form, as
+		// it does on success.
+		m.forms.importMnemonicInput.SetValue("")
+		m.forms.importMnemonicInput.Blur()
+		return m.showRecoveryBlockedReply(keyChangeCause("Key import", msg.Address, msg.Error))
+	}
 	if !m.takeOperationReply(msg.ID) {
 		return m.holdLateSuccess(msg.ID, msg.Success, msg), nil
 	}

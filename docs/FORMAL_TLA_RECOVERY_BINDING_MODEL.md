@@ -38,7 +38,12 @@ The transitions transcribe the post-commit reload and the recovery paths:
   confirm/remove mint in `internal/signerapp/admin/asaset.go`
   (`mutateASASet`), the restore and rollback paths in
   `internal/signerapp/backupadmin`, and the recovery reconcile in
-  `internal/signerapp/daemon/admin_services.go`. Restore and rollback write a
+  `internal/signerapp/daemon/admin_services.go`. `BeginReload` also stands
+  for the reloads with no commit that run on an unlocked signer: the
+  watcher's (`productruntime.Runtime.reloadFromWatcher`) and an in-place
+  write's (key generation and deletion in `internal/signerapp/keyadmin`,
+  template administration in `internal/signerapp/templateadmin`), each under
+  the store mutation lock. Restore and rollback write a
   restored cosigner key's source token file inside their mint, beside its
   credential and per-key policy, so the token file is one more member of the
   generation they commit and the reload that follows publishes it; the
@@ -66,9 +71,15 @@ The transitions transcribe the post-commit reload and the recovery paths:
   `mutateASASet` does for the ASA set; restore does the same, and so does
   the recovery reconcile, whose locked work `reconcileLocked` enters recovery
   itself; it once did so only after `ReconcileStore` had released the lock).
+  A reload with no commit that finds a content defect in the selected
+  generation (a failed validation, or two key files that resolve to one
+  address) enters recovery itself, in `productruntime.Runtime.Reload`,
+  before its caller releases the lock; it once published an empty key
+  snapshot and left the signer unlocked.
   Policy apply and the ASA set change commit only on an unlocked signer,
   and restore, rollback and the recovery reconcile run only on one unlocked
-  or in recovery, each checked under the lock: an unlock in flight on another connection, which
+  or in recovery, each checked under the lock, as the watcher's reload and
+  the in-place writes run only on one unlocked: an unlock in flight on another connection, which
   the model does not have, opens the keyring under the lock and publishes
   unlocked only after releasing it, and would otherwise publish over a
   commit whose reload failed, where `SetRecovery` did nothing on the
@@ -121,6 +132,15 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
+- `ReloadFail` always enters recovery. A reload with no commit (the
+  watcher's, an in-place write's) enters it only for a content defect in the
+  selected generation; any other failure, an unreadable `keys/` for
+  one, leaves the signer unlocked on the view it had. No commit moved the
+  root, so that view's key cache is the root's generation, and RB2 and RB3
+  hold for both outcomes. The property the entry exists for, that a
+  generation with a content defect is never served, is not checked: the
+  model has no generation content. A recovery entered by a reload with no
+  commit, for content found defective, is a model-extension candidate.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches
@@ -154,6 +174,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   entered after it began (KU5), but a commit can land between its reload
   and its publish, and which generation its own reload bound when it
   publishes is not checked by any model; it is a model-extension candidate.
+  Its reload replaces recovery's keyring with one opened from the same store
+  root. One that then fails keeps that keyring and the binding it made
+  (`ReloadBind`), so recovery maintenance and the reconcile still run; it
+  once closed the keyring, and with it the binding, leaving recovery unable
+  to act until a later unlock.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

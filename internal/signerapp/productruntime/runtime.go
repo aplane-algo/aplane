@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -202,6 +203,9 @@ type Runtime struct {
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
+	// onReloadRecovery is called with the defect after Reload entered
+	// recovery for one (SetReloadRecoveryHook). Guarded by watcherMu.
+	onReloadRecovery func(cause error)
 }
 
 // StoreMaintenanceToken is an opaque authorization to republish an identity
@@ -322,6 +326,17 @@ func (ir *Runtime) SetReloadFunc(fn func(passphrase []byte, session *keystore.Ke
 func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 	ir.watcherMu.Lock()
 	ir.reloadLock = fn
+	ir.watcherMu.Unlock()
+}
+
+// SetReloadRecoveryHook sets the function Reload calls once it has entered
+// recovery for a content defect, with the defect. Nothing else tells anyone:
+// the reload ran for a watcher event or as one step of an admin change, with
+// no request that reports the state. The process root logs the entry and
+// pushes the state to the admin session.
+func (ir *Runtime) SetReloadRecoveryHook(fn func(cause error)) {
+	ir.watcherMu.Lock()
+	ir.onReloadRecovery = fn
 	ir.watcherMu.Unlock()
 }
 
@@ -574,9 +589,10 @@ func (ir *Runtime) FinishStoreMaintenance(
 // (AnswerFromSession): it verifies the passphrase and answers with the
 // session's key count, and loads, publishes and clears nothing. A load
 // replaces the keyring, the policy, the key maps and the source token index,
-// and one that then fails closes the keyring, so a load under the session in
-// service would leave a signer that says unlocked and cannot sign, and would
-// republish state that concurrent changes had moved on from. An attempt whose
+// and one that then fails validation publishes an empty key snapshot, so a
+// load under the session in service would leave a signer that says unlocked
+// and cannot sign, and would republish state that concurrent changes had
+// moved on from. An attempt whose
 // session ended during the passphrase check is not answered from it and
 // loads, as one that found the signer locked does.
 //
@@ -1559,10 +1575,42 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // Reload rescans keys using the cached keyring (no passphrase needed).
 // Admin mutation paths call this directly while holding the store mutation lock;
 // watcher paths must use reloadFromWatcher so they acquire that lock themselves.
+//
+// A reload that finds a content defect in the selected generation, one that
+// fails its validation or two key files that resolve to one address, enters
+// recovery before it returns, so before its caller releases the store
+// mutation lock. A defect the key scan finds has published an empty key
+// snapshot, and an unlocked signer left serving it says it can sign with none
+// of its keys; a damaged source token file fails the reload before the scan,
+// with the key snapshot as it was. Recovery blocks signing either way, and
+// keeps the keyring for the reconcile that lifts it. A signer in
+// recovery enters it again, which fences an unlock in flight there as any
+// re-entry does, and a locked one stays locked (SetRecovery). Any other
+// failure, such as a keys directory that cannot be read, leaves the state as
+// it was, for the caller to answer; the callers after a store-root commit
+// enter recovery on every failure themselves. Once in recovery it calls the
+// hook SetReloadRecoveryHook set, which a lock that came first skips.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()
-	defer ir.passphraseLock.RUnlock()
-	return ir.reloadLocked(nil)
+	report, err := ir.reloadLocked(nil)
+	ir.passphraseLock.RUnlock()
+	if IsContentDefect(err) {
+		ir.SetRecovery()
+		ir.watcherMu.Lock()
+		hook := ir.onReloadRecovery
+		ir.watcherMu.Unlock()
+		if hook != nil && ir.IsRecovery() {
+			hook(err)
+		}
+	}
+	return report, err
+}
+
+// IsContentDefect reports whether a reload failed for a content defect in
+// the selected generation: one that fails its validation, or two key files
+// that resolve to one address. Reload enters recovery for one.
+func IsContentDefect(err error) bool {
+	return signertemplates.IsGenerationValidationErr(err) || errors.Is(err, apkeys.ErrAddressCollision)
 }
 
 // ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
@@ -1573,13 +1621,14 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // before the admin listener starts, and a passphrase change reloads under
 // store maintenance, with the signer locked.
 //
-// When it fails, the source token index goes only if the keyring went: a
-// reload that fails after it opened the keyring closes it again, and tokens
-// must not outlive the keyring that decrypts them. A reload that fails
-// without touching the keyring, because the store root did not open, leaves
-// the index alone: an unlock begun in recovery then leaves recovery the
-// keyring and the index it had. An unlock the fence refuses did not fail, and
-// keeps its index too (TryUnlock).
+// When it fails, the source token index goes only if the keyring went:
+// tokens must not outlive the keyring that decrypts them. A reload that
+// opened a keyring where none was open, a first unlock's, closes it again.
+// One that found recovery's keyring open, in an unlock begun there, leaves
+// the one it opened from the same store root, and the index with it; so does
+// one that fails before it opens a keyring, because the store root did not
+// open. Recovery then keeps what its reconcile, restore and rollback need. An
+// unlock the fence refuses did not fail, and keeps its index too (TryUnlock).
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.Lock()
 	defer ir.passphraseLock.Unlock()
@@ -1614,9 +1663,10 @@ func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadRepor
 // EnsureKeyWatcher starts the file watcher if not already running.
 // Watches the keys directory and key type state/template records.
 // The watcher stays running across lock/unlock transitions: when unlocked
-// it reloads immediately; when locked it marks the identity dirty for
-// reconciliation on the next unlock.
-// If the identity was marked dirty while locked, triggers an immediate reload.
+// it reloads immediately; when locked or in recovery it marks the identity
+// dirty for reconciliation on the next unlock (reloadFromWatcher).
+// If the identity was marked dirty, it reconciles at once on an unlocked
+// signer and leaves it marked otherwise.
 func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	ir.watcherMu.Lock()
 	wasDirty := ir.dirty
@@ -1653,13 +1703,11 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 		fmt.Println("Only store-root replacement will trigger a key reload")
 	}
 
-	// The reload callback either reloads (if unlocked) or marks dirty (if locked)
+	// The reload callback either reloads (if unlocked) or marks dirty
+	// (otherwise), deciding under the store mutation lock.
 	reloadOrDirty := func() error {
-		if ir.IsUnlocked() {
-			return ir.reloadFromWatcher()
-		}
-		ir.MarkDirty()
-		return nil
+		_, err := ir.reloadFromWatcher()
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1688,18 +1736,31 @@ func (ir *Runtime) MarkDirty() {
 }
 
 func (ir *Runtime) reconcileDirty() {
-	if err := ir.reloadFromWatcher(); err != nil {
+	switch reloaded, err := ir.reloadFromWatcher(); {
+	case err != nil:
 		fmt.Printf("⚠️  Dirty-state reconciliation failed for product store: %v\n", err)
-	} else {
+	case reloaded:
 		fmt.Println("✓ Reconciled pending filesystem changes for product store")
 	}
 }
 
-func (ir *Runtime) reloadFromWatcher() error {
+// reloadFromWatcher reloads for a change the watcher saw, or, on a signer
+// not unlocked, marks the store dirty for the next unlock that publishes to
+// reconcile. It reports whether it reloaded. It checks the state under the
+// store mutation lock, as every other caller of Reload does: a lock, then an
+// unlock that has loaded but not yet published, can land while it waits for
+// the lock, and a reload there that found a defect would publish its empty
+// key snapshot on the locked signer, where SetRecovery does nothing, for the
+// unlock to publish over.
+func (ir *Runtime) reloadFromWatcher() (bool, error) {
 	release := ir.lockStoreMutation()
 	defer release()
+	if !ir.IsUnlocked() {
+		ir.MarkDirty()
+		return false, nil
+	}
 	_, err := ir.Reload()
-	return err
+	return true, err
 }
 
 // StopKeyWatcher stops the file watcher if running.

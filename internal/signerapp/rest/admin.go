@@ -52,13 +52,18 @@ func (s Service) AdminDelete(ctx context.Context, ir *productruntime.Runtime, ad
 }
 
 // sanitizeKeyAdminError passes kinded errors through to the wire and hides
-// internal failure detail behind a stable per-operation message.
+// internal failure detail behind a stable per-operation message. A change
+// whose reload entered recovery answers as the HTTP API's cache_refresh,
+// without the store detail the admin answer names.
 func sanitizeKeyAdminError(err *svcerr.Error, internalMessage string) *svcerr.Error {
-	if err == nil {
+	switch {
+	case err == nil:
 		return nil
-	}
-	if err.Kind == svcerr.KindInternal {
+	case err.Kind == svcerr.KindInternal:
 		return &svcerr.Error{Kind: svcerr.KindInternal, Message: internalMessage}
+	case err.Kind == svcerr.KindRecoveryBlocked:
+		return &svcerr.Error{Kind: svcerr.KindCacheRefresh, Message: "failed to refresh signer key cache: the signer entered recovery"}
+	default:
+		return err
 	}
-	return err
 }

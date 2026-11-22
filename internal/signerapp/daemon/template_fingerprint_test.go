@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -21,7 +22,10 @@ import (
 // reinstalling a template rewrites its record with the fingerprint the current
 // code computes, whatever the record held. The reload that follows every
 // install reads all records, so installing another template succeeds only
-// while every other record holds exactly its template's fingerprint.
+// while every other record holds exactly its template's fingerprint. When one
+// does not, that reload finds an external edit, a content defect, and enters
+// recovery: the install answers recovery_blocked and rolls its own files
+// back.
 func TestTemplateInstallAndImportWithARecordedFingerprint(t *testing.T) {
 	const (
 		succeeds = true
@@ -117,8 +121,11 @@ func TestTemplateInstallAndImportWithARecordedFingerprint(t *testing.T) {
 					return
 				}
 				wantMessage := "generation validation failed: 0 malformed key file(s) and 1 template/key-type defect(s) in the selected generation: key type " + keyType
-				if success || code != "reload_failed" || message != wantMessage {
-					t.Fatalf("%s = (success %v, %q, %q), want reload_failed with %q", operation, success, code, message, wantMessage)
+				if success || code != protocol.ResultCodeRecoveryBlocked || message != wantMessage {
+					t.Fatalf("%s = (success %v, %q, %q), want recovery_blocked with %q", operation, success, code, message, wantMessage)
+				}
+				if !server.productRuntime().IsRecovery() {
+					t.Fatalf("state = %v after a reload that found an external edit, want recovery", server.productRuntime().GetState())
 				}
 				if lsigprovider.Get(installed) != nil {
 					t.Fatalf("%s is registered after a failed install", installed)

@@ -50,8 +50,9 @@ answers only for a session the signer stayed unlocked in across the
 passphrase check, and UnlockCheck is the step that confirms it: an attempt
 whose session ended during the passphrase check loads, as one that found
 the signer locked does. The load
-replaces the keyring and a load that fails closes it, so a load under a
-session in service could leave a signer that says unlocked and cannot sign.
+replaces the keyring and the key maps, and a load that fails validation
+publishes an empty key snapshot, so a load under a session in service could
+leave a signer that says unlocked and cannot sign.
 Unlock attempts run one at a time (unlockMu), and the check and the load
 hold the store mutation lock, which a store change holds when it enters
 recovery and a reconcile holds when it lifts one; so no other way to the
@@ -464,9 +465,11 @@ EnterRecoveryFrom(from, self) ==
                          ELSE ulSawRecov[u] \/ InFlight(u)]
 
 \* SetRecovery from the unlocked state or from recovery: a store change that
-\* ends in doubt, or a restore, rollback or reconcile that enters recovery
-\* again. Each holds the store mutation lock, so under LoadHoldsStoreLock none
-\* lands while an unlock loads. From recovery there is no session left to
+\* ends in doubt, a restore, rollback or reconcile that enters recovery
+\* again, or a reload without the passphrase that finds a content defect in
+\* the selected generation, a failed validation or an address collision
+\* (productruntime's Reload, for the watcher and the in-place writes). Each holds the store mutation lock, so under
+\* LoadHoldsStoreLock none lands while an unlock loads. From recovery there is no session left to
 \* end: every holder in flight started before the first entry. A recovery
 \* unlock's entry is RecoveryFinish.
 EnterRecovery ==
@@ -702,8 +705,9 @@ KU4_NoWipeWhileUnlocked == ~wipedLive
 KU5_NoUnlockOverLaterRecovery == ~overRecovery
 
 \* KU6: an unlock never loads keys while the signer is unlocked. A load
-\* replaces the keyring, and one that fails closes it, so a load under a
-\* session in service could leave a signer unlocked and unable to sign.
+\* replaces the keyring and the key maps, and one that fails validation
+\* publishes an empty key snapshot, so a load under a session in service
+\* could leave a signer unlocked and unable to sign.
 KU6_NoLoadUnderSession ==
     \A u \in Unlockers : ul[u] = "loading" => life # "unlocked"
 

@@ -101,8 +101,8 @@ CommitRoot ==
     /\ phase' = "committed"
     /\ UNCHANGED <<rootAuth, bound, cacheGen, recovery, maintainedStale, servedStale>>
 
-\* BeginReload is a reload with no commit: the recovery reconcile, or an
-\* explicit reload. It runs under the same lock.
+\* BeginReload is a reload with no commit: the recovery reconcile, the
+\* watcher's reload, or an in-place write's. It runs under the same lock.
 BeginReload ==
     /\ ~lockHeld
     /\ phase = "idle"

@@ -73,11 +73,14 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU7 | An unlock that answered from the session never locks the signer or runs a cleanup | `KU7_AnsweredUnlockLeavesSession` |
 
 KU6 is what an unlock of an unlocked signer must not break. A load replaces
-the keyring, and one that fails after the keyring opened closes it again
-(`templates/reload.go::Reload`, `ClearKeys`); under a session in service
-that left a signer that said unlocked and could not sign, and the load also
-republished the policy, the key maps and the source token index over
-changes made since it read them. KU7 says that an attempt that found the
+the keyring, the policy, the key maps and the source token index
+(`templates/reload.go::Reload`). Under a session in service one that failed
+after the keyring opened once closed it again (`ClearKeys`), which left a
+signer that said unlocked and could not sign. A failed load now closes the
+keyring only when it found none open, so an unlock begun in recovery leaves
+recovery a keyring, but one that fails validation still publishes an empty
+key snapshot, and every load republishes the policy, the key maps and the
+source token index over changes made since it read them. KU7 says that an attempt that found the
 signer unlocked, and so loaded nothing, does not lock or clear either: it
 has nothing to clear, and a loser's lock there could end a session another
 path published after the attempt's check.
@@ -116,7 +119,12 @@ waits for it; KU2 and KU3 cover that case.
   requires: a store mutation that a lock overtook calls it after the lock,
   and the signer stays locked. Every `SetRecovery` caller and the reconcile
   that promotes hold the store mutation lock (`commitAndReload`,
-  `mutateASASet`, restore, rollback, `reconcileLocked`), so neither action
+  `mutateASASet`, restore, rollback, `reconcileLocked`, and
+  `productruntime.Runtime.Reload`, which enters recovery when a reload
+  without the passphrase finds a content defect in the selected generation,
+  a failed validation or an address collision, under the lock its callers
+  hold: the watcher's `reloadFromWatcher`, key
+  and template administration, and the callers above), so neither action
   lands while an unlock loads under that lock. Recovery keeps the keyring:
   nothing drains and nothing is cleared. It ends the unlocked session: the
   session generation moves, and `productruntime`'s `SetRecovery` and

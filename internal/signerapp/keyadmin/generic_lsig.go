@@ -21,10 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-var (
-	errBadRequest   = errors.New("bad request")
-	errCacheRefresh = errors.New("failed to refresh signer key cache")
-)
+var errBadRequest = errors.New("bad request")
 
 type GenericLSigGenerator struct {
 	Config    *serverconfig.ServerConfig
@@ -98,16 +95,14 @@ func (g GenericLSigGenerator) GenerateContext(ctx context.Context, ir *productru
 		return "", fmt.Errorf("failed to save %s file: %w", template.DisplayName(), err)
 	}
 
-	if _, err := ir.Reload(); err != nil {
-		if errors.Is(err, keystore.ErrStoreLocked) {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %v", errCacheRefresh, err)
-	}
-
+	// The key is written and stays written, whatever the reload after it
+	// finds, so its audit event is recorded first, and a failed reload is
+	// answered with the address beside it.
 	if g.AuditLog != nil {
 		g.AuditLog.LogKeyGenerated(ctx, address, keyType)
 	}
-
+	if reloadErr := reloadKeys(ir); reloadErr != nil {
+		return address, reloadErr
+	}
 	return address, nil
 }

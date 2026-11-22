@@ -256,6 +256,9 @@ func InstallParsed(paths storepaths.Paths, tmpl ParsedTemplate, kr *crypto.Keyri
 	if err := validateRegisteredProviderConflict(tmpl); err != nil {
 		return result, err
 	}
+	if _, err := prepareAsReloadWould(tmpl.KeyType, tmpl.TemplateType, tmpl.YAMLData); err != nil {
+		return result, err
+	}
 
 	outputPath, err := templatestore.SaveTemplateActive(active, tmpl.YAMLData, tmpl.KeyType, tmpl.TemplateType, kr)
 	if err != nil {
@@ -439,7 +442,10 @@ func DeactivateCompiledProvider(paths storepaths.Paths, keyType string, kr *cryp
 	return result, nil
 }
 
-func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) (InstallResult, error) {
+// EnableInstalledTemplate enables a disabled installed template once it
+// passes the checks the reload after it runs (checkEnableAsReloadWould); one
+// that does not is refused with nothing changed.
+func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -469,6 +475,9 @@ func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 	if rec.State == keytypestate.StateEnabled {
 		result.AlreadyExists = true
 		return result, nil
+	}
+	if err := checkEnableAsReloadWould(rec, templateType, outputPath, kr); err != nil {
+		return result, err
 	}
 	previousState := rec
 	rec.State = keytypestate.StateEnabled
@@ -857,6 +866,61 @@ func validateRegisteredProviderConflict(tmpl ParsedTemplate) error {
 		return fmt.Errorf("key type %s is already registered by a conflicting provider", tmpl.KeyType)
 	}
 	return fmt.Errorf("key type %s is already registered as a built-in provider", tmpl.KeyType)
+}
+
+// prepareAsReloadWould runs on a template the preparation a reload runs
+// (templates.DefaultTemplateRegistrars), for the key type its record holds or
+// will hold, registers nothing, and returns the fingerprint the reload
+// compares with the record's. The reload counts a template that fails it as a
+// content defect and enters recovery, and the rollback of the install or
+// enable that wrote it would then remove the cause. For a new template,
+// admission (ParseYAML) covers all of it but one check: that the template is
+// stored under its own key type, which only a ParsedTemplate built by hand
+// can miss.
+func prepareAsReloadWould(keyType string, templateType templatestore.TemplateType, data []byte) (string, error) {
+	keyType, err := keytypestate.NormalizeKeyType(keyType)
+	if err != nil {
+		return "", err
+	}
+	var fingerprint string
+	switch templateType {
+	case templatestore.TemplateTypeGeneric:
+		prepared, prepareErr := generictemplate.PrepareKeystoreTemplateRegistration(keyType, data)
+		fingerprint, err = prepared.Fingerprint, prepareErr
+	case templatestore.TemplateTypeComposed:
+		prepared, prepareErr := composeddsa.PrepareKeystoreTemplateRegistration(keyType, data)
+		fingerprint, err = prepared.Fingerprint, prepareErr
+	default:
+		return "", fmt.Errorf("unsupported template_type %q", templateType)
+	}
+	if err != nil {
+		return "", fmt.Errorf("template %s would not load: %w", keyType, err)
+	}
+	return fingerprint, nil
+}
+
+// checkEnableAsReloadWould runs on a disabled record the checks the reload
+// after its enable runs. A reload compares only an enabled record's
+// fingerprint with its template, so a disabled one that no longer matches
+// passes every reload until it is enabled; the reload after the enable would
+// then find an external edit, enter recovery, and the enable's rollback would
+// remove the cause. The offline template repair, which classifies as a reload
+// does, does not see it either, so the refusal names the import that does.
+func checkEnableAsReloadWould(rec keytypestate.Record, templateType templatestore.TemplateType, templatePath string, kr *crypto.Keyring) error {
+	data, err := templatestore.LoadTemplateFromPath(templatePath, kr)
+	if err != nil {
+		return fmt.Errorf("template %s would not load: %w", rec.KeyType, err)
+	}
+	fingerprint, err := prepareAsReloadWould(rec.KeyType, templateType, data)
+	if err != nil {
+		return err
+	}
+	if keytypestate.CompareForReload(rec, fingerprint, "") == keytypestate.OutcomeExternalEdit {
+		return fmt.Errorf("template %s would not load once enabled: its record pins fingerprint %s and its stored template computes %s, an external edit; "+
+			"import the template again from a file you trust (`apadmin template import`), which pins the record to that definition and enables it "+
+			"(see docs/USER_KEYTYPES.md, Invalid or externally edited YAML template)", rec.KeyType, rec.Fingerprint, fingerprint)
+	}
+	return nil
 }
 
 func semanticFingerprint(templateType templatestore.TemplateType, data []byte) (string, error) {

@@ -104,10 +104,19 @@ func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
 	}
 
 	if len(passphrase) > 0 {
+		// A failure closes the keyring only when none was open before.
+		// The keyring found open is recovery's, in an unlock begun there:
+		// Unlock zeroes it and installs one opened from the same store root,
+		// since only a passphrase change replaces the wrapped keyring, and
+		// it runs with the signer locked. Closing that one would leave
+		// recovery no keyring for its reconcile, restore and rollback. The
+		// caller holds the lock every keyring open and close takes
+		// (productruntime's passphraseLock), so this reads a settled store.
+		foundOpen := s.KeyStore.WithKeyring(func(*crypto.Keyring) error { return nil }) == nil
 		if err := s.KeyStore.Unlock(passphrase); err != nil {
 			return nil, fmt.Errorf("failed to unlock the keystore: %w", err)
 		}
-		initializedMasterKey = true
+		initializedMasterKey = !foundOpen
 	}
 	// Follow the store root before anything that can fail: a reload that
 	// fails after a root commit must leave recovery acting on the generation

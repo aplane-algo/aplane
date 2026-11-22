@@ -5,6 +5,7 @@ package templateadmin
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,12 +99,30 @@ func setupServiceWithReload(
 	return svc, ir, &reloadCount, deps
 }
 
+// putInstalledTemplateForServiceTest installs a valid generic template for
+// keyType, which names it as test.<family>.v1, with a record in state that
+// pins no fingerprint. An enable checks the template as the reload after it
+// would, so the template must load.
 func putInstalledTemplateForServiceTest(t *testing.T, ir *productruntime.Runtime, keyType string, state keytypestate.State) {
 	t.Helper()
+	family := strings.TrimSuffix(strings.TrimPrefix(keyType, "test."), ".v1")
+	yaml := fmt.Sprintf(`schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: %s
+version: 1
+display_name: "Service Test"
+valid_rekey_target: false
+max_opcode_cost: 20000
+teal: |
+  #pragma version 8
+  int 0
+`, family)
 	err := ir.WithKeyring(func(masterKey *crypto.Keyring) error {
 		if _, err := templatestore.SaveTemplateActive(
 			genstoretest.Active(t, ir.KeyPaths()),
-			[]byte("schema_version: 1\ntemplate_type: generic\n"),
+			[]byte(yaml),
 			keyType,
 			templatestore.TemplateTypeGeneric,
 			masterKey,

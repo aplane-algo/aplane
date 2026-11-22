@@ -210,8 +210,15 @@ func (m Model) ensureTemplateVisible() Model {
 
 // finishLibraryAction applies the result of installing, enabling, or disabling
 // a KeyType Library entry, when id names the request its progress screen
-// still waits on.
-func (m Model) finishLibraryAction(id string, success bool, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+// still waits on. A reply whose reload entered recovery ends the operation on
+// the recovery screen with its cause, as a key change's does
+// (isRecoveryBlockedReply).
+func (m Model) finishLibraryAction(id string, success bool, code, status, errText, fallbackErr string) (tea.Model, tea.Cmd) {
+	if m.isRecoveryBlockedReply(id, code) {
+		m.library.installError = ""
+		m.library.pendingTemplate = nil
+		return m.showRecoveryBlockedReply("KeyType Library: " + errText)
+	}
 	if !m.takeOperationReply(id) {
 		return m, nil
 	}

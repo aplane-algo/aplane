@@ -1519,8 +1519,8 @@ then clears what it reloaded, since no later lock of a locked runtime would.
 The watcher is owned by the product runtime but is not tied to every lock
 transition:
 
-- when the runtime is unlocked, the watcher reloads immediately on qualifying filesystem changes,
-- when the runtime is locked, the watcher remains active and marks the runtime dirty,
+- when the runtime is unlocked, the watcher reloads immediately on qualifying filesystem changes; a reload that finds a content defect in the selected generation enters recovery,
+- when the runtime is locked or in recovery, the watcher remains active and marks the runtime dirty, so a defect it found is not lifted by removing the file: a reconcile or an unlock is,
 - the next unlock that publishes reconciles dirty state by reloading,
 - watchers are stopped on runtime shutdown, not on every ordinary lock.
 

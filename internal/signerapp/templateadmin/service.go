@@ -121,7 +121,7 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          protocol.ResultCodeReloadFailed,
+				Code:          reloadFailureCode(ir, reloadErr),
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -335,7 +335,7 @@ func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateR
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          protocol.ResultCodeReloadFailed,
+				Code:          reloadFailureCode(ir, reloadErr),
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -418,7 +418,7 @@ func (s Service) RemoveInstalledTemplate(req adminproto.RemoveInstalledTemplateR
 					KeyType:      removeResult.KeyType,
 					TemplateType: string(removeResult.TemplateType),
 					Removed:      true,
-					Code:         protocol.ResultCodeReloadFailed,
+					Code:         reloadFailureCode(ir, err),
 					Error:        err.Error(),
 				}
 			}
@@ -484,7 +484,12 @@ func (s Service) ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminpro
 }
 
 func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
-	installResult, err := templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType)
+	var installResult templatelibrary.InstallResult
+	err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+		var enableErr error
+		installResult, enableErr = templatelibrary.EnableInstalledTemplate(s.Deps.KeyPaths(), keyType, templateType, kr)
+		return enableErr
+	})
 	if err != nil {
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
@@ -501,7 +506,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    protocol.ResultCodeReloadFailed,
+			Code:    reloadFailureCode(ir, reloadErr),
 			Error:   reloadErr.Error(),
 		}
 	}
@@ -539,7 +544,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *productruntime.Runtim
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    protocol.ResultCodeReloadFailed,
+			Code:    reloadFailureCode(ir, err),
 			Error:   err.Error(),
 		}
 	}
@@ -580,7 +585,7 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 				Success: false,
 				KeyType: removeResult.KeyType,
 				Removed: removeResult.Removed,
-				Code:    protocol.ResultCodeReloadFailed,
+				Code:    reloadFailureCode(ir, err),
 				Error:   err.Error(),
 			}
 		}
@@ -644,6 +649,18 @@ func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyTyp
 		}
 	}
 	return false
+}
+
+// reloadFailureCode is the code of a template change whose reload failed:
+// recovery_blocked when the reload found a content defect in the selected
+// generation and entered recovery, which apadmin answers on its recovery
+// screen, and reload_failed otherwise. err may carry a rollback's failure
+// beside the reload's.
+func reloadFailureCode(ir *productruntime.Runtime, err error) string {
+	if productruntime.IsContentDefect(err) && ir.IsRecovery() {
+		return protocol.ResultCodeRecoveryBlocked
+	}
+	return protocol.ResultCodeReloadFailed
 }
 
 func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrary.InstallResult, cause error) error {

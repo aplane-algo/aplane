@@ -683,3 +683,108 @@ func dispatchIPCMessage(t *testing.T, session *adminserver.Session, msg any) {
 	}
 	session.Dispatch(data)
 }
+
+// A template the reload would not load is refused at install, before it
+// writes anything, and the signer keeps its state: the reload an install runs
+// next finds a clean store. Installed, the template was the content defect
+// that reload found, the signer entered recovery, and the install's rollback
+// then removed the files that caused it, leaving a clean store in recovery.
+// The install here runs as an admin install does, with the one such template
+// admission cannot produce: one stored under a key type not its own.
+func TestATemplateTheReloadWouldNotLoadLeavesTheSignerAsItWas(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	generateTestKey(t, server, "ed25519")
+	parsed, err := templatelibrary.ParseYAML("prepare.yaml", renderGenericTemplateYAML("ipc-prepare-refusal", 1, "Prepare Refusal", "stored under another key type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.KeyType = testTemplateKeyType("ipc-stored-elsewhere")
+	paths := mustActiveKeyPaths(t, server)
+
+	err = server.adminServices().withStoreMutation(func() error {
+		var installErr error
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			_, installErr = templatelibrary.InstallParsed(paths, parsed, kr)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if installErr != nil {
+			return installErr
+		}
+		_, reloadErr := ir.Reload()
+		return reloadErr
+	})
+	if err == nil || !strings.Contains(err.Error(), "would not load") {
+		t.Fatalf("install = %v, want the refusal before anything is written", err)
+	}
+	if !ir.IsUnlocked() || ir.KeyCount() != 1 {
+		t.Fatalf("after the refused install: state %v, %d key(s); want unlocked with 1", ir.GetState(), ir.KeyCount())
+	}
+	assertInstalledTemplateRemoved(t, server, parsed.KeyType, templatestore.TemplateTypeGeneric)
+	if _, ok, err := keytypestate.Get(paths, parsed.KeyType); err != nil || ok {
+		t.Fatalf("key type state exists=%v err=%v after the refused install, want none", ok, err)
+	}
+	if _, err := ir.Reload(); err != nil || !ir.IsUnlocked() {
+		t.Fatalf("Reload() after the refused install = %v, state %v; want a clean reload", err, ir.GetState())
+	}
+}
+
+// The review's probe made real. A disabled template whose record fingerprint
+// drifted passes every reload, until it is enabled. The enable once wrote the
+// record, the reload after it found the external edit and entered recovery,
+// and the enable's rollback then removed the cause, leaving a clean store in
+// recovery. The enable now runs the reload's checks first and is refused
+// with the defect, changing nothing; importing the template again, the
+// remedy the refusal names, pins the record and enables it.
+func TestEnablingATemplateWhoseRecordDriftedIsRefusedAndChangesNothing(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	ir := server.productRuntime()
+	defer ir.StopKeyWatcher()
+	generateTestKey(t, server, "ed25519")
+	svc := server.adminServices().templateServices()
+	family := fmt.Sprintf("ipc-enable-drift-%d", time.Now().UnixNano())
+	keyType := testTemplateKeyType(family)
+	yaml := renderGenericTemplateYAML(family, 1, "Enable Drift", "record drifted while disabled")
+	if res := svc.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{TemplateYAML: yaml}); !res.Success {
+		t.Fatalf("import = %+v", res)
+	}
+	if res := svc.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{KeyType: keyType}); !res.Success {
+		t.Fatalf("deactivate = %+v", res)
+	}
+	paths := mustActiveKeyPaths(t, server)
+	rec, ok, err := keytypestate.Get(paths, keyType)
+	if err != nil || !ok {
+		t.Fatalf("record: %v %v", ok, err)
+	}
+	stored := rec.Fingerprint
+	rec.Fingerprint += "00"
+	if err := keytypestate.Put(paths, rec); err != nil {
+		t.Fatal(err)
+	}
+	drifted, _, _ := keytypestate.Get(paths, keyType)
+	if err := server.adminServices().withStoreMutation(func() error { _, err := ir.Reload(); return err }); err != nil || !ir.IsUnlocked() {
+		t.Fatalf("reload with the drifted record disabled = %v, state %v; want clean", err, ir.GetState())
+	}
+
+	res := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{KeyType: keyType})
+	if res.Success || res.Code != protocol.ResultCodeActivationFailed || !strings.Contains(res.Error, "an external edit") || !strings.Contains(res.Error, stored) {
+		t.Fatalf("ActivateKeyType() = %+v, want the external edit refused", res)
+	}
+	if !ir.IsUnlocked() || ir.KeyCount() != 1 {
+		t.Fatalf("after the refused enable: state %v, %d key(s); want unlocked with 1", ir.GetState(), ir.KeyCount())
+	}
+	if after, _, _ := keytypestate.Get(paths, keyType); after != drifted {
+		t.Fatalf("record after the refused enable = %+v, want it unchanged: %+v", after, drifted)
+	}
+
+	if res := svc.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{TemplateYAML: yaml}); !res.Success {
+		t.Fatalf("import again = %+v, want it to pin the record", res)
+	}
+	if after, _, _ := keytypestate.Get(paths, keyType); after.Fingerprint != stored || after.State != keytypestate.StateEnabled || !ir.IsUnlocked() {
+		t.Fatalf("after importing again: record %+v, state %v; want it pinned to %s, enabled, and the signer unlocked", after, ir.GetState(), stored)
+	}
+}

@@ -1029,9 +1029,9 @@ another fingerprint version is an external edit like any other difference.
 |---|---|---|---|
 | Enable compiled provider | Provider is registered and library-visible. | Write enabled `source:"compiled"` state record with current fingerprint. | Identity can discover/generate that key type after reload. |
 | Disable compiled provider | No active key file in the identity uses that key type. | Delete the compiled state record. | Provider remains in the binary, but the identity can no longer generate it. |
-| Install YAML template | Candidate YAML parses, key type is valid, and install is authorized. | Encrypt YAML into `.template`, write enabled state record, reload identity. | Identity can discover/generate the template key type. |
+| Install YAML template | Candidate YAML parses and passes admission, key type is valid, no registered provider conflicts, the template passes the preparation the reload runs for the key type its record will hold (`PrepareKeystoreTemplateRegistration`), so it cannot be the content defect that reload finds, and install is authorized. | Encrypt YAML into `.template`, write enabled state record, reload identity. A failed reload rolls the two files back. | Identity can discover/generate the template key type. |
 | Disable YAML template | No active key file in the identity uses that key type. | Set state record to `disabled`, keep encrypted `.template`. | Template remains installed but hidden from generation. |
-| Enable YAML template | Encrypted `.template` and state record are valid. | Set state record to `enabled`, reload identity. | Template is visible for generation. |
+| Enable YAML template | Encrypted `.template` and state record are valid, and the template passes the checks the reload after the enable runs: its preparation, and the record's fingerprint is the one the template computes. A reload compares a disabled record's fingerprint with nothing, so a drifted one is found here, and refused with nothing changed, rather than by that reload, which would enter recovery. | Set state record to `enabled`, reload identity. | Template is visible for generation. |
 | Remove YAML template | No active key file in the identity uses that key type. | Delete state record and move `.template` to `deleted/keytypes/`. | Template leaves active scans. |
 | Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload warns that the record conflicts. | Generation stays available; valid existing keys are not rewritten; `apadmin keytype enable` re-pins the record. |
 | Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair a record defect with `apstore template repair`, or through supported install/enable paths while the signer is unlocked; see [Repairing a template record](USER_KEYTYPES.md#repairing-a-template-record). |
@@ -1686,11 +1686,12 @@ reads and writes, and the runtime index.
   in service holds, and a set or remove beside it is the change that
   stands. An unlock reload, from locked or recovery, holds the store
   mutation lock, so no set or remove lands during it. An unlock reload that
-  fails clears the index when it closed the keyring, and leaves it when the
-  keyring stayed open, as recovery's does when the store root fails to open
-  at the reload. A node that goes from unlocked to recovery keeps its index
-  with the keyring, and so does an unlock the fence refuses; a recovery
-  entered because an unlock's own reload failed validation has none. A lock removes a kept index and a later reload
+  fails clears the index when it closed the keyring, and leaves it when a
+  keyring stayed open: one begun in recovery leaves recovery a keyring
+  whatever step failed. A node that goes from unlocked to recovery keeps its
+  index with the keyring, and so does an unlock the fence refuses; a recovery
+  entered because the reload of an unlock of a locked node failed validation
+  has none. A lock removes a kept index and a later reload
   replaces it. In recovery no lookup runs, and a policy check is answered
   no token names from the index. A token sent in a request
   header is a Go string, which cannot be zeroed; zeroing covers the index.
@@ -1875,11 +1876,17 @@ The relevant order is:
 `startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
 
 An unlock runs this order only when the signer is not already unlocked. A
-reload with the passphrase replaces the keyring at step 1, and one that fails
-after it closes the keyring again, so an unlock request on an unlocked signer
+reload with the passphrase replaces the keyring at step 1 and the policy,
+source token index and key indexes after it, and one that fails validation
+publishes an empty key snapshot, so an unlock request on an unlocked signer
 does not reload: it verifies the passphrase and answers with the session's
 key count, and the session in service keeps its keyring, policy, key indexes
-and source token index. Unlock attempts run one at a time. An unlock's
+and source token index. A reload with the passphrase that fails closes the
+keyring it opened only when none was open before, as in an unlock of a locked
+signer. An unlock begun in recovery finds recovery's keyring open; its reload
+replaces it with one opened from the same store root, and a failure leaves
+that one, with the generation binding and the source token index, so the
+reconcile, restore and rollback recovery needs still run. Unlock attempts run one at a time. An unlock's
 reload, from locked or recovery, holds the store mutation lock from its state
 check to the end of the reload, as watcher-driven reloads and admin
 mutations do, and the unlock publishes the unlocked state after releasing
@@ -1891,7 +1898,24 @@ snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
 undecryptable, unsupported, or unexpected entry in `keys/`, and any
 template/key-type content defect, fails reload with a generation-validation
 error: the runtime publishes an empty snapshot and enters recovery with signing
-blocked. Entries are not dropped from an otherwise published snapshot. A
+blocked, whichever reload found it. An unlock enters it through its recovery
+unlock. A reload without the passphrase (the watcher's, an in-place write's
+such as key generation or deletion, a template administration's, a
+reconcile's, or one after a store-root commit) enters it before it returns,
+under the store mutation lock its caller holds (`productruntime.Runtime.Reload`),
+and recovery keeps the keyring for the reconcile that lifts it once the
+generation is repaired. The daemon logs the entry with its cause and pushes a
+`status` in recovery to the admin session, since no reply reports it; a key
+change's reply is `recovery_blocked` with the cause
+([ARCH_ADMIN.md](ARCH_ADMIN.md)). A reload failure of another kind, such as a `keys/`
+directory that cannot be read, leaves the runtime state of the watcher's and
+an in-place write's reload as it was, and the caller reports it; a caller
+after a store-root commit enters recovery on any failure. Two key files in
+`keys/` that resolve to one signing address (`keys.ErrAddressCollision`) are
+a content defect too: the reload publishes an empty snapshot, and a reload
+without the passphrase enters recovery for it as for a validation failure.
+An unlock that meets one still answers a failed unlock. Entries
+are not dropped from an otherwise published snapshot. A
 source token file that cannot be read, opened or decoded as its selector's,
 and an entry of `source_tokens/` that is not a token file, are damage of the
 same kind (`sourcetokens.ErrDamaged`): the reload fails with a
@@ -2015,8 +2039,13 @@ Mechanism:
   re-arm or restart, so only store-root replacement triggers a reload for
   out-of-band file edits in that window
 - missing key and key type directories are tracked and added later when created
-- when unlocked, qualifying changes trigger immediate reload
-- when locked, the watcher remains running and marks the product runtime dirty
+- when unlocked, qualifying changes trigger immediate reload; one that finds
+  a content defect in the selected generation enters recovery
+  ([Runtime reload behavior](#runtime-reload-behavior))
+- when locked or in recovery, the watcher remains running and marks the
+  product runtime dirty; a recovery a reload entered therefore does not lift
+  when the defect's file is removed, but at the reconcile or unlock that
+  follows
 - watcher-triggered reload obtains the product store mutation lock before scanning keys/templates
 - admin mutation paths that already hold the product store mutation lock call direct reload paths and must not call watcher-only reload entrypoints
 

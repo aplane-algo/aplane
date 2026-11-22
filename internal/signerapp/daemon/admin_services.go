@@ -142,6 +142,14 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	if !success {
 		return failedUnlock(errMsg)
 	}
+	// The publish ran the dirty reconciliation (EnsureKeyWatcher), whose
+	// reload can find a defect that appeared after this unlock's own load
+	// and enter recovery; it pushed that state already, so the answer says
+	// it too, as answerFencedUnlock's does, rather than leave apadmin on an
+	// unlocked signer.
+	if ir.IsRecovery() {
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
+	}
 	return true, keyCount, "", ""
 }
 
@@ -444,7 +452,8 @@ var errReconcileStateChanged = errors.New("runtime state changed while store rec
 // RecoveryBeforeRelease transcribes (RB2). The recovery-exit rescan passes
 // false: it starts in recovery, so a failure leaves it there, and a lock
 // that came in meanwhile stands (SetRecovery leaves a locked signer locked
-// too, so this is belt and braces). A
+// too, so this is belt and braces). A reload that finds a content defect
+// enters recovery itself either way (productruntime.Runtime.Reload). A
 // promotion refused after a clean reload (errReconcileStateChanged) enters
 // no recovery either way.
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, enterRecoveryOnFailure bool) (*signertemplates.ReloadReport, error) {

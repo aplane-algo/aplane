@@ -57,6 +57,9 @@ type ProductBuildHooks struct {
 	ReloadMutationLock func() sync.Locker
 	Info               func(string)
 	Warn               func(string)
+	// NotifyReloadRecovery is called with the defect after a reload without
+	// the passphrase entered recovery for one.
+	NotifyReloadRecovery func(cause error)
 }
 
 // BuildProductRuntime validates the product layout and constructs the one
@@ -231,8 +234,8 @@ func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hook
 	return svc
 }
 
-// WireReloadFunc configures the reload function and the watcher reload
-// mutation lock on a product runtime.
+// WireReloadFunc configures the reload function, the watcher reload mutation
+// lock and the hook for a reload's entry into recovery on a product runtime.
 func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks) {
 	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		svc := NewReloadService(ir, opts, hooks, session)
@@ -241,6 +244,7 @@ func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks 
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(hooks.ReloadMutationLock)
 	}
+	ir.SetReloadRecoveryHook(hooks.NotifyReloadRecovery)
 }
 
 // storedAdmissionAlerts are the admission problems of the stored documents,
