@@ -726,9 +726,11 @@ type UnlockOutcome struct {
 // when the reconcile or the load finds the store needing it. reconcile runs
 // under the store mutation lock and opens the store root with the
 // passphrase; onUnlocked runs once the attempt has published. It returns the
-// outcome, or the error of a request that left the signer as it was. A
-// passphrase that does not open the store root ends the request where it is
-// found. The passphrase bytes are not zeroed.
+// outcome, or the error of a request that neither unlocked the signer nor
+// entered recovery: one that lost to a lock has locked it, and a failed load
+// from locked has closed the keyring it opened. A passphrase that does not
+// open the store root ends the request where it is found. The passphrase
+// bytes are not zeroed.
 func (ir *Runtime) Unlock(passphrase []byte, reconcile func() error, onUnlocked func()) (UnlockOutcome, error) {
 	answer, reconcileErr := ir.AnswerIfUnlocked(passphrase, reconcile)
 	if answer.Answered {
@@ -1880,16 +1882,21 @@ func (ir *Runtime) StopKeyWatcher() {
 
 // --- Shutdown ---
 
-// invalidPassphrase is an unlock's failure for a passphrase that does not
-// open the store root. It reads "invalid passphrase", the text the admin
-// client shows, and is crypto.ErrInvalidPassphrase to errors.Is.
+// ErrInvalidPassphrase is an unlock's failure for the request's passphrase:
+// it does not open the store root. It reads "invalid passphrase", the text
+// the admin client shows, and is crypto.ErrInvalidPassphrase to errors.Is.
+// A load that fails because the store root no longer opens with a passphrase
+// already checked wraps crypto.ErrInvalidPassphrase but is not this: it is a
+// failed unlock, not a wrong passphrase.
+var ErrInvalidPassphrase error = invalidPassphrase{}
+
 type invalidPassphrase struct{}
 
 func (invalidPassphrase) Error() string { return "invalid passphrase" }
 func (invalidPassphrase) Unwrap() error { return crypto.ErrInvalidPassphrase }
 
 // unlockFailure classifies a store-root open error for an unlock: a
-// passphrase that does not open the root is invalidPassphrase, and any other
+// passphrase that does not open the root is ErrInvalidPassphrase, and any other
 // failure (an unreadable or damaged root) keeps its cause, so it is reported
 // as a failed unlock rather than a wrong passphrase.
 func unlockFailure(err error) error {
@@ -1897,7 +1904,7 @@ func unlockFailure(err error) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, crypto.ErrInvalidPassphrase):
-		return invalidPassphrase{}
+		return ErrInvalidPassphrase
 	default:
 		return fmt.Errorf("store root could not be opened: %w", err)
 	}

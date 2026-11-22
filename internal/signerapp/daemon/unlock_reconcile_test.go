@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -81,7 +82,10 @@ func TestReconcileGenerationQuarantineRequiresAndRecordsDurableAudit(t *testing.
 	defer cleanup()
 	successor := mintUnselectedGenerationForTest(t, server)
 
-	if err := server.adminServices().reconcileGenerations(server.runtime, testPassphrase); err != nil {
+	svc := server.adminServices()
+	if err := svc.withStoreMutation(func() error {
+		return svc.reconcileGenerationsWithPassphraseLocked(server.runtime, testPassphrase)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(server.keyPaths.QuarantinedGenerationDir(successor)); err != nil {
@@ -326,7 +330,7 @@ func TestFailedUnlockLogsOnlyRealFailuresAsErrors(t *testing.T) {
 	}
 
 	capture()
-	if _, _, _, code := failedUnlock(fmt.Errorf("invalid passphrase: %w", crypto.ErrInvalidPassphrase)); code != protocol.ErrCodeInvalidPassphrase {
+	if _, _, _, code := failedUnlock(productruntime.ErrInvalidPassphrase); code != protocol.ErrCodeInvalidPassphrase {
 		t.Fatalf("failedUnlock(wrong passphrase) code = %q", code)
 	}
 	if got := logs.String(); got != "" {

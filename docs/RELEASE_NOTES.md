@@ -12,14 +12,14 @@ before it was renamed `enroll`.
 - **An unlock that finds two key files for one signing address enters
   recovery**, as one that finds a malformed key file does. It answered
   `unlock_failed` and left the signer locked; a headless signer did not
-  start. The reconcile recovery needs repairs it.
+  start. Once the duplicate file is removed, a reconcile lifts recovery.
 - **The startup unlock of a headless signer runs the unlock an admin request
   runs**, with the same fence against a lock and the same fall back into
   recovery. It published the unlocked state without the fence. A good unlock
-  now checks the passphrase once more before it loads.
+  at startup now checks the passphrase once more before it loads.
 - **A wrong passphrase ends an unlock at the reconcile that finds it.** It
   went on to an entry into recovery, which opened the store root again
-  before it failed. At startup the daemon logs one error and does not start.
+  before it failed.
 - Unlock outcomes are decided by error values instead of message text. The
   messages the admin client shows are unchanged.
 

@@ -58,7 +58,7 @@ hold the store mutation lock, which a store change holds when it enters
 recovery and a reconcile holds when it lifts one; so no other way to the
 unlocked state lands between an attempt's check and the end of its load.
 
-A recovery unlock (TryRecovery, from UnlockIdentity when a reconcile or the
+A recovery unlock (TryRecovery, from productruntime's Unlock when a reconcile or the
 selected generation fails) is two steps, RecoveryStart and RecoveryFinish,
 and does not take unlockMu, so it may run beside an unlock or another
 recovery unlock. It opens the keyring and enters recovery; its keyring open

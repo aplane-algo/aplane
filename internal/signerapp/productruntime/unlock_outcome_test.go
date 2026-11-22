@@ -51,7 +51,7 @@ func TestAWrongPassphraseEndsAnUnlockAtTheReconcile(t *testing.T) {
 	}
 
 	outcome, err := ir.Unlock([]byte("not the passphrase"), reconcile, nil)
-	if !errors.Is(err, crypto.ErrInvalidPassphrase) || err.Error() != "invalid passphrase" {
+	if !errors.Is(err, ErrInvalidPassphrase) || err.Error() != "invalid passphrase" {
 		t.Fatalf("Unlock() = %+v, %v; want an invalid passphrase", outcome, err)
 	}
 	if reconciles != 1 || *checks != 0 || loads.Load() != 0 {
@@ -59,6 +59,30 @@ func TestAWrongPassphraseEndsAnUnlockAtTheReconcile(t *testing.T) {
 	}
 	if got := ir.GetState(); got != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v, want locked", got)
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("WithKeyring() = %v, want no keyring", err)
+	}
+}
+
+// The request ends on the reconcile's verdict alone: here the reconcile says
+// the passphrase does not open the store root, and the passphrase the
+// request carries does. Without the early exit the request would go on to an
+// entry into recovery, whose keyring unlock that passphrase passes, and the
+// locked signer would end in recovery.
+func TestAnUnlockEndsOnTheReconcilesWrongPassphrase(t *testing.T) {
+	ir, _, loads, _ := unlockedRuntimeForTest(t)
+	ir.Lock()
+	reconcile := func() error {
+		return fmt.Errorf("reconcile: %w", crypto.ErrInvalidPassphrase)
+	}
+
+	outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil)
+	if !errors.Is(err, ErrInvalidPassphrase) {
+		t.Fatalf("Unlock() = %+v, %v; want %v", outcome, err, ErrInvalidPassphrase)
+	}
+	if got := ir.GetState(); got != signerruntime.SignerStateLocked || loads.Load() != 0 {
+		t.Fatalf("state = %v after %d load(s), want locked with none", got, loads.Load())
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); !errors.Is(err, keystore.ErrStoreLocked) {
 		t.Fatalf("WithKeyring() = %v, want no keyring", err)

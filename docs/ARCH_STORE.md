@@ -1894,7 +1894,8 @@ it. The startup unlock of a headless signer runs the unlock an admin request
 runs (`productruntime.Runtime.Unlock`), with the same fence and the same
 fall back into recovery, before the admin listener starts. A passphrase that
 does not open the store root ends an unlock at the reconcile that finds it,
-with no entry into recovery, and at startup the daemon does not start.
+with no entry into recovery. At startup the unlock plan has already checked
+the passphrase it was given, and the daemon does not start on a wrong one.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Any malformed, misnamed, wrong-class,

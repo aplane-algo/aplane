@@ -127,6 +127,13 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 			want: "true recovery_blocked "},
 		{name: "address collision", load: func(*productruntime.Runtime) error { return collision },
 			want: "true recovery_blocked "},
+		// The store root no longer opens with the passphrase the request's
+		// check passed: a failed unlock, logged, not a wrong passphrase.
+		{name: "load cannot open the store root",
+			load: func(*productruntime.Runtime) error {
+				return fmt.Errorf("failed to unlock the keystore: %w", crypto.ErrInvalidPassphrase)
+			},
+			want: "false unlock_failed failed to load keys"},
 		{name: "lost to a lock", load: func(ir *productruntime.Runtime) error { ir.Lock(); return nil },
 			want: "false unlock_failed signer locked during unlock"},
 		{name: "met a recovery", recovery: true, load: func(ir *productruntime.Runtime) error { ir.SetRecovery(); return nil },

@@ -151,16 +151,9 @@ func failedUnlock(err error) (bool, int, string, string) {
 	return false, 0, err.Error(), code
 }
 
-// reconcileGenerations opens the authenticated root under the store mutation
-// lock and validates the selected generation fail-closed.
-func (s signerAdminServices) reconcileGenerations(ir *productruntime.Runtime, passphrase []byte) error {
-	return s.withStoreMutation(func() error {
-		return s.reconcileGenerationsWithPassphraseLocked(ir, passphrase)
-	})
-}
-
-// reconcileGenerationsWithPassphraseLocked is reconcileGenerations' work, for
-// a caller that holds the store mutation lock.
+// reconcileGenerationsWithPassphraseLocked opens the authenticated root with
+// the passphrase and validates the selected generation fail-closed, for an
+// unlock request: the caller holds the store mutation lock.
 func (s signerAdminServices) reconcileGenerationsWithPassphraseLocked(ir *productruntime.Runtime, passphrase []byte) error {
 	_, kr, err := genstore.OpenStoreRootSelection(ir.KeyPaths(), passphrase)
 	if err != nil {
@@ -170,9 +163,9 @@ func (s signerAdminServices) reconcileGenerationsWithPassphraseLocked(ir *produc
 	return s.reconcileGenerationsLocked(ir, kr)
 }
 
-// reconcileGenerationsLocked performs reconciliation without acquiring the
-// store mutation lock. Callers either use reconcileGenerations or hold the
-// lock across a larger validate/reload/state-transition sequence.
+// reconcileGenerationsLocked reconciles the store root with an open keyring.
+// The caller holds the store mutation lock, across the reload and state
+// change that follow.
 func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runtime, kr *crypto.Keyring) error {
 	preview, err := genstore.InspectStoreRoot(ir.KeyPaths(), kr)
 	if err != nil {
@@ -220,7 +213,7 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 }
 
 func unlockFailureCode(err error) string {
-	if errors.Is(err, crypto.ErrInvalidPassphrase) {
+	if errors.Is(err, productruntime.ErrInvalidPassphrase) {
 		return protocol.ErrCodeInvalidPassphrase
 	}
 	return protocol.ErrCodeUnlockFailed
