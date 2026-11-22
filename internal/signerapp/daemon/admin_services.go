@@ -142,6 +142,14 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	if !success {
 		return failedUnlock(errMsg)
 	}
+	// The publish ran the dirty reconciliation (EnsureKeyWatcher), whose
+	// reload can find a defect that appeared after this unlock's own load
+	// and enter recovery; it pushed that state already, so the answer says
+	// it too, as answerFencedUnlock's does, rather than leave apadmin on an
+	// unlocked signer.
+	if ir.IsRecovery() {
+		return true, 0, "", protocol.ResultCodeRecoveryBlocked
+	}
 	return true, keyCount, "", ""
 }
 

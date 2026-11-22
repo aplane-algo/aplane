@@ -192,3 +192,29 @@ func TestAKeyChangeThatEnteredRecoveryEndsOnTheRecoveryScreen(t *testing.T) {
 		}
 	}
 }
+
+// A lock that lands after a key change's reload entered recovery and before
+// its reply arrives stands: the reply ends the operation and leaves the
+// unlock screen, as a reconcile's or a rollback's late reply does, and the
+// next unlock finds the recovery. The reply once reopened the recovery
+// screen on a locked signer. The review's probe.
+func TestARecoveryBlockedReplyAfterALockLeavesTheSignerLocked(t *testing.T) {
+	m := Model{viewState: ViewGenerateForm, connectionState: ConnectionConnected, signerState: signerRuntimeUnlocked,
+		forms: formsState{importMnemonicInput: newImportMnemonicInput()}}
+	id := m.beginOperation(ViewGenerating)
+	m = updateModel(t, m, fromListener(decodeSignerReply(t, protocol.StatusMessage{
+		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindNotification, Type: protocol.MsgTypeStatus},
+		State:       "recovery",
+	})))
+	m = updateModel(t, m, SignerStatusMsg{State: "locked"})
+	m = updateModel(t, m, fromListener(decodeSignerReply(t, protocol.GenerateResultMessage{
+		BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindResponse, Type: protocol.MsgTypeGenerateResult, ID: id},
+		Code:        protocol.ResultCodeRecoveryBlocked, Error: "the cause",
+	})))
+	if m.viewState != ViewUnlock || m.signerState != signerRuntimeLocked {
+		t.Fatalf("view %v state %v after the late reply, want the unlock screen of a locked signer", m.viewState, m.signerState)
+	}
+	if m.operation != (pendingOperation{}) {
+		t.Fatalf("operation %+v, want it ended", m.operation)
+	}
+}

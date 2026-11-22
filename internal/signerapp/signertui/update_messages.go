@@ -234,9 +234,14 @@ func (m Model) isRecoveryBlockedReply(id, code string) bool {
 
 // showRecoveryBlockedReply ends the operation on the recovery screen with the
 // reply's cause, which names what to repair before the reconcile, as a policy
-// apply that ended in recovery does.
+// apply that ended in recovery does. A lock that came after the recovery,
+// before the reply, stands, as it does for a reconcile's or a rollback's
+// reply: the next unlock finds the recovery.
 func (m Model) showRecoveryBlockedReply(cause string) (tea.Model, tea.Cmd) {
 	m.operation = pendingOperation{}
+	if m.signerKnownLocked() {
+		return m, nil
+	}
 	var cmd tea.Cmd
 	if m.viewState != ViewStoreRecovery {
 		cmd = m.enterRecovery()

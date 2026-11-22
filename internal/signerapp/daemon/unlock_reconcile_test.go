@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -893,4 +895,39 @@ func TestAReconcileRefusedForALockedSignerAnswersLocked(t *testing.T) {
 	if ir.IsRecovery() {
 		t.Fatal("a refused reconcile entered recovery")
 	}
+}
+
+// An unlock's publish runs the dirty reconciliation (EnsureKeyWatcher), and
+// that reconciliation's reload can find a defect that appeared after the
+// unlock's own load, which enters recovery inside the publish. The status
+// push came first and the unlock then answered a plain success, so apadmin
+// showed an unlocked signer in recovery. The answer now comes from the state
+// the unlock leaves: recovery_blocked, as a fenced unlock answers. The
+// review's probe.
+func TestAnUnlockWhoseDirtyReconciliationEntersRecoveryAnswersRecovery(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	session := &ipcJSONRecorderConn{}
+	server.ipcServer = newIPCServerWithActiveConn(session)
+	server.hub = server.ipcServer
+	ir := server.productRuntime()
+	defer ir.StopKeyWatcher()
+	ir.Lock()
+	ir.MarkDirty()
+	opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
+	ir.SetReloadFunc(func(passphrase []byte, keySession *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		if passphrase != nil {
+			return signerstartup.NewReloadService(ir, opts, hooks, keySession).Reload(passphrase)
+		}
+		return nil, fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
+	})
+
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
+		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v, want recovery", ir.GetState())
+	}
+	requireRecoveryPushed(t, session)
 }
