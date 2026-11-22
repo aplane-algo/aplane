@@ -373,7 +373,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 			t.Fatal(err)
 		}
 		keyType := tc.keyType
-		t.Cleanup(func() { signertemplates.UnregisterProductProvider(keyType) })
+		t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	}
 
 	manager := signertemplates.NewManager(paths, lsigprovider.ProcessRegistry{})

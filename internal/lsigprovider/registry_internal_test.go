@@ -157,6 +157,34 @@ func TestRegisterAppliesStoredClientToLateProvider(t *testing.T) {
 	}
 }
 
+// A template a reload registers in a batch gets the stored algod client, as
+// one registered alone does: a composed template compiles its program
+// through it.
+func TestABatchAppliesTheStoredClient(t *testing.T) {
+	originalProviders := providers
+	originalClient := storedClient
+	providers = util.NewStringRegistry[LSigProvider]()
+	storedClient = nil
+	defer func() {
+		providers = originalProviders
+		storedClient = originalClient
+	}()
+
+	client, err := algod.MakeClient("https://example.com", "")
+	if err != nil {
+		t.Fatalf("MakeClient() error = %v", err)
+	}
+	ConfigureAlgodClient(client)
+
+	p := &stubConfigurableProvider{stubProvider: stubProvider{keyType: "batch-v1", family: "batch"}}
+	if registered, err := (ProcessRegistry{}).RegisterBatchIfAbsent([]LSigProvider{p}); err != nil || !registered[0] {
+		t.Fatalf("RegisterBatchIfAbsent() = %v, %v; want it registered", registered, err)
+	}
+	if p.client != client {
+		t.Fatal("a batch-registered provider did not receive the stored algod client")
+	}
+}
+
 func TestConcurrentRegisterAndConfigureAlgodClient(t *testing.T) {
 	originalProviders := providers
 	originalClient := storedClient
@@ -216,7 +244,7 @@ func TestABatchWithAnInvalidProviderRegistersNothing(t *testing.T) {
 	bad := stubProvider{keyType: "batch-bad", family: ""}
 	t.Cleanup(func() { Unregister(good.keyType); Unregister(bad.keyType) })
 
-	if registered, err := RegisterBatchIfAbsent([]LSigProvider{good, bad}); err == nil {
+	if registered, err := (ProcessRegistry{}).RegisterBatchIfAbsent([]LSigProvider{good, bad}); err == nil {
 		t.Fatalf("RegisterBatchIfAbsent() = %v, want the broken contract refused", registered)
 	}
 	if Has(good.keyType) {
@@ -228,7 +256,7 @@ func TestABatchWithAnInvalidProviderRegistersNothing(t *testing.T) {
 	if !RegisterIfAbsent(already) {
 		t.Fatal("RegisterIfAbsent() did not register")
 	}
-	registered, err := RegisterBatchIfAbsent([]LSigProvider{good, already})
+	registered, err := ProcessRegistry{}.RegisterBatchIfAbsent([]LSigProvider{good, already})
 	if err != nil || len(registered) != 2 || !registered[0] || registered[1] {
 		t.Fatalf("RegisterBatchIfAbsent() = %v, %v; want the new one registered and the present one not", registered, err)
 	}

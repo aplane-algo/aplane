@@ -15,11 +15,12 @@ before it was renamed `enroll`.
   template whose provider breaks the provider contract is refused at
   preparation, by install, import and reload alike, where it once panicked
   at registration.
-- **The reload reaches the provider registry through the runtime**
-  (`productruntime.Runtime.ProviderRegistry`). It is still the process-wide
-  registry; the handle is what a registry per identity would replace. The
-  key scan's signature-size lookups still read the process-wide registry
-  directly.
+- **The reload and template administration reach the provider registry
+  through the runtime** (`productruntime.Runtime.ProviderRegistry`): the
+  reload's registrations and lookups, and the unregistration of a removed or
+  disabled template. It is still the process-wide registry; the handle is
+  what a registry per identity would replace. The key scan's signature-size
+  lookups still read the process-wide registry directly.
 
 ## The keystore installs its keyring, binding and key cache together
 

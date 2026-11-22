@@ -104,7 +104,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() { UnregisterProductProvider(keyType) })
+				t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 				paths := mintedPathsForReloadTest(t)
 				masterKey := testTemplateMasterKey()
 				saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, data, masterKey)

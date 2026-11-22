@@ -354,7 +354,7 @@ func TestRepairCommitsAGenerationThatValidates(t *testing.T) {
 			manager.ActivePaths = repaired
 			report, err := manager.RegisterKeystoreTemplates(f.opts.Keyring)
 			for _, keyType := range []string{healthy, editedGeneric, editedComposed} {
-				t.Cleanup(func() { signertemplates.UnregisterProductProvider(keyType) })
+				t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 			}
 			if err != nil || len(report.ContentDefectKeyTypes()) != 0 || len(report.Warnings()) != 0 {
 				t.Fatalf("RegisterKeystoreTemplates(repaired) = %v, warnings %q, %v", report.ContentDefectKeyTypes(), report.Warnings(), err)

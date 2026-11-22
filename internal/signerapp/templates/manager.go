@@ -243,6 +243,7 @@ func (r RegistrationReport) Notices() []string {
 type ProviderRegistry interface {
 	Get(keyType string) lsigprovider.LSigProvider
 	RegisterBatchIfAbsent(batch []lsigprovider.LSigProvider) ([]bool, error)
+	Unregister(keyType string) bool
 }
 
 // Manager owns keystore template registration ordering for signer reloads.
@@ -304,9 +305,6 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 		return RegistrationReport{}, err
 	}
 	registry := m.Registry
-	if registry == nil {
-		registry = lsigprovider.ProcessRegistry{}
-	}
 
 	report := RegistrationReport{}
 	// Bind every record and template read to one caller-authenticated
@@ -357,7 +355,7 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 	// The namespace sweep backs the fail-closed reload gate.
 	report.NamespaceDefects, report.DisabledOrphanedKeyTypes = sweepKeyTypeNamespace(active, kr, records, registrarsBySource)
 
-	compiledOutcome := validateCompiledProviderRecords(records)
+	compiledOutcome := validateCompiledProviderRecords(records, registry)
 	report.CompiledIdempotentKeyTypes = append(report.CompiledIdempotentKeyTypes, compiledOutcome.IdempotentKeyTypes...)
 	report.CompiledConflictingKeyTypes = append(report.CompiledConflictingKeyTypes, compiledOutcome.ConflictingKeyTypes...)
 	report.CompiledInvalidKeyTypes = append(report.CompiledInvalidKeyTypes, compiledOutcome.InvalidKeyTypes...)
@@ -522,7 +520,7 @@ func registerPending(report *RegistrationReport, registry ProviderRegistry, pend
 	}
 	registered, err := registry.RegisterBatchIfAbsent(batch)
 	if err != nil {
-		return fmt.Errorf("failed to register keystore templates: %w", err)
+		return err
 	}
 	for i, p := range pending {
 		var outcome templatepolicy.RegistrationOutcome
@@ -613,7 +611,7 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 	return outcome, prepared.Provider
 }
 
-func validateCompiledProviderRecords(records []keytypestate.Record) templatepolicy.RegistrationOutcome {
+func validateCompiledProviderRecords(records []keytypestate.Record, registry ProviderRegistry) templatepolicy.RegistrationOutcome {
 	var outcome templatepolicy.RegistrationOutcome
 	for _, rec := range records {
 		if rec.Source != keytypestate.SourceCompiled {
@@ -623,7 +621,7 @@ func validateCompiledProviderRecords(records []keytypestate.Record) templatepoli
 			outcome.DisabledKeyTypes = append(outcome.DisabledKeyTypes, rec.KeyType)
 			continue
 		}
-		provider := lsigprovider.Get(rec.KeyType)
+		provider := registry.Get(rec.KeyType)
 		if provider == nil {
 			// Rotating key types are compiled but have no LogicSig provider
 			// and no template fingerprint.

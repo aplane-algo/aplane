@@ -49,9 +49,9 @@ func Register(p LSigProvider) {
 // key type is already present. It returns true when the provider was newly
 // registered and false when the key type already existed.
 //
-// This is intended for reconnect-safe runtime template loading, where the same
-// provider may be reloaded in the same process. Callers that want duplicate
-// registration to remain a hard failure should continue using Register.
+// Compiled providers that may register more than once in a process use it;
+// a reload registers its templates as a batch (ProcessRegistry). Callers that
+// want duplicate registration to remain a hard failure use Register.
 func RegisterIfAbsent(p LSigProvider) bool {
 	registerMu.Lock()
 	defer registerMu.Unlock()
@@ -216,11 +216,27 @@ func CheckContract(p LSigProvider) (string, error) {
 	return normalize(rawKeyType), nil
 }
 
+// ProcessRegistry is the process-wide provider registry, as the handle a
+// runtime is given: a reload registers its templates and reads the providers
+// registered before it through that handle, not through the package
+// functions. A registry per identity would replace it.
+type ProcessRegistry struct{}
+
+// Get returns the registered provider for keyType, or nil.
+func (ProcessRegistry) Get(keyType string) LSigProvider { return Get(keyType) }
+
+// Unregister removes keyType's provider and reports whether it was
+// registered: a removed or disabled template's, so its key type name is free
+// again and no key of the type signs.
+func (ProcessRegistry) Unregister(keyType string) bool { return Unregister(keyType) }
+
 // RegisterBatchIfAbsent registers each provider whose key type is not yet
 // present, all under one hold of the registration lock, and reports for each
 // whether it was newly registered. A batch with a provider that breaks the
-// contract registers nothing.
-func RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
+// contract registers nothing. A template's preparation already checked each
+// contract (CheckContract); the batch checks again, a deliberately layered
+// guard, since what it registers is process-wide.
+func (ProcessRegistry) RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
 	registerMu.Lock()
 	defer registerMu.Unlock()
 	keyTypes := make([]string, len(batch))
@@ -239,20 +255,6 @@ func RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
 		}
 	}
 	return registered, nil
-}
-
-// ProcessRegistry is the process-wide provider registry, as the handle a
-// runtime is given: a reload registers its templates and reads the providers
-// registered before it through that handle, not through the package
-// functions. A registry per identity would replace it.
-type ProcessRegistry struct{}
-
-// Get returns the registered provider for keyType, or nil.
-func (ProcessRegistry) Get(keyType string) LSigProvider { return Get(keyType) }
-
-// RegisterBatchIfAbsent is the package's RegisterBatchIfAbsent.
-func (ProcessRegistry) RegisterBatchIfAbsent(batch []LSigProvider) ([]bool, error) {
-	return RegisterBatchIfAbsent(batch)
 }
 
 // applyStoredClientIfNeeded runs with registerMu held.

@@ -94,7 +94,7 @@ func TestInstalledTemplateOutsideGenerationSupportKeepsTheStoreUsable(t *testing
 
 	manager := signertemplates.NewManager(paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = active
-	t.Cleanup(func() { signertemplates.UnregisterProductProvider(unsupportedTemplateKeyType) })
+	t.Cleanup(func() { lsigprovider.Unregister(unsupportedTemplateKeyType) })
 	report, err := manager.RegisterKeystoreTemplates(kr)
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
