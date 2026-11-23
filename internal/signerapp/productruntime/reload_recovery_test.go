@@ -15,16 +15,15 @@ import (
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
-// A reload without a passphrase that finds a content defect in the selected
-// generation, a failed validation or an address collision, enters recovery
-// before it returns, and so before its caller
-// releases the store mutation lock: such a reload has published an empty key
-// snapshot, and an unlocked signer serving it says it can sign with no keys.
-// Recovery keeps the keyring, for the reconcile that lifts it. A signer
-// already in recovery stays there, and a locked one stays locked. Any other
-// failure, such as a keys directory that cannot be read, leaves the state as
-// it was, for the caller to answer. Each entry is passed to the hook the
-// process root set, which tells the admin session and the log.
+// A reload without a passphrase whose build finds a content defect in the
+// selected generation, a failed validation or an address collision, enters
+// recovery before it returns, and so before its caller releases the store
+// mutation lock, and its error carries ErrEnteredRecovery. Recovery keeps the
+// keyring, for the reconcile that lifts it. A signer already in recovery
+// stays there, and a locked one stays locked, with no keyring to build with.
+// Any other failure, such as a keys directory that cannot be read, keeps the
+// view in service, for the caller to answer. Each entry is passed to the hook
+// the process root set, which tells the admin session and the log.
 func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 	validation := fmt.Errorf("%w: 1 malformed key file(s)", signertemplates.ErrGenerationValidation)
 	// As the reload wraps the scan's collision error.
@@ -46,10 +45,14 @@ func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ir, mutation, _, _ := unlockedRuntimeForTest(t)
+			bound, err := ir.ActivePaths()
+			if err != nil {
+				t.Fatal(err)
+			}
 			tc.from(ir)
-			ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-				return nil, tc.err
-			})
+			ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+				return &Loaded{Selection: &bound}, tc.err
+			}, ReloadEffects{})
 			var told []error
 			ir.SetReloadRecoveryHook(func(cause error) {
 				if ir.GetState() != signerruntime.SignerStateRecovery {
@@ -59,12 +62,20 @@ func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 			})
 
 			mutation.Lock() // as every caller of Reload holds it
-			_, err := ir.Reload()
+			_, err = ir.Reload()
 			state := ir.GetState()
 			mutation.Unlock()
 
-			if !errors.Is(err, tc.err) {
-				t.Fatalf("Reload() error = %v, want %v", err, tc.err)
+			// A locked signer has no keyring to build with.
+			wantErr := tc.err
+			if tc.want == signerruntime.SignerStateLocked {
+				wantErr = keystore.ErrStoreLocked
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("Reload() error = %v, want %v", err, wantErr)
+			}
+			if entered := errors.Is(err, ErrEnteredRecovery); entered != (tc.want == signerruntime.SignerStateRecovery) {
+				t.Fatalf("Reload() error marks an entry into recovery: %v, want %v", entered, tc.want == signerruntime.SignerStateRecovery)
 			}
 			if state != tc.want {
 				t.Fatalf("state = %v when Reload returned, want %v", state, tc.want)

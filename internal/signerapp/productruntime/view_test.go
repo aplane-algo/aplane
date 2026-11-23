@@ -460,3 +460,22 @@ func TestARuntimeWithNoBuildFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+// A watcher reload that finds the store root selecting another generation,
+// and then fails, enters recovery bound to that generation: the view in
+// service is the superseded one's. A watcher reload once kept the view after
+// any failure that was not a content defect.
+func TestAWatcherReloadThatFindsTheRootMovedEntersRecoveryBoundToIt(t *testing.T) {
+	ir, _, _ := viewInService(t)
+	moved := ir.KeyPaths().GenerationPaths("gen-1800000000-0a0b0c0d")
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		return &Loaded{Selection: &moved}, errors.New("injected read failure")
+	}, ReloadEffects{})
+	reloaded, err := ir.reloadFromWatcher()
+	if !reloaded || !errors.Is(err, ErrEnteredRecovery) {
+		t.Fatalf("reloadFromWatcher() = %v, %v; want a reload that entered recovery", reloaded, err)
+	}
+	if active, err := ir.ActivePaths(); !ir.IsRecovery() || err != nil || active.GenerationID() != moved.GenerationID() {
+		t.Fatalf("state %v bound to %v (%v), want recovery bound to %s", ir.GetState(), active.GenerationID(), err, moved.GenerationID())
+	}
+}

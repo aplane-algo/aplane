@@ -128,7 +128,7 @@ func TestRollbackRefusalDoesNotInventRecoveryState(t *testing.T) {
 // instead of being dropped. A reply with no status before it opens the
 // screen itself.
 func TestAKeyChangeThatEnteredRecoveryEndsOnTheRecoveryScreen(t *testing.T) {
-	const cause = "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: generation validation failed: keys/junk.txt"
+	const cause = "the change was written, but the reload after it entered recovery: generation validation failed: keys/junk.txt"
 	base := func(msgType, id string) protocol.BaseMessage {
 		return protocol.BaseMessage{Kind: protocol.MessageKindResponse, Type: msgType, ID: id}
 	}

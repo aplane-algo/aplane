@@ -1915,12 +1915,14 @@ succeeds while the signer is in recovery (a restore or a rollback begun
 there) publishes recovery's view of the new generation, and the reconcile
 that follows publishes the whole view as it promotes. Every entry into
 recovery outside an unlock publishes that view, so in recovery the key
-count is 0 and every per-key policy document shows as not held. A reload
-not yet built this way that finds the store root no longer authenticating
-keeps the view in service with no binding: the watcher's and an in-place
-write's. The
-watcher's and an in-place write's reloads, and an unlock's, still run the
-order above.
+count is 0 and every per-key policy document shows as not held. The
+watcher's and an in-place write's reloads (key generation, import and
+deletion, and template administration) build and publish the same way
+(`productruntime.Runtime.Reload`); no commit moved the root, so they keep
+the view for a transient failure, and enter recovery for a content defect or
+a root that no longer authenticates. Their callers answer `recovery_blocked`
+or `reload_failed` from the reload's error (`ErrEnteredRecovery`), not from
+the state. An unlock's reload still runs the order above.
 
 An unlock runs this order only when the signer is not already unlocked. A
 reload with the passphrase replaces the keyring at step 1 and the policy,

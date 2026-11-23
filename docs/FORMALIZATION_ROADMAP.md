@@ -987,3 +987,11 @@ reloads not yet built this way (the watcher's, an in-place write's) keep the
 view when the root stops authenticating, with the binding cleared, where the
 model takes `ReloadFail`: a model-extension candidate until they follow the
 failure rule.
+
+Changed 2026-11-23: the watcher's and an in-place write's reloads build and
+publish as the commit callers' do (`productruntime.Runtime.Reload` over
+`reloadView`), so `BeginReload` followed by `Build` and `ReloadFail` or
+`ReloadKeep` now transcribes them exactly. The candidate in the previous
+note is closed: a root that stops authenticating fails them into recovery
+bound to nothing, as the model has it. No spec change; the anchors in RB2,
+RB4, RL1 and A13 and the companion follow.

@@ -464,8 +464,9 @@ func TestShutdownSkipsTeardownForADeadlineEvenWithErrStillRunning(t *testing.T) 
 }
 
 // The stop is recorded before the keyring is zeroed, which takes locks
-// without a bound: here a reload holds the passphrase lock the zeroing
-// needs, and the record is already written while the zeroing waits. The
+// without a bound: here a reload with a passphrase, an unlock's, holds the
+// passphrase lock the zeroing needs, and the record is already written while
+// the zeroing waits. The
 // record was once written only after the zeroing returned, so a key
 // operation stalled inside one of those locks left no record at all.
 func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
@@ -482,7 +483,7 @@ func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
 	reloaded := make(chan struct{})
 	go func() {
 		defer close(reloaded)
-		_, _ = ir.Reload()
+		_, _ = ir.ReloadWithPassphrase([]byte("held"))
 	}()
 	<-reloading
 	var releaseOnce sync.Once

@@ -494,10 +494,14 @@ var reloadCallers = []reloadCaller{
 // afterAFailedReload is, for each caller and each fault, the caller's answer and
 // the view the signer is left serving (servedView.describe).
 //
-// The callers that build before they publish (a store-root commit's and the
-// reconcile's) end every failure in recovery's own view: no keys, and the
-// policy their build verified, or none when it failed before verifying one.
-// Recovery entered any other way holds no keys either.
+// Every reload but an unlock's builds before it publishes, and follows one
+// failure rule. A store-root commit's and the reconcile's end every failure
+// in recovery's own view: no keys, and the policy their build verified, or
+// none when it failed before verifying one. The watcher's and an in-place
+// write's keep the view in service, policy included, for a failure that is
+// neither a content defect nor a root that stopped authenticating, and enter
+// recovery's view for those; a template they activated is registered only
+// when the reload publishes it.
 var afterAFailedReload = map[string]map[string]string{
 	"unlock from locked": {
 		"root":      "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
@@ -556,60 +560,60 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"key generation": {
-		"root":      "success=false code=internal_error -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"key import": {
-		"root":      "success=false code=internal_error -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"key deletion": {
-		"root":      "success=false code=internal_error -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=internal_error -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"template import": {
-		"root":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"template removal": {
-		"root":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"key type deactivation": {
-		"root":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"key type activation": {
-		"root":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
-		"keytype":   "success=false code=recovery_blocked provider=registered -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=reload_failed provider=registered -> unlocked keyring=open generation=selected policy=replaced keys=1",
-		"collision": "success=false code=recovery_blocked provider=registered -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"stray":     "success=false code=recovery_blocked provider=registered -> recovery keyring=open generation=selected policy=replaced keys=0",
+		"keytype":   "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
+		"scan":      "success=false code=reload_failed provider=none -> unlocked keyring=open generation=selected policy=kept keys=1",
+		"collision": "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
+		"stray":     "success=false code=recovery_blocked provider=none -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"restore": {
 		"root":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=none policy=none keys=0",
@@ -628,10 +632,10 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"watcher": {
-		"root":      "failed=true -> unlocked keyring=open generation=none policy=kept keys=1",
+		"root":      "failed=true -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "failed=true -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"keytype":   "failed=true -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "failed=true -> unlocked keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "failed=true -> unlocked keyring=open generation=selected policy=kept keys=1",
 		"collision": "failed=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "failed=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},

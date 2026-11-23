@@ -178,7 +178,7 @@ func TestAKeyWriteWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	t.Cleanup(func() { appLogger.SetOutput(os.Stderr) })
 
 	result := server.adminServices().keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: "ed25519"})
-	const wantPrefix = "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: generation validation failed: "
+	const wantPrefix = "the change was written, but the reload after it entered recovery: generation validation failed: "
 	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked || !strings.HasPrefix(result.Error, wantPrefix) || !strings.Contains(result.Error, "junk.txt") {
 		t.Fatalf("GenerateKey() = %+v, want recovery_blocked naming the stray file", result)
 	}

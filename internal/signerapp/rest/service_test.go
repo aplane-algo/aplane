@@ -36,7 +36,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
@@ -143,22 +142,25 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 		KeyPaths: keyPaths,
 		NodeRole: role,
 	})
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, reloadKeysForTest(ir, keyPaths)
-	})
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		return scanBuildForTest(ir, kr)
+	}, productruntime.ReloadEffects{})
 	if unlocked {
 		ir.SetUnlocked()
 	}
 	return ir
 }
 
-func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
-	ks := ir.KeyStore()
-	if err := ks.Scan(); err != nil {
-		return err
-	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
-	return nil
+// scanBuildForTest is the reload's build reduced to its key scan: the
+// generation the store selects, scanned, with the policy in service carried
+// over as verified, so a reload leaves the policy as it found it.
+func scanBuildForTest(ir *productruntime.Runtime, kr *crypto.Keyring) (*productruntime.Loaded, error) {
+	contents, err := ir.KeyStore().ScanSelection(kr)
+	policy, set := ir.PolicyState()
+	return &productruntime.Loaded{
+		Selection: contents.Selection, PolicyVerified: true, Policy: policy, ASASet: set, Alerts: ir.PolicyAlerts(),
+		Contents: contents,
+	}, err
 }
 
 func TestServiceSignGroupDelegates(t *testing.T) {

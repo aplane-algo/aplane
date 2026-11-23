@@ -115,13 +115,13 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
-			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ProviderRegistry(), installResult, reloadErr)
+			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
 			out = adminproto.InstallLibraryTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          reloadFailureCode(ir, reloadErr),
+				Code:          reloadFailureCode(reloadErr),
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -129,7 +129,7 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 
 		if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, installResult.TemplateType) {
 			err := fmt.Errorf("template %s was saved but did not activate on reload", installResult.KeyType)
-			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ProviderRegistry(), installResult, err)
+			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, err)
 			out = adminproto.InstallLibraryTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -329,13 +329,13 @@ func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateR
 
 		reloadReport, reloadErr := ir.Reload()
 		if reloadErr != nil {
-			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ProviderRegistry(), installResult, reloadErr)
+			reloadErr = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, reloadErr)
 			out = adminproto.ImportInstalledTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          reloadFailureCode(ir, reloadErr),
+				Code:          reloadFailureCode(reloadErr),
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -343,7 +343,7 @@ func (s Service) ImportInstalledTemplate(req adminproto.ImportInstalledTemplateR
 
 		if !templateAcceptedByReloadReport(reloadReport, installResult.KeyType, installResult.TemplateType) {
 			err := fmt.Errorf("template %s was saved but did not activate on reload", installResult.KeyType)
-			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), ir.ProviderRegistry(), installResult, err)
+			err = rollbackFailedTemplateInstall(s.Deps.KeyPaths(), installResult, err)
 			out = adminproto.ImportInstalledTemplateResult{
 				Success:       false,
 				KeyType:       installResult.KeyType,
@@ -418,7 +418,7 @@ func (s Service) RemoveInstalledTemplate(req adminproto.RemoveInstalledTemplateR
 					KeyType:      removeResult.KeyType,
 					TemplateType: string(removeResult.TemplateType),
 					Removed:      true,
-					Code:         reloadFailureCode(ir, err),
+					Code:         reloadFailureCode(err),
 					Error:        err.Error(),
 				}
 			}
@@ -506,7 +506,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    reloadFailureCode(ir, reloadErr),
+			Code:    reloadFailureCode(reloadErr),
 			Error:   reloadErr.Error(),
 		}
 	}
@@ -544,7 +544,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *productruntime.Runtim
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    reloadFailureCode(ir, err),
+			Code:    reloadFailureCode(err),
 			Error:   err.Error(),
 		}
 	}
@@ -585,7 +585,7 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 				Success: false,
 				KeyType: removeResult.KeyType,
 				Removed: removeResult.Removed,
-				Code:    reloadFailureCode(ir, err),
+				Code:    reloadFailureCode(err),
 				Error:   err.Error(),
 			}
 		}
@@ -652,22 +652,25 @@ func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyTyp
 }
 
 // reloadFailureCode is the code of a template change whose reload failed:
-// recovery_blocked when the reload found a content defect in the selected
-// generation and entered recovery, which apadmin answers on its recovery
-// screen, and reload_failed otherwise. err may carry a rollback's failure
-// beside the reload's.
-func reloadFailureCode(ir *productruntime.Runtime, err error) string {
-	if productruntime.IsContentDefect(err) && ir.IsRecovery() {
+// recovery_blocked when the reload entered recovery, which apadmin answers on
+// its recovery screen, and reload_failed when it kept the view in service.
+// err may carry a rollback's failure beside the reload's.
+func reloadFailureCode(err error) string {
+	if errors.Is(err, productruntime.ErrEnteredRecovery) {
 		return protocol.ResultCodeRecoveryBlocked
 	}
 	return protocol.ResultCodeReloadFailed
 }
 
-func rollbackFailedTemplateInstall(paths storepaths.Paths, registry signertemplates.ProviderRegistry, result templatelibrary.InstallResult, cause error) error {
+// rollbackFailedTemplateInstall removes what a template install wrote when
+// its reload failed or did not activate it. It unregisters nothing: a reload
+// registers a template only when it publishes it active, so the install's
+// provider was never registered, and a provider registered under the same key
+// type before the install is not the install's to remove.
+func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrary.InstallResult, cause error) error {
 	var rollbackErr error
 	if !result.AlreadyExists {
 		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, result.KeyType)
-		registry.Unregister(result.KeyType)
 	}
 	if result.StateChanged {
 		if err := templatelibrary.RollbackTemplateStateChange(paths, result); err != nil {

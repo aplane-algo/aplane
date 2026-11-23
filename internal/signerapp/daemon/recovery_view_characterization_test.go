@@ -179,17 +179,15 @@ func sessionMessageTypes(t *testing.T, session *ipcJSONRecorderConn) string {
 	return strings.Join(out, "; ")
 }
 
-// A lock that lands while a reload on the keyring in service runs flips the
+// A lock that lands while a reload on the keyring in service builds flips the
 // state at once; its cleanup waits for the reload to end. The reload goes on
-// and publishes into the locked signer: the key maps, the key session, and a
-// keys_changed notification with the new count. The cleanup then clears all
-// of it, so the signer ends locked with nothing published, and the admin
-// session has been told of keys on a locked signer. The key the request
-// wrote is on disk, and the request answers a success.
-//
-// The redesign sends a reload's notifications only while the signer is still
-// unlocked: the keys_changed row goes.
-func TestALockDuringAReloadLetsItPublishAndNotifyBeforeTheCleanup(t *testing.T) {
+// and publishes into the locked signer, and the cleanup then clears all of
+// it, so the signer ends locked with nothing published. The reload sends its
+// notifications only while the signer is still unlocked, so the admin session
+// is told nothing: it once was told keys_changed with the new count, keys on a
+// locked signer. The key the request wrote is on disk, and the request
+// answers a success.
+func TestALockDuringAReloadPublishesAndTellsTheSessionNothing(t *testing.T) {
 	server := characterizedSigner(t)
 	ir := server.productRuntime()
 	session := &ipcJSONRecorderConn{}
@@ -214,7 +212,7 @@ func TestALockDuringAReloadLetsItPublishAndNotifyBeforeTheCleanup(t *testing.T) 
 		t.Fatalf("state during the reload = %v, want locked", stateInReload)
 	}
 	if !result.Success || result.Address == "" {
-		t.Fatalf("GenerateKey() = %+v, want a success as the code stands: the reload ran to its end", result)
+		t.Fatalf("GenerateKey() = %+v, want a success: the reload ran to its end", result)
 	}
 	if got := ir.GetState(); got != signerruntime.SignerStateLocked || ir.KeyCount() != 0 {
 		t.Fatalf("state = %v with %d key(s) after the lock's cleanup, want locked with none", got, ir.KeyCount())
@@ -224,9 +222,8 @@ func TestALockDuringAReloadLetsItPublishAndNotifyBeforeTheCleanup(t *testing.T) 
 	}
 	// The test signer wires no lock notification, so the lock itself tells
 	// the session nothing here.
-	const want = "keys_changed key_count=2"
-	if got := sessionMessageTypes(t, session); got != want {
-		t.Fatalf("the admin session was sent %q, want %q as the code stands", got, want)
+	if got := sessionMessageTypes(t, session); got != "" {
+		t.Fatalf("the admin session was sent %q, want nothing", got)
 	}
 }
 

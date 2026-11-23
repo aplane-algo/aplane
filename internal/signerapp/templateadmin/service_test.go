@@ -83,16 +83,30 @@ func setupServiceWithReload(
 		KeyStore: ks,
 		KeyPaths: keyPaths,
 	})
-	ir.SetReloadFunc(func(masterKey []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	// The reload's build, reduced to the selection and the policy in
+	// service: reload, when given, decides whether it fails. A failure keeps
+	// the generation bound, so the reload keeps the view in service.
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
 		reloadCount.Add(1)
 		if !deps.mutationActive.Load() {
 			deps.reloadOutsideMutation.Store(true)
 		}
-		if reload != nil {
-			return reload(masterKey, session)
+		selection, err := genstore.AuthenticateStoreRootSelection(keyPaths, kr)
+		if err != nil {
+			return nil, err
 		}
-		return &signertemplates.ReloadReport{}, nil
-	})
+		policy, set := ir.PolicyState()
+		loaded := &productruntime.Loaded{
+			Selection: &selection, PolicyVerified: true, Policy: policy, ASASet: set,
+			Contents: keystore.Contents{Selection: &selection},
+		}
+		if reload != nil {
+			if _, err := reload(nil, nil); err != nil {
+				return loaded, err
+			}
+		}
+		return loaded, nil
+	}, productruntime.ReloadEffects{})
 	ir.SetUnlocked()
 
 	svc := Service{Deps: deps, Runtime: ir}
