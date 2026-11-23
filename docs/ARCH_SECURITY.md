@@ -424,8 +424,23 @@ The SSH server allows at most 64 concurrent pending handshakes and closes
 excess arrivals; one remote address may hold at most 8 of them. Authentication
 has a 60-second socket deadline, cleared after successful authentication.
 Accepted sockets are tracked before authentication so shutdown also closes
-stalled handshakes. The limit applies to pending authentication, not
-established sessions.
+stalled handshakes.
+
+Established enrolled-client connections are capped separately: at most 8
+concurrent authenticated connections per enrolled key fingerprint and at most
+64 authenticated connections in total across all enrolled keys. Connections
+beyond either cap are closed after authentication without registering the
+session, and the refusal is logged. Enrollment connections have their own
+separate cap (at most 8 concurrent `enroll` connections) so unauthenticated
+enrollment traffic cannot consume enrolled-client slots.
+
+Each authenticated SSH connection may keep at most 16 concurrent `direct-tcpip`
+API channels open. Channels beyond the cap are rejected with SSH
+`ResourceShortage` before a channel handler or API handoff is started, and the
+slot is freed when the channel closes. (`apshell` and the Go, Python, and
+TypeScript SDKs each pool at most 2 idle HTTP/1.1 keep-alive channels per
+tunnel; 16 leaves headroom for parallel requests while keeping one connection
+to at most a quarter of the daemon's 64 HTTP connection slots.)
 
 Client TCP dialing and SSH authentication share one setup timeout (60 seconds
 by default). Setup cancellation closes the socket to interrupt blocked I/O.
