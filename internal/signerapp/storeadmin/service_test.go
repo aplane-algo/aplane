@@ -6,6 +6,7 @@ package storeadmin
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -305,8 +306,8 @@ func TestChangeStorePassphraseAuditsAllFourMigrationCounts(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer kr.Zero()
-			// Mint a successor carrying 2 policy sidecars (default + key) and
-			// 1 source token file so PolicySidecarsMigrated != SourceTokenFilesMigrated.
+			// Mint a successor with four distinct non-zero migration counts:
+			// 3 keys, 4 templates, 2 policy sidecars (default + key), and 1 source token file.
 			_, err = genstore.Mint(deps.paths, genstore.MintRequest{
 				SkipCandidateValidation: true,
 				GenerationID:            "gen-1785200001-00000002",
@@ -316,6 +317,24 @@ func TestChangeStorePassphraseAuditsAllFourMigrationCounts(t *testing.T) {
 				OperationID:             "test-seed-1",
 				CreatedAt:               time.Now().UTC(),
 				Apply: func(staged storepaths.GenPaths) error {
+					for _, keyName := range []string{"DELETED1", "DELETED2", "DELETED3"} {
+						sealed, err := kr.Seal([]byte("archived-key"), crypto.AccountKeyContext(keyName))
+						if err != nil {
+							return err
+						}
+						if err := os.WriteFile(filepath.Join(staged.DeletedKeysDir(), keyName+".key"), sealed, 0o600); err != nil {
+							return err
+						}
+					}
+					for _, tplName := range []string{"archived1.v1", "archived2.v1", "archived3.v1", "archived4.v1"} {
+						sealed, err := kr.Seal([]byte("archived-template"), crypto.KeyTypeTemplateContext(tplName))
+						if err != nil {
+							return err
+						}
+						if err := os.WriteFile(staged.DeletedKeyTypeTemplate(tplName), sealed, 0o600); err != nil {
+							return err
+						}
+					}
 					if err := policy.WriteKeyPolicy(staged, noderole.RoleCosigner, witnessID, []byte(keyDoc), kr, time.Now().UTC()); err != nil {
 						return err
 					}
@@ -367,20 +386,21 @@ func TestChangeStorePassphraseAuditsAllFourMigrationCounts(t *testing.T) {
 			if !tc.reloadFails && !result.Success {
 				t.Fatalf("result = %+v, want success", result)
 			}
-			if result.PolicySidecarsMigrated != 2 || result.SourceTokenFilesMigrated != 1 {
-				t.Fatalf("result counts = policy %d tokens %d, want 2 and 1",
+			if result.KeysMigrated != 3 || result.TemplatesMigrated != 4 ||
+				result.PolicySidecarsMigrated != 2 || result.SourceTokenFilesMigrated != 1 {
+				t.Fatalf("result counts = keys %d templates %d policy %d tokens %d, want 3, 4, 2, 1",
+					result.KeysMigrated, result.TemplatesMigrated,
 					result.PolicySidecarsMigrated, result.SourceTokenFilesMigrated)
 			}
 			if len(audit.events) != 1 || audit.events[0].kind != "passphrase_changed" {
 				t.Fatalf("audit events = %+v, want one passphrase_changed", audit.events)
 			}
 			got := audit.events[0]
-			if got.keysMigrated != result.KeysMigrated ||
-				got.templatesMigrated != result.TemplatesMigrated ||
+			if got.keysMigrated != 3 ||
+				got.templatesMigrated != 4 ||
 				got.policySidecarsMigrated != 2 ||
 				got.sourceTokenFilesMigrated != 1 {
-				t.Fatalf("audited migration counts = %+v, want keys=%d templates=%d policy=2 tokens=1",
-					got, result.KeysMigrated, result.TemplatesMigrated)
+				t.Fatalf("audited migration counts = %+v, want keys=3 templates=4 policy=2 tokens=1", got)
 			}
 		})
 	}

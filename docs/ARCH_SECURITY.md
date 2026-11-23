@@ -379,6 +379,8 @@ Logged information:
   enrollment and revocation events use. Enrolled connections carry
   `client:<fingerprint>` in `principal` and `requester_principal`; `enroll`
   connections record only `ssh_fingerprint` and omit the principal fields
+  (`CLIENT_ENROLLMENT_REQUESTED` still names `client:<fingerprint>` for a
+  key when a new enrollment request is queued)
 
 **Note:** The SSH username is the fixed non-secret value `aplane`. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
