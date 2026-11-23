@@ -14,10 +14,10 @@ before it was renamed `enroll`.
   reading it took at its start. A build that fails installs nothing: an
   unlock begun locked leaves the signer locked with no keyring and registers
   no template, and one begun in recovery leaves recovery its own keyring and
-  binding. The keyring the failed build opened is zeroed.
+  binding. The keyring the attempt opened is zeroed.
 - **A content defect enters recovery's view**, bound to what the build found
   the root selecting and showing the policy it verified, with the keyring
-  the build opened for an unlock begun locked. A reconcile that fails enters
+  the attempt opened for an unlock begun locked. A reconcile that fails enters
   recovery's view of what the build found. A role conflict fails the node
   closed, and an unlock whose build finds one installs nothing, unless its
   reconcile had already failed and it enters recovery for that.

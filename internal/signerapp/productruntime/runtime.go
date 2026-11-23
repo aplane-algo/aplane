@@ -585,8 +585,8 @@ type UnlockOutcome struct {
 // A request that finds the signer unlocked checks the passphrase and answers
 // with the session's key count; it reconciles, loads and publishes nothing.
 // For a signer locked or in recovery the store root is opened with the
-// passphrase once, which is that request's passphrase check; reconcile runs
-// with the keyring it opened, and the load opens the root again. A
+// passphrase once, which is that request's passphrase check and its one
+// derivation: the keyring it opened reconciles, builds and is installed. A
 // passphrase that does not open the root ends the request there, with
 // ErrInvalidPassphrase.
 //

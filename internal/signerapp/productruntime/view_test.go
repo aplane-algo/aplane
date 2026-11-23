@@ -513,7 +513,7 @@ func TestALockDuringAFailingBuildEntersNoRecovery(t *testing.T) {
 
 // An unlock from locked whose build fails for a transient reason installs
 // nothing: no keyring, no key maps, no token index, and no provider. The
-// keyring the build opened and its token index are zeroed.
+// keyring the attempt opened and its token index are zeroed.
 func TestAnUnlockWhoseBuildFailsInstallsNothing(t *testing.T) {
 	ir, bound, _ := viewInService(t)
 	registry := &recordingRegistry{}
@@ -543,13 +543,13 @@ func TestAnUnlockWhoseBuildFailsInstallsNothing(t *testing.T) {
 		t.Fatal("the build's token index was not zeroed")
 	}
 	if opened == nil || opened.CurrentTerm() != 0 {
-		t.Fatal("the keyring the build opened was not zeroed")
+		t.Fatal("the keyring the attempt opened was not zeroed")
 	}
 }
 
 // An unlock begun in recovery whose build fails for a transient reason
 // leaves recovery its own keyring and binding, for the reconcile, restore and
-// rollback it needs, and zeroes the keyring the build opened.
+// rollback it needs, and zeroes the keyring the attempt opened.
 func TestAnUnlockInRecoveryWhoseBuildFailsKeepsRecoverysKeyring(t *testing.T) {
 	ir, bound, _ := viewInService(t)
 	ir.EnterRecovery(nil)
@@ -577,7 +577,7 @@ func TestAnUnlockInRecoveryWhoseBuildFailsKeepsRecoverysKeyring(t *testing.T) {
 		t.Fatalf("binding after the failed unlock = %v, %v; want %s", active.GenerationID(), err, bound.GenerationID())
 	}
 	if opened == nil || opened == recoverys || opened.CurrentTerm() != 0 {
-		t.Fatal("the keyring the build opened was not zeroed")
+		t.Fatal("the keyring the attempt opened was not zeroed")
 	}
 }
 
