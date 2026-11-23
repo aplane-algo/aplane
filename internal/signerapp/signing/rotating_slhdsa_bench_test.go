@@ -54,7 +54,7 @@ func slhDiskFixture(b *testing.B) (*rotatingFixture, *keystore.FileKeyStore) {
 	if _, err := keys.SaveNewPayloadActive(active, payload, false, kr); err != nil {
 		b.Fatal(err)
 	}
-	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	store := keystore.NewFileKeyStore()
 	b.Cleanup(store.ClearKeys)
 	if err := keystoretest.Unlock(store, paths, passphrase); err != nil {
 		b.Fatal(err)

@@ -27,6 +27,20 @@ before it was renamed `enroll`.
   maintenance and installs before the maintenance ends.** A build that fails
   installs nothing and leaves the signer locked; the answer still reports
   the root as committed.
+- **Every unlock exit audits what its build found**: the LogicSig keys the
+  scan rejected are recorded and template notices logged on a failed
+  unlock, a failed passphrase change and an unlock that a lock overtook, as
+  on a published one. A role conflict found by the build of an unlock whose
+  reconcile failed now fails the node closed too.
+- **An unlock begun in recovery whose build fails after the root moved, or
+  finds the root no longer authenticating, answers `recovery_blocked`**, as a
+  reload does, and recovery is bound to what the build found, or to nothing.
+  It used to answer `unlock_failed` and leave recovery's binding.
+- **A failed unlock sends no keys-changed notification**, and an unlock that
+  a lock overtook records no key reload, since no key went into service. A
+  passphrase change publishes under maintenance, while the signer counts as
+  locked, so it sends none either; the stage table worker picks the new
+  keyring up on its next tick.
 - **The old reload is gone**: `templates.ReloadService`, its hooks and the
   runtime's reload function. Every reload builds and then publishes.
 - **The keystore methods only the old reload used are gone**: `Unlock`,

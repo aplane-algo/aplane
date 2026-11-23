@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -170,8 +171,9 @@ func TestAReconcileALockOvertookAnswersLocked(t *testing.T) {
 
 // wireBuildWith wires the reload's own build, with before run ahead of each
 // build. fromPassphrase is set for a build with a keyring an unlock or a
-// passphrase change opened, rather than the keyring in service; an error
-// from before is the build's.
+// passphrase change opened, rather than the keyring in service. An error
+// from before is the build's, failing as a build does after it has
+// authenticated the root: with the selection.
 func wireBuildWith(server *Signer, before func(fromPassphrase bool) error) {
 	ir := server.productRuntime()
 	opts := testProductBuildOptions(server)
@@ -183,7 +185,11 @@ func wireBuildWith(server *Signer, before func(fromPassphrase bool) error) {
 			return nil
 		})
 		if err := before(!inService); err != nil {
-			return nil, err
+			selection, authErr := genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+			if authErr != nil {
+				return nil, err
+			}
+			return &productruntime.Loaded{Selection: &selection}, err
 		}
 		return signerstartup.Build(ir, opts, kr)
 	}, productruntime.ReloadEffects{

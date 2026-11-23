@@ -73,7 +73,7 @@ func setupServiceWithReload(
 	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, testPassphrase)
 	keyring.Zero()
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(ks, keyPaths, testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}

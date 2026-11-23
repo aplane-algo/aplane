@@ -23,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keyclass"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -638,8 +637,10 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		// The store needs recovery: the attempt builds for recovery's view,
 		// so it is bound to what the root selects and shows the policy the
 		// build verified.
-		owned, loaded, _ := ir.buildWithPassphrase(passphrase)
+		owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
+		end := buildEnd(loaded, buildErr)
 		outcome, err := ir.unlockIntoRecovery(attempt, owned, loaded, err)
+		ir.afterReload(end)
 		return outcome, false, err
 	}
 	if ir.lockRuntime.LostToLock(attempt) {
@@ -647,23 +648,30 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 	}
 	owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
 	if buildErr != nil {
+		end := buildEnd(loaded, buildErr)
 		outcome, err := ir.unlockBuildFailed(attempt, owned, loaded, fmt.Errorf("failed to load keys: %w", buildErr))
+		ir.afterReload(end)
 		return outcome, false, err
 	}
 	report := ir.publishUnlock(owned, loaded)
+	end := reloadEnd{notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)}
 	switch err := ir.lockRuntime.PublishUnlocked(attempt); {
 	case errors.Is(err, signerruntime.ErrLockedDuringUnlock):
 		// The attempt locked the runtime for its cleanup, which cleared
-		// what the publish installed.
+		// what the publish installed: no key went into service, so no
+		// reload is recorded.
 		ir.notifyLocked()
+		ir.afterReload(end)
 		return UnlockOutcome{}, false, err
 	case errors.Is(err, signerruntime.ErrRecoveryDuringUnlock):
 		// Under the one hold no entry into recovery reaches this fence; it
 		// stays as a layered guard, and recovery then keeps what the
 		// publish installed until its reconcile.
+		ir.afterReload(end)
 		return UnlockOutcome{Recovery: true, Cause: err}, false, nil
 	}
-	ir.afterReload(reloadEnd{published: true, keyCount: report.KeyCount, notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)})
+	end.published, end.keyCount = true, report.KeyCount
+	ir.afterReload(end)
 	return UnlockOutcome{KeyCount: report.KeyCount}, true, nil
 }
 
@@ -1599,15 +1607,12 @@ func IsContentDefect(err error) bool {
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
 	owned, loaded, err := ir.buildWithPassphrase(passphrase)
 	if err != nil {
-		if errors.Is(err, keyclass.ErrNodeRoleConflict) {
-			if effects := ir.reloadEffectsSnapshot(); effects.NodeFailClosed != nil {
-				effects.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
-			}
-		}
+		end := buildEnd(loaded, err)
 		loaded.Discard()
 		if owned != nil {
 			owned.Zero()
 		}
+		ir.afterReload(end)
 		return nil, err
 	}
 	report := ir.publishUnlock(owned, loaded)

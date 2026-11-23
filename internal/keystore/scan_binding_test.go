@@ -30,7 +30,7 @@ func initializedStore(t *testing.T, passphrase []byte) storepaths.Paths {
 func TestClearKeysEmptiesTheKeyCache(t *testing.T) {
 	passphrase := []byte("scan-binding-passphrase")
 	paths := initializedStore(t, passphrase)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	ks := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(ks, paths, passphrase); err != nil {
 		t.Fatal(err)
 	}

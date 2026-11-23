@@ -308,9 +308,8 @@ func (ir *Runtime) reloadViewLocked(mode reloadMode) reloadEnd {
 		loaded = &Loaded{}
 	}
 	defer loaded.Discard()
-	end := reloadEnd{rejected: rejectedLogicSigKeys(loaded.Contents)}
+	end := buildEnd(loaded, buildErr)
 	prepared := loaded.Templates.Report()
-	end.notices, end.warnings = prepared.Notices(), prepared.Warnings()
 
 	inRecovery := ir.IsRecovery()
 	if buildErr == nil && !mode.inDoubt && (mode.reconcile || !inRecovery) {
@@ -337,9 +336,6 @@ func (ir *Runtime) reloadViewLocked(mode reloadMode) reloadEnd {
 	end.err, end.cause = buildErr, buildErr
 	if buildErr == nil {
 		end.cause = mode.cause
-	}
-	if errors.Is(buildErr, keyclass.ErrNodeRoleConflict) {
-		end.failClosed = buildErr
 	}
 	if mode.inDoubt {
 		// Entered before the build.
@@ -513,6 +509,19 @@ func rejectedLogicSigKeys(contents keystore.Contents) []apkeys.KeyScanWarning {
 	return rejected
 }
 
+// buildEnd is what afterReload reports of a build before anything is
+// published: the LogicSig keys its scan rejected and the template notices it
+// prepared, audited and logged whether or not it publishes, and a role
+// conflict, which fails the node closed.
+func buildEnd(loaded *Loaded, err error) reloadEnd {
+	prepared := loaded.Templates.Report()
+	end := reloadEnd{rejected: rejectedLogicSigKeys(loaded.Contents), notices: prepared.Notices(), warnings: prepared.Warnings()}
+	if errors.Is(err, keyclass.ErrNodeRoleConflict) {
+		end.failClosed = err
+	}
+	return end
+}
+
 // buildWithPassphrase opens a keyring from the store root with passphrase
 // and builds with it. It holds no passphraseLock: it changes nothing live, and
 // a lock that lands meanwhile wins at the attempt's fence. The keyring it
@@ -549,21 +558,18 @@ func (ir *Runtime) publishUnlock(kr *crypto.Keyring, l *Loaded) *signertemplates
 }
 
 // unlockBuildFailed decides how an unlock attempt whose build failed ends,
-// by the failure rule for a signer not unlocked. A role conflict fails the
-// node closed. A content defect enters recovery's view, as does, for an
-// attempt begun in recovery, a root that moved off recovery's binding. Any
+// by the failure rule for a signer not unlocked. A content defect enters
+// recovery's view, as does, for an attempt begun in recovery, a root that
+// moved off recovery's binding or did not authenticate. A role conflict,
+// which the caller's afterReload fails the node closed for, installs nothing,
+// unlike a reload's: the node serves nothing more, so an attempt begun
+// locked stays locked and one begun in recovery keeps recovery's view. Any
 // other failure changes nothing and is the attempt's error. The keyring the
 // build opened is installed only by an entry from locked; otherwise it is
 // zeroed, and recovery keeps its own.
 func (ir *Runtime) unlockBuildFailed(attempt signerruntime.Attempt, owned *crypto.Keyring, loaded *Loaded, err error) (UnlockOutcome, error) {
-	enter := IsContentDefect(err) ||
-		(attempt.State() == signerruntime.SignerStateRecovery && loaded.Selection != nil && ir.rootMoved(loaded.Selection))
-	if errors.Is(err, keyclass.ErrNodeRoleConflict) {
-		if effects := ir.reloadEffectsSnapshot(); effects.NodeFailClosed != nil {
-			effects.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
-		}
-		enter = false
-	}
+	enter := !errors.Is(err, keyclass.ErrNodeRoleConflict) &&
+		(IsContentDefect(err) || (attempt.State() == signerruntime.SignerStateRecovery && ir.rootMoved(loaded.Selection)))
 	if owned == nil || !enter {
 		loaded.Discard()
 		if owned != nil {
@@ -584,9 +590,14 @@ func (ir *Runtime) unlockBuildFailed(attempt signerruntime.Attempt, owned *crypt
 // zeroes the one it opened.
 func (ir *Runtime) unlockIntoRecovery(attempt signerruntime.Attempt, owned *crypto.Keyring, loaded *Loaded, cause error) (UnlockOutcome, error) {
 	defer loaded.Discard()
+	install := owned
+	if attempt.State() == signerruntime.SignerStateRecovery && owned != nil {
+		owned.Zero()
+		install = nil
+	}
 	if ir.lockRuntime.LostToLock(attempt) {
-		if owned != nil {
-			owned.Zero()
+		if install != nil {
+			install.Zero()
 		}
 		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
 	}
@@ -594,24 +605,24 @@ func (ir *Runtime) unlockIntoRecovery(attempt signerruntime.Attempt, owned *cryp
 	if loaded.PolicyVerified {
 		view.policy, view.asaSet, view.alerts = loaded.Policy, loaded.ASASet, loaded.Alerts
 	}
-	keep := owned
-	if attempt.State() == signerruntime.SignerStateRecovery || owned == nil {
-		if owned != nil {
-			owned.Zero()
-		}
-		_ = ir.keyStore.WithKeyring(func(inService *crypto.Keyring) error {
-			keep = inService
-			return nil
-		})
-	}
 	var detached keystore.DetachedKeyring
 	err := ir.lockRuntime.EnterRecovery(attempt, func() error {
-		if keep == nil {
-			return fmt.Errorf("no keyring for recovery: %w", cause)
-		}
 		ir.passphraseLock.Lock()
 		defer ir.passphraseLock.Unlock()
-		detached = ir.installRecoveryViewLocked(keep, view)
+		kr := install
+		if kr == nil {
+			// Recovery's own, read under passphraseLock: a lock's cleanup
+			// clears the keyring under it, so the one read here is still
+			// usable when it is installed.
+			_ = ir.keyStore.WithKeyring(func(inService *crypto.Keyring) error {
+				kr = inService
+				return nil
+			})
+		}
+		if kr == nil {
+			return fmt.Errorf("no keyring for recovery: %w", cause)
+		}
+		detached = ir.installRecoveryViewLocked(kr, view)
 		return nil
 	})
 	detached.ZeroWhenUnused()

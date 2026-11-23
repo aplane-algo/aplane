@@ -61,7 +61,7 @@ func TestWitnessEd25519GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("scan = %+v, want a %s witness with public key %s", info, witness.Ed25519V1, result.PublicKeyHex)
 	}
 
-	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	store := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(store, paths, passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}

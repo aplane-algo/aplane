@@ -192,7 +192,8 @@ waits for it; KU2 and KU3 cover that case.
   `unlockIntoRecovery`'s check of the reading and its install of recovery's
   view under `passphraseLock` (bound to what the build found the root
   selecting, the keyring the build opened for an attempt begun locked,
-  recovery's own for one begun in recovery), then the fence of
+  recovery's own for one begun in recovery, read under the same hold, since
+  a lock's cleanup clears it under that lock), then the fence of
   `runtime.Runtime.EnterRecovery`. One that lost before the open stops with
   nothing opened; one whose fence finds `lockGen` moved loses as a publish
   does; otherwise it enters recovery from whatever state the signer is in

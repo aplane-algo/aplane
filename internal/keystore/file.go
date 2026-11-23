@@ -23,14 +23,12 @@ import (
 
 // FileKeyStore implements KeyStore using encrypted files on disk
 type FileKeyStore struct {
-	paths  storepaths.Paths
 	active *storepaths.GenPaths
 
-	// Cache of address -> KeyScanInfo (populated by Scan)
-	// Contains both file path and key type from single decrypt
-	cache        map[string]keys.KeyScanInfo
-	scanWarnings []keys.KeyScanWarning
-	cacheLock    sync.RWMutex
+	// Cache of address -> KeyScanInfo, installed from a scan with the
+	// binding (Install).
+	cache     map[string]keys.KeyScanInfo
+	cacheLock sync.RWMutex
 
 	// The store's keyring, opened once at unlock and zeroed on lock.
 	keyring *crypto.Keyring
@@ -53,13 +51,10 @@ type SigningSummary struct {
 	ValidRekeyTarget bool
 }
 
-// NewAtomicFileKeyStoreForPaths creates a file store whose unlock and reload
-// authenticate generation selection from store-root.enc.
-func NewAtomicFileKeyStoreForPaths(paths storepaths.Paths) *FileKeyStore {
-	return &FileKeyStore{
-		paths: paths,
-		cache: make(map[string]keys.KeyScanInfo),
-	}
+// NewFileKeyStore creates a file store holding no keyring, binding or keys
+// until a publish installs them (Install).
+func NewFileKeyStore() *FileKeyStore {
+	return &FileKeyStore{cache: make(map[string]keys.KeyScanInfo)}
 }
 
 // Contents is what the store holds besides its keyring: the generation it
@@ -104,7 +99,6 @@ func (f *FileKeyStore) installLocked(kr *crypto.Keyring, contents Contents) Deta
 	if f.cache == nil {
 		f.cache = make(map[string]keys.KeyScanInfo)
 	}
-	f.scanWarnings = contents.Warnings
 	return previous
 }
 

@@ -66,7 +66,7 @@ func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *pr
 	cfg := serverconfig.DefaultServerConfig()
 	deps := &fakeDeps{dataDir: root, config: &cfg, keyPaths: paths}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		NodeRole: role,
 	})

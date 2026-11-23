@@ -133,7 +133,7 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 	keyring.Zero()
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(ks, keyPaths, restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
@@ -1024,7 +1024,7 @@ func keyTypesResponseContains(items []signerapi.KeyTypeInfo, keyType string) boo
 // so key type listings read the store's activation records.
 func restMatrixRuntime(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 	t.Helper()
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	ks := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(ks, paths, restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}

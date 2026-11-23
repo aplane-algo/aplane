@@ -107,7 +107,7 @@ func BuildProductRuntime(opts ProductBuildOptions, hooks ProductBuildHooks) (*pr
 	}
 
 	ir := productruntime.New(productruntime.Config{
-		KeyStore:         keystore.NewAtomicFileKeyStoreForPaths(opts.KeyPaths),
+		KeyStore:         keystore.NewFileKeyStore(),
 		KeyPaths:         opts.KeyPaths,
 		SessionTimeout:   sessionTimeout,
 		ApprovalWait:     approvalWait,

@@ -41,7 +41,7 @@ func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productrunti
 	if _, err := storeinit.Initialize(backupAdminTestPassphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
 		t.Fatal(err)
 	}
-	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	keyStore := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(keyStore, paths, backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}

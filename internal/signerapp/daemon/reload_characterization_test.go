@@ -61,10 +61,10 @@ func everyGeneration(t *testing.T, server *Signer, fn func(dir string)) {
 }
 
 var reloadFaults = []reloadFault{
-	// The store root file is damaged and no longer parses. A reload on the
-	// keyring in service fails where it follows the root's selection, and
-	// leaves no binding; a reload with a passphrase fails before that, where
-	// it opens the root, and leaves the binding it found.
+	// The store root file is damaged, once the build begins, and no longer
+	// parses: every build fails where it follows the root's selection. A
+	// reload, and an unlock begun in recovery, then leave recovery bound to
+	// nothing; an unlock begun locked stays locked.
 	{name: "root", plant: func(t *testing.T, server *Signer) {
 		path := server.keyPaths.StoreRootPath()
 		original, err := os.ReadFile(path)
@@ -483,7 +483,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"unlock from recovery": {
-		"root":      "unlock_failed -> recovery keyring=open generation=bound policy=kept keys=0",
+		"root":      "recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
 		"policy":    "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=0",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=0",

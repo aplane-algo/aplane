@@ -168,7 +168,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 // flight leaves it.
 func testUnpublishedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
-	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	keyStore := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(keyStore, paths, backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}

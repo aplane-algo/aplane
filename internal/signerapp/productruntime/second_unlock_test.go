@@ -51,7 +51,7 @@ func unlockedRuntimeForTest(t *testing.T) (ir *Runtime, mutation *hookedLock, lo
 	}
 	locks = &atomic.Int32{}
 	ir = New(Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		OnLocked: func() { locks.Add(1) },
 	})

@@ -62,7 +62,7 @@ func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
 	}
 
-	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	store := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(store, paths, passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}

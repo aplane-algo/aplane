@@ -126,7 +126,7 @@ func setupTestNodeWithUnlockMethod(t *testing.T, role noderole.Role, defaultPoli
 	masterKeyRing.Zero()
 
 	// Initialize FileKeyStore and derive master key
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewFileKeyStore()
 	err = keystoretest.Unlock(ks, keyPaths, testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)

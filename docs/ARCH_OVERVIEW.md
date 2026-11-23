@@ -1457,7 +1457,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.sshRuntimeMu` | SSH runtime swaps |
 | `Signer.rotatingLocks` | Per-account serialization of rotating signing |
 | `productruntime.Runtime.keysLock` | `keys`, `keyTypes`, `keyMetadata` |
-| `productruntime.Runtime.passphraseLock` | `keySession`, `reloadFn`, `buildFn` and `reloadEffects`, unlock-sensitive ops; held for reading by a reload on the keyring in service from its build to the end of its install |
+| `productruntime.Runtime.passphraseLock` | `keySession`, `buildFn` and `reloadEffects`, unlock-sensitive ops; held for reading by a reload on the keyring in service from its build to the end of its install |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
 | `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |

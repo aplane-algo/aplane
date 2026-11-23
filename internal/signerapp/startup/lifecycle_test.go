@@ -217,7 +217,7 @@ func newLifecycleTestRuntime(t *testing.T) *productruntime.Runtime {
 	t.Helper()
 	root := t.TempDir()
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: storepaths.NewPaths(root),
 	})
 	ir.SetUnlocked()
@@ -482,7 +482,7 @@ func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	ir := productruntime.New(productruntime.Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
+	ir := productruntime.New(productruntime.Config{KeyStore: keystore.NewFileKeyStore(), KeyPaths: paths})
 	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte("lifecycle-passphrase")); err != nil {
 		t.Fatal(err)
 	}

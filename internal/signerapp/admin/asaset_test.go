@@ -99,7 +99,7 @@ func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.GenesisHashNetworks = map[string]string{asaTestChain: "private-dev"}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		NodeRole: noderole.RoleSigner,
 	})

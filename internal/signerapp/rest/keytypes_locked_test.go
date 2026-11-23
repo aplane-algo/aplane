@@ -33,7 +33,7 @@ func lockedRuntimeWithEnabledLibraryType(t *testing.T, role noderole.Role) (*pro
 	}); err != nil {
 		t.Fatalf("enable %s: %v", storeEnabledLibraryKeyType, err)
 	}
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
+	ks := keystore.NewFileKeyStore()
 	ir := productruntime.New(productruntime.Config{KeyStore: ks, KeyPaths: keyPaths, NodeRole: role})
 	return ir, ks
 }

@@ -51,42 +51,24 @@ func setupTestKeysDir(t *testing.T) (string, utilkeys.Paths, func()) {
 
 // TestFileKeyStore_NewFileKeyStore tests store creation
 func TestFileKeyStore_NewFileKeyStore(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	_, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 	switch {
 	case store == nil:
-		t.Fatal("NewAtomicFileKeyStoreForPaths returned nil")
-	case store.paths.Root() != paths.Root():
-		t.Errorf("store root = %s, want %s", store.paths.Root(), paths.Root())
+		t.Fatal("NewFileKeyStore returned nil")
 	case store.cache == nil:
 		t.Error("cache should be initialized")
 	}
 }
 
-// TestFileKeyStore_NewFileKeyStore_DefaultPath tests default path handling
-func TestFileKeyStore_NewFileKeyStore_DefaultPath(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	// Scanning resolves the fixed product store's active layout per operation.
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	if store == nil {
-		t.Fatal("NewAtomicFileKeyStoreForPaths returned nil")
-		return
-	}
-	if store.paths.ProductDir() != paths.ProductDir() {
-		t.Errorf("product dir = %s, want %s", store.paths.ProductDir(), paths.ProductDir())
-	}
-}
-
 // TestFileKeyStore_Get_KeyNotFound tests Get for missing key
 func TestFileKeyStore_Get_KeyNotFound(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	_, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 	ctx := context.Background()
 
 	_, err := store.Get(ctx, "NONEXISTENT")
@@ -96,10 +78,10 @@ func TestFileKeyStore_Get_KeyNotFound(t *testing.T) {
 }
 
 func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
+	keysDir, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 	if err := store.setKeyringForTest(testMasterKey); err != nil {
 		t.Fatalf("setKeyringForTest(): %v", err)
 	}
@@ -147,10 +129,10 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 
 // TestFileKeyStore_GetKeyTypes tests key types cache copy
 func TestFileKeyStore_GetKeyTypes(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	_, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 
 	// Add some entries to cache
 	store.cache["addr1"] = keys.KeyScanInfo{KeyFile: "/path/to/key1", KeyType: "ed25519"}
@@ -173,10 +155,10 @@ func TestFileKeyStore_GetKeyTypes(t *testing.T) {
 }
 
 func TestFileKeyStore_GetSigningSummary(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	_, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 	store.cache["addr1"] = keys.KeyScanInfo{
 		Category:   keys.CategoryDSALsig,
 		Parameters: map[string]string{"cosigner_public_key": "abc123"},
@@ -270,10 +252,10 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 
 // TestFileKeyStore_CacheConcurrency tests thread-safe cache operations
 func TestFileKeyStore_CacheConcurrency(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
+	_, _, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	store := NewAtomicFileKeyStoreForPaths(paths)
+	store := NewFileKeyStore()
 
 	const numGoroutines = 50
 	const numIterations = 100

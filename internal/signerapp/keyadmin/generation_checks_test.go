@@ -399,7 +399,7 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 
 	// The running signer reloaded, and a signer started on the same store reads
 	// both accounts with no complaint.
-	fresh := keystore.NewAtomicFileKeyStoreForPaths(ir.KeyPaths())
+	fresh := keystore.NewFileKeyStore()
 	if err := keystoretest.Unlock(fresh, ir.KeyPaths(), testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
