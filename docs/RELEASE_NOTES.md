@@ -7,6 +7,27 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Key, template and watcher reloads build first and publish last too
+
+- **Key generation, import and deletion, every template operation and the
+  file watcher now reload the way a commit's reload does**
+  (`productruntime.Runtime.Reload`): the whole view is built first, and a
+  build that fails changes nothing live. A transient failure, such as a
+  `keys/` directory that cannot be read, keeps the view in service, policy
+  included; the reload once published the new policy before it failed.
+- **A store root that no longer authenticates enters recovery** for these
+  reloads too, bound to no generation. It once kept the signer unlocked
+  serving its keys with no binding.
+- **The answer comes from the reload, not the state.** A change whose reload
+  entered recovery answers `recovery_blocked`, for a content defect or a
+  root that no longer authenticates; one whose reload kept the view answers
+  `reload_failed`, or `internal_error` for a key change. The key change's
+  recovery message reads "the reload after it entered recovery".
+- **A template activation whose reload fails registers nothing**, and a
+  failed template install's rollback no longer unregisters a provider. It
+  once unregistered one registered under the same key type before the
+  install.
+
 ## After a store-root commit and in a reconcile, a reload builds first and publishes last
 
 - **The reload that follows a policy apply, an ASA set change, a restore or

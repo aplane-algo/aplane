@@ -838,13 +838,16 @@ func TestAnUnlockWhoseDirtyReconciliationEntersRecoveryAnswersRecovery(t *testin
 	defer ir.StopKeyWatcher()
 	ir.Lock()
 	ir.MarkDirty()
-	opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
-	ir.SetReloadFunc(func(passphrase []byte, keySession *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
-			return signerstartup.NewReloadService(ir, opts, hooks, keySession).Reload(passphrase)
+	// The unlock's own load is the real one; the reconcile's reload after
+	// the publish builds, and its build meets the defect.
+	opts := testProductBuildOptions(server)
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		loaded, err := signerstartup.Build(ir, opts, kr)
+		if err != nil {
+			return loaded, err
 		}
-		return nil, fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
-	})
+		return loaded, fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
+	}, productruntime.ReloadEffects{})
 
 	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {

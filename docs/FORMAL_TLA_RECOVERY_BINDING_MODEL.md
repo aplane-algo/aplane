@@ -148,16 +148,10 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   rule's: a store in doubt, a root that moved or does not authenticate, and
   a content defect fail; anything else keeps. The model lets any failure take
   either action, under the keep guard, so it checks the root fact, which is
-  what the invariants depend on. A reload with no commit that is not yet
-  built and published (the watcher's, an in-place write's) enters recovery
-  only for a content defect and keeps the view otherwise. No commit moved
-  the root, so its keep meets the guard, except when the root stops
-  authenticating: that reload keeps the view with the binding cleared and
-  its keys served (the `watcher`/`root` row of the reload characterization
-  table), where the model takes `ReloadFail`. No invariant reads a cleared
-  binding (RB4 is about a binding that is present), and no commit moved the
-  root, so RB2 and RB3 hold for it; that path is a model-extension
-  candidate until it follows the failure rule. The property a content defect's
+  what the invariants depend on. A reload with no commit (the watcher's,
+  an in-place write's) follows the same rule: no commit moved the root, so
+  its keep meets the guard, and a root that stops authenticating fails it as
+  it fails a commit's. The property a content defect's
   entry exists for, that a generation with a content defect is never served,
   is not checked: the model has no generation content. A recovery entered
   for content found defective is a model-extension candidate. Recovery's

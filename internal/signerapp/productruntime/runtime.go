@@ -209,8 +209,8 @@ type Runtime struct {
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
-	// onReloadRecovery is called with the defect after Reload entered
-	// recovery for one (SetReloadRecoveryHook). Guarded by watcherMu.
+	// onReloadRecovery is called with the cause after a reload entered
+	// recovery (SetReloadRecoveryHook). Guarded by watcherMu.
 	onReloadRecovery func(cause error)
 }
 
@@ -336,8 +336,8 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 	ir.watcherMu.Unlock()
 }
 
-// SetReloadRecoveryHook sets the function Reload calls once it has entered
-// recovery for a content defect, with the defect. Nothing else tells anyone:
+// SetReloadRecoveryHook sets the function a reload calls once its failure
+// rule has entered recovery, with the cause. Nothing else tells anyone:
 // the reload ran for a watcher event or as one step of an admin change, with
 // no request that reports the state. The process root logs the entry and
 // pushes the state to the admin session.
@@ -1626,30 +1626,6 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 
 // --- Reload ---
 
-// Reload rescans keys using the cached keyring (no passphrase needed).
-// Admin mutation paths call this directly while holding the store mutation lock;
-// watcher paths must use reloadFromWatcher so they acquire that lock themselves.
-//
-// A reload that finds a content defect in the selected generation, one that
-// fails its validation or two key files that resolve to one address, enters
-// recovery before it returns, so before its caller releases the store
-// mutation lock, with the view in service less its keys and token index
-// (EnterRecovery). Recovery blocks signing, and keeps the keyring for the
-// reconcile that lifts it. A signer in recovery enters it again, which fences
-// an unlock in flight there as any re-entry does, and a locked one stays
-// locked. Any other failure, such as a keys directory that cannot be read,
-// leaves the state as it was, for the caller to answer. Callers after a
-// store-root commit and the reconcile use FollowCommit and Reconcile.
-func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
-	ir.passphraseLock.RLock()
-	report, err := ir.reloadLocked(nil)
-	ir.passphraseLock.RUnlock()
-	if IsContentDefect(err) {
-		ir.EnterRecovery(err)
-	}
-	return report, err
-}
-
 // IsContentDefect reports whether a reload failed for a content defect in
 // the selected generation: one that fails its validation, or two key files
 // that resolve to one address. Reload enters recovery for one.
@@ -1792,9 +1768,9 @@ func (ir *Runtime) reconcileDirty() {
 // not unlocked, marks the store dirty for the next unlock that publishes to
 // reconcile. It reports whether it reloaded. It checks the state under the
 // store mutation lock, as every other caller of Reload does: a lock can land
-// while it waits for the lock, and a reload there that found a defect would
-// publish its empty key snapshot on the locked signer, where SetRecovery
-// does nothing.
+// while it waits for the lock, and the next unlock reconciles what the
+// watcher saw. A reload that finds the root moved, or a defect, enters
+// recovery by the failure rule.
 func (ir *Runtime) reloadFromWatcher() (bool, error) {
 	release := ir.lockStoreMutation()
 	defer release()

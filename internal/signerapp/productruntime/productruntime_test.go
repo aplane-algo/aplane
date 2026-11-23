@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -257,14 +257,17 @@ func TestKeyIndexSnapshotCarriesValidRekeyTarget(t *testing.T) {
 }
 
 func TestWatcherReloadUsesMutationLock(t *testing.T) {
-	ir := New(Config{})
-	ir.SetUnlocked()
+	ir, _, _, _ := unlockedRuntimeForTest(t)
+	bound, err := ir.ActivePaths()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	reloaded := make(chan struct{}, 1)
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
 		reloaded <- struct{}{}
-		return nil, nil
-	})
+		return &Loaded{Selection: &bound, Contents: keystore.Contents{Selection: &bound}}, nil
+	}, ReloadEffects{})
 
 	var mutationMu sync.Mutex
 	ir.SetReloadMutationLock(func() sync.Locker {

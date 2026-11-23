@@ -597,18 +597,19 @@ func mapGenerateError(err error) *Error {
 }
 
 // reloadKeys reloads after a key change was written and answers a reload
-// that failed. One that found a content defect entered recovery, and the
-// answer says so with the defect, since the operator has to repair the store
-// and reconcile it.
+// that failed. One that entered recovery, for a content defect in the
+// selected generation or a store root that no longer authenticates, says so
+// with the cause, since the operator has to repair the store and reconcile
+// it; one that kept the view in service is a failed refresh.
 func reloadKeys(ir *productruntime.Runtime) *Error {
 	_, err := ir.Reload()
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, productruntime.ErrEnteredRecovery):
+		return &Error{Kind: ErrorRecoveryBlocked, Message: "the change was written, but the reload after it entered recovery: " + err.Error()}
 	case isLockedStateError(err):
 		return &Error{Kind: ErrorLocked, Message: "signer is locked"}
-	case productruntime.IsContentDefect(err) && ir.IsRecovery():
-		return &Error{Kind: ErrorRecoveryBlocked, Message: "the change was written, but the reload after it found a content defect in the selected generation, and the signer entered recovery: " + err.Error()}
 	default:
 		return &Error{Kind: ErrorCacheRefresh, Message: "failed to refresh signer key cache"}
 	}

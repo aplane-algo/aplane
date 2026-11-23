@@ -17,14 +17,16 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
@@ -481,10 +483,7 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "reload-fail.yaml", renderGenericTemplateYAML(family, 1, "Reload Failure", "forces reload failure"))
 
-	ir := server.productRuntime()
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, errors.New("forced reload failure")
-	})
+	failBuildKeepingTheView(server, errors.New("forced reload failure"))
 
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
@@ -504,7 +503,6 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "reinstall-fail.yaml", renderGenericTemplateYAML(family, 1, "Reinstall Failure", "existing install survives reload failure"))
 
-	ir := server.productRuntime()
 	initial := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
@@ -520,9 +518,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 		t.Fatalf("initial installed template stat: %v", err)
 	}
 
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, errors.New("forced reload failure")
-	})
+	failBuildKeepingTheView(server, errors.New("forced reload failure"))
 	again := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
@@ -543,10 +539,7 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 	keyType := testTemplateKeyType(family)
 	writeLibraryTemplateForTest(t, server, "activation-fail.yaml", renderGenericTemplateYAML(family, 1, "Activation Failure", "reload does not activate provider"))
 
-	ir := server.productRuntime()
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, nil
-	})
+	buildWithoutTemplates(server)
 
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
@@ -591,9 +584,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 		t.Fatalf("template %q already registered", keyType)
 	}
 
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return &signertemplates.ReloadReport{}, nil
-	})
+	buildWithoutTemplates(server)
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
@@ -788,4 +779,32 @@ func TestEnablingATemplateWhoseRecordDriftedIsRefusedAndChangesNothing(t *testin
 	if after, _, _ := keytypestate.Get(paths, keyType); after.Fingerprint != stored || after.State != keytypestate.StateEnabled || !ir.IsUnlocked() {
 		t.Fatalf("after importing again: record %+v, state %v; want it pinned to %s, enabled, and the signer unlocked", after, ir.GetState(), stored)
 	}
+}
+
+// failBuildKeepingTheView makes the reload's build fail as a transient
+// failure would: the store root still selects the bound generation, so the
+// reload keeps the view in service and answers reload_failed.
+func failBuildKeepingTheView(server *Signer, cause error) {
+	ir := server.productRuntime()
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		selection, err := genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+		if err != nil {
+			return nil, err
+		}
+		return &productruntime.Loaded{Selection: &selection}, cause
+	}, productruntime.ReloadEffects{})
+}
+
+// buildWithoutTemplates is the reload's build with no template prepared: the
+// reload publishes and activates none.
+func buildWithoutTemplates(server *Signer) {
+	ir := server.productRuntime()
+	opts := testProductBuildOptions(server)
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		loaded, err := signerstartup.Build(ir, opts, kr)
+		if loaded != nil {
+			loaded.Templates = signertemplates.PreparedTemplates{}
+		}
+		return loaded, err
+	}, productruntime.ReloadEffects{})
 }

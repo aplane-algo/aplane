@@ -85,6 +85,18 @@ func (ir *Runtime) SetBuildFunc(fn BuildFunc, effects ReloadEffects) {
 // stands, and no recovery was entered.
 var ErrReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
 
+// ErrEnteredRecovery marks a reload's failure that ended in recovery's view:
+// a role conflict, a store in doubt, a root that moved or does not
+// authenticate, or a content defect (reloadView). errors.Is finds it on the
+// error a reload returns; the error reads as its cause. A failure that kept
+// the view in service, or that met a locked signer, does not carry it.
+var ErrEnteredRecovery = errors.New("the reload entered recovery")
+
+type enteredRecovery struct{ error }
+
+func (e enteredRecovery) Unwrap() error        { return e.error }
+func (e enteredRecovery) Is(target error) bool { return target == ErrEnteredRecovery }
+
 // errBuildNotConfigured is the build failure of a runtime no build was
 // wired into.
 var errBuildNotConfigured = errors.New("build function not configured")
@@ -143,9 +155,19 @@ func (ir *Runtime) FollowCommit(outcome genstore.MintOutcome) (*signertemplates.
 		report, _ := ir.reloadView(reloadMode{inDoubt: true, cause: errCommitUncertain})
 		return report, nil
 	case genstore.Committed:
-		return ir.reloadView(reloadMode{})
+		return ir.Reload()
 	}
 	return nil, nil
+}
+
+// Reload builds the generation the store root selects with the keyring in
+// service and publishes it, or publishes recovery's view or keeps the view
+// in service, by the failure rule (reloadView); no passphrase is needed. A
+// failure that entered recovery carries ErrEnteredRecovery. The caller holds
+// the store mutation lock: an admin change that wrote the store, or the
+// watcher (reloadFromWatcher), which takes it itself.
+func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
+	return ir.reloadView(reloadMode{})
 }
 
 // Reconcile runs step, the store's reconcile, with the keyring in service,
@@ -179,7 +201,10 @@ func (ir *Runtime) Reconcile(step func(*crypto.Keyring) error, explicit bool) (*
 // EnterRecovery enters recovery with the view in service: the keyring, the
 // binding and the policy stay, and the keys and the source token index go.
 // A locked signer stays locked. Once in recovery it calls the hook
-// SetReloadRecoveryHook set, with cause.
+// SetReloadRecoveryHook set, with cause. No production path calls it: every
+// entry into recovery outside an unlock comes from a reload's failure rule.
+// Tests use it to set up a signer in recovery; test/arch keeps it out of
+// production code.
 func (ir *Runtime) EnterRecovery(cause error) {
 	ir.passphraseLock.RLock()
 	var kr *crypto.Keyring
@@ -229,6 +254,9 @@ func (ir *Runtime) reloadView(mode reloadMode) (*signertemplates.ReloadReport, e
 		detached.ZeroWhenUnused()
 	}
 	end.detached = nil
+	if end.recovery && end.err != nil {
+		end.err = enteredRecovery{end.err}
+	}
 	if mode.reconcile && end.published {
 		promoted := ir.IsUnlocked()
 		if mode.fromRecovery {

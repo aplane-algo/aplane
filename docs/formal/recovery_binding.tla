@@ -48,11 +48,10 @@ Code anchors:
     FollowCommit and Reconcile over reloadView (the failure rule), and
     internal/signerapp/startup/product_build.go Build over
     internal/genstore/store_root.go AuthenticateStoreRootSelection and
-    ValidateStoreRootSelection. The reloads not yet built this way (the
-    watcher's, an in-place write's) bind first, in
-    internal/signerapp/templates/reload.go (BindStoreRootSelection), and
-    keep the view only when no commit moved the root; Build and ReloadKeep
-    stand for them too.
+    ValidateStoreRootSelection. BeginReload's reloads (the watcher's, an
+    in-place write's) are productruntime.Runtime.Reload over the same
+    reloadView: no commit moved the root, so ReloadKeep meets its guard
+    unless the root stopped authenticating, which fails them.
   - Maintain transcribes internal/signerapp/daemon/admin_services.go
     authenticatedSelection as used by ListDeletedArchive (under
     withStoreInspection) and PruneDeletedArchive (under withStoreMutation).
