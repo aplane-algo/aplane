@@ -41,11 +41,14 @@ func (s Service) AdminDelete(ctx context.Context, ir *productruntime.Runtime, ad
 	if err := ensureRuntimeUnlocked(ir); err != nil {
 		return err
 	}
+	// Deliberately layered with keyadmin.Service.DeleteKey's empty-address check:
+	// REST owns the HTTP query parameter and reports its query-parameter-specific
+	// message without branching on keyadmin's error text.
+	if address == "" {
+		return &svcerr.Error{Kind: svcerr.KindBadRequest, Message: "address query parameter is required"}
+	}
 
 	if _, err := s.Deps.KeyAdmin.DeleteKey(ctx, address); err != nil {
-		if err.Kind == svcerr.KindBadRequest && err.Message == "address is required" {
-			return &svcerr.Error{Kind: svcerr.KindBadRequest, Message: "address query parameter is required"}
-		}
 		return sanitizeKeyAdminError(err, "key deletion failed")
 	}
 	return nil

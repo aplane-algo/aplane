@@ -4,7 +4,10 @@
 package adminserver
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -25,15 +28,27 @@ func typed[T any](label string, handle func(*Session, *T)) dispatchFunc {
 	}
 }
 
-// decodeRequest decodes raw into a T. A decode can fail after it has filled
-// some fields (a later field of the wrong type, or a bad escape), so on error
-// every SensitiveBytes value already decoded is zeroed before msg, which then
-// holds only that partial and zeroed decode, is returned.
+// decodeRequest decodes raw into a T, rejecting unknown fields and any
+// trailing data after the JSON value. A decode can fail after it has filled
+// some fields (a later field of the wrong type, an unknown field, or trailing
+// tokens), so on error every SensitiveBytes value already decoded is zeroed
+// before msg, which then holds only that partial and zeroed decode, is
+// returned.
 func decodeRequest[T any](raw []byte) (msg T, err error) {
-	if err = json.Unmarshal(raw, &msg); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&msg); err != nil {
 		protocol.ZeroSensitive(&msg)
+		return msg, err
 	}
-	return msg, err
+	if _, err = decoder.Token(); err != io.EOF {
+		protocol.ZeroSensitive(&msg)
+		if err == nil {
+			err = errors.New("unexpected trailing data after JSON value")
+		}
+		return msg, err
+	}
+	return msg, nil
 }
 
 // dispatchTable routes request messages handled entirely within the
