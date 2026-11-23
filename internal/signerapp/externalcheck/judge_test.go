@@ -141,7 +141,11 @@ func TestQuoteBareUTF8BoundaryAndSupplementaryRunes(t *testing.T) {
 	}
 
 	// Supplementary runes (> U+FFFF) encode as a 4-hex-digit UTF-16 surrogate
-	// pair so following hex digits remain unambiguous.
+	// pair so following hex digits remain unambiguous; U+FFFF stays a single
+	// \u escape while U+10000 is the first code point using a surrogate pair.
+	if got := quoteBare("\uffff\U00010000"); got != `\uffff\ud800\udc00` {
+		t.Fatalf("quoteBare(U+FFFF..U+10000 boundary) = %q, want %q", got, `\uffff\ud800\udc00`)
+	}
 	if got := quoteBare("😀0"); got != `\ud83d\ude000` {
 		t.Fatalf("quoteBare(supplementary+hex) = %q, want %q", got, `\ud83d\ude000`)
 	}

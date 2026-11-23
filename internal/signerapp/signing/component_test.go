@@ -866,10 +866,7 @@ func TestAssembleDecodedPassthroughKeyLookupErrors(t *testing.T) {
 
 	t.Run("store locked on auth_addr candidate returns locked error", func(t *testing.T) {
 		session := &sequenceComponentKeyTestSession{
-			results: []componentKeyLookupResult{
-				{err: keystore.ErrKeyNotFound},
-				{err: keystore.ErrStoreLocked},
-			},
+			errs: []error{keystore.ErrKeyNotFound, keystore.ErrStoreLocked},
 		}
 		result, err := assembleDecoded(context.Background(), req, group, session)
 		if result != nil || err == nil || err.Kind != ErrorLocked || err.Message != lockedMessage {
@@ -886,23 +883,18 @@ func TestAssembleDecodedPassthroughKeyLookupErrors(t *testing.T) {
 	})
 }
 
-type componentKeyLookupResult struct {
-	km  *coresigning.KeyMaterial
-	err error
-}
-
 type sequenceComponentKeyTestSession struct {
-	results []componentKeyLookupResult
-	calls   int
+	errs  []error
+	calls int
 }
 
 func (s *sequenceComponentKeyTestSession) GetKeyWithContext(_ context.Context, _ string) (*coresigning.KeyMaterial, error) {
-	if s.calls >= len(s.results) {
+	if s.calls >= len(s.errs) {
 		return nil, keystore.ErrKeyNotFound
 	}
-	res := s.results[s.calls]
+	err := s.errs[s.calls]
 	s.calls++
-	return res.km, res.err
+	return nil, err
 }
 
 func mustDecodeAddress(t *testing.T, address string) []byte {
