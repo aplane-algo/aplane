@@ -23,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/asaset"
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -60,10 +59,15 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	signerruntime stateMu (read)  ->  rotatingStatusMu
 //	signerruntime stateMu (read)  ->  sourceTokens
 //	passphraseLock                ->  sourceTokens
+//	passphraseLock                ->  lsigprovider.registerMu (a publish)
+//	passphraseLock                ->  signerruntime stateMu (a reload's
+//	                                  entry into recovery)
 //
 // Per-lock scope:
 //
-//	passphraseLock  guards keySession, reloadFn, and keyring-unlock paths.
+//	passphraseLock  guards keySession, reloadFn, buildFn, reloadEffects, and
+//	                keyring-unlock paths; a reload on the keyring in service
+//	                holds it for reading from its build to its install.
 //	keysLock        guards the keys/keyTypes/keyMetadata maps. keysetRev is
 //	                bumped while keysLock is held (and atomically readable).
 //	watcherMu       guards watcherCancel, dirty, and the reloadLock callback
@@ -147,6 +151,11 @@ type Runtime struct {
 	watcherStarting bool // A watcher start is in flight; prevents duplicate starts
 	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock      func() sync.Locker
+
+	// buildFn and reloadEffects are the reload's build and what it tells
+	// the process, guarded by passphraseLock (SetBuildFunc).
+	buildFn       BuildFunc
+	reloadEffects ReloadEffects
 
 	approval   atomic.Pointer[signerapproval.Coordinator]
 	runtimeCfg *RuntimeConfig
@@ -503,19 +512,17 @@ func (ir *Runtime) SetUnlocked() {
 	ir.WakeStageWork()
 }
 
-// SetRecovery marks this identity as recovery-blocked without permitting
-// signing. An unlock request enters recovery through Unlock, fenced against
-// a lock. It ends the
-// unlocked session: the generation advances, and the contexts of the key uses
-// and passes handed out in that session are cancelled, so a stage table pass
-// stops and leaves the worker free to restore for the session a reconcile
-// opens. Nothing is drained or cleared; recovery keeps the keyring, and with
-// it the source token index, which the next reload that publishes one
-// replaces.
+// SetRecovery moves this identity into recovery without the recovery view:
+// the keys and the source token index stay, and the hook is not told. No
+// production path calls it: every entry into recovery publishes the view
+// (EnterRecovery, and the reload's failure rule). Tests use it to land a
+// recovery where none can land in production, inside an unlock's held load,
+// to exercise the unlock's fence; test/arch keeps it out of production code.
 func (ir *Runtime) SetRecovery() {
-	ir.lockRuntime.SetRecovery()
-	ir.cancelKeyUses()
-	ir.endSignRequests()
+	if ir.lockRuntime.SetRecovery() {
+		ir.cancelKeyUses()
+		ir.endSignRequests()
+	}
 }
 
 // endSignRequests ends every approval wait in flight when the session ends,
@@ -524,8 +531,8 @@ func (ir *Runtime) SetRecovery() {
 // not interrupted here: the session check refuses one that has not passed it,
 // and the cut of its key use refuses a rotating sign. Ordinary and component
 // signing register no key use, so one already past the check is stopped only
-// by a key load after the lock cleanup cleared the session, and not at all by
-// an entry into recovery (ARCH_SIGNING.md, session end).
+// by a key load after the lock cleanup cleared the session, or after an
+// entry into recovery stopped it (ARCH_SIGNING.md, session end).
 // The lock cleanup calls it first, before it waits for key users, so a lock,
 // the start of store maintenance and an unlock that lost to a lock withdraw
 // at once; entering recovery, which runs no cleanup, calls it directly.
@@ -1348,27 +1355,42 @@ func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {
 func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 	metadata := make(map[string]KeyPublicMetadata)
 	if ir.keyStore != nil {
-		// GetSigningSummary builds a fresh caller-owned copy per call, so its
-		// maps and metadata are adopted here without another clone layer.
-		summaries := ir.keyStore.GetSigningSummary()
-		publicKeys := ir.keyStore.GetPublicKeyHexMap()
-		metadata = make(map[string]KeyPublicMetadata, len(summaries))
-		for selector, summary := range summaries {
-			metadata[selector] = KeyPublicMetadata{
-				Category: summary.Category, BaseKeyType: summary.BaseKeyType, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
-				BoundedAuthorization: summary.BoundedAuthorization,
-				LogicSigResources:    summary.LogicSigResources,
-				SigningArgs:          summary.SigningArgs,
-				ValidRekeyTarget:     summary.ValidRekeyTarget,
-			}
-		}
+		metadata = keyMetadataOf(ir.keyStore.GetSigningSummary(), ir.keyStore.GetPublicKeyHexMap())
 	}
+	ir.setKeyMaps(keys, keyTypes, metadata)
+}
+
+// publishKeys replaces the key maps with the ones contents gives, and
+// returns how many keys it holds.
+func (ir *Runtime) publishKeys(contents keystore.Contents) int {
+	keys := contents.KeyFiles()
+	ir.setKeyMaps(keys, contents.KeyTypes(), keyMetadataOf(contents.SigningSummaries(), contents.PublicKeyHexes()))
+	return len(keys)
+}
+
+func (ir *Runtime) setKeyMaps(keys, keyTypes map[string]string, metadata map[string]KeyPublicMetadata) {
 	ir.keysLock.Lock()
 	ir.keys = keys
 	ir.keyTypes = keyTypes
 	ir.keyMetadata = metadata
 	ir.keysetRev.Add(1)
 	ir.keysLock.Unlock()
+}
+
+// keyMetadataOf builds each key's public metadata. The summaries are fresh
+// caller-owned copies, so their maps are adopted without another clone.
+func keyMetadataOf(summaries map[string]keystore.SigningSummary, publicKeys map[string]string) map[string]KeyPublicMetadata {
+	metadata := make(map[string]KeyPublicMetadata, len(summaries))
+	for selector, summary := range summaries {
+		metadata[selector] = KeyPublicMetadata{
+			Category: summary.Category, BaseKeyType: summary.BaseKeyType, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
+			BoundedAuthorization: summary.BoundedAuthorization,
+			LogicSigResources:    summary.LogicSigResources,
+			SigningArgs:          summary.SigningArgs,
+			ValidRekeyTarget:     summary.ValidRekeyTarget,
+		}
+	}
+	return metadata
 }
 
 // --- KeyStore access ---
@@ -1611,60 +1633,21 @@ func (ir *Runtime) SnapshotKeySession() *keystore.KeySession {
 // A reload that finds a content defect in the selected generation, one that
 // fails its validation or two key files that resolve to one address, enters
 // recovery before it returns, so before its caller releases the store
-// mutation lock. A defect the key scan finds has published an empty key
-// snapshot, and an unlocked signer left serving it says it can sign with none
-// of its keys; a damaged source token file fails the reload before the scan,
-// with the key snapshot as it was. Recovery blocks signing either way, and
-// keeps the keyring for the reconcile that lifts it. A signer in
-// recovery enters it again, which fences an unlock in flight there as any
-// re-entry does, and a locked one stays locked (SetRecovery). Any other
-// failure, such as a keys directory that cannot be read, leaves the state as
-// it was, for the caller to answer; after a store-root commit FollowCommit
-// enters recovery on every failure. Once in recovery it calls the
-// hook SetReloadRecoveryHook set, which a lock that came first skips.
+// mutation lock, with the view in service less its keys and token index
+// (EnterRecovery). Recovery blocks signing, and keeps the keyring for the
+// reconcile that lifts it. A signer in recovery enters it again, which fences
+// an unlock in flight there as any re-entry does, and a locked one stays
+// locked. Any other failure, such as a keys directory that cannot be read,
+// leaves the state as it was, for the caller to answer. Callers after a
+// store-root commit and the reconcile use FollowCommit and Reconcile.
 func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 	ir.passphraseLock.RLock()
 	report, err := ir.reloadLocked(nil)
 	ir.passphraseLock.RUnlock()
 	if IsContentDefect(err) {
-		ir.SetRecovery()
-		ir.watcherMu.Lock()
-		hook := ir.onReloadRecovery
-		ir.watcherMu.Unlock()
-		if hook != nil && ir.IsRecovery() {
-			hook(err)
-		}
+		ir.EnterRecovery(err)
 	}
 	return report, err
-}
-
-// FollowCommit brings the runtime onto what a store-root commit left the
-// root selecting (genstore.MintOutcomeOf). The caller holds the store
-// mutation lock, and calls it after its WithKeyring callback has returned: a
-// reload can zero the keyring, which waits for the callbacks using it.
-//
-// After an uncertain commit it enters recovery first, so no request signs
-// against the generation being replaced, and then reloads, so the keystore
-// follows whatever the root selects; signing stays blocked whatever the
-// reload finds. After a commit that landed it reloads, and enters recovery
-// when the reload fails, before the caller releases the lock: until a
-// reload succeeds the runtime may still serve the superseded generation. It
-// returns the reload's report and, for a commit that landed, its error. A
-// commit that did not happen needs nothing.
-func (ir *Runtime) FollowCommit(outcome genstore.MintOutcome) (*signertemplates.ReloadReport, error) {
-	switch outcome {
-	case genstore.Uncertain:
-		ir.SetRecovery()
-		report, _ := ir.Reload()
-		return report, nil
-	case genstore.Committed:
-		report, err := ir.Reload()
-		if err != nil {
-			ir.SetRecovery()
-		}
-		return report, err
-	}
-	return nil, nil
 }
 
 // IsContentDefect reports whether a reload failed for a content defect in

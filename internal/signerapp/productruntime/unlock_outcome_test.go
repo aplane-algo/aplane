@@ -133,13 +133,13 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 			want: want{err: signerruntime.ErrLockedDuringUnlock, state: signerruntime.SignerStateLocked}},
 		{name: "met a recovery", recovery: true, load: func(ir *Runtime) error { ir.SetRecovery(); return nil },
 			want: want{recovery: true, cause: signerruntime.ErrRecoveryDuringUnlock, state: signerruntime.SignerStateRecovery}},
-		{name: "the reload after the publish enters recovery", after: func(ir *Runtime) { ir.SetRecovery() },
+		{name: "the reload after the publish enters recovery", after: func(ir *Runtime) { ir.EnterRecovery(nil) },
 			want: want{recovery: true, state: signerruntime.SignerStateRecovery}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ir, _, _, locks := unlockedRuntimeForTest(t)
 			if tc.recovery {
-				ir.SetRecovery()
+				ir.EnterRecovery(nil)
 			} else {
 				ir.Lock()
 			}

@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
@@ -156,6 +157,34 @@ func plantBeforeReload(t *testing.T, server *Signer, fault reloadFault) {
 		}
 		return svc.Reload(passphrase)
 	})
+	// The callers that build before they publish meet the same faults. A
+	// fault at the scan fails the build where its scan stands: everything
+	// before it is built from the store as it was, and then the scan runs
+	// on the planted fault, or answers with the injected error.
+	effects := productruntime.ReloadEffects{
+		Audit: hooks.ReloadAuditLog, NotifyKeysChanged: hooks.NotifyKeysChanged,
+		Info: hooks.Info, Warn: hooks.Warn, NodeFailClosed: hooks.NodeFailClosed,
+	}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		if !fault.atScan {
+			once.Do(func() { fault.plant(t, server) })
+			return signerstartup.Build(ir, opts, kr)
+		}
+		loaded, err := signerstartup.Build(ir, opts, kr)
+		if err != nil {
+			return loaded, err
+		}
+		once.Do(func() { fault.plant(t, server) })
+		if fault.scanErr == nil {
+			loaded.Contents, err = keystore.ScanGeneration(*loaded.Selection, kr)
+		} else {
+			loaded.Contents, err = keystore.Contents{Selection: loaded.Selection}, fmt.Errorf("failed to scan keys directory: %w", fault.scanErr)
+		}
+		if err != nil {
+			return loaded, fmt.Errorf("failed to rescan keys directory: %w", err)
+		}
+		return loaded, nil
+	}, effects)
 }
 
 // servedView is what a signer served before a caller ran.
@@ -187,8 +216,8 @@ func rootSelection(server *Signer) (string, bool) {
 // is open; whether the runtime is bound to the generation the store root
 // selects, to one the root has left (superseded), or to none; whether the
 // policy is the one served before; and the key count. The source tokens are
-// recorded apart (TestAFailedReloadKeepsACosignersSourceTokens): a signer
-// node's store holds none.
+// recorded apart (TestAFailedReconcileLeavesRecoveryNoSourceTokens): a
+// signer node's store holds none.
 func (before servedView) describe(server *Signer) string {
 	ir := server.productRuntime()
 	keyring := "open"
@@ -207,7 +236,10 @@ func (before servedView) describe(server *Signer) string {
 		}
 	}
 	policyView := "replaced"
-	if ir.NodePolicy() == before.policy {
+	switch ir.NodePolicy() {
+	case nil:
+		policyView = "none"
+	case before.policy:
 		policyView = "kept"
 	}
 	return fmt.Sprintf("%v keyring=%s generation=%s policy=%s keys=%d",
@@ -312,7 +344,7 @@ var reloadCallers = []reloadCaller{
 	},
 	{
 		name: "unlock from recovery",
-		from: func(_ *testing.T, server *Signer) { server.productRuntime().SetRecovery() },
+		from: func(_ *testing.T, server *Signer) { server.productRuntime().EnterRecovery(nil) },
 		run: func(_ *testing.T, server *Signer) string {
 			return unlockCode(server.adminServices().UnlockIdentity(testPassphrase))
 		},
@@ -350,7 +382,7 @@ var reloadCallers = []reloadCaller{
 	},
 	{
 		name: "reconcile in recovery",
-		from: func(_ *testing.T, server *Signer) { server.productRuntime().SetRecovery() },
+		from: func(_ *testing.T, server *Signer) { server.productRuntime().EnterRecovery(nil) },
 		run: func(_ *testing.T, server *Signer) string {
 			result := server.adminServices().backupServices().ReconcileStore()
 			return fmt.Sprintf("success=%v code=%s", result.Success, result.Code)
@@ -461,6 +493,11 @@ var reloadCallers = []reloadCaller{
 
 // afterAFailedReload is, for each caller and each fault, the caller's answer and
 // the view the signer is left serving (servedView.describe).
+//
+// The callers that build before they publish (a store-root commit's and the
+// reconcile's) end every failure in recovery's own view: no keys, and the
+// policy their build verified, or none when it failed before verifying one.
+// Recovery entered any other way holds no keys either.
 var afterAFailedReload = map[string]map[string]string{
 	"unlock from locked": {
 		"root":      "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
@@ -471,10 +508,10 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"unlock from recovery": {
-		"root":      "unlock_failed -> recovery keyring=open generation=bound policy=kept keys=1",
-		"policy":    "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=1",
+		"root":      "unlock_failed -> recovery keyring=open generation=bound policy=kept keys=0",
+		"policy":    "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=0",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
@@ -495,26 +532,26 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=replaced keys=0",
 	},
 	"policy apply": {
-		"root":      "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=none policy=kept keys=1",
-		"policy":    "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=kept keys=1",
+		"root":      "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=none policy=none keys=0",
+		"policy":    "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=none keys=0",
 		"keytype":   "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"reconcile": {
-		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=kept keys=1",
-		"policy":    "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
+		"policy":    "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=none keys=0",
 		"keytype":   "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"reconcile in recovery": {
-		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=kept keys=1",
-		"policy":    "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=kept keys=1",
+		"root":      "success=false code=recovery_blocked -> recovery keyring=open generation=none policy=none keys=0",
+		"policy":    "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=none keys=0",
 		"keytype":   "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
@@ -575,18 +612,18 @@ var afterAFailedReload = map[string]map[string]string{
 		"stray":     "success=false code=recovery_blocked provider=registered -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"restore": {
-		"root":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=none policy=kept keys=1",
-		"policy":    "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=kept keys=1",
+		"root":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=none policy=none keys=0",
+		"policy":    "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=none keys=0",
 		"keytype":   "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=1",
+		"scan":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"rollback": {
-		"root":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=none policy=kept keys=2",
-		"policy":    "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=kept keys=2",
+		"root":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=none policy=none keys=0",
+		"policy":    "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=none keys=0",
 		"keytype":   "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=2",
+		"scan":      "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"collision": "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 		"stray":     "success=false code=restore_rollback_failed uncertain=false -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
@@ -620,12 +657,13 @@ func TestWhatAFailedReloadLeavesBehind(t *testing.T) {
 	}
 }
 
-// A cosigner's source tokens after a failed reload on the keyring in service.
-// The token files are in the generation, so a reload that gets as far as
-// reading them publishes them again, and one that fails earlier leaves the
-// index it found: the tokens are served to the next unlocked session either
-// way, and stay with the keyring through recovery.
-func TestAFailedReloadKeepsACosignersSourceTokens(t *testing.T) {
+// A cosigner's source tokens after a reconcile whose build failed: the
+// reconcile ends in recovery's view, which holds no token index, whatever
+// the fault. Nothing reads a token in recovery, since a token lookup runs
+// only inside a key use, which only an unlocked signer grants. The token
+// files stay in the generation, and the reconcile that lifts recovery
+// publishes them again. Recovery once kept the index it found.
+func TestAFailedReconcileLeavesRecoveryNoSourceTokens(t *testing.T) {
 	for _, fault := range reloadFaults {
 		t.Run(fault.name, func(t *testing.T) {
 			server, cleanup := setupTestNode(t, noderole.RoleCosigner, cosignerDefaultWithSources(t))
@@ -641,7 +679,7 @@ func TestAFailedReloadKeepsACosignersSourceTokens(t *testing.T) {
 			if !ir.IsRecovery() {
 				t.Fatalf("state = %v after a failed reconcile, want recovery", ir.GetState())
 			}
-			requireServedToken(t, server, sourcetokens.DefaultSelector, "tok-kept")
+			requireServedToken(t, server, sourcetokens.DefaultSelector, "")
 		})
 	}
 }

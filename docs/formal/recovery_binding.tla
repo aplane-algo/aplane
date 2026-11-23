@@ -10,37 +10,49 @@ root selection. This module picks up from there: the runtime holds a cached
 binding to a generation (the keystore's active paths) and a key cache built
 from the generation it last scanned successfully. A root-changing mutation
 commits the root and then reloads, both under the store mutation lock. The
-reload can fail (the selected generation does not validate, or the root no
-longer authenticates), and the three guards checked here are what keep a
-failed reload from leaving the runtime acting on the superseded, sealed
-generation:
+reload builds the generation the root selects before it installs any of it,
+and then publishes it, publishes recovery's view of it, or keeps the view in
+service. The build can fail (the selected generation does not validate, or
+the root no longer authenticates), and the four guards checked here are what
+keep a failed reload from leaving the runtime acting on the superseded,
+sealed generation:
 
-  BindBeforeValidate     the reload binds the authenticated selection before
-                         any step that can fail, so a failed reload still
-                         leaves the binding on the root's generation.
-  MaintenanceReadsRoot   recovery maintenance (deleted-archive list and
-                         prune) authenticates the root itself instead of
-                         trusting the cached binding.
-  RecoveryBeforeRelease  a failed post-commit reload enters recovery before
-                         the mutation lock is released, so no request is
-                         served from the stale key cache in between.
+  RecoveryBindsSelection  recovery's view is bound to the selection the build
+                          authenticated, or to nothing when the root did not
+                          authenticate, so a failed reload still leaves the
+                          binding on the root's generation.
+  KeepNeedsBoundSelection a failed reload keeps the view in service only
+                          while the root still selects the generation it is
+                          bound to.
+  MaintenanceReadsRoot    recovery maintenance (deleted-archive list and
+                          prune) authenticates the root itself instead of
+                          trusting the cached binding.
+  RecoveryBeforeRelease   a failed post-commit reload enters recovery before
+                          the mutation lock is released, so no request is
+                          served from the stale key cache in between.
 
-All three are TRUE in the code. The negative control sets the first two to
-FALSE, the shape before commit b0e51275, and TLC reproduces that bug: the
-reload fails, the binding stays on the old generation, and prune acts on
-the sealed rollback target while the root selects the new generation
-(RB1_MaintenanceFollowsRoot).
+All four are TRUE in the code. The negative control sets the first and the
+third to FALSE, the shape before commit b0e51275, and TLC reproduces that
+bug: the reload fails, the binding stays on the old generation, and prune
+acts on the sealed rollback target while the root selects the new generation
+(RB1_MaintenanceFollowsRoot). A second negative control sets
+KeepNeedsBoundSelection to FALSE: a failed reload after a commit keeps the
+superseded generation's view, and the binding is behind the root outside a
+mutation (RB4_BindingFollowsRoot).
 
 Code anchors:
-  - CommitRoot/BeginReload/ReloadBind/ReloadSucceed/ReloadFail transcribe
-    internal/signerapp/admin/policy.go ApplyPolicy and commitAndReload,
-    internal/signerapp/backupadmin/direct_restore.go, with
-    internal/signerapp/productruntime/runtime.go FollowCommit after each
-    commit, and the reload order
-    in internal/signerapp/templates/reload.go (BindStoreRootSelection first)
-    with internal/keystore/file.go Scan and BindStoreRootSelection over
+  - CommitRoot/BeginReload/Build/ReloadSucceed/ReloadFail/ReloadKeep
+    transcribe internal/signerapp/admin/policy.go ApplyPolicy,
+    internal/signerapp/backupadmin/direct_restore.go and
+    direct_rollback.go, with internal/signerapp/productruntime/view.go
+    FollowCommit and Reconcile over reloadView (the failure rule), and
+    internal/signerapp/startup/product_build.go Build over
     internal/genstore/store_root.go AuthenticateStoreRootSelection and
-    ValidateStoreRootSelection.
+    ValidateStoreRootSelection. The reloads not yet built this way (the
+    watcher's, an in-place write's) bind first, in
+    internal/signerapp/templates/reload.go (BindStoreRootSelection), and
+    keep the view only when no commit moved the root; Build and ReloadKeep
+    stand for them too.
   - Maintain transcribes internal/signerapp/daemon/admin_services.go
     authenticatedSelection as used by ListDeletedArchive (under
     withStoreInspection) and PruneDeletedArchive (under withStoreMutation).
@@ -54,7 +66,7 @@ Code anchors:
 See FORMAL_TLA_RECOVERY_BINDING_MODEL.md for the prose companion.
 ***************************************************************************)
 
-CONSTANTS BindBeforeValidate, MaintenanceReadsRoot, RecoveryBeforeRelease
+CONSTANTS RecoveryBindsSelection, KeepNeedsBoundSelection, MaintenanceReadsRoot, RecoveryBeforeRelease
 
 Old == "old"
 New == "new"
@@ -67,13 +79,15 @@ VARIABLES
     bound,            \* the keystore's cached binding (active paths), or None
     cacheGen,         \* the generation the key cache was last built from
     lockHeld,         \* the store mutation lock is held
-    phase,            \* "idle" | "committed" | "bound" | "failed"
+    built,            \* the generation the reload's build found the root
+                      \* selecting, or None when it did not authenticate
+    phase,            \* "idle" | "committed" | "built" | "failed"
     recovery,         \* the runtime is in recovery: signing and key writes refused
     maintainedStale,  \* history flag: maintenance acted on a generation other than root
     servedStale       \* history flag: a request was served from a stale cache
                       \* after the mutation lock was released
 
-vars == <<root, rootAuth, bound, cacheGen, lockHeld, phase, recovery,
+vars == <<root, rootAuth, bound, cacheGen, lockHeld, built, phase, recovery,
           maintainedStale, servedStale>>
 
 Init ==
@@ -82,6 +96,7 @@ Init ==
     /\ bound = Old
     /\ cacheGen = Old
     /\ lockHeld = FALSE
+    /\ built = Old
     /\ phase = "idle"
     /\ recovery = FALSE
     /\ maintainedStale = FALSE
@@ -101,7 +116,7 @@ CommitRoot ==
     /\ lockHeld' = TRUE
     /\ root' = New
     /\ phase' = "committed"
-    /\ UNCHANGED <<rootAuth, bound, cacheGen, recovery, maintainedStale, servedStale>>
+    /\ UNCHANGED <<rootAuth, bound, cacheGen, built, recovery, maintainedStale, servedStale>>
 
 \* BeginReload is a reload with no commit: the recovery reconcile, the
 \* watcher's reload, or an in-place write's. It runs under the same lock.
@@ -110,49 +125,64 @@ BeginReload ==
     /\ phase = "idle"
     /\ lockHeld' = TRUE
     /\ phase' = "committed"
-    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, recovery, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, built, recovery, maintainedStale, servedStale>>
 
-\* ReloadBind is the reload's first step: authenticate a fresh exact root
-\* read and bind what it selects, before validation or scanning can fail. A
-\* root that no longer authenticates leaves no authority to bind. Without
-\* BindBeforeValidate (the pre-fix code) the binding moves only on success.
-ReloadBind ==
+\* Build is the reload's build: it reads the root once and authenticates
+\* what it selects, and installs nothing. The binding stays where it is
+\* until a view is published.
+Build ==
     /\ phase = "committed"
-    /\ bound' = IF ~BindBeforeValidate THEN bound
-                ELSE IF rootAuth THEN root ELSE None
-    /\ phase' = "bound"
-    /\ UNCHANGED <<root, rootAuth, cacheGen, lockHeld, recovery, maintainedStale, servedStale>>
+    /\ built' = IF rootAuth THEN root ELSE None
+    /\ phase' = "built"
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, recovery, maintainedStale, servedStale>>
 
-\* ReloadSucceed: the selected generation validates and scans; the key cache
-\* follows the root, recovery (if any) lifts, and the lock is released.
+\* ReloadSucceed: the selected generation validates and scans, and the whole
+\* view is published: the binding and the key cache follow the root,
+\* recovery (if any) lifts, and the lock is released.
 ReloadSucceed ==
-    /\ phase = "bound"
-    /\ rootAuth
-    /\ bound' = root
-    /\ cacheGen' = root
+    /\ phase = "built"
+    /\ built # None
+    /\ bound' = built
+    /\ cacheGen' = built
     /\ recovery' = FALSE
     /\ lockHeld' = FALSE
     /\ phase' = "idle"
-    /\ UNCHANGED <<root, rootAuth, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, rootAuth, built, maintainedStale, servedStale>>
 
-\* ReloadFail: validation or scanning fails, or the root did not
-\* authenticate. The key cache keeps the generation it last scanned. With
-\* RecoveryBeforeRelease the runtime enters recovery in the same step the
-\* lock is released; without it the lock is released first and recovery is
-\* entered by a later step (EnterRecoveryLate), leaving a window.
+\* ReloadFail: the build failed, or the store is in doubt, and recovery's
+\* view is published: with RecoveryBindsSelection it is bound to the build's
+\* selection, or to nothing; without it (the pre-fix code) the binding stays.
+\* The view holds no keys; the key cache's generation is kept here, and
+\* recovery refuses to serve from it. With RecoveryBeforeRelease the runtime
+\* enters recovery in the same step the lock is released; without it the
+\* lock is released first and recovery is entered by a later step
+\* (EnterRecoveryLate), leaving a window.
 ReloadFail ==
-    /\ phase = "bound"
+    /\ phase = "built"
+    /\ bound' = IF RecoveryBindsSelection THEN built ELSE bound
     /\ lockHeld' = FALSE
     /\ IF RecoveryBeforeRelease
        THEN recovery' = TRUE /\ phase' = "idle"
        ELSE recovery' = recovery /\ phase' = "failed"
-    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, rootAuth, cacheGen, built, maintainedStale, servedStale>>
+
+\* ReloadKeep: a build that failed for a reason that is not a defect of the
+\* selected generation, on a store not in doubt, keeps the view in service
+\* (row 5 of the failure rule). With KeepNeedsBoundSelection it may do so
+\* only while the root still selects the generation the view is bound to;
+\* otherwise the reload fails (row 3).
+ReloadKeep ==
+    /\ phase = "built"
+    /\ KeepNeedsBoundSelection => (built # None /\ built = bound)
+    /\ lockHeld' = FALSE
+    /\ phase' = "idle"
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, built, recovery, maintainedStale, servedStale>>
 
 EnterRecoveryLate ==
     /\ phase = "failed"
     /\ recovery' = TRUE
     /\ phase' = "idle"
-    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, built, maintainedStale, servedStale>>
 
 ----------------------------------------------------------------------------
 (* What runs against which generation *)
@@ -165,7 +195,7 @@ EnterRecoveryLate ==
 Serve ==
     /\ ~recovery
     /\ servedStale' = (servedStale \/ (~lockHeld /\ cacheGen # root))
-    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, phase, recovery, maintainedStale>>
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, built, phase, recovery, maintainedStale>>
 
 \* Maintain is deleted-archive list or prune. With MaintenanceReadsRoot it
 \* authenticates the root itself and errors (no action) when the root does
@@ -177,7 +207,7 @@ Maintain ==
     /\ LET target == IF MaintenanceReadsRoot THEN root ELSE bound
        IN  /\ IF MaintenanceReadsRoot THEN rootAuth ELSE bound # None
            /\ maintainedStale' = (maintainedStale \/ target # root)
-    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, phase, recovery, servedStale>>
+    /\ UNCHANGED <<root, rootAuth, bound, cacheGen, lockHeld, built, phase, recovery, servedStale>>
 
 ----------------------------------------------------------------------------
 (* Root authentication *)
@@ -186,13 +216,13 @@ RootDamaged ==
     /\ ~lockHeld
     /\ rootAuth
     /\ rootAuth' = FALSE
-    /\ UNCHANGED <<root, bound, cacheGen, lockHeld, phase, recovery, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, bound, cacheGen, lockHeld, built, phase, recovery, maintainedStale, servedStale>>
 
 RootRepaired ==
     /\ ~lockHeld
     /\ ~rootAuth
     /\ rootAuth' = TRUE
-    /\ UNCHANGED <<root, bound, cacheGen, lockHeld, phase, recovery, maintainedStale, servedStale>>
+    /\ UNCHANGED <<root, bound, cacheGen, lockHeld, built, phase, recovery, maintainedStale, servedStale>>
 
 ----------------------------------------------------------------------------
 (* Next and Spec *)
@@ -200,9 +230,10 @@ RootRepaired ==
 Next ==
     \/ CommitRoot
     \/ BeginReload
-    \/ ReloadBind
+    \/ Build
     \/ ReloadSucceed
     \/ ReloadFail
+    \/ ReloadKeep
     \/ EnterRecoveryLate
     \/ Serve
     \/ Maintain
@@ -220,11 +251,12 @@ TypeOK ==
     /\ bound \in Gens \cup {None}
     /\ cacheGen \in Gens
     /\ lockHeld \in BOOLEAN
-    /\ phase \in {"idle", "committed", "bound", "failed"}
+    /\ built \in Gens \cup {None}
+    /\ phase \in {"idle", "committed", "built", "failed"}
     /\ recovery \in BOOLEAN
     /\ maintainedStale \in BOOLEAN
     /\ servedStale \in BOOLEAN
-    /\ lockHeld <=> phase \in {"committed", "bound"}
+    /\ lockHeld <=> phase \in {"committed", "built"}
 
 \* RB1: recovery maintenance acts only on the generation the root selects.
 RB1_MaintenanceFollowsRoot == ~maintainedStale

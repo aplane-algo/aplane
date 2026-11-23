@@ -132,22 +132,26 @@ waits for it; KU2 and KU3 cover that case.
   (`enterRecoveryLocked`), which every attempt in flight later finds.
   `SetRecovery` does nothing on a locked signer, as `EnterRecovery`'s guard
   requires: a store mutation that a lock overtook calls it after the lock,
-  and the signer stays locked. Every `SetRecovery` caller and the reconcile
-  that promotes hold the store mutation lock
+  and the signer stays locked. Every entry into recovery outside an unlock
+  publishes recovery's view (`productruntime.Runtime.enterRecoveryViewLocked`,
+  the state first and then the view; for a store in doubt the state before
+  the build, in `reloadViewLocked`), and every one of them and the
+  reconcile that promotes hold the store mutation lock
   (`productruntime.Runtime.FollowCommit`, for policy apply, the ASA set,
-  restore and rollback; the restore's checkpoint failures;
-  `reconcileLocked`; and
-  `productruntime.Runtime.Reload`, which enters recovery when a reload
-  without the passphrase finds a content defect in the selected generation,
-  a failed validation or an address collision, under the lock its callers
-  hold: the watcher's `reloadFromWatcher`, key
-  and template administration, and the callers above), so neither action
-  lands inside an unlock attempt, which holds that lock throughout. Recovery keeps the keyring:
-  nothing drains and nothing is cleared. It ends the unlocked session: the
-  session generation moves, and `productruntime`'s `SetRecovery` cancels
-  the key uses that session handed out (`cancelKeyUses`), without waiting
-  for them; an attempt's own entry begins locked or in recovery, with no
-  session left to end. The session generation is a
+  restore and rollback, and the restore's checkpoint failures;
+  `productruntime.Runtime.Reconcile`; and `productruntime.Runtime.Reload`,
+  which enters recovery (`EnterRecovery`) when a reload without the
+  passphrase finds a content defect in the selected generation, a failed
+  validation or an address collision, under the lock its callers hold: the
+  watcher's `reloadFromWatcher`, and key and template administration), so
+  neither action lands inside an unlock attempt, which holds that lock
+  throughout. Recovery keeps the keyring and nothing drains; its view drops
+  the key maps, the key cache and the source token index, which nothing
+  reads in recovery. It ends the unlocked session: the session generation
+  moves, and the entry cancels the key uses that session handed out
+  (`cancelKeyUses`, in `afterReload`, once the passphrase lock is released),
+  without waiting for them; an attempt's own entry begins locked or in
+  recovery, with no session left to end. The session generation is a
   counter of its own, apart from the lock generation the unlock's first
   fence compares, so an unlock that overlaps an entry into recovery does not
   run the lock's cleanup. Its second fence compares the session, so it does

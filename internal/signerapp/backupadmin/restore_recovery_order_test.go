@@ -10,10 +10,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -53,9 +51,7 @@ func TestRestoreEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 			t.Cleanup(func() { fsutil.TestHook = nil })
 		}},
 		{"a reload that fails after the commit", func(t *testing.T, paths storepaths.Paths, ir *productruntime.Runtime) {
-			ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-				return nil, errors.New("reload failed")
-			})
+			failBuild(ir)
 		}},
 	}
 	for _, tt := range tests {
@@ -98,11 +94,7 @@ func TestRestoreEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 // is unlocked or in recovery.
 func TestRestoreAndRollbackOnASignerNotYetUnlockedAreRefused(t *testing.T) {
 	const want = "signer is locked: keystore is locked"
-	failReload := func(ir *productruntime.Runtime) {
-		ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-			return nil, errors.New("reload failed")
-		})
-	}
+	failReload := failBuild
 
 	t.Run("restore", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())

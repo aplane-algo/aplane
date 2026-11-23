@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -25,28 +26,29 @@ import (
 )
 
 // These tests record what a signer in recovery shows, and what a lock that
-// lands during a reload leaves, as the code stands. The reload redesign makes
-// recovery publish no keys and gates a reload's notifications on the state;
-// the rows it changes say so.
+// lands during a reload leaves.
 
-// Recovery is entered with the key maps as they were (a store change that
-// ended in doubt, a failed reconcile) or with none (a reload that found a
-// content defect). The admin requests a session in recovery is answered read
-// the key maps in one place: the policy views mark each per-key document as
-// held or not. They read the maps whatever the state, so the marking differs
-// by the way recovery was entered. The snapshot digest does not cover the
-// marking and is the same throughout.
-//
-// With no keys published in recovery, the first row becomes "key_not_held" 0,
-// as the second.
-func TestThePolicyViewsInRecoveryMarkHeldKeysByHowItWasEntered(t *testing.T) {
+// Recovery publishes no keys, however it was entered: a store change that
+// ended in doubt and a reload that found a content defect both leave it with
+// none. The admin requests a session in recovery is answered read the key
+// maps in one place: the policy views mark each per-key document as held or
+// not, so in recovery every per-key document shows as not held. The snapshot
+// digest does not cover the marking and is the same throughout. A store
+// change in doubt once entered recovery with the key maps as they were, and
+// its per-key document showed as the key's own.
+func TestThePolicyViewsInRecoveryMarkEveryPerKeyDocumentNotHeld(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		enter func(t *testing.T, server *Signer)
 		want  string
 	}{
-		{name: "a store change that ended in doubt", want: "own 1",
-			enter: func(_ *testing.T, server *Signer) { server.productRuntime().SetRecovery() }},
+		{name: "a store change that ended in doubt", want: "key_not_held 0",
+			enter: func(_ *testing.T, server *Signer) {
+				_ = server.adminServices().withStoreMutation(func() error {
+					_, err := server.productRuntime().FollowCommit(genstore.Uncertain)
+					return err
+				})
+			}},
 		{name: "a reload that found a content defect", want: "key_not_held 0",
 			enter: func(t *testing.T, server *Signer) {
 				ir := server.productRuntime()
@@ -99,15 +101,13 @@ func TestThePolicyViewsInRecoveryMarkHeldKeysByHowItWasEntered(t *testing.T) {
 	}
 }
 
-// A commit that may have landed enters recovery and then reloads, so the
-// runtime follows the generation the root now selects. That reload succeeds
-// in recovery and publishes the key maps: the signer is in recovery with its
-// key count unchanged, and the policy the commit wrote. A restore or a
-// rollback begun in recovery reloads the same way.
-//
-// With no keys published in recovery, the key count here becomes 0 until the
-// reconcile.
-func TestAnUncertainCommitLeavesRecoveryWithItsKeysPublished(t *testing.T) {
+// A commit that may have landed enters recovery and then builds, so the
+// runtime follows the generation the root now selects. The build succeeds,
+// and recovery's view of it publishes no keys: the signer is in recovery with
+// none, and the policy the commit wrote, until the reconcile publishes the
+// keys as it promotes. A restore or a rollback begun in recovery publishes
+// the same way. The reload once published the key maps in recovery.
+func TestAnUncertainCommitLeavesRecoveryWithNoKeysUntilTheReconcile(t *testing.T) {
 	server := characterizedSigner(t)
 	ir := server.productRuntime()
 	before := viewBefore(server)
@@ -125,7 +125,7 @@ func TestAnUncertainCommitLeavesRecoveryWithItsKeysPublished(t *testing.T) {
 		t.Fatalf("ApplyPolicy() = %+v, want an uncertain commit", result)
 	}
 
-	const want = "recovery keyring=open generation=selected policy=replaced keys=1"
+	const want = "recovery keyring=open generation=selected policy=replaced keys=0"
 	if got := before.describe(server); got != want {
 		t.Fatalf("after an uncertain commit:\n got: %s\nwant: %s", got, want)
 	}

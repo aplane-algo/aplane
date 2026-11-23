@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -25,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -89,10 +91,27 @@ func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *pr
 		})
 	}
 	ir.SetReloadFunc(reload)
+	wireBuild(ir, paths, &cfg)
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir, reload
+}
+
+// wireBuild gives ir the reload's own build over paths.
+func wireBuild(ir *productruntime.Runtime, paths storepaths.Paths, cfg *serverconfig.ServerConfig) {
+	opts := signerstartup.ProductBuildOptions{KeyPaths: paths, Config: cfg}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
+}
+
+// failBuild makes every reload's build of ir fail with err, having
+// established nothing.
+func failBuild(ir *productruntime.Runtime, err error) {
+	ir.SetBuildFunc(func(*crypto.Keyring) (*productruntime.Loaded, error) {
+		return nil, err
+	}, productruntime.ReloadEffects{})
 }
 
 func signerPolicyDoc(maxFee string) string {
@@ -245,6 +264,16 @@ func TestPolicyApplyRejectsStaleInvalidAndMalformedRequests(t *testing.T) {
 func TestCosignerPolicyApplyAddsReplacesAndRemovesPerKey(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleCosigner)
 	ir.PublishSnapshot(map[string]string{adminPolicyKeyA: "keys/" + adminPolicyKeyA + ".cos"}, map[string]string{})
+	// Each reload's build finds key A too, as a scan of a store holding it
+	// would.
+	opts := signerstartup.ProductBuildOptions{KeyPaths: ir.KeyPaths(), Config: svc.Deps.Config()}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		loaded, err := signerstartup.Build(ir, opts, kr)
+		if err == nil {
+			loaded.Contents.Keys = map[string]apkeys.KeyScanInfo{adminPolicyKeyA: {KeyFile: "keys/" + adminPolicyKeyA + ".cos"}}
+		}
+		return loaded, err
+	}, productruntime.ReloadEffects{})
 	view := svc.GetPolicy()
 	if !view.Success || view.NodeRole != "cosigner" || len(view.Documents) != 1 || view.Documents[0].Key != policy.DefaultKey ||
 		len(view.Keys) != 1 || view.Keys[0].Status != adminproto.PolicyKeyDefault {
@@ -355,9 +384,7 @@ func (d *recordingMutationDeps) WithStoreMutation(fn func() error) error {
 func TestPolicyApplyEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
 	svc, ir := setupPolicyAdmin(t, noderole.RoleSigner)
 	view := svc.GetPolicy()
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, fmt.Errorf("reload failed")
-	})
+	failBuild(ir, fmt.Errorf("build failed"))
 	deps := &recordingMutationDeps{Deps: svc.Deps, ir: ir}
 	svc.Deps = deps
 
@@ -449,9 +476,7 @@ func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	if ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
 	}
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, fmt.Errorf("reload failed")
-	})
+	failBuild(ir, fmt.Errorf("build failed"))
 
 	result := svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 		Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},

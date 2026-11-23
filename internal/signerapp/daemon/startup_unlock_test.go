@@ -150,7 +150,7 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 			server := characterizedSigner(t)
 			ir := server.productRuntime()
 			if tc.recovery {
-				ir.SetRecovery()
+				ir.EnterRecovery(nil)
 			} else {
 				ir.Lock()
 			}

@@ -970,3 +970,20 @@ at depth 2. The positive runs grow to 101040 states and, deep, 2021040, both
 at depth 2, and the two earlier negative controls still fail on SI1, now
 after 50536 and 50560 states. `make formal-test` now has 38 runs,
 twenty-two of them negative controls.
+
+Changed 2026-11-22: `recovery_binding.tla` follows the reload that builds
+first and publishes last, for the commit callers and the reconcile
+(`productruntime.Runtime.reloadView`). `ReloadBind` became `Build`, which
+reads and authenticates the root and installs nothing; the binding now
+moves only when a view is published. `ReloadFail` publishes recovery's view
+bound to the build's selection (`RecoveryBindsSelection`, the old
+`BindBeforeValidate`), and the new `ReloadKeep` keeps the view in service
+only while the root still selects its generation (`KeepNeedsBoundSelection`).
+The negative control `recovery_binding_negative_keep.cfg` keeps the view
+whatever the root selects and violates RB4 after 10 states at depth 4 (RB2
+and RB3 too). The positive run grows to 52 states at depth 11; the RB1
+control is unchanged at 15 states. `make formal-test` now has 46 runs. The
+reloads not yet built this way (the watcher's, an in-place write's) keep the
+view when the root stops authenticating, with the binding cleared, where the
+model takes `ReloadFail`: a model-extension candidate until they follow the
+failure rule.

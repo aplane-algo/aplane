@@ -71,8 +71,8 @@
   },
   {
     "spec": "recovery_binding",
-    "distinct_states": 45,
-    "depth": 10
+    "distinct_states": 52,
+    "depth": 11
   },
   {
     "spec": "recovery_binding",
@@ -80,6 +80,13 @@
     "expected_invariant_violation": "RB1_MaintenanceFollowsRoot",
     "distinct_states": 15,
     "depth": 5
+  },
+  {
+    "spec": "recovery_binding",
+    "cfg": "recovery_binding_negative_keep",
+    "expected_invariant_violation": "RB4_BindingFollowsRoot",
+    "distinct_states": 10,
+    "depth": 4
   },
   {
     "spec": "rotating_leaf_release",

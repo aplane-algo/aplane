@@ -111,6 +111,15 @@ func (x *Index) release() {
 	}
 }
 
+// Discard zeroes an index that was never published: a reload's that was
+// not, or that a lock overtook. Nothing reads such an index, so it is zeroed
+// at once.
+func (x *Index) Discard() {
+	if x != nil {
+		x.retire()
+	}
+}
+
 // retire marks x replaced and zeroes it at once when nobody reads it.
 func (x *Index) retire() {
 	x.mu.Lock()

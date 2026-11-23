@@ -59,7 +59,7 @@ type ASAChain interface {
 func (s Service) ListASASet() adminproto.ListASASetResult {
 	_, set := s.Runtime.PolicyState()
 	if set == nil {
-		return adminproto.ListASASetResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.ListASASetResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	tokens := chainTokens(s.networks())
 	var out []adminproto.ASAInfo
@@ -81,7 +81,7 @@ func (s Service) ListASASet() adminproto.ListASASetResult {
 func (s Service) LookupASA(req adminproto.LookupASARequest) adminproto.LookupASAResult {
 	_, set := s.Runtime.PolicyState()
 	if set == nil {
-		return adminproto.LookupASAResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.LookupASAResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	genesis, err := s.chainFor(req.Network)
 	if err != nil {

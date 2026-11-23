@@ -593,13 +593,12 @@ func TestHeldKeyChecksComeAfterTheLockAndTheGenerationChecks(t *testing.T) {
 		expect(t, ErrorInvalidInput, "require_cosigner")
 	})
 
-	// In recovery the store's key cache still names the account, so the
-	// order is what decides: the state check answers before the held-key
-	// check could refuse the rotating target.
+	// Recovery's view holds no keys, as a lock's does: the state check
+	// answers.
 	t.Run("a signer in recovery", func(t *testing.T) {
-		ir.SetRecovery()
-		if got := ir.KeyStore().GetKeyTypes()[rotating.Address]; got != rotatingTestKeyType {
-			t.Fatalf("a signer in recovery has %q for the rotating account in its key list", got)
+		ir.EnterRecovery(nil)
+		if got := ir.KeyStore().GetKeyTypes(); len(got) != 0 {
+			t.Fatalf("a signer in recovery's key list is %v, want recovery's view to hold none", got)
 		}
 		expect(t, ErrorLocked, "signer is not unlocked")
 	})

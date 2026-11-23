@@ -224,7 +224,7 @@ func TestRecoveryRestoreRepairsADamagedTokenFileFromTheBackup(t *testing.T) {
 	if err := os.WriteFile(resolveAtomicTestGeneration(t, paths).SourceTokenPath(key), []byte("damaged"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ir.SetRecovery()
+	ir.EnterRecovery(nil)
 
 	refused := restoreForTokenTest(service, archivePath, "restore-refused", false)
 	if refused.Success || refused.Code != protocol.ResultCodeRestoreConflict || len(refused.Conflicts) != 1 {

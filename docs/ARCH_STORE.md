@@ -1693,11 +1693,14 @@ reads and writes, and the runtime index.
   mutation lock, so no set or remove lands during it. An unlock reload that
   fails clears the index when it closed the keyring, and leaves it when a
   keyring stayed open: one begun in recovery leaves recovery a keyring
-  whatever step failed. A node that goes from unlocked to recovery keeps its
-  index with the keyring, and so does an unlock the fence refuses; a recovery
-  entered because the reload of an unlock of a locked node failed validation
-  has none. A lock removes a kept index and a later reload
-  replaces it. In recovery no lookup runs, and a policy check is answered
+  whatever step failed. An entry into recovery outside an unlock drops the
+  index with the key maps, and the reconcile that lifts recovery publishes
+  it again from the token files. An unlock begun in recovery whose load
+  fails after reading the token files leaves recovery the index that load
+  published. An unlock the fence
+  refuses keeps the index its reload published; under the one-hold unlock no
+  entry into recovery reaches that fence. A lock removes a kept index and a
+  later reload replaces it. In recovery no lookup runs, and a policy check is answered
   no token names from the index. A token sent in a request
   header is a Go string, which cannot be zeroed; zeroing covers the index.
 - **Lifecycle.** Key deletion moves the key's file to
@@ -1879,6 +1882,45 @@ The relevant order is:
 
 `productruntime.Runtime.reloadLocked` runs this through the function wired by
 `startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
+
+A reload after a store-root commit, and a reconcile's, builds the whole view
+before it installs any of it (`productruntime.Runtime.reloadView`).
+`startup.Build` reads the store root once and runs steps 2 to 7 without
+changing anything live: the templates are prepared and checked, and none is
+registered. The publish then installs the result under the passphrase lock:
+the stage tables close, the providers are registered as one batch, the
+keystore takes the binding and the key cache, the runtime the policy, the
+source token index and the key indexes, and the key session starts. Audit
+and the keys-changed notification follow, the notification only while the
+signer is still unlocked.
+
+When the build fails, or the caller found the store in doubt, the outcome is
+decided by facts:
+
+1. a role conflict fails the node closed, and the signer enters recovery;
+2. a store in doubt (an uncertain commit, a reconcile that failed) enters
+   recovery, whatever the build returned;
+3. a root that selects another generation than the one bound, or does not
+   authenticate, enters recovery bound to what it selects, or to nothing;
+4. a content defect in the selected generation enters recovery;
+5. anything else keeps the view in service, and the caller reports the
+   error.
+
+After a commit the root has moved, so every failure enters recovery.
+Recovery's view is bound to the build's selection, or to nothing, shows the
+policy and ASA set the build verified, or none, so a superseded
+generation's policy is not left visible, and holds no keys, no source token
+index and no active key session; it registers no provider. A build that
+succeeds while the signer is in recovery (a restore or a rollback begun
+there) publishes recovery's view of the new generation, and the reconcile
+that follows publishes the whole view as it promotes. Every entry into
+recovery outside an unlock publishes that view, so in recovery the key
+count is 0 and every per-key policy document shows as not held. A reload
+not yet built this way that finds the store root no longer authenticating
+keeps the view in service with no binding: the watcher's and an in-place
+write's. The
+watcher's and an in-place write's reloads, and an unlock's, still run the
+order above.
 
 An unlock runs this order only when the signer is not already unlocked. A
 reload with the passphrase replaces the keyring at step 1 and the policy,

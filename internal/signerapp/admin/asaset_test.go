@@ -124,6 +124,7 @@ func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *
 		})
 	}
 	ir.SetReloadFunc(reload)
+	wireBuild(ir, paths, &cfg)
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -187,9 +188,7 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 	if ir.IsUnlocked() || ir.IsRecovery() {
 		t.Fatalf("setup: state = %s, want locked with the keyring open", ir.GetState())
 	}
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		return nil, errors.New("reload failed")
-	})
+	failBuild(ir, errors.New("build failed"))
 
 	added := confirmASA9(t, svc)
 	removed := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})

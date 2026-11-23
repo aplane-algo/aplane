@@ -287,6 +287,45 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 // error return is reserved for manager misconfiguration and unrecoverable work
 // that should stop the caller's reload flow.
 func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
+	prepared, err := m.PrepareKeystoreTemplates(kr)
+	if err != nil {
+		return prepared.report, err
+	}
+	return prepared.Register(m.Registry), nil
+}
+
+// PreparedTemplates is a reload's templates prepared and checked, with
+// nothing registered: the report of every outcome but the registration's,
+// and the providers to activate.
+type PreparedTemplates struct {
+	report  RegistrationReport
+	pending []pendingRegistration
+}
+
+// Report is the preparation's report. It holds every content defect: the
+// registration only decides whether a template it activates is activated
+// or conflicting.
+func (p PreparedTemplates) Report() RegistrationReport { return p.report }
+
+// Register registers the prepared providers as one batch in registry and
+// returns the whole report. It cannot fail: every provider kept the
+// contract at preparation, which the batch checks again. A batch that
+// refused one anyway would register nothing, and every template it held is
+// reported conflicting, so none of them signs.
+func (p PreparedTemplates) Register(registry ProviderRegistry) RegistrationReport {
+	report := p.report
+	if err := registerPending(&report, registry, p.pending); err != nil {
+		for _, pending := range p.pending {
+			appendOutcome(&report, pending.source, templatepolicy.RegistrationOutcome{ConflictingKeyTypes: []string{pending.keyType}})
+		}
+	}
+	return report
+}
+
+// PrepareKeystoreTemplates prepares every keystore template and checks it,
+// as RegisterKeystoreTemplates does, and registers nothing: a reload's
+// Build prepares, and its Publish registers (PreparedTemplates.Register).
+func (m *Manager) PrepareKeystoreTemplates(kr *crypto.Keyring) (PreparedTemplates, error) {
 	return m.processKeystoreTemplates(kr, true)
 }
 
@@ -296,13 +335,17 @@ func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationRep
 // validly encrypted but semantically broken candidate can never become
 // authoritative.
 func (m *Manager) ValidateKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
-	return m.processKeystoreTemplates(kr, false)
+	prepared, err := m.processKeystoreTemplates(kr, false)
+	return prepared.report, err
 }
 
-func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (RegistrationReport, error) {
+// processKeystoreTemplates prepares every template record. With activate set
+// it returns each template to activate as a provider to register; without
+// it, as validation does, it reports each one activated.
+func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, activate bool) (PreparedTemplates, error) {
 	registrars, err := m.templateRegistrars()
 	if err != nil {
-		return RegistrationReport{}, err
+		return PreparedTemplates{}, err
 	}
 	registry := m.Registry
 
@@ -316,12 +359,12 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 		var err error
 		active, err = genstore.Resolve(m.Paths)
 		if err != nil {
-			return report, fmt.Errorf("failed to resolve active key store layout: %w", err)
+			return PreparedTemplates{report: report}, fmt.Errorf("failed to resolve active key store layout: %w", err)
 		}
 	}
 	records, err := keytypestate.ListActive(active)
 	if err != nil {
-		return report, fmt.Errorf("failed to load keystore templates: %w", err)
+		return PreparedTemplates{report: report}, fmt.Errorf("failed to load keystore templates: %w", err)
 	}
 
 	registrarsBySource := make(map[keytypestate.Source]TemplateRegistrar, len(registrars))
@@ -331,22 +374,19 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 
 	// Reload is state-record driven: stray encrypted .template files without a
 	// matching key type state record are intentionally invisible. Every
-	// template is prepared and checked first; the ones to activate are then
-	// registered as one batch.
+	// template is prepared and checked here; the ones to activate are
+	// registered later, as one batch (PreparedTemplates.Register).
 	var pending []pendingRegistration
 	for _, rec := range records {
 		registrar, ok := registrarsBySource[rec.Source]
 		if !ok {
 			continue
 		}
-		outcome, provider := processTemplateRecord(active, kr, rec, registrar, registry, register)
+		outcome, provider := processTemplateRecord(active, kr, rec, registrar, registry, activate)
 		appendOutcome(&report, registrar.Source, outcome)
 		if provider != nil {
 			pending = append(pending, pendingRegistration{source: registrar.Source, keyType: rec.KeyType, provider: provider})
 		}
-	}
-	if err := registerPending(&report, registry, pending); err != nil {
-		return report, err
 	}
 
 	if invalid, listErr := keytypestate.ListInvalidActive(active); listErr == nil {
@@ -360,7 +400,7 @@ func (m *Manager) processKeystoreTemplates(kr *crypto.Keyring, register bool) (R
 	report.CompiledConflictingKeyTypes = append(report.CompiledConflictingKeyTypes, compiledOutcome.ConflictingKeyTypes...)
 	report.CompiledInvalidKeyTypes = append(report.CompiledInvalidKeyTypes, compiledOutcome.InvalidKeyTypes...)
 
-	return report, nil
+	return PreparedTemplates{report: report, pending: pending}, nil
 }
 
 func (m *Manager) templateRegistrars() ([]TemplateRegistrar, error) {
@@ -535,9 +575,9 @@ func registerPending(report *RegistrationReport, registry ProviderRegistry, pend
 }
 
 // processTemplateRecord decides one template record's outcome. A template
-// to activate, when register is set, is returned as its provider for the
+// to activate, when activate is set, is returned as its provider for the
 // caller to register with the rest, its outcome left to that registration.
-func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, registry ProviderRegistry, register bool) (templatepolicy.RegistrationOutcome, lsigprovider.LSigProvider) {
+func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec keytypestate.Record, registrar TemplateRegistrar, registry ProviderRegistry, activate bool) (templatepolicy.RegistrationOutcome, lsigprovider.LSigProvider) {
 	var outcome templatepolicy.RegistrationOutcome
 	path := templatestore.GetTemplateFilePathActive(active, rec.KeyType)
 	if _, err := os.Stat(path); err != nil {
@@ -600,7 +640,7 @@ func processTemplateRecord(active storepaths.GenPaths, kr *crypto.Keyring, rec k
 		}
 		return outcome, nil
 	}
-	if !register {
+	if !activate {
 		outcome.ActivatedKeyTypes = append(outcome.ActivatedKeyTypes, rec.KeyType)
 		return outcome, nil
 	}

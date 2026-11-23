@@ -1,18 +1,23 @@
 # Recovery Binding Machine-Checkable Model
 
 > Status: TLC checked over the full finite state space; the recorded positive
-> run generated 45 distinct reachable states at depth 10 with no
+> run generated 52 distinct reachable states at depth 11 with no
 > counterexamples. The expected-failure negative control
-> (`recovery_binding_negative.cfg`, `BindBeforeValidate = FALSE` and
+> (`recovery_binding_negative.cfg`, `RecoveryBindsSelection = FALSE` and
 > `MaintenanceReadsRoot = FALSE`) violates `RB1_MaintenanceFollowsRoot` after
-> 15 distinct states at depth 5 and must keep producing that exact
-> counterexample.
+> 15 distinct states at depth 5, and the second
+> (`recovery_binding_negative_keep.cfg`, `KeepNeedsBoundSelection = FALSE`)
+> violates `RB4_BindingFollowsRoot` after 10 distinct states at depth 4. Each
+> must keep producing that exact counterexample.
 
 This model picks up where [the store-root commit
 model](FORMAL_TLA_STORE_ROOT_COMMIT_MODEL.md) leaves off. That model says how
 a new generation becomes the authenticated root selection. This one asks
 which generation the runtime then acts on, when the reload that follows a
-root commit fails: the keystore's cached binding, the key cache the signer
+root commit fails: the reload builds the generation the root selects before
+it installs any of it, and then publishes it, publishes recovery's view of
+it, or keeps the view in service (the failure rule,
+`productruntime.Runtime.reloadView`). The model follows the keystore's cached binding, the key cache the signer
 serves from, and the generation that recovery maintenance (deleted-archive
 list and prune) operates on.
 
@@ -54,24 +59,29 @@ The transitions transcribe the post-commit reload and the recovery paths:
   key cache exists to fall behind the root, and nothing can `Serve` or
   `Maintain` until a signer starts. That signer is locked until its first
   unlock, whose reload binds the authenticated root selection before anything
-  can fail (`BindStoreRootSelection`, as `ReloadBind`), so it begins as `Init`
-  does, with the repaired generation, or the old one after a repair that did
+  can fail (`BindStoreRootSelection`), so it begins as `Init` does, with the repaired generation, or the old one after a repair that did
   not commit, as `root`.
-- `ReloadBind` is the reload's first step in
-  `internal/signerapp/templates/reload.go`: `BindStoreRootSelection`
-  authenticates a fresh exact root read and binds what it selects before
-  validation or scanning can fail (`internal/keystore/file.go`, over
-  `genstore.AuthenticateStoreRootSelection`). A root that no longer
-  authenticates clears the binding.
-- `ReloadSucceed` rebuilds the key cache from the root's generation and lifts
-  recovery. `ReloadFail` leaves the cache on the generation it last scanned
-  and, with `RecoveryBeforeRelease`, enters recovery in the same step the
-  lock is released. After a commit that is
+- `Build` is the reload's build, `internal/signerapp/startup/product_build.go`
+  `Build`: it reads the root once and authenticates what it selects
+  (`genstore.AuthenticateStoreRootSelection`), before anything that can
+  fail, and installs nothing. The binding moves only when a view is
+  published. A root that no longer authenticates gives no selection.
+- `ReloadSucceed` publishes the whole view (`publishLocked`): the binding and
+  the key cache follow the root's generation, and a reconcile lifts
+  recovery. `ReloadFail` publishes recovery's view
+  (`installRecoveryViewLocked`): bound to the build's selection, or to
+  nothing (`RecoveryBindsSelection`), with no keys, and with
+  `RecoveryBeforeRelease` it enters recovery in the same step the lock is
+  released. `ReloadKeep` keeps the view in service, which the failure rule
+  allows only while the root still selects the generation the view is bound
+  to (`KeepNeedsBoundSelection`, `rootMoved`): a failure that is not a
+  defect of the selected generation, on a store not in doubt. After a commit
+  the root has moved, so every failure is `ReloadFail`. That is
   `productruntime.Runtime.FollowCommit`, which policy apply, the ASA set,
   restore and rollback call once their `WithKeyring` callback has returned,
-  inside their `WithStoreMutation`; the recovery reconcile's locked work,
-  `reconcileLocked`, enters recovery itself (it once did so only after
-  `ReconcileStore` had released the lock).
+  inside their `WithStoreMutation`; the recovery reconcile,
+  `productruntime.Runtime.Reconcile`, enters recovery itself on any failure
+  (it once did so only after `ReconcileStore` had released the lock).
   A reload with no commit that finds a content defect in the selected
   generation (a failed validation, or two key files that resolve to one
   address) enters recovery itself, in `productruntime.Runtime.Reload`,
@@ -106,15 +116,16 @@ The transitions transcribe the post-commit reload and the recovery paths:
 - `RootDamaged` and `RootRepaired` stand for a `store-root.enc` that stops or
   resumes authenticating.
 
-The three constants are the three guards the code has. Each is
-load-bearing for a different invariant, confirmed by mutation:
+The four constants are the four guards the code has, confirmed by mutation:
 
 | Mutation | Result |
 |---|---|
-| `BindBeforeValidate = FALSE` alone | RB4 fails: a failed reload leaves the binding on the old generation |
+| `RecoveryBindsSelection = FALSE` alone | RB4 fails: a failed reload leaves the binding on the old generation |
+| `KeepNeedsBoundSelection = FALSE` alone | RB2, RB3 and RB4 fail: a failed reload after a commit keeps serving the superseded generation, unlocked |
 | `MaintenanceReadsRoot = FALSE` alone | all hold: with the binding fixed, the cached binding is the root |
 | `RecoveryBeforeRelease = FALSE` alone | RB2 and RB3 fail: a request is served from the stale cache between lock release and recovery entry |
-| both of the first two `FALSE` (negative control) | RB1 fails in five steps: commit, bind (no-op), reload fails, prune acts on the old generation |
+| `RecoveryBindsSelection` and `MaintenanceReadsRoot` `FALSE` (negative control) | RB1 fails in five steps: commit, build, reload fails with the binding left, prune acts on the old generation |
+| `KeepNeedsBoundSelection = FALSE` (negative control) | RB4 fails in four steps: commit, build, the view is kept |
 
 The negative control is the code before commit `b0e51275` and reproduces
 the bug that commit fixed. The harness (`scripts/run-formal-tests.py`)
@@ -133,23 +144,40 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
 - Validation and scan failures are one nondeterministic outcome. Which
   generation content is invalid, and the exact error, are
   `internal/genstore` and `internal/keystore` concerns.
-- `ReloadFail` always enters recovery. A reload with no commit (the
-  watcher's, an in-place write's) enters it only for a content defect in the
-  selected generation; any other failure, an unreadable `keys/` for
-  one, leaves the signer unlocked on the view it had. No commit moved the
-  root, so that view's key cache is the root's generation, and RB2 and RB3
-  hold for both outcomes. The property the entry exists for, that a
-  generation with a content defect is never served, is not checked: the
-  model has no generation content. A recovery entered by a reload with no
-  commit, for content found defective, is a model-extension candidate.
+- Which failures are `ReloadFail` and which `ReloadKeep` is the failure
+  rule's: a store in doubt, a root that moved or does not authenticate, and
+  a content defect fail; anything else keeps. The model lets any failure take
+  either action, under the keep guard, so it checks the root fact, which is
+  what the invariants depend on. A reload with no commit that is not yet
+  built and published (the watcher's, an in-place write's) enters recovery
+  only for a content defect and keeps the view otherwise. No commit moved
+  the root, so its keep meets the guard, except when the root stops
+  authenticating: that reload keeps the view with the binding cleared and
+  its keys served (the `watcher`/`root` row of the reload characterization
+  table), where the model takes `ReloadFail`. No invariant reads a cleared
+  binding (RB4 is about a binding that is present), and no commit moved the
+  root, so RB2 and RB3 hold for it; that path is a model-extension
+  candidate until it follows the failure rule. The property a content defect's
+  entry exists for, that a generation with a content defect is never served,
+  is not checked: the model has no generation content. A recovery entered
+  for content found defective is a model-extension candidate. Recovery's
+  view holds no keys and no source token index; the model keeps
+  `cacheGen` and checks that recovery refuses to serve from it.
+- `ReloadSucceed` lifts recovery, which in the code only a reconcile's
+  publish does: a commit's build that succeeds in recovery (a restore or a
+  rollback begun there) publishes recovery's view and stays in recovery
+  until the reconcile that follows. The model over-approximates by letting
+  any successful reload leave recovery; every invariant it checks still
+  holds, and the code's path is one of the runs the model allows.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches
   neither the old record nor the candidate (`genstore.RootCommitUncertain`).
   `genstore.Mint` classifies these as `Uncertain` itself (`MintOutcomeOf`),
   and a caller treats any mint failure but `NotCommitted` as one it cannot
-  vouch for; `FollowCommit` takes the path of a commit that landed,
-  entering recovery first: the caller cannot tell whether the root moved. Policy apply and the ASA set
+  vouch for; `FollowCommit` enters recovery before its build, since the
+  caller cannot tell whether the root moved, and publishes recovery's view
+  of what the build found after it. Policy apply and the ASA set
   change are refused unless the runtime is unlocked
   (`admin/policy.go::commitAndReload`, `admin/asaset.go::mutateASASet`), so
   only restore and rollback commit from recovery. A refused mutation never
@@ -177,7 +205,7 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   model-extension candidate.
   Its reload replaces recovery's keyring with one opened from the same store
   root. One that then fails keeps that keyring and the binding it made
-  (`ReloadBind`), so recovery maintenance and the reconcile still run; it
+  (`BindStoreRootSelection`), so recovery maintenance and the reconcile still run; it
   once closed the keyring, and with it the binding, leaving recovery unable
   to act until a later unlock.
 - The normal configuration already exhausts the model's full finite state
@@ -197,10 +225,13 @@ java -jar tla2tools.jar -config docs/formal/recovery_binding.cfg \
   docs/formal/recovery_binding.tla
 java -jar tla2tools.jar -config docs/formal/recovery_binding_negative.cfg \
   docs/formal/recovery_binding.tla
+java -jar tla2tools.jar -config docs/formal/recovery_binding_negative_keep.cfg \
+  docs/formal/recovery_binding.tla
 ```
 
-The negative run is expected to fail with an `RB1_MaintenanceFollowsRoot`
-counterexample; the make harness asserts that expectation.
+The negative runs are expected to fail with an `RB1_MaintenanceFollowsRoot`
+and an `RB4_BindingFollowsRoot` counterexample; the make harness asserts
+those expectations.
 
 ## Linking back
 

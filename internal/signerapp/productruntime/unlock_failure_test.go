@@ -41,7 +41,7 @@ func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 		},
 		"unlock from recovery": func(p []byte) error {
 			ir.SetUnlocked()
-			ir.SetRecovery()
+			ir.EnterRecovery(nil)
 			_, err := ir.Unlock(p, reconcile, nil)
 			return err
 		},

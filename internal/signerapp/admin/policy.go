@@ -60,7 +60,7 @@ func (s Service) GetPolicyContext() adminproto.PolicyContextView {
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	current, set := s.Runtime.PolicyState()
 	if current == nil {
-		return adminproto.CheckPolicyResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer"}
+		return adminproto.CheckPolicyResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	env := s.policyEnv(nil)
 	env.ASASet = set
