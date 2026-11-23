@@ -10,6 +10,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -822,6 +823,86 @@ func TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough(t *testi
 	}, group, uncosigned); err != nil {
 		t.Fatalf("assembleDecoded(held account without a cosigner) error = %v", err)
 	}
+}
+
+// rejectLocalCosignedPassthrough treats only ErrKeyNotFound as a foreign
+// passthrough; ErrStoreLocked reports locked (not HTTP 500) and any other
+// lookup error fails closed as internal.
+func TestAssembleDecodedPassthroughKeyLookupErrors(t *testing.T) {
+	sender := types.Address{34}.String()
+	auth := types.Address{35}.String()
+	var authAddress types.Address
+	copy(authAddress[:], mustDecodeAddress(t, auth))
+	txn := paymentTransaction(t, sender, types.Address{36}.String(), 8)
+	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, AuthAddr: authAddress, Sig: types.Signature{0x01}}))
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	req := signerapi.AssemblyRequest{
+		GroupBytesHex: groupBytesHex,
+		Passthrough:   []signerapi.AssemblyPassthroughItem{{TargetIndex: 0, SignedTxnHex: signed}},
+	}
+
+	t.Run("not found continues as foreign passthrough", func(t *testing.T) {
+		session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
+		result, err := assembleDecoded(context.Background(), req, group, session)
+		if err != nil || result == nil {
+			t.Fatalf("assembleDecoded(not found) = %#v, %#v; want foreign passthrough accepted", result, err)
+		}
+		if session.calls != 2 {
+			t.Fatalf("GetKeyWithContext calls = %d, want 2 (sender and auth_addr)", session.calls)
+		}
+	})
+
+	t.Run("store locked returns locked error", func(t *testing.T) {
+		session := &componentKeyTestSession{err: fmt.Errorf("mid-request lock: %w", keystore.ErrStoreLocked)}
+		result, err := assembleDecoded(context.Background(), req, group, session)
+		if result != nil || err == nil || err.Kind != ErrorLocked || err.Message != lockedMessage {
+			t.Fatalf("assembleDecoded(locked) = %#v, %#v; want locked error", result, err)
+		}
+	})
+
+	t.Run("store locked on auth_addr candidate returns locked error", func(t *testing.T) {
+		session := &sequenceComponentKeyTestSession{
+			results: []componentKeyLookupResult{
+				{err: keystore.ErrKeyNotFound},
+				{err: keystore.ErrStoreLocked},
+			},
+		}
+		result, err := assembleDecoded(context.Background(), req, group, session)
+		if result != nil || err == nil || err.Kind != ErrorLocked || err.Message != lockedMessage {
+			t.Fatalf("assembleDecoded(locked on auth_addr) = %#v, %#v; want locked error", result, err)
+		}
+	})
+
+	t.Run("other lookup error fails closed as internal", func(t *testing.T) {
+		session := &componentKeyTestSession{err: errors.New("corrupt key file")}
+		result, err := assembleDecoded(context.Background(), req, group, session)
+		if result != nil || err == nil || err.Kind != ErrorInternal || !strings.Contains(err.Message, "corrupt key file") {
+			t.Fatalf("assembleDecoded(other error) = %#v, %#v; want internal error", result, err)
+		}
+	})
+}
+
+type componentKeyLookupResult struct {
+	km  *coresigning.KeyMaterial
+	err error
+}
+
+type sequenceComponentKeyTestSession struct {
+	results []componentKeyLookupResult
+	calls   int
+}
+
+func (s *sequenceComponentKeyTestSession) GetKeyWithContext(_ context.Context, _ string) (*coresigning.KeyMaterial, error) {
+	if s.calls >= len(s.results) {
+		return nil, keystore.ErrKeyNotFound
+	}
+	res := s.results[s.calls]
+	s.calls++
+	return res.km, res.err
 }
 
 func mustDecodeAddress(t *testing.T, address string) []byte {

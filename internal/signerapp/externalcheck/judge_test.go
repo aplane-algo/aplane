@@ -111,6 +111,42 @@ func TestJudgeMissingFactAndLongValues(t *testing.T) {
 	}
 }
 
+func TestQuoteBareUTF8BoundaryAndSupplementaryRunes(t *testing.T) {
+	// Plain ASCII within the limit stays unchanged, and quotes/backslashes stay escaped.
+	if got := quoteBare(`hello "world" \ok`); got != `hello \"world\" \\ok` {
+		t.Fatalf("quoteBare(ascii+escapes) = %q", got)
+	}
+
+	// Exactly maxQuotedValue runes (63 ASCII + 1 two-byte UTF-8 rune = 65 bytes)
+	// must neither truncate nor split the final multi-byte character into \ufffd.
+	exact := strings.Repeat("a", maxQuotedValue-1) + "é"
+	wantExact := strings.Repeat("a", maxQuotedValue-1) + `\u00e9`
+	if got := quoteBare(exact); got != wantExact {
+		t.Fatalf("quoteBare(exact %d runes) = %q, want %q", maxQuotedValue, got, wantExact)
+	}
+
+	// Exceeding maxQuotedValue with a multi-byte rune straddling byte 64 must
+	// cut cleanly on a rune boundary with no replacement character.
+	over := strings.Repeat("a", maxQuotedValue-1) + "é" + "z"
+	wantOver := strings.Repeat("a", maxQuotedValue-1) + `\u00e9...`
+	if got := quoteBare(over); got != wantOver || strings.Contains(got, `\ufffd`) {
+		t.Fatalf("quoteBare(over rune boundary) = %q, want %q", got, wantOver)
+	}
+
+	// Multi-byte strings made entirely of non-ASCII runes count characters, not bytes.
+	multi := strings.Repeat("é", maxQuotedValue+2)
+	wantMulti := strings.Repeat(`\u00e9`, maxQuotedValue) + "..."
+	if got := quoteBare(multi); got != wantMulti {
+		t.Fatalf("quoteBare(multi-byte) = %q, want %q", got, wantMulti)
+	}
+
+	// Supplementary runes (> U+FFFF) encode as a 4-hex-digit UTF-16 surrogate
+	// pair so following hex digits remain unambiguous.
+	if got := quoteBare("😀0"); got != `\ud83d\ude000` {
+		t.Fatalf("quoteBare(supplementary+hex) = %q, want %q", got, `\ud83d\ude000`)
+	}
+}
+
 func TestJudgeEchoIsPerCheck(t *testing.T) {
 	cfg := compileChecks(t, `{"s": {"base_url": "https://s.example"}}`, `[
 	  {"id": "echoing", "source": "s", "scope": "request", "networks": ["*"], "path": "/x",

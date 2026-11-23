@@ -124,10 +124,14 @@ func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, t
 			// closed: treating it as "not held" would let a cosigned account slip
 			// through as passthrough during exactly the conditions this check
 			// guards against.
-			if errors.Is(err, keystore.ErrKeyNotFound) {
+			switch {
+			case errors.Is(err, keystore.ErrKeyNotFound):
 				continue
+			case errors.Is(err, keystore.ErrStoreLocked):
+				return lockedError()
+			default:
+				return internal(fmt.Sprintf("passthrough index %d: failed to resolve key for %s: %v", targetIndex, addr.String(), err))
 			}
-			return internal(fmt.Sprintf("passthrough index %d: failed to resolve key for %s: %v", targetIndex, addr.String(), err))
 		}
 		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough

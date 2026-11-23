@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/strictjson"
@@ -195,16 +196,22 @@ func quote(s string) string {
 }
 
 func quoteBare(s string) string {
-	cut := false
-	if len(s) > maxQuotedValue {
-		s, cut = s[:maxQuotedValue], true
-	}
 	var b strings.Builder
+	count := 0
+	cut := false
 	for _, r := range s {
+		if count >= maxQuotedValue {
+			cut = true
+			break
+		}
+		count++
 		switch {
 		case r == '"' || r == '\\':
 			b.WriteByte('\\')
 			b.WriteRune(r)
+		case r > 0xffff:
+			r1, r2 := utf16.EncodeRune(r)
+			fmt.Fprintf(&b, "\\u%04x\\u%04x", r1, r2)
 		case r < 0x20 || r >= 0x7f:
 			fmt.Fprintf(&b, "\\u%04x", r)
 		default:
