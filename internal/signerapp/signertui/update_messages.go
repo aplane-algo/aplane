@@ -224,8 +224,7 @@ func (m Model) handleGenerateResultMsg(msg GenerateResultMsg) (tea.Model, tea.Cm
 }
 
 // isRecoveryBlockedReply reports a reply to this session's generate, delete or
-// import, or to a KeyType Library action, whose reload found a content defect
-// and entered recovery. The signer pushes its new state while that reload
+// import, or to a KeyType Library action, whose reload entered recovery. The signer pushes its new state while that reload
 // runs, so the recovery screen is usually open when the reply arrives, which
 // would make it a late failure and drop it, cause and all.
 func (m Model) isRecoveryBlockedReply(id, code string) bool {

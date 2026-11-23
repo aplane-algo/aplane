@@ -1377,11 +1377,12 @@ checked before locked/headless/test startup mode selection.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configuration details.
 
-Both locked and headless paths converge through
-`productruntime.Runtime.reloadLocked`, entered through `Runtime.Reload` or
-`ReloadWithPassphrase`. Production wiring from
-`startup.WireReloadFunc` delegates the work to
-`templates.ReloadService.Reload`, which:
+A reload with the keyring in service, `Runtime.Reload`, builds and then
+publishes (`productruntime/view.go`, with `startup.Build`). Both locked and
+headless unlocks, and a passphrase change, still reload through
+`productruntime.Runtime.reloadLocked`, entered through
+`ReloadWithPassphrase`. Production wiring from `startup.WireReloadFunc`
+delegates that work to `templates.ReloadService.Reload`, which:
 
 1. opens or reuses the keyring,
 2. verifies the identity's node role and loads its authenticated policy,

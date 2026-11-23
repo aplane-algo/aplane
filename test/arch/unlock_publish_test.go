@@ -55,6 +55,8 @@ func TestNoProductionCodePublishesUnlockedWithoutTheFence(t *testing.T) {
 // before it builds and installs the view after), the test seams'
 // forwarding, and the lock runtime's EnterRecovery from an unlock's entry.
 func TestNoProductionCodeEntersRecoveryOutsideTheFailureRule(t *testing.T) {
+	// The functions that may reach the lock runtime's SetRecovery and
+	// EnterRecovery, each through ir.lockRuntime.
 	allowed := map[string]map[string]map[string]bool{
 		"SetRecovery": {
 			"internal/signerapp/productruntime/view.go":    {"enterRecoveryViewLocked": true, "reloadViewLocked": true},
@@ -70,18 +72,22 @@ func TestNoProductionCodeEntersRecoveryOutsideTheFailureRule(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
+			// Every reference counts, a method value as much as a call.
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				selector, ok := call.Fun.(*ast.SelectorExpr)
+				selector, ok := node.(*ast.SelectorExpr)
 				if !ok {
 					return true
 				}
 				byFile, watched := allowed[selector.Sel.Name]
-				if watched && !byFile[rel][fn.Name.Name] {
-					t.Errorf("%s: %s calls %s; an entry into recovery outside an unlock comes from a reload's failure rule", rel, fn.Name.Name, selector.Sel.Name)
+				if !watched {
+					return true
+				}
+				onLockRuntime := false
+				if inner, ok := selector.X.(*ast.SelectorExpr); ok && inner.Sel.Name == "lockRuntime" {
+					onLockRuntime = true
+				}
+				if !onLockRuntime || !byFile[rel][fn.Name.Name] {
+					t.Errorf("%s: %s refers to %s; an entry into recovery outside an unlock comes from a reload's failure rule", rel, fn.Name.Name, selector.Sel.Name)
 				}
 				return true
 			})

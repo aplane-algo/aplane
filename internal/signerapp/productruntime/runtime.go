@@ -209,8 +209,8 @@ type Runtime struct {
 
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
-	// onReloadRecovery is called with the defect after Reload entered
-	// recovery for one (SetReloadRecoveryHook). Guarded by watcherMu.
+	// onReloadRecovery is called with the cause after a reload entered
+	// recovery (SetReloadRecoveryHook). Guarded by watcherMu.
 	onReloadRecovery func(cause error)
 }
 
@@ -336,8 +336,8 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 	ir.watcherMu.Unlock()
 }
 
-// SetReloadRecoveryHook sets the function Reload calls once it has entered
-// recovery for a content defect, with the defect. Nothing else tells anyone:
+// SetReloadRecoveryHook sets the function a reload calls once its failure
+// rule has entered recovery, with the cause. Nothing else tells anyone:
 // the reload ran for a watcher event or as one step of an admin change, with
 // no request that reports the state. The process root logs the entry and
 // pushes the state to the admin session.

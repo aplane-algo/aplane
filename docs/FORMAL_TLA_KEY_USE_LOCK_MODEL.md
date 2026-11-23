@@ -140,10 +140,10 @@ waits for it; KU2 and KU3 cover that case.
   (`productruntime.Runtime.FollowCommit`, for policy apply, the ASA set,
   restore and rollback, and the restore's checkpoint failures;
   `productruntime.Runtime.Reconcile`; and `productruntime.Runtime.Reload`,
-  which enters recovery (`EnterRecovery`) when a reload without the
-  passphrase finds a content defect in the selected generation, a failed
-  validation or an address collision, under the lock its callers hold: the
-  watcher's `reloadFromWatcher`, and key and template administration), so
+  which enters recovery by the same failure rule, for a content defect in
+  the selected generation, a root that moved or no longer authenticates, or
+  a role conflict, under the lock its callers hold: the watcher's
+  `reloadFromWatcher`, and key and template administration), so
   neither action lands inside an unlock attempt, which holds that lock
   throughout. Recovery keeps the keyring and nothing drains; its view drops
   the key maps, the key cache and the source token index, which nothing

@@ -479,3 +479,34 @@ func TestAWatcherReloadThatFindsTheRootMovedEntersRecoveryBoundToIt(t *testing.T
 		t.Fatalf("state %v bound to %v (%v), want recovery bound to %s", ir.GetState(), active.GenerationID(), err, moved.GenerationID())
 	}
 }
+
+// A lock that lands while a reload's build runs, a build that then finds a
+// content defect, leaves the signer locked: the entry into recovery is
+// refused, recovery's view is not installed, the hook is not told, and the
+// error carries no ErrEnteredRecovery, so a caller answers as for a failed
+// refresh, not recovery_blocked.
+func TestALockDuringAFailingBuildEntersNoRecovery(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	told := false
+	ir.SetReloadRecoveryHook(func(error) { told = true })
+	var lockDone sync.WaitGroup
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		lockDone.Add(1)
+		go func() {
+			defer lockDone.Done()
+			ir.Lock()
+		}()
+		for ir.GetState() != signerruntime.SignerStateLocked {
+			time.Sleep(time.Millisecond)
+		}
+		return &Loaded{Selection: &bound}, fmt.Errorf("%w: injected", signertemplates.ErrGenerationValidation)
+	}, ReloadEffects{})
+	_, err := ir.Reload()
+	lockDone.Wait()
+	if !errors.Is(err, signertemplates.ErrGenerationValidation) || errors.Is(err, ErrEnteredRecovery) {
+		t.Fatalf("Reload() = %v, want the defect without ErrEnteredRecovery", err)
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked || told {
+		t.Fatalf("state %v, hook told %v; want the lock standing and the hook not told", ir.GetState(), told)
+	}
+}

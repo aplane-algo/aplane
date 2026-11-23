@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -116,8 +118,10 @@ func TestADeactivationWhoseReloadFailsLeavesTheTypeUnusable(t *testing.T) {
 	if lsigprovider.Get(keyType) != nil {
 		t.Fatal("the deactivated template's provider is still registered")
 	}
+	// The reload works again, so only the deactivation refuses the key.
+	signerstartup.WireReloadFunc(server.productRuntime(), testProductBuildOptions(server), server.productBuildHooks())
 	generated := server.adminServices().keyApp().GenerateKey(context.Background(), adminproto.GenerateKeyRequest{KeyType: keyType})
-	if generated.Success {
-		t.Fatalf("GenerateKey(%s) = %+v after the deactivation, want it refused", keyType, generated)
+	if generated.Success || !strings.Contains(generated.Error, "is not enabled on this node") {
+		t.Fatalf("GenerateKey(%s) = %+v after the deactivation, want it refused as not enabled", keyType, generated)
 	}
 }
