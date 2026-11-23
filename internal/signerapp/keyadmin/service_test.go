@@ -733,22 +733,14 @@ func TestServiceImportKeyLockedReturnsLockedError(t *testing.T) {
 
 const serviceGenericKeyType = "test.generic-service-test.v1"
 
+// registerServiceGenericTemplate registers the provider the installed
+// template (serviceGenericTemplateYAML) loads as, valid_rekey_target
+// declaration included, which key creation needs.
 func registerServiceGenericTemplate(t *testing.T) {
 	t.Helper()
-	spec := &generictemplate.TemplateSpec{
-		BaseTemplateSpec: templatestore.BaseTemplateSpec{
-			Publisher:   "test",
-			Family:      "generic-service-test",
-			Version:     1,
-			DisplayName: "Generic Service Test",
-		},
-		Parameters: []generictemplate.ParameterSpec{{
-			Name:     "owner",
-			Type:     "address",
-			Required: true,
-		}},
-		TemplateMode: "generated",
-		TEAL:         "#pragma version 8\nint 1\nreturn",
+	spec, err := generictemplate.ParseTemplateSpec(serviceGenericTemplateYAML())
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec(service generic template) error = %v", err)
 	}
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec(service generic template) error = %v", err)
