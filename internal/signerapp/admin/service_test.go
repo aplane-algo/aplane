@@ -88,6 +88,38 @@ func (builtinNetworksChain) ReadAsset(context.Context, []byte, uint64) (models.A
 	return models.AssetParams{}, errors.New("no assets")
 }
 
+type settingAuditRecord struct {
+	kind, opID, key, oldValue, newValue string
+}
+
+type fakeSettingAudit struct {
+	mu        sync.Mutex
+	records   []settingAuditRecord
+	intentErr error
+}
+
+func (a *fakeSettingAudit) LogSettingChangeIntentDurable(_ context.Context, opID, key, oldValue, newValue string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.intentErr != nil {
+		return a.intentErr
+	}
+	a.records = append(a.records, settingAuditRecord{kind: "intent", opID: opID, key: key, oldValue: oldValue, newValue: newValue})
+	return nil
+}
+
+func (a *fakeSettingAudit) LogSettingChanged(_ context.Context, opID, key, oldValue, newValue string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.records = append(a.records, settingAuditRecord{kind: "changed", opID: opID, key: key, oldValue: oldValue, newValue: newValue})
+}
+
+func (a *fakeSettingAudit) snapshot() []settingAuditRecord {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]settingAuditRecord(nil), a.records...)
+}
+
 func setupAdminService(t *testing.T) (Service, *productruntime.Runtime, *fakeDeps) {
 	return setupAdminServiceWithRole(t, noderole.RoleSigner)
 }
@@ -113,7 +145,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		KeyPaths: keyPaths,
 		NodeRole: role,
 	})
-	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}}, ir, deps
+	return Service{Deps: deps, Runtime: ir, ASAChain: builtinNetworksChain{}, Audit: &fakeSettingAudit{}}, ir, deps
 }
 
 func TestServiceReportsTheRuntimeUnlockMethod(t *testing.T) {
@@ -207,7 +239,7 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	} {
 		t.Run(req.Key, func(t *testing.T) {
 			svc, _, deps := setupAdminService(t)
-			if err := svc.UpdateAdminSetting(req); err != nil {
+			if err := svc.UpdateAdminSetting(context.Background(), req); err != nil {
 				t.Fatalf("UpdateAdminSetting(%s) error = %v", req.Key, err)
 			}
 			if deps.identityMutationCalls != 1 {
@@ -229,7 +261,7 @@ func TestUpdateAdminSettingRefusesKeysThatAreNotWritable(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: key, Value: "0.0.0.0"})
+			err = svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: key, Value: "0.0.0.0"})
 			if want := "unknown or read-only setting: " + key; err == nil || err.Error() != want {
 				t.Fatalf("UpdateAdminSetting(%s) error = %v, want %q", key, err, want)
 			}
@@ -279,7 +311,7 @@ func TestGenerationRequirementSettingsTakeEffectAndPersist(t *testing.T) {
 		{adminproto.AdminSettingRequireContained, true, false},
 		{adminproto.AdminSettingRequireCosigner, true, true},
 	} {
-		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: test.key, Value: "true"}); err != nil {
+		if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: test.key, Value: "true"}); err != nil {
 			t.Fatalf("UpdateAdminSetting(%s) error = %v", test.key, err)
 		}
 		admin, cosigner := ir.Config().GenerationRequirements()
@@ -313,14 +345,14 @@ func TestGenerationRequirementCannotBeSaved(t *testing.T) {
 	if err := os.MkdirAll(productruntime.ConfigPath(deps.dataDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireContained, Value: "true"})
+	err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireContained, Value: "true"})
 	if protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved {
 		t.Fatalf("turning a requirement on: error = %v, want %s", err, protocol.ResultCodeAppliedNotSaved)
 	}
 	if contained, _ := ir.Config().GenerationRequirements(); !contained {
 		t.Fatal("a requirement turned on is not in effect after its save failed")
 	}
-	err = svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireCosigner, Value: "false"})
+	err = svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingRequireCosigner, Value: "false"})
 	if err == nil || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved {
 		t.Fatalf("turning a requirement off: error = %v, want a plain save failure", err)
 	}
@@ -357,7 +389,7 @@ func TestUpdateAdminSettingRefusesNonCanonicalBooleans(t *testing.T) {
 				svc, _, deps := setupAdminService(t)
 				// Every setting on, so a value read as false would show.
 				for _, k := range boolSettingKeys {
-					if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: k, Value: "true"}); err != nil {
+					if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: k, Value: "true"}); err != nil {
 						t.Fatalf("UpdateAdminSetting(%s=true) error = %v", k, err)
 					}
 				}
@@ -367,7 +399,7 @@ func TestUpdateAdminSettingRefusesNonCanonicalBooleans(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				err = svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: key, Value: value})
+				err = svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: key, Value: value})
 				if err == nil || protocol.CodeForError(err) != protocol.ErrCodeInvalidRequest {
 					t.Fatalf("UpdateAdminSetting(%s=%q) error = %v, want an invalid_request refusal", key, value, err)
 				}
@@ -497,7 +529,7 @@ func storedSetting(t *testing.T, dataDir, key string) string {
 func startSettingChange(t *testing.T, c settingChange) (Service, *productruntime.Runtime, *fakeDeps) {
 	t.Helper()
 	svc, ir, deps := setupAdminService(t)
-	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
+	if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
 		t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", c.key, c.from, err)
 	}
 	requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "start state")
@@ -520,7 +552,7 @@ func TestSettingDirectionDecidesWhenAChangeTakesEffect(t *testing.T) {
 		t.Run(c.name(), func(t *testing.T) {
 			svc, ir, deps := startSettingChange(t, c)
 			held := fsutiltest.Hold(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
-				return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+				return svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			})
 			during := c.from
 			if c.restrictive {
@@ -549,7 +581,7 @@ func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 				svc, ir, deps := startSettingChange(t, c)
 				failDurableWriteAt(t, op, settingTarget(deps.dataDir, c.key))
 
-				err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+				err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 				fsutil.TestHook = nil
 				var saveErr *adminproto.SettingSaveError
 				if !errors.As(err, &saveErr) || saveErr.Key != c.key || saveErr.InEffect != c.restrictive {
@@ -567,7 +599,7 @@ func TestUpdateAdminSettingFailureBeforeRename(t *testing.T) {
 					}
 					requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the failed save")
 				}
-				if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
+				if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
 					t.Fatalf("next UpdateAdminSetting error = %v", err)
 				}
 				requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the next save")
@@ -590,7 +622,7 @@ func TestUnchangedValueWhoseSaveFailsReportsNothingInEffect(t *testing.T) {
 			svc, ir, deps := startSettingChange(t, same)
 			failDurableWriteAt(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key))
 
-			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			fsutil.TestHook = nil
 			if err == nil || protocol.CodeForError(err) == protocol.ResultCodeAppliedNotSaved || !strings.Contains(err.Error(), "unchanged") {
 				t.Fatalf("UpdateAdminSetting error = %v (code %q), want the plain unchanged failure", err, protocol.CodeForError(err))
@@ -611,7 +643,7 @@ func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T
 			svc, ir, deps := startSettingChange(t, c)
 			failDurableWriteAt(t, fsutil.OpDirSync, filepath.Dir(settingTarget(deps.dataDir, c.key)))
 
-			err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+			err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			fsutil.TestHook = nil
 			if err != nil {
 				t.Fatalf("UpdateAdminSetting error = %v, want success", err)
@@ -621,7 +653,7 @@ func TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning(t *testing.T
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after the unsynced save")
 			// The next change goes through as usual.
-			if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
+			if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.from}); err != nil {
 				t.Fatalf("next UpdateAdminSetting error = %v", err)
 			}
 			requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after the next save")
@@ -653,7 +685,7 @@ func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
 				svc, ir, deps := startSettingChange(t, c)
 				target := settingTarget(deps.dataDir, c.key)
 				update := func(v string) error {
-					return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: v})
+					return svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: v})
 				}
 				failDurableWriteAt(t, fsutil.OpRename, target)
 				if err := update(c.to); protocol.CodeForError(err) != protocol.ResultCodeAppliedNotSaved {
@@ -705,7 +737,7 @@ func TestUnsavedSettingIsReportedUntilASaveSucceeds(t *testing.T) {
 // differed from the startup configuration.
 func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 	svc, ir, deps := setupAdminService(t)
-	if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "false"}); err != nil {
+	if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: adminproto.AdminSettingUserAutoApprove, Value: "false"}); err != nil {
 		t.Fatal(err)
 	}
 	identityPath := productruntime.ConfigPath(deps.dataDir)
@@ -719,7 +751,7 @@ func TestSettingSaveKeepsAHandEditToAnotherKey(t *testing.T) {
 		{Key: adminproto.AdminSettingUserAutoApprove, Value: "true"},
 		{Key: adminproto.AdminSettingTheme, Value: "dark"},
 	} {
-		if err := svc.UpdateAdminSetting(req); err != nil {
+		if err := svc.UpdateAdminSetting(context.Background(), req); err != nil {
 			t.Fatalf("UpdateAdminSetting(%s=%s) after a hand edit: %v", req.Key, req.Value, err)
 		}
 	}
@@ -748,7 +780,7 @@ func TestSettingChangesLeaveRootConfigUntouched(t *testing.T) {
 	}
 
 	for _, c := range settingChanges() {
-		if err := svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
+		if err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to}); err != nil {
 			t.Fatalf("UpdateAdminSetting(%s=%s) error = %v", c.key, c.to, err)
 		}
 	}
@@ -773,7 +805,7 @@ func TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld(t *testing.T) {
 		t.Run(c.name(), func(t *testing.T) {
 			svc, _, deps := startSettingChange(t, c)
 			held := fsutiltest.Hold(t, fsutil.OpRename, settingTarget(deps.dataDir, c.key), func() error {
-				return svc.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
+				return svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{Key: c.key, Value: c.to})
 			})
 			if got := unsavedSettings(svc); slices.Contains(got, c.key) != c.restrictive {
 				t.Fatalf("unsaved during the held save = %v, want %s listed only for a restrictive change (%v)", got, c.key, c.restrictive)
@@ -785,5 +817,101 @@ func TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld(t *testing.T) {
 				t.Fatalf("unsaved after the save = %v, want none", got)
 			}
 		})
+	}
+}
+
+// Non-restrictive setting updates (loosening a boolean setting, changing
+// passphrase_timeout or theme, or re-saving an already-saved value) wait for
+// a durable SETTING_CHANGE_INTENT before saving or publishing. Missing audit
+// refuses with audit_unavailable, and a write failure refuses with
+// audit_write_failed, leaving both memory and disk untouched.
+func TestNonRestrictiveSettingRequiresDurableAuditBeforeSave(t *testing.T) {
+	for _, c := range settingChanges() {
+		if c.restrictive {
+			continue
+		}
+		for _, mode := range []string{"unavailable", "write_failed", "durable"} {
+			t.Run(c.name()+"/"+mode, func(t *testing.T) {
+				svc, ir, deps := startSettingChange(t, c)
+				switch mode {
+				case "unavailable":
+					svc.Audit = nil
+				case "write_failed":
+					svc.Audit = &fakeSettingAudit{intentErr: errors.New("audit disk full")}
+				case "durable":
+					svc.Audit = &fakeSettingAudit{}
+				}
+				err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
+					OperationID: "op-1", Key: c.key, Value: c.to,
+				})
+				switch mode {
+				case "unavailable":
+					if code := protocol.CodeForError(err); code != protocol.ResultCodeAuditUnavailable {
+						t.Fatalf("error = %v (code %q), want %s", err, code, protocol.ResultCodeAuditUnavailable)
+					}
+					requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after audit unavailable refusal")
+				case "write_failed":
+					if code := protocol.CodeForError(err); code != protocol.ResultCodeAuditWriteFailed {
+						t.Fatalf("error = %v (code %q), want %s", err, code, protocol.ResultCodeAuditWriteFailed)
+					}
+					requireSetting(t, svc, ir, deps, c.key, c.from, c.from, "after audit write failure")
+				case "durable":
+					if err != nil {
+						t.Fatalf("UpdateAdminSetting error = %v", err)
+					}
+					requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after durable audit and save")
+					records := svc.Audit.(*fakeSettingAudit).snapshot()
+					if len(records) != 2 || records[0].kind != "intent" || records[1].kind != "changed" {
+						t.Fatalf("audit records = %+v, want [intent, changed]", records)
+					}
+					for _, rec := range records {
+						if rec.opID != "op-1" || rec.key != c.key {
+							t.Fatalf("audit record = %+v, want op-1 and key %s", rec, c.key)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// Restrictive setting updates (turning user_auto_approve off, or enabling
+// require_contained, require_cosigner or lock_on_disconnect) apply and save
+// even when the audit log is unavailable or failing, so an audit failure
+// never blocks locking down. When the audit log is present, the saved change
+// emits SETTING_CHANGED without blocking on SETTING_CHANGE_INTENT.
+func TestRestrictiveSettingAppliesEvenWhenAuditUnavailableOrFailing(t *testing.T) {
+	for _, c := range settingChanges() {
+		if !c.restrictive {
+			continue
+		}
+		for _, mode := range []string{"unavailable", "write_failed", "healthy"} {
+			t.Run(c.name()+"/"+mode, func(t *testing.T) {
+				svc, ir, deps := startSettingChange(t, c)
+				switch mode {
+				case "unavailable":
+					svc.Audit = nil
+				case "write_failed":
+					svc.Audit = &fakeSettingAudit{intentErr: errors.New("audit disk full")}
+				case "healthy":
+					svc.Audit = &fakeSettingAudit{}
+				}
+				err := svc.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
+					OperationID: "op-lockdown", Key: c.key, Value: c.to,
+				})
+				if err != nil {
+					t.Fatalf("restrictive change under audit %s failed: %v", mode, err)
+				}
+				requireSetting(t, svc, ir, deps, c.key, c.to, c.to, "after restrictive change")
+				if mode == "healthy" {
+					records := svc.Audit.(*fakeSettingAudit).snapshot()
+					if len(records) != 1 || records[0].kind != "changed" ||
+						records[0].opID != "op-lockdown" || records[0].key != c.key ||
+						records[0].oldValue != c.from || records[0].newValue != c.to {
+						t.Fatalf("audit records = %+v, want one changed record %s %s->%s", records, c.key, c.from, c.to)
+					}
+				}
+			})
+		}
 	}
 }

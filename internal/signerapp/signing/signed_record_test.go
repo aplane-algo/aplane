@@ -8,10 +8,12 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -36,7 +38,7 @@ func TestSignedRecordDescribesTheTransactionsAsSigned(t *testing.T) {
 	}
 
 	audit := &testAuditLogger{}
-	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), "")
+	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), approvalOutcome{ApprovalSource: ApprovalSourceHuman})
 	if len(audit.approved) != 1 {
 		t.Fatalf("approvals = %d, want one for the account; dummies are recorded in its group", len(audit.approved))
 	}
@@ -67,8 +69,11 @@ func TestSignedRecordDescribesTheTransactionsAsSigned(t *testing.T) {
 // A transaction signed alone records no group.
 func TestSignedRecordOfAnUngroupedTransaction(t *testing.T) {
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1_000}}
-	got := signedGroupOf([]types.Transaction{txn}, 0).record(0, "A", "txn 1/1 signed", "rule")
-	if got.TxID != algocrypto.GetTxID(txn) || got.Fee != 1_000 || got.PolicyRuleID != "rule" {
+	got := signedGroupOf([]types.Transaction{txn}, 0).record(0, "A", "txn 1/1 signed", approvalOutcome{
+		PolicyRuleID:   "rule",
+		ApprovalSource: ApprovalSourceHuman,
+	})
+	if got.TxID != algocrypto.GetTxID(txn) || got.Fee != 1_000 || got.PolicyRuleID != "rule" || got.ApprovalSource != ApprovalSourceHuman {
 		t.Fatalf("record = %+v", got)
 	}
 	if got.GroupID != "" || got.GroupTxIDs != nil || got.DummyCount != 0 {
@@ -76,7 +81,7 @@ func TestSignedRecordOfAnUngroupedTransaction(t *testing.T) {
 	}
 }
 
-// A refused request records the refusal and nothing as signed.
+// A refused request records the refusal, its policy rule ID, and nothing as signed.
 func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 	audit := &testAuditLogger{}
 	service := &Service{
@@ -102,8 +107,9 @@ func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 	if result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); result != nil || err == nil {
 		t.Fatalf("result %v, error %v; want a refusal", result, err)
 	}
-	if len(audit.rejected) != 1 || !strings.HasPrefix(audit.rejected[0].reason, auditPolicyRejected) {
-		t.Fatalf("rejections = %+v, want one policy rejection", audit.rejected)
+	if len(audit.rejected) != 1 || !strings.HasPrefix(audit.rejected[0].reason, auditPolicyRejected) ||
+		audit.rejected[0].policyRule != policy.RejectForeignRekeyRuleID {
+		t.Fatalf("rejections = %+v, want one policy rejection with rule %q", audit.rejected, policy.RejectForeignRekeyRuleID)
 	}
 	if len(audit.approved) != 0 {
 		t.Fatalf("a refused request was recorded as signed: %+v", audit.approved)
@@ -119,7 +125,7 @@ func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := decodedSignedGroup(group, 0).record(1, "A", "signed", "")
+	got := decodedSignedGroup(group, 0).record(1, "A", "signed", approvalOutcome{})
 	if got.TxID != algocrypto.GetTxID(txns[1]) || got.TxnSender != txns[1].Sender.String() || got.Fee != uint64(txns[1].Fee) {
 		t.Fatalf("record = %+v, want transaction 2 as decoded", got)
 	}
@@ -133,8 +139,130 @@ func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
 	// The group ID is the one the decode validated, not read off a
 	// transaction.
 	group.GroupID = types.Digest{9}
-	if got := decodedSignedGroup(group, 0).record(0, "A", "signed", ""); got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) {
+	if got := decodedSignedGroup(group, 0).record(0, "A", "signed", approvalOutcome{}); got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) {
 		t.Fatalf("group_id = %q, want the group's own ID", got.GroupID)
+	}
+}
+
+// Approval gates distinguish human approvals, User Auto-Approve, and policy
+// Always Approve (with its rule ID) across both Operator Default and Always
+// Review outcomes.
+func TestApprovalGatesDistinguishHumanUserAutoApproveAndAlwaysApprove(t *testing.T) {
+	sender := types.Address{1}
+	receiver := types.Address{2}
+	selfPay := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, Fee: 1_000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: sender},
+	}
+	otherPay := types.Transaction{
+		Type:             types.PaymentTx,
+		Header:           types.Header{Sender: sender, Fee: 1_000},
+		PaymentTxnFields: types.PaymentTxnFields{Receiver: receiver, Amount: 1_000},
+	}
+	tests := []struct {
+		name            string
+		txn             types.Transaction
+		policyJSON      string
+		userAutoApprove bool
+		wantSource      string
+		wantRuleID      string
+		wantPrompted    bool
+	}{
+		{
+			name:            "human operator default",
+			txn:             otherPay,
+			policyJSON:      `{"transaction_types":{"*":"allow"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: false,
+			wantSource:      ApprovalSourceHuman,
+			wantRuleID:      "",
+			wantPrompted:    true,
+		},
+		{
+			name:            "human always review",
+			txn:             otherPay,
+			policyJSON:      `{"transaction_types":{"*":"allow","pay":"review"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: false,
+			wantSource:      ApprovalSourceHuman,
+			wantRuleID:      policy.TransactionTypeRuleID("pay"),
+			wantPrompted:    true,
+		},
+		{
+			name:            "user auto approve operator default",
+			txn:             otherPay,
+			policyJSON:      `{"transaction_types":{"*":"allow"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: true,
+			wantSource:      ApprovalSourceUserAutoApprove,
+			wantRuleID:      "",
+			wantPrompted:    false,
+		},
+		{
+			name:            "user auto approve always review",
+			txn:             otherPay,
+			policyJSON:      `{"transaction_types":{"*":"allow","pay":"review"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: true,
+			wantSource:      ApprovalSourceUserAutoApprove,
+			wantRuleID:      policy.TransactionTypeRuleID("pay"),
+			wantPrompted:    false,
+		},
+		{
+			name:            "policy always approve with manual setting",
+			txn:             selfPay,
+			policyJSON:      `{"auto_approve_self_noop_transfer":true,"transaction_types":{"*":"allow"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: false,
+			wantSource:      ApprovalSourceAlwaysApprove,
+			wantRuleID:      policy.AutoApproveSelfNoOpTransferRuleID,
+			wantPrompted:    false,
+		},
+		{
+			name:            "policy always approve with user auto approve on",
+			txn:             selfPay,
+			policyJSON:      `{"auto_approve_self_noop_transfer":true,"transaction_types":{"*":"allow"},"transfer_policy":{"on_no_route":"operator_default"}}`,
+			userAutoApprove: true,
+			wantSource:      ApprovalSourceAlwaysApprove,
+			wantRuleID:      policy.AutoApproveSelfNoOpTransferRuleID,
+			wantPrompted:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := routingPolicyConfigForSigningTest(t, tc.policyJSON)
+			prompted := false
+			approval := &ApprovalService{
+				UserAutoApprove: tc.userAutoApprove,
+				HasClient:       func() bool { return true },
+				RequestSigningApprovalPrompt: promptFromContextDecision(func(_ context.Context, _, _, _, _ string, _, _ uint64, _ []signerapproval.Violation, _ time.Duration) (bool, error) {
+					prompted = true
+					return true, nil
+				}),
+			}
+			svc := &Service{
+				Approval:                      approval,
+				PolicyFor:                     fixedPolicy(cfg),
+				IsUnlocked:                    func() bool { return true },
+				GenerateTxnDescriptionFromTxn: describeAs("txn"),
+			}
+			req := signerapi.GroupSignRequest{
+				RequestID: "req-" + tc.name,
+				Requests:  []signerapi.SignRequest{{AuthAddress: sender.String()}},
+			}
+			plan := &PlanResult{
+				AllTxns:               []types.Transaction{tc.txn},
+				PassthroughIndices:    map[int]bool{},
+				PassthroughSignedTxns: map[int][]byte{},
+				ForeignIndices:        map[int]bool{},
+			}
+			outcome, release, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+			if err != nil {
+				t.Fatalf("approveGroupWithPlanContext() error = %v", err)
+			}
+			release()
+			if outcome.ApprovalSource != tc.wantSource || outcome.PolicyRuleID != tc.wantRuleID || prompted != tc.wantPrompted {
+				t.Fatalf("outcome = %+v prompted=%v, want source=%q rule=%q prompted=%v",
+					outcome, prompted, tc.wantSource, tc.wantRuleID, tc.wantPrompted)
+			}
+		})
 	}
 }
 

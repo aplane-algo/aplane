@@ -165,7 +165,7 @@ func TestListedRekeyIsForcedToReview(t *testing.T) {
 	}
 	svc := &Service{PolicyFor: fixedPolicy(cfg)}
 	prompted := ""
-	ruleID, gateErr := svc.runApprovalGates(context.Background(), gateInput{
+	outcome, gateErr := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:            []types.Transaction{rekey},
 		EvalCount:          1,
 		ListedRekeyTargets: map[int]map[string]bool{0: items[0].ListedRekeyTargets},
@@ -176,8 +176,8 @@ func TestListedRekeyIsForcedToReview(t *testing.T) {
 			return nil
 		},
 	}, nil)
-	if gateErr != nil || ruleID != policy.BoundedRekeyRequiresReviewRuleID || prompted != ruleID {
-		t.Fatalf("gates = %q, %v; prompted %q", ruleID, gateErr, prompted)
+	if gateErr != nil || outcome.PolicyRuleID != policy.BoundedRekeyRequiresReviewRuleID || outcome.ApprovalSource != ApprovalSourceHuman || prompted != outcome.PolicyRuleID {
+		t.Fatalf("gates = %+v, %v; prompted %q", outcome, gateErr, prompted)
 	}
 }
 

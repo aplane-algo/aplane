@@ -329,8 +329,11 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 		plan.FeeInfo.NativePQFeeContribution = p.PQFee
 		plan.IsPreGrouped = p.Pregrouped
 	}
-	ruleID, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
-	return rec.outcome(ruleID, err, "policy engine rejected request: ")
+	outcome, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+	if err == nil && outcome.ApprovalSource == ApprovalSourceAlwaysApprove && outcome.PolicyRuleID == "" {
+		t.Fatal("always_approve outcome missing PolicyRuleID")
+	}
+	return rec.outcome(outcome.PolicyRuleID, err, "policy engine rejected request: ")
 }
 
 // reportedDummies is the plan's dummy list when it disagrees with the group:
@@ -365,7 +368,7 @@ func (c *verdictCase) runGates(t *testing.T, group []types.Transaction) verdictW
 			authKeys[i] = c.authSelector(t, i, group[i])
 		}
 	}
-	ruleID, err := svc.runApprovalGates(context.Background(), gateInput{
+	outcome, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:              group,
 		EvalCount:            requests,
 		PassthroughIndices:   passthrough,
@@ -381,7 +384,7 @@ func (c *verdictCase) runGates(t *testing.T, group []types.Transaction) verdictW
 			return nil
 		},
 	}, rec)
-	return rec.outcome(ruleID, err, "policy engine rejected request: ")
+	return rec.outcome(outcome.PolicyRuleID, err, "policy engine rejected request: ")
 }
 
 func (c *verdictCase) runCosignerComponent(t *testing.T, group []types.Transaction) verdictWant {

@@ -462,7 +462,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0]), AppCallInfo: req.AppCallInfo}},
 		Batch:     req.Batch,
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
+	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -624,7 +624,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	var recorded signedGroup
 	if s.AuditLog != nil {
 		recorded = auditedGroup(plan)
-		s.logSuccessfulSignatures(signReq, plan, recorded, policyRuleID)
+		s.logSuccessfulSignatures(signReq, plan, recorded, outcome)
 	}
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
@@ -700,7 +700,7 @@ func (s *Service) logWithheldSignature(group signedGroup, account string, refuse
 	if s.AuditLog == nil {
 		return
 	}
-	s.AuditLog.LogSignWithheld(group.record(0, account, "", ""), "signature withheld after it was recorded as signed: "+refused.Message)
+	s.AuditLog.LogSignWithheld(group.record(0, account, "", approvalOutcome{}), "signature withheld after it was recorded as signed: "+refused.Message)
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or

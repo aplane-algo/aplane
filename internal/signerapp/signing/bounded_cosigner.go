@@ -93,7 +93,7 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, groupReq, plan)
+	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, groupReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -109,12 +109,12 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 		}
 		components = append(components, component)
 	}
-	s.logBoundedComponentsApproved(req, plan, targets, policyRuleID)
+	s.logBoundedComponentsApproved(req, plan, targets, outcome)
 	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-cosigner base component(s)\n", len(components))
 	return &signerapi.ComponentResponse{RequestID: req.RequestID, Components: components}, nil
 }
 
-func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, plan *PlanResult, targets []int, policyRuleID string) {
+func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, plan *PlanResult, targets []int, outcome approvalOutcome) {
 	if s.AuditLog == nil || plan == nil {
 		return
 	}
@@ -130,7 +130,7 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 		}
 		txReq := groupReq.Requests[index]
 		const details = "bounded-cosigner base component released after policy and operator approval"
-		s.AuditLog.LogSignApproved(group.record(index, txReq.AuthAddress, details, policyRuleID))
+		s.AuditLog.LogSignApproved(group.record(index, txReq.AuthAddress, details, outcome))
 	}
 }
 

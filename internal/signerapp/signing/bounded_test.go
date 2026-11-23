@@ -126,7 +126,7 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 
 	promptCalls := 0
 	forcedRule := ""
-	ruleID, err := svc.runApprovalGates(context.Background(), gateInput{
+	outcome, err := svc.runApprovalGates(context.Background(), gateInput{
 		AllTxns:            []types.Transaction{selfPay},
 		EvalCount:          1,
 		ForcedReviewRuleID: policy.BoundedRekeyRequiresReviewRuleID,
@@ -143,8 +143,8 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 	if promptCalls != 1 {
 		t.Fatalf("prompt calls = %d, want 1", promptCalls)
 	}
-	if ruleID != policy.BoundedRekeyRequiresReviewRuleID || forcedRule != ruleID {
-		t.Fatalf("rule IDs = returned %q prompted %q", ruleID, forcedRule)
+	if outcome.PolicyRuleID != policy.BoundedRekeyRequiresReviewRuleID || outcome.ApprovalSource != ApprovalSourceHuman || forcedRule != outcome.PolicyRuleID {
+		t.Fatalf("outcome = %+v prompted %q", outcome, forcedRule)
 	}
 }
 

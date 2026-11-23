@@ -194,7 +194,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 	if err := rejectOrdinarySignKeyTypes(plan); err != nil {
 		return nil, err
 	}
-	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
+	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
@@ -211,7 +211,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
 	if s.AuditLog != nil {
-		s.logSuccessfulSignatures(req, plan, auditedGroup(plan), alwaysReviewRuleID)
+		s.logSuccessfulSignatures(req, plan, auditedGroup(plan), outcome)
 	}
 
 	return &SignGroupResult{
@@ -232,14 +232,14 @@ func rejectOrdinarySignKeyTypes(plan *PlanResult) *ServiceError {
 	return nil
 }
 
-func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult) (string, func(), *ServiceError) {
+func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult) (approvalOutcome, func(), *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
 	// What the gates below judge and the operator is shown.
 	approvedDigest := approvalDigest(req, plan)
 
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return "", nil, lockedError()
+		return approvalOutcome{}, nil, lockedError()
 	}
 
 	review := s.Approval.review(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
@@ -259,7 +259,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 	console.Println(groupDesc)
 	console.Sync()
 
-	alwaysReviewRuleID, gateErr := s.runApprovalGates(ctx, gateInput{
+	outcome, gateErr := s.runApprovalGates(ctx, gateInput{
 		AllTxns:              allTxns,
 		EvalCount:            len(req.Requests),
 		PassthroughIndices:   plan.PassthroughIndices,
@@ -290,21 +290,21 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		},
 	}, console)
 	if gateErr != nil {
-		return "", nil, gateErr
+		return approvalOutcome{}, nil, gateErr
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
+		return approvalOutcome{}, nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
 	}
 	release, err := s.beforeExecute()
 	if err != nil {
 		// The request passed its gates, an operator approval among them,
 		// but the signer locked or its session ended before it could sign.
 		s.logSignRejections(req, plan, txns, "session_ended_after_approval", err)
-		return "", nil, err
+		return approvalOutcome{}, nil, err
 	}
 	plan.bindApproval(approvedDigest)
-	return alwaysReviewRuleID, release, nil
+	return outcome, release, nil
 }
 
 // policyFor resolves a selector's policy through the request's snapshot. It
@@ -381,7 +381,7 @@ func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, s
 // logSuccessfulSignatures records each position this signer signed with its
 // key, as signed: group is the final group, as the executor signed it, with
 // the trailing dummies it signed.
-func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, policyRuleID string) {
+func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, outcome approvalOutcome) {
 	if s.AuditLog == nil {
 		return
 	}
@@ -391,7 +391,7 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 			continue
 		}
 		details := fmt.Sprintf("txn %d/%d signed", i+1, len(req.Requests))
-		s.AuditLog.LogSignApproved(group.record(i, txReq.AuthAddress, details, policyRuleID))
+		s.AuditLog.LogSignApproved(group.record(i, txReq.AuthAddress, details, outcome))
 	}
 }
 
@@ -410,7 +410,8 @@ func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *
 // txn_auth, and a position it signs gets one entry, not two.
 //
 // Any other refusal, a policy rejection, writes one entry per position this
-// signer would have signed, naming the auth address, sender and reason.
+// signer would have signed, naming the auth address, sender, reason, and the
+// first matched policy rule ID when present.
 func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string, refusal *ServiceError) {
 	if refusal != nil && refusal.RefusedPosition != nil {
 		s.logPositionRefusal(req, plan, *refusal.RefusedPosition, reason)
@@ -420,8 +421,17 @@ func (s *Service) logSignRejections(req signerapi.GroupSignRequest, plan *PlanRe
 	if !ok || rejectLogger == nil {
 		return
 	}
+	policyRuleID := ""
+	if refusal != nil {
+		policyRuleID = refusal.PolicyRuleID
+	}
+	ruleLogger, hasRuleLogger := s.AuditLog.(AuditRejectPolicyRuleLogger)
 	for i, txReq := range req.Requests {
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
+			continue
+		}
+		if policyRuleID != "" && hasRuleLogger && ruleLogger != nil {
+			ruleLogger.LogSignRejectedWithPolicyRule(txReq.AuthAddress, txns[i].Sender.String(), reason, policyRuleID)
 			continue
 		}
 		rejectLogger.LogSignRejected(txReq.AuthAddress, txns[i].Sender.String(), reason)
@@ -441,7 +451,7 @@ func (s *Service) logPositionRefusal(req signerapi.GroupSignRequest, plan *PlanR
 			authAddress, signs = req.Requests[i].AuthAddress, true
 		}
 		if signs || i == named {
-			s.AuditLog.LogSignRejectedRecord(group.record(i, authAddress, "", ""), reason)
+			s.AuditLog.LogSignRejectedRecord(group.record(i, authAddress, "", approvalOutcome{}), reason)
 		}
 	}
 }

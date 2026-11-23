@@ -20,7 +20,7 @@ contracts; these models cover narrower security-critical transitions.
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
 | `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release; what an unlock may publish, load and clear beside a lock, a recovery and a session in service |
-| `setting_publish.tla` | when a writable setting's change takes effect relative to its save: restrictive before, anything else after |
+| `setting_publish.tla` | when a writable setting's change takes effect relative to its durable audit intent and its save: restrictive before without blocking on audit, anything else audited first and published after |
 | `signer_invariants.tla` | the signer invariants ahead of the policy verdict, the positions each one judges, and a cosigner document's external checks after the verdict |
 
 The single-product runtime has no decommission state or operation lease, so the
@@ -1019,3 +1019,15 @@ at depth 2. The positive runs grow to 202,080 states and, deep, 4,042,080,
 both at depth 2; the three earlier negative controls still fail on SI1 and
 SI6, now after 101,074, 101,122, and 101,048 states. `make formal-test` now
 has 47 runs.
+
+Changed 2026-11-23: `internal/signerapp/admin/service.go::updateAdminSettingLocked`
+now requires a durable `SETTING_CHANGE_INTENT` audit record before saving any
+non-restrictive setting update (including `passphrase_timeout` and `theme`)
+while never blocking a restrictive update on audit availability or writes, and
+records best-effort `SETTING_CHANGED` on save success. `setting_publish.tla`
+adds `"auditing"`, `audited`, `"audit_failed"`, the constant
+`AuditPermissiveBeforeSave`, `AuditDurable`/`AuditFail`, and
+`SP5_AuditDirectionRule` (positive run: 31 distinct states at depth 6;
+`setting_publish_negative_audit.cfg` violates SP5 after 3 distinct states at
+depth 2; existing negative controls keep violating SP1 at 5 states and SP3 at
+4 states, depth 2). `make formal-test` now has 48 runs.

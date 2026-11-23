@@ -261,7 +261,7 @@ func TestRunApprovalGatesTypeReviewBeatsAutoApprove(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := routingPolicyConfigForSigningTest(t, `{"auto_approve_self_noop_transfer": true, "transaction_types": `+tc.types+`, "transfer_policy": {"on_no_route": "operator_default"}}`)
 			prompts, promptedRule := 0, ""
-			ruleID, err := (&Service{PolicyFor: fixedPolicy(cfg)}).runApprovalGates(context.Background(), gateInput{
+			outcome, err := (&Service{PolicyFor: fixedPolicy(cfg)}).runApprovalGates(context.Background(), gateInput{
 				AllTxns: []types.Transaction{selfPay}, EvalCount: 1, AuthKeys: []string{selfPay.Sender.String()}, Plan: plan,
 				RequestOperatorApproval: func(_ context.Context, rule string) *ServiceError { prompts++; promptedRule = rule; return nil },
 			}, nil)
@@ -269,13 +269,13 @@ func TestRunApprovalGatesTypeReviewBeatsAutoApprove(t *testing.T) {
 				t.Fatalf("runApprovalGates() error = %v", err)
 			}
 			if !tc.review {
-				if prompts != 0 {
-					t.Fatalf("prompts = %d, want the self no-op auto-approved", prompts)
+				if prompts != 0 || outcome.ApprovalSource != ApprovalSourceAlwaysApprove || outcome.PolicyRuleID != policy.AutoApproveSelfNoOpTransferRuleID {
+					t.Fatalf("prompts = %d, outcome = %+v; want auto-approved under %s", prompts, outcome, policy.AutoApproveSelfNoOpTransferRuleID)
 				}
 				return
 			}
-			if want := policy.TransactionTypeRuleID("pay"); ruleID != want || promptedRule != want || prompts != 1 {
-				t.Fatalf("rule %q prompted %q prompts %d, want review under %s instead of auto-approval", ruleID, promptedRule, prompts, want)
+			if want := policy.TransactionTypeRuleID("pay"); outcome.PolicyRuleID != want || outcome.ApprovalSource != ApprovalSourceHuman || promptedRule != want || prompts != 1 {
+				t.Fatalf("outcome %+v prompted %q prompts %d, want human review under %s instead of auto-approval", outcome, promptedRule, prompts, want)
 			}
 		})
 	}

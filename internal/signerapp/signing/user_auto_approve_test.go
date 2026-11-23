@@ -80,7 +80,7 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 					approval := &ApprovalService{UserAutoApprove: auto, HasClient: func() bool { return false }}
 					svc := &Service{Approval: approval, PolicyFor: fixedPolicy(cfg)}
 					approvalCalls := 0
-					rule, err := svc.runApprovalGates(context.Background(), gateInput{
+					outcome, err := svc.runApprovalGates(context.Background(), gateInput{
 						AllTxns: txns, EvalCount: len(txns), ForeignIndices: foreign,
 						KnownAddresses:     map[string]bool{types.Address{3}.String(): true},
 						ForcedReviewRuleID: tc.forcedRule,
@@ -98,16 +98,24 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 						if err == nil || err.Kind != ErrorForbidden || approvalCalls != 0 {
 							t.Fatalf("error = %v, approval calls = %d; want hard rejection before approval", err, approvalCalls)
 						}
+						if err.PolicyRuleID == "" {
+							t.Fatalf("hard policy rejection missing PolicyRuleID: %+v", err)
+						}
 						return
 					}
-					if tc.name != "fallback" && rule == "" {
+					if tc.name != "fallback" && outcome.PolicyRuleID == "" {
 						t.Fatal("expected a review rule to match and remain available for audit")
 					}
 					if approvalCalls != 1 {
 						t.Fatalf("approval calls = %d, want 1", approvalCalls)
 					}
-					if auto && err != nil {
-						t.Fatalf("auto-approve requires no admin client: %v", err)
+					if auto {
+						if err != nil {
+							t.Fatalf("auto-approve requires no admin client: %v", err)
+						}
+						if outcome.ApprovalSource != ApprovalSourceUserAutoApprove {
+							t.Fatalf("approval source = %q, want %q", outcome.ApprovalSource, ApprovalSourceUserAutoApprove)
+						}
 					}
 					if !auto && (err == nil || err.Kind != ErrorUnavailable) {
 						t.Fatalf("manual review without admin: error = %v, want unavailable", err)
@@ -266,7 +274,7 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 				if tc.listed {
 					in.ListedRekeyTargets = map[int]map[string]bool{0: {tc.target.String(): true}}
 				}
-				rule, err := svc.runApprovalGates(context.Background(), in, &stringConsole{&console})
+				outcome, err := svc.runApprovalGates(context.Background(), in, &stringConsole{&console})
 				if tc.want != allowed {
 					wantKind := ErrorForbidden
 					if tc.want == invalid {
@@ -293,8 +301,12 @@ func TestRekeyRuleTruthTable(t *testing.T) {
 					}
 					return
 				}
-				if err != nil || rule != policy.AlwaysReviewWarningsRuleID || approvalCalls != 1 {
-					t.Fatalf("rule = %q, error = %v, approval calls = %d; want review by %s", rule, err, approvalCalls, policy.AlwaysReviewWarningsRuleID)
+				wantSource := ApprovalSourceHuman
+				if auto {
+					wantSource = ApprovalSourceUserAutoApprove
+				}
+				if err != nil || outcome.PolicyRuleID != policy.AlwaysReviewWarningsRuleID || outcome.ApprovalSource != wantSource || approvalCalls != 1 {
+					t.Fatalf("outcome = %+v, error = %v, approval calls = %d; want %s review by %s", outcome, err, approvalCalls, wantSource, policy.AlwaysReviewWarningsRuleID)
 				}
 				if auto {
 					if prompted {

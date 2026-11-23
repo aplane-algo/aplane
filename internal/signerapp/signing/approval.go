@@ -536,7 +536,9 @@ func policyRejection(violations []policy.LintViolation, console Console) *Servic
 	errText := policy.JoinLintViolations(violations)
 	console.Printf("[POLICY ENGINE] Rejected: %s\n", termsafe.Line(errText))
 	console.Sync()
-	return forbidden(fmt.Sprintf("policy engine rejected request: %s", errText))
+	err := forbidden(fmt.Sprintf("policy engine rejected request: %s", errText))
+	err.PolicyRuleID = firstPolicyRuleID(violations)
+	return err
 }
 
 // EvaluateAutoRejectionRules evaluates hard policy rules against each signable

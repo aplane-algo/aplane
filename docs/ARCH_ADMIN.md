@@ -694,7 +694,7 @@ transaction type is one more entry in `fields` and needs no client change.
 
 - `admin_settings`: `user_auto_approve`, optional `require_contained` and `require_cosigner`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`, optional `unsaved_settings` (the settings in effect but not saved, which a restart reverts, in key order; see Writable Settings)
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
-- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_saved"` means a restrictive value is in effect but was not saved, so a restart loads the old value (see Writable Settings)
+- `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`; `success:false` with `code:"applied_not_saved"` means a restrictive value is in effect but was not saved, so a restart loads the old value; `code:"audit_unavailable"` or `code:"audit_write_failed"` means a non-restrictive update was refused because its durable `SETTING_CHANGE_INTENT` audit entry could not be recorded (see Writable Settings)
 
 #### Policy Messages
 
@@ -733,7 +733,7 @@ Apply rules, the same on both node roles:
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
 - Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one a lock reached while the request waited for the store mutation lock, whose keyring stays open until the lock's cleanup has run: a commit there whose reload failed would call `SetRecovery` on a locked signer, which does nothing. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
-- `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, and `source_token_remove` each write a durable audit intent before the service runs, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
+- `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, `source_token_remove`, and non-restrictive `update_admin_setting` changes each write a durable audit intent before applying, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.
 
@@ -961,17 +961,24 @@ When an update takes effect depends on the change's direction:
   effect; or a request for the value in effect while that value is unsaved
   (below), which tries the save again. The value takes effect before the
   save, so a hung or slow disk cannot keep the old, more permissive value in
-  effect, and it stays in effect whatever the save does. It still waits for
-  the store mutation lock the update runs under, so an update queued behind
-  another store mutation takes effect when that one finishes.
+  effect, and it stays in effect whatever the save does. It never blocks on
+  the audit log, so an unavailable or failing audit log cannot prevent
+  locking down. It still waits for the store mutation lock the update runs
+  under, so an update queued behind another store mutation takes effect when
+  that one finishes.
 - Permissive: every other request, `theme`, `passphrase_timeout` and a
-  request for the value already saved included. The value takes effect only
-  once its file has replaced the old one, so no reader, a signing request
-  included, ever sees a permissive value that was not saved. Until then
-  readers keep the old value. A failed save of the value already saved
-  answers the plain "unchanged" failure, not `applied_not_saved`, since
-  nothing in effect would be undone by a restart; like every failed save it
-  writes a `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
+  request for the value already saved included. After validation, the signer
+  writes a durable `SETTING_CHANGE_INTENT` audit record before touching the
+  file or memory; a missing audit log refuses the update with
+  `code:"audit_unavailable"` and a failed write refuses it with
+  `code:"audit_write_failed"`, leaving both file and memory unchanged. Once
+  audited, the value takes effect only once its file has replaced the old
+  one, so no reader, a signing request included, ever sees a permissive
+  value that was not audited and saved. Until then readers keep the old
+  value. A failed save of the value already saved answers the plain
+  "unchanged" failure, not `applied_not_saved`, since nothing in effect
+  would be undone by a restart; like every failed save it writes a
+  `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
 
 The rule covers only the four boolean settings the signer itself enforces.
 `passphrase_timeout` is not one of them: only the admin client enforces it
@@ -1001,12 +1008,14 @@ permissive change whose save fails (memory keeps the restrictive value), and
 a retry whose save fails again (answered `applied_not_saved` once more) all
 leave it. A restart loads the saved value, so the set starts empty.
 
-Every save that fails, either kind, writes one `SETTING_SAVE_ERROR` audit
-entry (see [ARCH_SECURITY.md](ARCH_SECURITY.md)) with the setting, the value
-and the cause, and whether the value is in effect anyway: for
+Every saved setting update, either direction, writes one best-effort
+`SETTING_CHANGED` audit entry naming the setting, previous value, and new
+value. Every save that fails, either kind, writes one `SETTING_SAVE_ERROR`
+audit entry (see [ARCH_SECURITY.md](ARCH_SECURITY.md)) with the setting, the
+value and the cause, and whether the value is in effect anyway: for
 `applied_not_saved` it is the only durable trace of a change a restart
-undoes. A request refused before any save is attempted (a bad value, a
-headless-mode refusal, an unknown setting) writes none.
+undoes. A request refused before any audit or save is attempted (a bad
+value, a headless-mode refusal, an unknown setting) writes none.
 
 An admin client re-reads `get_admin_settings` after any
 `update_admin_setting_result`, a failed one included, to show the state the

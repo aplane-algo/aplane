@@ -1503,7 +1503,7 @@ func TestLogSuccessfulSignaturesSkipsPassthroughAndForeign(t *testing.T) {
 		ForeignIndices:     map[int]bool{2: true},
 	}
 
-	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), "")
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), approvalOutcome{ApprovalSource: ApprovalSourceHuman})
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
@@ -1527,12 +1527,18 @@ func TestLogSuccessfulSignaturesIncludesForcedReviewRule(t *testing.T) {
 		ForeignIndices:     map[int]bool{},
 	}
 
-	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), policy.ReviewAlgoPaymentExceededRuleID)
+	service.logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, 0), approvalOutcome{
+		PolicyRuleID:   policy.ReviewAlgoPaymentExceededRuleID,
+		ApprovalSource: ApprovalSourceUserAutoApprove,
+	})
 	if len(audit.approved) != 1 {
 		t.Fatalf("len(audit.approved) = %d, want 1", len(audit.approved))
 	}
 	if got := audit.approved[0].policyRule; got != policy.ReviewAlgoPaymentExceededRuleID {
 		t.Fatalf("policyRule = %q, want %q", got, policy.ReviewAlgoPaymentExceededRuleID)
+	}
+	if got := audit.approved[0].record.ApprovalSource; got != ApprovalSourceUserAutoApprove {
+		t.Fatalf("ApprovalSource = %q, want %q", got, ApprovalSourceUserAutoApprove)
 	}
 }
 

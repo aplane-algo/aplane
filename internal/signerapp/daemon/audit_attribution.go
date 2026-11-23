@@ -96,15 +96,16 @@ func (l *signingAuditLogger) LogSignRejectedRecord(record signersigning.SignedRe
 // txnRecordOf is record as the audit log writes it.
 func txnRecordOf(record signersigning.SignedRecord) signeraudit.TxnRecord {
 	return signeraudit.TxnRecord{
-		TxnAuth:      record.AuthAddress,
-		TxnSender:    record.TxnSender,
-		TxnDetails:   record.Details,
-		PolicyRuleID: record.PolicyRuleID,
-		TxID:         record.TxID,
-		Fee:          record.Fee,
-		GroupID:      record.GroupID,
-		GroupTxIDs:   record.GroupTxIDs,
-		DummyCount:   record.DummyCount,
+		TxnAuth:        record.AuthAddress,
+		TxnSender:      record.TxnSender,
+		TxnDetails:     record.Details,
+		PolicyRuleID:   record.PolicyRuleID,
+		ApprovalSource: record.ApprovalSource,
+		TxID:           record.TxID,
+		Fee:            record.Fee,
+		GroupID:        record.GroupID,
+		GroupTxIDs:     record.GroupTxIDs,
+		DummyCount:     record.DummyCount,
 	}
 }
 

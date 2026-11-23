@@ -42,6 +42,7 @@ Each line is a JSON object with the following fields:
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
 | `policy_rule_id` | string | Matching policy rule for a rejection, forced review, or explicit auto-approval |
+| `approval_source` | string | On client-signing `SIGN_APPROVED`: how the signature was authorized (`human`, `user_auto_approve`, or `always_approve`) |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
 | `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
 | `key_count` | int | Number of keys: loaded, on start and reload events; restored, on a restore outcome; that a restore would admit, on a restore preview |
@@ -214,10 +215,12 @@ LogicSig argument values.
 
 | Event | Description |
 |-------|-------------|
-| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened: `reason` is `ssh` for an enrolled key, `ssh-enroll` for an `enroll` connection (an unenrolled key, which anyone who reaches the SSH port can offer), and `ssh_fingerprint` names the key |
+| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`): `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal), and `ssh_fingerprint` names the key |
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
-| `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause. Refused requests and other setting changes are not audited |
+| `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |
+| `SETTING_CHANGED` | Admin setting change saved (`reason` `setting=<key> old=<old> new=<new>`) |
+| `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause |
 | `CLIENT_ENROLLMENT_REQUESTED` | A client asked to be enrolled; the request waits for the operator (principal `client:<fingerprint>`, `client_label` carries the requested label) |
 | `CLIENT_ENROLLED` | Client SSH key enrolled by the operator, by approving its request or importing the key (`client_label` carries its display label; `remote_addr` is empty for an import) |
 | `CLIENT_ENROLLMENT_REJECTED` | The operator rejected a waiting enrollment request |

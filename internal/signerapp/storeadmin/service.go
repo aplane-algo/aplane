@@ -33,7 +33,7 @@ type Deps interface {
 type AuditLogger interface {
 	LogStoreInitialized(metadataDir string)
 	LogStoreInitializeFailed(reason string)
-	LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int)
+	LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated int)
 	LogPassphraseChangeFailed(ctx context.Context, reason string)
 }
 
@@ -199,7 +199,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 		// durability-confirmation error is operational failure after a
 		// successful passphrase cutover, not PASSPHRASE_CHANGE_FAILED.
 		if rotation.RootCommitted {
-			s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated)
+			s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated, rotation.PolicySidecarsMigrated, rotation.SourceTokenFilesMigrated)
 		} else {
 			s.logPassphraseChangeFailed(ctx, err.Error())
 		}
@@ -215,7 +215,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 			Error:                    err.Error(),
 		}
 	}
-	s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated)
+	s.logPassphraseChanged(ctx, rotation.KeysMigrated, rotation.TemplatesMigrated, rotation.PolicySidecarsMigrated, rotation.SourceTokenFilesMigrated)
 	return adminproto.ChangeStorePassphraseResult{
 		Success:                  true,
 		KeysMigrated:             rotation.KeysMigrated,
@@ -250,9 +250,9 @@ func (s Service) logStoreInitializeFailed(reason string) {
 	}
 }
 
-func (s Service) logPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int) {
+func (s Service) logPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated int) {
 	if s.AuditLog != nil {
-		s.AuditLog.LogPassphraseChanged(ctx, keysMigrated, templatesMigrated)
+		s.AuditLog.LogPassphraseChanged(ctx, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated)
 	}
 }
 

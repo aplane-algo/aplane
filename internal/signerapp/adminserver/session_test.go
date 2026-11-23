@@ -198,7 +198,7 @@ func (s *stubServices) ImportClientKey(SessionContext, string, string) (Imported
 func (s *stubServices) BuildAdminSettings() adminproto.AdminSettings {
 	return adminproto.AdminSettings{}
 }
-func (s *stubServices) UpdateAdminSetting(req adminproto.UpdateAdminSettingRequest) error {
+func (s *stubServices) UpdateAdminSetting(ctx context.Context, req adminproto.UpdateAdminSettingRequest) error {
 	return nil
 }
 func (s *stubServices) GetPolicy() adminproto.PolicyView {

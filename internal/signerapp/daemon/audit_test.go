@@ -60,7 +60,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogSSHSessionDisconnected("10.0.0.1", "SHA256:abc", true)
 	logger.LogStoreInitialized("/data/identities/default")
 	logger.LogStoreInitializeFailed("already initialized")
-	logger.LogPassphraseChanged(context.Background(), 2, 1)
+	logger.LogPassphraseChanged(context.Background(), 2, 1, 3, 4)
 	logger.LogPassphraseChangeFailed(context.Background(), "invalid passphrase")
 
 	data, err := os.ReadFile(path)
@@ -92,6 +92,32 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	}
 	if keyReload.Event != signeraudit.AuditKeyReload || keyReload.Principal != auth.SystemProductAdminPrincipalID || keyReload.RequesterPrincipal != auth.SystemProductAdminPrincipalID {
 		t.Fatalf("key reload attribution = %#v", keyReload)
+	}
+
+	var sshConn, sshDisc, passChanged signeraudit.AuditEntry
+	if err := json.Unmarshal([]byte(lines[8]), &sshConn); err != nil {
+		t.Fatalf("decode ssh connect entry: %v", err)
+	}
+	if sshConn.Event != signeraudit.AuditSessionConnected || sshConn.Transport != "ssh" ||
+		sshConn.Principal != auth.ClientPrincipalPrefix+"SHA256:abc" ||
+		sshConn.RequesterPrincipal != auth.ClientPrincipalPrefix+"SHA256:abc" ||
+		sshConn.SSHFingerprint != "SHA256:abc" {
+		t.Fatalf("ssh connect attribution = %#v", sshConn)
+	}
+	if err := json.Unmarshal([]byte(lines[9]), &sshDisc); err != nil {
+		t.Fatalf("decode ssh disconnect entry: %v", err)
+	}
+	if sshDisc.Event != signeraudit.AuditSessionDisconnected || sshDisc.Transport != "ssh" ||
+		sshDisc.Principal != auth.ClientPrincipalPrefix+"SHA256:abc" ||
+		sshDisc.RequesterPrincipal != auth.ClientPrincipalPrefix+"SHA256:abc" {
+		t.Fatalf("ssh disconnect attribution = %#v", sshDisc)
+	}
+	if err := json.Unmarshal([]byte(lines[12]), &passChanged); err != nil {
+		t.Fatalf("decode passphrase changed entry: %v", err)
+	}
+	wantReason := "keys_migrated=2 templates_migrated=1 policy_sidecars_migrated=3 source_token_files_migrated=4"
+	if passChanged.Event != signeraudit.AuditPassphraseChanged || passChanged.Reason != wantReason {
+		t.Fatalf("passphrase changed = %#v, want reason %q", passChanged, wantReason)
 	}
 }
 
@@ -538,7 +564,7 @@ func TestAuditKeyMutationAttributionFromContext(t *testing.T) {
 	logger.LogKeyGenerated(signeraudit.WithAttribution(context.Background(), auditAttribution{
 		RequesterPrincipal: "client:SHA256:abc", Transport: auditTransportHTTP, RemoteAddr: "127.0.0.1:5",
 	}), "ADDR2", "ed25519")
-	logger.LogPassphraseChanged(adminserver.WithSessionContext(context.Background(), session), 1, 0)
+	logger.LogPassphraseChanged(adminserver.WithSessionContext(context.Background(), session), 1, 0, 2, 3)
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 3 {

@@ -13,6 +13,24 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+const (
+	// ApprovalSourceHuman means an operator explicitly approved the prompt.
+	ApprovalSourceHuman = "human"
+	// ApprovalSourceUserAutoApprove means the signer's User Auto-Approve
+	// setting satisfied the approval or review gate without an operator prompt.
+	ApprovalSourceUserAutoApprove = "user_auto_approve"
+	// ApprovalSourceAlwaysApprove means a policy Always Approve rule approved
+	// the request without prompting the operator.
+	ApprovalSourceAlwaysApprove = "always_approve"
+)
+
+// approvalOutcome describes how a client-signing request was approved for
+// SIGN_APPROVED audit records.
+type approvalOutcome struct {
+	PolicyRuleID   string
+	ApprovalSource string
+}
+
 // SignedRecord is the audit record of one transaction this signer signed: the
 // transaction as signed, after planning raised its fee, set its group ID and
 // added dummies, and the group it was signed in. A refusal that names one
@@ -23,11 +41,12 @@ import (
 // signatures or LogicSig argument values.
 type SignedRecord struct {
 	// AuthAddress is the signing key's address, or a cosigner's Witness Key ID.
-	AuthAddress  string
-	TxnSender    string
-	Details      string
-	PolicyRuleID string
-	TxID         string
+	AuthAddress    string
+	TxnSender      string
+	Details        string
+	PolicyRuleID   string
+	ApprovalSource string
+	TxID           string
 	// Fee is the signed transaction's fee, in microAlgos.
 	Fee uint64
 	// GroupID (base64) and GroupTxIDs, every transaction of the group in
@@ -126,11 +145,12 @@ func newSignedGroup(txns []types.Transaction, txIDs []string, groupID types.Dige
 // record is the SignedRecord of the transaction at index, signed by
 // authAddress: its own fields from that transaction, in the group it was
 // signed in.
-func (g signedGroup) record(index int, authAddress, details, policyRuleID string) SignedRecord {
+func (g signedGroup) record(index int, authAddress, details string, outcome approvalOutcome) SignedRecord {
 	r := SignedRecord{
-		AuthAddress:  authAddress,
-		Details:      details,
-		PolicyRuleID: policyRuleID,
+		AuthAddress:    authAddress,
+		Details:        details,
+		PolicyRuleID:   outcome.PolicyRuleID,
+		ApprovalSource: outcome.ApprovalSource,
 	}
 	if index < 0 || index >= len(g.txns) {
 		return r
