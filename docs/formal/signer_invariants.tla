@@ -41,6 +41,9 @@ Invariants:
           answer can remove a signature, never add one.
   - SI6 : a request the invariants or the policy refuse makes no external
           lookup.
+  - SI7 : a group whose cross-slot network parameters are invalid (mismatched
+          genesis hashes or non-overlapping validity windows) reaches neither
+          policy, external lookups, nor signature release.
 
 `policy_precedence.tla` derives the policy verdict and `sign_boundary.tla`
 the output per slot class; here the policy and the operator are one free
@@ -74,12 +77,14 @@ CONSTANTS
     MaxPositions,               \* upper bound on the group's length (TLC bound)
     InvariantsBeforePolicy,     \* the invariants run before the policy verdict
     TargetJudgesEveryPosition,  \* the valid-target invariant reads every position
-    ExternalAfterPolicy         \* external lookups follow a sign verdict only
+    ExternalAfterPolicy,        \* external lookups follow a sign verdict only
+    NetworkParamsBeforeGates    \* cross-slot genesis/window check runs first
 
 ASSUME MaxPositions \in Nat /\ MaxPositions >= 1
 ASSUME InvariantsBeforePolicy \in BOOLEAN
 ASSUME TargetJudgesEveryPosition \in BOOLEAN
 ASSUME ExternalAfterPolicy \in BOOLEAN
+ASSUME NetworkParamsBeforeGates \in BOOLEAN
 
 \* A position of the group as it will go on chain. "sign" is a position this
 \* signer signs; the others are not its signatures.
@@ -100,18 +105,19 @@ Groups == UNION {[1..n -> Position] : n \in 1..MaxPositions}
 ExternalAnswer == {"none", "pass", "refuse"}
 
 VARIABLES
-    group,          \* the whole group
-    would_sign,     \* what policy and the operator would answer, if asked
-    external,       \* what the external checks would answer, if asked
-    decided,        \* the gate sequence has run
-    refused_by,     \* "none", "target" or "signed": the invariant that refused
-    refused_at,     \* the position a refusal names, 0 when none
-    asked,          \* the policy verdict (and so the operator) was consulted
-    looked_up,      \* an external lookup was made
-    released        \* the signer released its signatures
+    group,                  \* the whole group
+    valid_network_params,   \* uniform GenesisHash and overlapping validity window
+    would_sign,             \* what policy and the operator would answer, if asked
+    external,               \* what the external checks would answer, if asked
+    decided,                \* the gate sequence has run
+    refused_by,             \* "none", "network", "target" or "signed"
+    refused_at,             \* the position a refusal names, 0 when none
+    asked,                  \* the policy verdict (and so the operator) was consulted
+    looked_up,              \* an external lookup was made
+    released                \* the signer released its signatures
 
-vars == <<group, would_sign, external, decided, refused_by, refused_at, asked,
-          looked_up, released>>
+vars == <<group, valid_network_params, would_sign, external, decided,
+          refused_by, refused_at, asked, looked_up, released>>
 
 ----------------------------------------------------------------------------
 \* The positions the valid-target invariant reads.
@@ -142,6 +148,7 @@ GatesRefuse == RefusedBy(group) # "none" \/ ~would_sign
 
 Init ==
     /\ group \in Groups
+    /\ valid_network_params \in BOOLEAN
     /\ would_sign \in BOOLEAN
     /\ external \in ExternalAnswer
     /\ decided = FALSE
@@ -151,29 +158,36 @@ Init ==
     /\ looked_up = FALSE
     /\ released = FALSE
 
-\* One request's gate decision. signs is the answer of the invariants and the
+\* One request's gate decision. validateNetworkParams runs before invariants,
+\* policy and external checks; signs is the answer of the invariants and the
 \* policy; the external checks come last and can only refuse.
 Decide ==
-    LET signs == IF InvariantsBeforePolicy
-                    THEN RefusedBy(group) = "none" /\ would_sign
-                    ELSE would_sign
-    IN
     /\ ~decided
     /\ decided' = TRUE
-    /\ IF InvariantsBeforePolicy
-          THEN /\ refused_by' = RefusedBy(group)
-               /\ refused_at' = RefusedAt(group)
-               /\ asked' = (RefusedBy(group) = "none")
-          \* The mutation: the policy verdict first, and an approval skips
-          \* the invariants.
-          ELSE /\ asked' = TRUE
-               /\ refused_by' = IF would_sign THEN "none" ELSE RefusedBy(group)
-               /\ refused_at' = IF would_sign THEN 0 ELSE RefusedAt(group)
-    \* runExternalChecks: a request with checks is looked up once the
-    \* earlier gates say sign. The mutation looks it up whatever they say.
-    /\ looked_up' = (external # "none" /\ (signs \/ ~ExternalAfterPolicy))
-    /\ released' = (signs /\ external # "refuse")
-    /\ UNCHANGED <<group, would_sign, external>>
+    /\ IF NetworkParamsBeforeGates /\ ~valid_network_params
+          THEN /\ refused_by' = "network"
+               /\ refused_at' = 0
+               /\ asked' = FALSE
+               /\ looked_up' = FALSE
+               /\ released' = FALSE
+          ELSE LET signs == IF InvariantsBeforePolicy
+                               THEN RefusedBy(group) = "none" /\ would_sign
+                               ELSE would_sign
+               IN
+               /\ IF InvariantsBeforePolicy
+                     THEN /\ refused_by' = RefusedBy(group)
+                          /\ refused_at' = RefusedAt(group)
+                          /\ asked' = (RefusedBy(group) = "none")
+                     \* The mutation: the policy verdict first, and an approval skips
+                     \* the invariants.
+                     ELSE /\ asked' = TRUE
+                          /\ refused_by' = IF would_sign THEN "none" ELSE RefusedBy(group)
+                          /\ refused_at' = IF would_sign THEN 0 ELSE RefusedAt(group)
+               \* runExternalChecks: a request with checks is looked up once the
+               \* earlier gates say sign. The mutation looks it up whatever they say.
+               /\ looked_up' = (external # "none" /\ (signs \/ ~ExternalAfterPolicy))
+               /\ released' = (signs /\ external # "refuse")
+    /\ UNCHANGED <<group, valid_network_params, would_sign, external>>
 
 Next == Decide \/ (decided /\ UNCHANGED vars)
 
@@ -182,10 +196,11 @@ Spec == Init /\ [][Next]_vars
 ----------------------------------------------------------------------------
 TypeOK ==
     /\ group \in Groups
+    /\ valid_network_params \in BOOLEAN
     /\ would_sign \in BOOLEAN
     /\ external \in ExternalAnswer
     /\ decided \in BOOLEAN
-    /\ refused_by \in {"none", "target", "signed"}
+    /\ refused_by \in {"none", "network", "target", "signed"}
     /\ refused_at \in 0..MaxPositions
     /\ asked \in BOOLEAN
     /\ looked_up \in BOOLEAN
@@ -219,6 +234,11 @@ SI5_ExternalChecksOnlyRefuse ==
 SI6_NoLookupForARefusedRequest ==
     GatesRefuse => ~looked_up
 
+\* SI7: a group with invalid cross-slot network parameters never reaches
+\* policy, external checks, or signature release.
+SI7_NoReleaseOrLookupWithInvalidNetworkParams ==
+    ~valid_network_params => (~asked /\ ~looked_up /\ ~released)
+
 Safety ==
     /\ TypeOK
     /\ SI1_NoReleaseWithInvalidRekeyTarget
@@ -227,5 +247,6 @@ Safety ==
     /\ SI4_RefusalNamesFirstPosition
     /\ SI5_ExternalChecksOnlyRefuse
     /\ SI6_NoLookupForARefusedRequest
+    /\ SI7_NoReleaseOrLookupWithInvalidNetworkParams
 
 =============================================================================

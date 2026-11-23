@@ -266,28 +266,35 @@
   },
   {
     "spec": "signer_invariants",
-    "distinct_states": 101040,
+    "distinct_states": 202080,
     "depth": 2
   },
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_negative_order",
     "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
-    "distinct_states": 50536,
+    "distinct_states": 101074,
     "depth": 2
   },
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_negative_positions",
     "expected_invariant_violation": "SI1_NoReleaseWithInvalidRekeyTarget",
-    "distinct_states": 50560,
+    "distinct_states": 101122,
     "depth": 2
   },
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_negative_external",
     "expected_invariant_violation": "SI6_NoLookupForARefusedRequest",
-    "distinct_states": 50522,
+    "distinct_states": 101048,
+    "depth": 2
+  },
+  {
+    "spec": "signer_invariants",
+    "cfg": "signer_invariants_negative_network",
+    "expected_invariant_violation": "SI7_NoReleaseOrLookupWithInvalidNetworkParams",
+    "distinct_states": 101041,
     "depth": 2
   }
 ]

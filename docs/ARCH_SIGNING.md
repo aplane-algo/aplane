@@ -658,6 +658,15 @@ transactions whenever it lagged a protocol upgrade. Other malformed
 transactions, such as an asset with too many decimals or an application call
 with too many arguments, are still refused only by the network at submission.
 
+**Cross-slot network parameters.** Multi-transaction groups must target a
+single network (identical `GenesisHash` across every transaction) and have
+overlapping validity windows (`max FirstValid <= min LastValid`). Any group
+that violates either rule is refused with `400` (`bad_request`) and without
+auditing a policy refusal, across the planner (`/plan` and `/sign`),
+frozen-component validation, and cosigner component gates (immediately after
+transaction bounds, ahead of signer invariants, policy evaluation, and
+external checks).
+
 See `internal/signerapp/daemon/http_handlers_signing.go`'s `handleSign` for the dispatch
 implementation, and `internal/signerapp/signing/planner.go` and
 `internal/signerapp/signing/execution.go` for the planning and per-key

@@ -360,6 +360,75 @@ func TestValidateFrozenComponentContextRefusesATransactionTheNetworkNeverAccepts
 	}
 }
 
+// Frozen-component validation enforces cross-slot network parameters (uniform
+// GenesisHash and overlapping validity windows) before key verification,
+// sizing, or any approval gate.
+func TestValidateFrozenComponentContextRefusesMixedGenesisOrDisjointWindow(t *testing.T) {
+	service, authorizer, target := frozenBoundedTestService(t, 4_500)
+	contextual := testnetPaymentTransaction(t, types.Address{91}.String(), types.Address{92}.String(), 1)
+	contextual.FirstValid, contextual.LastValid = target.FirstValid, target.LastValid
+	contextual.GenesisHash, contextual.GenesisID = target.GenesisHash, target.GenesisID
+	otherGenesis := verdictGenesis(t, apconfig.AlgorandMainnetGenesisHash)
+	otherGenesisID := "mainnet-v1.0"
+	if target.GenesisHash == otherGenesis {
+		otherGenesis = verdictGenesis(t, apconfig.AlgorandTestnetGenesisHash)
+		otherGenesisID = "testnet-v1.0"
+	}
+
+	planned, planErr := service.Planner.PlanGroup(signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{
+		{AuthAddress: authorizer, TxnBytesHex: txnutil.EncodeWithPrefixHex(target)},
+		{TxnBytesHex: txnutil.EncodeWithPrefixHex(contextual)},
+	}})
+	if planErr != nil {
+		t.Fatal(planErr)
+	}
+	baseReq := signerapi.ComponentRequest{
+		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+		ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1}},
+	}
+	for i := 2; i < len(planned.AllTxns); i++ {
+		baseReq.DummyPositions = append(baseReq.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
+	}
+	baseReq.GroupBytesHex = regroupedHex(t, planned.AllTxns)
+	if _, _, err := service.ValidateFrozenComponentContext(baseReq); err != nil {
+		t.Fatalf("valid frozen group refused: %+v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		mutate   func([]types.Transaction)
+		wantText string
+	}{
+		{
+			name: "mixed genesis hash on contextual slot",
+			mutate: func(txns []types.Transaction) {
+				txns[1].GenesisHash = otherGenesis
+				txns[1].GenesisID = otherGenesisID
+			},
+			wantText: "different genesis hash",
+		},
+		{
+			name: "disjoint validity window on contextual slot",
+			mutate: func(txns []types.Transaction) {
+				txns[1].FirstValid = txns[0].LastValid + 50
+				txns[1].LastValid = txns[1].FirstValid + 50
+			},
+			wantText: "validity windows do not overlap",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mutated := append([]types.Transaction(nil), planned.AllTxns...)
+			tc.mutate(mutated)
+			bad := baseReq
+			bad.GroupBytesHex = regroupedHex(t, mutated)
+			_, _, err := service.ValidateFrozenComponentContext(bad)
+			if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, tc.wantText) {
+				t.Fatalf("ValidateFrozenComponentContext() error = %#v, want bad_request mentioning %q", err, tc.wantText)
+			}
+		})
+	}
+}
+
 // A cosigner node reaches neither the planner nor frozen-component validation,
 // so its gates make the check, after the witness key is found and before the
 // invariants and the policy. The refusal is input validation, like any other

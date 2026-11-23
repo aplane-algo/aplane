@@ -1403,11 +1403,12 @@ host and port.
   `localhost` that resolves elsewhere is refused.
 - A redirect is never followed.
 
-**The answer.** It is accepted only with status 200, a body within
-`max_response_bytes`, and strict JSON (`internal/strictjson`): valid UTF-8,
-one value with nothing after it, no duplicate keys, nesting at most 64 deep,
-and number literals of at most 64 characters with an exponent within ±64.
-The `Content-Type` header is not checked. Anything else is a failed lookup.
+**The answer.** It is accepted only with status 200, response headers within
+16 KiB (`MaxResponseHeaderBytes`), a body within `max_response_bytes`, and
+strict JSON (`internal/strictjson`): valid UTF-8, one value with nothing after
+it, no duplicate keys, nesting at most 64 deep, and number literals of at most
+64 characters with an exponent within ±64. The `Content-Type` header is not
+checked. Anything else is a failed lookup.
 
 **Judging.**
 

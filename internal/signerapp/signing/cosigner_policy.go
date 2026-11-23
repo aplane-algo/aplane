@@ -49,9 +49,14 @@ func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan)
 	targets := componentTargetPositions(plan)
 	// A group the network could never accept gets no witness signature. This
 	// route reaches neither the planner nor the frozen-component validation,
-	// which make the same check.
+	// which make the same checks.
 	if err := validateTransactionBounds(group); err != nil {
 		return err
+	}
+	if len(group) > 1 {
+		if err := validateNetworkParams(group, consoleOf(s.Console)); err != nil {
+			return err
+		}
 	}
 	// A cosigner holds only witness keys. Their 52-character IDs never equal
 	// a 58-character RekeyTo address, but an Ed25519 witness key's public key

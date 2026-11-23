@@ -1,16 +1,19 @@
 # Signer Invariants Machine-Checkable Model
 
-> Status: TLC checked; the recorded positive run generated 101,040 distinct
+> Status: TLC checked; the recorded positive run generated 202,080 distinct
 > states at depth 2 with no counterexamples (groups of up to three
-> positions), and the deep run 2,021,040 at depth 2 (up to four). Three
+> positions), and the deep run 4,042,080 at depth 2 (up to four). Four
 > expected-failure negative controls must keep producing their
 > counterexamples. Two fail on `SI1_NoReleaseWithInvalidRekeyTarget`:
 > `signer_invariants_negative_order.cfg` (`InvariantsBeforePolicy = FALSE`)
-> after 50,536 distinct states at depth 2, and
+> after 101,074 distinct states at depth 2, and
 > `signer_invariants_negative_positions.cfg`
-> (`TargetJudgesEveryPosition = FALSE`) after 50,560 at depth 2. The third,
+> (`TargetJudgesEveryPosition = FALSE`) after 101,122 at depth 2. The third,
 > `signer_invariants_negative_external.cfg` (`ExternalAfterPolicy = FALSE`),
-> fails on `SI6_NoLookupForARefusedRequest` after 50,522 at depth 2.
+> fails on `SI6_NoLookupForARefusedRequest` after 101,048 at depth 2. The
+> fourth, `signer_invariants_negative_network.cfg`
+> (`NetworkParamsBeforeGates = FALSE`), fails on
+> `SI7_NoReleaseOrLookupWithInvalidNetworkParams` after 101,041 at depth 2.
 
 The signer invariants are refusals no policy lifts: no rekey to a held
 aplane key that is not a valid rekey target, no rekey to a rotating account,
@@ -32,6 +35,7 @@ The spec lives at [formal/signer_invariants.tla](formal/signer_invariants.tla).
 | SI4 | A refusal by the valid-target invariant names the first position that breaks it | `SI4_RefusalNamesFirstPosition` |
 | SI5 | No signature is released for a request unless the policy would sign it and its external checks, if it has any, pass: the external answer can remove a signature, never add one | `SI5_ExternalChecksOnlyRefuse` |
 | SI6 | A request the invariants or the policy refuse makes no external lookup | `SI6_NoLookupForARefusedRequest` |
+| SI7 | A group whose cross-slot network parameters are invalid (mismatched genesis hashes or non-overlapping validity windows) reaches neither policy, external lookups, nor signature release | `SI7_NoReleaseOrLookupWithInvalidNetworkParams` |
 
 ## What TLC actually verifies
 
@@ -65,7 +69,7 @@ released only if, in addition, the answer is not `"refuse"`. The answer
 enters the release as a conjunct, so it can refuse a signature the earlier
 gates allowed and cannot release one they refused (SI5).
 
-The three constants are the three guards, each load-bearing, confirmed by
+The four constants are the four guards, each load-bearing, confirmed by
 mutation:
 
 | Mutation | Result |
@@ -73,6 +77,7 @@ mutation:
 | `InvariantsBeforePolicy = FALSE` (negative control) | SI1 fails: an approval releases a group that carries the rekey |
 | `TargetJudgesEveryPosition = FALSE` (negative control) | SI1 fails: the rekey sits at a passthrough position and the signer signs the rest of the group |
 | `ExternalAfterPolicy = FALSE` (negative control) | SI6 fails: a request the policy refuses is still looked up |
+| `NetworkParamsBeforeGates = FALSE` (negative control) | SI7 fails: a group with mismatched genesis hashes or disjoint validity windows reaches policy, external checks, and signature release |
 
 SI5 has no constant of its own, since its guard is the shape of the release
 rather than an order or a scope. It was checked by hand against two
@@ -96,10 +101,16 @@ passing answer release a request the policy refused (SI5 fails on
   address, so on a cosigner the valid-target invariant reads the addresses of
   the Ed25519 cosigner keys the node holds (`cosignerKeyAddresses`) and
   refuses a rekey to one at any position. Its signed-position invariants run
-  before its policy as on a signer. The cosigner's key lookup, transaction
-  bounds validation and the building of that address set run before the
-  invariants and are not modeled; a set that cannot be built refuses the
-  request.
+  before its policy as on a signer.
+- `Decide` also transcribes cross-slot network parameter validation
+  (`planner.go::validateNetworkParams`, called by the planner,
+  `frozen_component.go::ValidateFrozenComponentContext`, and
+  `cosigner_policy.go::runCosignerGates`), modeled as the boolean
+  `valid_network_params` checked ahead of the invariants, policy, and
+  external lookups under `NetworkParamsBeforeGates` (SI7). The cosigner's
+  key lookup, per-transaction bounds validation, and the building of
+  `cosignerKeyAddresses` remain outside the model; a set that cannot be
+  built refuses the request.
 - A position outside the group fails closed in the code
   (`positionOutsideGroup`); the model's positions are the group's by
   construction.
@@ -143,5 +154,7 @@ java -jar tla2tools.jar -config docs/formal/signer_invariants_negative_order.cfg
 java -jar tla2tools.jar -config docs/formal/signer_invariants_negative_positions.cfg \
   docs/formal/signer_invariants.tla
 java -jar tla2tools.jar -config docs/formal/signer_invariants_negative_external.cfg \
+  docs/formal/signer_invariants.tla
+java -jar tla2tools.jar -config docs/formal/signer_invariants_negative_network.cfg \
   docs/formal/signer_invariants.tla
 ```
