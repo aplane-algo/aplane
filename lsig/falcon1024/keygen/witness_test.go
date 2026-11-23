@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -62,10 +63,10 @@ func TestCosignerFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 
 	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := store.Unlock(passphrase); err != nil {
+	if err := keystoretest.Unlock(store, paths, passphrase); err != nil {
 		t.Fatalf("Unlock() error = %v", err)
 	}
-	if err := store.Scan(); err != nil {
+	if _, err := keystoretest.Rescan(store, paths); err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
 	km, err := store.Get(context.Background(), result.Address)

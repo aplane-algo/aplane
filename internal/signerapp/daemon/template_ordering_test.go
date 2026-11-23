@@ -5,9 +5,11 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/crypto"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -81,11 +83,11 @@ teal: |
 
 	// Standalone key metadata lets key inventory classify and expose signing args
 	// before the matching template has been registered for generation.
-	ks := ir.KeyStore()
-	if err := ks.Scan(); err != nil {
-		t.Fatalf("keyStore.Scan() error = %v", err)
+	contents, err := keystoretest.Rescan(ir.KeyStore(), ir.KeyPaths())
+	if err != nil {
+		t.Fatalf("Rescan() error = %v", err)
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
+	ir.PublishSnapshot(contents.KeyFiles(), contents.KeyTypes())
 
 	preReloadInfo, ok := findKeyInfoResponse(server.restService().BuildKeyInfoList(ir), address)
 	if !ok {

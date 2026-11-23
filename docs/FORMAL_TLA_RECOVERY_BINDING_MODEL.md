@@ -58,8 +58,9 @@ The transitions transcribe the post-commit reload and the recovery paths:
   apstore's exclusive store lock refuses a running signer, so no binding or
   key cache exists to fall behind the root, and nothing can `Serve` or
   `Maintain` until a signer starts. That signer is locked until its first
-  unlock, whose reload binds the authenticated root selection before anything
-  can fail (`BindStoreRootSelection`), so it begins as `Init` does, with the repaired generation, or the old one after a repair that did
+  unlock, whose build authenticates the root selection before anything can
+  fail, and whose publish or recovery view binds it, so it begins as `Init`
+  does, with the repaired generation, or the old one after a repair that did
   not commit, as `root`.
 - `Build` is the reload's build, `internal/signerapp/startup/product_build.go`
   `Build`: it reads the root once and authenticates what it selects
@@ -197,11 +198,11 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   recovery entered after it began (KU5). Which generation its own reload
   bound when it publishes is not checked by any model; it is a
   model-extension candidate.
-  Its reload replaces recovery's keyring with one opened from the same store
-  root. One that then fails keeps that keyring and the binding it made
-  (`BindStoreRootSelection`), so recovery maintenance and the reconcile still run; it
-  once closed the keyring, and with it the binding, leaving recovery unable
-  to act until a later unlock.
+  It builds with a keyring opened from the same store root and installs it
+  only when it publishes or enters recovery for a content defect; one whose
+  build fails otherwise keeps recovery's keyring and binding, so recovery
+  maintenance and the reconcile still run. It once closed the keyring, and
+  with it the binding, leaving recovery unable to act until a later unlock.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.

@@ -81,64 +81,6 @@ func TestFileKeyStore_NewFileKeyStore_DefaultPath(t *testing.T) {
 	}
 }
 
-func TestAtomicFileKeyStoreAuthenticatesFreshRootSelection(t *testing.T) {
-	paths := utilkeys.NewPaths(t.TempDir())
-	passphrase := []byte("atomic-store-root-test-passphrase")
-	kr, err := crypto.NewKeyring()
-	if err != nil {
-		t.Fatalf("NewKeyring() error = %v", err)
-	}
-	t.Cleanup(kr.Zero)
-
-	firstID := "gen-1785200000-00000001"
-	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		SkipCandidateValidation: true,
-		GenerationID:            firstID,
-		FirstGeneration:         true,
-		InitialPassphrase:       passphrase,
-		Operation:               "store-initialize",
-		OperationID:             "init-" + firstID,
-		CreatedAt:               time.Unix(1_785_200_000, 0),
-		Integrity:               kr,
-		Apply:                   genstoretest.ApplyAuthorityPlaceholders,
-	}); err != nil {
-		t.Fatalf("Mint(first generation) error = %v", err)
-	}
-	if _, err := os.Lstat(filepath.Join(paths.ProductDir(), "CURRENT")); !os.IsNotExist(err) {
-		t.Fatalf("CURRENT exists after atomic mint: %v", err)
-	}
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-	if err := store.Unlock(passphrase); err != nil {
-		t.Fatalf("Unlock() error = %v", err)
-	}
-	t.Cleanup(store.ClearKeys)
-	active, err := store.ActivePaths()
-	if err != nil || active.GenerationID() != firstID {
-		t.Fatalf("ActivePaths() = %q, %v; want %q", active.GenerationID(), err, firstID)
-	}
-
-	secondID := "gen-1785200001-00000002"
-	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		SkipCandidateValidation: true,
-		GenerationID:            secondID,
-		Parent:                  firstID,
-		Operation:               "test-successor",
-		OperationID:             "successor-" + secondID,
-		CreatedAt:               time.Unix(1_785_200_001, 0),
-		Integrity:               kr,
-	}); err != nil {
-		t.Fatalf("Mint(successor) error = %v", err)
-	}
-	if err := store.Scan(); err != nil {
-		t.Fatalf("Scan() error = %v", err)
-	}
-	active, err = store.ActivePaths()
-	if err != nil || active.GenerationID() != secondID {
-		t.Fatalf("ActivePaths() after root commit = %q, %v; want %q", active.GenerationID(), err, secondID)
-	}
-}
-
 // TestFileKeyStore_Get_KeyNotFound tests Get for missing key
 func TestFileKeyStore_Get_KeyNotFound(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
@@ -200,36 +142,6 @@ func TestFileKeyStore_GetDecryptFailureIsNotInvalidPassphrase(t *testing.T) {
 	}
 	if errors.Is(err, crypto.ErrInvalidPassphrase) {
 		t.Fatalf("Get() error = %v, should not be ErrInvalidPassphrase for key file corruption", err)
-	}
-}
-
-// TestFileKeyStore_GetCache tests cache copy
-func TestFileKeyStore_GetCache(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewAtomicFileKeyStoreForPaths(paths)
-
-	// Add some entries to cache
-	store.cache["addr1"] = keys.KeyScanInfo{KeyFile: "/path/to/key1", KeyType: "ed25519"}
-	store.cache["addr2"] = keys.KeyScanInfo{KeyFile: "/path/to/key2", KeyType: "aplane.falcon1024.v1"}
-
-	cache := store.GetCache()
-
-	// Verify it's a copy with just file paths
-	if len(cache) != 2 {
-		t.Errorf("Expected 2 entries, got %d", len(cache))
-	}
-
-	// Verify it returns file paths
-	if cache["addr1"] != "/path/to/key1" {
-		t.Errorf("Expected /path/to/key1, got %s", cache["addr1"])
-	}
-
-	// Modify the returned cache - should not affect original
-	cache["addr3"] = "/path/to/key3"
-	if len(store.cache) != 2 {
-		t.Error("GetCache should return a copy, not the original map")
 	}
 }
 
@@ -375,7 +287,6 @@ func TestFileKeyStore_CacheConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < numIterations; j++ {
 				_ = store.GetPublicKeyHexMap()
-				_ = store.GetCache()
 				_ = store.GetKeyTypes()
 				_ = store.GetSigningSummary()
 			}

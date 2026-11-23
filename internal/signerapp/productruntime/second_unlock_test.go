@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -54,7 +55,7 @@ func unlockedRuntimeForTest(t *testing.T) (ir *Runtime, mutation *hookedLock, lo
 		KeyPaths: paths,
 		OnLocked: func() { locks.Add(1) },
 	})
-	if err := ir.KeyStore().Unlock([]byte(secondUnlockPassphrase)); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte(secondUnlockPassphrase)); err != nil {
 		t.Fatal(err)
 	}
 	loads = &atomic.Int32{}

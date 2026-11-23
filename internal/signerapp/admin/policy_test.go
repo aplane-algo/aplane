@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -69,7 +70,7 @@ func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *pr
 		KeyPaths: paths,
 		NodeRole: role,
 	})
-	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {

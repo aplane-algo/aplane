@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -68,7 +69,7 @@ func TestKeyTypesWhileLockedListsTheBuiltInTypes(t *testing.T) {
 				t.Fatal("no built-in key types for the role; the test proves nothing")
 			}
 
-			if err := ks.Unlock(restTestPassphrase); err != nil {
+			if err := keystoretest.Unlock(ks, ir.KeyPaths(), restTestPassphrase); err != nil {
 				t.Fatalf("Unlock(): %v", err)
 			}
 			resp, svcErr = Service{}.KeyTypes(ir)

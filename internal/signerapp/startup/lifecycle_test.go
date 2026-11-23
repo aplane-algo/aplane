@@ -16,6 +16,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -482,7 +483,7 @@ func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
 		t.Fatal(err)
 	}
 	ir := productruntime.New(productruntime.Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
-	if err := ir.KeyStore().Unlock([]byte("lifecycle-passphrase")); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte("lifecycle-passphrase")); err != nil {
 		t.Fatal(err)
 	}
 	ir.SetUnlocked()

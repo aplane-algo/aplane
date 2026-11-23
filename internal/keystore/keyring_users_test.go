@@ -67,7 +67,6 @@ func TestWithKeyringCallbackReadsTheStoreWhileALockWaits(t *testing.T) {
 			close(inside)
 			<-proceed
 			_, _ = fs.ActivePaths()
-			_ = fs.GetCache()
 			_ = fs.GetKeyTypes()
 			stillWorks <- keyringWorks(kr)
 			return nil

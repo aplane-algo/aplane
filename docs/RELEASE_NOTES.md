@@ -29,6 +29,11 @@ before it was renamed `enroll`.
   the root as committed.
 - **The old reload is gone**: `templates.ReloadService`, its hooks and the
   runtime's reload function. Every reload builds and then publishes.
+- **The keystore methods only the old reload used are gone**: `Unlock`,
+  `Scan`, `ScanSelection`, `BindStoreRootSelection`, `ClearCache`,
+  `GetCache` and `GetScanWarnings`. A build scans with
+  `keystore.ScanGeneration`, and a publish installs with `Install`. Tests set
+  up a store with `keystoretest`.
 
 ## Key, template and watcher reloads build first and publish last too
 

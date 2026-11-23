@@ -4,14 +4,11 @@
 package keystore_test
 
 import (
-	"os"
 	"testing"
-	"time"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 
-	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -27,149 +24,6 @@ func initializedStore(t *testing.T, passphrase []byte) storepaths.Paths {
 	return paths
 }
 
-func mintSuccessor(t *testing.T, paths storepaths.Paths, passphrase []byte, parent string) string {
-	t.Helper()
-	_, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer kr.Zero()
-	next, err := genstore.NewGenerationID(time.Now().Add(time.Second))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := genstore.Mint(paths, genstore.MintRequest{
-		SkipCandidateValidation: true,
-		GenerationID:            next, Parent: parent, Operation: "test", OperationID: "test-" + next,
-		CreatedAt: time.Now(), Integrity: kr,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return next
-}
-
-// A reload that fails after a root commit must bind the newly selected
-// generation, never keep the superseded one: recovery maintenance acts on the
-// binding, and the old generation is sealed and immutable.
-func TestScanFailureBindsTheAuthenticatedSelection(t *testing.T) {
-	passphrase := []byte("scan-binding-passphrase")
-	paths := initializedStore(t, passphrase)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(passphrase); err != nil {
-		t.Fatal(err)
-	}
-	before, err := ks.ActivePaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	next := mintSuccessor(t, paths, passphrase, before.GenerationID())
-
-	keysDir := paths.GenerationPaths(next).KeysDir()
-	if err := os.Chmod(keysDir, 0); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(keysDir, 0o700) })
-
-	if err := ks.Scan(); err == nil {
-		t.Fatal("Scan() succeeded on an unreadable selected generation")
-	}
-	after, err := ks.ActivePaths()
-	if err != nil {
-		t.Fatalf("ActivePaths() after a failed scan error = %v, want the authenticated selection", err)
-	}
-	if after.GenerationID() != next {
-		t.Fatalf("ActivePaths() = %s, want the root's selection %s (superseded %s)", after.GenerationID(), next, before.GenerationID())
-	}
-}
-
-// A root that no longer authenticates with the session keyring leaves no
-// authority to bind.
-func TestScanClearsBindingWhenRootStopsAuthenticating(t *testing.T) {
-	passphrase := []byte("scan-binding-passphrase")
-	paths := initializedStore(t, passphrase)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(passphrase); err != nil {
-		t.Fatal(err)
-	}
-	foreign := initializedStore(t, passphrase)
-	root, err := os.ReadFile(foreign.StoreRootPath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(paths.StoreRootPath(), root, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ks.Scan(); err == nil {
-		t.Fatal("Scan() succeeded with a root sealed under another keyring")
-	}
-	if active, err := ks.ActivePaths(); err == nil {
-		t.Fatalf("ActivePaths() = %s after the root stopped authenticating, want no binding", active.GenerationID())
-	}
-}
-
-// A scan that fails keeps the key cache it found: the view in service may
-// still be signing from it, and only a scan that succeeds replaces it.
-func TestAFailedScanKeepsTheKeyCache(t *testing.T) {
-	passphrase := []byte("scan-binding-passphrase")
-	paths := initializedStore(t, passphrase)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(passphrase); err != nil {
-		t.Fatal(err)
-	}
-	active, err := ks.ActivePaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ks.SeedCacheForTest("ADDR", "ADDR.key")
-	keysDir := active.KeysDir()
-	if err := os.Chmod(keysDir, 0); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(keysDir, 0o700) })
-
-	if err := ks.Scan(); err == nil {
-		t.Fatal("Scan() succeeded on an unreadable keys directory")
-	}
-	if got := ks.GetCache(); got["ADDR"] != "ADDR.key" {
-		t.Fatalf("GetCache() after a failed scan = %v, want the cache it found", got)
-	}
-}
-
-// An unlock keeps the key cache and its scan warnings, which the reload's
-// scan that follows replaces, and zeroes the keyring it replaced. An unlock begun in recovery
-// whose reload then fails leaves recovery the cache its runtime key maps were
-// built from.
-func TestUnlockKeepsTheKeyCacheAndZeroesTheKeyringItReplaced(t *testing.T) {
-	passphrase := []byte("scan-binding-passphrase")
-	paths := initializedStore(t, passphrase)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(passphrase); err != nil {
-		t.Fatal(err)
-	}
-	var replaced *crypto.Keyring
-	if err := ks.WithKeyring(func(kr *crypto.Keyring) error { replaced = kr; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if replaced.CurrentTerm() == 0 {
-		t.Fatal("the first keyring has no current term")
-	}
-	ks.SeedCacheForTest("ADDR", "ADDR.key")
-
-	if err := ks.Unlock(passphrase); err != nil {
-		t.Fatal(err)
-	}
-	if got := ks.GetCache(); got["ADDR"] != "ADDR.key" {
-		t.Fatalf("GetCache() after an unlock = %v, want the cache kept", got)
-	}
-	if got := ks.GetScanWarnings(); len(got) != 1 || got[0].KeyFile != "keys/stray.key" {
-		t.Fatalf("GetScanWarnings() after an unlock = %v, want the warning kept", got)
-	}
-	if replaced.CurrentTerm() != 0 {
-		t.Fatal("the keyring the unlock replaced was not zeroed")
-	}
-}
-
 // A lock empties the key cache with the keyring. A key load on a locked
 // signer answers locked before it reaches the store: the lock destroys the
 // key session first.
@@ -177,12 +31,12 @@ func TestClearKeysEmptiesTheKeyCache(t *testing.T) {
 	passphrase := []byte("scan-binding-passphrase")
 	paths := initializedStore(t, passphrase)
 	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(passphrase); err != nil {
+	if err := keystoretest.Unlock(ks, paths, passphrase); err != nil {
 		t.Fatal(err)
 	}
 	ks.SeedCacheForTest("ADDR", "ADDR.key")
 	ks.ClearKeys()
-	if got := ks.GetCache(); len(got) != 0 {
-		t.Fatalf("GetCache() after a lock = %v, want it empty", got)
+	if got := ks.GetKeyTypes(); len(got) != 0 {
+		t.Fatalf("GetKeyTypes() after a lock = %v, want the cache empty", got)
 	}
 }

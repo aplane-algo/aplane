@@ -1833,8 +1833,8 @@ time by a goroutine that already holds one waits behind any writer queued
 between the two, so a lock's `ClearKeys` arriving during an admin operation
 used to deadlock the store, and with it signing, lock and shutdown.
 
-`Get`, `Scan` and `BindStoreRootSelection` call no outside code, and they keep
-the lock through their cryptographic operation. Because no copy of a term key
+`Get` calls no outside code, and it keeps the lock through its cryptographic
+operation. Because no copy of a term key
 is ever handed out, there is nothing to outlive either guard.
 
 #### Keyring Lifetime and the Cache Lock

@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -168,7 +169,7 @@ func testUnlockedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, rel
 func testUnpublishedBackupIdentityRuntime(t *testing.T, paths storepaths.Paths, reloads *atomic.Int64) *productruntime.Runtime {
 	t.Helper()
 	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
+	if err := keystoretest.Unlock(keyStore, paths, backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	autoApprove := false

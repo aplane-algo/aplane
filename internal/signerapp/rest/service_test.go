@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -133,7 +134,7 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
 	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
-	if err := ks.Unlock(restTestPassphrase); err != nil {
+	if err := keystoretest.Unlock(ks, keyPaths, restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 
@@ -155,7 +156,11 @@ func setupProductRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role
 // generation the store selects, scanned, with the policy in service carried
 // over as verified, so a reload leaves the policy as it found it.
 func scanBuildForTest(ir *productruntime.Runtime, kr *crypto.Keyring) (*productruntime.Loaded, error) {
-	contents, err := ir.KeyStore().ScanSelection(kr)
+	selection, err := genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := keystore.ScanGeneration(selection, kr)
 	policy, set := ir.PolicyState()
 	return &productruntime.Loaded{
 		Selection: contents.Selection, PolicyVerified: true, Policy: policy, ASASet: set, Alerts: ir.PolicyAlerts(),
@@ -1020,7 +1025,7 @@ func keyTypesResponseContains(items []signerapi.KeyTypeInfo, keyType string) boo
 func restMatrixRuntime(t *testing.T, paths storepaths.Paths) *productruntime.Runtime {
 	t.Helper()
 	ks := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := ks.Unlock(restTestPassphrase); err != nil {
+	if err := keystoretest.Unlock(ks, paths, restTestPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 	return productruntime.New(productruntime.Config{
