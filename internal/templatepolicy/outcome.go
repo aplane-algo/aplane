@@ -3,6 +3,8 @@
 
 package templatepolicy
 
+import "github.com/aplane-algo/aplane/internal/lsigprovider"
+
 // RegistrationOutcome reports what happened while loading keystore-backed
 // templates for a single family during reload/unlock.
 type RegistrationOutcome struct {
@@ -16,9 +18,11 @@ type RegistrationOutcome struct {
 }
 
 // PreparedTemplateRegistration is the type-specific result of parsing and
-// validating one decrypted YAML template. Callers own lifecycle policy and call
-// Register only after state-record and registry compatibility checks pass.
+// validating one decrypted YAML template: the provider it registers, which
+// keeps the provider contract (lsigprovider.CheckContract). Callers own
+// lifecycle policy and register it only after state-record and registry
+// compatibility checks pass.
 type PreparedTemplateRegistration struct {
 	Fingerprint string
-	Register    func() bool
+	Provider    lsigprovider.LSigProvider
 }

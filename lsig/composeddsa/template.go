@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -476,11 +475,13 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	if provider.KeyType() != keyType {
 		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("template key type %q does not match state key type %q", provider.KeyType(), keyType)
 	}
+	registered := &templateProvider{provider}
+	if _, err := lsigprovider.CheckContract(registered); err != nil {
+		return templatepolicy.PreparedTemplateRegistration{}, err
+	}
 	return templatepolicy.PreparedTemplateRegistration{
 		Fingerprint: provider.CompatibilityFingerprint(),
-		Register: func() bool {
-			return logicsigdsa.RegisterIfAbsent(&templateProvider{provider})
-		},
+		Provider:    registered,
 	}, nil
 }
 

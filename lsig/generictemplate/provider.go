@@ -796,11 +796,12 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 		return templatepolicy.PreparedTemplateRegistration{}, fmt.Errorf("template key type %q does not match state key type %q", spec.KeyType(), keyType)
 	}
 	tmpl := NewYAMLTemplate(spec)
+	if _, err := lsigprovider.CheckContract(tmpl); err != nil {
+		return templatepolicy.PreparedTemplateRegistration{}, err
+	}
 	return templatepolicy.PreparedTemplateRegistration{
 		Fingerprint: compatibilityFingerprintForSpec(spec),
-		Register: func() bool {
-			return genericlsig.RegisterIfAbsent(tmpl)
-		},
+		Provider:    tmpl,
 	}, nil
 }
 

@@ -7,12 +7,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
-// RegisterIfAbsent adds a Template unless its key type is already present.
-// It returns true when newly registered and false when the key type already existed.
-func RegisterIfAbsent(t Template) bool {
-	return lsigprovider.RegisterIfAbsent(t)
-}
-
 // Get retrieves a Template by its key type.
 // Input is normalized to lowercase.
 // Returns nil if not found or if the provider is not a Template.

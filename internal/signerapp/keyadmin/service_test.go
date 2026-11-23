@@ -25,7 +25,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -254,7 +253,7 @@ teal: |
 	}
 	// Registered as an installed template is, with its valid_rekey_target
 	// declaration, which creation needs.
-	prepared.Register()
+	lsigprovider.RegisterIfAbsent(prepared.Provider)
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,
 	}); err != nil {
@@ -429,7 +428,7 @@ teal: |
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec() error = %v", err)
 	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 
 	called := false
 	svc.GenerateGenericLSig = func(context.Context, string, map[string]string) (string, error) {
@@ -730,7 +729,7 @@ func registerServiceGenericTemplate(t *testing.T) {
 	if err := generictemplate.ValidateSpec(spec); err != nil {
 		t.Fatalf("ValidateSpec(service generic template) error = %v", err)
 	}
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 }
 
 func installServiceGenericTemplate(t *testing.T, ir *productruntime.Runtime) {

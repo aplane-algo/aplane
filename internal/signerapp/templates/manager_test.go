@@ -38,7 +38,8 @@ func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *test
 	})
 
 	manager := &Manager{
-		Paths: paths,
+		Paths:    paths,
+		Registry: memoryRegistry{},
 		Registrars: []TemplateRegistrar{
 			{
 				Name:         "generic",
@@ -47,7 +48,7 @@ func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *test
 				Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 					return templatepolicy.PreparedTemplateRegistration{
 						Fingerprint: "incoming-" + keyType,
-						Register:    func() bool { return true },
+						Provider:    templatesTestProvider{keyType: keyType, fingerprint: "incoming-" + keyType},
 					}, nil
 				},
 			},
@@ -91,6 +92,64 @@ func TestRegisterKeystoreTemplatesReportsActivatedAndConflictingKeyTypes(t *test
 	}
 }
 
+// The batch decides activated or conflicting: a template the registry does
+// not newly register, because another registration took its key type after
+// the preparation looked, is reported conflicting, as one found registered at
+// preparation is. A reload reads what the registry it was given holds: a
+// second reload finds the template the first registered there, and reports
+// it idempotent, not activated again.
+func TestTheBatchDecidesActivatedOrConflictingAndAReloadReadsItsRegistry(t *testing.T) {
+	paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
+	masterKey := testTemplateMasterKey()
+	const keyType = "batch-generic"
+	saveTemplateRecord(t, paths, keyType, templatestore.TemplateTypeGeneric, masterKey)
+	registrars := []TemplateRegistrar{{
+		Name:         "generic",
+		Source:       keytypestate.SourceYAMLGeneric,
+		TemplateType: templatestore.TemplateTypeGeneric,
+		Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
+			return templatepolicy.PreparedTemplateRegistration{
+				Fingerprint: "fp-" + keyType,
+				Provider:    templatesTestProvider{keyType: keyType, fingerprint: "fp-" + keyType},
+			}, nil
+		},
+	}}
+	kr := cryptotest.Keyring(t, masterKey)
+
+	refused, err := (&Manager{Paths: paths, Registrars: registrars, Registry: refusingRegistry{}}).RegisterKeystoreTemplates(kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refused.GenericActivatedKeyTypes) != 0 || !reflect.DeepEqual(refused.GenericConflictingKeyTypes, []string{keyType}) {
+		t.Fatalf("a refused registration reported activated %v and conflicting %v, want it conflicting", refused.GenericActivatedKeyTypes, refused.GenericConflictingKeyTypes)
+	}
+
+	manager := &Manager{Paths: paths, Registrars: registrars, Registry: memoryRegistry{}}
+	first, err := manager.RegisterKeystoreTemplates(kr)
+	if err != nil || !reflect.DeepEqual(first.GenericActivatedKeyTypes, []string{keyType}) {
+		t.Fatalf("first reload activated %v, %v; want %s", first.GenericActivatedKeyTypes, err, keyType)
+	}
+	second, err := manager.RegisterKeystoreTemplates(kr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.GenericActivatedKeyTypes) != 0 || !reflect.DeepEqual(second.GenericIdempotentKeyTypes, []string{keyType}) {
+		t.Fatalf("second reload activated %v and found idempotent %v, want it idempotent", second.GenericActivatedKeyTypes, second.GenericIdempotentKeyTypes)
+	}
+}
+
+// refusingRegistry registers nothing: every key type in a batch is taken,
+// as if another registration had come first.
+type refusingRegistry struct{}
+
+func (refusingRegistry) Get(keyType string) lsigprovider.LSigProvider {
+	return lsigprovider.Get(keyType)
+}
+func (refusingRegistry) Unregister(string) bool { return false }
+func (refusingRegistry) RegisterBatchIfAbsent(batch []lsigprovider.LSigProvider) ([]bool, error) {
+	return make([]bool, len(batch)), nil
+}
+
 func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	paths = genstoretest.MintFirst(t, paths)
@@ -112,6 +171,7 @@ func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.
 
 	manager := &Manager{
 		Paths:      paths,
+		Registry:   lsigprovider.ProcessRegistry{},
 		Registrars: nil,
 	}
 
@@ -140,7 +200,7 @@ func TestRegisterKeystoreTemplatesReturnsStateListError(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, testTemplateMasterKey()))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, testTemplateMasterKey()))
 	if err == nil || !strings.Contains(err.Error(), "failed to load keystore templates") {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v, want state list failure", err)
 	}
@@ -157,13 +217,13 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	genericKeyType := "test.manager-generic.v1"
 	composedKeyType := "test.manager-composed.v1"
 	t.Cleanup(func() {
-		UnregisterProductProvider(genericKeyType)
-		UnregisterProductProvider(composedKeyType)
+		lsigprovider.Unregister(genericKeyType)
+		lsigprovider.Unregister(composedKeyType)
 	})
 	saveTemplateYAML(t, paths, genericKeyType, templatestore.TemplateTypeGeneric, managerGenericTemplateYAML("manager-generic"), masterKey)
 	saveTemplateYAML(t, paths, composedKeyType, templatestore.TemplateTypeComposed, managerComposedTemplateYAML("manager-base", "manager-composed"), masterKey)
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -191,13 +251,13 @@ func TestReloadTreatsAChangedValidRekeyTargetAsAnotherDefinition(t *testing.T) {
 	paths = genstoretest.MintFirst(t, paths)
 	masterKey := testTemplateMasterKey()
 	keyType := "test.manager-declaration.v1"
-	t.Cleanup(func() { UnregisterProductProvider(keyType) })
+	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	original := managerGenericTemplateYAML("manager-declaration")
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, original, masterKey)
 
 	reload := func() RegistrationReport {
 		t.Helper()
-		report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+		report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 		if err != nil {
 			t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 		}
@@ -231,7 +291,8 @@ func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 
 	saveTemplateRecord(t, paths, keyType, templatestore.TemplateTypeGeneric, masterKey)
 	manager := &Manager{
-		Paths: paths,
+		Paths:    paths,
+		Registry: lsigprovider.ProcessRegistry{},
 		Registrars: []TemplateRegistrar{
 			{
 				Name:         "generic",
@@ -240,12 +301,7 @@ func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 				Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 					return templatepolicy.PreparedTemplateRegistration{
 						Fingerprint: fingerprint,
-						Register: func() bool {
-							return lsigprovider.RegisterIfAbsent(templatesTestProvider{
-								keyType:     keyType,
-								fingerprint: fingerprint,
-							})
-						},
+						Provider:    templatesTestProvider{keyType: keyType, fingerprint: fingerprint},
 					}, nil
 				},
 			},
@@ -268,8 +324,8 @@ func TestProductTemplateProviderRegistersAndUnregisters(t *testing.T) {
 		t.Fatalf("GenericIdempotentKeyTypes = %#v, want %s", idempotent.GenericIdempotentKeyTypes, keyType)
 	}
 
-	if unregistered := UnregisterProductProvider(keyType); !unregistered {
-		t.Fatalf("UnregisterProductProvider() did not unregister provider")
+	if unregistered := lsigprovider.Unregister(keyType); !unregistered {
+		t.Fatalf("lsigprovider.Unregister() did not unregister provider")
 	}
 	if lsigprovider.Get(keyType) != nil {
 		t.Fatalf("provider %s remained registered after product deactivation", keyType)
@@ -285,7 +341,7 @@ func TestRegisterKeystoreTemplatesSkipsDisabledComposedTemplate(t *testing.T) {
 	saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeComposed, managerComposedTemplateYAML("manager-disabled-base", "manager-disabled"), masterKey)
 	writeTemplateStateForTest(t, paths, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -458,7 +514,7 @@ func TestRegisterKeystoreTemplatesReportsOrphanedTemplateRecords(t *testing.T) {
 		t.Fatalf("Put(composed orphan) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, testTemplateMasterKey()))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, testTemplateMasterKey()))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -480,7 +536,7 @@ func TestRegisterKeystoreTemplatesReportsInvalidStateRecord(t *testing.T) {
 		t.Fatalf("WriteFile(corrupt record) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -520,7 +576,7 @@ func TestRegisterKeystoreTemplatesReportsUnreadableTemplateAsInvalid(t *testing.
 		t.Fatalf("Put(state record) error = %v", err)
 	}
 
-	report, err := NewManager(paths).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+	report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).RegisterKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 	if err != nil {
 		t.Fatalf("RegisterKeystoreTemplates() error = %v", err)
 	}
@@ -594,14 +650,30 @@ func lifecycleMatrixManager(paths storepaths.Paths, registered map[string]bool) 
 		registrars[i].Prepare = func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 			return templatepolicy.PreparedTemplateRegistration{
 				Fingerprint: "fp-" + keyType,
-				Register: func() bool {
-					registered[keyType] = true
-					return true
-				},
+				Provider:    templatesTestProvider{keyType: keyType, fingerprint: "fp-" + keyType},
 			}, nil
 		}
 	}
-	return &Manager{Paths: paths, Registrars: registrars}
+	return &Manager{Paths: paths, Registrars: registrars, Registry: recordingRegistry(registered)}
+}
+
+// recordingRegistry records the key types a reload registers, and registers
+// nothing: the process-wide registry answers its lookups.
+type recordingRegistry map[string]bool
+
+func (r recordingRegistry) Get(keyType string) lsigprovider.LSigProvider {
+	return lsigprovider.Get(keyType)
+}
+
+func (r recordingRegistry) Unregister(string) bool { return false }
+
+func (r recordingRegistry) RegisterBatchIfAbsent(batch []lsigprovider.LSigProvider) ([]bool, error) {
+	registered := make([]bool, len(batch))
+	for i, p := range batch {
+		r[p.KeyType()] = true
+		registered[i] = true
+	}
+	return registered, nil
 }
 
 func assertLifecycleReportBucket(t *testing.T, report RegistrationReport, keyType string, want string) {
@@ -762,7 +834,7 @@ func sweepWithDisabledOrphansForTest(t *testing.T, paths storepaths.Paths, maste
 	if err != nil {
 		t.Fatalf("ListActive() error = %v", err)
 	}
-	registrars, err := NewManager(paths).templateRegistrars()
+	registrars, err := NewManager(paths, lsigprovider.ProcessRegistry{}).templateRegistrars()
 	if err != nil {
 		t.Fatalf("templateRegistrars() error = %v", err)
 	}
@@ -965,4 +1037,37 @@ func TestSweepKeyTypeNamespaceNamesTheEntry(t *testing.T) {
 	if !reflect.DeepEqual(defects, want) {
 		t.Fatalf("sweepKeyTypeNamespace() = %+v, want %+v", defects, want)
 	}
+}
+
+// memoryRegistry is a provider registry of its own over the process-wide
+// one: it reads providers from both and registers into its own map, so a
+// test's registrations do not outlive it.
+type memoryRegistry map[string]lsigprovider.LSigProvider
+
+func (r memoryRegistry) Get(keyType string) lsigprovider.LSigProvider {
+	if p, ok := r[keyType]; ok {
+		return p
+	}
+	return lsigprovider.Get(keyType)
+}
+
+func (r memoryRegistry) Unregister(keyType string) bool {
+	_, ok := r[keyType]
+	delete(r, keyType)
+	return ok
+}
+
+func (r memoryRegistry) RegisterBatchIfAbsent(batch []lsigprovider.LSigProvider) ([]bool, error) {
+	registered := make([]bool, len(batch))
+	for i, p := range batch {
+		keyType, err := lsigprovider.CheckContract(p)
+		if err != nil {
+			return nil, err
+		}
+		if r.Get(keyType) == nil {
+			r[keyType] = p
+			registered[i] = true
+		}
+	}
+	return registered, nil
 }

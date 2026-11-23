@@ -8,7 +8,7 @@
 // To add a new generic LogicSig template:
 // 1. Create a new package in lsig/<template>/
 // 2. Implement the Template interface
-// 3. Add registration in the provider package that calls genericlsig.RegisterIfAbsent()
+// 3. Register its provider with lsigprovider; a keystore template is prepared and registered by the reload (templates.Manager)
 // 4. Add the appropriate RegisterClient call to lsig/clientreg and the RegisterSigner call to lsig/signerreg
 package genericlsig
 

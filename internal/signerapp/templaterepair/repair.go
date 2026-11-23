@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
@@ -231,7 +232,7 @@ func damagePath(damage error, current storepaths.GenPaths) (string, bool) {
 // first damage a repair does not cover, and what refuses a commit over it.
 // reconcileErr is reconciliation's refusal of the store, if any.
 func classify(opts Options, preview *Preview, reconcileErr error) error {
-	manager := signertemplates.NewManager(opts.Paths)
+	manager := signertemplates.NewManager(opts.Paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = opts.Current
 	report, err := manager.ValidateKeystoreTemplates(opts.Keyring)
 	if err != nil {

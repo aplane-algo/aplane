@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -266,7 +265,7 @@ func registerLibraryGenericTemplateForTest(t *testing.T, filename string) {
 	t.Helper()
 
 	_, spec := loadLibraryGenericTemplateForTest(t, filename)
-	genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
+	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 }
 
 func installLibraryGenericTemplateForTest(t *testing.T, server *Signer, filename string) {

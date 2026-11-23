@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -109,7 +110,7 @@ func parsePruneArgs(args []string) (pruneOptions, error) {
 }
 
 func verifyCurrentGenerationContentWithKeyring(paths storepaths.Paths, active storepaths.GenPaths, kr *crypto.Keyring) error {
-	manager := signertemplates.NewManager(paths)
+	manager := signertemplates.NewManager(paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = active
 	templateReport, err := manager.RegisterKeystoreTemplates(kr)
 	if err != nil {

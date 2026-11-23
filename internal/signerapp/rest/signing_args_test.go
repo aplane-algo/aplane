@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -29,7 +28,7 @@ func TestKeysListSigningArgsOnlyForKeysThatRecordThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	generic := generictemplate.NewYAMLTemplate(spec)
-	genericlsig.RegisterIfAbsent(generic)
+	lsigprovider.RegisterIfAbsent(generic)
 	t.Cleanup(func() { lsigprovider.Unregister(generic.KeyType()) })
 	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 

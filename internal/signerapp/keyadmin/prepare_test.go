@@ -60,7 +60,7 @@ teal: |
 	}
 	// Registered as an installed template is, with its valid_rekey_target
 	// declaration, which creation needs.
-	prepared.Register()
+	lsigprovider.RegisterIfAbsent(prepared.Provider)
 	t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
 		KeyType: keyType, Source: keytypestate.SourceYAMLComposed, State: keytypestate.StateEnabled,

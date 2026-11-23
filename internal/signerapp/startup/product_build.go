@@ -160,7 +160,7 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 // directly because reload callers already hold passphraseLock; this function
 // must not call ir.SnapshotKeySession().
 func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
-	templateManager := signertemplates.NewManager(ir.KeyPaths())
+	templateManager := signertemplates.NewManager(ir.KeyPaths(), ir.ProviderRegistry())
 	svc := &signertemplates.ReloadService{
 		KeyStore:        ir.KeyStore(),
 		Session:         session,

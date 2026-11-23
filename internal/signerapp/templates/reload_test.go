@@ -131,7 +131,8 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 		KeyStore: store,
 		Session:  session,
 		TemplateManager: &Manager{
-			Paths: paths,
+			Registry: memoryRegistry{},
+			Paths:    paths,
 			Registrars: []TemplateRegistrar{
 				{
 					Name:         "generic",
@@ -140,7 +141,7 @@ func TestReloadReportsTemplateActivationAndConflicts(t *testing.T) {
 					Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 						return templatepolicy.PreparedTemplateRegistration{
 							Fingerprint: "incoming-" + keyType,
-							Register:    func() bool { return true },
+							Provider:    templatesTestProvider{keyType: keyType, fingerprint: "incoming-" + keyType},
 						}, nil
 					},
 				},
@@ -195,7 +196,8 @@ func TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan(t *testing.T) {
 		KeyStore: store,
 		Session:  session,
 		TemplateManager: &Manager{
-			Paths: paths,
+			Paths:    paths,
+			Registry: lsigprovider.ProcessRegistry{},
 			Registrars: []TemplateRegistrar{
 				{
 					Name:         "generic",
@@ -249,7 +251,8 @@ func TestReloadBeforeKeyScanHookErrorAbortsReload(t *testing.T) {
 		KeyStore: store,
 		Session:  session,
 		TemplateManager: &Manager{
-			Paths: paths,
+			Paths:    paths,
+			Registry: lsigprovider.ProcessRegistry{},
 			Registrars: []TemplateRegistrar{
 				{
 					Name:         "generic",
@@ -289,7 +292,8 @@ func TestReloadLockedErrorPreservesStoreLockedSentinel(t *testing.T) {
 		KeyStore: store,
 		Session:  &fakeSession{},
 		TemplateManager: &Manager{
-			Paths: mintedPathsForReloadTest(t),
+			Paths:    mintedPathsForReloadTest(t),
+			Registry: lsigprovider.ProcessRegistry{},
 		},
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
@@ -313,7 +317,7 @@ func TestReloadClearsInitializedMasterKeyOnBeforeKeyScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		BeforeKeyScan: func(*crypto.Keyring) error {
 			return wantErr
 		},
@@ -340,7 +344,7 @@ func TestReloadClearsInitializedMasterKeyOnScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
@@ -378,7 +382,7 @@ func TestReloadWithAPassphraseKeepsAKeyringItFoundOpen(t *testing.T) {
 			service := &ReloadService{
 				KeyStore:        store,
 				Session:         &fakeSession{},
-				TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+				TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 				BeforeKeyScan: func(*crypto.Keyring) error {
 					return tc.beforeKeyScan
 				},
@@ -404,7 +408,7 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 	}
 
@@ -430,7 +434,7 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		BeforePublish: func(map[string]string, map[string]string) error {
 			return wantErr
 		},
@@ -472,7 +476,7 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
 			if keyTypes["ADDR"] == witness.Falcon1024V1 {
 				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.witness-falcon1024.v1`)
@@ -521,7 +525,7 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: mintedPathsForReloadTest(t), Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string) {
 			publishedKeys = keys
 			publishedKeyTypes = keyTypes
@@ -567,7 +571,7 @@ func TestReloadAuditsLogicSigInvariantScanWarnings(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         session,
-		TemplateManager: &Manager{Paths: paths, Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		TemplateManager: &Manager{Paths: paths, Registrars: []TemplateRegistrar{testNoopRegistrar()}, Registry: lsigprovider.ProcessRegistry{}},
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 		AuditLog:        audit,
 	}
@@ -618,7 +622,7 @@ func TestReloadBindsStoreRootSelectionBeforePreScanHook(t *testing.T) {
 	service := &ReloadService{
 		KeyStore:        store,
 		Session:         &fakeSession{},
-		TemplateManager: &Manager{Paths: paths},
+		TemplateManager: &Manager{Paths: paths, Registry: lsigprovider.ProcessRegistry{}},
 		BeforeKeyScan: func(*crypto.Keyring) error {
 			boundBeforeHook = store.bindCalled
 			return errors.New("policy integrity failed")
@@ -725,16 +729,16 @@ teal: |
 	saveTemplateYAML(t, paths, composedKeyType, templatestore.TemplateTypeComposed, composed, masterKey)
 	saveTemplateYAML(t, paths, boundedKeyType, templatestore.TemplateTypeComposed, bounded, masterKey)
 	t.Cleanup(func() {
-		UnregisterProductProvider(genericKeyType)
-		UnregisterProductProvider(composedKeyType)
-		UnregisterProductProvider(boundedKeyType)
+		lsigprovider.Unregister(genericKeyType)
+		lsigprovider.Unregister(composedKeyType)
+		lsigprovider.Unregister(boundedKeyType)
 	})
 
 	published := false
 	service := &ReloadService{
 		KeyStore:        &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}},
 		Session:         &fakeSession{},
-		TemplateManager: NewManager(paths),
+		TemplateManager: NewManager(paths, lsigprovider.ProcessRegistry{}),
 		PublishSnapshot: func(map[string]string, map[string]string) { published = true },
 		Info:            func(string) {},
 		Warn:            func(string) {},

@@ -63,7 +63,7 @@ teal: |
 		t.Fatal(err)
 	}
 	lsigprovider.Unregister(keyType)
-	prepared.Register()
+	lsigprovider.RegisterIfAbsent(prepared.Provider)
 }
 
 // A creation request is resolved under the store mutation lock, which a

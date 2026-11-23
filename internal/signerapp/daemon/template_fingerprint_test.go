@@ -13,7 +13,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -59,8 +58,8 @@ func TestTemplateInstallAndImportWithARecordedFingerprint(t *testing.T) {
 				otherKeyType := testTemplateKeyType(otherFamily)
 				otherYAML := renderGenericTemplateYAML(otherFamily, 1, "Other", "another template")
 				t.Cleanup(func() {
-					signertemplates.UnregisterProductProvider(keyType)
-					signertemplates.UnregisterProductProvider(otherKeyType)
+					lsigprovider.Unregister(keyType)
+					lsigprovider.Unregister(otherKeyType)
 				})
 
 				templates := server.adminServices().templateApp()

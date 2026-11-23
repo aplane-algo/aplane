@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -102,7 +101,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 		t.Fatalf("ParseTemplateSpec(generic) error = %v", err)
 	}
 	generic := generictemplate.NewYAMLTemplate(genericSpec)
-	genericlsig.RegisterIfAbsent(generic)
+	lsigprovider.RegisterIfAbsent(generic)
 	t.Cleanup(func() { lsigprovider.Unregister(generic.KeyType()) })
 	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 

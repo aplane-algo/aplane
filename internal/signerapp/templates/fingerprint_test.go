@@ -55,7 +55,7 @@ func reloadServiceForFingerprintTest(paths utilkeys.Paths) *ReloadService {
 	return &ReloadService{
 		KeyStore:        &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}},
 		Session:         &fakeSession{},
-		TemplateManager: NewManager(paths),
+		TemplateManager: NewManager(paths, lsigprovider.ProcessRegistry{}),
 		PublishSnapshot: func(map[string]string, map[string]string) {},
 		AuditLog:        &fakeAuditLog{},
 		Info:            func(string) {},
@@ -104,7 +104,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() { UnregisterProductProvider(keyType) })
+				t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 				paths := mintedPathsForReloadTest(t)
 				masterKey := testTemplateMasterKey()
 				saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, data, masterKey)
@@ -143,7 +143,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 					if report != nil {
 						t.Fatalf("Reload() report = %+v, want none", report)
 					}
-					report, err := NewManager(paths).ValidateKeystoreTemplates(cryptotest.Keyring(t, masterKey))
+					report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).ValidateKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 					if err != nil {
 						t.Fatalf("ValidateKeystoreTemplates() error = %v", err)
 					}

@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/templaterepair"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
@@ -32,7 +31,7 @@ func TestOfflineTemplateRepairLetsTheSignerUnlock(t *testing.T) {
 	orphaned := testTemplateKeyType(fmt.Sprintf("offline-repair-orphan-%d", suffix))
 	templates := server.adminServices().templateApp()
 	for _, keyType := range []string{edited, orphaned} {
-		t.Cleanup(func() { signertemplates.UnregisterProductProvider(keyType) })
+		t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 		family := strings.TrimSuffix(strings.TrimPrefix(keyType, "test."), ".v1")
 		yaml := renderGenericTemplateYAML(family, 1, "Offline Repair", "offline repair")
 		if result := templates.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{TemplateYAML: yaml}); !result.Success {
@@ -61,8 +60,8 @@ func TestOfflineTemplateRepairLetsTheSignerUnlock(t *testing.T) {
 		t.Helper()
 		server.runtime.Lock()
 		// A fresh process has registered no template.
-		signertemplates.UnregisterProductProvider(edited)
-		signertemplates.UnregisterProductProvider(orphaned)
+		lsigprovider.Unregister(edited)
+		lsigprovider.Unregister(orphaned)
 		success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
 		if !success {
 			t.Fatalf("UnlockIdentity() failed: %s", errMsg)

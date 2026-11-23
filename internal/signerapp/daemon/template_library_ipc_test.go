@@ -20,6 +20,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -586,7 +587,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	if err != nil {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
-	if !genericlsig.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec)) {
+	if !lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec)) {
 		t.Fatalf("template %q already registered", keyType)
 	}
 
