@@ -15,9 +15,15 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/cmdspec"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
-const CurrentManifestFormat = "2.0"
+const (
+	CurrentManifestFormat = "2.0"
+
+	// MaxManifestBytes caps manifest.json reads on the host.
+	MaxManifestBytes int64 = 1 << 20
+)
 
 // Manifest represents an external plugin's manifest.json
 type Manifest struct {
@@ -53,7 +59,7 @@ type Command struct {
 
 // load reads and parses a manifest.json file
 func load(path string) (*Manifest, error) {
-	data, err := os.ReadFile(path)
+	data, _, err := fsutil.ReadRegularFileLimited(path, MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest: %w", err)
 	}

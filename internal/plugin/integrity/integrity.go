@@ -14,7 +14,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/checksum"
+	"github.com/aplane-algo/aplane/internal/fsutil"
+)
+
+const (
+	// MaxChecksumsFileBytes caps checksums.sha256 reads on the host.
+	MaxChecksumsFileBytes int64 = 1 << 20
+
+	// MaxChecksumEntryBytes caps individual plugin file reads hashed on the host
+	// (accommodates single-executable runtime bundles while preventing unbounded reads).
+	MaxChecksumEntryBytes int64 = 512 << 20
+)
+
+var (
+	maxChecksumsFileBytes = MaxChecksumsFileBytes
+	maxChecksumEntryBytes = MaxChecksumEntryBytes
 )
 
 // Verifier handles plugin integrity verification
@@ -74,12 +88,18 @@ func verifyChecksumEntry(pluginDir string, entry ChecksumEntry) error {
 		return err
 	}
 
-	actualHash, err := checksum.ComputeSHA256(filePath)
+	actualHash, _, err := fsutil.RegularFileSHA256Limited(filePath, maxChecksumEntryBytes)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
 			return fmt.Errorf("%w: %s", ErrMissingFile, entry.Filename)
+		case errors.Is(err, fsutil.ErrNotRegularFile):
+			return fmt.Errorf("%w: %s", ErrNonRegularFile, entry.Filename)
+		case errors.Is(err, fsutil.ErrFileTooLarge):
+			return fmt.Errorf("%w: %s", ErrFileTooLarge, entry.Filename)
+		default:
+			return fmt.Errorf("failed to hash %s: %w", entry.Filename, err)
 		}
-		return fmt.Errorf("failed to hash %s: %w", entry.Filename, err)
 	}
 
 	if actualHash != entry.Hash {
@@ -102,9 +122,16 @@ func GenerateChecksums(pluginDir string, files []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		hash, err := checksum.ComputeSHA256(filePath)
+		hash, _, err := fsutil.RegularFileSHA256Limited(filePath, maxChecksumEntryBytes)
 		if err != nil {
-			return "", fmt.Errorf("failed to hash %s: %w", file, err)
+			switch {
+			case errors.Is(err, fsutil.ErrNotRegularFile):
+				return "", fmt.Errorf("%w: %s", ErrNonRegularFile, file)
+			case errors.Is(err, fsutil.ErrFileTooLarge):
+				return "", fmt.Errorf("%w: %s", ErrFileTooLarge, file)
+			default:
+				return "", fmt.Errorf("failed to hash %s: %w", file, err)
+			}
 		}
 		// Use two spaces between hash and filename (sha256sum format)
 		result.WriteString(fmt.Sprintf("%s  %s\n", hash, file))
@@ -129,9 +156,34 @@ func resolvePluginPath(pluginDir, entry string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to validate checksums entry %s: %w", entry, err)
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("%w: %s", ErrChecksumsPathEscape, entry)
+	}
+	if err := checkNoSymlinkAncestors(root, rel, entry); err != nil {
+		return "", err
 	}
 
 	return cleanPath, nil
+}
+
+// checkNoSymlinkAncestors rejects intermediate symlink or non-directory path
+// segments inside the plugin directory so host-side verification cannot follow
+// a subdirectory symlink outside the plugin root.
+func checkNoSymlinkAncestors(root, rel, entry string) error {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	cur := root
+	for _, part := range parts[:len(parts)-1] {
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("failed to inspect path %s: %w", entry, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("%w: %s", ErrNonRegularFile, entry)
+		}
+	}
+	return nil
 }

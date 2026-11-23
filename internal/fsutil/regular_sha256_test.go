@@ -6,6 +6,7 @@ package fsutil
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,10 +55,41 @@ func TestReadRegularFileLimitedRejectsOversizeAndSymlink(t *testing.T) {
 	if string(got) != string(data) || mode != 0o600 {
 		t.Fatalf("ReadRegularFileLimited() = %q mode %o", got, mode)
 	}
-	if _, _, err := ReadRegularFileLimited(target, int64(len(data)-1)); err == nil {
-		t.Fatal("ReadRegularFileLimited(oversize) error = nil, want rejection")
+	if _, _, err := ReadRegularFileLimited(target, int64(len(data)-1)); !errors.Is(err, ErrFileTooLarge) {
+		t.Fatalf("ReadRegularFileLimited(oversize) error = %v, want ErrFileTooLarge", err)
 	}
-	if _, _, err := ReadRegularFileLimited(link, int64(len(data))); err == nil {
-		t.Fatal("ReadRegularFileLimited(symlink) error = nil, want rejection")
+	if _, _, err := ReadRegularFileLimited(link, int64(len(data))); !errors.Is(err, ErrNotRegularFile) {
+		t.Fatalf("ReadRegularFileLimited(symlink) error = %v, want ErrNotRegularFile", err)
+	}
+}
+
+func TestRegularFileSHA256Limited(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	data := []byte("content")
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+
+	got, size, err := RegularFileSHA256Limited(target, int64(len(data)))
+	if err != nil {
+		t.Fatalf("RegularFileSHA256Limited(exact) error = %v", err)
+	}
+	want := sha256.Sum256(data)
+	if got != hex.EncodeToString(want[:]) || size != int64(len(data)) {
+		t.Fatalf("RegularFileSHA256Limited() = %q %d", got, size)
+	}
+	if _, _, err := RegularFileSHA256Limited(target, int64(len(data)-1)); !errors.Is(err, ErrFileTooLarge) {
+		t.Fatalf("RegularFileSHA256Limited(oversize) error = %v, want ErrFileTooLarge", err)
+	}
+	if _, _, err := RegularFileSHA256Limited(link, int64(len(data))); !errors.Is(err, ErrNotRegularFile) {
+		t.Fatalf("RegularFileSHA256Limited(symlink) error = %v, want ErrNotRegularFile", err)
+	}
+	if _, _, err := RegularFileSHA256Limited(dir, int64(len(data))); !errors.Is(err, ErrNotRegularFile) {
+		t.Fatalf("RegularFileSHA256Limited(dir) error = %v, want ErrNotRegularFile", err)
 	}
 }

@@ -27,4 +27,11 @@ var (
 
 	// ErrChecksumsPathEscape indicates a checksums entry resolves outside the plugin directory.
 	ErrChecksumsPathEscape = errors.New("checksums entry escapes plugin directory")
+
+	// ErrNonRegularFile indicates a checksums file or entry is a symlink, directory,
+	// FIFO, device, or other non-regular file.
+	ErrNonRegularFile = errors.New("plugin file is not a regular file")
+
+	// ErrFileTooLarge indicates a checksums file or entry exceeds the maximum size.
+	ErrFileTooLarge = errors.New("plugin file exceeds size limit")
 )

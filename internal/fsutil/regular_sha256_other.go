@@ -23,7 +23,7 @@ func RegularFileSHA256(path string) (string, int64, error) {
 		return "", 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return "", 0, fmt.Errorf("path is not a regular file: %s", path)
+		return "", 0, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -38,6 +38,37 @@ func RegularFileSHA256(path string) (string, int64, error) {
 	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
 
+// RegularFileSHA256Limited hashes one regular file of at most max bytes.
+func RegularFileSHA256Limited(path string, max int64) (string, int64, error) {
+	if max < 0 || max == math.MaxInt64 {
+		return "", 0, fmt.Errorf("invalid regular-file size limit %d", max)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", 0, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", 0, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
+	}
+	if info.Size() > max {
+		return "", 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = file.Close() }()
+	hash := sha256.New()
+	size, err := io.Copy(hash, io.LimitReader(file, max+1))
+	if err != nil {
+		return "", 0, err
+	}
+	if size > max {
+		return "", 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), size, nil
+}
+
 // ReadRegularFile reads one regular file and returns its permission bits.
 // Server binaries use the Linux/Darwin implementation, which rejects
 // final-component symlinks atomically.
@@ -47,7 +78,7 @@ func ReadRegularFile(path string) ([]byte, os.FileMode, error) {
 		return nil, 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("path is not a regular file: %s", path)
+		return nil, 0, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -69,7 +100,10 @@ func ReadRegularFileLimited(path string, max int64) ([]byte, os.FileMode, error)
 		return nil, 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("path is not a regular file: %s", path)
+		return nil, 0, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
+	}
+	if info.Size() > max {
+		return nil, 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -81,7 +115,7 @@ func ReadRegularFileLimited(path string, max int64) ([]byte, os.FileMode, error)
 		return nil, 0, err
 	}
 	if int64(len(data)) > max {
-		return nil, 0, fmt.Errorf("file exceeds size limit %d", max)
+		return nil, 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
 	}
 	return data, info.Mode().Perm(), nil
 }

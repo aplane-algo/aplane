@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/command"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/docassets"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/jsapi"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -436,8 +439,13 @@ Assets can be IDs or cached names (e.g., "usdc" instead of "10458941").
 Amounts written with an asset are in human units (e.g., "5 algo" = 5 ALGO, "100 usdc" = 100 USDC).
 Everything else is in the smallest unit: fee=, pay= and --pay take microAlgos (1 ALGO = 1000000), and in JavaScript every amount and fee is microAlgos or the asset's base units; use algo(5) to write 5 ALGO.`
 
+const maxPluginMCPDocBytes int64 = 64 * 1024
+
 // mcpBuildDescription builds the MCP tool description by combining the base
 // command reference with any mcp.md files found in discovered plugin directories.
+// Each mcp.md must be a regular file inside a non-symlink plugin directory and
+// within maxPluginMCPDocBytes so a plugin cannot smuggle arbitrary host files
+// into the MCP tool description sent to the model provider.
 func mcpBuildDescription(pm apshellapp.PluginRuntime) string {
 	if pm == nil {
 		return mcpBaseDescription
@@ -450,12 +458,11 @@ func mcpBuildDescription(pm apshellapp.PluginRuntime) string {
 
 	var pluginDocs []string
 	for _, p := range plugins {
-		mcpMD := filepath.Join(p.Dir, "mcp.md")
-		data, err := os.ReadFile(mcpMD)
+		content, err := readPluginMCPDoc(p.Dir, maxPluginMCPDocBytes)
 		if err != nil {
+			slog.With("component", "mcp").Warn("ignoring plugin mcp.md", "plugin", p.Manifest.Name, "error", err)
 			continue
 		}
-		content := strings.TrimSpace(string(data))
 		if content != "" {
 			pluginDocs = append(pluginDocs, content)
 		}
@@ -466,4 +473,24 @@ func mcpBuildDescription(pm apshellapp.PluginRuntime) string {
 	}
 
 	return mcpBaseDescription + "\n\n" + strings.Join(pluginDocs, "\n\n")
+}
+
+func readPluginMCPDoc(pluginDir string, maxBytes int64) (string, error) {
+	dirInfo, err := os.Lstat(pluginDir)
+	if err != nil {
+		return "", err
+	}
+	if dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
+		return "", fmt.Errorf("plugin directory must be a non-symlink directory")
+	}
+
+	mcpMD := filepath.Join(pluginDir, "mcp.md")
+	data, _, err := fsutil.ReadRegularFileLimited(mcpMD, maxBytes)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }

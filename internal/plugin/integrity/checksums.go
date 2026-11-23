@@ -5,11 +5,15 @@ package integrity
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 // ChecksumEntry represents a single entry in the checksums file
@@ -31,20 +35,25 @@ var checksumLineRegex = regexp.MustCompile(`^([a-fA-F0-9]{64})\s{1,2}(.+)$`)
 func LoadChecksums(pluginDir string) (*ChecksumFile, error) {
 	checksumPath := filepath.Join(pluginDir, "checksums.sha256")
 
-	file, err := os.Open(checksumPath)
-	if os.IsNotExist(err) {
-		return nil, ErrNoChecksums
-	}
+	data, _, err := fsutil.ReadRegularFileLimited(checksumPath, maxChecksumsFileBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open checksums file: %w", err)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return nil, ErrNoChecksums
+		case errors.Is(err, fsutil.ErrNotRegularFile):
+			return nil, fmt.Errorf("%w: checksums.sha256", ErrNonRegularFile)
+		case errors.Is(err, fsutil.ErrFileTooLarge):
+			return nil, fmt.Errorf("%w: checksums.sha256", ErrFileTooLarge)
+		default:
+			return nil, fmt.Errorf("failed to open checksums file: %w", err)
+		}
 	}
-	defer func() { _ = file.Close() }()
 
 	cf := &ChecksumFile{
 		Entries: make([]ChecksumEntry, 0),
 	}
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
