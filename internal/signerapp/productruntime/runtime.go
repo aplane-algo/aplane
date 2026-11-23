@@ -371,11 +371,10 @@ func (ir *Runtime) SetVerifiedPolicyState(p *policyruntime.NodePolicy, set *asas
 	ir.nodePolicy, ir.asaSet, ir.policyAlerts = p, set, slices.Clone(alerts)
 }
 
-// PublishSourceTokens installs the source token index a reload decrypted
-// from the generation it just verified, and retires the one it replaces. It
-// is called from the reload, which holds passphraseLock, so a lock cleanup,
-// which clears the index under the same lock, lands wholly before or after
-// it; a reload after the cleanup has no keyring to decrypt with.
+// PublishSourceTokens puts next in service as the source token index and
+// retires the one it replaces. It is a test seam, kept out of production by
+// an arch test: a view goes into service only through a build's publish
+// (publishLocked), and tests use it to plant an index no store could build.
 func (ir *Runtime) PublishSourceTokens(next *sourcetokens.Index) {
 	ir.sourceTokens.Publish(next)
 }
@@ -586,8 +585,8 @@ type UnlockOutcome struct {
 // A request that finds the signer unlocked checks the passphrase and answers
 // with the session's key count; it reconciles, loads and publishes nothing.
 // For a signer locked or in recovery the store root is opened with the
-// passphrase once, which is that request's passphrase check; reconcile runs
-// with the keyring it opened, and the load opens the root again. A
+// passphrase once, which is that request's passphrase check and its one
+// derivation: the keyring it opened reconciles, builds and is installed. A
 // passphrase that does not open the root ends the request there, with
 // ErrInvalidPassphrase.
 //
@@ -625,35 +624,39 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		outcome, err := ir.answerFromSession(attempt, passphrase)
 		return outcome, false, err
 	}
+	// The one derivation of the attempt: the keyring it opens reconciles,
+	// builds, and is installed by the publish or recovery's view; every
+	// other exit zeroes it.
 	kr, _, err := openStoreRoot(ir.keyPaths.ProductDir(), passphrase)
 	if err != nil {
 		return UnlockOutcome{}, false, unlockFailure(err)
 	}
-	defer kr.Zero()
 	if ir.lockRuntime.LostToLock(attempt) {
+		kr.Zero()
 		return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
 	}
 	if err := reconcile(kr); err != nil {
 		// The store needs recovery: the attempt builds for recovery's view,
 		// so it is bound to what the root selects and shows the policy the
 		// build verified.
-		owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
+		loaded, buildErr := ir.buildOpened(kr)
 		end := buildEnd(loaded, buildErr)
-		outcome, err := ir.unlockIntoRecovery(attempt, owned, loaded, err)
+		outcome, err := ir.unlockIntoRecovery(attempt, kr, loaded, err)
 		ir.afterReload(end)
 		return outcome, false, err
 	}
 	if ir.lockRuntime.LostToLock(attempt) {
+		kr.Zero()
 		return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
 	}
-	owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
+	loaded, buildErr := ir.buildOpened(kr)
 	if buildErr != nil {
 		end := buildEnd(loaded, buildErr)
-		outcome, err := ir.unlockBuildFailed(attempt, owned, loaded, fmt.Errorf("failed to load keys: %w", buildErr))
+		outcome, err := ir.unlockBuildFailed(attempt, kr, loaded, fmt.Errorf("failed to load keys: %w", buildErr))
 		ir.afterReload(end)
 		return outcome, false, err
 	}
-	report := ir.publishUnlock(owned, loaded)
+	report := ir.publishUnlock(kr, loaded)
 	end := reloadEnd{notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)}
 	switch err := ir.lockRuntime.PublishUnlocked(attempt); {
 	case errors.Is(err, signerruntime.ErrLockedDuringUnlock):
@@ -1316,7 +1319,11 @@ func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string) {
 	return keys, keyTypes
 }
 
-// PublishSnapshot replaces the key maps with new data from a reload.
+// PublishSnapshot replaces the key maps with keys and keyTypes, and the key
+// metadata with what the keystore holds. It is a test seam, kept out of
+// production by an arch test: a view goes into service only through a
+// build's publish (publishLocked), and tests use it to plant key maps no
+// store could build.
 func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string) {
 	metadata := make(map[string]KeyPublicMetadata)
 	if ir.keyStore != nil {
@@ -1605,17 +1612,19 @@ func IsContentDefect(err error) bool {
 // nothing, and the keyring it opened is zeroed; a role conflict fails the
 // node closed. Caller must NOT hold passphraseLock.
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
-	owned, loaded, err := ir.buildWithPassphrase(passphrase)
+	kr, _, err := openStoreRoot(ir.keyPaths.ProductDir(), passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unlock the keystore: %w", err)
+	}
+	loaded, err := ir.buildOpened(kr)
 	if err != nil {
 		end := buildEnd(loaded, err)
 		loaded.Discard()
-		if owned != nil {
-			owned.Zero()
-		}
+		kr.Zero()
 		ir.afterReload(end)
 		return nil, err
 	}
-	report := ir.publishUnlock(owned, loaded)
+	report := ir.publishUnlock(kr, loaded)
 	ir.afterReload(reloadEnd{published: true, keyCount: report.KeyCount, notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)})
 	return report, nil
 }

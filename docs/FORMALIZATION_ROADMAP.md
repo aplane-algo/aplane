@@ -995,3 +995,14 @@ publish as the commit callers' do (`productruntime.Runtime.Reload` over
 note is closed: a root that stops authenticating fails them into recovery
 bound to nothing, as the model has it. No spec change; the anchors in RB2,
 RB4, RL1 and A13 and the companion follow.
+
+Changed 2026-11-23: an unlock attempt builds the whole view on a keyring it
+opened and installs it, keyring included (`productruntime/view.go`
+`buildOpened`, `publishUnlock`, `unlockIntoRecovery`), and opens the store
+root once: the keyring that reconciles is the one it builds and installs
+with. In `key_use_lock.tla` only the comments change: `Load` and
+`RecoveryOpen` stand for the build and the install, and KU6 keeps its
+predicate with its reason restated (an install under a session in service
+would replace what concurrent changes had moved on, where a failed load once
+closed the keyring). The guard order is step 2b's. The companion, KU6, KU8
+and KU9 follow.

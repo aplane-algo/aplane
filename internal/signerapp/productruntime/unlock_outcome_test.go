@@ -58,23 +58,52 @@ func TestAWrongPassphraseEndsAnUnlockAtTheStoreRootOpen(t *testing.T) {
 	}
 }
 
-// A good unlock of a locked signer reconciles with the keyring its opening
-// of the store root gave it, and loads once: two derivations, the opening
-// and the load's. It checks the passphrase no other way.
-func TestAGoodUnlockReconcilesWithTheKeyringItOpened(t *testing.T) {
+// countStoreRootOpens counts the unlock's openings of the store root with
+// a passphrase, each one derivation, and runs them as they run.
+func countStoreRootOpens(t *testing.T) *int {
+	t.Helper()
+	open := openStoreRoot
+	t.Cleanup(func() { openStoreRoot = open })
+	opens := new(int)
+	openStoreRoot = func(dir string, passphrase []byte) (*crypto.Keyring, crypto.StoreRootSelection, error) {
+		*opens++
+		return open(dir, passphrase)
+	}
+	return opens
+}
+
+// A good unlock of a locked signer derives from the passphrase once: the
+// keyring its opening of the store root gave it reconciles, builds, and is
+// the keyring the published signer serves. It checks the passphrase no other
+// way, and loads once. It once opened the root again for its load.
+func TestAGoodUnlockDerivesOnceAndServesTheKeyringItOpened(t *testing.T) {
 	ir, _, loads, _ := unlockedRuntimeForTest(t)
+	paths := ir.KeyPaths()
 	ir.Lock()
 	checks := countPassphraseChecks(t)
-	var given *crypto.Keyring
+	opens := countStoreRootOpens(t)
+	var reconciled, built *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		loads.Add(1)
+		built = kr
+		return selectionBuild(paths, kr)
+	}, ReloadEffects{})
 	reconcile := func(kr *crypto.Keyring) error {
-		given = kr
+		reconciled = kr
 		return nil
 	}
 	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil); err != nil || !ir.IsUnlocked() {
 		t.Fatalf("Unlock() = %v, state %v; want unlocked", err, ir.GetState())
 	}
-	if given == nil || *checks != 0 || loads.Load() != 1 {
-		t.Fatalf("reconciled with %v, %d passphrase check(s), %d load(s); want a keyring, none and one", given, *checks, loads.Load())
+	if *opens != 1 || *checks != 0 || loads.Load() != 1 {
+		t.Fatalf("%d store root opening(s), %d passphrase check(s), %d load(s); want one, none and one", *opens, *checks, loads.Load())
+	}
+	var served *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { served = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled == nil || built != reconciled || served != reconciled || zeroed(served) {
+		t.Fatalf("reconciled with %p, built with %p, serving %p; want one usable keyring", reconciled, built, served)
 	}
 }
 

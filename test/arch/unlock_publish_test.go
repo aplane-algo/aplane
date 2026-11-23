@@ -96,3 +96,23 @@ func TestNoProductionCodeEntersRecoveryOutsideTheFailureRule(t *testing.T) {
 		}
 	})
 }
+
+// TestNoProductionCodePublishesWhatNoBuildVerified keeps the product
+// runtime's PublishSnapshot and PublishSourceTokens out of production code.
+// They put key maps or a source token index in service directly, outside a
+// publish of what a build verified (productruntime/view.go publishLocked),
+// so a production caller would serve keys or tokens no build checked against
+// the generation the root selects. Tests use them to plant a view no store
+// could build. Every reference counts, method values included.
+func TestNoProductionCodePublishesWhatNoBuildVerified(t *testing.T) {
+	seams := map[string]bool{"PublishSnapshot": true, "PublishSourceTokens": true}
+	forEachProductionFile(t, func(rel string, parsed *ast.File) {
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			if selector, ok := node.(*ast.SelectorExpr); ok && seams[selector.Sel.Name] {
+				t.Errorf("%s refers to %s, a test seam; a view goes into service through a build's publish",
+					rel, selector.Sel.Name)
+			}
+			return true
+		})
+	})
+}

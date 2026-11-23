@@ -80,8 +80,9 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU9 | An attempt's entry into recovery never ends a session another attempt published while it ran | `KU9_RecoveryKeepsAnotherSession` |
 
 KU6 is what an unlock of an unlocked signer must not break. A load builds
-the whole view with a keyring opened from the passphrase and then installs
-it (`productruntime/view.go::buildWithPassphrase`, `::publishUnlock`); the
+the whole view with the keyring the attempt opened from the passphrase, the
+one its reconcile used, and then installs it
+(`productruntime/view.go::buildOpened`, `::publishUnlock`); the
 install replaces the keyring, the policy, the key maps and the source token
 index. A build that fails closes and installs nothing, so the reason KU6 once
 had, a failed load that closed the keyring under a session in service and
@@ -175,7 +176,8 @@ waits for it; KU2 and KU3 cover that case.
   check of the reading (`LostToLock`), and the reconcile with the keyring
   that opening gave. An attempt that lost stops there with nothing to
   clear; a reconcile that fails leads to the recovery end. `Load` is the
-  second check, the build from the passphrase, which changes nothing live,
+  second check, the build on the keyring that opening gave, the attempt's
+  one derivation of the passphrase, which changes nothing live,
   and its install; a content defect the build finds leads to the recovery
   end instead, and any other failure ends the attempt with nothing
   installed and the keyring it opened zeroed. An attempt begun in recovery
@@ -191,7 +193,7 @@ waits for it; KU2 and KU3 cover that case.
 - `RecoveryOpen` and `RecoveryFinish` transcribe the attempt's second end:
   `unlockIntoRecovery`'s check of the reading and its install of recovery's
   view under `passphraseLock` (bound to what the build found the root
-  selecting, the keyring the build opened for an attempt begun locked,
+  selecting, the keyring the attempt opened for an attempt begun locked,
   recovery's own for one begun in recovery, read under the same hold, since
   a lock's cleanup clears it under that lock), then the fence of
   `runtime.Runtime.EnterRecovery`. One that lost before the open stops with

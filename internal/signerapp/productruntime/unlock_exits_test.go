@@ -157,7 +157,7 @@ func TestAnUnlockInRecoveryThatEntersRecoveryKeepsRecoverysKeyring(t *testing.T)
 				t.Fatalf("recovery's keyring = %p (%v), want its own %p, usable", current, err, recoverys)
 			}
 			if !zeroed(opened) || opened == recoverys {
-				t.Fatal("the keyring the build opened was not zeroed")
+				t.Fatal("the keyring the attempt opened was not zeroed")
 			}
 			if !tokenZeroed(built, "tok-built") {
 				t.Fatal("the build's token index was not zeroed")
@@ -197,7 +197,7 @@ func TestAnUnlockALockOvertookBeforeItsRecoveryZeroesWhatItBuilt(t *testing.T) {
 		t.Fatal("the overtaken unlock left a keyring")
 	}
 	if !zeroed(opened) {
-		t.Fatal("the keyring the build opened was not zeroed")
+		t.Fatal("the keyring the attempt opened was not zeroed")
 	}
 	if !tokenZeroed(built, "tok-built") {
 		t.Fatal("the build's token index was not zeroed")
@@ -224,7 +224,7 @@ func TestAPassphraseChangeWhoseBuildFailsZeroesWhatItBuilt(t *testing.T) {
 		t.Fatal("the failed passphrase change installed a keyring")
 	}
 	if !zeroed(opened) {
-		t.Fatal("the keyring the build opened was not zeroed")
+		t.Fatal("the keyring the attempt opened was not zeroed")
 	}
 	if !tokenZeroed(built, "tok-built") {
 		t.Fatal("the build's token index was not zeroed")
@@ -291,5 +291,119 @@ func TestARoleConflictOnAnUnlockInRecoveryInstallsNothing(t *testing.T) {
 	}
 	if !zeroed(opened) {
 		t.Fatal("the keyring the attempt opened was not zeroed")
+	}
+}
+
+// An unlock attempt that loses to a lock before it builds zeroes the keyring
+// it opened, and loads nothing: a lock that lands just after the store
+// root's opening, or during the reconcile. The keyring is the attempt's from
+// its opening to its install, so no exit may leave it unzeroed.
+func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
+	for _, when := range []string{"after the opening", "during the reconcile"} {
+		t.Run(when, func(t *testing.T) {
+			ir, _, loads, _ := unlockedRuntimeForTest(t)
+			ir.Lock()
+			lockNow := func() {
+				var lockDone sync.WaitGroup
+				lockDone.Add(1)
+				go func() {
+					defer lockDone.Done()
+					ir.Lock()
+				}()
+				lockDone.Wait()
+			}
+			var opened *crypto.Keyring
+			open := openStoreRoot
+			t.Cleanup(func() { openStoreRoot = open })
+			openStoreRoot = func(dir string, passphrase []byte) (*crypto.Keyring, crypto.StoreRootSelection, error) {
+				kr, selection, err := open(dir, passphrase)
+				opened = kr
+				if when == "after the opening" {
+					lockNow()
+				}
+				return kr, selection, err
+			}
+			reconcile := func(*crypto.Keyring) error {
+				if when == "during the reconcile" {
+					lockNow()
+				}
+				return nil
+			}
+
+			if _, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+				t.Fatalf("Unlock() = %v, want %v", err, signerruntime.ErrLockedDuringUnlock)
+			}
+			if loads.Load() != 0 || ir.GetState() != signerruntime.SignerStateLocked {
+				t.Fatalf("%d load(s), state %v; want none, locked", loads.Load(), ir.GetState())
+			}
+			if !zeroed(opened) {
+				t.Fatal("the keyring the attempt opened was not zeroed")
+			}
+		})
+	}
+}
+
+// An unlock from locked that enters recovery, because its reconcile failed
+// or its build found a content defect, installs the keyring it opened with
+// recovery's view, usable: recovery's reconcile, restore and rollback need
+// it. The attempt opens the store root once.
+func TestAnUnlockFromLockedIntoRecoveryServesTheKeyringItOpened(t *testing.T) {
+	for _, cause := range []string{"reconcile fails", "content defect"} {
+		t.Run(cause, func(t *testing.T) {
+			ir, bound, _ := viewInService(t)
+			ir.Lock()
+			opens := countStoreRootOpens(t)
+			var buildErr error
+			reconcile := noReconcile
+			if cause == "content defect" {
+				buildErr = fmt.Errorf("%w: injected", signertemplates.ErrGenerationValidation)
+			} else {
+				reconcile = func(*crypto.Keyring) error { return errors.New("injected reconcile failure") }
+			}
+			var built *crypto.Keyring
+			ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+				built = kr
+				return &Loaded{Selection: &bound}, buildErr
+			}, ReloadEffects{})
+
+			outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil)
+			if err != nil || !outcome.Recovery || !ir.IsRecovery() {
+				t.Fatalf("Unlock() = %+v, %v in state %v; want an answer of recovery", outcome, err, ir.GetState())
+			}
+			var served *crypto.Keyring
+			if err := ir.WithKeyring(func(kr *crypto.Keyring) error { served = kr; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if built == nil || served != built || zeroed(served) {
+				t.Fatalf("recovery serves %p, the attempt built with %p; want that keyring, usable", served, built)
+			}
+			if *opens != 1 {
+				t.Fatalf("%d store root opening(s), want one", *opens)
+			}
+		})
+	}
+}
+
+// A passphrase change opens the store root with the new passphrase once, and
+// the keyring that opening gave is the one it builds with and installs.
+func TestAPassphraseChangeOpensTheRootOnceAndServesThatKeyring(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	ir.Lock()
+	opens := countStoreRootOpens(t)
+	var built *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		built = kr
+		return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+	}, ReloadEffects{})
+
+	if _, err := ir.ReloadWithPassphrase([]byte(secondUnlockPassphrase)); err != nil {
+		t.Fatalf("ReloadWithPassphrase() = %v", err)
+	}
+	var served *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { served = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if *opens != 1 || built == nil || served != built || zeroed(served) {
+		t.Fatalf("%d opening(s), built with %p, serving %p; want one opening and that keyring, usable", *opens, built, served)
 	}
 }

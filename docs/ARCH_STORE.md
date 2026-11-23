@@ -1882,9 +1882,10 @@ The relevant order is:
 
 Every reload builds the whole view before it installs any of it: a reload
 with the keyring in service (`productruntime.Runtime.reloadView`), and an
-unlock's or a passphrase change's, with a keyring opened from the
-passphrase (`buildWithPassphrase`, then `publishUnlock`, which installs that
-keyring too).
+unlock's or a passphrase change's, with the keyring it opened from the
+passphrase (`buildOpened`, then `publishUnlock`, which installs that keyring
+too). An unlock opens the store root once: that keyring reconciles, builds
+and is installed.
 `startup.Build` reads the store root once and runs steps 2 to 7 without
 changing anything live: the templates are prepared and checked, and none is
 registered. The publish then installs the result under the passphrase lock:
@@ -1929,12 +1930,13 @@ would replace the keyring, the policy, the source token index and the key
 indexes, so an unlock request on an unlocked signer verifies the passphrase
 and answers with the session's key count, and the session in service keeps
 all of them. An unlock of a locked signer, or one begun in recovery, builds
-with a keyring opened from the passphrase and installs it, then fences. Its
+with the keyring it opened from the passphrase for its reconcile and
+installs it, then fences. Its
 build follows the failure rule for a signer not unlocked: a content defect
-enters recovery's view, with the keyring the build opened for an unlock begun
+enters recovery's view, with the keyring the attempt opened for an unlock begun
 locked and recovery's own for one begun in recovery; a role conflict fails
 the node closed; any other failure installs nothing and zeroes the keyring
-the build opened, so an unlock begun locked leaves the signer locked with no
+the attempt opened, so an unlock begun locked leaves the signer locked with no
 keyring, and one begun in recovery leaves recovery its keyring and binding
 for the reconcile, restore and rollback it needs. A reconcile that fails
 enters recovery's view of what the build found. A passphrase change builds
