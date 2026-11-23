@@ -54,8 +54,9 @@ service could leave a signer that says unlocked and cannot sign.
 An attempt on a signer locked or in recovery opens the store root and
 reconciles (Reconcile), loads (Load) and publishes (Publish), or, when the
 reconcile or the load finds the store needing it, takes its second end and
-enters recovery (RecoveryOpen, RecoveryFinish), opening the keyring again
-for it. Before the reconcile, before the load and before the recovery
+enters recovery (RecoveryOpen, RecoveryFinish). The keyring it opens is the
+one it reconciles, builds and installs with: one derivation per attempt.
+Before the reconcile, before the load and before the recovery
 open it checks its reading, and an attempt that has lost to a lock stops
 there with nothing to clear.
 
@@ -194,8 +195,8 @@ Code anchors:
     answerFromSession: the passphrase check and the comparison with the
     reading. Reconcile transcribes unlockHeld's store root open, its first
     LostToLock check and the reconcile; Load its second check, the build
-    from the passphrase (productruntime/view.go buildWithPassphrase), which
-    changes nothing live, and its install (publishUnlock), which replaces
+    on the keyring that open gave it (productruntime/view.go buildOpened),
+    which changes nothing live, and its install (publishUnlock), which replaces
     the keyring, the key maps, the policy and the token index; Publish
     runtime.Runtime.PublishUnlocked; RecoveryOpen productruntime's
     unlockIntoRecovery (its LostToLock check and the install of recovery's

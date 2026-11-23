@@ -80,8 +80,9 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU9 | An attempt's entry into recovery never ends a session another attempt published while it ran | `KU9_RecoveryKeepsAnotherSession` |
 
 KU6 is what an unlock of an unlocked signer must not break. A load builds
-the whole view with a keyring opened from the passphrase and then installs
-it (`productruntime/view.go::buildWithPassphrase`, `::publishUnlock`); the
+the whole view with the keyring the attempt opened from the passphrase, the
+one its reconcile used, and then installs it
+(`productruntime/view.go::buildOpened`, `::publishUnlock`); the
 install replaces the keyring, the policy, the key maps and the source token
 index. A build that fails closes and installs nothing, so the reason KU6 once
 had, a failed load that closed the keyring under a session in service and

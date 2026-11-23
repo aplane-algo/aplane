@@ -293,3 +293,52 @@ func TestARoleConflictOnAnUnlockInRecoveryInstallsNothing(t *testing.T) {
 		t.Fatal("the keyring the attempt opened was not zeroed")
 	}
 }
+
+// An unlock attempt that loses to a lock before it builds zeroes the keyring
+// it opened, and loads nothing: a lock that lands just after the store
+// root's opening, or during the reconcile. The keyring is the attempt's from
+// its opening to its install, so no exit may leave it unzeroed.
+func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
+	for _, when := range []string{"after the opening", "during the reconcile"} {
+		t.Run(when, func(t *testing.T) {
+			ir, _, loads, _ := unlockedRuntimeForTest(t)
+			ir.Lock()
+			lockNow := func() {
+				var lockDone sync.WaitGroup
+				lockDone.Add(1)
+				go func() {
+					defer lockDone.Done()
+					ir.Lock()
+				}()
+				lockDone.Wait()
+			}
+			var opened *crypto.Keyring
+			open := openStoreRoot
+			t.Cleanup(func() { openStoreRoot = open })
+			openStoreRoot = func(dir string, passphrase []byte) (*crypto.Keyring, crypto.StoreRootSelection, error) {
+				kr, selection, err := open(dir, passphrase)
+				opened = kr
+				if when == "after the opening" {
+					lockNow()
+				}
+				return kr, selection, err
+			}
+			reconcile := func(*crypto.Keyring) error {
+				if when == "during the reconcile" {
+					lockNow()
+				}
+				return nil
+			}
+
+			if _, err := ir.Unlock([]byte(secondUnlockPassphrase), reconcile, nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+				t.Fatalf("Unlock() = %v, want %v", err, signerruntime.ErrLockedDuringUnlock)
+			}
+			if loads.Load() != 0 || ir.GetState() != signerruntime.SignerStateLocked {
+				t.Fatalf("%d load(s), state %v; want none, locked", loads.Load(), ir.GetState())
+			}
+			if !zeroed(opened) {
+				t.Fatal("the keyring the attempt opened was not zeroed")
+			}
+		})
+	}
+}

@@ -162,8 +162,9 @@ before it was renamed `enroll`.
   longer ends a session another request published beside it.
 - **An unlock that arrives during a passphrase change waits for it**, then
   is refused with the old passphrase and unlocks with the new one.
-- **A good unlock of a locked signer derives from the passphrase twice**, a
-  wrong passphrase once. An attempt that has lost to a lock loads nothing.
+- **An unlock of a locked signer derives from the passphrase once**, good or
+  wrong: the keyring it opens reconciles, builds and is installed. An
+  attempt that has lost to a lock loads nothing.
 
 ## An address collision on unlock enters recovery; startup unlocks as an admin request does
 

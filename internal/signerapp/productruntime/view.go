@@ -522,30 +522,26 @@ func buildEnd(loaded *Loaded, err error) reloadEnd {
 	return end
 }
 
-// buildWithPassphrase opens a keyring from the store root with passphrase
-// and builds with it. It holds no passphraseLock: it changes nothing live, and
-// a lock that lands meanwhile wins at the attempt's fence. The keyring it
-// opened is returned with what it built, for a publish to install or for the
-// caller to zero; it is nil when the root did not open.
-func (ir *Runtime) buildWithPassphrase(passphrase []byte) (*crypto.Keyring, *Loaded, error) {
+// buildOpened builds with kr, the keyring an unlock or a passphrase change
+// opened from the store root, which is not the one in service. It holds no
+// passphraseLock: it changes nothing live, and a lock that lands meanwhile
+// wins at the attempt's fence. kr stays the caller's, for a publish to
+// install or for the caller to zero.
+func (ir *Runtime) buildOpened(kr *crypto.Keyring) (*Loaded, error) {
 	ir.passphraseLock.RLock()
 	build := ir.buildFn
 	ir.passphraseLock.RUnlock()
-	kr, _, err := openStoreRoot(ir.keyPaths.ProductDir(), passphrase)
-	if err != nil {
-		return nil, &Loaded{}, fmt.Errorf("failed to unlock the keystore: %w", err)
-	}
 	if build == nil {
-		return kr, &Loaded{}, errBuildNotConfigured
+		return &Loaded{}, errBuildNotConfigured
 	}
 	loaded, err := build(kr)
 	if loaded == nil {
 		loaded = &Loaded{}
 	}
-	return kr, loaded, err
+	return loaded, err
 }
 
-// publishUnlock installs l with kr, the keyring an unlock's build opened,
+// publishUnlock installs l with kr, the keyring an unlock opened,
 // which replaces the keyring in service (recovery's, in an unlock begun in
 // recovery) under passphraseLock for writing, and zeroes the replaced one
 // once the lock is released. The attempt's fence follows.
@@ -567,16 +563,14 @@ func (ir *Runtime) publishUnlock(kr *crypto.Keyring, l *Loaded) *signertemplates
 // attempt whose reconcile failed enters recovery for that failure before it
 // gets here, role conflict or not.) Any
 // other failure changes nothing and is the attempt's error. The keyring the
-// build opened is installed only by an entry from locked; otherwise it is
+// attempt opened is installed only by an entry from locked; otherwise it is
 // zeroed, and recovery keeps its own.
 func (ir *Runtime) unlockBuildFailed(attempt signerruntime.Attempt, owned *crypto.Keyring, loaded *Loaded, err error) (UnlockOutcome, error) {
 	enter := !errors.Is(err, keyclass.ErrNodeRoleConflict) &&
 		(IsContentDefect(err) || (attempt.State() == signerruntime.SignerStateRecovery && ir.rootMoved(loaded.Selection)))
-	if owned == nil || !enter {
+	if !enter {
 		loaded.Discard()
-		if owned != nil {
-			owned.Zero()
-		}
+		owned.Zero()
 		return UnlockOutcome{}, err
 	}
 	return ir.unlockIntoRecovery(attempt, owned, loaded, err)
@@ -588,12 +582,12 @@ func (ir *Runtime) unlockBuildFailed(attempt signerruntime.Attempt, owned *crypt
 // no token index. The view is installed and then the attempt's fence decides
 // (signerruntime.Runtime.EnterRecovery): a lock since the attempt began wins,
 // and the attempt's cleanup clears the view. An attempt begun locked installs
-// the keyring its build opened; one begun in recovery keeps recovery's, and
-// zeroes the one it opened.
+// owned, the keyring it opened; one begun in recovery keeps recovery's, and
+// zeroes owned.
 func (ir *Runtime) unlockIntoRecovery(attempt signerruntime.Attempt, owned *crypto.Keyring, loaded *Loaded, cause error) (UnlockOutcome, error) {
 	defer loaded.Discard()
 	install := owned
-	if attempt.State() == signerruntime.SignerStateRecovery && owned != nil {
+	if attempt.State() == signerruntime.SignerStateRecovery {
 		owned.Zero()
 		install = nil
 	}

@@ -1882,9 +1882,10 @@ The relevant order is:
 
 Every reload builds the whole view before it installs any of it: a reload
 with the keyring in service (`productruntime.Runtime.reloadView`), and an
-unlock's or a passphrase change's, with a keyring opened from the
-passphrase (`buildWithPassphrase`, then `publishUnlock`, which installs that
-keyring too).
+unlock's or a passphrase change's, with the keyring it opened from the
+passphrase (`buildOpened`, then `publishUnlock`, which installs that keyring
+too). An unlock opens the store root once: that keyring reconciles, builds
+and is installed.
 `startup.Build` reads the store root once and runs steps 2 to 7 without
 changing anything live: the templates are prepared and checked, and none is
 registered. The publish then installs the result under the passphrase lock:
