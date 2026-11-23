@@ -1006,3 +1006,16 @@ predicate with its reason restated (an install under a session in service
 would replace what concurrent changes had moved on, where a failed load once
 closed the keyring). The guard order is step 2b's. The companion, KU6, KU8
 and KU9 follow.
+
+Changed 2026-11-23: `cosigner_policy.go::runCosignerGates` adds
+`validateNetworkParams` beside `validateTransactionBounds`, matching the
+planner and frozen-component validation so a mixed-genesis or
+non-overlapping-window group never reaches signer invariants, policy
+evaluation, external checks, or signing. `signer_invariants.tla` gains
+`valid_network_params`, the guard `NetworkParamsBeforeGates`, and
+`SI7_NoReleaseOrLookupWithInvalidNetworkParams`. The negative control
+`signer_invariants_negative_network.cfg` violates SI7 after 101,041 states
+at depth 2. The positive runs grow to 202,080 states and, deep, 4,042,080,
+both at depth 2; the three earlier negative controls still fail on SI1 and
+SI6, now after 101,074, 101,122, and 101,048 states. `make formal-test` now
+has 47 runs.

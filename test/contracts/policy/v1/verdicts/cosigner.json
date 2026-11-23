@@ -173,6 +173,7 @@
         {
           "type": "pay",
           "sender": "A3",
+          "network": "unknown",
           "receiver": "A4",
           "amount": 1
         },
@@ -186,14 +187,46 @@
       ],
       "targets": [
         0,
-        1,
         2
       ],
       "component_key": "W1",
       "expect": {
         "outcome": "reject",
         "kind": "forbidden",
-        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 2: [transfer_policy:route_miss] transfer routing found no route for pay movement; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
+        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "mixed genesis hashes are refused before policy",
+      "surface": "cosigner",
+      "policies": {
+        "W1": {}
+      },
+      "group": [
+        {
+          "type": "pay",
+          "sender": "A1",
+          "network": "testnet",
+          "receiver": "A2",
+          "amount": 1
+        },
+        {
+          "type": "pay",
+          "sender": "A3",
+          "network": "mainnet",
+          "receiver": "A4",
+          "amount": 1
+        }
+      ],
+      "targets": [
+        0,
+        1
+      ],
+      "component_key": "W1",
+      "expect": {
+        "outcome": "error",
+        "kind": "bad_request",
+        "message": "transaction 2 has different genesis hash - all transactions must target the same network"
       }
     },
     {

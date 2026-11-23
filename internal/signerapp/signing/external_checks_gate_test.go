@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -326,3 +328,78 @@ func TestComponentPlanRefusesAMalformedWitnessKeyID(t *testing.T) {
 		}
 	}
 }
+
+// A multi-target group whose transactions target different networks must be
+// refused before policy evaluation or external checks run; otherwise a
+// scope:request check scoped to mainnet would inspect only target 0's network
+// and skip the lookup.
+func TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks(t *testing.T) {
+	g := newExternalGate(t)
+	g.cfg.ExternalChecks = []policy.ExternalCheckV1{{
+		ID:       "mainnet-only-request",
+		Source:   "screening",
+		Scope:    policy.ExternalScopeRequest,
+		Networks: []string{apconfig.NetworkMainnet},
+		Path: policy.ExternalTemplateV1{Text: "/request/{network}", Parts: []policy.ExternalTemplatePart{
+			{Literal: "/request/"}, {Fact: "network"},
+		}},
+		Require: []policy.ExternalRuleV1{{Pointer: "/ok", Op: policy.ExternalOpEq, Bool: boolPtr(true)}},
+	}}
+
+	txn0 := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+	txn1 := testnetPaymentTransaction(t, g.source, g.allowed, 2)
+	txn1.GenesisHash = verdictGenesis(t, apconfig.AlgorandMainnetGenesisHash)
+	txn1.GenesisID = "mainnet-v1.0"
+	gid, err := crypto.ComputeGroupID([]types.Transaction{txn0, txn1})
+	if err != nil {
+		t.Fatalf("ComputeGroupID() error = %v", err)
+	}
+	txn0.Group = gid
+	txn1.Group = gid
+
+	store := &componentKeyStore{}
+	_, signErr := g.svc.signComponentWithContext(context.Background(), componentPlanRequest{
+		RequestID:     "cmp-cosigner-mixed-genesis",
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn0), txnutil.EncodeWithPrefixHex(txn1)}),
+		TargetIndices: []int{0, 1},
+	}, newComponentKeySession(store))
+	if signErr == nil || signErr.Kind != ErrorBadRequest || !strings.Contains(signErr.Message, "different genesis hash") {
+		t.Fatalf("signComponentWithContext(mixed genesis) error = %#v, want bad request for different genesis hash", signErr)
+	}
+	if g.hits.Load() != 0 || store.calls != 0 || len(g.audit.limited) != 0 {
+		t.Fatalf("hits=%d storeCalls=%d audit=%d, want 0 for all", g.hits.Load(), store.calls, len(g.audit.limited))
+	}
+}
+
+// A multi-target group whose validity windows do not overlap can never confirm
+// on chain and is refused before policy evaluation or external checks.
+func TestCosignerRefusesNonOverlappingValidityWindows(t *testing.T) {
+	g := newExternalGate(t)
+	txn0 := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+	txn1 := testnetPaymentTransaction(t, g.source, g.allowed, 2)
+	txn0.FirstValid, txn0.LastValid = 1000, 1100
+	txn1.FirstValid, txn1.LastValid = 1200, 1300
+	gid, err := crypto.ComputeGroupID([]types.Transaction{txn0, txn1})
+	if err != nil {
+		t.Fatalf("ComputeGroupID() error = %v", err)
+	}
+	txn0.Group = gid
+	txn1.Group = gid
+
+	plan := mustPrepareComponentSigning(t, componentPlanRequest{
+		RequestID:     "cmp-cosigner-disjoint-window",
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
+		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn0), txnutil.EncodeWithPrefixHex(txn1)}),
+		TargetIndices: []int{0, 1},
+	})
+	gateErr := g.svc.runCosignerGates(context.Background(), plan)
+	if gateErr == nil || gateErr.Kind != ErrorBadRequest || !strings.Contains(gateErr.Message, "validity windows do not overlap") {
+		t.Fatalf("runCosignerGates(disjoint window) error = %#v, want bad request for disjoint windows", gateErr)
+	}
+	if g.hits.Load() != 0 || len(g.audit.limited) != 0 {
+		t.Fatalf("hits=%d audit=%d, want 0 for both", g.hits.Load(), len(g.audit.limited))
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }

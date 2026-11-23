@@ -226,6 +226,7 @@ Source: [ARCH_POLICY.md](ARCH_POLICY.md) (the signer invariants, the gate sequen
 | SI4 | implemented | A valid-target refusal names the first position that breaks the invariant | `internal/signerapp/signing/invariant_gate.go::rejectRekeyToInvalidTarget` (`RefusedPosition`) | `internal/signerapp/signing/rekey_target_gate_test.go::TestRejectRekeyToInvalidTarget`; `::TestValidTargetRefusalIsAuditedAtThePositionItNames` | Machine-checked as `SI4_RefusalNamesFirstPosition`. |
 | SI5 | implemented | No signature is released for a request unless the policy would sign it and its external checks, if it has any, pass; the external answer can remove a signature, never add one | `internal/signerapp/signing/cosigner_policy.go::runCosignerGates` (external checks last, after the policy verdict); `internal/signerapp/signing/external_checks.go::runExternalChecks` | `internal/signerapp/signing/external_checks_gate_test.go::TestCosignerSignsWhenExternalChecksPass`; `::TestCosignerExternalCheckRefusalKeepsTheAnswerInTheAuditRecord`; `::TestCosignerRefusesWhenItCannotRunExternalChecks` | Machine-checked as `SI5_ExternalChecksOnlyRefuse`. A signer-role request and a cosigner document without checks are the answer `"none"`. SI5 has no negative-control constant; the companion records the two scratch mutations of the release conjunct that break it. |
 | SI6 | implemented | A request the invariants or the policy refuse makes no external lookup | `internal/signerapp/signing/cosigner_policy.go::runCosignerGates` (a policy refusal returns before `runExternalChecks`); `internal/signerapp/signing/external_checks.go::runExternalChecks` (a document without checks looks nothing up) | `internal/signerapp/signing/external_checks_gate_test.go::TestCosignerMakesNoLookupForARequestThePolicyRefuses`; `::TestCosignerRefusesWhenItCannotRunExternalChecks` | Machine-checked as `SI6_NoLookupForARefusedRequest`; negative control `ExternalAfterPolicy = FALSE`. |
+| SI7 | implemented | A multi-transaction group whose cross-slot network parameters are invalid (different `GenesisHash` values or non-overlapping `[FirstValid, LastValid]` windows) is refused before signer invariants, policy evaluation, external checks, or signing, on both node roles | `internal/signerapp/signing/planner.go::validateNetworkParams`; `internal/signerapp/signing/frozen_component.go::ValidateFrozenComponentContext`; `internal/signerapp/signing/cosigner_policy.go::runCosignerGates` | `internal/signerapp/signing/external_checks_gate_test.go::TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks`; `::TestCosignerRefusesNonOverlappingValidityWindows`; `internal/signerapp/signing/planner_test.go` | Machine-checked as `SI7_NoReleaseOrLookupWithInvalidNetworkParams`; negative control `NetworkParamsBeforeGates = FALSE`. |
 
 ## Open Cross-Cutting Gaps
 
@@ -547,19 +548,24 @@ depth 2, and
 
 [formal/signer_invariants.tla](formal/signer_invariants.tla) (see
 [FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md](FORMAL_TLA_SIGNER_INVARIANTS_MODEL.md))
-models the signer invariants ahead of the policy verdict, the positions
-each one judges, and a cosigner document's external checks after the
-policy, under three guards as constants (invariants before policy, the
-valid-target invariant over every position, external lookups only after a
-sign verdict). TLC checked, 101,040 distinct states, depth 2, no
-counterexamples; the deep run 2,021,040 at depth 2.
+models cross-slot network parameter validation (`validateNetworkParams`),
+the signer invariants ahead of the policy verdict, the positions each one
+judges, and a cosigner document's external checks after the policy, under
+four guards as constants (network params before gates, invariants before
+policy, the valid-target invariant over every position, external lookups
+only after a sign verdict). TLC checked, 202,080 distinct states, depth 2,
+no counterexamples; the deep run 4,042,080 at depth 2.
 [formal/signer_invariants_negative_order.cfg](formal/signer_invariants_negative_order.cfg)
 and
 [formal/signer_invariants_negative_positions.cfg](formal/signer_invariants_negative_positions.cfg)
-must each violate `SI1_NoReleaseWithInvalidRekeyTarget`, after 50,536 and
-50,560 distinct states at depth 2, and
+must each violate `SI1_NoReleaseWithInvalidRekeyTarget`, after 101,074 and
+101,122 distinct states at depth 2,
 [formal/signer_invariants_negative_external.cfg](formal/signer_invariants_negative_external.cfg)
-must violate `SI6_NoLookupForARefusedRequest`, after 50,522 at depth 2.
+must violate `SI6_NoLookupForARefusedRequest`, after 101,048 at depth 2,
+and
+[formal/signer_invariants_negative_network.cfg](formal/signer_invariants_negative_network.cfg)
+must violate `SI7_NoReleaseOrLookupWithInvalidNetworkParams`, after
+101,041 at depth 2.
 
 | Invariant | TLA+ predicate |
 |---|---|
@@ -569,6 +575,7 @@ must violate `SI6_NoLookupForARefusedRequest`, after 50,522 at depth 2.
 | SI4 (the refusal names the first position) | `SI4_RefusalNamesFirstPosition` |
 | SI5 (external checks only refuse) | `SI5_ExternalChecksOnlyRefuse` |
 | SI6 (no lookup for a refused request) | `SI6_NoLookupForARefusedRequest` |
+| SI7 (no release or lookup with invalid network params) | `SI7_NoReleaseOrLookupWithInvalidNetworkParams` |
 
 ### Unmodeled invariants
 

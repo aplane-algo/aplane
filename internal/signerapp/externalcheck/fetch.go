@@ -38,6 +38,9 @@ const (
 	answerMaxDepth         = 64
 	answerMaxNumberLiteral = 64
 	answerMaxExponent      = 64
+	// maxResponseHeaderBytes caps HTTP response headers read into locked memory
+	// under mlockall(), matching chainread's 16 KiB limit.
+	maxResponseHeaderBytes = 16 << 10
 )
 
 // Answer is a lookup's accepted answer and the request ID it was sent with.
@@ -265,9 +268,10 @@ func (f *Fetcher) acquire(ctx context.Context, origin string) (func(), error) {
 //     checked on the address actually dialed.
 func (f *Fetcher) transport(source policy.ExternalSourceV1, target *url.URL) *http.Transport {
 	t := &http.Transport{
-		DisableKeepAlives:   true,
-		ForceAttemptHTTP2:   false,
-		TLSHandshakeTimeout: time.Duration(source.TimeoutMS) * time.Millisecond,
+		DisableKeepAlives:      true,
+		ForceAttemptHTTP2:      false,
+		MaxResponseHeaderBytes: maxResponseHeaderBytes,
+		TLSHandshakeTimeout:    time.Duration(source.TimeoutMS) * time.Millisecond,
 	}
 	if target.Scheme == "http" {
 		t.Proxy = nil

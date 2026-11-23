@@ -62,7 +62,7 @@
   {
     "spec": "signer_invariants",
     "cfg": "signer_invariants_deep",
-    "distinct_states": 2021040,
+    "distinct_states": 4042080,
     "depth": 2
   }
 ]

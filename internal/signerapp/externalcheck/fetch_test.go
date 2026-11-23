@@ -90,6 +90,10 @@ func TestGetFailsClosed(t *testing.T) {
 		{"oversize", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`"` + strings.Repeat("a", 1<<10) + `"`))
 		}, "body over 1024 bytes"},
+		{"oversize headers", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Pad", strings.Repeat("a", maxResponseHeaderBytes+1024))
+			_, _ = w.Write([]byte(`{"ok": true}`))
+		}, "the lookup failed"},
 		{"not JSON", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`<html>`)) }, "not acceptable JSON"},
 		{"empty body", func(http.ResponseWriter, *http.Request) {}, "not acceptable JSON"},
 		{"duplicate key", func(w http.ResponseWriter, _ *http.Request) {
