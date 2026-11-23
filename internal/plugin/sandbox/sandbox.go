@@ -239,6 +239,10 @@ func generateSeatbeltProfile(cfg Config) string {
 
 	// Mach operations (allowlisted services required by Go/Node.js DNS, TLS,
 	// and runtime startup; mach-register is intentionally omitted).
+	// com.apple.logd and com.apple.diagnosticd are intentionally left denied:
+	// losing system-library log lines does not affect plugins (their output goes
+	// over stderr and JSON-RPC), and plugins do not need write access to the
+	// system log.
 	sb.WriteString("; Mach IPC (allowlisted services for DNS, TLS, and runtime init)\n")
 	sb.WriteString("(allow mach-lookup\n")
 	sb.WriteString("    (global-name \"com.apple.CoreServices.coreservicesd\")\n")
