@@ -374,6 +374,23 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteRejectsEmptyAddress(t *testing.T) {
+	unlocked := setupProductRuntime(t, true)
+	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{Runtime: unlocked}}}
+
+	err := svc.AdminDelete(context.Background(), unlocked, "")
+	if err == nil || err.Kind != svcerr.KindBadRequest || err.Message != "address query parameter is required" {
+		t.Fatalf("AdminDelete(empty) = %+v, want KindBadRequest with query-parameter message", err)
+	}
+
+	// Unlock check runs before the query-parameter check.
+	locked := setupProductRuntime(t, false)
+	lockedSvc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{Runtime: locked}}}
+	if err := lockedSvc.AdminDelete(context.Background(), locked, ""); err == nil || err.Kind != svcerr.KindLocked {
+		t.Fatalf("AdminDelete(locked, empty) = %+v, want KindLocked", err)
+	}
+}
+
 func TestAuthorizationKindForCategory(t *testing.T) {
 	tests := []struct {
 		category string

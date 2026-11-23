@@ -4,7 +4,6 @@
 package adminserver
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -224,11 +223,8 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 			return AuthOutcomeFailed
 		}
 
-		var authMsg protocol.AuthMessage
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&authMsg); err != nil {
-			authMsg.Passphrase.Zero()
+		authMsg, err := decodeRequest[protocol.AuthMessage](raw)
+		if err != nil {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
 			return AuthOutcomeFailed
 		}

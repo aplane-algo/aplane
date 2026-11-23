@@ -2109,12 +2109,20 @@ when memory protection is enabled, until the runtime reuses or frees it.
   the words into a byte buffer that is zeroed after delivery, but the
   encoder's strings remain. apadmin then draws the phrase on screen as a
   string, as it does every rendered value.
-- **Login frames.** The signer decodes an `auth` or `auth_only` frame with a
-  strict `json.Decoder` (`DisallowUnknownFields`) so an unexpected field is
-  refused. The decoder reads the frame, passphrase included, into an internal
-  buffer that cannot be zeroed. The frame itself and the decoded passphrase
-  are zeroed; avoiding that copy would mean a hand-written strict parser, which
-  was declined for the same reason as for the store root.
+- **Admin request frames.** The signer decodes every strict admin request
+  (`auth`, `auth_only`, `initialize_store`, and every post-auth request in
+  `dispatchTable`) through `decodeRequest`, which uses a strict `json.Decoder`
+  (`DisallowUnknownFields`) so unexpected fields are refused. The decoder
+  copies the frame into an internal buffer that cannot be zeroed, so every
+  request carrying a `SensitiveBytes` field (`auth`, `auth_only`,
+  `initialize_store`, `unlock`, `change_store_passphrase`, `backup`,
+  `commit_backup_import`, `preview_restore`, `restore_backup`, `export_key`,
+  `import_key`, `import_installed_template`, and `source_token_set`) leaves a
+  copy of its secret in that buffer, both on success and on decode refusal.
+  The frame itself and the decoded `SensitiveBytes` fields are zeroed
+  (including partial decodes on error); avoiding the decoder copy would mean a
+  hand-written strict parser, which was declined for the same reason as for the
+  store root.
 - **Typed keys.** bubbletea delivers every key press as a string, and a
   login or appass passphrase, when the operator unmasks it, is rendered as a
   string. appass also hands the passphrase to `appass-systemd-creds` through a

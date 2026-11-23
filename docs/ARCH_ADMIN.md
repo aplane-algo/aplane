@@ -67,8 +67,15 @@ the bootstrap exchange. `initialize_store` is not part of the authenticated
 dispatch table: after auth it is rejected as `unknown_message_type`.
 
 Admin sessions bind directly to the one product runtime. The auth shape has
-no runtime selector. Strict known-field decoding rejects unknown fields before
-passphrase verification or runtime work.
+no runtime selector. Every admin request except the bodyless
+`displace_confirm` displacement reply (`auth`, `auth_only`,
+`initialize_store`, and every post-auth request in the dispatch table) uses
+strict known-field JSON decoding: unknown fields at any depth are rejected
+before passphrase verification or handler work (`invalid_auth_message` during
+auth, `invalid_request` inside `initialize_store_result` for
+`initialize_store`, and `invalid_request` for dispatched requests), trailing
+data after the JSON value is rejected with `invalid_message_format`, and any
+sensitive fields decoded before a decode failure are zeroed.
 
 Admin sessions share one process-wide authenticated-pending slot and one
 active admin slot, plus one pre-auth pending slot until a session's passphrase
