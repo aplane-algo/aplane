@@ -961,17 +961,24 @@ When an update takes effect depends on the change's direction:
   effect; or a request for the value in effect while that value is unsaved
   (below), which tries the save again. The value takes effect before the
   save, so a hung or slow disk cannot keep the old, more permissive value in
-  effect, and it stays in effect whatever the save does. It still waits for
-  the store mutation lock the update runs under, so an update queued behind
-  another store mutation takes effect when that one finishes.
+  effect, and it stays in effect whatever the save does. It never blocks on
+  the audit log, so an unavailable or failing audit log cannot prevent
+  locking down. It still waits for the store mutation lock the update runs
+  under, so an update queued behind another store mutation takes effect when
+  that one finishes.
 - Permissive: every other request, `theme`, `passphrase_timeout` and a
-  request for the value already saved included. The value takes effect only
-  once its file has replaced the old one, so no reader, a signing request
-  included, ever sees a permissive value that was not saved. Until then
-  readers keep the old value. A failed save of the value already saved
-  answers the plain "unchanged" failure, not `applied_not_saved`, since
-  nothing in effect would be undone by a restart; like every failed save it
-  writes a `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
+  request for the value already saved included. After validation, the signer
+  writes a durable `SETTING_CHANGE_INTENT` audit record before touching the
+  file or memory; a missing audit log refuses the update with
+  `code:"audit_unavailable"` and a failed write refuses it with
+  `code:"audit_write_failed"`, leaving both file and memory unchanged. Once
+  audited, the value takes effect only once its file has replaced the old
+  one, so no reader, a signing request included, ever sees a permissive
+  value that was not audited and saved. Until then readers keep the old
+  value. A failed save of the value already saved answers the plain
+  "unchanged" failure, not `applied_not_saved`, since nothing in effect
+  would be undone by a restart; like every failed save it writes a
+  `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
 
 The rule covers only the four boolean settings the signer itself enforces.
 `passphrase_timeout` is not one of them: only the admin client enforces it
@@ -1001,12 +1008,14 @@ permissive change whose save fails (memory keeps the restrictive value), and
 a retry whose save fails again (answered `applied_not_saved` once more) all
 leave it. A restart loads the saved value, so the set starts empty.
 
-Every save that fails, either kind, writes one `SETTING_SAVE_ERROR` audit
-entry (see [ARCH_SECURITY.md](ARCH_SECURITY.md)) with the setting, the value
-and the cause, and whether the value is in effect anyway: for
+Every saved setting update, either direction, writes one best-effort
+`SETTING_CHANGED` audit entry naming the setting, previous value, and new
+value. Every save that fails, either kind, writes one `SETTING_SAVE_ERROR`
+audit entry (see [ARCH_SECURITY.md](ARCH_SECURITY.md)) with the setting, the
+value and the cause, and whether the value is in effect anyway: for
 `applied_not_saved` it is the only durable trace of a change a restart
-undoes. A request refused before any save is attempted (a bad value, a
-headless-mode refusal, an unknown setting) writes none.
+undoes. A request refused before any audit or save is attempted (a bad
+value, a headless-mode refusal, an unknown setting) writes none.
 
 An admin client re-reads `get_admin_settings` after any
 `update_admin_setting_result`, a failed one included, to show the state the

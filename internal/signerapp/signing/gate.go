@@ -75,9 +75,10 @@ type gateInput struct {
 // at a position this signer signs, no nonparticipating keyreg at a position
 // this signer signs), then the policy verdict (policyeval.Evaluate: hard
 // rejection, always-review rules, auto-approval rules), then the operator
-// approval fallback. It returns the matched always-review rule ID for
-// approval audit events ("" when none matched).
-func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (string, *ServiceError) {
+// approval fallback. It returns the approval audit outcome (matched Always
+// Approve or Always Review rule ID, and whether approval came from Always
+// Approve, User Auto-Approve, or a human operator).
+func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Console) (approvalOutcome, *ServiceError) {
 	console = consoleOf(console)
 	slots := clientSlots(in.AllTxns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.policyFor, in.AuthKeys, in.ListedRekeyTargets)
 	if err := s.rejectSignerInvariants(in.AllTxns, signerPositions(slots), in.InvalidRekeyTargets); err != nil {
@@ -86,7 +87,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		if in.LogRejection != nil {
 			in.LogRejection(auditSignerInvariant+err.Message, err)
 		}
-		return "", err
+		return approvalOutcome{}, err
 	}
 	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
 		Group:                in.AllTxns,
@@ -108,25 +109,32 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 		if in.LogRejection != nil {
 			in.LogRejection(auditPolicyRejected+err.Message, err)
 		}
-		return "", err
+		return approvalOutcome{}, err
 	}
 
 	switch verdict.Outcome {
 	case policyeval.Review:
 		if err := in.RequestOperatorApproval(ctx, verdict.RuleID); err != nil {
-			return verdict.RuleID, err
+			return approvalOutcome{PolicyRuleID: verdict.RuleID}, err
 		}
 		console.Sync()
-		return verdict.RuleID, nil
+		return approvalOutcome{PolicyRuleID: verdict.RuleID, ApprovalSource: s.operatorApprovalSource()}, nil
 	case policyeval.Approve:
 		console.Printf("[POLICY] Txn auto-approved (%s)\n", verdict.RuleID)
 		console.Sync()
-		return "", nil
+		return approvalOutcome{PolicyRuleID: verdict.RuleID, ApprovalSource: ApprovalSourceAlwaysApprove}, nil
 	default:
 		if err := in.RequestOperatorApproval(ctx, ""); err != nil {
-			return "", err
+			return approvalOutcome{}, err
 		}
 	}
 	console.Sync()
-	return "", nil
+	return approvalOutcome{ApprovalSource: s.operatorApprovalSource()}, nil
+}
+
+func (s *Service) operatorApprovalSource() string {
+	if s != nil && s.Approval != nil && s.Approval.UserAutoApprove {
+		return ApprovalSourceUserAutoApprove
+	}
+	return ApprovalSourceHuman
 }

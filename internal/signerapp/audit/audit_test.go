@@ -4,6 +4,7 @@
 package audit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -403,5 +404,85 @@ func TestSignApprovedLeavesTheSharedGroupTxIDsAlone(t *testing.T) {
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 || len(entries[1].GroupTxIDs) != maxAuditSelectors || entries[1].GroupTxIDsOmitted != 2 {
 		t.Fatalf("entries = %+v, want each bounded to %d group_txids", entries, maxAuditSelectors)
+	}
+}
+
+func TestSettingChangeIntentAndChangedAuditCarrySessionAndValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := adminserver.WithSessionContext(context.Background(), adminserver.SessionContext{
+		SessionID:      "admin-42",
+		Origin:         adminserver.OriginLocal,
+		AdminPrincipal: adminserver.SessionPrincipal{ID: "system:product-admin"},
+	})
+	if err := a.LogSettingChangeIntentDurable(ctx, "op-9", "user_auto_approve", "false", "true"); err != nil {
+		t.Fatalf("LogSettingChangeIntentDurable: %v", err)
+	}
+	a.LogSettingChanged(ctx, "op-9", "user_auto_approve", "false", "true")
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	wantReason := "setting=user_auto_approve old=false new=true"
+	if e := entries[0]; e.Event != AuditSettingChangeIntent || e.Outcome != "requested" ||
+		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || e.Reason != wantReason {
+		t.Fatalf("intent entry = %+v", e)
+	}
+	if e := entries[1]; e.Event != AuditSettingChanged || e.Outcome != "changed" ||
+		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || e.Reason != wantReason {
+		t.Fatalf("changed entry = %+v", e)
+	}
+}
+
+func TestSSHSessionAuditUsesClientPrincipalAndSSHTransport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogSSHSessionConnected("10.0.0.1:5000", "SHA256:fp1", true)
+	a.LogSSHSessionDisconnected("10.0.0.1:5000", "SHA256:fp1", false)
+	a.LogSSHSessionConnected("10.0.0.2:5001", "", false)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 3 {
+		t.Fatalf("got %d entries, want 3", len(entries))
+	}
+	if e := entries[0]; e.Principal != "client:SHA256:fp1" || e.RequesterPrincipal != "client:SHA256:fp1" ||
+		e.Transport != "ssh" || e.Reason != "ssh" || e.SSHFingerprint != "SHA256:fp1" {
+		t.Fatalf("enrolled ssh connect = %+v", e)
+	}
+	if e := entries[1]; e.Principal != "client:SHA256:fp1" || e.Transport != "ssh" || e.Reason != "ssh-enroll" {
+		t.Fatalf("enroll ssh disconnect = %+v", e)
+	}
+	if e := entries[2]; e.Principal != "" || e.RequesterPrincipal != "" || e.Transport != "ssh" {
+		t.Fatalf("empty-fingerprint ssh connect = %+v, want empty principal and ssh transport", e)
+	}
+}
+
+func TestSignApprovedCarriesApprovalSourceAndPolicyRuleID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogSignApprovedAttributed(Attribution{RequesterPrincipal: "client:SHA256:abc", Transport: "http"}, TxnRecord{
+		TxnAuth: "ADDR", TxnSender: "ADDR", TxID: "TX1",
+		PolicyRuleID: "auto_approve_self_noop_transfer", ApprovalSource: "always_approve",
+	})
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	if len(entries) != 1 || entries[0].PolicyRuleID != "auto_approve_self_noop_transfer" || entries[0].ApprovalSource != "always_approve" {
+		t.Fatalf("entries = %+v", entries)
 	}
 }

@@ -522,8 +522,9 @@ type PruneDeletedArchiveResult struct {
 
 // UpdateAdminSettingRequest is the admin-domain request to change one setting.
 type UpdateAdminSettingRequest struct {
-	Key   string
-	Value string
+	OperationID string
+	Key         string
+	Value       string
 }
 
 // SettingSaveError is a setting update whose save failed after its value was

@@ -101,8 +101,8 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings"}) {
 		return
 	}
-	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
-	err := s.settingsServices.UpdateAdminSetting(request)
+	request := adminproto.UpdateAdminSettingRequest{OperationID: msg.ID, Key: msg.Key, Value: msg.Value}
+	err := s.settingsServices.UpdateAdminSetting(s.auditContext(), request)
 	// Every failed save is audited, a value left in effect without one (which
 	// a restart reverts, and which nothing else durable records) included. A
 	// request refused before any save is not a save error.

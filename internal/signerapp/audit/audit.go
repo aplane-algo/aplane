@@ -60,6 +60,8 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditSettingChangeIntent              AuditEventType = "SETTING_CHANGE_INTENT"
+	AuditSettingChanged                   AuditEventType = "SETTING_CHANGED"
 	AuditSettingSaveError                 AuditEventType = "SETTING_SAVE_ERROR"
 	AuditClientEnrollmentRequested        AuditEventType = "CLIENT_ENROLLMENT_REQUESTED"
 	AuditClientEnrolled                   AuditEventType = "CLIENT_ENROLLED"
@@ -125,7 +127,8 @@ type AuditEntry struct {
 	TxID                 string         `json:"txid,omitempty"`                // ID of the transaction as signed, after planning; on a SIGN_REJECTED, of the transaction the refusal names, as planned
 	RemoteAddr           string         `json:"remote_addr,omitempty"`         // Client IP (for auth failures)
 	Reason               string         `json:"reason,omitempty"`              // Rejection/failure reason
-	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Matched review rule, satisfied manually or by User Auto-Approve
+	PolicyRuleID         string         `json:"policy_rule_id,omitempty"`      // Matched policy rule for a rejection, forced review, or explicit auto-approval
+	ApprovalSource       string         `json:"approval_source,omitempty"`     // SIGN_APPROVED client signing authorization path: human, user_auto_approve, or always_approve
 	WitnessKeyID         string         `json:"witness_key_id,omitempty"`      // Public witness authority affected by a cosigner-reference mutation
 	KeyCount             int            `json:"key_count,omitempty"`           // For key reload events
 	ArchiveSHA256        string         `json:"archive_sha256,omitempty"`
@@ -301,7 +304,7 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.Principal, &entry.RequesterPrincipal, &entry.ApproverPrincipal,
 		&entry.AdminSessionID, &entry.Transport, &entry.Outcome,
 		&entry.TxnAuth, &entry.TxnSender, &entry.TxnType, &entry.TxID,
-		&entry.RemoteAddr, &entry.PolicyRuleID, &entry.WitnessKeyID,
+		&entry.RemoteAddr, &entry.PolicyRuleID, &entry.ApprovalSource, &entry.WitnessKeyID,
 		&entry.ArchiveSHA256, &entry.GenerationID, &entry.ParentGenerationID,
 		&entry.ManifestSHA256, &entry.LiveInventorySHA256, &entry.ClientLabel, &entry.SSHFingerprint,
 		&entry.ResultCode, &entry.ExpectedPolicySetSHA256, &entry.ExpectedSnapshotSHA256,
@@ -679,12 +682,13 @@ func requestEntry(event AuditEventType, attr Attribution, address, txnSender, tx
 // group the signer was asked to sign. It never holds key material,
 // signatures or LogicSig argument values.
 type TxnRecord struct {
-	TxnAuth      string // the signing key's address, a cosigner's Witness Key ID, or empty for a position the signer does not sign
-	TxnSender    string
-	TxnDetails   string
-	PolicyRuleID string // the review rule that matched, if one did
-	TxID         string
-	Fee          uint64 // microAlgos
+	TxnAuth        string // the signing key's address, a cosigner's Witness Key ID, or empty for a position the signer does not sign
+	TxnSender      string
+	TxnDetails     string
+	PolicyRuleID   string // the policy rule that matched, if one did
+	ApprovalSource string // client signing authorization path: human, user_auto_approve, or always_approve
+	TxID           string
+	Fee            uint64 // microAlgos
 	// GroupID (base64) and GroupTxIDs, every transaction of the group in
 	// order, are empty for a transaction alone. The last DummyCount of
 	// GroupTxIDs are dummies this request added, which the signer signs.
@@ -703,6 +707,7 @@ func txnRecordEntry(attr Attribution, event AuditEventType, outcome string, reco
 	entry.TxnSender = record.TxnSender
 	entry.TxnDetails = record.TxnDetails
 	entry.PolicyRuleID = record.PolicyRuleID
+	entry.ApprovalSource = record.ApprovalSource
 	entry.TxID = record.TxID
 	fee := record.Fee
 	entry.Fee = &fee
@@ -977,15 +982,30 @@ func sshSessionReason(enrolled bool) string {
 	return "ssh-enroll"
 }
 
+// sshSessionAuditFields attributes an SSH client connection event to the
+// client key that opened it (or leaves the principal empty if no fingerprint
+// was supplied) with transport "ssh".
+func sshSessionAuditFields(remoteAddr, sshFingerprint string, enrolled bool) AuditEntry {
+	principal := ""
+	if sshFingerprint != "" {
+		principal = auth.ClientPrincipalPrefix + sshFingerprint
+	}
+	return AuditEntry{
+		Principal:          principal,
+		RequesterPrincipal: principal,
+		Transport:          "ssh",
+		RemoteAddr:         remoteAddr,
+		Reason:             sshSessionReason(enrolled),
+		SSHFingerprint:     sshFingerprint,
+	}
+}
+
 // LogSSHSessionConnected logs an SSH client connection opening. enrolled
 // says whether the key that opened it is enrolled.
 func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string, enrolled bool) {
-	entry := productPrincipalAuditFields()
+	entry := sshSessionAuditFields(remoteAddr, sshFingerprint, enrolled)
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
-	entry.RemoteAddr = remoteAddr
-	entry.Reason = sshSessionReason(enrolled)
-	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
 
@@ -999,12 +1019,9 @@ func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext)
 
 // LogSSHSessionDisconnected logs an SSH client connection closing.
 func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint string, enrolled bool) {
-	entry := productPrincipalAuditFields()
+	entry := sshSessionAuditFields(remoteAddr, sshFingerprint, enrolled)
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
-	entry.RemoteAddr = remoteAddr
-	entry.Reason = sshSessionReason(enrolled)
-	entry.SSHFingerprint = sshFingerprint
 	a.Log(entry)
 }
 
@@ -1022,6 +1039,27 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	entry.Event = AuditIdentityLocked
 	entry.Outcome = "locked"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogSettingChangeIntentDurable records a non-restrictive admin setting
+// update durably before the setting is saved or published.
+func (a *AuditLogger) LogSettingChangeIntentDurable(ctx context.Context, operationID, key, oldValue, newValue string) error {
+	entry := contextAuditFields(ctx)
+	entry.Event = AuditSettingChangeIntent
+	entry.Outcome = "requested"
+	entry.OperationID = operationID
+	entry.Reason = fmt.Sprintf("setting=%s old=%s new=%s", key, oldValue, newValue)
+	return a.logDurable(entry)
+}
+
+// LogSettingChanged records a saved admin setting change (best effort).
+func (a *AuditLogger) LogSettingChanged(ctx context.Context, operationID, key, oldValue, newValue string) {
+	entry := contextAuditFields(ctx)
+	entry.Event = AuditSettingChanged
+	entry.Outcome = "changed"
+	entry.OperationID = operationID
+	entry.Reason = fmt.Sprintf("setting=%s old=%s new=%s", key, oldValue, newValue)
 	a.Log(entry)
 }
 
@@ -1417,14 +1455,16 @@ func (a *AuditLogger) LogStoreInitializeFailed(reason string) {
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated int) {
+func (a *AuditLogger) LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated int) {
 	entry := contextAuditFields(ctx)
 	entry.Event = AuditPassphraseChanged
 	entry.Outcome = "changed"
 	entry.Reason = fmt.Sprintf(
-		"keys_migrated=%d templates_migrated=%d",
+		"keys_migrated=%d templates_migrated=%d policy_sidecars_migrated=%d source_token_files_migrated=%d",
 		keysMigrated,
 		templatesMigrated,
+		policySidecarsMigrated,
+		sourceTokenFilesMigrated,
 	)
 	a.Log(entry)
 }

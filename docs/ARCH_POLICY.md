@@ -1966,19 +1966,22 @@ requires the admin authorization action `identity.restore`.
 
 ## Audit and Observability
 
-Signing outcome audit records carry a policy rule in `policy_rule_id` only
-for some outcomes:
+Signing outcome audit records carry `policy_rule_id` and (on client-signing
+approvals) `approval_source` (`human`, `user_auto_approve`, or
+`always_approve`):
 
-- Client-signing and cosigned user-component Always Deny records are
-  `SIGN_REJECTED` with the rule IDs only in the `reason` text; `policy_rule_id`
-  is set on cosigner policy rejections and on records for review-forced
-  prompts.
+- Always Deny records (`SIGN_REJECTED`) on both signer-role client signing
+  and cosigner component signing carry the first violated rule ID in
+  `policy_rule_id` as well as full violation details in `reason`.
 - Always Review matches produce `SIGN_APPROVED` or `SIGN_REJECTED` records with
-  the matched rule, depending on the operator's decision or User Auto-Approve.
-  A rule ID alone does not imply a human approved the request.
-- Always Approve outcomes are logged as `SIGN_APPROVED` with no
-  `policy_rule_id`; the rule ID appears only on the console line.
-- Operator Default outcomes produce records with no `policy_rule_id`.
+  the matched rule in `policy_rule_id`. On `SIGN_APPROVED`, `approval_source`
+  distinguishes a human decision (`human`) from User Auto-Approve
+  (`user_auto_approve`).
+- Always Approve outcomes produce `SIGN_APPROVED` with the matched approval
+  rule in `policy_rule_id` and `approval_source:"always_approve"`.
+- Operator Default outcomes produce records with no `policy_rule_id` and, on
+  `SIGN_APPROVED`, `approval_source:"human"` or
+  `approval_source:"user_auto_approve"`.
 
 The signer also prints `[POLICY] ...` lines to its console output for each
 policy decision:

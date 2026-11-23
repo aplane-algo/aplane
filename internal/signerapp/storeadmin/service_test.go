@@ -39,7 +39,7 @@ func (l *recordingAuditLog) LogStoreInitializeFailed(reason string) {
 	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", reason: reason})
 }
 
-func (l *recordingAuditLog) LogPassphraseChanged(_ context.Context, _, _ int) {
+func (l *recordingAuditLog) LogPassphraseChanged(_ context.Context, _, _, _, _ int) {
 	l.events = append(l.events, auditEvent{kind: "passphrase_changed"})
 }
 

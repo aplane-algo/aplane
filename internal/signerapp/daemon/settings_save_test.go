@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -58,7 +59,7 @@ func TestSigningSeesAutoApproveByTheChangesDirection(t *testing.T) {
 					return server.newApprovalServiceWithAudit(ir, nil).UserAutoApprove
 				}
 				update := func(v bool) error {
-					return app.UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+					return app.UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 						Key: adminproto.AdminSettingUserAutoApprove, Value: strconv.FormatBool(v),
 					})
 				}
@@ -145,7 +146,7 @@ func TestSettingSaveOutcomesReachTheAdminClientAndTheLogs(t *testing.T) {
 			if tc.value == "true" {
 				start = "false"
 			}
-			if err := server.adminServices().adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+			if err := server.adminServices().adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 				Key: adminproto.AdminSettingUserAutoApprove, Value: start,
 			}); err != nil {
 				t.Fatal(err)
@@ -229,5 +230,88 @@ func TestSettingSaveOutcomesReachTheAdminClientAndTheLogs(t *testing.T) {
 				t.Fatalf("SETTING_SAVE_ERROR entry = %#v, want outcome %s and reason %q plus the cause", entries[0], outcome, wantReason)
 			}
 		})
+	}
+}
+
+// Over IPC, every successful setting change emits SETTING_CHANGED with admin
+// session attribution; a non-restrictive change (including passphrase_timeout)
+// also writes durable SETTING_CHANGE_INTENT before saving and fails closed
+// with audit_unavailable when the daemon has no audit log. A restrictive
+// change still applies without an audit log so an audit failure never blocks
+// locking down.
+func TestUpdateAdminSettingAuditDirectionOverIPC(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	t.Cleanup(cleanup)
+	ir := server.productRuntime()
+	auditPath := filepath.Join(server.dataDir, "audit.log")
+
+	recorder := &ipcJSONRecorderConn{}
+	session := newBoundTestSession(&IPCServer{signer: server}, recorder, ir)
+	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-enable"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "true",
+	})
+	session.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-disable"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "false",
+	})
+
+	msgs := recorder.messages(t)
+	if len(msgs) != 2 || msgs[0]["success"] != true || msgs[1]["success"] != true {
+		t.Fatalf("messages = %#v, want both setting updates to succeed", msgs)
+	}
+	intents := auditEntries(t, auditPath, string(signeraudit.AuditSettingChangeIntent))
+	if len(intents) != 1 || intents[0]["operation_id"] != "req-enable" ||
+		intents[0]["reason"] != "setting=user_auto_approve old=false new=true" ||
+		intents[0]["transport"] != "ipc" || intents[0]["admin_session_id"] == "" {
+		t.Fatalf("SETTING_CHANGE_INTENT entries = %#v, want one for req-enable", intents)
+	}
+	changed := auditEntries(t, auditPath, string(signeraudit.AuditSettingChanged))
+	if len(changed) != 2 ||
+		changed[0]["operation_id"] != "req-enable" || changed[0]["reason"] != "setting=user_auto_approve old=false new=true" ||
+		changed[1]["operation_id"] != "req-disable" || changed[1]["reason"] != "setting=user_auto_approve old=true new=false" {
+		t.Fatalf("SETTING_CHANGED entries = %#v, want enable then disable", changed)
+	}
+
+	// Simulate startup without an audit log: loosening and passphrase_timeout
+	// refuse with audit_unavailable, while tightening still succeeds.
+	ir.Config().SetUserAutoApprove(true)
+	server.auditLog = nil
+
+	noAuditRecorder := &ipcJSONRecorderConn{}
+	noAuditSession := newBoundTestSession(&IPCServer{signer: server}, noAuditRecorder, ir)
+	noAuditSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-timeout"},
+		Key:         adminproto.AdminSettingPassphraseTimeout,
+		Value:       "15m",
+	})
+	noAuditSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-lockdown"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "false",
+	})
+	noAuditSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-loosen"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "true",
+	})
+
+	noAuditMsgs := noAuditRecorder.messages(t)
+	if len(noAuditMsgs) != 3 {
+		t.Fatalf("no-audit message count = %d, want 3", len(noAuditMsgs))
+	}
+	if noAuditMsgs[0]["success"] != false || noAuditMsgs[0]["code"] != protocol.ResultCodeAuditUnavailable {
+		t.Fatalf("passphrase_timeout without audit = %#v, want audit_unavailable", noAuditMsgs[0])
+	}
+	if noAuditMsgs[1]["success"] != true {
+		t.Fatalf("restrictive lockdown without audit = %#v, want success", noAuditMsgs[1])
+	}
+	if noAuditMsgs[2]["success"] != false || noAuditMsgs[2]["code"] != protocol.ResultCodeAuditUnavailable {
+		t.Fatalf("permissive enable without audit = %#v, want audit_unavailable", noAuditMsgs[2])
+	}
+	if ir.Config().UserAutoApprove() {
+		t.Fatal("user_auto_approve remained enabled after lockdown and refused re-enable")
 	}
 }

@@ -1250,7 +1250,8 @@ Audit entries carry attribution fields:
   minted for it
 - `remote_addr`: remote address when available
 - `reason`: rejection, failure, or denial detail when available
-- `policy_rule_id`: matched review rule (satisfied by a human or User Auto-Approve), when present
+- `policy_rule_id`: matched policy rule for a rejection, forced review (satisfied by a human or User Auto-Approve), or explicit auto-approval, when present
+- `approval_source`: on client-signing `SIGN_APPROVED`, which authorization path approved the signature: `human`, `user_auto_approve`, or `always_approve`
 - `key_count`: key count for startup and reload events, the keys a restore
   restored, and the keys a restore preview would admit
 - `skipped_keys`: the archived keys a restore, its preview, or an import
@@ -1360,6 +1361,8 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
+- `SETTING_CHANGE_INTENT`
+- `SETTING_CHANGED`
 - `SETTING_SAVE_ERROR`
 - `CLIENT_ENROLLMENT_REQUESTED`
 - `CLIENT_ENROLLED`
@@ -1433,7 +1436,8 @@ Signing-audit semantics:
     signer does not sign has no `txn_auth` field. Every entry's `reason`
     names the position and, for a rekey, the target
   - a policy rejection writes one entry per position the signer signs, with
-    `txn_auth`, `txn_sender` and `reason`, and no `txid`
+    `txn_auth`, `txn_sender`, `reason`, and `policy_rule_id` (the first
+    violated rule ID when present), and no `txid`
   - an operator rejection, a reviewability block or an approval timeout
     writes one entry per position of the request, with no `txn_auth` for a
     position whose request entry names no auth address (passthrough and
@@ -1478,9 +1482,9 @@ Signing-audit semantics:
   `group_id` of that `SIGN_APPROVED`: the signature never left. Rotating
   prepare signs nothing and writes no entry
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
-- approved/rejected signing records include `policy_rule_id` when a review rule matched, including when User Auto-Approve satisfied it without a human decision
+- client-signing `SIGN_APPROVED` records carry `approval_source` (`human`, `user_auto_approve`, or `always_approve`), and `policy_rule_id` whenever a review rule or Always Approve rule matched (including when User Auto-Approve satisfied a review rule without a human decision); policy rejections (`SIGN_REJECTED`) carry the first violated rule ID in `policy_rule_id`
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
-- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection) and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled; they are attributed to `system:product-admin`
+- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record `transport:"ssh"`, the client principal `client:<ssh_fingerprint>` (empty if no fingerprint was supplied), the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection), and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled
 - key-management audit events are recorded once the key file is written or archived, before the reload that follows, so a change whose reload fails, and which therefore still happened, is audited too. They are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time LogicSig invariant (an on-curve address, or missing or
@@ -1520,23 +1524,39 @@ Store-management audit semantics:
 
 - `STORE_INITIALIZED` is emitted when authenticated local IPC store initialization succeeds
 - `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
-- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key/template counts are recorded on the event
+- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key, template, policy-sidecar, and source-token-file counts are recorded in `reason`
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
 - `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports,
   promotes, or removes a cosigner-reference record; `outcome` is the action
   (or `failed`) and `witness_key_id` identifies the authority, with no
   public-key material in the entry
-- admin setting changes (`update_admin_setting`) are not audited in general.
-  The exception is a save that fails: `SETTING_SAVE_ERROR`, with the admin
-  session's attribution and a `reason` of `setting=<key> value=<value>
-  in_effect=<true|false>: <cause>`. `in_effect=true` (`outcome:"applied"`) is
-  a restrictive value left in effect but not saved (`applied_not_saved`),
-  which a restart reverts and nothing else durable records;
-  `in_effect=false` (`outcome:"failed"`) is a change that took no effect. A
-  request refused before any save (a bad value, a headless-mode refusal, an
-  unknown setting) writes none, and neither does a save whose directory
-  flush failed after the rename, which is a success (see
-  [Writable Settings](ARCH_ADMIN.md#writable-settings))
+- admin setting changes (`update_admin_setting`) are audited according to
+  their direction (see [Writable Settings](ARCH_ADMIN.md#writable-settings)):
+  - a non-restrictive update (turning `user_auto_approve` on, turning
+    `require_contained`, `require_cosigner`, or `lock_on_disconnect` off,
+    changing `passphrase_timeout` or `theme`, or re-saving an unchanged
+    value) writes a durable `SETTING_CHANGE_INTENT` (`outcome:"requested"`,
+    `reason` `setting=<key> old=<old> new=<new>`) after validation and before
+    touching the file or memory. A missing audit log refuses the update with
+    `audit_unavailable` and a failed write refuses it with
+    `audit_write_failed`
+  - a restrictive update (`user_auto_approve` turned off, or
+    `require_contained`, `require_cosigner`, or `lock_on_disconnect` turned
+    on, or retrying an unsaved restrictive value) publishes and saves without
+    waiting on the audit log, so an audit failure never blocks locking down
+  - every saved update, either direction, emits a best-effort
+    `SETTING_CHANGED` (`outcome:"changed"`, `reason`
+    `setting=<key> old=<old> new=<new>`) with admin session attribution and
+    `operation_id` (including when the post-rename directory flush failed,
+    which is a success)
+  - every save that fails before the rename writes `SETTING_SAVE_ERROR`, with
+    the admin session's attribution and a `reason` of `setting=<key>
+    value=<value> in_effect=<true|false>: <cause>`. `in_effect=true`
+    (`outcome:"applied"`) is a restrictive value left in effect but not saved
+    (`applied_not_saved`), which a restart reverts and nothing else durable
+    records; `in_effect=false` (`outcome:"failed"`) is a change that took no
+    effect. A request refused before any audit or save (a bad value, a
+    headless-mode refusal, an unknown setting) writes none
 - generation maintenance is audited in intent/result pairs: each `*_INTENT`
   entry is written durably before the store changes, and a durable-write
   failure refuses the operation. `GENERATION_QUARANTINE_INTENT` and

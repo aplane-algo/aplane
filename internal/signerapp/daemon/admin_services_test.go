@@ -186,7 +186,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 	svc := server.adminServices()
 
 	// Attempting to enable lock_on_disconnect in headless mode must fail
-	err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err := svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 		Key:   adminproto.AdminSettingLockOnDisconnect,
 		Value: "true",
 	})
@@ -198,7 +198,7 @@ func TestUpdateAdminSetting_RejectsLockOnDisconnectInHeadlessMode(t *testing.T) 
 	}
 
 	// Setting lock_on_disconnect=false should still succeed
-	err = svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err = svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 		Key:   adminproto.AdminSettingLockOnDisconnect,
 		Value: "false",
 	})
@@ -219,7 +219,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 	svc := server.adminServices()
 
 	// Attempting to set a non-zero timeout in headless mode must fail
-	err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err := svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 		Key:   adminproto.AdminSettingPassphraseTimeout,
 		Value: "15m",
 	})
@@ -231,7 +231,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 	}
 
 	// Setting timeout to "0" (disabled) should still succeed
-	err = svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err = svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 		Key:   adminproto.AdminSettingPassphraseTimeout,
 		Value: "0",
 	})
@@ -249,7 +249,7 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 		t.Fatal("expected default product runtime")
 	}
 
-	err := server.adminServices().adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+	err := server.adminServices().adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 		Key:   "mode",
 		Value: "cosigner",
 	})
@@ -284,7 +284,7 @@ func TestConcurrentThemeUpdatesAreSerialized(t *testing.T) {
 			<-start
 			values := []string{"dark", "light", "auto"}
 			for i := 0; i < 10; i++ {
-				if err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+				if err := svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 					Key:   adminproto.AdminSettingTheme,
 					Value: values[(worker+i)%len(values)],
 				}); err != nil {
@@ -344,7 +344,7 @@ func TestConcurrentProductConfigUpdatesAreSerialized(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for i := 0; i < 20; i++ {
-				if err := svc.adminApp().UpdateAdminSetting(adminproto.UpdateAdminSettingRequest{
+				if err := svc.adminApp().UpdateAdminSetting(context.Background(), adminproto.UpdateAdminSettingRequest{
 					Key:   tc.key,
 					Value: tc.value,
 				}); err != nil {

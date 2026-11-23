@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollment"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -36,6 +37,7 @@ func optionalAuditLog[I any](log *AuditLogger) I {
 // here makes a method dropped from *AuditLogger fail the build rather than
 // the type assertion at run time.
 var (
+	_ signeradmin.SettingAudit        = (*AuditLogger)(nil)
 	_ keyadmin.AuditLogger            = (*AuditLogger)(nil)
 	_ enrollment.AuditLogger          = (*AuditLogger)(nil)
 	_ storeadmin.AuditLogger          = (*AuditLogger)(nil)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollment"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -21,6 +22,9 @@ import (
 // logger and panics on its first entry, so every service must see none.
 func TestServicesBuiltWithoutAnAuditLogSeeNoLogger(t *testing.T) {
 	fs := &Signer{}
+	if got := fs.adminServices().adminApp().Audit; got != nil {
+		t.Errorf("admin service Audit = %#v, want nil", got)
+	}
 	if got := fs.adminServices().storeApp().AuditLog; got != nil {
 		t.Errorf("store admin AuditLog = %#v, want nil", got)
 	}
@@ -81,6 +85,9 @@ func TestOptionalAuditLogPassesAPresentLogger(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = log.Close() })
 
+	if optionalAuditLog[signeradmin.SettingAudit](log) == nil {
+		t.Error("signeradmin.SettingAudit is nil")
+	}
 	if optionalAuditLog[keyadmin.AuditLogger](log) == nil {
 		t.Error("keyadmin.AuditLogger is nil")
 	}

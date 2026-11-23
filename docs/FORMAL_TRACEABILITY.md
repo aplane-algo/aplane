@@ -212,7 +212,8 @@ Source: [ARCH_ADMIN.md](ARCH_ADMIN.md#writable-settings) (when a setting change 
 | SP1 | implemented | The value in effect is never more permissive than the file's | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (publishes a non-restrictive value only after the save); `::restricts` | `internal/signerapp/admin/service_test.go::TestSettingDirectionDecidesWhenAChangeTakesEffect`; `::TestUpdateAdminSettingFailureBeforeRename`; `internal/signerapp/daemon/settings_save_test.go::TestSigningSeesAutoApproveByTheChangesDirection`; `internal/signerapp/productruntime/productruntime_test.go::TestStoredConfigRefusesAnOverlayWithNoDocument` | Machine-checked as `SP1_NeverMorePermissiveThanFile`; negative control `PermissiveAfterSave = FALSE`. A restart loads the file's value: `productruntime/config.go::LoadStoredConfig` refuses a file with no YAML document rather than read it as the defaults. |
 | SP2 | implemented | A value in effect ahead of the file is reported unsaved, and only a restrictive value is | `internal/signerapp/admin/service.go::updateAdminSettingLocked`; `internal/signerapp/productruntime/config.go::SetUnsaved`; `::IsUnsaved` | `internal/signerapp/admin/service_test.go::TestUnsavedSettingIsReportedUntilASaveSucceeds`; `::TestUnchangedValueWhoseSaveFailsReportsNothingInEffect` | Machine-checked as `SP2_AheadOfFileIsReported`. |
 | SP3 | implemented | A restrictive request is in effect for as long as its save takes | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (publish and unsaved mark before the save) | `internal/signerapp/admin/service_test.go::TestRestrictiveValueIsReportedUnsavedWhileItsSaveIsHeld`; `internal/signerapp/daemon/settings_save_test.go::TestSigningSeesAutoApproveByTheChangesDirection` | Machine-checked as `SP3_RestrictiveInEffectDuringSave`; negative control `RestrictiveFirst = FALSE`. |
-| SP4 | implemented | The answer matches the state it reports | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (`ResultCodeAppliedNotSaved`, `SettingSaveError`) | `internal/signerapp/admin/service_test.go::TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning`; `internal/signerapp/daemon/settings_save_test.go::TestSettingSaveOutcomesReachTheAdminClientAndTheLogs` | Machine-checked as `SP4_AnswerMatchesState`. A directory flush that fails after the rename is a success. |
+| SP4 | implemented | The answer matches the state it reports | `internal/signerapp/admin/service.go::updateAdminSettingLocked` (`ResultCodeAppliedNotSaved`, `ResultCodeAuditUnavailable`, `ResultCodeAuditWriteFailed`, `SettingSaveError`) | `internal/signerapp/admin/service_test.go::TestUpdateAdminSettingFailureAfterRenameIsASuccessWithAWarning`; `::TestNonRestrictiveSettingRequiresDurableAuditBeforeSave`; `internal/signerapp/daemon/settings_save_test.go::TestSettingSaveOutcomesReachTheAdminClientAndTheLogs` | Machine-checked as `SP4_AnswerMatchesState`. A directory flush that fails after the rename is a success. |
+| SP5 | implemented | A non-restrictive setting update never saves, places, or succeeds without a durable intent audit record, and a restrictive update never blocks on auditing | `internal/signerapp/admin/service.go::updateAdminSettingLocked`; `::recordSettingIntentDurable`; `internal/signerapp/audit/audit.go::LogSettingChangeIntentDurable`; `::LogSettingChanged` | `internal/signerapp/admin/service_test.go::TestNonRestrictiveSettingRequiresDurableAuditBeforeSave`; `::TestRestrictiveSettingAppliesEvenWhenAuditUnavailableOrFailing`; `internal/signerapp/daemon/settings_save_test.go::TestUpdateAdminSettingAuditDirectionOverIPC` | Machine-checked as `SP5_AuditDirectionRule`; negative control `AuditPermissiveBeforeSave = FALSE` (`setting_publish_negative_audit.cfg`). `passphrase_timeout` and `theme` follow the non-restrictive path (fail-closed on audit failure). |
 
 ## Signer Invariants
 
@@ -528,14 +529,18 @@ root.
 [formal/setting_publish.tla](formal/setting_publish.tla) (see
 [FORMAL_TLA_SETTING_PUBLISH_MODEL.md](FORMAL_TLA_SETTING_PUBLISH_MODEL.md))
 models when a change to a writable boolean setting takes effect relative to
-its save, under the two halves of the rule as constants (a restrictive
-change before the save, any other change after it). TLC checked over the
-full finite state space, 23 distinct states, depth 5, no counterexamples.
+its durable audit intent and its save, under the three parts of the rule as
+constants (a restrictive change before the save without blocking on audit,
+any other change durably audited before the save and published only after
+it). TLC checked over the full finite state space, 31 distinct states,
+depth 6, no counterexamples.
 [formal/setting_publish_negative_permissive.cfg](formal/setting_publish_negative_permissive.cfg)
 must violate `SP1_NeverMorePermissiveThanFile` after 5 distinct states at
-depth 2, and
+depth 2,
 [formal/setting_publish_negative_restrictive.cfg](formal/setting_publish_negative_restrictive.cfg)
-`SP3_RestrictiveInEffectDuringSave` after 4 distinct states at depth 2.
+`SP3_RestrictiveInEffectDuringSave` after 4 distinct states at depth 2, and
+[formal/setting_publish_negative_audit.cfg](formal/setting_publish_negative_audit.cfg)
+`SP5_AuditDirectionRule` after 3 distinct states at depth 2.
 
 | Invariant | TLA+ predicate |
 |---|---|
@@ -543,6 +548,7 @@ depth 2, and
 | SP2 (ahead of the file is reported) | `SP2_AheadOfFileIsReported` |
 | SP3 (restrictive in effect during the save) | `SP3_RestrictiveInEffectDuringSave` |
 | SP4 (the answer matches the state) | `SP4_AnswerMatchesState` |
+| SP5 (non-restrictive requires durable audit; restrictive never blocks on audit) | `SP5_AuditDirectionRule` |
 
 ### Signer invariants module
 

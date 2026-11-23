@@ -36,7 +36,7 @@ func TestSignedRecordDescribesTheTransactionsAsSigned(t *testing.T) {
 	}
 
 	audit := &testAuditLogger{}
-	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), "")
+	(&Service{AuditLog: audit}).logSuccessfulSignatures(req, plan, signedGroupOf(plan.AllTxns, len(plan.DummyTxns)), approvalOutcome{ApprovalSource: ApprovalSourceHuman})
 	if len(audit.approved) != 1 {
 		t.Fatalf("approvals = %d, want one for the account; dummies are recorded in its group", len(audit.approved))
 	}
@@ -67,8 +67,11 @@ func TestSignedRecordDescribesTheTransactionsAsSigned(t *testing.T) {
 // A transaction signed alone records no group.
 func TestSignedRecordOfAnUngroupedTransaction(t *testing.T) {
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1_000}}
-	got := signedGroupOf([]types.Transaction{txn}, 0).record(0, "A", "txn 1/1 signed", "rule")
-	if got.TxID != algocrypto.GetTxID(txn) || got.Fee != 1_000 || got.PolicyRuleID != "rule" {
+	got := signedGroupOf([]types.Transaction{txn}, 0).record(0, "A", "txn 1/1 signed", approvalOutcome{
+		PolicyRuleID:   "rule",
+		ApprovalSource: ApprovalSourceHuman,
+	})
+	if got.TxID != algocrypto.GetTxID(txn) || got.Fee != 1_000 || got.PolicyRuleID != "rule" || got.ApprovalSource != ApprovalSourceHuman {
 		t.Fatalf("record = %+v", got)
 	}
 	if got.GroupID != "" || got.GroupTxIDs != nil || got.DummyCount != 0 {
@@ -76,7 +79,7 @@ func TestSignedRecordOfAnUngroupedTransaction(t *testing.T) {
 	}
 }
 
-// A refused request records the refusal and nothing as signed.
+// A refused request records the refusal, its policy rule ID, and nothing as signed.
 func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 	audit := &testAuditLogger{}
 	service := &Service{
@@ -102,8 +105,9 @@ func TestRefusedSignRecordsNothingAsSigned(t *testing.T) {
 	if result, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); result != nil || err == nil {
 		t.Fatalf("result %v, error %v; want a refusal", result, err)
 	}
-	if len(audit.rejected) != 1 || !strings.HasPrefix(audit.rejected[0].reason, auditPolicyRejected) {
-		t.Fatalf("rejections = %+v, want one policy rejection", audit.rejected)
+	if len(audit.rejected) != 1 || !strings.HasPrefix(audit.rejected[0].reason, auditPolicyRejected) ||
+		audit.rejected[0].policyRule != policy.RejectForeignRekeyRuleID {
+		t.Fatalf("rejections = %+v, want one policy rejection with rule %q", audit.rejected, policy.RejectForeignRekeyRuleID)
 	}
 	if len(audit.approved) != 0 {
 		t.Fatalf("a refused request was recorded as signed: %+v", audit.approved)
@@ -119,7 +123,7 @@ func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := decodedSignedGroup(group, 0).record(1, "A", "signed", "")
+	got := decodedSignedGroup(group, 0).record(1, "A", "signed", approvalOutcome{})
 	if got.TxID != algocrypto.GetTxID(txns[1]) || got.TxnSender != txns[1].Sender.String() || got.Fee != uint64(txns[1].Fee) {
 		t.Fatalf("record = %+v, want transaction 2 as decoded", got)
 	}
@@ -133,7 +137,7 @@ func TestDecodedSignedGroupNamesTheDecodedIDs(t *testing.T) {
 	// The group ID is the one the decode validated, not read off a
 	// transaction.
 	group.GroupID = types.Digest{9}
-	if got := decodedSignedGroup(group, 0).record(0, "A", "signed", ""); got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) {
+	if got := decodedSignedGroup(group, 0).record(0, "A", "signed", approvalOutcome{}); got.GroupID != base64.StdEncoding.EncodeToString(group.GroupID[:]) {
 		t.Fatalf("group_id = %q, want the group's own ID", got.GroupID)
 	}
 }

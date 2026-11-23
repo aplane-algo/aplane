@@ -19,8 +19,11 @@ Invariants:
   - SP3 : a restrictive request is in effect for as long as its save takes.
   - SP4 : the answer matches the state: a success leaves memory and file on
           the requested value; "applied, not saved" leaves the restrictive
-          value in effect and unsaved; a plain failure changed nothing in
-          effect.
+          value in effect and unsaved; a plain or audit failure changed
+          nothing in effect.
+  - SP5 : a non-restrictive update never reaches save, placement, or ok
+          without a durable intent audit record, and a restrictive update
+          never blocks on auditing.
 
 The model covers one setting. Settings are independent: each has its own
 unsaved flag, an update runs under the store mutation lock, and the save
@@ -29,39 +32,44 @@ rewrites only its own key.
 The model intentionally omits:
 
   - passphrase_timeout and theme, which are never restrictive and follow the
-    permissive path,
+    permissive path (durable intent audit before save),
   - the headless refusals of lock_on_disconnect and passphrase_timeout,
   - a hand edit of the file while the signer runs (it takes effect at the
     next start; the signer makes no check for one),
   - the directory flush after the rename: its failure
     (fsutil.ErrPublishedNotDurable) leaves the new file in place and is a
-    success, SavePlaced then Publish here.
+    success, SavePlaced then Publish here,
+  - the best-effort SETTING_CHANGED and SETTING_SAVE_ERROR outcome entries
+    written after the save returns.
 
 See FORMAL_TLA_SETTING_PUBLISH_MODEL.md for the prose companion.
 *)
 EXTENDS TLC
 
 CONSTANTS
-    RestrictiveFirst,       \* a restrictive change is published before its save
-    PermissiveAfterSave     \* any other change is published only after its save
+    RestrictiveFirst,          \* a restrictive change is published before its save
+    PermissiveAfterSave,       \* any other change is published only after its save
+    AuditPermissiveBeforeSave  \* a non-restrictive change durably records intent before its save
 
 ASSUME RestrictiveFirst \in BOOLEAN
 ASSUME PermissiveAfterSave \in BOOLEAN
+ASSUME AuditPermissiveBeforeSave \in BOOLEAN
 
 \* TRUE is the restrictive value throughout.
-Result == {"none", "ok", "applied_not_saved", "failed"}
+Result == {"none", "ok", "applied_not_saved", "failed", "audit_failed"}
 
 VARIABLES
     mem,        \* the value in effect
     file,       \* the value the next start loads
     unsaved,    \* the signer reports the setting unsaved
-    pc,         \* "idle", or "saving" then "placed": an update holds the
+    pc,         \* "idle", "auditing", "saving", or "placed": an update holds the
                 \* store mutation lock
     req,        \* the value the update in progress asked for
     early,      \* the update in progress took the restrictive path
+    audited,    \* the update in progress durably recorded its intent before saving
     result      \* the last update's answer
 
-vars == <<mem, file, unsaved, pc, req, early, result>>
+vars == <<mem, file, unsaved, pc, req, early, audited, result>>
 
 Init ==
     /\ file \in BOOLEAN
@@ -70,6 +78,7 @@ Init ==
     /\ pc = "idle"
     /\ req = FALSE
     /\ early = FALSE
+    /\ audited = FALSE
     /\ result = "none"
 
 \* restricts(): the request is for the restrictive value, and that value is
@@ -78,23 +87,42 @@ Restricts(v) == v /\ (~mem \/ unsaved)
 
 Begin(v) ==
     /\ pc = "idle"
-    /\ pc' = "saving"
     /\ req' = v
     /\ early' = Restricts(v)
+    /\ audited' = FALSE
     /\ result' = "none"
-    /\ IF Restricts(v) /\ RestrictiveFirst
-          THEN mem' = TRUE /\ unsaved' = TRUE
-          ELSE IF ~Restricts(v) /\ ~PermissiveAfterSave
-                  THEN mem' = v /\ UNCHANGED unsaved
-                  ELSE UNCHANGED <<mem, unsaved>>
+    /\ IF Restricts(v)
+          THEN /\ pc' = "saving"
+               /\ IF RestrictiveFirst
+                     THEN mem' = TRUE /\ unsaved' = TRUE
+                     ELSE UNCHANGED <<mem, unsaved>>
+          ELSE /\ pc' = IF AuditPermissiveBeforeSave THEN "auditing" ELSE "saving"
+               /\ IF ~PermissiveAfterSave
+                     THEN mem' = v /\ UNCHANGED unsaved
+                     ELSE UNCHANGED <<mem, unsaved>>
     /\ UNCHANGED file
+
+\* The durable SETTING_CHANGE_INTENT write succeeds for a non-restrictive update.
+AuditDurable ==
+    /\ pc = "auditing"
+    /\ audited' = TRUE
+    /\ pc' = "saving"
+    /\ UNCHANGED <<mem, file, unsaved, req, early, result>>
+
+\* The audit log is unavailable or its durable write fails: the non-restrictive
+\* update is refused without touching the file or memory.
+AuditFail ==
+    /\ pc = "auditing"
+    /\ result' = "audit_failed"
+    /\ pc' = "idle"
+    /\ UNCHANGED <<mem, file, unsaved, req, early, audited>>
 
 \* The save's rename puts the new file in place.
 SavePlaced ==
     /\ pc = "saving"
     /\ file' = req
     /\ pc' = "placed"
-    /\ UNCHANGED <<mem, unsaved, req, early, result>>
+    /\ UNCHANGED <<mem, unsaved, req, early, audited, result>>
 
 \* Memory follows the file and is no longer ahead of it.
 Publish ==
@@ -103,7 +131,7 @@ Publish ==
     /\ unsaved' = FALSE
     /\ result' = "ok"
     /\ pc' = "idle"
-    /\ UNCHANGED <<file, req, early>>
+    /\ UNCHANGED <<file, req, early, audited>>
 
 \* The old file is still in place. A restrictive value stays in effect and
 \* unsaved; any other value was never published.
@@ -111,7 +139,7 @@ SaveFail ==
     /\ pc = "saving"
     /\ result' = IF early THEN "applied_not_saved" ELSE "failed"
     /\ pc' = "idle"
-    /\ UNCHANGED <<mem, file, unsaved, req, early>>
+    /\ UNCHANGED <<mem, file, unsaved, req, early, audited>>
 
 \* A restart, or a crash at any point of an update: the save replaces the
 \* file in one rename, so the file holds the old value or the new one.
@@ -120,11 +148,14 @@ Restart ==
     /\ mem' = file
     /\ unsaved' = FALSE
     /\ pc' = "idle"
+    /\ audited' = FALSE
     /\ result' = "none"
     /\ UNCHANGED <<file, req, early>>
 
 Next ==
     \/ \E v \in BOOLEAN : Begin(v)
+    \/ AuditDurable
+    \/ AuditFail
     \/ SavePlaced
     \/ Publish
     \/ SaveFail
@@ -137,9 +168,10 @@ TypeOK ==
     /\ mem \in BOOLEAN
     /\ file \in BOOLEAN
     /\ unsaved \in BOOLEAN
-    /\ pc \in {"idle", "saving", "placed"}
+    /\ pc \in {"idle", "auditing", "saving", "placed"}
     /\ req \in BOOLEAN
     /\ early \in BOOLEAN
+    /\ audited \in BOOLEAN
     /\ result \in Result
 
 \* SP1: a signing request, which reads mem at any moment, never sees a
@@ -160,6 +192,14 @@ SP4_AnswerMatchesState ==
     /\ result = "ok" => (mem = req /\ file = req /\ ~unsaved)
     /\ result = "applied_not_saved" => (mem /\ unsaved)
     /\ result = "failed" => (mem = file \/ unsaved)
+    /\ result = "audit_failed" => (~early /\ (mem = file \/ unsaved))
+
+\* SP5: a non-restrictive update never saves, places, or succeeds without a
+\* durable intent audit record, and a restrictive update never enters auditing.
+SP5_AuditDirectionRule ==
+    /\ (~early /\ pc \in {"saving", "placed"}) => audited
+    /\ (~early /\ result = "ok") => audited
+    /\ (pc = "auditing") => ~early
 
 Safety ==
     /\ TypeOK
@@ -167,5 +207,6 @@ Safety ==
     /\ SP2_AheadOfFileIsReported
     /\ SP3_RestrictiveInEffectDuringSave
     /\ SP4_AnswerMatchesState
+    /\ SP5_AuditDirectionRule
 
 =============================================================================

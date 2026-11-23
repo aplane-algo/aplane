@@ -74,6 +74,9 @@ type Error struct {
 	// whatever the position's kind, including one the signer does not sign.
 	// It never reaches the wire: Message names the position for people.
 	RefusedPosition *int
+	// PolicyRuleID, when set, is the first matched policy rule on a policy
+	// rejection, for SIGN_REJECTED audit records. It never reaches the wire.
+	PolicyRuleID string
 }
 
 func (e *Error) Error() string {
