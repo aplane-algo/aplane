@@ -243,6 +243,7 @@ func generateSeatbeltProfile(cfg Config) string {
 	sb.WriteString("(allow mach-lookup\n")
 	sb.WriteString("    (global-name \"com.apple.CoreServices.coreservicesd\")\n")
 	sb.WriteString("    (global-name \"com.apple.SecurityServer\")\n")
+	sb.WriteString("    (global-name \"com.apple.SystemConfiguration.DNSConfiguration\")\n")
 	sb.WriteString("    (global-name \"com.apple.SystemConfiguration.configd\")\n")
 	sb.WriteString("    (global-name \"com.apple.bsd.dirhelper\")\n")
 	sb.WriteString("    (global-name \"com.apple.dnssd.service\")\n")
@@ -302,6 +303,10 @@ var baseAllowedEnvKeys = map[string]bool{
 	"TERM":                     true,
 	"TMPDIR":                   true,
 	"TZ":                       true,
+	// macOS CoreFoundation reads this locale/encoding tag; stripping it makes
+	// CoreFoundation fall back to reading ~/.CFUserTextEncoding and probing
+	// /dev/autofs_nowait under Seatbelt.
+	"__CF_USER_TEXT_ENCODING": true,
 }
 
 // filterEnv filters environment variables for sandboxed execution using an

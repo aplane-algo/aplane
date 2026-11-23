@@ -1309,9 +1309,10 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 - File metadata (stat) on any path; file contents stay behind the allowlist
 - Allowlisted Mach lookup services required by Go/Node.js DNS, TLS, and runtime
   startup (`mDNSResponder`, `dnssd.service`, `opendirectoryd.libinfo`,
-  `SecurityServer`, `trustd.agent`, `ocspd`, `configd`, `coreservicesd`,
-  `dirhelper`, `system.logger`, `system.notification_center`); wildcard
-  `mach-lookup` and `mach-register` are denied
+  `SecurityServer`, `trustd.agent`, `ocspd`, `SystemConfiguration.DNSConfiguration`,
+  `configd`, `coreservicesd`, `dirhelper`, `system.logger`,
+  `system.notification_center`); wildcard `mach-lookup` and `mach-register` are
+  denied
 - Network - enabled for all external plugins for algod, KMD, or indexer API calls
 
 **What plugins CANNOT access:**
@@ -1328,8 +1329,8 @@ Plugins start from an explicit allowlist rather than inheriting the host
 environment. Only these variables pass from the host into the sandbox:
 - Base runtime variables: `HOME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`, `TZ`,
   `TMPDIR`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS`,
-  `APSHELL_PLUGIN_STATE_DIR`, and `PATH` (rewritten to keep only entries under
-  `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and `/sbin/`)
+  `APSHELL_PLUGIN_STATE_DIR`, `__CF_USER_TEXT_ENCODING`, and `PATH` (rewritten
+  to keep only entries under `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and `/sbin/`)
 - Additional variable names explicitly declared in the plugin manifest's `env`
   array. A manifest's `env` list is its consent surface: operators reviewing or
   installing a plugin should check declared names, because any variable that is

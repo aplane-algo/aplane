@@ -51,6 +51,7 @@ func TestFilterEnv(t *testing.T) {
 		"APSHELL_NETWORK=testnet",
 		"RETI_APP_ID=12345",
 		"APSHELL_PLUGIN_STATE_DIR=/var/lib/plugin-state",
+		"__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0",
 	}
 
 	// Even if a manifest declares credential-shaped names, sensitiveEnvKey
@@ -110,6 +111,9 @@ func TestFilterEnv(t *testing.T) {
 	}
 	if envMap["RETI_APP_ID"] != "12345" {
 		t.Error("filterEnv should keep a manifest-declared non-secret config variable")
+	}
+	if envMap["__CF_USER_TEXT_ENCODING"] != "0x1F5:0x0:0x0" {
+		t.Error("filterEnv should keep __CF_USER_TEXT_ENCODING")
 	}
 }
 
@@ -218,9 +222,19 @@ func TestGenerateSeatbeltProfile(t *testing.T) {
 	if strings.Contains(profile, "mach-register") {
 		t.Error("profile must not allow mach-register")
 	}
-	for _, svc := range []string{"com.apple.mDNSResponder", "com.apple.SecurityServer", "com.apple.trustd.agent"} {
+	for _, svc := range []string{
+		"com.apple.mDNSResponder",
+		"com.apple.SecurityServer",
+		"com.apple.SystemConfiguration.DNSConfiguration",
+		"com.apple.trustd.agent",
+	} {
 		if !strings.Contains(profile, `(global-name "`+svc+`")`) {
 			t.Errorf("profile missing allowlisted mach-lookup service %s", svc)
+		}
+	}
+	for _, denied := range []string{"com.apple.logd", "com.apple.diagnosticd"} {
+		if strings.Contains(profile, denied) {
+			t.Errorf("profile must not allow mach-lookup service %s", denied)
 		}
 	}
 
