@@ -39,6 +39,11 @@ type Config struct {
 
 	// Env are the environment variables for the plugin
 	Env []string
+
+	// AllowedEnv lists additional host environment variable names declared by
+	// the plugin manifest. Only variables in the base runtime allowlist or in
+	// AllowedEnv (and not blocked as host credentials) pass into the sandbox.
+	AllowedEnv []string
 }
 
 // ErrSandboxUnavailable is returned when sandboxing is required but not available
@@ -144,7 +149,7 @@ func buildLinuxCommand(cfg Config) (*exec.Cmd, error) {
 
 	cmd := exec.Command(bwrapPath, args...)
 	cmd.Dir = cfg.PluginDir
-	cmd.Env = filterEnv(cfg.PluginName, cfg.Env)
+	cmd.Env = filterEnv(cfg.PluginName, cfg.AllowedEnv, cfg.Env)
 
 	return cmd, nil
 }
@@ -166,7 +171,7 @@ func buildDarwinCommand(cfg Config) (*exec.Cmd, error) {
 
 	cmd := exec.Command(sandboxExecPath, args...)
 	cmd.Dir = cfg.PluginDir
-	cmd.Env = filterEnv(cfg.PluginName, cfg.Env)
+	cmd.Env = filterEnv(cfg.PluginName, cfg.AllowedEnv, cfg.Env)
 
 	return cmd, nil
 }
@@ -232,10 +237,27 @@ func generateSeatbeltProfile(cfg Config) string {
 	sb.WriteString("; Network access\n")
 	sb.WriteString("(allow network*)\n\n")
 
-	// Mach operations (needed for basic process functionality)
-	sb.WriteString("; Mach IPC (required for process operation)\n")
-	sb.WriteString("(allow mach-lookup)\n")
-	sb.WriteString("(allow mach-register)\n\n")
+	// Mach operations (allowlisted services required by Go/Node.js DNS, TLS,
+	// and runtime startup; mach-register is intentionally omitted).
+	// com.apple.logd and com.apple.diagnosticd are intentionally left denied:
+	// losing system-library log lines does not affect plugins (their output goes
+	// over stderr and JSON-RPC), and plugins do not need write access to the
+	// system log.
+	sb.WriteString("; Mach IPC (allowlisted services for DNS, TLS, and runtime init)\n")
+	sb.WriteString("(allow mach-lookup\n")
+	sb.WriteString("    (global-name \"com.apple.CoreServices.coreservicesd\")\n")
+	sb.WriteString("    (global-name \"com.apple.SecurityServer\")\n")
+	sb.WriteString("    (global-name \"com.apple.SystemConfiguration.DNSConfiguration\")\n")
+	sb.WriteString("    (global-name \"com.apple.SystemConfiguration.configd\")\n")
+	sb.WriteString("    (global-name \"com.apple.bsd.dirhelper\")\n")
+	sb.WriteString("    (global-name \"com.apple.dnssd.service\")\n")
+	sb.WriteString("    (global-name \"com.apple.mDNSResponder\")\n")
+	sb.WriteString("    (global-name \"com.apple.ocspd\")\n")
+	sb.WriteString("    (global-name \"com.apple.system.logger\")\n")
+	sb.WriteString("    (global-name \"com.apple.system.notification_center\")\n")
+	sb.WriteString("    (global-name \"com.apple.system.opendirectoryd.libinfo\")\n")
+	sb.WriteString("    (global-name \"com.apple.trustd.agent\")\n")
+	sb.WriteString(")\n\n")
 
 	// Signal handling
 	sb.WriteString("; Signals\n")
@@ -269,17 +291,48 @@ func seatbeltStringLiteral(path string) string {
 	return strconv.Quote(path)
 }
 
-// filterEnv filters environment variables for sandboxed execution
-// Removes potentially sensitive variables, except the configuration variables
-// that pluginName itself owns.
-func filterEnv(pluginName string, env []string) []string {
+// baseAllowedEnvKeys are the minimal OS/runtime environment variables passed
+// into every sandboxed plugin. All other host variables are stripped unless
+// explicitly declared by the plugin manifest and permitted by sensitiveEnvKey.
+var baseAllowedEnvKeys = map[string]bool{
+	"APSHELL_PLUGIN_STATE_DIR": true,
+	"HOME":                     true,
+	"LANG":                     true,
+	"LC_ALL":                   true,
+	"LC_CTYPE":                 true,
+	"NODE_EXTRA_CA_CERTS":      true,
+	"PATH":                     true,
+	"SSL_CERT_DIR":             true,
+	"SSL_CERT_FILE":            true,
+	"TERM":                     true,
+	"TMPDIR":                   true,
+	"TZ":                       true,
+	// macOS CoreFoundation reads this locale/encoding tag; stripping it makes
+	// CoreFoundation fall back to reading ~/.CFUserTextEncoding and probing
+	// /dev/autofs_nowait under Seatbelt.
+	"__CF_USER_TEXT_ENCODING": true,
+}
+
+// filterEnv filters environment variables for sandboxed execution using an
+// allowlist: only base runtime variables and names explicitly declared in
+// allowedEnv survive, and credential-shaped names are always refused unless
+// explicitly exempted for pluginName.
+func filterEnv(pluginName string, allowedEnv []string, env []string) []string {
 	// Directories accessible inside the sandbox (bind-mounted read-only)
 	sandboxPrefixes := []string{"/usr/", "/bin/", "/lib/", "/lib64/", "/sbin/"}
+
+	declared := make(map[string]bool, len(allowedEnv))
+	for _, name := range allowedEnv {
+		declared[name] = true
+	}
 
 	var filtered []string
 	for _, e := range env {
 		parts := strings.SplitN(e, "=", 2)
 		key := parts[0]
+		if !baseAllowedEnvKeys[key] && !declared[key] {
+			continue
+		}
 		if sensitiveEnvKey(pluginName, key) {
 			continue
 		}
@@ -321,13 +374,16 @@ var pluginConfigEnvKeys = map[string]map[string]bool{
 var secretEnvSuffixes = []string{
 	"_TOKEN", "_SECRET", "_API_KEY", "_PASSWORD",
 	"_PASSPHRASE", "_MNEMONIC", "_PRIVATE_KEY", "_SEED",
+	"_PROXY",
 }
 
 // secretEnvKeys are credential variables secretEnvSuffixes does not catch.
+// Checked case-insensitively so manifest declarations cannot bypass the block.
 var secretEnvKeys = map[string]bool{
 	"AWS_ACCESS_KEY_ID":     true,
 	"AWS_SECRET_ACCESS_KEY": true,
 	"AWS_SESSION_TOKEN":     true,
+	"DATABASE_URL":          true,
 	"GITHUB_TOKEN":          true,
 	"GH_TOKEN":              true,
 	"NPM_TOKEN":             true,
@@ -340,10 +396,10 @@ func sensitiveEnvKey(pluginName, key string) bool {
 	if pluginConfigEnvKeys[pluginName][key] {
 		return false
 	}
-	if secretEnvKeys[key] {
+	upper := strings.ToUpper(key)
+	if secretEnvKeys[upper] {
 		return true
 	}
-	upper := strings.ToUpper(key)
 	for _, suffix := range secretEnvSuffixes {
 		if strings.HasSuffix(upper, suffix) {
 			return true

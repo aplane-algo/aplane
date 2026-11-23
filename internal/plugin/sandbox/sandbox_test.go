@@ -33,6 +33,13 @@ func TestFilterEnv(t *testing.T) {
 		"SERVICE_TOKEN=service_xxx",
 		"LOCAL_SECRET=local_xxx",
 		"DATABASE_PASSWORD=hunter2",
+		"DATABASE_URL=postgres://user:pass@db.internal/prod",
+		"database_url=postgres://user:pass@db.internal/prod",
+		"HTTP_PROXY=http://user:pass@proxy.internal:8080",
+		"HTTPS_PROXY=http://user:pass@proxy.internal:8443",
+		"https_proxy=http://user:pass@proxy.internal:8443",
+		"ALL_PROXY=socks5://user:pass@proxy.internal:1080",
+		"UNDECLARED_HOST_VAR=should_not_leak",
 		"APSHELL_ALGOD_TOKEN=operator_set",
 		"APSIGNER_PASSPHRASE=signer_master",
 		"TEST_PASSPHRASE=test_master",
@@ -43,9 +50,25 @@ func TestFilterEnv(t *testing.T) {
 		"APSHELL_EXTRA_SECRET=operator_set",
 		"APSHELL_NETWORK=testnet",
 		"RETI_APP_ID=12345",
+		"APSHELL_PLUGIN_STATE_DIR=/var/lib/plugin-state",
+		"__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0",
 	}
 
-	result := filterEnv("test-plugin", input)
+	// Even if a manifest declares credential-shaped names, sensitiveEnvKey
+	// still blocks them; only declared non-secret names and base runtime vars
+	// pass through.
+	declared := []string{
+		"RETI_APP_ID",
+		"DATABASE_URL",
+		"database_url",
+		"HTTPS_PROXY",
+		"https_proxy",
+		"AWS_SECRET_ACCESS_KEY",
+		"APSIGNER_PASSPHRASE",
+		"CUSTOM_API_KEY",
+		"lowercase_password",
+	}
+	result := filterEnv("test-plugin", declared, input)
 
 	// Build lookup
 	envMap := make(map[string]string)
@@ -54,16 +77,17 @@ func TestFilterEnv(t *testing.T) {
 		envMap[parts[0]] = parts[1]
 	}
 
-	// Sensitive vars should be excluded
+	// Sensitive and undeclared host vars should be excluded
 	excluded := []string{
 		"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
 		"GITHUB_TOKEN", "GH_TOKEN", "NPM_TOKEN",
 		"SSH_AUTH_SOCK", "SSH_AGENT_PID", "GPG_AGENT_INFO",
 		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY",
 		"CUSTOM_API_KEY", "SERVICE_TOKEN", "LOCAL_SECRET", "DATABASE_PASSWORD",
+		"DATABASE_URL", "database_url", "HTTP_PROXY", "HTTPS_PROXY", "https_proxy", "ALL_PROXY",
+		"UNDECLARED_HOST_VAR", "APSHELL_NETWORK",
 		"APSIGNER_PASSPHRASE", "TEST_PASSPHRASE", "TEST_FUNDING_MNEMONIC",
 		"WALLET_PRIVATE_KEY", "HD_SEED", "lowercase_password",
-		// APSHELL_* names take the same rules as any other.
 		"APSHELL_ALGOD_TOKEN", "APSHELL_EXTRA_SECRET",
 	}
 	for _, key := range excluded {
@@ -72,7 +96,7 @@ func TestFilterEnv(t *testing.T) {
 		}
 	}
 
-	// Safe vars should remain
+	// Base runtime allowlist and declared non-secret config vars should remain
 	if envMap["HOME"] != "/home/user" {
 		t.Error("filterEnv should keep HOME")
 	}
@@ -82,11 +106,14 @@ func TestFilterEnv(t *testing.T) {
 	if envMap["TERM"] != "xterm" {
 		t.Error("filterEnv should keep TERM")
 	}
-	if envMap["APSHELL_NETWORK"] != "testnet" {
-		t.Error("filterEnv should keep a non-secret APSHELL_* name")
+	if envMap["APSHELL_PLUGIN_STATE_DIR"] != "/var/lib/plugin-state" {
+		t.Error("filterEnv should keep APSHELL_PLUGIN_STATE_DIR")
 	}
 	if envMap["RETI_APP_ID"] != "12345" {
-		t.Error("filterEnv should keep a plugin's own non-secret configuration")
+		t.Error("filterEnv should keep a manifest-declared non-secret config variable")
+	}
+	if envMap["__CF_USER_TEXT_ENCODING"] != "0x1F5:0x0:0x0" {
+		t.Error("filterEnv should keep __CF_USER_TEXT_ENCODING")
 	}
 }
 
@@ -95,7 +122,7 @@ func TestFilterEnvPathSanitization(t *testing.T) {
 		"PATH=/usr/bin:/usr/local/bin:/home/user/.nvm/bin:/sbin:/lib/custom:/opt/custom",
 	}
 
-	result := filterEnv("test-plugin", input)
+	result := filterEnv("test-plugin", nil, input)
 
 	var pathValue string
 	for _, e := range result {
@@ -135,12 +162,12 @@ func TestFilterEnvPathSanitization(t *testing.T) {
 }
 
 func TestFilterEnvEmpty(t *testing.T) {
-	result := filterEnv("test-plugin", nil)
+	result := filterEnv("test-plugin", nil, nil)
 	if len(result) != 0 {
 		t.Errorf("filterEnv(nil) should return empty, got %d", len(result))
 	}
 
-	result = filterEnv("test-plugin", []string{})
+	result = filterEnv("test-plugin", nil, []string{})
 	if len(result) != 0 {
 		t.Errorf("filterEnv([]) should return empty, got %d", len(result))
 	}
@@ -186,6 +213,29 @@ func TestGenerateSeatbeltProfile(t *testing.T) {
 	// Should allow file-read-metadata (required for HTTPS fetch / DNS stat calls)
 	if !strings.Contains(profile, "(allow file-read-metadata)") {
 		t.Error("profile should allow file-read-metadata (required by Node.js TLS/undici for HTTPS fetch)")
+	}
+
+	// Should restrict Mach IPC to allowlisted global names (no wildcard mach-lookup or mach-register)
+	if strings.Contains(profile, "(allow mach-lookup)") {
+		t.Error("profile must not contain unrestricted (allow mach-lookup)")
+	}
+	if strings.Contains(profile, "mach-register") {
+		t.Error("profile must not allow mach-register")
+	}
+	for _, svc := range []string{
+		"com.apple.mDNSResponder",
+		"com.apple.SecurityServer",
+		"com.apple.SystemConfiguration.DNSConfiguration",
+		"com.apple.trustd.agent",
+	} {
+		if !strings.Contains(profile, `(global-name "`+svc+`")`) {
+			t.Errorf("profile missing allowlisted mach-lookup service %s", svc)
+		}
+	}
+	for _, denied := range []string{"com.apple.logd", "com.apple.diagnosticd"} {
+		if strings.Contains(profile, denied) {
+			t.Errorf("profile must not allow mach-lookup service %s", denied)
+		}
 	}
 
 	// Should deny sensitive paths
@@ -296,9 +346,15 @@ func TestFilterEnvPassesLocalNetConfigOnlyToItsPlugin(t *testing.T) {
 		"OTHER_TOKEN=x",
 		"DB_PASSWORD=y",
 	}
+	declared := []string{
+		"APLANE_LOCALNET_TOKEN",
+		"APLANE_LOCALNET_WALLET_PASSWORD",
+		"OTHER_TOKEN",
+		"DB_PASSWORD",
+	}
 	filtered := func(pluginName string) map[string]bool {
 		got := map[string]bool{}
-		for _, e := range filterEnv(pluginName, input) {
+		for _, e := range filterEnv(pluginName, declared, input) {
 			got[e] = true
 		}
 		return got

@@ -1947,7 +1947,10 @@ the steps that completed in `steps`, and the failing step's outcome in
 
 Plugins can include an `mcp.md` file in their directory to provide
 LLM-specific instructions. At startup, the MCP server discovers plugins and
-appends any `mcp.md` content to the `execute` tool description.
+appends any `mcp.md` content to the `execute` tool description. Because `mcp.md`
+is read on the host outside the plugin sandbox, it must be a regular file (never
+a symlink, directory, or FIFO) inside a non-symlink plugin directory and at most
+64 KiB; non-conforming files are ignored with a warning.
 
 ```
 plugins.available/my-plugin/

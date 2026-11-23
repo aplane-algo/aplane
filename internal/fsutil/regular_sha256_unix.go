@@ -8,6 +8,7 @@ package fsutil
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -28,6 +29,32 @@ func RegularFileSHA256(path string) (string, int64, error) {
 	size, err := io.Copy(hash, file)
 	if err != nil {
 		return "", 0, err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), size, nil
+}
+
+// RegularFileSHA256Limited hashes one regular file of at most max bytes without
+// following a final-component symlink, rejecting oversized files rather than
+// hashing past the cap.
+func RegularFileSHA256Limited(path string, max int64) (string, int64, error) {
+	if max < 0 || max == math.MaxInt64 {
+		return "", 0, fmt.Errorf("invalid regular-file size limit %d", max)
+	}
+	file, info, err := openRegularFile(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = file.Close() }()
+	if info.Size() > max {
+		return "", 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
+	}
+	hash := sha256.New()
+	size, err := io.Copy(hash, io.LimitReader(file, max+1))
+	if err != nil {
+		return "", 0, err
+	}
+	if size > max {
+		return "", 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
 	}
 	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
@@ -59,12 +86,15 @@ func ReadRegularFileLimited(path string, max int64) ([]byte, os.FileMode, error)
 		return nil, 0, err
 	}
 	defer func() { _ = file.Close() }()
+	if info.Size() > max {
+		return nil, 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
+	}
 	data, err := io.ReadAll(io.LimitReader(file, max+1))
 	if err != nil {
 		return nil, 0, err
 	}
 	if int64(len(data)) > max {
-		return nil, 0, fmt.Errorf("file exceeds size limit %d", max)
+		return nil, 0, fmt.Errorf("%w %d", ErrFileTooLarge, max)
 	}
 	return data, info.Mode().Perm(), nil
 }
@@ -72,6 +102,9 @@ func ReadRegularFileLimited(path string, max int64) ([]byte, os.FileMode, error)
 func openRegularFile(path string) (*os.File, os.FileInfo, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return nil, nil, fmt.Errorf("%w: %s: %w", ErrNotRegularFile, path, err)
+		}
 		return nil, nil, err
 	}
 	file := os.NewFile(uintptr(fd), path)
@@ -82,7 +115,7 @@ func openRegularFile(path string) (*os.File, os.FileInfo, error) {
 	}
 	if !info.Mode().IsRegular() {
 		_ = file.Close()
-		return nil, nil, fmt.Errorf("path is not a regular file: %s", path)
+		return nil, nil, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
 	}
 	return file, info, nil
 }
