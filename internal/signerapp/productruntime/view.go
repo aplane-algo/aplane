@@ -561,9 +561,11 @@ func (ir *Runtime) publishUnlock(kr *crypto.Keyring, l *Loaded) *signertemplates
 // by the failure rule for a signer not unlocked. A content defect enters
 // recovery's view, as does, for an attempt begun in recovery, a root that
 // moved off recovery's binding or did not authenticate. A role conflict,
-// which the caller's afterReload fails the node closed for, installs nothing,
-// unlike a reload's: the node serves nothing more, so an attempt begun
-// locked stays locked and one begun in recovery keeps recovery's view. Any
+// which the caller's afterReload fails the node closed for, installs nothing
+// here, unlike a reload's: the node serves nothing more, so an attempt begun
+// locked stays locked and one begun in recovery keeps recovery's view. (An
+// attempt whose reconcile failed enters recovery for that failure before it
+// gets here, role conflict or not.) Any
 // other failure changes nothing and is the attempt's error. The keyring the
 // build opened is installed only by an entry from locked; otherwise it is
 // zeroed, and recovery keeps its own.
@@ -626,12 +628,18 @@ func (ir *Runtime) unlockIntoRecovery(attempt signerruntime.Attempt, owned *cryp
 		return nil
 	})
 	detached.ZeroWhenUnused()
-	if errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+	switch {
+	case errors.Is(err, signerruntime.ErrLockedDuringUnlock):
 		// The attempt locked the runtime for its cleanup, which cleared the
 		// view it installed.
 		ir.notifyLocked()
-	}
-	if err != nil {
+		return UnlockOutcome{}, err
+	case err != nil && ir.lockRuntime.LostToLock(attempt):
+		// A lock that landed after the check above cleared recovery's
+		// keyring before open read it: the attempt lost to that lock, which
+		// told the admin session itself.
+		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
+	case err != nil:
 		return UnlockOutcome{}, err
 	}
 	// The attempt began locked or in recovery (an unlocked one is answered

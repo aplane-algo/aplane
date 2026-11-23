@@ -19,7 +19,8 @@ before it was renamed `enroll`.
   the root selecting and showing the policy it verified, with the keyring
   the build opened for an unlock begun locked. A reconcile that fails enters
   recovery's view of what the build found. A role conflict fails the node
-  closed and the unlock fails.
+  closed, and an unlock whose build finds one installs nothing, unless its
+  reconcile had already failed and it enters recovery for that.
 - **A failed unlock no longer publishes the policy it verified.** The old
   reload published the new policy before it failed; a locked signer now
   keeps the policy it had, and recovery shows the one its build verified.

@@ -230,3 +230,66 @@ func TestAPassphraseChangeWhoseBuildFailsZeroesWhatItBuilt(t *testing.T) {
 		t.Fatal("the build's token index was not zeroed")
 	}
 }
+
+// An unlock whose build succeeds but which a lock overtook publishes, loses
+// at its fence, and still audits what its build found, though no key went
+// into service and no key reload is recorded.
+func TestAnUnlockALockOvertookAtItsFenceStillAuditsWhatItsBuildFound(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	ir.Lock()
+	audit := &countingAudit{}
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		var lockDone sync.WaitGroup
+		lockDone.Add(1)
+		go func() {
+			defer lockDone.Done()
+			ir.Lock()
+		}()
+		lockDone.Wait()
+		return &Loaded{Selection: &bound, Contents: rejectedScan(bound)}, nil
+	}, ReloadEffects{Audit: audit})
+
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), noReconcile, nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+		t.Fatalf("Unlock() = %v, want %v", err, signerruntime.ErrLockedDuringUnlock)
+	}
+	if audit.rejected != 1 || audit.reloads != 0 {
+		t.Fatalf("rejected key audits %d, key reloads %d; want 1 and none", audit.rejected, audit.reloads)
+	}
+}
+
+// A role conflict on an unlock begun in recovery installs nothing, even
+// where the build found the root moved, which would otherwise rebind
+// recovery: the node fails closed, and recovery keeps its own keyring and
+// binding. The keyring the attempt opened is zeroed.
+func TestARoleConflictOnAnUnlockInRecoveryInstallsNothing(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	moved := ir.KeyPaths().GenerationPaths("gen-1800000000-0a0b0c0d")
+	ir.EnterRecovery(nil)
+	var recoverys *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { recoverys = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	failedClosed := 0
+	var opened *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		opened = kr
+		return &Loaded{Selection: &moved}, fmt.Errorf("key snapshot rejected: %w", keyclass.ErrNodeRoleConflict)
+	}, ReloadEffects{NodeFailClosed: func(error) { failedClosed++ }})
+
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), noReconcile, nil); !errors.Is(err, keyclass.ErrNodeRoleConflict) {
+		t.Fatalf("Unlock() = %v, want the role conflict", err)
+	}
+	if failedClosed != 1 || !ir.IsRecovery() {
+		t.Fatalf("node failed closed %d time(s), state %v; want once, recovery", failedClosed, ir.GetState())
+	}
+	if active, err := ir.ActivePaths(); err != nil || active.GenerationID() != bound.GenerationID() {
+		t.Fatalf("recovery bound to %v (%v), want %s kept", active.GenerationID(), err, bound.GenerationID())
+	}
+	var current *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { current = kr; return nil }); err != nil || current != recoverys {
+		t.Fatalf("recovery's keyring = %p (%v), want its own %p", current, err, recoverys)
+	}
+	if !zeroed(opened) {
+		t.Fatal("the keyring the attempt opened was not zeroed")
+	}
+}
