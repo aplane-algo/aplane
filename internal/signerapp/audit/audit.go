@@ -982,12 +982,14 @@ func sshSessionReason(enrolled bool) string {
 	return "ssh-enroll"
 }
 
-// sshSessionAuditFields attributes an SSH client connection event to the
-// client key that opened it (or leaves the principal empty if no fingerprint
-// was supplied) with transport "ssh".
+// sshSessionAuditFields attributes an SSH client connection event with
+// transport "ssh". Enrolled connections identify the client principal
+// ("client:<fingerprint>"); unenrolled enroll connections carry no principal
+// because anyone who can reach the SSH port can open one, and are identified
+// by ssh_fingerprint and reason "ssh-enroll".
 func sshSessionAuditFields(remoteAddr, sshFingerprint string, enrolled bool) AuditEntry {
 	principal := ""
-	if sshFingerprint != "" {
+	if enrolled && sshFingerprint != "" {
 		principal = auth.ClientPrincipalPrefix + sshFingerprint
 	}
 	return AuditEntry{

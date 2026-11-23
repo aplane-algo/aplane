@@ -363,21 +363,22 @@ secret of any kind.
 All SSH connections are logged for audit purposes:
 
 ```json
-{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
-{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"system:product-admin","requester_principal":"system:product-admin","outcome":"disconnected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
+{"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"client:SHA256:Vb3x...","requester_principal":"client:SHA256:Vb3x...","transport":"ssh","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
+{"timestamp":"2026-01-18T11:45:00Z","event":"SESSION_DISCONNECTED","principal":"client:SHA256:Vb3x...","requester_principal":"client:SHA256:Vb3x...","transport":"ssh","outcome":"disconnected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
 ```
 
 Logged information:
-- Remote IP address and port
+- Remote IP address and port, with `transport: "ssh"`
 - Connect/disconnect events, including `enroll` connections
 - `reason`: `ssh` for a connection an enrolled key opened, `ssh-enroll` for
   an `enroll` connection. Anyone who can reach the SSH port can open an
-  `enroll` connection, so an `ssh-enroll` entry identifies no client
+  `enroll` connection, so an `ssh-enroll` entry identifies no authenticated
+  client and leaves `principal` and `requester_principal` empty
 - `ssh_fingerprint`: the SHA256 fingerprint of the client key that opened the
   connection, the same form `client:<fingerprint>` principals and the
-  enrollment and revocation events use. For an `enroll` connection it is the
-  key asking to be enrolled. The principal fields still name the product
-  admin
+  enrollment and revocation events use. Enrolled connections carry
+  `client:<fingerprint>` in `principal` and `requester_principal`; `enroll`
+  connections record only `ssh_fingerprint` and omit the principal fields
 
 **Note:** The SSH username is the fixed non-secret value `aplane`. The SSH auth-log
 callback records only remote address, authentication method, and outcome; it
@@ -1484,7 +1485,7 @@ Signing-audit semantics:
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - client-signing `SIGN_APPROVED` records carry `approval_source` (`human`, `user_auto_approve`, or `always_approve`), and `policy_rule_id` whenever a review rule or Always Approve rule matched (including when User Auto-Approve satisfied a review rule without a human decision); policy rejections (`SIGN_REJECTED`) carry the first violated rule ID in `policy_rule_id`
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
-- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record `transport:"ssh"`, the client principal `client:<ssh_fingerprint>` (empty if no fingerprint was supplied), the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection), and `reason`: `ssh` for an enrolled key's connection, `ssh-enroll` for an `enroll` connection, whose key is not enrolled
+- IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record `transport:"ssh"`, the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection), and `reason`: `ssh` for an enrolled key's connection (attributed to `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (whose key is not enrolled, so `principal` and `requester_principal` are omitted)
 - key-management audit events are recorded once the key file is written or archived, before the reload that follows, so a change whose reload fails, and which therefore still happened, is audited too. They are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time LogicSig invariant (an on-curve address, or missing or

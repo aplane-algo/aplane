@@ -133,7 +133,7 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 }
 
 func (s *Service) operatorApprovalSource() string {
-	if s != nil && s.Approval != nil && s.Approval.UserAutoApprove {
+	if s.Approval != nil && s.Approval.UserAutoApprove {
 		return ApprovalSourceUserAutoApprove
 	}
 	return ApprovalSourceHuman

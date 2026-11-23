@@ -65,7 +65,7 @@ A signing request reads the value in effect at any moment, without the
 store mutation lock, so SP1 and SP3 are invariants over every state, the
 ones inside an update included.
 
-The three constants are the three halves of the rule, each load-bearing,
+The three constants are the three parts of the rule, each load-bearing,
 confirmed by mutation:
 
 | Mutation | Result |

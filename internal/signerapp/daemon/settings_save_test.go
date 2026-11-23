@@ -275,6 +275,57 @@ func TestUpdateAdminSettingAuditDirectionOverIPC(t *testing.T) {
 		t.Fatalf("SETTING_CHANGED entries = %#v, want enable then disable", changed)
 	}
 
+	// Close the audit logger so the handle is present but durable intent
+	// writes fail: permissive updates must refuse with audit_write_failed and
+	// leave memory and disk untouched, while tightening still succeeds.
+	ir.Config().SetUserAutoApprove(true)
+	if err := server.auditLog.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeFailRecorder := &ipcJSONRecorderConn{}
+	writeFailSession := newBoundTestSession(&IPCServer{signer: server}, writeFailRecorder, ir)
+	writeFailSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-writefail-timeout"},
+		Key:         adminproto.AdminSettingPassphraseTimeout,
+		Value:       "15m",
+	})
+	writeFailSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-writefail-lockdown"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "false",
+	})
+	writeFailSession.HandleUpdateAdminSetting(&protocol.UpdateAdminSettingMessage{
+		BaseMessage: protocol.BaseMessage{ID: "req-writefail-loosen"},
+		Key:         adminproto.AdminSettingUserAutoApprove,
+		Value:       "true",
+	})
+	writeFailMsgs := writeFailRecorder.messages(t)
+	if len(writeFailMsgs) != 3 {
+		t.Fatalf("write-fail message count = %d, want 3", len(writeFailMsgs))
+	}
+	if writeFailMsgs[0]["success"] != false || writeFailMsgs[0]["code"] != protocol.ResultCodeAuditWriteFailed {
+		t.Fatalf("passphrase_timeout on write failure = %#v, want audit_write_failed", writeFailMsgs[0])
+	}
+	if writeFailMsgs[1]["success"] != true {
+		t.Fatalf("restrictive lockdown on write failure = %#v, want success", writeFailMsgs[1])
+	}
+	if writeFailMsgs[2]["success"] != false || writeFailMsgs[2]["code"] != protocol.ResultCodeAuditWriteFailed {
+		t.Fatalf("permissive enable on write failure = %#v, want audit_write_failed", writeFailMsgs[2])
+	}
+	if ir.Config().UserAutoApprove() {
+		t.Fatal("user_auto_approve was enabled despite audit_write_failed")
+	}
+	stored, err := productruntime.LoadStoredConfig(server.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.UserAutoApprove == nil || *stored.UserAutoApprove {
+		t.Fatalf("stored user_auto_approve = %v, want false after refused enable", stored.UserAutoApprove)
+	}
+	if stored.PassphraseTimeout != "" && stored.PassphraseTimeout != "0" {
+		t.Fatalf("stored passphrase_timeout = %q, want unchanged after audit_write_failed", stored.PassphraseTimeout)
+	}
+
 	// Simulate startup without an audit log: loosening and passphrase_timeout
 	// refuse with audit_unavailable, while tightening still succeeds.
 	ir.Config().SetUserAutoApprove(true)

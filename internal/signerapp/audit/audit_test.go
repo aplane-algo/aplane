@@ -460,11 +460,65 @@ func TestSSHSessionAuditUsesClientPrincipalAndSSHTransport(t *testing.T) {
 		e.Transport != "ssh" || e.Reason != "ssh" || e.SSHFingerprint != "SHA256:fp1" {
 		t.Fatalf("enrolled ssh connect = %+v", e)
 	}
-	if e := entries[1]; e.Principal != "client:SHA256:fp1" || e.Transport != "ssh" || e.Reason != "ssh-enroll" {
-		t.Fatalf("enroll ssh disconnect = %+v", e)
+	if e := entries[1]; e.Principal != "" || e.RequesterPrincipal != "" ||
+		e.Transport != "ssh" || e.Reason != "ssh-enroll" || e.SSHFingerprint != "SHA256:fp1" {
+		t.Fatalf("enroll ssh disconnect = %+v, want empty principal and ssh-enroll", e)
 	}
 	if e := entries[2]; e.Principal != "" || e.RequesterPrincipal != "" || e.Transport != "ssh" {
 		t.Fatalf("empty-fingerprint ssh connect = %+v, want empty principal and ssh transport", e)
+	}
+}
+
+type failSyncAuditFile struct {
+	auditFile
+	syncErr error
+}
+
+func (f *failSyncAuditFile) Sync() error { return f.syncErr }
+
+func TestSettingChangeIntentDurableFailsOnWriteOrSyncError(t *testing.T) {
+	t.Run("sync failure", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		a, err := NewAuditLogger(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = a.Close() }()
+		a.file = &failSyncAuditFile{auditFile: a.file, syncErr: fmt.Errorf("injected sync error")}
+		if err := a.LogSettingChangeIntentDurable(context.Background(), "op-sync", "user_auto_approve", "false", "true"); err == nil {
+			t.Fatal("LogSettingChangeIntentDurable succeeded despite Sync error")
+		}
+	})
+
+	t.Run("closed log", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		a, err := NewAuditLogger(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := a.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.LogSettingChangeIntentDurable(context.Background(), "op-closed", "user_auto_approve", "false", "true"); err == nil {
+			t.Fatal("LogSettingChangeIntentDurable succeeded on closed logger")
+		}
+	})
+}
+
+func TestPassphraseChangedAuditsAllFourMigrationCounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.LogPassphraseChanged(context.Background(), 2, 3, 4, 5)
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := readAuditEntries(t, path)
+	want := "keys_migrated=2 templates_migrated=3 policy_sidecars_migrated=4 source_token_files_migrated=5"
+	if len(entries) != 1 || entries[0].Event != AuditPassphraseChanged || entries[0].Reason != want {
+		t.Fatalf("entries = %+v, want PASSPHRASE_CHANGED with reason %q", entries, want)
 	}
 }
 

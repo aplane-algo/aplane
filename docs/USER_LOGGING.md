@@ -215,7 +215,7 @@ LogicSig argument values.
 
 | Event | Description |
 |-------|-------------|
-| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`, principal `client:<ssh_fingerprint>`): `reason` is `ssh` for an enrolled key, `ssh-enroll` for an `enroll` connection (an unenrolled key, which anyone who reaches the SSH port can offer), and `ssh_fingerprint` names the key |
+| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`): `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal), and `ssh_fingerprint` names the key |
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended |
 | `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
 | `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |

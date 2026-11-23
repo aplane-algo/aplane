@@ -58,10 +58,10 @@ func TestStopSSHRuntimePropagatesLifecycleContextAndDetachesRuntime(t *testing.T
 	}
 }
 
-// SSH session entries named only the product admin, so the audit log could
-// not say which client key a connection belonged to. Each now carries the
-// fingerprint of the key that opened it, enrolled or asking to be, beside
-// the fields it had.
+// SSH session entries record transport "ssh" and the fingerprint of the key
+// that opened the connection. Enrolled connections attribute the entry to the
+// client:<fingerprint> principal; unenrolled ssh-enroll connections identify no
+// authenticated client principal.
 func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	auditLog, err := NewAuditLogger(path)
@@ -78,12 +78,14 @@ func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 	cb(sshtunnel.SessionEvent{RemoteAddr: "10.0.0.3:1", Fingerprint: "SHA256:asking"})
 
 	// An enroll connection's key is not enrolled, and anyone who reaches the
-	// SSH port can open one, so its entries say "ssh-enroll", not "ssh".
+	// SSH port can open one, so its entries say "ssh-enroll" and carry no
+	// enrolled-client principal.
+	enrolledPrincipal := auth.ClientPrincipalPrefix + "SHA256:enrolled"
 	want := []signeraudit.AuditEntry{
-		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
-		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
-		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
-		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", Transport: "ssh", Principal: enrolledPrincipal, RequesterPrincipal: enrolledPrincipal, RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", Transport: "ssh", Principal: enrolledPrincipal, RequesterPrincipal: enrolledPrincipal, RemoteAddr: "10.0.0.2:1", Reason: "ssh", SSHFingerprint: "SHA256:enrolled"},
+		{Event: signeraudit.AuditSessionConnected, Outcome: "connected", Transport: "ssh", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
+		{Event: signeraudit.AuditSessionDisconnected, Outcome: "disconnected", Transport: "ssh", RemoteAddr: "10.0.0.3:1", Reason: "ssh-enroll", SSHFingerprint: "SHA256:asking"},
 	}
 	entries := readAuditEntries(t, path)
 	if len(entries) != len(want) {
@@ -92,8 +94,6 @@ func TestSSHSessionAuditEntriesNameTheClientKey(t *testing.T) {
 	for i, entry := range entries {
 		w := want[i]
 		w.Timestamp = entry.Timestamp
-		w.Principal = auth.SystemProductAdminPrincipalID
-		w.RequesterPrincipal = auth.SystemProductAdminPrincipalID
 		if !reflect.DeepEqual(entry, w) {
 			t.Errorf("entry %d = %+v, want %+v", i, entry, w)
 		}
