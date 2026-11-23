@@ -44,6 +44,10 @@ const (
 	// RevokedRequestType is the global request the server sends before it
 	// closes a connection whose key was revoked, so the client can report why.
 	RevokedRequestType = "key-revoked@aplane"
+	// ConnectionLimitRequestType is the global request the server sends before
+	// it closes an authenticated connection refused for exceeding a connection
+	// limit, so the client can report why instead of seeing only EOF.
+	ConnectionLimitRequestType = "connection-limit@aplane"
 )
 
 // isClosedConnError returns true if the error is due to use of a closed connection
@@ -148,11 +152,16 @@ const (
 	maxAuthenticatedSSHConnsPerKey = 8
 
 	// Open direct-tcpip channels are bounded per authenticated connection.
-	// apshell and the Go, Python, and TypeScript SDKs each keep at most 2
-	// idle HTTP/1.1 keep-alive channels per tunnel; 16 leaves room for
-	// parallel requests while ensuring one connection can occupy at most a
-	// quarter of the daemon's 64 HTTP slots and cannot spawn unbounded
-	// channel goroutines or net.Pipe buffers.
+	// This is a hard cap on concurrent in-flight HTTP requests (plus open
+	// idle channels) on one SSH connection: a 17th concurrent channel fails
+	// immediately with ssh.ResourceShortage ("too many open channels"), and
+	// clients do not currently queue for it. apshell and the Go, Python, and
+	// TypeScript SDKs each keep at most 2 idle HTTP/1.1 keep-alive channels
+	// per tunnel, and apshell / cosigned submission stay well below 16
+	// concurrent requests; 16 caps one connection at a quarter of the
+	// daemon's 64 HTTP slots (a single key with 8 connections can still open
+	// up to 128 channels total, bounded in memory/FDs and capped at 64
+	// concurrent HTTP handlers by the daemon).
 	maxDirectTCPIPChannelsPerConn = 16
 
 	// enroll connections are unauthenticated, so their footprint
@@ -717,11 +726,11 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	// the revocation's close pass.
 	s.sshConnsMu.Lock()
 	revoked := !isEnrollment && (info.key == nil || !s.isEnrolled(info.key))
-	var limitReason string
+	limit := authConnAdmitted
 	if !revoked && !isEnrollment {
-		limitReason = s.authenticatedConnLimitReasonLocked(info.fingerprint)
+		limit = s.checkAuthenticatedConnLimitLocked(info.fingerprint)
 	}
-	if !revoked && limitReason == "" {
+	if !revoked && limit == authConnAdmitted {
 		s.sshConns[sshConn] = info
 	}
 	delete(s.rawConns, netConn)
@@ -755,11 +764,14 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	}()
 
 	if revoked {
+		fmt.Printf("[SSH] Refused revoked key from %s (key: %s)\n", remoteAddr, info.fingerprint)
 		_, _, _ = sshConn.SendRequest(RevokedRequestType, false, []byte("key revoked"))
 		return
 	}
-	if limitReason != "" {
-		fmt.Printf("[SSH] Refused authenticated connection from %s (key: %s): %s\n", remoteAddr, info.fingerprint, limitReason)
+	if limit != authConnAdmitted {
+		reason := limit.reason()
+		fmt.Printf("[SSH] Refused authenticated connection from %s (key: %s): %s\n", remoteAddr, info.fingerprint, reason)
+		_, _, _ = sshConn.SendRequest(ConnectionLimitRequestType, false, []byte(reason))
 		return
 	}
 
@@ -860,10 +872,31 @@ func (s *Server) serveChannels(sshConn *ssh.ServerConn, info sshConnInfo, isEnro
 	}
 }
 
-// authenticatedConnLimitReasonLocked reports why another authenticated
-// connection for fingerprint exceeds the per-key or total cap, or "" if
-// admitted. The caller holds sshConnsMu.
-func (s *Server) authenticatedConnLimitReasonLocked(fingerprint string) string {
+// authConnLimit classifies whether an authenticated SSH connection is admitted
+// or refused by a connection limit.
+type authConnLimit uint8
+
+const (
+	authConnAdmitted authConnLimit = iota
+	authConnLimitPerKey
+	authConnLimitTotal
+)
+
+func (l authConnLimit) reason() string {
+	switch l {
+	case authConnLimitPerKey:
+		return "per-key limit reached"
+	case authConnLimitTotal:
+		return "total authenticated connection limit reached"
+	default:
+		return ""
+	}
+}
+
+// checkAuthenticatedConnLimitLocked reports whether another authenticated
+// connection for fingerprint exceeds the per-key or total cap. The caller
+// holds sshConnsMu.
+func (s *Server) checkAuthenticatedConnLimitLocked(fingerprint string) authConnLimit {
 	total, forKey := 0, 0
 	for _, existing := range s.sshConns {
 		if existing.key == nil {
@@ -875,12 +908,12 @@ func (s *Server) authenticatedConnLimitReasonLocked(fingerprint string) string {
 		}
 	}
 	if forKey >= maxAuthenticatedSSHConnsPerKey {
-		return "per-key limit reached"
+		return authConnLimitPerKey
 	}
 	if total >= maxAuthenticatedSSHConns {
-		return "total authenticated connection limit reached"
+		return authConnLimitTotal
 	}
-	return ""
+	return authConnAdmitted
 }
 
 // handleGlobalRequests handles global SSH requests including keepalives.

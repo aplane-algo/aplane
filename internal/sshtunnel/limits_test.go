@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,19 +17,31 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func dialAuthenticated(t *testing.T, srv *Server, addr string, signer ssh.Signer) *ssh.Client {
-	t.Helper()
-	client, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
+func tryDialAuthenticated(srv *Server, addr string, signer ssh.Signer) (*ssh.Client, error) {
+	return ssh.Dial("tcp", addr, &ssh.ClientConfig{
 		User:            productSSHUsername,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
 		Timeout:         5 * time.Second,
 	})
+}
+
+func dialAuthenticated(t *testing.T, srv *Server, addr string, signer ssh.Signer) *ssh.Client {
+	t.Helper()
+	client, err := tryDialAuthenticated(srv, addr, signer)
 	if err != nil {
 		t.Fatalf("ssh.Dial(%s): %v", productSSHUsername, err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	return client
+}
+
+func totalAuthenticatedCount(srv *Server) int {
+	total := 0
+	for _, n := range srv.ConnectedFingerprints() {
+		total += n
+	}
+	return total
 }
 
 func waitForFingerprintCount(t *testing.T, srv *Server, fingerprint string, want int) {
@@ -47,20 +60,30 @@ func waitForTotalAuthenticatedCount(t *testing.T, srv *Server, want int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		total := 0
-		for _, n := range srv.ConnectedFingerprints() {
-			total += n
-		}
-		if total == want {
+		if totalAuthenticatedCount(srv) == want {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	total := 0
-	for _, n := range srv.ConnectedFingerprints() {
-		total += n
+	t.Fatalf("total authenticated connections = %d, want %d", totalAuthenticatedCount(srv), want)
+}
+
+func waitForEnrollmentConnCount(t *testing.T, srv *Server, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		srv.sshConnsMu.Lock()
+		n := srv.enrollmentConns
+		srv.sshConnsMu.Unlock()
+		if n == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("total authenticated connections = %d, want %d", total, want)
+	srv.sshConnsMu.Lock()
+	got := srv.enrollmentConns
+	srv.sshConnsMu.Unlock()
+	t.Fatalf("enrollmentConns = %d, want %d", got, want)
 }
 
 // One enrolled key may hold at most maxAuthenticatedSSHConnsPerKey live
@@ -96,12 +119,7 @@ func TestAuthenticatedConnectionsCappedPerKey(t *testing.T) {
 
 	// Connection beyond key A's limit must be refused and closed promptly
 	// without registering a session event.
-	extraA, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
-		User:            productSSHUsername,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signerA)},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	})
+	extraA, err := tryDialAuthenticated(srv, addr, signerA)
 	if err == nil {
 		defer func() { _ = extraA.Close() }()
 		if !closedWithin(extraA, 2*time.Second) {
@@ -141,6 +159,50 @@ func TestAuthenticatedConnectionsCappedPerKey(t *testing.T) {
 	}
 }
 
+// When the server refuses an authenticated connection for hitting a connection
+// limit, it sends ConnectionLimitRequestType before closing so sshtunnel.Client
+// records DisconnectReasonConnectionLimit and logs the limit warning instead of
+// a plain remote close.
+func TestClientObservesConnectionLimitDisconnectReason(t *testing.T) {
+	out := captureLog(t)
+	srv, tmpDir := testServer(t)
+	set := newEnrolledSet()
+	srv.SetProductHooks(set.hooks())
+
+	_, pub, identityPath := generateClientIdentityFile(t, tmpDir)
+	fp := ssh.FingerprintSHA256(pub)
+	set.add(pub)
+	host, port, known := startServer(t, srv, tmpDir)
+
+	for i := 0; i < maxAuthenticatedSSHConnsPerKey; i++ {
+		c := NewClient(host, port, identityPath, known)
+		if err := c.ConnectWithKey(context.Background()); err != nil {
+			t.Fatalf("ConnectWithKey(%d) error = %v", i+1, err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+	}
+	waitForFingerprintCount(t, srv, fp, maxAuthenticatedSSHConnsPerKey)
+
+	extra := NewClient(host, port, identityPath, known)
+	t.Cleanup(func() { _ = extra.Close() })
+	disconnected := make(chan struct{})
+	extra.SetDisconnectCallback(func() { close(disconnected) })
+	if err := extra.ConnectWithKey(context.Background()); err != nil {
+		t.Fatalf("extra ConnectWithKey() error = %v, want handshake to succeed before post-auth limit close", err)
+	}
+	select {
+	case <-disconnected:
+	case <-time.After(3 * time.Second):
+		t.Fatal("excess client connection was not disconnected")
+	}
+	if got := extra.DisconnectReason(); got != DisconnectReasonConnectionLimit {
+		t.Fatalf("DisconnectReason() = %q, want %q", got, DisconnectReasonConnectionLimit)
+	}
+	if !strings.Contains(out.String(), "signer connection limit reached") {
+		t.Fatalf("client log = %q, want signer connection limit warning", out.String())
+	}
+}
+
 // Total live authenticated connections across all enrolled keys are capped at
 // maxAuthenticatedSSHConns, independently of enrollment connections, and
 // closing any authenticated connection frees a slot.
@@ -155,16 +217,7 @@ func TestAuthenticatedConnectionsCappedInTotal(t *testing.T) {
 	// Open an enrollment connection before filling the authenticated cap so
 	// we also prove enrollment connections do not consume authenticated slots.
 	earlyEnroll := dialEnrollment(t, srv, addr)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		srv.sshConnsMu.Lock()
-		n := srv.enrollmentConns
-		srv.sshConnsMu.Unlock()
-		if n == 1 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitForEnrollmentConnCount(t, srv, 1)
 	if closedWithin(earlyEnroll, 50*time.Millisecond) {
 		t.Fatal("early enrollment connection closed unexpectedly")
 	}
@@ -189,12 +242,7 @@ func TestAuthenticatedConnectionsCappedInTotal(t *testing.T) {
 	overflowSigner, overflowPub := generateClientKey(t)
 	overflowFP := ssh.FingerprintSHA256(overflowPub)
 	set.add(overflowPub)
-	overflowConn, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
-		User:            productSSHUsername,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(overflowSigner)},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	})
+	overflowConn, err := tryDialAuthenticated(srv, addr, overflowSigner)
 	if err == nil {
 		defer func() { _ = overflowConn.Close() }()
 		if !closedWithin(overflowConn, 2*time.Second) {
@@ -298,6 +346,76 @@ func TestDirectTCPIPChannelsCappedPerConnection(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Cleanup(func() { _ = replacement.Close() })
+}
+
+// A burst of simultaneous direct-tcpip opens on one connection must not slip
+// past maxDirectTCPIPChannelsPerConn: accounting happens in the channel accept
+// loop before spawning each handler goroutine.
+func TestDirectTCPIPChannelsConcurrentBurstEnforcesCap(t *testing.T) {
+	srv, tmpDir := testServer(t)
+	set := newEnrolledSet()
+	srv.SetProductHooks(set.hooks())
+
+	var handoffCalls atomic.Int32
+	srv.SetAPIHandoff(func(conn *APIConn) error {
+		handoffCalls.Add(1)
+		go func() {
+			defer func() { _ = conn.Close() }()
+			_, _ = io.Copy(io.Discard, conn)
+		}()
+		return nil
+	})
+
+	host, port, known := startServer(t, srv, tmpDir)
+	client, _ := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
+
+	const burst = maxDirectTCPIPChannelsPerConn * 2
+	start := make(chan struct{})
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		opened   []net.Conn
+		rejected int
+		otherErr []error
+	)
+	wg.Add(burst)
+	for i := 0; i < burst; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			conn, err := client.DialSignerAPI(context.Background())
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				opened = append(opened, conn)
+				return
+			}
+			var openErr *ssh.OpenChannelError
+			if errors.As(err, &openErr) && openErr.Reason == ssh.ResourceShortage {
+				rejected++
+				return
+			}
+			otherErr = append(otherErr, err)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	for _, c := range opened {
+		t.Cleanup(func() { _ = c.Close() })
+	}
+
+	if len(otherErr) > 0 {
+		t.Fatalf("unexpected channel errors: %v", otherErr)
+	}
+	if len(opened) != maxDirectTCPIPChannelsPerConn {
+		t.Fatalf("concurrent burst opened %d channels, want %d (rejected=%d)", len(opened), maxDirectTCPIPChannelsPerConn, rejected)
+	}
+	if rejected != burst-maxDirectTCPIPChannelsPerConn {
+		t.Fatalf("concurrent burst rejected %d channels with ResourceShortage, want %d", rejected, burst-maxDirectTCPIPChannelsPerConn)
+	}
+	if got := handoffCalls.Load(); got != maxDirectTCPIPChannelsPerConn {
+		t.Fatalf("apiHandoff calls = %d, want %d", got, maxDirectTCPIPChannelsPerConn)
+	}
 }
 
 // Rejected direct-tcpip channels (such as non-loopback targets) must release

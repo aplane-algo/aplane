@@ -43,6 +43,7 @@ func TestConnectionLossIsLoggedAsAWarning(t *testing.T) {
 	}{
 		{"remote close", "", "connection closed by remote server"},
 		{"revocation", DisconnectReasonKeyRevoked, "this client's key was revoked by the signer"},
+		{"connection limit", DisconnectReasonConnectionLimit, "signer connection limit reached"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := captureLog(t)

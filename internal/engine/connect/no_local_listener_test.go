@@ -121,3 +121,26 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 		t.Fatal("the cancelled connect left a connection behind")
 	}
 }
+
+// A connect refused because the enrolled key is already at the server's
+// per-key connection limit reports the limit rather than a raw EOF.
+func TestConnectReportsConnectionLimitReached(t *testing.T) {
+	node := sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A"}}})
+	}))
+
+	// Fill all 8 per-key authenticated slots with the enrolled client key.
+	for i := 0; i < 8; i++ {
+		st := NewState()
+		if _, err := st.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil); err != nil {
+			t.Fatalf("ConnectWithTunnel(%d) error = %v", i+1, err)
+		}
+		t.Cleanup(func() { st.Disconnect(nil) })
+	}
+
+	overflow := NewState()
+	_, err := overflow.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "signer connection limit reached") {
+		t.Fatalf("9th ConnectWithTunnel() error = %v, want signer connection limit reached", err)
+	}
+}

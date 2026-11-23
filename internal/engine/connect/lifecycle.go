@@ -107,6 +107,12 @@ func (s *ConnectionState) ConnectWithTunnel(
 	keysResp, err := signerClient.GetKeysWithContext(ctx)
 	if err != nil {
 		failed()
+		switch client.DisconnectReason() {
+		case sshtunnel.DisconnectReasonConnectionLimit:
+			return nil, fmt.Errorf("signer connection limit reached")
+		case sshtunnel.DisconnectReasonKeyRevoked:
+			return nil, fmt.Errorf("client key was revoked by the signer")
+		}
 		return nil, fmt.Errorf("failed to verify connection: %w", err)
 	}
 	if onKeys != nil {
