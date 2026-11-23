@@ -6,7 +6,9 @@ package adminserver
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -112,9 +114,81 @@ func injectTopLevelField(t *testing.T, raw []byte, fieldJSON string) []byte {
 	return out
 }
 
-// Every request type in dispatchTable must round-trip cleanly from
-// MarshalAdminMessage under strict decoding, and reject an unknown field with
-// ErrCodeInvalidRequest.
+func populateRequestSample(sample any) any {
+	val := reflect.New(reflect.TypeOf(sample)).Elem()
+	val.Set(reflect.ValueOf(sample))
+	populateValue(val, 0)
+	return val.Interface()
+}
+
+func populateValue(v reflect.Value, depth int) {
+	if !v.CanSet() || depth > 8 {
+		return
+	}
+	switch v.Kind() {
+	case reflect.Struct:
+		if v.Type() == reflect.TypeFor[protocol.BaseMessage]() {
+			return
+		}
+		if v.Type() == reflect.TypeFor[time.Time]() {
+			v.Set(reflect.ValueOf(time.Unix(1700000000, 0).UTC()))
+			return
+		}
+		for i := range v.NumField() {
+			populateValue(v.Field(i), depth+1)
+		}
+	case reflect.String:
+		v.SetString("x")
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(1)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(1.5)
+	case reflect.Slice:
+		if v.Type() == reflect.TypeFor[protocol.SensitiveBytes]() {
+			v.Set(reflect.ValueOf(protocol.NewSensitiveBytes("secret")))
+			return
+		}
+		if v.Type() == reflect.TypeFor[json.RawMessage]() {
+			v.Set(reflect.ValueOf(json.RawMessage(`{"k":"v"}`)))
+			return
+		}
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			v.SetBytes([]byte("x"))
+			return
+		}
+		s := reflect.MakeSlice(v.Type(), 1, 1)
+		populateValue(s.Index(0), depth+1)
+		v.Set(s)
+	case reflect.Array:
+		for i := range v.Len() {
+			populateValue(v.Index(i), depth+1)
+		}
+	case reflect.Pointer:
+		p := reflect.New(v.Type().Elem())
+		populateValue(p.Elem(), depth+1)
+		v.Set(p)
+	case reflect.Map:
+		m := reflect.MakeMapWithSize(v.Type(), 1)
+		k := reflect.New(v.Type().Key()).Elem()
+		populateValue(k, depth+1)
+		elem := reflect.New(v.Type().Elem()).Elem()
+		populateValue(elem, depth+1)
+		m.SetMapIndex(k, elem)
+		v.Set(m)
+	case reflect.Interface:
+		if v.NumMethod() == 0 {
+			v.Set(reflect.ValueOf("x"))
+		}
+	}
+}
+
+// Every request type in dispatchTable (plus auth and initialize_store) must
+// round-trip cleanly with all fields populated under strict decoding, and
+// reject an unknown field with ErrCodeInvalidRequest.
 func TestDispatchTableStrictDecodeRoundTripAndUnknownFieldRefusal(t *testing.T) {
 	samples := allDispatchRequestSamples()
 	if len(samples) != len(dispatchTable) {
@@ -126,12 +200,14 @@ func TestDispatchTableStrictDecodeRoundTripAndUnknownFieldRefusal(t *testing.T) 
 			t.Fatalf("dispatchTable entry %q missing from allDispatchRequestSamples", msgType)
 		}
 		t.Run(msgType, func(t *testing.T) {
-			raw, err := protocol.MarshalAdminMessage(sample)
+			populated := populateRequestSample(sample)
+			raw, err := protocol.MarshalAdminMessage(populated)
 			if err != nil {
 				t.Fatalf("MarshalAdminMessage(%s) error = %v", msgType, err)
 			}
 
-			// Valid marshaled frame must decode without ErrCodeInvalidRequest.
+			// Valid marshaled frame with every field populated must decode
+			// without ErrCodeInvalidRequest.
 			session, conn, _ := newStrictDecodeTestSession(t)
 			session.Dispatch(raw)
 			for _, w := range decodeAdminProtoWrites(t, conn) {
@@ -156,6 +232,37 @@ func TestDispatchTableStrictDecodeRoundTripAndUnknownFieldRefusal(t *testing.T) 
 			}
 		})
 	}
+
+	t.Run("auth_populated", func(t *testing.T) {
+		sample := populateRequestSample(protocol.AuthMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuth, ID: "a"},
+		}).(protocol.AuthMessage)
+		sample.ProtocolVersion = protocol.AdminProtocolVersion
+		raw, err := protocol.MarshalAdminMessage(sample)
+		if err != nil {
+			t.Fatalf("MarshalAdminMessage(auth) error = %v", err)
+		}
+		decoded, err := decodeRequest[protocol.AuthMessage](raw)
+		defer decoded.Passphrase.Zero()
+		if err != nil {
+			t.Fatalf("decodeRequest(auth) error = %v", err)
+		}
+	})
+
+	t.Run("initialize_store_populated", func(t *testing.T) {
+		sample := populateRequestSample(protocol.InitializeStoreMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "i"},
+		}).(protocol.InitializeStoreMessage)
+		raw, err := protocol.MarshalAdminMessage(sample)
+		if err != nil {
+			t.Fatalf("MarshalAdminMessage(initialize_store) error = %v", err)
+		}
+		decoded, err := decodeRequest[protocol.InitializeStoreMessage](raw)
+		defer decoded.Passphrase.Zero()
+		if err != nil {
+			t.Fatalf("decodeRequest(initialize_store) error = %v", err)
+		}
+	})
 }
 
 // A misspelled review field on generate_key must be refused at decode time
@@ -173,20 +280,51 @@ func TestGenerateKeyRefusesMisspelledReviewFields(t *testing.T) {
 			name:  "misspelled expected_boundary_digest",
 			frame: `{"kind":"request","type":"generate_key","id":"g2","key_type":"ed25519","expected_boundary_digst":"def"}`,
 		},
-		{
-			name:  "nested unknown field in apply_policy",
-			frame: `{"kind":"request","type":"apply_policy","id":"p1","documents":[{"key":"default","extra":1}]}`,
-		},
-		{
-			name:  "nested unknown field in add_asa",
-			frame: `{"kind":"request","type":"add_asa","id":"a1","confirmed":{"asset_id":1,"bogus":true}}`,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			session, conn, svc := newStrictDecodeTestSession(t)
 			session.Dispatch([]byte(tc.frame))
 			if svc.generateKeyCalls != 0 {
 				t.Fatalf("GenerateKey called %d times, want 0", svc.generateKeyCalls)
+			}
+			if len(conn.writes) != 1 {
+				t.Fatalf("writes = %d, want 1", len(conn.writes))
+			}
+			var errResp protocol.ErrorMessage
+			if err := json.Unmarshal(conn.writes[0], &errResp); err != nil {
+				t.Fatalf("unmarshal error response: %v", err)
+			}
+			if errResp.Code != protocol.ErrCodeInvalidRequest {
+				t.Fatalf("code = %q, want %q", errResp.Code, protocol.ErrCodeInvalidRequest)
+			}
+		})
+	}
+}
+
+// Nested unknown fields inside request payloads must also be rejected before
+// reaching the service handler.
+func TestDispatchRefusesNestedUnknownFields(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		frame string
+		calls func(*stubServices) int
+	}{
+		{
+			name:  "apply_policy document extra field",
+			frame: `{"kind":"request","type":"apply_policy","id":"p1","documents":[{"key":"default","extra":1}]}`,
+			calls: func(svc *stubServices) int { return svc.applyPolicyCalls },
+		},
+		{
+			name:  "add_asa confirmed extra field",
+			frame: `{"kind":"request","type":"add_asa","id":"a1","confirmed":{"asset_id":1,"bogus":true}}`,
+			calls: func(svc *stubServices) int { return svc.addASACalls },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session, conn, svc := newStrictDecodeTestSession(t)
+			session.Dispatch([]byte(tc.frame))
+			if got := tc.calls(svc); got != 0 {
+				t.Fatalf("handler called %d times, want 0", got)
 			}
 			if len(conn.writes) != 1 {
 				t.Fatalf("writes = %d, want 1", len(conn.writes))

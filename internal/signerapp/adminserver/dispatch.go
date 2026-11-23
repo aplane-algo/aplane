@@ -29,11 +29,13 @@ func typed[T any](label string, handle func(*Session, *T)) dispatchFunc {
 }
 
 // decodeRequest decodes raw into a T, rejecting unknown fields and any
-// trailing data after the JSON value. A decode can fail after it has filled
-// some fields (a later field of the wrong type, an unknown field, or trailing
-// tokens), so on error every SensitiveBytes value already decoded is zeroed
-// before msg, which then holds only that partial and zeroed decode, is
-// returned.
+// trailing data after the JSON value. The trailing-data check is deliberately
+// layered behind protocol.ParseAdminBaseMessage (which currently rejects
+// trailing data first on every production caller) so decodeRequest stays
+// strict on its own. A decode can fail after it has filled some fields (a
+// later field of the wrong type, an unknown field, or trailing tokens), so on
+// error every SensitiveBytes value already decoded is zeroed before msg, which
+// then holds only that partial and zeroed decode, is returned.
 func decodeRequest[T any](raw []byte) (msg T, err error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
