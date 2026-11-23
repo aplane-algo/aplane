@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -65,11 +66,11 @@ func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *pr
 	cfg := serverconfig.DefaultServerConfig()
 	deps := &fakeDeps{dataDir: root, config: &cfg, keyPaths: paths}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		NodeRole: role,
 	})
-	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
@@ -90,7 +91,6 @@ func setupUnpublishedPolicyAdmin(t *testing.T, role noderole.Role) (Service, *pr
 			return nil
 		})
 	}
-	ir.SetReloadFunc(reload)
 	wireBuild(ir, paths, &cfg)
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
@@ -523,15 +523,22 @@ func (g *beforeUnlockCheck) Unlock() { g.mu.Unlock() }
 // publish, so a store change lands wholly before it or after it, never
 // inside. It returns how many times the unlock loaded, the state its
 // reconcile ran in ("" for none), and its error.
-func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, reload policyReload, between func()) (loads int, reconciledIn string, err error) {
+func secondUnlockMeeting(t *testing.T, svc Service, ir *productruntime.Runtime, between func()) (loads int, reconciledIn string, err error) {
 	t.Helper()
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
+	// The unlock's own load is the build after between, which stages the
+	// change that lands first and builds for its own reload.
+	opts := signerstartup.ProductBuildOptions{KeyPaths: ir.KeyPaths(), Config: svc.Deps.Config()}
+	staged := false
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		if staged {
 			loads++
 		}
-		return reload(passphrase, session)
-	})
-	gate := &beforeUnlockCheck{mu: &svc.Deps.(*fakeDeps).mu, between: between}
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
+	gate := &beforeUnlockCheck{mu: &svc.Deps.(*fakeDeps).mu, between: func() {
+		between()
+		staged = true
+	}}
 	ir.SetReloadMutationLock(func() sync.Locker { return gate })
 	_, err = ir.Unlock([]byte(adminPolicyPassphrase), func(*crypto.Keyring) error {
 		reconciledIn = ir.GetState().String()
@@ -573,13 +580,13 @@ func failIdentityDirSync(svc Service) (restore func()) {
 // that read and its check: the unlock loaded in recovery and once published
 // unlocked over it without the reconcile recovery needs.
 func TestUncertainPolicyCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) {
-	svc, ir, reload := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
+	svc, ir, _ := setupUnpublishedPolicyAdmin(t, noderole.RoleSigner)
 	ir.SetUnlocked()
 	view := svc.GetPolicy()
 	snapshot := svc.GetPolicyContext().SnapshotSHA256
 
 	var result adminproto.ApplyPolicyResult
-	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.ApplyPolicy(adminproto.ApplyPolicyRequest{
 			Documents:               []adminproto.PolicyDocument{{Key: policy.DefaultKey, Document: signerPolicyDoc("2000")}},

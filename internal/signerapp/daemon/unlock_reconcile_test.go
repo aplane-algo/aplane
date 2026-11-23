@@ -21,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -422,19 +421,15 @@ func TestAStoreChangeLandsBeforeOrAfterAWholeUnlock(t *testing.T) {
 			ir.EnterRecovery(nil) // the unlock begins in recovery
 			loads := 0
 			failReconcile := false
-			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-				if passphrase != nil {
+			wireBuildWith(server, func(fromPassphrase bool) error {
+				switch {
+				case fromPassphrase:
 					loads++
+				case failReconcile:
+					return errors.New("simulated reconcile build failure")
 				}
-				return &signertemplates.ReloadReport{}, nil
+				return nil
 			})
-			opts := testProductBuildOptions(server)
-			ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
-				if failReconcile {
-					return nil, errors.New("simulated reconcile build failure")
-				}
-				return signerstartup.Build(ir, opts, kr)
-			}, productruntime.ReloadEffects{})
 			storeChange := func() {
 				failReconcile = true
 				if _, err := server.adminServices().reconcileReloadAndPromote(ir, true); err == nil {
@@ -488,11 +483,12 @@ func TestAFailedReloadThatKeepsTheKeyringLeavesRecoveryItsKeyring(t *testing.T) 
 	ir.EnterRecovery(nil)
 
 	loads := 0
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
+	wireBuildWith(server, func(fromPassphrase bool) error {
+		if fromPassphrase {
 			loads++
+			return errors.New("injected")
 		}
-		return nil, errors.New("failed to unlock the keystore: injected")
+		return nil
 	})
 	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); success || !strings.Contains(errMsg, "injected") {
 		t.Fatalf("UnlockIdentity() = (%v, %q), want the load's failure", success, errMsg)
@@ -618,18 +614,14 @@ func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
 	if !unlocked {
 		t.Fatal("the signer is not unlocked after its first unlock")
 	}
-	reloads := 0
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		reloads++
-		return nil, errors.New("injected reload failure")
-	})
+	builds, _ := countBuilds(server)
 
 	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
 	if !success || errMsg != "" || code != "" || keyCount != ir.KeyCount() {
 		t.Fatalf("second UnlockIdentity() = (%v, %d, %q, %q), want a plain success with the session's key count", success, keyCount, errMsg, code)
 	}
-	if reloads != 0 {
-		t.Fatalf("the second unlock ran %d reload(s), want none", reloads)
+	if builds.Load() != 0 {
+		t.Fatalf("the second unlock ran %d build(s), want none", builds.Load())
 	}
 	if !ir.IsUnlockedIn(generation) {
 		t.Fatal("the second unlock ended the session in service")
@@ -643,8 +635,8 @@ func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
 	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(wrong); success || errMsg == "" {
 		t.Fatalf("UnlockIdentity(wrong passphrase) on an unlocked signer = (%v, %q), want a refusal", success, errMsg)
 	}
-	if reloads != 0 || !ir.IsUnlockedIn(generation) {
-		t.Fatalf("a refused unlock ran %d reload(s) or ended the session", reloads)
+	if builds.Load() != 0 || !ir.IsUnlockedIn(generation) {
+		t.Fatalf("a refused unlock ran %d build(s) or ended the session", builds.Load())
 	}
 	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err != nil {
 		t.Fatalf("a refused unlock closed the session's keyring: %v", err)
@@ -673,12 +665,12 @@ func TestTwoUnlocksAtOnceReloadOnce(t *testing.T) {
 	second := make(chan outcome, 1)
 	secondWaiting := make(chan struct{})
 	var loads atomic.Int32
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil && loads.Add(1) == 1 {
+	wireBuildWith(server, func(fromPassphrase bool) error {
+		if fromPassphrase && loads.Add(1) == 1 {
 			go unlock(second)
 			<-secondWaiting
 		}
-		return &signertemplates.ReloadReport{}, nil
+		return nil
 	})
 	// The second's acquisition: it reaches the lock while the first holds it.
 	gateStoreMutation(server, &gatedMutationLock{before: map[int32]func(){
@@ -729,15 +721,15 @@ func TestAFailedReconcileLeavesASessionPublishedBesideIt(t *testing.T) {
 	second := make(chan outcome, 1)
 	secondWaiting := make(chan struct{})
 	minted := false
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil && !minted {
+	wireBuildWith(server, func(fromPassphrase bool) error {
+		if fromPassphrase && !minted {
 			minted = true
 			mintUnselectedGenerationForTest(t, server)
 			server.auditLog = nil
 			go unlock(second)
 			<-secondWaiting
 		}
-		return &signertemplates.ReloadReport{}, nil
+		return nil
 	})
 	gateStoreMutation(server, &gatedMutationLock{before: map[int32]func(){
 		unlockHold + 1: func() { close(secondWaiting) },
@@ -774,12 +766,12 @@ func TestAReconcileOfALockedSignerIsRefusedUnderTheLock(t *testing.T) {
 	ir := server.productRuntime()
 	ir.Lock()
 	var reloads atomic.Int32 // without a passphrase: the reconcile's, and the watcher's after the publish
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
-			return &signertemplates.ReloadReport{}, ir.KeyStore().Unlock(passphrase)
+	wireBuildWith(server, func(fromPassphrase bool) error {
+		if fromPassphrase {
+			return nil
 		}
 		reloads.Add(1)
-		return nil, errors.New("simulated reconcile reload failure")
+		return errors.New("simulated reconcile build failure")
 	})
 	var reconcileErr error
 	var reconcileReloads int32
@@ -838,16 +830,14 @@ func TestAnUnlockWhoseDirtyReconciliationEntersRecoveryAnswersRecovery(t *testin
 	defer ir.StopKeyWatcher()
 	ir.Lock()
 	ir.MarkDirty()
-	// The unlock's own load is the real one; the reconcile's reload after
-	// the publish builds, and its build meets the defect.
-	opts := testProductBuildOptions(server)
-	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
-		loaded, err := signerstartup.Build(ir, opts, kr)
-		if err != nil {
-			return loaded, err
+	// The unlock's own build is the real one; the reconcile's reload after
+	// the publish builds with the keyring in service, and meets the defect.
+	wireBuildWith(server, func(fromPassphrase bool) error {
+		if fromPassphrase {
+			return nil
 		}
-		return loaded, fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
-	}, productruntime.ReloadEffects{})
+		return fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
+	})
 
 	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {

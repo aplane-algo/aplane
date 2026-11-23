@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -53,12 +54,12 @@ func slhDiskFixture(b *testing.B) (*rotatingFixture, *keystore.FileKeyStore) {
 	if _, err := keys.SaveNewPayloadActive(active, payload, false, kr); err != nil {
 		b.Fatal(err)
 	}
-	store := keystore.NewAtomicFileKeyStoreForPaths(paths)
+	store := keystore.NewFileKeyStore()
 	b.Cleanup(store.ClearKeys)
-	if err := store.Unlock(passphrase); err != nil {
+	if err := keystoretest.Unlock(store, paths, passphrase); err != nil {
 		b.Fatal(err)
 	}
-	if err := store.Scan(); err != nil {
+	if _, err := keystoretest.Rescan(store, paths); err != nil {
 		b.Fatal(err)
 	}
 	f.session.Destroy()

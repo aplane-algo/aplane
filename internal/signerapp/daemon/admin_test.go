@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/productmode"
 	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
@@ -125,8 +126,8 @@ func setupTestNodeWithUnlockMethod(t *testing.T, role noderole.Role, defaultPoli
 	masterKeyRing.Zero()
 
 	// Initialize FileKeyStore and derive master key
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
-	err = ks.Unlock(testPassphrase)
+	ks := keystore.NewFileKeyStore()
+	err = keystoretest.Unlock(ks, keyPaths, testPassphrase)
 	if err != nil {
 		t.Fatalf("Failed to initialize master key: %v", err)
 	}
@@ -1138,12 +1139,11 @@ func reloadKeysForTest(server *Signer) error {
 		return fmt.Errorf("identity not found")
 	}
 
-	ks := ir.KeyStore()
-	if err := ks.Scan(); err != nil {
+	contents, err := keystoretest.Rescan(ir.KeyStore(), ir.KeyPaths())
+	if err != nil {
 		return fmt.Errorf("scan failed: %w", err)
 	}
-
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
+	ir.PublishSnapshot(contents.KeyFiles(), contents.KeyTypes())
 	return nil
 }
 

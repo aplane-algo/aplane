@@ -154,14 +154,14 @@ func TestTheUnlockOutcomeIsDecidedByErrorValues(t *testing.T) {
 				}
 			}
 			notifiedBefore := locks.Load()
-			ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-				if passphrase != nil && tc.load != nil {
+			ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+				if tc.load != nil {
 					if err := tc.load(ir); err != nil {
 						return nil, err
 					}
 				}
-				return &signertemplates.ReloadReport{}, nil
-			})
+				return selectionBuild(ir.KeyPaths(), kr)
+			}, ReloadEffects{})
 
 			var onUnlocked func()
 			if tc.after != nil {

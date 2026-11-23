@@ -107,7 +107,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *prod
 		config:   &cfg,
 		keyPaths: keyPaths,
 	}
-	keyStore := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
+	keyStore := keystore.NewFileKeyStore()
 	ir := productruntime.New(productruntime.Config{
 		KeyStore: keyStore,
 		KeyPaths: keyPaths,

@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -98,11 +99,11 @@ func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *
 	cfg := serverconfig.DefaultServerConfig()
 	cfg.GenesisHashNetworks = map[string]string{asaTestChain: "private-dev"}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		NodeRole: noderole.RoleSigner,
 	})
-	if err := ir.KeyStore().Unlock([]byte(adminPolicyPassphrase)); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte(adminPolicyPassphrase)); err != nil {
 		t.Fatal(err)
 	}
 	reload := func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
@@ -123,7 +124,6 @@ func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *
 			return nil
 		})
 	}
-	ir.SetReloadFunc(reload)
 	wireBuild(ir, paths, &cfg)
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 // begins in recovery and reconciles before it publishes. The ASA set calls
 // SetRecovery once, before its best-effort reload.
 func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) {
-	svc, ir, _, reload := setupUnpublishedASAAdmin(t)
+	svc, ir, _, _ := setupUnpublishedASAAdmin(t)
 	ir.SetUnlocked()
 	looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
 	if !looked.Success {
@@ -223,7 +223,7 @@ func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) 
 	}
 
 	var result adminproto.AddASAResult
-	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
 	})

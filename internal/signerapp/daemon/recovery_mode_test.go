@@ -26,7 +26,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 		t.Fatalf("RemoveAll(selected generation) error = %v", err)
 	}
 	ir := productruntime.New(productruntime.Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 	})
 	service := (&Signer{runtime: ir}).adminServices()

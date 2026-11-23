@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -72,8 +73,8 @@ func setupServiceWithReload(
 	keyring, active := genstoretest.MintFirstAtomic(t, keyPaths, testPassphrase)
 	keyring.Zero()
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
-	if err := ks.Unlock(testPassphrase); err != nil {
+	ks := keystore.NewFileKeyStore()
+	if err := keystoretest.Unlock(ks, keyPaths, testPassphrase); err != nil {
 		t.Fatalf("InitializeMasterKey: %v", err)
 	}
 

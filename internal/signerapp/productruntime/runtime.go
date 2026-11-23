@@ -65,7 +65,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //
 // Per-lock scope:
 //
-//	passphraseLock  guards keySession, reloadFn, buildFn, reloadEffects, and
+//	passphraseLock  guards keySession, buildFn, reloadEffects, and
 //	                keyring-unlock paths; a reload on the keyring in service
 //	                holds it for reading from its build to its install.
 //	keysLock        guards the keys/keyTypes/keyMetadata maps. keysetRev is
@@ -201,12 +201,6 @@ type Runtime struct {
 	pendingUnsynced bool
 	pendingIntended *enrollqueue.Queue
 
-	// reloadFn performs template registration + key scan + snapshot publish.
-	// Injected by the process root after construction.
-	// The session parameter is the current keySession; callers already hold
-	// passphraseLock so the reload function must not re-acquire it.
-	reloadFn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)
-
 	// onLocked is called after lock cleanup completes (for IPC notification, etc).
 	onLocked func()
 	// onReloadRecovery is called with the cause after a reload entered
@@ -314,17 +308,6 @@ func initialKeysetRevision() uint64 {
 		panic(fmt.Sprintf("crypto/rand failed: %v", err))
 	}
 	return binary.BigEndian.Uint64(b[:]) >> (64 - keysetRevisionBits)
-}
-
-// SetReloadFunc sets the function used to reload keys and templates.
-// Safe for concurrent use; the function is stored under passphraseLock.
-// The function receives the keySession directly because callers of
-// reloadLocked already hold passphraseLock; the function must not
-// re-acquire it.
-func (ir *Runtime) SetReloadFunc(fn func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error)) {
-	ir.passphraseLock.Lock()
-	ir.reloadFn = fn
-	ir.passphraseLock.Unlock()
 }
 
 // SetReloadMutationLock sets the process-wide lock watcher-triggered reloads
@@ -651,35 +634,45 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
 	}
 	if err := reconcile(kr); err != nil {
-		outcome, err := ir.enterRecovery(attempt, passphrase, err)
+		// The store needs recovery: the attempt builds for recovery's view,
+		// so it is bound to what the root selects and shows the policy the
+		// build verified.
+		owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
+		end := buildEnd(loaded, buildErr)
+		outcome, err := ir.unlockIntoRecovery(attempt, owned, loaded, err)
+		ir.afterReload(end)
 		return outcome, false, err
 	}
 	if ir.lockRuntime.LostToLock(attempt) {
 		return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
 	}
-	if _, err := ir.ReloadWithPassphrase(passphrase); err != nil {
-		err = fmt.Errorf("failed to load keys: %w", err)
-		if !IsContentDefect(err) {
-			return UnlockOutcome{}, false, err
-		}
-		// Content defects in the selected generation are a recovery
-		// condition, not an unlock failure: the passphrase was right and
-		// the operator resolves the store from recovery mode.
-		outcome, err := ir.enterRecovery(attempt, passphrase, err)
+	owned, loaded, buildErr := ir.buildWithPassphrase(passphrase)
+	if buildErr != nil {
+		end := buildEnd(loaded, buildErr)
+		outcome, err := ir.unlockBuildFailed(attempt, owned, loaded, fmt.Errorf("failed to load keys: %w", buildErr))
+		ir.afterReload(end)
 		return outcome, false, err
 	}
+	report := ir.publishUnlock(owned, loaded)
+	end := reloadEnd{notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)}
 	switch err := ir.lockRuntime.PublishUnlocked(attempt); {
 	case errors.Is(err, signerruntime.ErrLockedDuringUnlock):
-		// The attempt locked the runtime for its cleanup.
+		// The attempt locked the runtime for its cleanup, which cleared
+		// what the publish installed: no key went into service, so no
+		// reload is recorded.
 		ir.notifyLocked()
+		ir.afterReload(end)
 		return UnlockOutcome{}, false, err
 	case errors.Is(err, signerruntime.ErrRecoveryDuringUnlock):
-		// The fence leaves what the load published, the source token index
-		// included: recovery keeps the keyring, which decrypts every token
-		// file. No lookup uses it until the signer is unlocked.
+		// Under the one hold no entry into recovery reaches this fence; it
+		// stays as a layered guard, and recovery then keeps what the
+		// publish installed until its reconcile.
+		ir.afterReload(end)
 		return UnlockOutcome{Recovery: true, Cause: err}, false, nil
 	}
-	return UnlockOutcome{KeyCount: ir.KeyCount()}, true, nil
+	end.published, end.keyCount = true, report.KeyCount
+	ir.afterReload(end)
+	return UnlockOutcome{KeyCount: report.KeyCount}, true, nil
 }
 
 // answerFromSession answers a request that found the signer unlocked, from
@@ -698,34 +691,6 @@ func (ir *Runtime) answerFromSession(attempt signerruntime.Attempt, passphrase [
 		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
 	}
 	return UnlockOutcome{KeyCount: keyCount}, nil
-}
-
-// enterRecovery ends a request whose reconcile or load found the store
-// needing recovery (cause) by entering it, with a keyring opened from the
-// store root: the passphrase opens the root again for it. A lock since the
-// request began wins, as it does against a publish: an attempt that has
-// already lost opens nothing, and one a lock overtakes during the open loses
-// at EnterRecovery's fence.
-func (ir *Runtime) enterRecovery(attempt signerruntime.Attempt, passphrase []byte, cause error) (UnlockOutcome, error) {
-	if ir.lockRuntime.LostToLock(attempt) {
-		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
-	}
-	err := ir.lockRuntime.EnterRecovery(attempt, func() error {
-		ir.passphraseLock.Lock()
-		defer ir.passphraseLock.Unlock()
-		return unlockFailure(ir.keyStore.Unlock(passphrase))
-	})
-	if errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
-		// The attempt locked the runtime for its cleanup.
-		ir.notifyLocked()
-	}
-	if err != nil {
-		return UnlockOutcome{}, err
-	}
-	// The attempt began locked or in recovery (an unlocked one is answered
-	// from the session), so no key use or approval of a session is in flight
-	// for the entry to end.
-	return UnlockOutcome{Recovery: true, Cause: cause}, nil
 }
 
 // --- Approval ---
@@ -1633,49 +1598,26 @@ func IsContentDefect(err error) bool {
 	return signertemplates.IsGenerationValidationErr(err) || errors.Is(err, apkeys.ErrAddressCollision)
 }
 
-// ReloadWithPassphrase opens the keyring with the passphrase and scans keys.
-// Caller must NOT hold passphraseLock.
-//
-// No caller reloads with a passphrase under a session in service: an unlock
-// of an unlocked signer loads nothing (Unlock), the startup unlock runs
-// before the admin listener starts, and a passphrase change reloads under
-// store maintenance, with the signer locked.
-//
-// When it fails, the source token index goes only if the keyring went:
-// tokens must not outlive the keyring that decrypts them. A reload that
-// opened a keyring where none was open, a first unlock's, closes it again.
-// One that found recovery's keyring open, in an unlock begun there, leaves
-// the one it opened from the same store root, and the index with it; so does
-// one that fails before it opens a keyring, because the store root did not
-// open. Recovery then keeps what its reconcile, restore and rollback need. An
-// unlock the fence refuses did not fail, and keeps its index too (unlockHeld).
+// ReloadWithPassphrase builds the generation the store root selects with a
+// keyring opened from passphrase and installs it, keyring included: a
+// passphrase change's republish, under store maintenance with the signer
+// locked, before FinishStoreMaintenance. A build that fails installs
+// nothing, and the keyring it opened is zeroed; a role conflict fails the
+// node closed. Caller must NOT hold passphraseLock.
 func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.ReloadReport, error) {
-	ir.passphraseLock.Lock()
-	defer ir.passphraseLock.Unlock()
-	report, err := ir.reloadLocked(passphrase)
-	if err != nil && !ir.keyringOpen() {
-		ir.sourceTokens.Clear()
+	owned, loaded, err := ir.buildWithPassphrase(passphrase)
+	if err != nil {
+		end := buildEnd(loaded, err)
+		loaded.Discard()
+		if owned != nil {
+			owned.Zero()
+		}
+		ir.afterReload(end)
+		return nil, err
 	}
-	return report, err
-}
-
-// keyringOpen reports whether the keystore holds an open keyring.
-func (ir *Runtime) keyringOpen() bool {
-	return ir.keyStore != nil && ir.keyStore.WithKeyring(func(*crypto.Keyring) error { return nil }) == nil
-}
-
-func (ir *Runtime) reloadLocked(passphrase []byte) (*signertemplates.ReloadReport, error) {
-	if ir.reloadFn == nil {
-		return nil, fmt.Errorf("reload function not configured")
-	}
-	// Close jobs holding the old inventory before publishing replacements.
-	ir.stageTables.Invalidate()
-	// Pass keySession directly — caller holds passphraseLock.
-	report, err := ir.reloadFn(passphrase, ir.keySession)
-	if err == nil {
-		ir.WakeStageWork()
-	}
-	return report, err
+	report := ir.publishUnlock(owned, loaded)
+	ir.afterReload(reloadEnd{published: true, keyCount: report.KeyCount, notices: report.TemplateNotices, warnings: report.TemplateWarnings, rejected: rejectedLogicSigKeys(loaded.Contents)})
+	return report, nil
 }
 
 // --- Watcher ---

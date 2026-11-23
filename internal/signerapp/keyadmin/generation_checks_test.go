@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
@@ -253,7 +254,7 @@ func generateRotating(t *testing.T, service Service) *GenerateResult {
 // storedKeyFiles lists the files beside the given account's key file.
 func storedKeyFiles(t *testing.T, ir *productruntime.Runtime, address string) []string {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Dir(ir.KeyStore().GetCache()[address]))
+	entries, err := os.ReadDir(filepath.Dir(keyFileOf(t, ir, address)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +368,7 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 	ir, service := setupRotatingHolder(t)
 	rotating := generateRotating(t, service)
-	keyFile := ir.KeyStore().GetCache()[rotating.Address]
+	keyFile := keyFileOf(t, ir, rotating.Address)
 	saved, readErr := os.ReadFile(keyFile)
 	if readErr != nil {
 		t.Fatal(readErr)
@@ -398,20 +399,21 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 
 	// The running signer reloaded, and a signer started on the same store reads
 	// both accounts with no complaint.
-	fresh := keystore.NewAtomicFileKeyStoreForPaths(ir.KeyPaths())
-	if err := fresh.Unlock(testPassphrase); err != nil {
+	fresh := keystore.NewFileKeyStore()
+	if err := keystoretest.Unlock(fresh, ir.KeyPaths(), testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
-	if err := fresh.Scan(); err != nil {
-		t.Fatalf("Scan(): %v", err)
+	scanned, scanErr := keystoretest.Rescan(fresh, ir.KeyPaths())
+	if scanErr != nil {
+		t.Fatalf("Rescan(): %v", scanErr)
+	}
+	if len(scanned.Warnings) != 0 {
+		t.Fatalf("the restarted store warns: %+v", scanned.Warnings)
 	}
 	for name, store := range map[string]*keystore.FileKeyStore{"reloaded": ir.KeyStore(), "restarted": fresh} {
 		keyTypes := store.GetKeyTypes()
 		if keyTypes[listed.Address] != boundedHostKeyType || keyTypes[rotating.Address] != rotatingTestKeyType {
 			t.Fatalf("%s store holds %v", name, keyTypes)
-		}
-		if warnings := store.GetScanWarnings(); len(warnings) != 0 {
-			t.Fatalf("%s store warns: %+v", name, warnings)
 		}
 		if got := store.GetSigningSummary()[listed.Address].Parameters[plainhost.ParameterRekeyTo]; got != rotating.Address {
 			t.Fatalf("%s store: the account's list is %q", name, got)
@@ -432,7 +434,7 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 // restore would.
 func takeOutOfStore(t *testing.T, ir *productruntime.Runtime, selector string) (putBack func()) {
 	t.Helper()
-	keyFile := ir.KeyStore().GetCache()[selector]
+	keyFile := keyFileOf(t, ir, selector)
 	saved, err := os.ReadFile(keyFile)
 	if err != nil {
 		t.Fatal(err)

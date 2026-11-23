@@ -31,7 +31,7 @@ func TestUnlockReportsADamagedStoreRootApartFromAWrongPassphrase(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	ir := New(Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
+	ir := New(Config{KeyStore: keystore.NewFileKeyStore(), KeyPaths: paths})
 	reconcile := func(*crypto.Keyring) error { return nil }
 	attempts := map[string]func([]byte) error{
 		"unlock from locked": func(p []byte) error {

@@ -3,46 +3,14 @@
 
 package templates
 
-import (
-	"errors"
-	"fmt"
+import "errors"
 
-	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keystore"
-)
-
-type KeyStore interface {
-	Unlock(passphrase []byte) error
-	WithKeyring(fn func(kr *crypto.Keyring) error) error
-	ClearKeys()
-	// BindStoreRootSelection binds the generation the store root selects
-	// before reload validates it.
-	BindStoreRootSelection() error
-	Scan() error
-	GetCache() map[string]string
-	GetKeyTypes() map[string]string
-}
-
-type Session interface {
-	InitializeSession()
-}
-
+// AuditLogger is what a reload records: the key count it published, and each
+// key the scan rejected for a LogicSig invariant.
 type AuditLogger interface {
 	LogKeyReload(keyCount int)
 	LogKeyRejected(keyFile, reason string)
 }
-
-type KeysChangedNotification struct {
-	KeyCount int
-}
-
-type NotifyKeysChangedFunc func(notification KeysChangedNotification)
-type BeforeKeyScanFunc func(kr *crypto.Keyring) error
-type BeforePublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string) error
-type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string)
-type WarnFunc func(msg string)
-type InfoFunc func(msg string)
 
 // ReloadReport is a request-scoped projection of one runtime reload. It
 // describes what the reload accepted or rejected for callers such as template
@@ -56,19 +24,6 @@ type ReloadReport struct {
 	RegistrationReport
 }
 
-type ReloadService struct {
-	KeyStore          KeyStore
-	Session           Session
-	TemplateManager   *Manager
-	BeforeKeyScan     BeforeKeyScanFunc
-	BeforePublish     BeforePublishSnapshotFunc
-	PublishSnapshot   PublishSnapshotFunc
-	AuditLog          AuditLogger
-	NotifyKeysChanged NotifyKeysChangedFunc
-	Info              InfoFunc
-	Warn              WarnFunc
-}
-
 // ErrGenerationValidation marks a reload failure caused by content defects
 // in the selected generation; the unlock paths map it to recovery mode
 // instead of an ordinary unlock failure.
@@ -77,181 +32,4 @@ var ErrGenerationValidation = errors.New("generation validation failed")
 // IsGenerationValidationErr reports whether err wraps ErrGenerationValidation.
 func IsGenerationValidationErr(err error) bool {
 	return errors.Is(err, ErrGenerationValidation)
-}
-
-func (s *ReloadService) Reload(passphrase []byte) (*ReloadReport, error) {
-	if s.KeyStore == nil || s.Session == nil || s.TemplateManager == nil || s.PublishSnapshot == nil {
-		return nil, fmt.Errorf("reload service not fully configured")
-	}
-
-	report := &ReloadReport{}
-
-	initializedMasterKey := false
-	clearInitializedMasterKey := func() {
-		if initializedMasterKey {
-			s.KeyStore.ClearKeys()
-			initializedMasterKey = false
-		}
-	}
-
-	if len(passphrase) > 0 {
-		// A failure closes the keyring only when none was open before.
-		// The keyring found open is recovery's, in an unlock begun there:
-		// Unlock zeroes it and installs one opened from the same store root,
-		// since only a passphrase change replaces the wrapped keyring, and
-		// it runs with the signer locked. Closing that one would leave
-		// recovery no keyring for its reconcile, restore and rollback. The
-		// caller holds the lock every keyring open and close takes
-		// (productruntime's passphraseLock), so this reads a settled store.
-		foundOpen := s.KeyStore.WithKeyring(func(*crypto.Keyring) error { return nil }) == nil
-		if err := s.KeyStore.Unlock(passphrase); err != nil {
-			return nil, fmt.Errorf("failed to unlock the keystore: %w", err)
-		}
-		initializedMasterKey = !foundOpen
-	}
-	// Follow the store root before anything that can fail: a reload that
-	// fails after a root commit must leave recovery acting on the generation
-	// the root selects, never the superseded, sealed one.
-	if err := s.KeyStore.BindStoreRootSelection(); err != nil {
-		clearInitializedMasterKey()
-		return nil, fmt.Errorf("failed to resolve active key store layout: %w", err)
-	}
-
-	var beforeKeyScanErr error
-	if err := s.KeyStore.WithKeyring(func(kr *crypto.Keyring) error {
-		if s.BeforeKeyScan != nil {
-			if err := s.BeforeKeyScan(kr); err != nil {
-				beforeKeyScanErr = err
-				return err
-			}
-		}
-		registrationReport, err := s.TemplateManager.RegisterKeystoreTemplates(kr)
-		if err != nil {
-			return err
-		}
-		report.TemplateNotices = registrationReport.Notices()
-		report.TemplateWarnings = registrationReport.Warnings()
-		report.RegistrationReport = registrationReport
-		for _, notice := range report.TemplateNotices {
-			if s.Info != nil {
-				s.Info(notice)
-			} else {
-				fmt.Printf("Info: %s\n", notice)
-			}
-		}
-		for _, warning := range report.TemplateWarnings {
-			if s.Warn != nil {
-				s.Warn(warning)
-			} else {
-				fmt.Printf("Warning: %s\n", warning)
-			}
-		}
-		return nil
-	}); err != nil {
-		clearInitializedMasterKey()
-		if beforeKeyScanErr != nil {
-			return nil, fmt.Errorf("reload pre-scan hook failed: %w", beforeKeyScanErr)
-		}
-		if errors.Is(err, keystore.ErrStoreLocked) {
-			return nil, fmt.Errorf("signer is locked: %w", err)
-		}
-		return nil, fmt.Errorf("failed to register keystore templates: %w", err)
-	}
-
-	if err := s.KeyStore.Scan(); err != nil {
-		clearInitializedMasterKey()
-		if errors.Is(err, keys.ErrAddressCollision) {
-			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{})
-			if s.NotifyKeysChanged != nil {
-				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
-			}
-		}
-		return nil, fmt.Errorf("failed to rescan keys directory: %w", err)
-	}
-	s.auditRejectedLogicSigKeys()
-
-	// Reload fails closed on content defects: the selected generation is
-	// the committed state, and a malformed or undecryptable entry in it
-	// means the generation fails validation — recovery, not a
-	// warning-tolerant unlock (docs/ARCH_STORE.md, "Runtime reload behavior").
-	{
-		var warnings []keys.KeyScanWarning
-		if provider, ok := s.KeyStore.(keys.KeyScanWarningProvider); ok {
-			warnings = provider.GetScanWarnings()
-		}
-		templateDefects := report.ContentDefectKeyTypes()
-		if len(warnings) > 0 || len(templateDefects) > 0 {
-			clearInitializedMasterKey()
-			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{})
-			if s.NotifyKeysChanged != nil {
-				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
-			}
-			detail := ""
-			if len(warnings) > 0 {
-				detail = warnings[0].Message()
-			} else {
-				detail = "key type " + templateDefects[0]
-			}
-			return nil, fmt.Errorf("%w: %d malformed key file(s) and %d template/key-type defect(s) in the selected generation: %s",
-				ErrGenerationValidation, len(warnings), len(templateDefects), detail)
-		}
-	}
-
-	newKeysMap := s.KeyStore.GetCache()
-	newKeyTypes := s.KeyStore.GetKeyTypes()
-	if s.BeforePublish != nil {
-		if err := s.BeforePublish(newKeysMap, newKeyTypes); err != nil {
-			clearInitializedMasterKey()
-			s.clearKeyCache()
-			s.PublishSnapshot(map[string]string{}, map[string]string{})
-			if s.NotifyKeysChanged != nil {
-				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
-			}
-			return nil, fmt.Errorf("key snapshot rejected: %w", err)
-		}
-	}
-	s.PublishSnapshot(newKeysMap, newKeyTypes)
-
-	s.Session.InitializeSession()
-
-	keyCount := len(newKeysMap)
-	report.KeyCount = keyCount
-	if s.AuditLog != nil {
-		s.AuditLog.LogKeyReload(keyCount)
-	}
-
-	fmt.Printf("🔄 Keys reloaded: %d key(s) available\n", keyCount)
-
-	if s.NotifyKeysChanged != nil {
-		s.NotifyKeysChanged(KeysChangedNotification{KeyCount: keyCount})
-	}
-
-	return report, nil
-}
-
-func (s *ReloadService) clearKeyCache() {
-	type keyCacheClearer interface {
-		ClearCache()
-	}
-	if clearer, ok := s.KeyStore.(keyCacheClearer); ok {
-		clearer.ClearCache()
-	}
-}
-
-func (s *ReloadService) auditRejectedLogicSigKeys() {
-	if s.AuditLog == nil {
-		return
-	}
-	provider, ok := s.KeyStore.(keys.KeyScanWarningProvider)
-	if !ok {
-		return
-	}
-	for _, warning := range provider.GetScanWarnings() {
-		if !warning.IsLogicSigInvariantViolation() {
-			continue
-		}
-		s.AuditLog.LogKeyRejected(warning.KeyFile, string(warning.Code)+": "+warning.Reason())
-	}
 }

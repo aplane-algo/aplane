@@ -11,13 +11,12 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
-	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // TestSignerStateString verifies signerruntime.SignerState.String() returns correct values
@@ -165,37 +164,39 @@ func TestApprovalCoordinatorUsesProductAdminHub(t *testing.T) {
 
 }
 
-func TestReloadServiceNotifiesProductAdminHub(t *testing.T) {
+// A reload that publishes on an unlocked signer tells the admin session its
+// key count, through the hooks the process root wires into the runtime.
+func TestAReloadNotifiesTheProductAdminHub(t *testing.T) {
+	server := characterizedSigner(t)
 	hub := &recordingAdminHub{}
-	signer := &Signer{hub: hub}
-	ir := productruntime.New(productruntime.Config{})
-
-	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.productBuildHooks(), nil)
-	if svc.NotifyKeysChanged == nil {
-		t.Fatal("NotifyKeysChanged = nil, want configured callback")
+	server.hub = hub
+	if err := server.adminServices().withStoreMutation(func() error {
+		_, err := server.productRuntime().Reload()
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
-	svc.NotifyKeysChanged(signertemplates.KeysChangedNotification{KeyCount: 3})
-
 	if !hub.keysCalled {
-		t.Fatal("NotifyKeysChanged was not called")
+		t.Fatal("the reload did not tell the admin session its key count")
 	}
 }
 
-func TestReloadServiceFailsNodeClosedOnNodeRoleConflict(t *testing.T) {
-	nodeState := &productruntime.NodeFailState{}
-	signer := &Signer{nodeFailState: nodeState}
-	ir := productruntime.New(productruntime.Config{
-		NodeRole: noderole.RoleSigner,
+// A reload whose build finds a role conflict, here a source token file on a
+// signer node, fails the node closed through the hooks the process root wires
+// into the runtime, and enters recovery.
+func TestAReloadFailsTheNodeClosedOnARoleConflict(t *testing.T) {
+	server := characterizedSigner(t)
+	server.nodeFailState = &productruntime.NodeFailState{}
+	signerstartup.WireReloadFunc(server.productRuntime(), testProductBuildOptions(server), server.productBuildHooks())
+	writeTokenEntry(t, server, storepaths.SourceTokensDefaultSelector+storepaths.SourceTokenFileExtension)
+	err := server.adminServices().withStoreMutation(func() error {
+		_, err := server.productRuntime().Reload()
+		return err
 	})
-
-	svc := signerstartup.NewReloadService(ir, testProductBuildOptions(signer), signer.productBuildHooks(), nil)
-	err := svc.BeforePublish(nil, map[string]string{
-		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": witness.Falcon1024V1,
-	})
-	if err == nil {
-		t.Fatal("BeforePublish() error = nil, want node role conflict")
+	if !errors.Is(err, keyclass.ErrNodeRoleConflict) || !server.productRuntime().IsRecovery() {
+		t.Fatalf("Reload() = %v, state %v; want a role conflict and recovery", err, server.productRuntime().GetState())
 	}
-	if closeErr := nodeState.Err(); !errors.Is(closeErr, productruntime.ErrNodeFailClosed) {
+	if closeErr := server.nodeFailState.Err(); !errors.Is(closeErr, productruntime.ErrNodeFailClosed) {
 		t.Fatalf("node failure = %v, want ErrNodeFailClosed", closeErr)
 	}
 }

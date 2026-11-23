@@ -7,6 +7,49 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Unlock, startup and a passphrase change build first and publish last
+
+- **An unlock builds the whole view with a keyring opened from the
+  passphrase, installs it, keyring included, and then fences** with the
+  reading it took at its start. A build that fails installs nothing: an
+  unlock begun locked leaves the signer locked with no keyring and registers
+  no template, and one begun in recovery leaves recovery its own keyring and
+  binding. The keyring the failed build opened is zeroed.
+- **A content defect enters recovery's view**, bound to what the build found
+  the root selecting and showing the policy it verified, with the keyring
+  the build opened for an unlock begun locked. A reconcile that fails enters
+  recovery's view of what the build found. A role conflict fails the node
+  closed, and an unlock whose build finds one installs nothing, unless its
+  reconcile had already failed and it enters recovery for that.
+- **A failed unlock no longer publishes the policy it verified.** The old
+  reload published the new policy before it failed; a locked signer now
+  keeps the policy it had, and recovery shows the one its build verified.
+- **A passphrase change builds with the new passphrase under store
+  maintenance and installs before the maintenance ends.** A build that fails
+  installs nothing and leaves the signer locked; the answer still reports
+  the root as committed.
+- **Every unlock exit audits what its build found**: the LogicSig keys the
+  scan rejected are recorded and template notices logged on a failed
+  unlock, a failed passphrase change and an unlock that a lock overtook, as
+  on a published one. A role conflict found by the build of an unlock whose
+  reconcile failed now fails the node closed too.
+- **An unlock begun in recovery whose build fails after the root moved, or
+  finds the root no longer authenticating, answers `recovery_blocked`**, as a
+  reload does, and recovery is bound to what the build found, or to nothing.
+  It used to answer `unlock_failed` and leave recovery's binding.
+- **A failed unlock sends no keys-changed notification**, and an unlock that
+  a lock overtook records no key reload, since no key went into service. A
+  passphrase change publishes under maintenance, while the signer counts as
+  locked, so it sends none either; the stage table worker picks the new
+  keyring up on its next tick.
+- **The old reload is gone**: `templates.ReloadService`, its hooks and the
+  runtime's reload function. Every reload builds and then publishes.
+- **The keystore methods only the old reload used are gone**: `Unlock`,
+  `Scan`, `ScanSelection`, `BindStoreRootSelection`, `ClearCache`,
+  `GetCache` and `GetScanWarnings`. A build scans with
+  `keystore.ScanGeneration`, and a publish installs with `Install`. Tests set
+  up a store with `keystoretest`.
+
 ## Key, template and watcher reloads build first and publish last too
 
 - **Key generation, import and deletion, every template operation and the

@@ -510,3 +510,118 @@ func TestALockDuringAFailingBuildEntersNoRecovery(t *testing.T) {
 		t.Fatalf("state %v, hook told %v; want the lock standing and the hook not told", ir.GetState(), told)
 	}
 }
+
+// An unlock from locked whose build fails for a transient reason installs
+// nothing: no keyring, no key maps, no token index, and no provider. The
+// keyring the build opened and its token index are zeroed.
+func TestAnUnlockWhoseBuildFailsInstallsNothing(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	registry := &recordingRegistry{}
+	ir.providers = registry
+	prepared := preparedTemplate(t, ir, bound, "unlock-template")
+	ir.Lock()
+	built := viewTokens(t, "tok-built")
+	var opened *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		opened = kr
+		return &Loaded{Selection: &bound, Templates: prepared, Tokens: built, Contents: viewKeys(bound)}, errors.New("injected read failure")
+	}, ReloadEffects{})
+
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), func(*crypto.Keyring) error { return nil }, nil); err == nil {
+		t.Fatal("Unlock() succeeded though its build failed")
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked || ir.KeyCount() != 0 {
+		t.Fatalf("state %v with %d key(s), want locked with none", ir.GetState(), ir.KeyCount())
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err == nil {
+		t.Fatal("the failed unlock installed a keyring")
+	}
+	if got := registry.registered(); len(got) != 0 {
+		t.Fatalf("the failed unlock registered %v", got)
+	}
+	if value, _ := built.TokenFor(sourcetokens.DefaultSelector, "screening"); value == "tok-built" {
+		t.Fatal("the build's token index was not zeroed")
+	}
+	if opened == nil || opened.CurrentTerm() != 0 {
+		t.Fatal("the keyring the build opened was not zeroed")
+	}
+}
+
+// An unlock begun in recovery whose build fails for a transient reason
+// leaves recovery its own keyring and binding, for the reconcile, restore and
+// rollback it needs, and zeroes the keyring the build opened.
+func TestAnUnlockInRecoveryWhoseBuildFailsKeepsRecoverysKeyring(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	ir.EnterRecovery(nil)
+	var recoverys *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { recoverys = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var opened *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		opened = kr
+		return &Loaded{Selection: &bound}, errors.New("injected read failure")
+	}, ReloadEffects{})
+
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), func(*crypto.Keyring) error { return nil }, nil); err == nil {
+		t.Fatal("Unlock() succeeded though its build failed")
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state %v, want recovery", ir.GetState())
+	}
+	var current *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { current = kr; return nil }); err != nil || current != recoverys {
+		t.Fatalf("recovery's keyring after the failed unlock = %p (%v), want its own %p", current, err, recoverys)
+	}
+	if active, err := ir.ActivePaths(); err != nil || active.GenerationID() != bound.GenerationID() {
+		t.Fatalf("binding after the failed unlock = %v, %v; want %s", active.GenerationID(), err, bound.GenerationID())
+	}
+	if opened == nil || opened == recoverys || opened.CurrentTerm() != 0 {
+		t.Fatal("the keyring the build opened was not zeroed")
+	}
+}
+
+// An unlock that loses to a lock landing during its build publishes, and
+// its fence then locks and clears: no keyring, key maps or token index from
+// the attempt remain. Its policy and the providers it registered remain, as
+// a policy does after any lock.
+func TestAnUnlockThatLosesToALockLeavesNothingButItsPolicy(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	registry := &recordingRegistry{}
+	ir.providers = registry
+	prepared := preparedTemplate(t, ir, bound, "loser-template")
+	ir.Lock()
+	policy := &policyruntime.NodePolicy{}
+	var lockDone sync.WaitGroup
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		lockDone.Add(1)
+		go func() {
+			defer lockDone.Done()
+			ir.Lock()
+		}()
+		// The lock lands whole: its cleanup has nothing to wait for, since
+		// the build holds no passphrase lock.
+		lockDone.Wait()
+		return &Loaded{Selection: &bound, PolicyVerified: true, Policy: policy, Templates: prepared,
+			Tokens: viewTokens(t, "tok-loser"), Contents: viewKeys(bound)}, nil
+	}, ReloadEffects{})
+
+	if _, err := ir.Unlock([]byte(secondUnlockPassphrase), func(*crypto.Keyring) error { return nil }, nil); !errors.Is(err, signerruntime.ErrLockedDuringUnlock) {
+		t.Fatalf("Unlock() = %v, want %v", err, signerruntime.ErrLockedDuringUnlock)
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked || ir.KeyCount() != 0 {
+		t.Fatalf("state %v with %d key(s), want locked with none", ir.GetState(), ir.KeyCount())
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err == nil {
+		t.Fatal("the losing unlock left a keyring")
+	}
+	if _, ok := ir.sourceTokens.TokenFor(sourcetokens.DefaultSelector, "screening"); ok {
+		t.Fatal("the losing unlock left a token index")
+	}
+	if ir.NodePolicy() != policy {
+		t.Fatal("the losing unlock's policy is gone; a lock leaves the policy")
+	}
+	if got := registry.registered(); len(got) != 1 {
+		t.Fatalf("the losing unlock registered %v, want its one batch", got)
+	}
+}

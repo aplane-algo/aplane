@@ -20,8 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
 // An unlock request holds the store mutation lock from its state read to its
@@ -32,16 +30,8 @@ import (
 // countPassphraseLoads counts the reloads with a passphrase, and runs each
 // reload as wired.
 func countPassphraseLoads(server *Signer) *atomic.Int32 {
-	ir := server.productRuntime()
-	opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
-	loads := &atomic.Int32{}
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
-			loads.Add(1)
-		}
-		return signerstartup.NewReloadService(ir, opts, hooks, session).Reload(passphrase)
-	})
-	return loads
+	_, fromPassphrase := countBuilds(server)
+	return fromPassphrase
 }
 
 // lockAtTheQuarantine lands a lock, from another goroutine as one from

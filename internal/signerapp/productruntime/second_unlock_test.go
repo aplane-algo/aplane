@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -50,24 +51,32 @@ func unlockedRuntimeForTest(t *testing.T) (ir *Runtime, mutation *hookedLock, lo
 	}
 	locks = &atomic.Int32{}
 	ir = New(Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: paths,
 		OnLocked: func() { locks.Add(1) },
 	})
-	if err := ir.KeyStore().Unlock([]byte(secondUnlockPassphrase)); err != nil {
+	if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), []byte(secondUnlockPassphrase)); err != nil {
 		t.Fatal(err)
 	}
 	loads = &atomic.Int32{}
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
-			loads.Add(1)
-		}
-		return &signertemplates.ReloadReport{}, nil
-	})
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		loads.Add(1)
+		return selectionBuild(paths, kr)
+	}, ReloadEffects{})
 	mutation = &hookedLock{}
 	ir.SetReloadMutationLock(func() sync.Locker { return mutation })
 	ir.SetUnlocked()
 	return ir, mutation, loads, locks
+}
+
+// selectionBuild is the reload's build reduced to the generation the store
+// root selects, with no keys, no policy and no templates.
+func selectionBuild(paths storepaths.Paths, kr *crypto.Keyring) (*Loaded, error) {
+	selection, err := genstore.AuthenticateStoreRootSelection(paths, kr)
+	if err != nil {
+		return nil, err
+	}
+	return &Loaded{Selection: &selection, Contents: keystore.Contents{Selection: &selection}}, nil
 }
 
 // countReconciles is an unlock request's reconcile that counts its runs and
@@ -179,15 +188,13 @@ func TestAnUnlockLoadsUnderTheStoreMutationLock(t *testing.T) {
 	ir, mutation, _, _ := unlockedRuntimeForTest(t)
 	ir.EnterRecovery(nil)
 	heldDuringLoad := false
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase != nil {
-			heldDuringLoad = !mutation.TryLock()
-			if !heldDuringLoad {
-				mutation.Mutex.Unlock()
-			}
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		heldDuringLoad = !mutation.TryLock()
+		if !heldDuringLoad {
+			mutation.Mutex.Unlock()
 		}
-		return &signertemplates.ReloadReport{}, nil
-	})
+		return selectionBuild(ir.KeyPaths(), kr)
+	}, ReloadEffects{})
 	stateAtRelease := signerruntime.SignerStateRecovery
 	mutation.afterRelease = func() { stateAtRelease = ir.GetState() }
 	heldInCallback := true

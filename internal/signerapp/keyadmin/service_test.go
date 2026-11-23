@@ -25,9 +25,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -120,8 +122,8 @@ func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productrunti
 	keyring.Zero()
 	keyPaths = genstoretest.BindActive(t, keyPaths, active)
 
-	ks := keystore.NewAtomicFileKeyStoreForPaths(keyPaths)
-	if err := ks.Unlock(testPassphrase); err != nil {
+	ks := keystore.NewFileKeyStore()
+	if err := keystoretest.Unlock(ks, keyPaths, testPassphrase); err != nil {
 		t.Fatalf("Unlock(): %v", err)
 	}
 
@@ -141,7 +143,11 @@ func setupProductRuntimeWithRole(t *testing.T, role noderole.Role) *productrunti
 // generation the store selects, scanned, with the policy in service carried
 // over as verified, so a reload leaves the policy as it found it.
 func scanBuildForTest(ir *productruntime.Runtime, kr *crypto.Keyring) (*productruntime.Loaded, error) {
-	contents, err := ir.KeyStore().ScanSelection(kr)
+	selection, err := genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+	if err != nil {
+		return nil, err
+	}
+	contents, err := keystore.ScanGeneration(selection, kr)
 	policy, set := ir.PolicyState()
 	return &productruntime.Loaded{
 		Selection: contents.Selection, PolicyVerified: true, Policy: policy, ASASet: set, Alerts: ir.PolicyAlerts(),
@@ -149,13 +155,20 @@ func scanBuildForTest(ir *productruntime.Runtime, kr *crypto.Keyring) (*productr
 	}, err
 }
 
+// reloadKeysForTest reloads as the watcher does, with the fixture's build.
 func reloadKeysForTest(ir *productruntime.Runtime, _ storepaths.Paths) error {
-	ks := ir.KeyStore()
-	if err := ks.Scan(); err != nil {
-		return err
+	_, err := ir.Reload()
+	return err
+}
+
+// keyFileOf is the key file the signer serves for address.
+func keyFileOf(t *testing.T, ir *productruntime.Runtime, address string) string {
+	t.Helper()
+	keyFile, err := ir.FindKeyFile(address)
+	if err != nil {
+		t.Fatal(err)
 	}
-	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes())
-	return nil
+	return keyFile
 }
 
 func TestServiceGenerateKeyEd25519(t *testing.T) {

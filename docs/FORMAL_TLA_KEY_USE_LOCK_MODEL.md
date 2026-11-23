@@ -79,15 +79,15 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 | KU8 | A lock that lands during an unlock attempt stands: the attempt neither publishes unlocked nor enters recovery after it | `KU8_LockStands` |
 | KU9 | An attempt's entry into recovery never ends a session another attempt published while it ran | `KU9_RecoveryKeepsAnotherSession` |
 
-KU6 is what an unlock of an unlocked signer must not break. A load replaces
-the keyring, the policy, the key maps and the source token index
-(`templates/reload.go::Reload`). Under a session in service one that failed
-after the keyring opened once closed it again (`ClearKeys`), which left a
-signer that said unlocked and could not sign. A failed load now closes the
-keyring only when it found none open, so an unlock begun in recovery leaves
-recovery a keyring, but one that fails validation still publishes an empty
-key snapshot, and every load republishes the policy, the key maps and the
-source token index over changes made since it read them. KU7 says that an attempt that found the
+KU6 is what an unlock of an unlocked signer must not break. A load builds
+the whole view with a keyring opened from the passphrase and then installs
+it (`productruntime/view.go::buildWithPassphrase`, `::publishUnlock`); the
+install replaces the keyring, the policy, the key maps and the source token
+index. A build that fails closes and installs nothing, so the reason KU6 once
+had, a failed load that closed the keyring under a session in service and
+left a signer that said unlocked and could not sign, is gone. What remains
+is the install: under a session in service it would replace what concurrent
+changes had moved on since the build read them. KU7 says that an attempt that found the
 signer unlocked, and so loaded nothing, does not lock or clear either: it
 has nothing to clear, and a loser's lock there could end a session another
 path published after the attempt's check.
@@ -175,8 +175,11 @@ waits for it; KU2 and KU3 cover that case.
   check of the reading (`LostToLock`), and the reconcile with the keyring
   that opening gave. An attempt that lost stops there with nothing to
   clear; a reconcile that fails leads to the recovery end. `Load` is the
-  second check and `ReloadWithPassphrase`, whose content defect also leads
-  to the recovery end.
+  second check, the build from the passphrase, which changes nothing live,
+  and its install; a content defect the build finds leads to the recovery
+  end instead, and any other failure ends the attempt with nothing
+  installed and the keyring it opened zeroed. An attempt begun in recovery
+  whose build fails keeps recovery's keyring.
 - `Publish` transcribes `runtime.Runtime.PublishUnlocked`, the fence. An
   attempt that finds `lockGen` moved has lost to a lock; it may have loaded
   keys after that lock's cleanup ran, so it clears them. It first locks as
@@ -186,8 +189,11 @@ waits for it; KU2 and KU3 cover that case.
   entry into recovery and publishes nothing; under the hold none reaches
   it, so the comparison is a layered guard.
 - `RecoveryOpen` and `RecoveryFinish` transcribe the attempt's second end:
-  `enterRecovery`'s check of the reading and its keyring open
-  (`KeyStore.Unlock` under `passphraseLock`), then the fence of
+  `unlockIntoRecovery`'s check of the reading and its install of recovery's
+  view under `passphraseLock` (bound to what the build found the root
+  selecting, the keyring the build opened for an attempt begun locked,
+  recovery's own for one begun in recovery, read under the same hold, since
+  a lock's cleanup clears it under that lock), then the fence of
   `runtime.Runtime.EnterRecovery`. One that lost before the open stops with
   nothing opened; one whose fence finds `lockGen` moved loses as a publish
   does; otherwise it enters recovery from whatever state the signer is in

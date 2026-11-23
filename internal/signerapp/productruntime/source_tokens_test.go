@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/keystore"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 )
 
@@ -122,22 +121,25 @@ func TestDestroyZeroesTheSourceTokenIndex(t *testing.T) {
 	}
 }
 
-// A reload that publishes the index and then fails, as an unlock's can when a
-// step after the policy load fails, leaves no tokens in memory: the unlock
-// failed and the signer stays locked.
-func TestAFailedUnlockReloadLeavesNoSourceTokens(t *testing.T) {
-	ir := New(Config{})
-	var published *sourcetokens.Index
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		published = sourceTokenIndex(t, "token-value")
-		ir.PublishSourceTokens(published)
-		return nil, errors.New("injected failure after the policy load")
-	})
-	if _, err := ir.ReloadWithPassphrase([]byte("passphrase")); err == nil {
+// A reload with a passphrase whose build read the tokens and then failed, as
+// a passphrase change's can when a step after the token load fails, leaves no
+// tokens in memory: the build's index is zeroed, nothing is published, and
+// the signer stays locked.
+func TestAFailedReloadWithAPassphraseLeavesNoSourceTokens(t *testing.T) {
+	ir, _, _, _ := unlockedRuntimeForTest(t)
+	ir.Lock()
+	built := sourceTokenIndex(t, "token-value")
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		return &Loaded{Tokens: built}, errors.New("injected failure after the token load")
+	}, ReloadEffects{})
+	if _, err := ir.ReloadWithPassphrase([]byte(secondUnlockPassphrase)); err == nil {
 		t.Fatal("ReloadWithPassphrase() succeeded")
 	}
-	requireZeroed(t, published, "after the failed reload")
+	requireZeroed(t, built, "after the failed reload")
 	if _, ok := ir.SourceTokenFor(sourceTokenTestKeyID, "screening"); ok {
-		t.Fatal("SourceTokenFor() found a token after a failed unlock reload")
+		t.Fatal("SourceTokenFor() found a token after a failed reload")
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err == nil {
+		t.Fatal("the failed reload installed the keyring it opened")
 	}
 }

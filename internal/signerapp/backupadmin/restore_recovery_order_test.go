@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -201,7 +202,7 @@ func TestARefusalBeforeThePassphraseIsTriedDoesNotChargeTheRestoreLimiter(t *tes
 		if preview := service.PreviewRestore(adminproto.PreviewRestoreRequest{ArchivePath: archivePath, ExportPassphrase: []byte("export-passphrase")}); preview.Code != protocol.ResultCodeRestorePreviewFailed {
 			t.Fatalf("PreviewRestore() with the keyring closed = %+v, want a refusal", preview)
 		}
-		if err := ir.KeyStore().Unlock(backupAdminTestPassphrase); err != nil {
+		if err := keystoretest.Unlock(ir.KeyStore(), ir.KeyPaths(), backupAdminTestPassphrase); err != nil {
 			t.Fatal(err)
 		}
 		if restored := restore(t, service, archivePath, request("reopened", "export-passphrase")); !restored.Success {

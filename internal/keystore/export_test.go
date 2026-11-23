@@ -35,23 +35,21 @@ func (f *FileKeyStore) keyringIsLoaded() bool {
 	return f.keyring != nil
 }
 
-// contentsForTest reads the keyring, the binding, the key cache and the
-// warnings under one hold of the cache lock, as one reader of the store sees
-// them.
-func (f *FileKeyStore) contentsForTest() (kr *crypto.Keyring, generation string, files map[string]string, warnings int) {
+// contentsForTest reads the keyring, the binding and the key cache under one
+// hold of the cache lock, as one reader of the store sees them.
+func (f *FileKeyStore) contentsForTest() (kr *crypto.Keyring, generation string, files map[string]string) {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
 	if f.active != nil {
 		generation = f.active.GenerationID()
 	}
-	return f.keyring, generation, Contents{Keys: f.cache}.KeyFiles(), len(f.scanWarnings)
+	return f.keyring, generation, Contents{Keys: f.cache}.KeyFiles()
 }
 
-// SeedCacheForTest puts one cached key for address on the store, and one
-// scan warning, as a scan that found them would have.
+// SeedCacheForTest puts one cached key for address on the store, as a scan
+// that found it would have.
 func (f *FileKeyStore) SeedCacheForTest(address, keyFile string) {
 	f.cacheLock.Lock()
 	defer f.cacheLock.Unlock()
 	f.cache = map[string]keys.KeyScanInfo{address: {KeyFile: keyFile}}
-	f.scanWarnings = []keys.KeyScanWarning{{KeyFile: "keys/stray.key"}}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -40,8 +41,8 @@ func unlockedCosignerRuntime(t *testing.T, paths storepaths.Paths) *productrunti
 	if _, err := storeinit.Initialize(backupAdminTestPassphrase, storeinit.Options{ValidateCandidate: storevalidate.FirstGeneration, DataDir: paths.Root(), Paths: paths, Role: noderole.RoleCosigner}); err != nil {
 		t.Fatal(err)
 	}
-	keyStore := keystore.NewAtomicFileKeyStoreForPaths(paths)
-	if err := keyStore.Unlock(backupAdminTestPassphrase); err != nil {
+	keyStore := keystore.NewFileKeyStore()
+	if err := keystoretest.Unlock(keyStore, paths, backupAdminTestPassphrase); err != nil {
 		t.Fatal(err)
 	}
 	ir := productruntime.New(productruntime.Config{

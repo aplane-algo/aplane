@@ -144,10 +144,11 @@ At scan, a selector mismatch or category/extension mismatch is skipped as
 invalid authority rather than failing the scan: the file installs no runtime
 entry, the other files are still scanned, and the scan reports it with one
 `filename_mismatch` warning whose reason names the class or selector that does
-not match (`internal/keys/keys.go`). Reload then fails closed on any scan
-warning (`internal/signerapp/templates/reload.go`): it clears the key cache and
-the published snapshot and fails the selected generation's validation, which
-holds the identity in recovery with signing blocked. The store-commit gate
+not match (`internal/keys/keys.go`). A reload's build then fails closed on any scan
+warning (`internal/signerapp/startup/product_build.go::Build`): it fails the
+selected generation's validation, a content defect, and the reload or unlock
+enters recovery's view, with no keys, which holds the identity in recovery
+with signing blocked. The store-commit gate
 (`internal/signerapp/storevalidate`) refuses a candidate generation with any
 scan warning the same way. Canonical filename binding removes the selection
 ambiguity by construction: each valid payload has exactly one

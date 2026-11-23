@@ -1151,13 +1151,15 @@ lsig/signerreg.RegisterSigner()
         stage cryptography, and generator (outside lsigprovider)
 ```
 
-Runtime templates (from keystore) are loaded by every reload, before its key
-scan. Each template is prepared first, which returns its provider and checks
-the provider contract (`lsigprovider.CheckContract`); the ones to activate
-are then registered as one batch (`lsigprovider.RegisterBatchIfAbsent`),
-through the registry the runtime hands the reload:
+Runtime templates (from keystore) are prepared by every reload's build,
+before its key scan: each template is prepared, which returns its provider
+and checks the provider contract (`lsigprovider.CheckContract`), and nothing
+is registered. A publish then registers the ones to activate as one batch
+(`lsigprovider.RegisterBatchIfAbsent`), through the registry the runtime
+holds; a build that is not published registers none:
 ```go
-signertemplates.NewManager(paths, ir.ProviderRegistry()).RegisterKeystoreTemplates(keyring)
+prepared, err := signertemplates.NewManager(paths, ir.ProviderRegistry()).PrepareKeystoreTemplates(keyring) // the build
+report := prepared.Register(ir.ProviderRegistry())                                                         // the publish
 ```
 
 ### Algod client configuration

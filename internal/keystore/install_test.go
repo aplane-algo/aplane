@@ -25,8 +25,7 @@ func contentsOf(paths storepaths.Paths, generation string, n int) Contents {
 	}
 }
 
-// Install sets the keyring, the binding, the key cache and the warnings
-// together: a reader under the cache lock sees all of one installation,
+// Install sets the keyring, the binding and the key cache together: a reader under the cache lock sees all of one installation,
 // never a keyring or a binding from one and a cache from another.
 func TestInstallSetsTheContentsTogether(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
@@ -59,12 +58,11 @@ func TestInstallSetsTheContentsTogether(t *testing.T) {
 	}()
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		kr, generation, files, warnings := fs.contentsForTest()
-		want := installs[generation]
-		if kr != keyrings[generation] || files["ADDR"] != generation+".key" || warnings != len(want.Warnings) {
+		kr, generation, files := fs.contentsForTest()
+		if kr != keyrings[generation] || files["ADDR"] != generation+".key" {
 			stop.Store(true)
 			wg.Wait()
-			t.Fatalf("a reader saw generation %s with cache %v, %d warning(s) and another installation's keyring: parts of two installations", generation, files, warnings)
+			t.Fatalf("a reader saw generation %s with cache %v and another installation's keyring: parts of two installations", generation, files)
 		}
 	}
 	stop.Store(true)

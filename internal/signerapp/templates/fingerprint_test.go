@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -51,16 +50,22 @@ func putRecordedFingerprint(t *testing.T, paths utilkeys.Paths, keyType string, 
 	}
 }
 
-func reloadServiceForFingerprintTest(paths utilkeys.Paths) *ReloadService {
-	return &ReloadService{
-		KeyStore:        &fakeKeyStore{cache: map[string]string{}, keyTypes: map[string]string{}},
-		Session:         &fakeSession{},
-		TemplateManager: NewManager(paths, lsigprovider.ProcessRegistry{}),
-		PublishSnapshot: func(map[string]string, map[string]string) {},
-		AuditLog:        &fakeAuditLog{},
-		Info:            func(string) {},
-		Warn:            func(string) {},
+// reloadTemplatesForTest runs the reload's template step as a build and its
+// publish do: every template is prepared, and when the preparation found no
+// content defect the ones to activate are registered. A build that found a
+// defect is not published, and registers nothing; the defects are returned
+// with the preparation's report.
+func reloadTemplatesForTest(t *testing.T, paths utilkeys.Paths) (RegistrationReport, []string) {
+	t.Helper()
+	manager := NewManager(paths, lsigprovider.ProcessRegistry{})
+	prepared, err := manager.PrepareKeystoreTemplates(cryptotest.Keyring(t, testTemplateMasterKey()))
+	if err != nil {
+		t.Fatalf("PrepareKeystoreTemplates() error = %v", err)
 	}
+	if defects := prepared.Report().ContentDefectKeyTypes(); len(defects) > 0 {
+		return prepared.Report(), defects
+	}
+	return prepared.Register(manager.Registry), nil
 }
 
 // A reload accepts a template's record only when its fingerprint is the one
@@ -110,38 +115,36 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 				saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, data, masterKey)
 				if registered {
 					putRecordedFingerprint(t, paths, keyType, keytypestate.SourceYAMLGeneric, live)
-					if _, err := reloadServiceForFingerprintTest(paths).Reload(nil); err != nil {
-						t.Fatalf("registering Reload() error = %v", err)
+					if _, defects := reloadTemplatesForTest(t, paths); len(defects) != 0 {
+						t.Fatalf("the registering reload found defects %v", defects)
 					}
 				}
 				putRecordedFingerprint(t, paths, keyType, keytypestate.SourceYAMLGeneric, recordedFingerprint(recordedName, live))
 
-				report, err := reloadServiceForFingerprintTest(paths).Reload(nil)
+				report, defects := reloadTemplatesForTest(t, paths)
 				switch wantOutcome {
 				case accepted:
-					if err != nil {
-						t.Fatalf("Reload() error = %v, want the record accepted", err)
+					if len(defects) != 0 {
+						t.Fatalf("the reload found defects %v, want the record accepted", defects)
 					}
 					bucket := report.GenericActivatedKeyTypes
 					if registered {
 						bucket = report.GenericIdempotentKeyTypes
 					}
 					if !reflect.DeepEqual(bucket, []string{keyType}) {
-						t.Fatalf("report = %+v, want %s accepted", report.RegistrationReport, keyType)
+						t.Fatalf("report = %+v, want %s accepted", report, keyType)
 					}
 					if lsigprovider.Get(keyType) == nil {
 						t.Fatalf("%s is not registered", keyType)
 					}
 				case externalEdit:
-					if !errors.Is(err, ErrGenerationValidation) {
-						t.Fatalf("Reload() error = %v, want ErrGenerationValidation", err)
+					// A content defect: the build fails the generation, so the
+					// reload publishes and registers nothing.
+					if !reflect.DeepEqual(defects, []string{keyType}) {
+						t.Fatalf("the reload found defects %v, want %s", defects, keyType)
 					}
-					wantErr := "generation validation failed: 0 malformed key file(s) and 1 template/key-type defect(s) in the selected generation: key type " + keyType
-					if err.Error() != wantErr {
-						t.Fatalf("Reload() error = %q, want %q", err, wantErr)
-					}
-					if report != nil {
-						t.Fatalf("Reload() report = %+v, want none", report)
+					if !registered && lsigprovider.Get(keyType) != nil {
+						t.Fatalf("%s was registered by a reload that found it defective", keyType)
 					}
 					report, err := NewManager(paths, lsigprovider.ProcessRegistry{}).ValidateKeystoreTemplates(cryptotest.Keyring(t, masterKey))
 					if err != nil {
@@ -225,25 +228,25 @@ func TestReloadRequiresTheRecordedCompiledFingerprintExactly(t *testing.T) {
 				paths := mintedPathsForReloadTest(t)
 				putRecordedFingerprint(t, paths, keyType, keytypestate.SourceCompiled, recordedFingerprint(recordedName, live))
 
-				report, err := reloadServiceForFingerprintTest(paths).Reload(nil)
-				if err != nil {
-					t.Fatalf("Reload() error = %v, want a compiled conflict not to fail reload", err)
+				report, defects := reloadTemplatesForTest(t, paths)
+				if len(defects) != 0 {
+					t.Fatalf("the reload found defects %v, want a compiled conflict not to fail it", defects)
 				}
 				if wantConflict {
 					if !reflect.DeepEqual(report.CompiledConflictingKeyTypes, []string{keyType}) || len(report.CompiledIdempotentKeyTypes) != 0 {
-						t.Fatalf("report = %+v, want %s conflicting", report.RegistrationReport, keyType)
+						t.Fatalf("report = %+v, want %s conflicting", report, keyType)
 					}
 					wantWarning := "conflicting compiled key type records ignored on reload: [" + keyType + "] (re-pin each with `apadmin keytype enable <key_type>`)"
-					if !reflect.DeepEqual(report.TemplateWarnings, []string{wantWarning}) {
-						t.Fatalf("TemplateWarnings = %q, want %q", report.TemplateWarnings, wantWarning)
+					if !reflect.DeepEqual(report.Warnings(), []string{wantWarning}) {
+						t.Fatalf("TemplateWarnings = %q, want %q", report.Warnings(), wantWarning)
 					}
 					return
 				}
 				if !reflect.DeepEqual(report.CompiledIdempotentKeyTypes, []string{keyType}) || len(report.CompiledConflictingKeyTypes) != 0 {
-					t.Fatalf("report = %+v, want %s consistent", report.RegistrationReport, keyType)
+					t.Fatalf("report = %+v, want %s consistent", report, keyType)
 				}
-				if len(report.TemplateWarnings) != 0 {
-					t.Fatalf("TemplateWarnings = %q, want none", report.TemplateWarnings)
+				if len(report.Warnings()) != 0 {
+					t.Fatalf("TemplateWarnings = %q, want none", report.Warnings())
 				}
 			})
 		}

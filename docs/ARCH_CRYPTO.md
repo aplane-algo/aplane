@@ -654,7 +654,7 @@ Start here when changing the subsystem:
 - `internal/keys/payload_codec.go`
 - `internal/keystore/file.go`
 - `internal/keystore/session.go`
-- `internal/signerapp/templates/reload.go`
+- `internal/signerapp/productruntime/view.go`
 - `docs/DEV_KEYTYPES.md`
 - `docs/ARCH_OVERVIEW.md`
 - `docs/ARCH_CONTRACTS.md`

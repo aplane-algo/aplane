@@ -193,11 +193,14 @@ Code anchors:
     awaitCleanups, then the reading. AnswerCheck transcribes
     answerFromSession: the passphrase check and the comparison with the
     reading. Reconcile transcribes unlockHeld's store root open, its first
-    LostToLock check and the reconcile; Load its second check and
-    ReloadWithPassphrase; Publish runtime.Runtime.PublishUnlocked;
-    RecoveryOpen productruntime's enterRecovery (its LostToLock check and the
-    keyring open) and RecoveryFinish the fence of runtime.Runtime
-    EnterRecovery. At the fences, when the lock generation moved,
+    LostToLock check and the reconcile; Load its second check, the build
+    from the passphrase (productruntime/view.go buildWithPassphrase), which
+    changes nothing live, and its install (publishUnlock), which replaces
+    the keyring, the key maps, the policy and the token index; Publish
+    runtime.Runtime.PublishUnlocked; RecoveryOpen productruntime's
+    unlockIntoRecovery (its LostToLock check and the install of recovery's
+    view, keyring included) and RecoveryFinish the fence of
+    runtime.Runtime EnterRecovery. At the fences, when the lock generation moved,
     lockForCleanupLocked and the cleanup it decides; otherwise, for the
     publish, when the session moved, the return with
     ErrRecoveryDuringUnlock, and for the recovery end enterRecoveryLocked.
@@ -782,9 +785,9 @@ KU4_NoWipeWhileUnlocked == ~wipedLive
 KU5_NoUnlockOverLaterRecovery == ~overRecovery
 
 \* KU6: an unlock never loads keys while the signer is unlocked. A load
-\* replaces the keyring and the key maps, and one that fails validation
-\* publishes an empty key snapshot, so a load under a session in service
-\* could leave a signer unlocked and unable to sign.
+\* builds and then installs, and the install would replace the keyring, the
+\* key maps, the policy and the token index of a session in service that
+\* concurrent changes had moved on from; a build that fails closes nothing.
 KU6_NoLoadUnderSession ==
     \A u \in Unlockers : ul[u] = "loading" => life # "unlocked"
 

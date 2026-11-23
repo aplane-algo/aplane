@@ -256,7 +256,7 @@ func TestEndKeyUsesRefusesKeyUsesDuringAndAfterIt(t *testing.T) {
 	for round := 0; round < rounds; round++ {
 		root := t.TempDir()
 		ir := New(Config{
-			KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+			KeyStore: keystore.NewFileKeyStore(),
 			KeyPaths: storepaths.NewPaths(root),
 		})
 		ir.SetUnlocked()
@@ -351,7 +351,7 @@ func TestEndKeyUsesRefusesAKeyUseWhileItDrains(t *testing.T) {
 func TestDestroyAloneStopsTheWatcherAndRefusesKeyUsesWithoutWaiting(t *testing.T) {
 	root := t.TempDir()
 	ir := New(Config{
-		KeyStore: keystore.NewAtomicFileKeyStoreForPaths(storepaths.NewPaths(root)),
+		KeyStore: keystore.NewFileKeyStore(),
 		KeyPaths: storepaths.NewPaths(root),
 	})
 	ir.SetUnlocked()

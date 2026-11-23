@@ -206,13 +206,6 @@ type KeyScanReport struct {
 	Warnings []KeyScanWarning
 }
 
-// KeyScanWarningProvider exposes recoverable warnings from the most recent key
-// scan. Signer application code uses this to audit security-relevant key
-// rejections without coupling key scanning to signer audit packages.
-type KeyScanWarningProvider interface {
-	GetScanWarnings() []KeyScanWarning
-}
-
 // ReadAndDecryptFile reads a file and opens it under the current term as the
 // object ctx names. Runtime key files must be encrypted; plaintext key
 // payloads belong in explicit import or migration paths, not normal signing

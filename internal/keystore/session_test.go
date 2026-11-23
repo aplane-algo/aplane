@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signing"
 	ed25519signing "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
-	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func init() {
@@ -250,7 +249,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	}
 
 	// Create FileKeyStore and set up cache and master key
-	fileStore := NewAtomicFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot))
+	fileStore := NewFileKeyStore()
 	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519", Category: keys.CategoryEd25519}
 	fileStore.setKeyringDirectlyForTest(masterKeyRing)
 

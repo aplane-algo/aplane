@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -165,4 +167,47 @@ func TestAReconcileALockOvertookAnswersLocked(t *testing.T) {
 	if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.State != signerruntime.SignerStateLocked.String() {
 		t.Fatalf("ReconcileStore() overtaken by a lock = %+v, want the locked answer", result)
 	}
+}
+
+// wireBuildWith wires the reload's own build, with before run ahead of each
+// build. fromPassphrase is set for a build with a keyring an unlock or a
+// passphrase change opened, rather than the keyring in service. An error
+// from before is the build's, failing as a build does after it has
+// authenticated the root: with the selection.
+func wireBuildWith(server *Signer, before func(fromPassphrase bool) error) {
+	ir := server.productRuntime()
+	opts := testProductBuildOptions(server)
+	hooks := server.productBuildHooks()
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		inService := false
+		_ = ir.KeyStore().WithKeyring(func(current *crypto.Keyring) error {
+			inService = current == kr
+			return nil
+		})
+		if err := before(!inService); err != nil {
+			selection, authErr := genstore.AuthenticateStoreRootSelection(ir.KeyPaths(), kr)
+			if authErr != nil {
+				return nil, err
+			}
+			return &productruntime.Loaded{Selection: &selection}, err
+		}
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{
+		Audit: hooks.ReloadAuditLog, NotifyKeysChanged: hooks.NotifyKeysChanged,
+		Info: hooks.Info, Warn: hooks.Warn, NodeFailClosed: hooks.NodeFailClosed,
+	})
+}
+
+// countBuilds wires the reload's own build and counts the builds: all of
+// them, and those with a keyring an unlock opened.
+func countBuilds(server *Signer) (all, fromPassphrase *atomic.Int32) {
+	all, fromPassphrase = &atomic.Int32{}, &atomic.Int32{}
+	wireBuildWith(server, func(passphrase bool) error {
+		all.Add(1)
+		if passphrase {
+			fromPassphrase.Add(1)
+		}
+		return nil
+	})
+	return all, fromPassphrase
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
@@ -155,14 +154,11 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 				ir.Lock()
 			}
 			if tc.load != nil {
-				opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
-				ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-					if passphrase != nil {
-						if err := tc.load(ir); err != nil {
-							return nil, err
-						}
+				wireBuildWith(server, func(fromPassphrase bool) error {
+					if fromPassphrase {
+						return tc.load(ir)
 					}
-					return signerstartup.NewReloadService(ir, opts, hooks, session).Reload(passphrase)
+					return nil
 				})
 			}
 			if tc.before != nil {
