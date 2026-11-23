@@ -44,6 +44,10 @@ const (
 	// RevokedRequestType is the global request the server sends before it
 	// closes a connection whose key was revoked, so the client can report why.
 	RevokedRequestType = "key-revoked@aplane"
+	// ConnectionLimitRequestType is the global request the server sends before
+	// it closes an authenticated connection refused for exceeding a connection
+	// limit, so the client can report why instead of seeing only EOF.
+	ConnectionLimitRequestType = "connection-limit@aplane"
 )
 
 // isClosedConnError returns true if the error is due to use of a closed connection
@@ -136,6 +140,29 @@ const (
 	// One remote address may hold only a share of the handshake slots, so a
 	// single host cannot keep every slot busy for the handshake timeout.
 	maxPendingSSHHandshakesPerHost = 8
+
+	// Authenticated connections are bounded both per enrolled key and across
+	// all enrolled keys, so an enrolled or compromised key cannot grow
+	// resident memory under mlockall() or exhaust file descriptors. A normal
+	// workstation runs one apshell session (or a few terminals alongside an
+	// SDK or cosigner client), so 8 per key leaves headroom for concurrent
+	// sessions while 64 total matches the handshake cap and the daemon's
+	// maxHTTPConnections.
+	maxAuthenticatedSSHConns       = 64
+	maxAuthenticatedSSHConnsPerKey = 8
+
+	// Open direct-tcpip channels are bounded per authenticated connection.
+	// This is a hard cap on concurrent in-flight HTTP requests (plus open
+	// idle channels) on one SSH connection: a 17th concurrent channel fails
+	// immediately with ssh.ResourceShortage ("too many open channels"), and
+	// clients do not currently queue for it. apshell and the Go, Python, and
+	// TypeScript SDKs each keep at most 2 idle HTTP/1.1 keep-alive channels
+	// per tunnel, and apshell / cosigned submission stay well below 16
+	// concurrent requests; 16 caps one connection at a quarter of the
+	// daemon's 64 HTTP slots (a single key with 8 connections can still open
+	// up to 128 channels total, bounded in memory/FDs and capped at 64
+	// concurrent HTTP handlers by the daemon).
+	maxDirectTCPIPChannelsPerConn = 16
 
 	// enroll connections are unauthenticated, so their footprint
 	// is bounded: a few concurrent connections, each of which must start
@@ -692,13 +719,18 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		}
 	}
 
-	// Track the connection for shutdown and revocation. The enrollment check
-	// is repeated here, under the same lock revocation uses to find
-	// connections, so a key revoked while its handshake was in flight is
-	// refused rather than registered after the revocation's close pass.
+	// Track the connection for shutdown, revocation, and authenticated
+	// connection limits. The enrollment check is repeated here, under the
+	// same lock revocation uses to find connections, so a key revoked while
+	// its handshake was in flight is refused rather than registered after
+	// the revocation's close pass.
 	s.sshConnsMu.Lock()
 	revoked := !isEnrollment && (info.key == nil || !s.isEnrolled(info.key))
-	if !revoked {
+	limit := authConnAdmitted
+	if !revoked && !isEnrollment {
+		limit = s.checkAuthenticatedConnLimitLocked(info.fingerprint)
+	}
+	if !revoked && limit == authConnAdmitted {
 		s.sshConns[sshConn] = info
 	}
 	delete(s.rawConns, netConn)
@@ -722,15 +754,24 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		if err := sshConn.Close(); err != nil && !isClosedConnError(err) {
 			fmt.Printf("Failed to close SSH connection: %v\n", err)
 		}
-		// Log the session disconnect.
-		fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
-		if connectedLogged && s.sessionCallback != nil {
-			s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil})
+		if connectedLogged {
+			// Log the session disconnect.
+			fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
+			if s.sessionCallback != nil {
+				s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil})
+			}
 		}
 	}()
 
 	if revoked {
+		fmt.Printf("[SSH] Refused revoked key from %s (key: %s)\n", remoteAddr, info.fingerprint)
 		_, _, _ = sshConn.SendRequest(RevokedRequestType, false, []byte("key revoked"))
+		return
+	}
+	if limit != authConnAdmitted {
+		reason := limit.reason()
+		fmt.Printf("[SSH] Refused authenticated connection from %s (key: %s): %s\n", remoteAddr, info.fingerprint, reason)
+		_, _, _ = sshConn.SendRequest(ConnectionLimitRequestType, false, []byte(reason))
 		return
 	}
 
@@ -775,8 +816,15 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		defer deadline.Stop()
 	}
 
-	// Handle channel requests
+	s.serveChannels(sshConn, info, isEnrollment, chans)
+}
+
+// serveChannels dispatches incoming SSH channels for an established
+// connection, enforcing per-connection channel caps for both enrollment and
+// authenticated API sessions.
+func (s *Server) serveChannels(sshConn *ssh.ServerConn, info sshConnInfo, isEnrollment bool, chans <-chan ssh.NewChannel) {
 	var enrollmentChannels atomic.Int32
+	var directChannels atomic.Int32
 	for newChannel := range chans {
 		if isEnrollment {
 			// Enrollment mode: handle session channels for exec. The
@@ -800,9 +848,20 @@ func (s *Server) handleConnection(netConn net.Conn) {
 
 		switch newChannel.ChannelType() {
 		case "direct-tcpip":
+			// Cap open forwarded API channels per connection before accepting
+			// or spawning a handler, so one connection cannot exhaust HTTP
+			// slots or resident memory under mlockall().
+			if directChannels.Load() >= maxDirectTCPIPChannelsPerConn {
+				if err := newChannel.Reject(ssh.ResourceShortage, "too many open channels"); err != nil && !isClosedConnError(err) {
+					fmt.Printf("Failed to reject SSH channel: %v\n", err)
+				}
+				continue
+			}
+			directChannels.Add(1)
 			s.activeConns.Add(1)
 			go func(ch ssh.NewChannel) {
 				defer s.activeConns.Done()
+				defer directChannels.Add(-1)
 				s.handleChannel(sshConn, info, ch)
 			}(newChannel)
 		default:
@@ -811,6 +870,50 @@ func (s *Server) handleConnection(netConn net.Conn) {
 			}
 		}
 	}
+}
+
+// authConnLimit classifies whether an authenticated SSH connection is admitted
+// or refused by a connection limit.
+type authConnLimit uint8
+
+const (
+	authConnAdmitted authConnLimit = iota
+	authConnLimitPerKey
+	authConnLimitTotal
+)
+
+func (l authConnLimit) reason() string {
+	switch l {
+	case authConnLimitPerKey:
+		return "per-key limit reached"
+	case authConnLimitTotal:
+		return "total authenticated connection limit reached"
+	default:
+		return ""
+	}
+}
+
+// checkAuthenticatedConnLimitLocked reports whether another authenticated
+// connection for fingerprint exceeds the per-key or total cap. The caller
+// holds sshConnsMu.
+func (s *Server) checkAuthenticatedConnLimitLocked(fingerprint string) authConnLimit {
+	total, forKey := 0, 0
+	for _, existing := range s.sshConns {
+		if existing.key == nil {
+			continue
+		}
+		total++
+		if existing.fingerprint == fingerprint {
+			forKey++
+		}
+	}
+	if forKey >= maxAuthenticatedSSHConnsPerKey {
+		return authConnLimitPerKey
+	}
+	if total >= maxAuthenticatedSSHConns {
+		return authConnLimitTotal
+	}
+	return authConnAdmitted
 }
 
 // handleGlobalRequests handles global SSH requests including keepalives.
@@ -994,9 +1097,9 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to record enrollment request\n", 1)
 		return true
 	}
-	fmt.Printf("[SSH] SSH key enrolled for %s (key: %s)\n", remoteAddr, fingerprint)
 
 	if s.enrollmentRequest == nil {
+		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): enrollment unavailable\n", remoteAddr, fingerprint)
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to record enrollment request\n", 1)
 		return true
 	}
@@ -1007,7 +1110,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v\n", remoteAddr, fingerprint, err)
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+quoteClientText(err.Error())+"\n", 1)
 	case pending:
-		fmt.Printf("[SSH] Enrollment request from %s is waiting for the operator (key: %s)\n", remoteAddr, fingerprint)
+		fmt.Printf("[SSH] Enrollment request recorded from %s; waiting for the operator (key: %s)\n", remoteAddr, fingerprint)
 		_ = s.respondEnrollment(sshConn, channel, "pending "+fingerprint+"\n", 0)
 	default:
 		fmt.Printf("[SSH] Enrollment request from %s: key already enrolled (key: %s)\n", remoteAddr, fingerprint)

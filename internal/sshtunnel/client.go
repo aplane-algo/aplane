@@ -126,6 +126,11 @@ type Client struct {
 // closed the connection because the client's key was revoked.
 const DisconnectReasonKeyRevoked = "key-revoked"
 
+// DisconnectReasonConnectionLimit is the disconnect reason recorded when the
+// server closed the connection because an authenticated connection limit was
+// reached.
+const DisconnectReasonConnectionLimit = "connection-limit"
+
 // forwardedAPIAddress is the destination named in every direct-tcpip channel
 // request. The server (see handleChannel) checks only that the address is
 // loopback and always dials its own REST listener, so the port here is
@@ -220,6 +225,13 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	// Connect to SSH server
 	addr := net.JoinHostPort(c.host, fmt.Sprint(c.sshPort))
 
+	// Clear any disconnect reason from a prior connection before dialing so a
+	// server notice sent immediately after the handshake (for example key
+	// revocation or a connection-limit refusal) cannot be overwritten here.
+	c.mu.Lock()
+	c.disconnectReason = ""
+	c.mu.Unlock()
+
 	sshClient, interceptDone, err := c.dialAndIntercept(ctx, "tcp", addr, config)
 	if err != nil {
 		return fmt.Errorf("SSH connection failed: %w", classifyHandshakeError(err))
@@ -229,7 +241,6 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	c.sshClient = sshClient
 	c.interceptDone = interceptDone
 	c.connected = true
-	c.disconnectReason = ""
 	// Recreate keepaliveStop in case this is a reconnection.
 	keepaliveStop := newKeepaliveStopSignal()
 	c.keepaliveStop = keepaliveStop
@@ -787,6 +798,27 @@ func logConnectionError(err error) {
 	logger().Warn("connection closed", "error", err)
 }
 
+// DisconnectReason returns the server-sent disconnect reason recorded for this
+// connection (such as DisconnectReasonKeyRevoked or
+// DisconnectReasonConnectionLimit), or "" if none was received.
+func (c *Client) DisconnectReason() string {
+	c.mu.Lock()
+	connected := c.connected
+	interceptDone := c.interceptDone
+	reason := c.disconnectReason
+	c.mu.Unlock()
+	if !connected && reason == "" && interceptDone != nil {
+		select {
+		case <-interceptDone:
+		case <-time.After(time.Second):
+		}
+		c.mu.Lock()
+		reason = c.disconnectReason
+		c.mu.Unlock()
+	}
+	return reason
+}
+
 // handleDisconnect is called when the connection dies
 func (c *Client) handleDisconnect() {
 	c.mu.Lock()
@@ -802,9 +834,12 @@ func (c *Client) handleDisconnect() {
 	if !wasConnected {
 		return
 	}
-	if reason == DisconnectReasonKeyRevoked {
+	switch reason {
+	case DisconnectReasonKeyRevoked:
 		logger().Warn("disconnected: this client's key was revoked by the signer")
-	} else {
+	case DisconnectReasonConnectionLimit:
+		logger().Warn("disconnected: signer connection limit reached")
+	default:
 		logger().Warn("connection closed by remote server")
 	}
 	if callback != nil {
@@ -813,8 +848,8 @@ func (c *Client) handleDisconnect() {
 }
 
 // dialAndIntercept connects to the SSH server and intercepts global requests
-// from the server (the revocation notice) before forwarding them to
-// ssh.NewClient. The returned channel closes once the interceptor has
+// from the server (revocation and connection-limit notices) before forwarding
+// them to ssh.NewClient. The returned channel closes once the interceptor has
 // drained the request stream, which the SSH mux closes when the connection
 // ends.
 func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, chan struct{}, error) {
@@ -829,9 +864,18 @@ func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, con
 	go func() {
 		defer close(done)
 		for req := range reqs {
-			if req.Type == RevokedRequestType {
+			switch req.Type {
+			case RevokedRequestType:
 				c.mu.Lock()
 				c.disconnectReason = DisconnectReasonKeyRevoked
+				c.mu.Unlock()
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				continue
+			case ConnectionLimitRequestType:
+				c.mu.Lock()
+				c.disconnectReason = DisconnectReasonConnectionLimit
 				c.mu.Unlock()
 				if req.WantReply {
 					_ = req.Reply(true, nil)

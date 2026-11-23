@@ -424,8 +424,30 @@ The SSH server allows at most 64 concurrent pending handshakes and closes
 excess arrivals; one remote address may hold at most 8 of them. Authentication
 has a 60-second socket deadline, cleared after successful authentication.
 Accepted sockets are tracked before authentication so shutdown also closes
-stalled handshakes. The limit applies to pending authentication, not
-established sessions.
+stalled handshakes.
+
+Established enrolled-client connections are capped separately: at most 8
+concurrent authenticated connections per enrolled key fingerprint and at most
+64 authenticated connections in total across all enrolled keys. Connections
+beyond either cap are closed after authentication without registering the
+session: the server logs the refusal and sends a `connection-limit@aplane`
+global request before closing so clients can report the reason instead of
+seeing only `EOF`. Enrollment connections have their own separate cap (at most
+8 concurrent `enroll` connections) so unauthenticated enrollment traffic cannot
+consume enrolled-client slots.
+
+Each authenticated SSH connection may keep at most 16 concurrent `direct-tcpip`
+API channels open. This is a hard limit on concurrent in-flight HTTP requests
+(plus open idle keep-alive channels) per connection: a 17th concurrent channel
+is rejected immediately with SSH `ResourceShortage` (`too many open channels`)
+before a channel handler or API handoff is started, with no server-side
+queueing, and the slot is freed when the channel closes. (`apshell` and the Go,
+Python, and TypeScript SDKs each pool at most 2 idle HTTP/1.1 keep-alive
+channels per tunnel, and `apshell` and cosigned submission stay well below 16
+concurrent requests; 16 holds a single connection to at most a quarter of the
+daemon's 64 HTTP connection slots, while one enrolled key with 8 connections
+may hold up to 128 channels across them, bounded in memory and file descriptors
+and capped at 64 concurrent HTTP handlers by the daemon.)
 
 Client TCP dialing and SSH authentication share one setup timeout (60 seconds
 by default). Setup cancellation closes the socket to interrupt blocked I/O.
