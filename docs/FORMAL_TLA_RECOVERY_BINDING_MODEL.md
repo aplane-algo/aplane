@@ -160,10 +160,17 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   `cacheGen` and checks that recovery refuses to serve from it.
 - `ReloadSucceed` lifts recovery, which in the code only a reconcile's
   publish does: a commit's build that succeeds in recovery (a restore or a
-  rollback begun there) publishes recovery's view and stays in recovery
-  until the reconcile that follows. The model over-approximates by letting
-  any successful reload leave recovery; every invariant it checks still
-  holds, and the code's path is one of the runs the model allows.
+  rollback run under recovery, with `direct_restore.go` sampling recovery
+  state inside the store mutation lock) publishes recovery's view and stays in
+  recovery until `daemon/admin_services.go` runs `exitRecoveryIfReconciled`
+  based on post-call state (`ir.IsRecovery()`), reporting `recovery_blocked`
+  if that rescan still leaves the signer in recovery and skipping the
+  non-explicit rescan under the lock if a concurrent unlock already promoted
+  out of recovery. The model over-approximates by letting any successful
+  reload leave recovery and does not model the separate post-restore/rollback
+  `exitRecoveryIfReconciled` rescan (a model-extension candidate); every
+  invariant it checks still holds, and the code's path is one of the runs the
+  model allows.
 - `CommitRoot` stands for policy apply, the ASA set, restore, and rollback,
   and also for a commit whose outcome is uncertain: the candidate is visible
   but not confirmed durable, or the root cannot be read back or matches

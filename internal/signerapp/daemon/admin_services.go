@@ -287,11 +287,22 @@ func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, pub
 
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	ir := s.Runtime
-	wasRecovery := ir.IsRecovery()
 	result := s.Service.RestoreBackup(req)
-	if result.Success && wasRecovery {
-		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
-			result.KeyCount = report.KeyCount
+	if result.Success && ir.IsRecovery() {
+		report, err := s.daemon.exitRecoveryIfReconciled(ir)
+		switch {
+		case err == nil:
+			if report != nil {
+				result.KeyCount = report.KeyCount
+			}
+		case ir.IsRecovery():
+			result.Success = false
+			result.Code = protocol.ResultCodeRecoveryBlocked
+			if result.GenerationID != "" {
+				result.Error = fmt.Sprintf("restore committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
+			} else {
+				result.Error = fmt.Sprintf("restore completed, but signer stayed in recovery mode: %v", err)
+			}
 		}
 	}
 	s.daemon.rearmWatcherAfterGenerationFlip(ir)
@@ -300,13 +311,20 @@ func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest)
 
 func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	ir := s.Runtime
-	wasRecovery := ir.IsRecovery()
 	result := s.Service.RollbackRestore(req)
-	if result.Success && wasRecovery {
-		// A rollback begun in recovery publishes recovery's view, with no
+	if result.Success && ir.IsRecovery() {
+		// A rollback that runs in recovery publishes recovery's view, with no
 		// keys; the reconcile that lifts recovery publishes them.
-		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
-			result.KeyCount = report.KeyCount
+		report, err := s.daemon.exitRecoveryIfReconciled(ir)
+		switch {
+		case err == nil:
+			if report != nil {
+				result.KeyCount = report.KeyCount
+			}
+		case ir.IsRecovery():
+			result.Success = false
+			result.Code = protocol.ResultCodeRecoveryBlocked
+			result.Error = fmt.Sprintf("rollback committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
 		}
 	}
 	s.daemon.rearmWatcherAfterGenerationFlip(ir)
@@ -377,6 +395,13 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 		if err := ir.RequireUnlockedOrRecovery(); err != nil {
 			return err
 		}
+		if !explicit && !ir.IsRecovery() {
+			// A concurrent unlock already reconciled and promoted the signer
+			// out of recovery before this rescan acquired the lock; do not run
+			// a non-explicit rescan on an unlocked signer.
+			report = &signertemplates.ReloadReport{KeyCount: ir.KeyCount()}
+			return nil
+		}
 		report, err = ir.Reconcile(func(kr *crypto.Keyring) error {
 			return s.reconcileGenerationsLocked(ir, kr)
 		}, explicit)
@@ -396,7 +421,7 @@ func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *productruntime.
 
 // exitRecoveryIfReconciled promotes recovery only after the generation store
 // reconciles and validates cleanly.
-func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime) (*signertemplates.ReloadReport, bool) {
+func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	// The rescan re-runs generational reconciliation and fail-closed
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
@@ -404,19 +429,19 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	switch {
 	case errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery):
 		logInfof("reconciliation rescan skipped: %v", err)
-		return nil, false
+		return nil, err
 	case errors.Is(err, productruntime.ErrReconcileStateChanged):
 		logInfof("reconciliation rescan overtaken by a lock: %v", err)
-		return nil, false
+		return nil, err
 	}
 	if err != nil {
 		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
-		return nil, false
+		return nil, err
 	}
 	if hub := s.signer.adminHub(); hub != nil {
 		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
 	}
-	return report, true
+	return report, nil
 }
 
 func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {

@@ -546,6 +546,17 @@ func (ir *Runtime) FinishStoreMaintenance(
 	republish bool,
 ) bool {
 	if ir.lockRuntime.FinishMaintenance(token.runtime, republish) {
+		// ReloadWithPassphrase ran while maintenance held the signer locked, so
+		// afterReload skipped the unlocked-only notifications. Deliver them now
+		// if the signer is still unlocked (a lock that raced right after
+		// FinishMaintenance broadcasts its own locked state).
+		if ir.IsUnlocked() {
+			effects := ir.reloadEffectsSnapshot()
+			if effects.NotifyKeysChanged != nil {
+				effects.NotifyKeysChanged(ir.KeyCount())
+			}
+			ir.WakeStageWork()
+		}
 		return true
 	}
 	ir.notifyLocked()

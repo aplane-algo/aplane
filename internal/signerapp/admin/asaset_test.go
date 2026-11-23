@@ -234,6 +234,107 @@ func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) 
 	requireReconciledInRecovery(t, ir, loads, reconciledIn, err)
 }
 
+// An ASA set commit whose durability is unknown or whose post-commit reload
+// fails must enter recovery before the store mutation lock is released (RB2):
+// until then the runtime may still serve the superseded generation, and a
+// follow-up change taking the lock would land on top of it.
+func TestASASetChangeEntersRecoveryBeforeReleasingTheLock(t *testing.T) {
+	t.Run("add with uncertain commit", func(t *testing.T) {
+		svc, ir, _ := setupASAAdmin(t)
+		looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
+		if !looked.Success {
+			t.Fatalf("LookupASA() = %+v", looked)
+		}
+		deps := &recordingMutationDeps{Deps: svc.Deps, ir: ir}
+		svc.Deps = deps
+		defer failIdentityDirSync(svc)()
+
+		result := svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
+		if result.Success || !result.CommitUncertain || result.Code != "asa_commit_uncertain" {
+			t.Fatalf("AddASA(uncertain) = %+v, want asa_commit_uncertain", result)
+		}
+		if !deps.recoveryAtRelease {
+			t.Fatal("runtime entered recovery only after the store mutation lock was released")
+		}
+		if !ir.IsRecovery() {
+			t.Fatal("runtime is not in recovery after an uncertain ASA commit")
+		}
+		stuck := currentGeneration(t, svc, ir)
+		again := svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
+		if again.Success || again.Code != protocol.ResultCodeRecoveryBlocked || again.CommitUncertain {
+			t.Fatalf("AddASA() in recovery = %+v, want recovery_blocked", again)
+		}
+		if after := currentGeneration(t, svc, ir); after != stuck {
+			t.Fatalf("add in recovery moved the generation %s -> %s", stuck, after)
+		}
+	})
+
+	t.Run("add with failed post-commit reload", func(t *testing.T) {
+		svc, ir, _ := setupASAAdmin(t)
+		looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
+		if !looked.Success {
+			t.Fatalf("LookupASA() = %+v", looked)
+		}
+		failBuild(ir, fmt.Errorf("build failed"))
+		deps := &recordingMutationDeps{Deps: svc.Deps, ir: ir}
+		svc.Deps = deps
+
+		result := svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
+		if result.Success || !result.CommitUncertain || result.Code != "asa_reload_failed" {
+			t.Fatalf("AddASA(reload failed) = %+v, want asa_reload_failed", result)
+		}
+		if result.GenerationID == "" || result.GenerationID != currentGeneration(t, svc, ir) {
+			t.Fatalf("reload failure lost its commit generation: %+v", result)
+		}
+		if !deps.recoveryAtRelease {
+			t.Fatal("runtime entered recovery only after the store mutation lock was released")
+		}
+		if !ir.IsRecovery() {
+			t.Fatal("runtime is not in recovery after a failed ASA post-commit reload")
+		}
+		stuck := currentGeneration(t, svc, ir)
+		again := svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
+		if again.Success || again.Code != protocol.ResultCodeRecoveryBlocked || again.CommitUncertain {
+			t.Fatalf("AddASA() in recovery = %+v, want recovery_blocked", again)
+		}
+		if after := currentGeneration(t, svc, ir); after != stuck {
+			t.Fatalf("add in recovery moved the generation %s -> %s", stuck, after)
+		}
+	})
+
+	t.Run("remove with failed post-commit reload", func(t *testing.T) {
+		svc, ir, _ := setupASAAdmin(t)
+		if added := confirmASA9(t, svc); !added.Success {
+			t.Fatalf("confirmASA9() = %+v", added)
+		}
+		failBuild(ir, fmt.Errorf("build failed"))
+		deps := &recordingMutationDeps{Deps: svc.Deps, ir: ir}
+		svc.Deps = deps
+
+		result := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
+		if result.Success || !result.CommitUncertain || result.Code != "asa_reload_failed" {
+			t.Fatalf("RemoveASA(reload failed) = %+v, want asa_reload_failed", result)
+		}
+		if result.GenerationID == "" || result.GenerationID != currentGeneration(t, svc, ir) {
+			t.Fatalf("reload failure lost its commit generation: %+v", result)
+		}
+		if !deps.recoveryAtRelease {
+			t.Fatal("runtime entered recovery only after the store mutation lock was released")
+		}
+		if !ir.IsRecovery() {
+			t.Fatal("runtime is not in recovery after a failed ASA removal reload")
+		}
+		stuck := currentGeneration(t, svc, ir)
+		again := svc.RemoveASA(adminproto.RemoveASARequest{Network: "private-dev", AssetID: 9})
+		if again.Success || again.Code != protocol.ResultCodeRecoveryBlocked || again.CommitUncertain {
+			t.Fatalf("RemoveASA() in recovery = %+v, want recovery_blocked", again)
+		}
+		if after := currentGeneration(t, svc, ir); after != stuck {
+			t.Fatalf("remove in recovery moved the generation %s -> %s", stuck, after)
+		}
+	})
+}
+
 func confirmASA9Again(t *testing.T, svc Service) adminproto.LookupASAResult {
 	t.Helper()
 	return svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})

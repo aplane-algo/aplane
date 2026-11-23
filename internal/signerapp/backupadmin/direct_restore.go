@@ -30,7 +30,6 @@ import (
 func (s Service) RestoreBackup(
 	req adminproto.RestoreBackupRequest,
 ) adminproto.RestoreBackupResult {
-	ir := s.Runtime
 	result := adminproto.RestoreBackupResult{OperationID: req.OperationID}
 	passphrase := req.ExportPassphrase
 	defer crypto.ZeroBytes(passphrase)
@@ -56,7 +55,6 @@ func (s Service) RestoreBackup(
 
 	run := &restoreRun{
 		s: s, req: req, result: &result, passphrase: passphrase, archivePath: archivePath,
-		wasRecovery: ir.IsRecovery(),
 	}
 	err = s.Deps.WithStoreMutation(run.mutate)
 	if err != nil {
@@ -93,7 +91,7 @@ type restoreRun struct {
 	passphrase  []byte
 	archivePath string
 	// wasRecovery is whether the identity was recovery-blocked when the
-	// restore began.
+	// restore acquired the store mutation lock.
 	wasRecovery bool
 	// archiveTried is set once the archive is read with the passphrase, and
 	// archiveAuthenticated once the passphrase is proven: only a failure
@@ -120,6 +118,7 @@ func (r *restoreRun) mutate() (restoreErr error) {
 	if err := ir.RequireUnlockedOrRecovery(); err != nil {
 		return err
 	}
+	r.wasRecovery = ir.IsRecovery()
 	prepareErr := ir.WithKeyring(r.loadAndCommit)
 	if prepareErr != nil {
 		if result.CommitUncertain {

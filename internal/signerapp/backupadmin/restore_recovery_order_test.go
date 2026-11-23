@@ -5,8 +5,10 @@ package backupadmin
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -209,4 +211,73 @@ func TestARefusalBeforeThePassphraseIsTriedDoesNotChargeTheRestoreLimiter(t *tes
 			t.Fatalf("RestoreBackup() with the keyring open again = %+v, want success", restored)
 		}
 	})
+}
+
+type blockingMutationDeps struct {
+	Deps
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (d *blockingMutationDeps) WithStoreMutation(fn func() error) error {
+	close(d.entered)
+	<-d.release
+	return d.Deps.WithStoreMutation(fn)
+}
+
+// An idempotent no-op restore that starts unlocked and enters recovery while
+// waiting for the store mutation lock must read recovery state under the lock
+// and still run FollowCommit(Committed) instead of skipping it via a stale
+// pre-lock wasRecovery=false reading.
+func TestIdempotentRestoreEnteringRecoveryWhileWaitingForLockFollowsCommit(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	var reloads atomic.Int64
+	ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+	archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+	service := directRestoreTestService(paths, ir)
+
+	// First restore commits the archive's credential so the second restore is
+	// an idempotent no-op (committedGeneration == "").
+	if first := service.RestoreBackup(adminproto.RestoreBackupRequest{
+		OperationID:      "seed-idempotent",
+		ArchivePath:      archivePath,
+		ExportPassphrase: []byte("export-passphrase"),
+	}); !first.Success {
+		t.Fatalf("seed RestoreBackup() = %+v", first)
+	}
+
+	// Make FollowCommit fail so skipping it (old stale wasRecovery=false)
+	// would wrongly return Success:true while running it returns recovery_blocked.
+	failBuild(ir)
+	deps := &blockingMutationDeps{
+		Deps:    service.Deps,
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	service.Deps = deps
+
+	var wg sync.WaitGroup
+	var result adminproto.RestoreBackupResult
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result = service.RestoreBackup(adminproto.RestoreBackupRequest{
+			OperationID:      "idempotent-recovery-race",
+			ArchivePath:      archivePath,
+			ExportPassphrase: []byte("export-passphrase"),
+		})
+	}()
+
+	select {
+	case <-deps.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("RestoreBackup did not reach WithStoreMutation")
+	}
+	ir.EnterRecovery(errors.New("simulated recovery before lock acquisition"))
+	close(deps.release)
+	wg.Wait()
+
+	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked {
+		t.Fatalf("idempotent RestoreBackup() in recovery with failing reload = %+v, want Success=false Code=%s", result, protocol.ResultCodeRecoveryBlocked)
+	}
 }

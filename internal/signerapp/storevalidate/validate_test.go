@@ -25,7 +25,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
+	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
 func TestRecoveryDestinationRefusesDamageOutsideSelectedCredential(t *testing.T) {
@@ -296,4 +298,101 @@ func TestTemplateRepairDestinationSkipsOnlyTheRepairedRecords(t *testing.T) {
 			t.Fatalf("CommitOnlyDamage() error = %v, want the stray %s", err, stray)
 		}
 	})
+}
+
+// Candidate (and therefore apstore verify and generation commits) must reject
+// a disabled YAML template whose stored file no longer matches its recorded
+// compatibility fingerprint.
+func TestCandidateRejectsDisabledTemplateWithMismatchedFingerprint(t *testing.T) {
+	clientreg.RegisterClient()
+	root := t.TempDir()
+	paths := storepaths.NewPaths(root)
+	passphrase := []byte("storevalidate-test-passphrase")
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+		ValidateCandidate: storevalidate.FirstGeneration,
+		DataDir:           root,
+		Paths:             paths,
+		Role:              noderole.RoleSigner,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active, kr, err := genstore.ResolveStoreRoot(paths, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kr.Zero()
+
+	const keyType = "test.disabled-verify.v1"
+	yamlV1 := []byte(`schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: disabled-verify
+version: 1
+display_name: "Disabled Verify"
+valid_rekey_target: false
+description: "Disabled fingerprint test"
+max_opcode_cost: 20000
+parameters: []
+runtime_args: []
+teal: |
+  #pragma version 8
+  int 1
+  return
+`)
+	yamlV2 := []byte(`schema_version: 1
+template_type: generic
+template_mode: generated
+publisher: test
+family: disabled-verify
+version: 1
+display_name: "Disabled Verify"
+valid_rekey_target: false
+description: "Disabled fingerprint test"
+max_opcode_cost: 20000
+parameters: []
+runtime_args: []
+teal: |
+  #pragma version 8
+  int 2
+  return
+`)
+	fpV1, err := generictemplate.SemanticFingerprint(yamlV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := templatestore.SaveTemplateActive(active, yamlV1, keyType, templatestore.TemplateTypeGeneric, kr); err != nil {
+		t.Fatal(err)
+	}
+	if err := keytypestate.PutActive(active, keytypestate.Record{
+		KeyType:     keyType,
+		Source:      keytypestate.SourceYAMLGeneric,
+		State:       keytypestate.StateDisabled,
+		Fingerprint: fpV1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := storevalidate.Options{
+		Paths: paths, Candidate: active, Keyring: kr,
+		ExpectedRole: noderole.RoleSigner, DataDir: root,
+		Config: &serverconfig.ServerConfig{},
+	}
+	if err := storevalidate.Candidate(opts); err != nil {
+		t.Fatalf("Candidate() with matching disabled template fingerprint error = %v", err)
+	}
+
+	// Replace the disabled template file with different valid YAML without
+	// updating the state record's fingerprint.
+	if _, err := templatestore.SaveTemplateActive(active, yamlV2, keyType, templatestore.TemplateTypeGeneric, kr); err != nil {
+		t.Fatal(err)
+	}
+	var defectErr *storevalidate.TemplateContentDefectError
+	err = storevalidate.Candidate(opts)
+	if !errors.As(err, &defectErr) {
+		t.Fatalf("Candidate() error = %v, want *TemplateContentDefectError", err)
+	}
+	if filepath.Base(defectErr.Path) != keyType+".template" || !strings.Contains(defectErr.Defect, "fingerprint") {
+		t.Fatalf("TemplateContentDefectError = %+v, want fingerprint defect on %s.template", defectErr, keyType)
+	}
 }

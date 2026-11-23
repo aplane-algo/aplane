@@ -327,3 +327,67 @@ func TestRegistrationReportRecordDefects(t *testing.T) {
 		t.Fatalf("ContentDefectsExcept() = %+v, want %+v", got, want)
 	}
 }
+
+// A disabled YAML template is never registered, but its encrypted file must
+// still match its recorded compatibility fingerprint byte for byte. Any
+// mismatch is reported as a NamespaceDefect so unlock, reload, Candidate, and
+// apstore verify all fail closed.
+func TestReloadRequiresTheRecordedFingerprintForDisabledTemplates(t *testing.T) {
+	cases := map[string]bool{
+		"matching":            true,
+		"nothing recorded":    true,
+		"mismatching":         false,
+		"unversioned":         false,
+		"version 0":           false,
+		"noncanonical prefix": false,
+		"cross-version":       false,
+		"malformed hash":      false,
+	}
+	for index, recordedName := range recordedFingerprintNames {
+		wantAccepted, ok := cases[recordedName]
+		if !ok {
+			t.Fatalf("no expectation for %q", recordedName)
+		}
+		t.Run(recordedName, func(t *testing.T) {
+			family := "disabled-fp-" + string(rune('a'+index))
+			data := managerGenericTemplateYAML(family)
+			keyType := "test." + family + ".v1"
+			live, err := generictemplate.SemanticFingerprint(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { lsigprovider.Unregister(keyType) })
+			paths := mintedPathsForReloadTest(t)
+			masterKey := testTemplateMasterKey()
+			saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, data, masterKey)
+			if err := keytypestate.Put(paths, keytypestate.Record{
+				KeyType:     keyType,
+				Source:      keytypestate.SourceYAMLGeneric,
+				State:       keytypestate.StateDisabled,
+				Fingerprint: recordedFingerprint(recordedName, live),
+			}); err != nil {
+				t.Fatalf("keytypestate.Put() error = %v", err)
+			}
+
+			report, defects := reloadTemplatesForTest(t, paths)
+			if lsigprovider.Get(keyType) != nil {
+				t.Fatalf("disabled template %s was registered", keyType)
+			}
+			if wantAccepted {
+				if len(defects) != 0 || len(report.NamespaceDefects) != 0 {
+					t.Fatalf("accepted disabled template reported defects=%v namespace=%+v", defects, report.NamespaceDefects)
+				}
+				return
+			}
+			if len(report.NamespaceDefects) != 1 || report.NamespaceDefects[0].Entry != keyType+".template" {
+				t.Fatalf("NamespaceDefects = %+v, want one defect for %s.template", report.NamespaceDefects, keyType)
+			}
+			if !strings.Contains(report.NamespaceDefects[0].Text, "fingerprint") {
+				t.Fatalf("NamespaceDefect text = %q, want fingerprint mismatch description", report.NamespaceDefects[0].Text)
+			}
+			if len(defects) != 1 {
+				t.Fatalf("ContentDefectKeyTypes() = %v, want 1 defect", defects)
+			}
+		})
+	}
+}

@@ -273,7 +273,7 @@ func TestARecoveryExitRescanKeepsALockThatCameFirst(t *testing.T) {
 	if ir.GetState() != signerruntime.SignerStateLocked {
 		t.Fatalf("state = %v after Lock, want locked", ir.GetState())
 	}
-	if _, ok := server.adminServices().exitRecoveryIfReconciled(ir); ok {
+	if _, err := server.adminServices().exitRecoveryIfReconciled(ir); err == nil {
 		t.Fatal("the rescan lifted recovery on a locked signer")
 	}
 	if ir.GetState() != signerruntime.SignerStateLocked {
