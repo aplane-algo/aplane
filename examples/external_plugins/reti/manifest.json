@@ -78,6 +78,10 @@
     }
   ],
   "networks": ["testnet", "mainnet", "betanet", "localnet", "sandbox"],
+  "env": [
+    "RETI_APP_ID",
+    "RETI_NFD_API_URL"
+  ],
   "timeout": 120,
   "manifest_format": "2.0"
 }

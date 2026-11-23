@@ -60,17 +60,23 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 		t.Setenv(name, "")
 		_ = os.Unsetenv(name)
 	}
-	// An operator's own APSHELL_ALGOD_TOKEN, a setting of the operator's own,
-	// and a secret-shaped name.
+	// An operator's own APSHELL_ALGOD_TOKEN, a manifest-declared setting, an
+	// undeclared host variable, and a secret-shaped name.
 	t.Setenv("APSHELL_ALGOD_TOKEN", "operator-token")
 	t.Setenv("APLANE_ENV_PROBE_SETTING", "kept")
+	t.Setenv("APLANE_ENV_PROBE_UNDECLARED", "stripped-undeclared")
 	t.Setenv("APLANE_ENV_PROBE_TOKEN", "stripped")
 
 	m := NewManagerWithDataDir(filepath.Join(base, "data"))
 	m.SetConfig("localnet", "http://localhost:4001", "config-token")
 	m.SetCachedPluginsForTest([]*discovery.Plugin{{
-		Dir:      pluginDir,
-		Manifest: &manifest.Manifest{Name: "env-probe", Executable: "run.sh", Timeout: 10},
+		Dir: pluginDir,
+		Manifest: &manifest.Manifest{
+			Name:       "env-probe",
+			Executable: "run.sh",
+			Env:        []string{"APLANE_ENV_PROBE_SETTING", "APLANE_ENV_PROBE_TOKEN"},
+			Timeout:    10,
+		},
 	}})
 	if _, err := m.StartPlugin("env-probe"); err != nil {
 		t.Fatalf("StartPlugin() error = %v", err)
@@ -92,6 +98,9 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 	}
 	if got := env["APLANE_ENV_PROBE_SETTING"]; got != "kept" {
 		t.Errorf("plugin env APLANE_ENV_PROBE_SETTING = %q, want the operator's value", got)
+	}
+	if got, ok := env["APLANE_ENV_PROBE_UNDECLARED"]; ok {
+		t.Errorf("plugin env APLANE_ENV_PROBE_UNDECLARED = %q, want it stripped", got)
 	}
 	if got, ok := env["APLANE_ENV_PROBE_TOKEN"]; ok {
 		t.Errorf("plugin env APLANE_ENV_PROBE_TOKEN = %q, want it stripped", got)

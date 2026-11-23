@@ -40,6 +40,7 @@ type Manifest struct {
 	// Capabilities and permissions
 	Commands []Command `json:"commands"`           // Executable command interface
 	Networks []string  `json:"networks,omitempty"` // Network context tokens
+	Env      []string  `json:"env,omitempty"`      // Host environment variable names the plugin reads
 
 	// Resource limits
 	Timeout int `json:"timeout,omitempty"` // seconds, default 30
@@ -126,6 +127,10 @@ func (m *Manifest) Validate() error {
 		}
 	}
 
+	if err := validateEnvNames(m.Env); err != nil {
+		return err
+	}
+
 	// Set defaults
 	if m.Timeout < 0 {
 		return fmt.Errorf("timeout must be non-negative")
@@ -145,6 +150,38 @@ func (m *Manifest) normalizeManifestFormat() error {
 		return fmt.Errorf("unsupported manifest_format %q", m.ManifestFormat)
 	}
 	return nil
+}
+
+func validateEnvNames(names []string) error {
+	seen := make(map[string]bool, len(names))
+	for i, name := range names {
+		if !isValidEnvName(name) {
+			return fmt.Errorf("env[%d]: invalid environment variable name %q", i, name)
+		}
+		if seen[name] {
+			return fmt.Errorf("env[%d]: duplicate environment variable name %q", i, name)
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+func isValidEnvName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		letter := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'
+		digit := c >= '0' && c <= '9'
+		if i == 0 && !letter {
+			return false
+		}
+		if !letter && !digit {
+			return false
+		}
+	}
+	return true
 }
 
 // GetExecutablePath returns the full path to the plugin executable

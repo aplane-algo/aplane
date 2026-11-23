@@ -163,6 +163,7 @@ This file is the entry point for any external plugin.
 | `args` | No | `[]` | Command-line arguments to pass to the executable |
 | `commands` | Yes | - | Array of commands the plugin provides (for CLI and tab completion); at least one is required |
 | `networks` | No | all | Networks the plugin supports (empty = all networks) |
+| `env` | No | `[]` | Host environment variable names the plugin reads as configuration (still subject to credential filtering) |
 | `timeout` | No | 30 | Execution timeout in seconds |
 | `manifest_format` | No | "2.0" | Plugin manifest schema format; only `2.0` is accepted |
 
@@ -1306,6 +1307,11 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 - Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
 - `/tmp`, `/private/tmp`, and `/var/folders` (read-write) - temporary files
 - File metadata (stat) on any path; file contents stay behind the allowlist
+- Allowlisted Mach lookup services required by Go/Node.js DNS, TLS, and runtime
+  startup (`mDNSResponder`, `dnssd.service`, `opendirectoryd.libinfo`,
+  `SecurityServer`, `trustd.agent`, `ocspd`, `configd`, `coreservicesd`,
+  `dirhelper`, `system.logger`, `system.notification_center`); wildcard
+  `mach-lookup` and `mach-register` are denied
 - Network - enabled for all external plugins for algod, KMD, or indexer API calls
 
 **What plugins CANNOT access:**
@@ -1318,22 +1324,31 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 
 **Environment filtering:**
 
-Plugins start from the host environment (`os.Environ()`) plus
-`APSHELL_PLUGIN_STATE_DIR`. The sandbox then removes:
+Plugins start from an explicit allowlist rather than inheriting the host
+environment. Only these variables pass from the host into the sandbox:
+- Base runtime variables: `HOME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`, `TZ`,
+  `TMPDIR`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS`,
+  `APSHELL_PLUGIN_STATE_DIR`, and `PATH` (rewritten to keep only entries under
+  `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and `/sbin/`)
+- Additional variable names explicitly declared in the plugin manifest's `env`
+  array
+
+Even when a variable is declared in `env`, host credential names are always
+refused:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
-- `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
+- `DATABASE_URL`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`
 - `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`
 - any variable whose name ends (case-insensitively) in `_TOKEN`, `_SECRET`,
-  `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, or
-  `_SEED` — so `APSIGNER_PASSPHRASE` and test mnemonics never reach a plugin
+  `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, `_SEED`,
+  or `_PROXY` (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `APSIGNER_PASSPHRASE`,
+  test mnemonics)
 
-`APSHELL_*` names follow the same rules as any variable. The two LocalNet
-overrides `APLANE_LOCALNET_TOKEN` and `APLANE_LOCALNET_WALLET_PASSWORD` are
-exempt only for the plugin whose manifest name is `algokit-localnet`; every
+The two LocalNet overrides `APLANE_LOCALNET_TOKEN` and
+`APLANE_LOCALNET_WALLET_PASSWORD` are exempt only for the plugin whose manifest
+name is `algokit-localnet` (which declares them in its manifest `env`); every
 other plugin has them stripped, since all plugins run with network access.
-`PATH` is rewritten to keep only entries under `/usr/`, `/bin/`, `/lib/`,
-`/lib64/`, and `/sbin/`. All other host environment variables are inherited
-unchanged.
+Undeclared host variables (including `DATABASE_URL`, proxy credentials, and
+arbitrary shell environment variables) never reach a plugin.
 
 **Linux Sandbox Details (bubblewrap):**
 

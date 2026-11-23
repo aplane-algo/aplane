@@ -40,6 +40,13 @@
     }
   ],
   "networks": ["localnet"],
+  "env": [
+    "APLANE_LOCALNET_ALGOD_URL",
+    "APLANE_LOCALNET_KMD_URL",
+    "APLANE_LOCALNET_TOKEN",
+    "APLANE_LOCALNET_WALLET",
+    "APLANE_LOCALNET_WALLET_PASSWORD"
+  ],
   "timeout": 60,
   "manifest_format": "2.0"
 }

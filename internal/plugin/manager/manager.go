@@ -349,6 +349,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 		ExecPath:   execPath,
 		Args:       plugin.Manifest.Args,
 		Env:        pluginEnv(os.Environ(), stateDir),
+		AllowedEnv: plugin.Manifest.Env,
 	}
 
 	cmd, sandboxName, err := sandbox.BuildCommand(sandboxCfg)
