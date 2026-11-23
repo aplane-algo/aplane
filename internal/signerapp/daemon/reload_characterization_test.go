@@ -23,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 )
 
@@ -39,31 +38,12 @@ import (
 type reloadFault struct {
 	name  string
 	plant func(t *testing.T, server *Signer)
-	// atScan plants the fault when the reload reaches its key scan, after it
-	// has published the policy and the source tokens, not when it begins.
+	// atScan plants the fault when the build reaches its key scan, after it
+	// has verified the policy and read the source tokens, not when it
+	// begins.
 	atScan bool
-	// scanErr, when set, is what the key scan returns in place of scanning,
-	// with the store bound to the root's selection as a scan that fails
-	// leaves it.
+	// scanErr, when set, is what the key scan returns in place of scanning.
 	scanErr error
-}
-
-// plantAtScan is the keystore a reload scans, with a fault planted first.
-type plantAtScan struct {
-	*keystore.FileKeyStore
-	plant   func()
-	scanErr error
-}
-
-func (k plantAtScan) Scan() error {
-	k.plant()
-	if k.scanErr == nil {
-		return k.FileKeyStore.Scan()
-	}
-	if err := k.BindStoreRootSelection(); err != nil {
-		return err
-	}
-	return fmt.Errorf("failed to scan keys directory: %w", k.scanErr)
 }
 
 // everyGeneration calls fn with each generation directory's paths. A fault in
@@ -140,27 +120,15 @@ var reloadFaults = []reloadFault{
 	}},
 }
 
-// plantBeforeReload plants fault when the next reload begins, and runs the
-// reload as wired.
+// plantBeforeReload plants fault when the next reload's build begins, and
+// runs the build as wired. A fault at the scan fails the build where its scan
+// stands: everything before it is built from the store as it was, and then
+// the scan runs on the planted fault, or answers with the injected error.
 func plantBeforeReload(t *testing.T, server *Signer, fault reloadFault) {
 	t.Helper()
 	ir := server.productRuntime()
 	opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
 	var once sync.Once
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		svc := signerstartup.NewReloadService(ir, opts, hooks, session)
-		plant := func() { once.Do(func() { fault.plant(t, server) }) }
-		if fault.atScan {
-			svc.KeyStore = plantAtScan{FileKeyStore: ir.KeyStore(), plant: plant, scanErr: fault.scanErr}
-		} else {
-			plant()
-		}
-		return svc.Reload(passphrase)
-	})
-	// The callers that build before they publish meet the same faults. A
-	// fault at the scan fails the build where its scan stands: everything
-	// before it is built from the store as it was, and then the scan runs
-	// on the planted fault, or answers with the injected error.
 	effects := productruntime.ReloadEffects{
 		Audit: hooks.ReloadAuditLog, NotifyKeysChanged: hooks.NotifyKeysChanged,
 		Info: hooks.Info, Warn: hooks.Warn, NodeFailClosed: hooks.NodeFailClosed,
@@ -494,8 +462,11 @@ var reloadCallers = []reloadCaller{
 // afterAFailedReload is, for each caller and each fault, the caller's answer and
 // the view the signer is left serving (servedView.describe).
 //
-// Every reload but an unlock's builds before it publishes, and follows one
-// failure rule. A store-root commit's and the reconcile's end every failure
+// Every reload builds before it publishes, and follows one failure rule. An
+// unlock, the startup unlock and a passphrase change build with a keyring
+// opened from the passphrase and install nothing when the build fails: the
+// policy their build verified is not published, the keyring is zeroed, and a
+// content defect enters recovery's view, which holds the verified policy. A store-root commit's and the reconcile's end every failure
 // in recovery's own view: no keys, and the policy their build verified, or
 // none when it failed before verifying one. The watcher's and an in-place
 // write's keep the view in service, policy included, for a failure that is
@@ -507,7 +478,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"root":      "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
 		"policy":    "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "unlock_failed -> locked keyring=closed generation=none policy=replaced keys=0",
+		"scan":      "unlock_failed -> locked keyring=closed generation=none policy=kept keys=0",
 		"collision": "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
@@ -515,7 +486,7 @@ var afterAFailedReload = map[string]map[string]string{
 		"root":      "unlock_failed -> recovery keyring=open generation=bound policy=kept keys=0",
 		"policy":    "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=0",
 		"keytype":   "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=replaced keys=0",
+		"scan":      "unlock_failed -> recovery keyring=open generation=selected policy=kept keys=0",
 		"collision": "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "recovery_blocked -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
@@ -523,17 +494,17 @@ var afterAFailedReload = map[string]map[string]string{
 		"root":      "started=false -> locked keyring=closed generation=none policy=kept keys=0",
 		"policy":    "started=false -> locked keyring=closed generation=none policy=kept keys=0",
 		"keytype":   "started=true -> recovery keyring=open generation=selected policy=replaced keys=0",
-		"scan":      "started=false -> locked keyring=closed generation=none policy=replaced keys=0",
+		"scan":      "started=false -> locked keyring=closed generation=none policy=kept keys=0",
 		"collision": "started=true -> recovery keyring=open generation=selected policy=replaced keys=0", // an address collision is a content defect: recovery
 		"stray":     "started=true -> recovery keyring=open generation=selected policy=replaced keys=0",
 	},
 	"passphrase change": {
 		"root":      "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
 		"policy":    "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
-		"keytype":   "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=replaced keys=0",
-		"scan":      "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=replaced keys=0",
-		"collision": "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=replaced keys=0",
-		"stray":     "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=replaced keys=0",
+		"keytype":   "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
+		"scan":      "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
+		"collision": "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
+		"stray":     "success=false code=passphrase_change_failed committed=true -> locked keyring=closed generation=none policy=kept keys=0",
 	},
 	"policy apply": {
 		"root":      "success=false code=policy_reload_failed uncertain=true -> recovery keyring=open generation=none policy=none keys=0",

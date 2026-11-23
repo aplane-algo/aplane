@@ -1880,11 +1880,11 @@ The relevant order is:
 9. activate the key session,
 10. emit audit and IPC notifications.
 
-`productruntime.Runtime.reloadLocked` runs this through the function wired by
-`startup.WireReloadFunc`, which is `templates.ReloadService.Reload`.
-
-A reload after a store-root commit, and a reconcile's, builds the whole view
-before it installs any of it (`productruntime.Runtime.reloadView`).
+Every reload builds the whole view before it installs any of it: a reload
+with the keyring in service (`productruntime.Runtime.reloadView`), and an
+unlock's or a passphrase change's, with a keyring opened from the
+passphrase (`buildWithPassphrase`, then `publishUnlock`, which installs that
+keyring too).
 `startup.Build` reads the store root once and runs steps 2 to 7 without
 changing anything live: the templates are prepared and checked, and none is
 registered. The publish then installs the result under the passphrase lock:
@@ -1922,20 +1922,25 @@ deletion, and template administration) build and publish the same way
 the view for a transient failure, and enter recovery for a content defect or
 a root that no longer authenticates. Their callers answer `recovery_blocked`
 or `reload_failed` from the reload's error (`ErrEnteredRecovery`), not from
-the state. An unlock's reload still runs the order above.
+the state.
 
-An unlock runs this order only when the signer is not already unlocked. A
-reload with the passphrase replaces the keyring at step 1 and the policy,
-source token index and key indexes after it, and one that fails validation
-publishes an empty key snapshot, so an unlock request on an unlocked signer
-does not reload: it verifies the passphrase and answers with the session's
-key count, and the session in service keeps its keyring, policy, key indexes
-and source token index. A reload with the passphrase that fails closes the
-keyring it opened only when none was open before, as in an unlock of a locked
-signer. An unlock begun in recovery finds recovery's keyring open; its reload
-replaces it with one opened from the same store root, and a failure leaves
-that one, with the generation binding and the source token index, so the
-reconcile, restore and rollback recovery needs still run. An unlock request
+An unlock builds only when the signer is not already unlocked: its install
+would replace the keyring, the policy, the source token index and the key
+indexes, so an unlock request on an unlocked signer verifies the passphrase
+and answers with the session's key count, and the session in service keeps
+all of them. An unlock of a locked signer, or one begun in recovery, builds
+with a keyring opened from the passphrase and installs it, then fences. Its
+build follows the failure rule for a signer not unlocked: a content defect
+enters recovery's view, with the keyring the build opened for an unlock begun
+locked and recovery's own for one begun in recovery; a role conflict fails
+the node closed; any other failure installs nothing and zeroes the keyring
+the build opened, so an unlock begun locked leaves the signer locked with no
+keyring, and one begun in recovery leaves recovery its keyring and binding
+for the reconcile, restore and rollback it needs. A reconcile that fails
+enters recovery's view of what the build found. A passphrase change builds
+with the new passphrase under store maintenance and installs before the
+maintenance ends; a build that fails installs nothing and leaves the signer
+locked. An unlock request
 holds the store mutation lock from its state read to its publish, as
 watcher-driven reloads and admin mutations do, so unlock requests run one at
 a time and no store change lands inside one; the watcher starts after the
@@ -1950,9 +1955,8 @@ Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Any malformed, misnamed, wrong-class,
 undecryptable, unsupported, or unexpected entry in `keys/`, and any
 template/key-type content defect, fails reload with a generation-validation
-error: the runtime publishes an empty snapshot and enters recovery with signing
-blocked, whichever reload found it. An unlock enters it through its recovery
-unlock. A reload without the passphrase (the watcher's, an in-place write's
+error: the runtime enters recovery with signing blocked, with recovery's
+view, which holds no keys, whichever reload found it. A reload without the passphrase (the watcher's, an in-place write's
 such as key generation or deletion, a template administration's, a
 reconcile's, or one after a store-root commit) enters it before it returns,
 under the store mutation lock its caller holds (`productruntime.Runtime.Reload`),
@@ -1965,9 +1969,8 @@ directory that cannot be read, leaves the runtime state of the watcher's and
 an in-place write's reload as it was, and the caller reports it; a caller
 after a store-root commit enters recovery on any failure. Two key files in
 `keys/` that resolve to one signing address (`keys.ErrAddressCollision`) are
-a content defect too: the reload publishes an empty snapshot, and a reload
-without the passphrase enters recovery for it as for a validation failure,
-and so does an unlock (`productruntime.IsContentDefect`). Entries
+a content defect too: every reload enters recovery for it as for a
+validation failure, an unlock's included (`productruntime.IsContentDefect`). Entries
 are not dropped from an otherwise published snapshot. A
 source token file that cannot be read, opened or decoded as its selector's,
 and an entry of `source_tokens/` that is not a token file, are damage of the

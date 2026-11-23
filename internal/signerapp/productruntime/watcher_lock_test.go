@@ -9,8 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/keystore"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/crypto"
 )
 
 // waitSignallingLock is a store mutation lock that reports each Lock call
@@ -36,12 +35,10 @@ func (l *waitSignallingLock) Lock() {
 func TestTheWatcherChecksTheStateUnderTheStoreMutationLock(t *testing.T) {
 	ir, _, _, _ := unlockedRuntimeForTest(t)
 	var reloads atomic.Int32
-	ir.SetReloadFunc(func(passphrase []byte, _ *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		if passphrase == nil {
-			reloads.Add(1)
-		}
-		return &signertemplates.ReloadReport{}, nil
-	})
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		reloads.Add(1)
+		return selectionBuild(ir.KeyPaths(), kr)
+	}, ReloadEffects{})
 	lock := &waitSignallingLock{waiting: make(chan struct{}, 1)}
 	ir.SetReloadMutationLock(func() sync.Locker { return lock })
 	var onChange func() error

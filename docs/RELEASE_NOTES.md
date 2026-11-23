@@ -7,6 +7,29 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Unlock, startup and a passphrase change build first and publish last
+
+- **An unlock builds the whole view with a keyring opened from the
+  passphrase, installs it, keyring included, and then fences** with the
+  reading it took at its start. A build that fails installs nothing: an
+  unlock begun locked leaves the signer locked with no keyring and registers
+  no template, and one begun in recovery leaves recovery its own keyring and
+  binding. The keyring the failed build opened is zeroed.
+- **A content defect enters recovery's view**, bound to what the build found
+  the root selecting and showing the policy it verified, with the keyring
+  the build opened for an unlock begun locked. A reconcile that fails enters
+  recovery's view of what the build found. A role conflict fails the node
+  closed and the unlock fails.
+- **A failed unlock no longer publishes the policy it verified.** The old
+  reload published the new policy before it failed; a locked signer now
+  keeps the policy it had, and recovery shows the one its build verified.
+- **A passphrase change builds with the new passphrase under store
+  maintenance and installs before the maintenance ends.** A build that fails
+  installs nothing and leaves the signer locked; the answer still reports
+  the root as committed.
+- **The old reload is gone**: `templates.ReloadService`, its hooks and the
+  runtime's reload function. Every reload builds and then publishes.
+
 ## Key, template and watcher reloads build first and publish last too
 
 - **Key generation, import and deletion, every template operation and the

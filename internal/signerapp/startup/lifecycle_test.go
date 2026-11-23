@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -464,26 +465,38 @@ func TestShutdownSkipsTeardownForADeadlineEvenWithErrStillRunning(t *testing.T) 
 }
 
 // The stop is recorded before the keyring is zeroed, which takes locks
-// without a bound: here a reload with a passphrase, an unlock's, holds the
-// passphrase lock the zeroing needs, and the record is already written while
-// the zeroing waits. The
-// record was once written only after the zeroing returned, so a key
-// operation stalled inside one of those locks left no record at all.
+// without a bound: here a reload on the keyring in service holds the
+// passphrase lock the zeroing needs while it builds, and the record is
+// already written while the zeroing waits. The record was once written only
+// after the zeroing returned, so a key operation stalled inside one of those
+// locks left no record at all.
 func TestShutdownRecordsTheStopBeforeZeroing(t *testing.T) {
 	t.Parallel()
 
-	ir := newLifecycleTestRuntime(t)
+	paths := storepaths.NewPaths(t.TempDir())
+	if _, err := storeinit.Initialize([]byte("lifecycle-passphrase"), storeinit.Options{
+		ValidateCandidate: func(storeinit.FirstGenerationCandidate) error { return nil },
+		DataDir:           paths.Root(),
+		Paths:             paths,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ir := productruntime.New(productruntime.Config{KeyStore: keystore.NewAtomicFileKeyStoreForPaths(paths), KeyPaths: paths})
+	if err := ir.KeyStore().Unlock([]byte("lifecycle-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	ir.SetUnlocked()
 	reloading := make(chan struct{})
 	releaseReload := make(chan struct{})
-	ir.SetReloadFunc(func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+	ir.SetBuildFunc(func(*crypto.Keyring) (*productruntime.Loaded, error) {
 		close(reloading)
 		<-releaseReload
-		return nil, nil
-	})
+		return nil, errors.New("released")
+	}, productruntime.ReloadEffects{})
 	reloaded := make(chan struct{})
 	go func() {
 		defer close(reloaded)
-		_, _ = ir.ReloadWithPassphrase([]byte("held"))
+		_, _ = ir.Reload()
 	}()
 	<-reloading
 	var releaseOnce sync.Once

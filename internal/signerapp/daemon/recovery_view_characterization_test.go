@@ -21,8 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
 // These tests record what a signer in recovery shows, and what a lock that
@@ -258,12 +256,6 @@ func TestAReloadAfterALocksCleanupPublishesNothing(t *testing.T) {
 // countReloads counts the reloads, with a passphrase or without, and runs
 // each as wired.
 func countReloads(server *Signer) *atomic.Int32 {
-	ir := server.productRuntime()
-	opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
-	loads := &atomic.Int32{}
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		loads.Add(1)
-		return signerstartup.NewReloadService(ir, opts, hooks, session).Reload(passphrase)
-	})
-	return loads
+	all, _ := countBuilds(server)
+	return all
 }

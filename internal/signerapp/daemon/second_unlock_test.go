@@ -16,11 +16,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -169,38 +166,15 @@ func TestATokenChangeBesideASecondUnlockStands(t *testing.T) {
 				}
 			}
 
-			opts, hooks := testProductBuildOptions(server), server.productBuildHooks()
-			changed := false
-			ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-				reload := signerstartup.NewReloadService(ir, opts, hooks, session)
-				if passphrase == nil || changed {
-					return reload.Reload(passphrase)
-				}
-				var read *sourcetokens.Index
-				if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-					active, err := ir.ActivePaths()
-					if err != nil {
-						return err
-					}
-					read, err = sourcetokens.LoadIndex(active, ir.NodeRole(), kr)
-					return err
-				}); err != nil {
-					return nil, err
-				}
-				change()
-				changed = true
-				report, err := reload.Reload(passphrase)
-				ir.PublishSourceTokens(read)
-				return report, err
-			})
-
+			_, loads := countBuilds(server)
 			if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
 				t.Fatalf("second UnlockIdentity() failed: %s", errMsg)
 			}
-			if !changed {
-				// The unlock loaded nothing, so the change lands after it.
-				change()
+			if loads.Load() != 0 {
+				t.Fatalf("the second unlock loaded %d time(s), want none", loads.Load())
 			}
+			// The unlock loaded nothing, so the change lands after it.
+			change()
 			requireTokenFilesHold(t, server, policy.DefaultKey, tc.after)
 			requireServedToken(t, server, policy.DefaultKey, tc.after)
 			if _, err := ir.FindKeyFile(key); err != nil {

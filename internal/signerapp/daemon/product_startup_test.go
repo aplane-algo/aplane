@@ -583,8 +583,9 @@ func TestGenerationDamagePublishesTheVerifiedPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ir.ReloadWithPassphrase(passphrase); !signertemplates.IsGenerationValidationErr(err) {
-				t.Fatalf("ReloadWithPassphrase() error = %v, want a generation validation failure", err)
+			outcome, err := ir.Unlock(passphrase, func(*crypto.Keyring) error { return nil }, nil)
+			if err != nil || !outcome.Recovery || !signertemplates.IsGenerationValidationErr(outcome.Cause) {
+				t.Fatalf("Unlock() = %+v, %v; want recovery for a generation validation failure", outcome, err)
 			}
 			if np, set := ir.PolicyState(); np == nil || set == nil || np.Default == nil {
 				t.Fatalf("PolicyState() = %v, %v; want the verified policy published", np, set)

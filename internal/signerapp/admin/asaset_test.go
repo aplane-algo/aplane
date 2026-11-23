@@ -123,7 +123,6 @@ func setupUnpublishedASAAdmin(t *testing.T) (Service, *productruntime.Runtime, *
 			return nil
 		})
 	}
-	ir.SetReloadFunc(reload)
 	wireBuild(ir, paths, &cfg)
 	if _, err := reload(nil, nil); err != nil {
 		t.Fatal(err)
@@ -215,7 +214,7 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 // begins in recovery and reconciles before it publishes. The ASA set calls
 // SetRecovery once, before its best-effort reload.
 func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) {
-	svc, ir, _, reload := setupUnpublishedASAAdmin(t)
+	svc, ir, _, _ := setupUnpublishedASAAdmin(t)
 	ir.SetUnlocked()
 	looked := svc.LookupASA(adminproto.LookupASARequest{Network: "private-dev", AssetID: 9})
 	if !looked.Success {
@@ -223,7 +222,7 @@ func TestUncertainASASetCommitBeforeASecondUnlockIsReconciledByIt(t *testing.T) 
 	}
 
 	var result adminproto.AddASAResult
-	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, reload, func() {
+	loads, reconciledIn, err := secondUnlockMeeting(t, svc, ir, func() {
 		defer failIdentityDirSync(svc)()
 		result = svc.AddASA(adminproto.AddASARequest{Confirmed: looked.Asset})
 	})

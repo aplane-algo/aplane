@@ -155,85 +155,6 @@ func WireApprovalCoordinator(ir *productruntime.Runtime, hooks ProductBuildHooks
 	ir.SetApprovalCoordinator(coordinator)
 }
 
-// NewReloadService builds the template reload service for a product runtime
-// using the process options and hooks. The session parameter is passed
-// directly because reload callers already hold passphraseLock; this function
-// must not call ir.SnapshotKeySession().
-func NewReloadService(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
-	templateManager := signertemplates.NewManager(ir.KeyPaths(), ir.ProviderRegistry())
-	svc := &signertemplates.ReloadService{
-		KeyStore:        ir.KeyStore(),
-		Session:         session,
-		TemplateManager: templateManager,
-		BeforeKeyScan: func(kr *crypto.Keyring) error {
-			active, err := genstore.ResolveStoreRootWithKeyring(opts.KeyPaths, kr)
-			if err != nil {
-				return fmt.Errorf("authenticate active product generation: %w", err)
-			}
-			templateManager.ActivePaths = active
-			if verifiedRole, err := noderole.LoadAndVerifyGenerationWithKeyring(opts.KeyPaths, active, kr); err != nil {
-				return fmt.Errorf("node role verification failed for product store: %w", err)
-			} else if verifiedRole.Role != ir.NodeRole() {
-				return fmt.Errorf("node role verification failed: runtime role %q does not match verified role %q", ir.NodeRole(), verifiedRole.Role)
-			}
-			nodePolicy, err := policyruntime.Load(ir.NodeRole(), opts.Config, active, kr)
-			if err != nil {
-				return fmt.Errorf("policy verification failed for product store: %w", err)
-			}
-			// A present ASA set must authenticate: a damaged one is an
-			// integrity failure, never the built-ins only.
-			set, err := asasetstore.Load(active, kr)
-			if err != nil {
-				return fmt.Errorf("asa set verification failed for product store: %w", err)
-			}
-			// The verified policy is published before the tokens it serves
-			// are read, so a reload that a damaged token file fails leaves
-			// it published, as one a malformed key file fails does: the
-			// recovery it enters shows and exports it. A damaged token
-			// file is damage in the selected generation: the reload fails
-			// as a generation validation failure, which the unlock paths
-			// turn into recovery, where a restore can replace the file.
-			// One on a signer node is a role conflict, which fails the
-			// node closed as a forbidden key does.
-			ir.SetVerifiedPolicyState(nodePolicy, set, storedAdmissionAlerts(ir.NodeRole(), opts.Config, set, nodePolicy))
-			tokens, err := sourcetokens.LoadIndex(active, ir.NodeRole(), kr)
-			if err != nil {
-				switch {
-				case errors.Is(err, keyclass.ErrNodeRoleConflict):
-					if hooks.NodeFailClosed != nil {
-						hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
-					}
-				case errors.Is(err, sourcetokens.ErrDamaged):
-					return fmt.Errorf("%w: source token verification failed for product store: %w",
-						signertemplates.ErrGenerationValidation, err)
-				}
-				return fmt.Errorf("source token verification failed for product store: %w", err)
-			}
-			ir.PublishSourceTokens(tokens)
-			return nil
-		},
-		BeforePublish: func(_ map[string]string, keyTypes map[string]string) error {
-			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
-				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
-					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", err))
-				}
-				return err
-			}
-			return nil
-		},
-		PublishSnapshot: ir.PublishSnapshot,
-		AuditLog:        hooks.ReloadAuditLog,
-		Info:            hooks.Info,
-		Warn:            hooks.Warn,
-	}
-	if hooks.NotifyKeysChanged != nil {
-		svc.NotifyKeysChanged = func(notification signertemplates.KeysChangedNotification) {
-			hooks.NotifyKeysChanged(notification.KeyCount)
-		}
-	}
-	return svc
-}
-
 // Build builds the generation the store root selects with kr, for a
 // reload's publish (productruntime.BuildFunc), and changes no live state. It
 // reads the store root once. The order is the one a failure needs: the
@@ -317,9 +238,9 @@ func Build(ir *productruntime.Runtime, opts ProductBuildOptions, kr *crypto.Keyr
 	return loaded, nil
 }
 
-// WireReloadFunc configures the reload's build and the reload function, the
-// watcher reload mutation lock and the hook for a reload's entry into
-// recovery on a product runtime.
+// WireReloadFunc configures the reload's build and what it tells the
+// process, the watcher reload mutation lock and the hook for a reload's
+// entry into recovery on a product runtime.
 func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks ProductBuildHooks) {
 	effects := productruntime.ReloadEffects{
 		Audit:             hooks.ReloadAuditLog,
@@ -331,10 +252,6 @@ func WireReloadFunc(ir *productruntime.Runtime, opts ProductBuildOptions, hooks 
 	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
 		return Build(ir, opts, kr)
 	}, effects)
-	ir.SetReloadFunc(func(passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		svc := NewReloadService(ir, opts, hooks, session)
-		return svc.Reload(passphrase)
-	})
 	if hooks.ReloadMutationLock != nil {
 		ir.SetReloadMutationLock(hooks.ReloadMutationLock)
 	}

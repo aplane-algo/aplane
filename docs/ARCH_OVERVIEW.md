@@ -1377,21 +1377,26 @@ checked before locked/headless/test startup mode selection.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configuration details.
 
-A reload with the keyring in service, `Runtime.Reload`, builds and then
-publishes (`productruntime/view.go`, with `startup.Build`). Both locked and
-headless unlocks, and a passphrase change, still reload through
-`productruntime.Runtime.reloadLocked`, entered through
-`ReloadWithPassphrase`. Production wiring from `startup.WireReloadFunc`
-delegates that work to `templates.ReloadService.Reload`, which:
+Both locked and headless paths converge on one build and one publish
+(`internal/signerapp/productruntime/view.go`). The build,
+`startup.Build`, wired by `startup.WireReloadFunc`, runs with the keyring in
+service or, for an unlock or a passphrase change, with one opened from the
+passphrase, and changes nothing live:
 
-1. opens or reuses the keyring,
-2. verifies the identity's node role and loads its authenticated policy,
-3. registers templates,
-4. scans keys,
-5. validates the scanned key classes against the node role,
-6. replaces runtime indexes,
-7. activates the key session,
-8. emits audit and IPC notifications.
+1. reads and authenticates the store root once,
+2. verifies the identity's node role and loads its authenticated policy and
+   ASA set,
+3. reads the source tokens,
+4. prepares the templates, registering none,
+5. scans keys,
+6. validates the scanned key classes against the node role.
+
+The publish then installs it in one order under the passphrase lock (the
+stage tables close, the providers are registered as one batch, the keystore
+takes the keyring and the key cache, the runtime the policy, the tokens and
+the key indexes, and the key session starts), or a failure publishes
+recovery's view or keeps the view in service. Audit and IPC notifications
+follow once the locks are released.
 
 Key type activation and disabled records are consulted by inventory and admin
 key operations when deciding whether an optional key type can be discovered,

@@ -53,7 +53,9 @@ func TestNoProductionCodePublishesUnlockedWithoutTheFence(t *testing.T) {
 // The calls allowed are the lock runtime's SetRecovery from the failure
 // rule's entries (a reload's, and one for a store in doubt, which enters
 // before it builds and installs the view after), the test seams'
-// forwarding, and the lock runtime's EnterRecovery from an unlock's entry.
+// forwarding, and the lock runtime's EnterRecovery from an unlock's entry
+// (unlockIntoRecovery), which installs recovery's view of what the unlock's
+// build found.
 func TestNoProductionCodeEntersRecoveryOutsideTheFailureRule(t *testing.T) {
 	// The functions that may reach the lock runtime's SetRecovery and
 	// EnterRecovery, each through ir.lockRuntime.
@@ -63,7 +65,7 @@ func TestNoProductionCodeEntersRecoveryOutsideTheFailureRule(t *testing.T) {
 			"internal/signerapp/productruntime/runtime.go": {"SetRecovery": true},
 		},
 		"EnterRecovery": {
-			"internal/signerapp/productruntime/runtime.go": {"enterRecovery": true},
+			"internal/signerapp/productruntime/view.go": {"unlockIntoRecovery": true},
 		},
 	}
 	forEachProductionFile(t, func(rel string, parsed *ast.File) {
