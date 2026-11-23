@@ -476,6 +476,9 @@ func mcpBuildDescription(pm apshellapp.PluginRuntime) string {
 }
 
 func readPluginMCPDoc(pluginDir string, maxBytes int64) (string, error) {
+	// Deliberately layered with plugin discovery's symlink check: discovery
+	// results are cached and the plugin directory could be swapped after
+	// discovery.
 	dirInfo, err := os.Lstat(pluginDir)
 	if err != nil {
 		return "", err

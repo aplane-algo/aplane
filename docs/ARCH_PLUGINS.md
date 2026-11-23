@@ -1331,7 +1331,10 @@ environment. Only these variables pass from the host into the sandbox:
   `APSHELL_PLUGIN_STATE_DIR`, and `PATH` (rewritten to keep only entries under
   `/usr/`, `/bin/`, `/lib/`, `/lib64/`, and `/sbin/`)
 - Additional variable names explicitly declared in the plugin manifest's `env`
-  array
+  array. A manifest's `env` list is its consent surface: operators reviewing or
+  installing a plugin should check declared names, because any variable that is
+  not credential-shaped (for example `SLACK_WEBHOOK_URL`) passes through when
+  declared
 
 Even when a variable is declared in `env`, host credential names are always
 refused:
@@ -1341,7 +1344,10 @@ refused:
 - any variable whose name ends (case-insensitively) in `_TOKEN`, `_SECRET`,
   `_API_KEY`, `_PASSWORD`, `_PASSPHRASE`, `_MNEMONIC`, `_PRIVATE_KEY`, `_SEED`,
   or `_PROXY` (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `APSIGNER_PASSPHRASE`,
-  test mnemonics)
+  test mnemonics). As a deliberate trade-off, `_PROXY` variables are stripped
+  even when declared (because proxy URLs routinely embed credentials), so a
+  plugin that needs an unauthenticated proxy cannot inherit one via `HTTP_PROXY`
+  or `HTTPS_PROXY`
 
 The two LocalNet overrides `APLANE_LOCALNET_TOKEN` and
 `APLANE_LOCALNET_WALLET_PASSWORD` are exempt only for the plugin whose manifest
