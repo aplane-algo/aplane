@@ -301,9 +301,8 @@ for each.
   adds nothing to it) is a moment, not a hold: a lock that begins after it
   clears the session while a key decrypted before it is still signing. The
   request returns that signature when it needs no later key load; a load after
-  the session is cleared fails, and the request answers locked (an assembly's
-  passthrough key lookup answers internal). An entry into recovery clears
-  nothing, so such a request signs to completion. KU2 is about
+  the session is cleared fails, and the request answers locked. An entry into
+  recovery clears nothing, so such a request signs to completion. KU2 is about
   registered key uses only. Making those paths key uses would be an extension
   of this model.
 - The source token index counts readers of its own: an index that a reload

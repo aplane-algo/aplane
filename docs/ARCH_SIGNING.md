@@ -1209,8 +1209,7 @@ end:
 - A lock, the start of store maintenance, or an unlock that lost to a lock
   runs the lock cleanup, which clears the key session only after it has
   drained the registered key users. A key load before that still succeeds;
-  one after it fails, and the request answers `locked` (an assembly's
-  passthrough key lookup answers `internal` instead). A signature whose key
+  one after it fails, and the request answers `locked`. A signature whose key
   was already decrypted is not stopped: the cleanup does not wait for it, and
   a request whose last key was already decrypted returns its signatures.
 - An entry into recovery keeps the keyring and stops the key session, with
