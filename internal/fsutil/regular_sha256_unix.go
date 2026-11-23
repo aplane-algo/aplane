@@ -103,7 +103,7 @@ func openRegularFile(path string) (*os.File, os.FileInfo, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, unix.ELOOP) {
-			return nil, nil, fmt.Errorf("%w: %s", ErrNotRegularFile, path)
+			return nil, nil, fmt.Errorf("%w: %s: %w", ErrNotRegularFile, path, err)
 		}
 		return nil, nil, err
 	}
