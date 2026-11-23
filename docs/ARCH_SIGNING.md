@@ -643,6 +643,15 @@ Where it runs:
 - On a cosigner node, in the component gates, after the witness key is found
   and before the invariants and the policy.
 
+**Cross-slot network parameters.** Multi-transaction groups must target a
+single network (identical `GenesisHash` across every transaction) and have
+overlapping validity windows (`max FirstValid <= min LastValid`). Any group
+that violates either rule is refused with `400` (`bad_request`) and without
+auditing a policy refusal, across the planner (`/plan` and `/sign`),
+frozen-component validation, and cosigner component gates (immediately after
+transaction bounds, ahead of signer invariants, policy evaluation, and
+external checks).
+
 Every position is checked, signed here or not, since one member the network
 refuses fails the whole group.
 

@@ -187,20 +187,42 @@
       ],
       "targets": [
         0,
+        1,
         2
       ],
       "component_key": "W1",
       "expect": {
         "outcome": "reject",
         "kind": "forbidden",
-        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
+        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 2: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
       }
     },
     {
       "name": "mixed genesis hashes are refused before policy",
       "surface": "cosigner",
       "policies": {
-        "W1": {}
+        "W1": {
+          "transfer_policy": {
+            "routes": [
+              {
+                "id": "both-networks",
+                "networks": [
+                  "testnet",
+                  "mainnet"
+                ],
+                "sources": [
+                  "*"
+                ],
+                "assets": [
+                  "algo"
+                ],
+                "destinations": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
       },
       "group": [
         {

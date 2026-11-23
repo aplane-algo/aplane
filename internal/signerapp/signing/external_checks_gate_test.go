@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -332,10 +333,25 @@ func TestComponentPlanRefusesAMalformedWitnessKeyID(t *testing.T) {
 // A multi-target group whose transactions target different networks must be
 // refused before policy evaluation or external checks run; otherwise a
 // scope:request check scoped to mainnet would inspect only target 0's network
-// and skip the lookup.
+// and skip the lookup, even when policy routes cover both networks.
 func TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks(t *testing.T) {
 	g := newExternalGate(t)
-	g.cfg.ExternalChecks = []policy.ExternalCheckV1{{
+	bothNetworks := cosignerPolicyConfigForSigningTest(t, fmt.Sprintf(`{
+  "transfer_policy": {
+    "routes": [
+      {
+        "id": "allow_both_networks",
+        "networks": ["testnet", "mainnet"],
+        "sources": [%q],
+        "assets": ["algo"],
+        "destinations": [%q]
+      }
+    ]
+  }
+}`, g.source, g.allowed))
+	bothNetworks.DocumentKey = g.cfg.DocumentKey
+	bothNetworks.ExternalSources = g.cfg.ExternalSources
+	bothNetworks.ExternalChecks = []policy.ExternalCheckV1{{
 		ID:       "mainnet-only-request",
 		Source:   "screening",
 		Scope:    policy.ExternalScopeRequest,
@@ -345,6 +361,8 @@ func TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks(t *testing
 		}},
 		Require: []policy.ExternalRuleV1{{Pointer: "/ok", Op: policy.ExternalOpEq, Bool: boolPtr(true)}},
 	}}
+	g.cfg = bothNetworks
+	g.svc.PolicyFor = fixedPolicy(bothNetworks)
 
 	txn0 := testnetPaymentTransaction(t, g.source, g.allowed, 1)
 	txn1 := testnetPaymentTransaction(t, g.source, g.allowed, 2)
@@ -369,6 +387,73 @@ func TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks(t *testing
 	}
 	if g.hits.Load() != 0 || store.calls != 0 || len(g.audit.limited) != 0 {
 		t.Fatalf("hits=%d storeCalls=%d audit=%d, want 0 for all", g.hits.Load(), store.calls, len(g.audit.limited))
+	}
+}
+
+// Network parameter validation runs before signer invariants: a group that
+// both violates cross-slot network rules (mixed genesis or disjoint windows)
+// and breaks a signer invariant (such as a nonparticipating keyreg) must get
+// an unaudited bad_request rather than an audited invariant refusal.
+func TestCosignerRefusesNetworkParamErrorsBeforeSignerInvariants(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mutate   func(*types.Transaction, *types.Transaction)
+		wantText string
+	}{
+		{
+			name: "mixed genesis with nonparticipating keyreg",
+			mutate: func(_, txn1 *types.Transaction) {
+				txn1.GenesisHash = verdictGenesis(t, apconfig.AlgorandMainnetGenesisHash)
+				txn1.GenesisID = "mainnet-v1.0"
+			},
+			wantText: "different genesis hash",
+		},
+		{
+			name: "disjoint validity windows with nonparticipating keyreg",
+			mutate: func(txn0, txn1 *types.Transaction) {
+				txn0.FirstValid, txn0.LastValid = 1000, 1100
+				txn1.FirstValid, txn1.LastValid = 1200, 1300
+			},
+			wantText: "validity windows do not overlap",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newExternalGate(t)
+			txn0 := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+			txn1 := types.Transaction{
+				Type: types.KeyRegistrationTx,
+				Header: types.Header{
+					Sender:      txn0.Sender,
+					Fee:         1_000,
+					FirstValid:  txn0.FirstValid,
+					LastValid:   txn0.LastValid,
+					GenesisID:   txn0.GenesisID,
+					GenesisHash: txn0.GenesisHash,
+				},
+				KeyregTxnFields: types.KeyregTxnFields{Nonparticipation: true},
+			}
+			tc.mutate(&txn0, &txn1)
+			gid, err := crypto.ComputeGroupID([]types.Transaction{txn0, txn1})
+			if err != nil {
+				t.Fatalf("ComputeGroupID() error = %v", err)
+			}
+			txn0.Group = gid
+			txn1.Group = gid
+
+			plan := mustPrepareComponentSigning(t, componentPlanRequest{
+				RequestID:     "cmp-cosigner-network-before-invariant",
+				ComponentKey:  testFalconComponentSelector(t, 0xab),
+				Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn0), txnutil.EncodeWithPrefixHex(txn1)}),
+				TargetIndices: []int{0, 1},
+			})
+			gateErr := g.svc.runCosignerGates(context.Background(), plan)
+			if gateErr == nil || gateErr.Kind != ErrorBadRequest || !strings.Contains(gateErr.Message, tc.wantText) {
+				t.Fatalf("runCosignerGates() error = %#v, want bad_request mentioning %q", gateErr, tc.wantText)
+			}
+			if g.hits.Load() != 0 || len(g.audit.limited) != 0 || len(g.audit.rejected) != 0 {
+				t.Fatalf("hits=%d limited=%d rejected=%d, want 0 for all", g.hits.Load(), len(g.audit.limited), len(g.audit.rejected))
+			}
+		})
 	}
 }
 
