@@ -1472,11 +1472,13 @@ Signing-audit semantics:
   account sent to `/sign` (`bounded_cosigner_required`) or a planning
   error, is refused for that reason and writes no `SIGN_REJECTED`, whatever
   its other positions hold; nothing was signed. A technical failure while
-  signing a position is
-  `SIGN_FAILED`. A request cancelled by the client, or stopped before any
-  of those (no apadmin connected, a lock before signing began), leaves only
-  what it wrote before it stopped: on `/sign`, its `SIGN_REQUEST` entries.
-  The rotating sign writes no `SIGN_REQUEST`
+  signing a position is `SIGN_FAILED`. On `/sign` and bounded-base
+  `/sign/component`, an approved request stopped by a lock or recovery before
+  `SIGN_APPROVED` is written records `SIGN_REJECTED` with reason
+  `session_ended_after_approval`. A request cancelled by the client, or
+  stopped before any of those (no apadmin connected, a lock before approval
+  completed), leaves only what it wrote before it stopped: on `/sign`, its
+  `SIGN_REQUEST` entries. The rotating sign writes no `SIGN_REQUEST`
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
 - signing audit over HTTP records `transport:"http"` and the connection's `client:<fingerprint>` principal as requester
@@ -1498,13 +1500,15 @@ Signing-audit semantics:
   signature leaves the signer; it records the account, `txid`,
   `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
   release memory from these entries at unlock (see
-  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). The
-  rotating sign then writes `SIGN_APPROVED` for the spend as signed (its
-  dummies counted in `dummy_count`) and makes its last check. If that check
-  refuses the release (the signer locked, the request was cancelled, the key
-  was removed), it writes a `SIGN_FAILED` whose `reason` begins
+  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)).
+  Audited signing paths (`/sign`, bounded-base and cosigner `/sign/component`,
+  and rotating sign) release their key use before writing `SIGN_APPROVED` and
+  then make a final check of the request's session and context. If that check
+  refuses the release (the signer locked, entered recovery, the request was
+  cancelled, or for rotating sign the key was removed), the signer writes a
+  `SIGN_FAILED` whose `reason` begins
   `signature withheld after it was recorded as signed`, with the `txid` and
-  `group_id` of that `SIGN_APPROVED`: the signature never left. Rotating
+  `group_id` of each `SIGN_APPROVED`: the signatures never left. Rotating
   prepare signs nothing and writes no entry
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - client-signing `SIGN_APPROVED` records carry `approval_source` (`human`, `user_auto_approve`, or `always_approve`), and `policy_rule_id` whenever a review rule or Always Approve rule matched (including when User Auto-Approve satisfied a review rule without a human decision); policy rejections (`SIGN_REJECTED`) carry the first violated rule ID in `policy_rule_id`
@@ -1932,11 +1936,14 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
    external checks, and mnemonic export. For signing paths that require
    approval, the key use begins only after policy gates and operator approval
    (never spanning approval wait) and releases once loaded key material is
-   zeroed and before blocking audit writes. Every in-flight signing or assembly
-   request sees its key use canceled, zeroes its loaded key material, releases
-   the key use, and withholds its signatures as `locked`. While this step waits
-   for a registered key user, the keyring stays intact until the user releases;
-   once step 4 clears the key session, any subsequent load fails as `locked`.
+   zeroed and before blocking audit or console writes. Any signing or assembly
+   request still before its final check sees its key use canceled (or its
+   post-release check fail), zeroes its loaded key material, releases the key
+   use, and withholds its signatures as `locked` (a request already past its
+   final check returns, and one its client canceled answers 503). While this
+   step waits for a registered key user, the keyring stays intact until the
+   user releases; once step 4 clears the key session, any subsequent load fails
+   as `locked`.
 4. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until in-flight `GetKeyWithContext` calls release the
      session; request-wide draining is owned by the request server lifecycle.

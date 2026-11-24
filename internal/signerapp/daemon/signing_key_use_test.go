@@ -9,6 +9,9 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -408,7 +411,7 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 		name     string
 		role     noderole.Role
 		holdAddr func(*nonRotatingDaemonFixture) string
-		run      func(*testing.T, *nonRotatingDaemonFixture, *signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError)
+		prepare  func(*testing.T, *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError)
 	}
 
 	cases := []lockCase{
@@ -416,53 +419,66 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 			name:     "ordinary_sign",
 			role:     noderole.RoleSigner,
 			holdAddr: func(fx *nonRotatingDaemonFixture) string { return fx.edAddr },
-			run: func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-				res, err := svc.SignGroupWithContext(context.Background(), fx.ordinaryRequest(t), session)
-				return res != nil, err
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.ordinaryRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.SignGroupWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
 			},
 		},
 		{
 			name:     "bounded_component",
 			role:     noderole.RoleSigner,
 			holdAddr: func(fx *nonRotatingDaemonFixture) string { return fx.boundedAddr },
-			run: func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-				res, err := svc.PrepareBoundedComponentWithContext(context.Background(), fx.boundedComponentRequest(t), session)
-				return res != nil, err
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.boundedComponentRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
 			},
 		},
 		{
 			name:     "cosigner_component",
 			role:     noderole.RoleCosigner,
 			holdAddr: func(fx *nonRotatingDaemonFixture) string { return fx.cosignerKeyID },
-			run: func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-				res, err := svc.SignComponentsWithContext(context.Background(), fx.cosignerComponentRequest(t), session)
-				return res != nil, err
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.cosignerComponentRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.SignComponentsWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
 			},
 		},
 		{
 			name:     "assemble_bounded_target",
 			role:     noderole.RoleSigner,
 			holdAddr: func(fx *nonRotatingDaemonFixture) string { return fx.boundedAddr },
-			run: func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 				prepSession := keystore.NewKeySession(fx.newStore(""))
 				prepSession.InitializeSession()
 				defer prepSession.Destroy()
 				req := fx.assemblyRequest(t, fx.newService(&signingAuditLogger{log: fx.server.auditLog}), prepSession)
-				res, err := svc.AssembleWithContext(context.Background(), req, session)
-				return res != nil, err
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.AssembleWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
 			},
 		},
 		{
 			name:     "assemble_local_passthrough",
 			role:     noderole.RoleSigner,
 			holdAddr: func(fx *nonRotatingDaemonFixture) string { return fx.edAddr },
-			run: func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 				prepSession := keystore.NewKeySession(fx.newStore(""))
 				prepSession.InitializeSession()
 				defer prepSession.Destroy()
 				req := fx.assemblyRequest(t, fx.newService(&signingAuditLogger{log: fx.server.auditLog}), prepSession)
-				res, err := svc.AssembleWithContext(context.Background(), req, session)
-				return res != nil, err
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.AssembleWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
 			},
 		},
 	}
@@ -470,6 +486,7 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fx := newNonRotatingDaemonFixture(t, tc.role)
+			run := tc.prepare(t, fx)
 			svc := fx.newService(&signingAuditLogger{log: fx.server.auditLog})
 			store := fx.newStore(tc.holdAddr(fx))
 			locked := make(chan struct{})
@@ -503,7 +520,7 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 			}
 			done := make(chan outcome, 1)
 			go func() {
-				got, err := tc.run(t, fx, svc, session)
+				got, err := run(svc, session)
 				done <- outcome{gotOutput: got, err: err}
 			}()
 
@@ -569,16 +586,22 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 // blocks waiting on an operator prompt for /sign or bounded /sign/component.
 func TestLockDoesNotWaitForNonRotatingApprovalPrompt(t *testing.T) {
 	paths := []struct {
-		name string
-		run  func(*testing.T, *nonRotatingDaemonFixture, *signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError)
+		name    string
+		prepare func(*testing.T, *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError)
 	}{
-		{"ordinary_sign", func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-			res, err := svc.SignGroupWithContext(context.Background(), fx.ordinaryRequest(t), session)
-			return res != nil, err
+		{"ordinary_sign", func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+			req := fx.ordinaryRequest(t)
+			return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				res, err := svc.SignGroupWithContext(context.Background(), req, session)
+				return res != nil, err
+			}
 		}},
-		{"bounded_component", func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-			res, err := svc.PrepareBoundedComponentWithContext(context.Background(), fx.boundedComponentRequest(t), session)
-			return res != nil, err
+		{"bounded_component", func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+			req := fx.boundedComponentRequest(t)
+			return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+				return res != nil, err
+			}
 		}},
 	}
 
@@ -586,6 +609,7 @@ func TestLockDoesNotWaitForNonRotatingApprovalPrompt(t *testing.T) {
 		t.Run(path.name, func(t *testing.T) {
 			fx := newNonRotatingDaemonFixture(t, noderole.RoleSigner)
 			fx.ir.Config().SetUserAutoApprove(false)
+			run := path.prepare(t, fx)
 			svc := fx.newService(&signingAuditLogger{log: fx.server.auditLog})
 			store := fx.newStore("")
 			session := keystore.NewKeySession(store)
@@ -610,7 +634,7 @@ func TestLockDoesNotWaitForNonRotatingApprovalPrompt(t *testing.T) {
 			}
 			done := make(chan outcome, 1)
 			go func() {
-				got, err := path.run(t, fx, svc, session)
+				got, err := run(svc, session)
 				done <- outcome{gotOutput: got, err: err}
 			}()
 
@@ -651,9 +675,10 @@ func TestLockDoesNotWaitForNonRotatingApprovalPrompt(t *testing.T) {
 
 type auditInterruptLogger struct {
 	signingAudit
-	onApprove func()
-	approved  atomic.Int32
-	withheld  atomic.Int32
+	onApprove      func()
+	approved       atomic.Int32
+	withheld       atomic.Int32
+	withheldReason atomic.Pointer[string]
 }
 
 func (l *auditInterruptLogger) LogSignApproved(record signersigning.SignedRecord) {
@@ -668,6 +693,8 @@ func (l *auditInterruptLogger) LogSignApproved(record signersigning.SignedRecord
 
 func (l *auditInterruptLogger) LogSignWithheld(record signersigning.SignedRecord, reason string) {
 	l.withheld.Add(1)
+	r := reason
+	l.withheldReason.Store(&r)
 	if l.signingAudit != nil {
 		l.signingAudit.LogSignWithheld(record, reason)
 	}
@@ -675,7 +702,7 @@ func (l *auditInterruptLogger) LogSignWithheld(record signersigning.SignedRecord
 
 // End-to-end check on the real productruntime.Runtime: for every audited
 // non-rotating signing path,
-//  1. calling ir.Lock() synchronously inside LogSignApproved must not deadlock
+//  1. calling ir.Lock() while LogSignApproved is running must not deadlock
 //     (proving endKeyUse already ran before the blocking audit write) and must
 //     withhold signatures as ErrorLocked with LogSignWithheld;
 //  2. a recovery + PromoteRecoveryToUnlocked round-trip inside LogSignApproved
@@ -703,16 +730,18 @@ func TestNonRotatingSignStopsAtLockOrRecoveryDuringAuditWrite(t *testing.T) {
 
 	interrupts := []struct {
 		name string
-		do   func(*testing.T, *productruntime.Runtime)
+		do   func(*productruntime.Runtime) error
 	}{
-		{"lock_during_audit", func(_ *testing.T, ir *productruntime.Runtime) {
+		{"lock_during_audit", func(ir *productruntime.Runtime) error {
 			ir.Lock()
+			return nil
 		}},
-		{"recovery_round_trip_during_audit", func(t *testing.T, ir *productruntime.Runtime) {
+		{"recovery_round_trip_during_audit", func(ir *productruntime.Runtime) error {
 			ir.EnterRecovery(nil)
 			if !ir.PromoteRecoveryToUnlocked() {
-				t.Fatal("PromoteRecoveryToUnlocked() = false")
+				return fmt.Errorf("PromoteRecoveryToUnlocked() = false")
 			}
+			return nil
 		}},
 	}
 
@@ -721,10 +750,19 @@ func TestNonRotatingSignStopsAtLockOrRecoveryDuringAuditWrite(t *testing.T) {
 			t.Run(path.name+"/"+intr.name, func(t *testing.T) {
 				fx := newNonRotatingDaemonFixture(t, path.role)
 				var once sync.Once
+				var intrErr error
 				audit := &auditInterruptLogger{
 					signingAudit: &signingAuditLogger{log: fx.server.auditLog},
 					onApprove: func() {
-						once.Do(func() { intr.do(t, fx.ir) })
+						once.Do(func() {
+							done := make(chan error, 1)
+							go func() { done <- intr.do(fx.ir) }()
+							select {
+							case intrErr = <-done:
+							case <-time.After(5 * time.Second):
+								intrErr = fmt.Errorf("%s blocked waiting on audit write (KeyUse was still held)", intr.name)
+							}
+						})
 					},
 				}
 				svc := fx.newService(audit)
@@ -733,13 +771,100 @@ func TestNonRotatingSignStopsAtLockOrRecoveryDuringAuditWrite(t *testing.T) {
 				t.Cleanup(session.Destroy)
 
 				gotOutput, err := path.run(t, fx, svc, session)
+				if intrErr != nil {
+					t.Fatal(intrErr)
+				}
 				if gotOutput || err == nil || err.Kind != signersigning.ErrorLocked {
 					t.Fatalf("run() = (output=%v, err=%v), want (false, ErrorLocked)", gotOutput, err)
 				}
 				if audit.approved.Load() != 1 || audit.withheld.Load() != 1 {
 					t.Fatalf("audit approved=%d withheld=%d, want 1/1", audit.approved.Load(), audit.withheld.Load())
 				}
+				if reason := audit.withheldReason.Load(); reason == nil || !strings.HasPrefix(*reason, "signature withheld after it was recorded as signed: ") {
+					t.Fatalf("withheld reason = %v, want standard prefix", reason)
+				}
 			})
 		}
+	}
+}
+
+type blockingConsole struct {
+	match   string
+	parked  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *blockingConsole) Printf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	if strings.Contains(line, c.match) {
+		c.once.Do(func() {
+			close(c.parked)
+			<-c.release
+		})
+	}
+}
+
+func (c *blockingConsole) Println(...any) {}
+func (c *blockingConsole) Sync()          {}
+
+// A stalled stdout/console while printing per-transaction progress for /sign
+// must never hold a KeyUse or block Runtime.Lock from clearing the keyring.
+func TestStalledConsoleDoesNotBlockLockOnOrdinarySign(t *testing.T) {
+	fx := newNonRotatingDaemonFixture(t, noderole.RoleSigner)
+	svc := fx.newService(&signingAuditLogger{log: fx.server.auditLog})
+	con := &blockingConsole{
+		match:   "signed (",
+		parked:  make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(con.release) }) }
+	defer unblock()
+
+	svc.Executor.Console = con
+	svc.Console = con
+
+	session := keystore.NewKeySession(fx.newStore(""))
+	session.InitializeSession()
+	t.Cleanup(session.Destroy)
+	req := fx.ordinaryRequest(t)
+
+	done := make(chan *signersigning.ServiceError, 1)
+	go func() {
+		_, err := svc.SignGroupWithContext(context.Background(), req, session)
+		done <- err
+	}()
+
+	select {
+	case <-con.parked:
+	case err := <-done:
+		t.Fatalf("SignGroupWithContext finished before console print: err=%v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("SignGroupWithContext never reached executor console print")
+	}
+
+	locked := make(chan struct{})
+	go func() {
+		fx.ir.Lock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Lock blocked on a stalled console write (KeyUse must end before console output)")
+	}
+	if fx.ir.IsUnlocked() {
+		t.Fatal("runtime is still unlocked after Lock() returned")
+	}
+	if _, err := fx.ir.SnapshotKeySession().GetKeyWithContext(context.Background(), fx.edAddr); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("SnapshotKeySession after Lock = %v, want ErrStoreLocked", err)
+	}
+
+	unblock()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("SignGroupWithContext never finished after console unblocked")
 	}
 }

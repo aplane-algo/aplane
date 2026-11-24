@@ -187,14 +187,15 @@ Code anchors:
     * internal/signerapp/daemon/signing_service.go newSigningServiceWithAudit
       (inSession capturing UnlockedGeneration) together with the post-approval
       / post-gate key-use windows in internal/signerapp/signing/service.go
-      (openKeyUse, keyUseRefused, postAuditRefused, signGroupWithPlanContext,
+      (openKeyUse, keyUseRefused, signGroupWithPlanContext,
       signComponentWithContext, AssembleWithContext), execution.go
-      (ExecuteGroupSigning), bounded_cosigner.go
+      (executeGroupSigning), bounded_cosigner.go
       (PrepareBoundedComponentWithContext, assembleBoundedTarget),
       component_sign.go (signPreparedCosignerComponents), and
       component_assemble.go (assembleDecoded, rejectLocalCosignedPassthrough).
-      Assembly writes no post-release audit entry, so its keyUseRefused check
-      in SMake before endKeyUse is already its final check before return.
+      Every route releases its key use before SReturn's final keyUseRefused
+      check (after SIGN_APPROVED on the audited routes, directly on
+      /sign/assemble).
   - EStart/ERegister/ERead/EDeliver/ERelease transcribe
     internal/signerapp/keyadmin/export.go ExportKey.
   - LockState transcribes internal/signerapp/runtime/runtime.go Lock and

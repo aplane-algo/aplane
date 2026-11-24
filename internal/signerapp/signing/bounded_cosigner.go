@@ -102,31 +102,36 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	}
 	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
 	if useErr != nil {
-		if useErr.Kind == ErrorLocked {
-			s.logSignRejections(groupReq, plan, plan.AllTxns[:len(groupReq.Requests)], "session_ended_after_approval", useErr)
-		}
+		s.logSessionEndedAfterApproval(groupReq, plan, useErr)
 		return nil, useErr
 	}
 	defer endKeyUse()
 	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {
 		if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+			endKeyUse()
+			s.logSessionEndedAfterApproval(groupReq, plan, refused)
 			return nil, refused
 		}
 		component, signErr := signBoundedBaseComponent(useCtx, groupReq, plan, targetIndex, session)
 		if signErr != nil {
-			return nil, s.classifyKeyUseError(ctx, useCtx, signErr)
+			classified := s.classifyKeyUseError(ctx, useCtx, signErr)
+			endKeyUse()
+			s.logSessionEndedAfterApproval(groupReq, plan, classified)
+			return nil, classified
 		}
 		components = append(components, component)
 	}
 	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+		endKeyUse()
+		s.logSessionEndedAfterApproval(groupReq, plan, refused)
 		return nil, refused
 	}
 	// Release the key use before the blocking audit write so a stalled disk
 	// cannot hold a lock's drain, then recheck the session before returning.
 	endKeyUse()
 	records := s.logBoundedComponentsApproved(req, plan, targets, outcome)
-	if refused := s.postAuditRefused(ctx); refused != nil {
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}

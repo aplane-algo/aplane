@@ -118,21 +118,19 @@ waits for it; KU2 and KU3 cover that case.
   the rotating signing window (`SignRotatingWithContext` in
   `internal/signerapp/signing/rotating_flow.go`) and the non-rotating signing
   and assembly windows (`signGroupWithPlanContext`, `signComponentWithContext`,
-  `AssembleWithContext`, `openKeyUse`, `keyUseRefused`, `postAuditRefused` in
-  `internal/signerapp/signing/service.go`, `ExecuteGroupSigning` in
+  `AssembleWithContext`, `openKeyUse`, `keyUseRefused` in
+  `internal/signerapp/signing/service.go`, `executeGroupSigning` in
   `execution.go`, `PrepareBoundedComponentWithContext` and
   `assembleBoundedTarget` in `bounded_cosigner.go`,
   `signPreparedCosignerComponents` in `component_sign.go`, and
   `assembleDecoded` / `rejectLocalCosignedPassthrough` in
   `component_assemble.go`): the session generation captured at request start
   (`deps.LockGeneration` / `newSigningServiceWithAudit`'s `inSession`), key-use
-  registration after approval and policy gates (`deps.keyUse` / `openKeyUse`),
-  key load, signing, zeroing and session/context check (`releaseRefused` /
-  `keyUseRefused`), key-use release before the blocking audit write, and the
-  post-audit session recheck (`releaseRefused` / `postAuditRefused`, writing
-  `LogSignWithheld` on refusal) before returning signatures. `/sign/assemble`
-  writes no post-release audit entry, so its `keyUseRefused` check before
-  `endKeyUse` is already its final check before returning.
+  registration after approval and policy gates (`deps.keyUse` / `openKeyUse`,
+  both refusing nil `KeyUse`), key load, signing/assembly, zeroing, key-use
+  release before any blocking audit or console write, and the post-release
+  session recheck (`releaseRefused` / `keyUseRefused(ctx, nil)`, writing
+  `LogSignWithheld` on refusal after `SIGN_APPROVED`) before returning.
 - `EStart`, `ERegister`, `ERead`, `EDeliver`, and `ERelease` transcribe
   `ExportKey` in `internal/signerapp/keyadmin/export.go`: the key use taken
   under the mutation lock, the context check before the read, the second check
@@ -319,17 +317,16 @@ for each.
   actions.
 - Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
   `/sign/assemble` register key uses through `Service.openKeyUse` after their
-  gates and approval, never spanning human approval wait, and follow the same
+  gates and approval, never spanning human approval wait, release before
+  blocking audit or console writes, and run the same post-release session check
+  (`keyUseRefused(ctx, nil)`) before returning, following the same
   `SStart` → `SRegister` → `SMake` → `SRelease` → `SReturn` lifecycle as
-  rotating sign (with `/sign/assemble` returning right after `SRelease` because
-  it writes no post-sign audit entry, so `SMake`'s `keyUseRefused` check before
-  `endKeyUse` is already its final check). `newSigningServiceWithAudit` in
-  `internal/signerapp/daemon/signing_service.go` is the sole production
-  constructor of signing services and always wires `KeyUse: ir.KeyUseContext`.
-  `installRecoveryViewLocked` also replaces `KeySession` on recovery entry (as
-  `performLockCleanup` does on lock), so a session pointer taken before
-  recovery stays permanently locked even after a later reconcile promotes back
-  to unlocked.
+  rotating sign. `openKeyUse` refuses nil `KeyUse`, so no signing or assembly
+  path can load key material unregistered; `newSigningServiceWithAudit` in
+  `internal/signerapp/daemon/signing_service.go` wires `KeyUse: ir.KeyUseContext`
+  for every request-serving service (the two helper services built in
+  `stage_table_worker.go` run only stage-table fill/status and never reach
+  `openKeyUse`).
 - The source token index counts readers of its own: an index that a reload
   or a token change replaces is zeroed when its last reader releases
   (`internal/sourcetokens/index.go`). The model does not represent
@@ -358,7 +355,7 @@ for each.
 - The sign's recheck before the seed is closed is folded into `SMake`'s check
   and the final one: it changes what is recorded, not what is returned.
 - A refusal at the final check writes a `SIGN_FAILED` entry
-  (`logWithheldSignature`) after the check. Nothing leaves on that path, so it
+  (`logWithheldRecords`) after the check. Nothing leaves on that path, so it
   too changes only what is recorded, and `SReturn` leaves it out.
 - A check and the release it guards are one step (`SReturn`, `EDeliver`), for
   the reason above.

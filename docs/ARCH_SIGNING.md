@@ -1210,18 +1210,20 @@ material is zeroed and before any blocking audit write:
   cancels every registered key use and waits for each to zero its loaded key
   material and release before clearing the key session and keyring. Any signing
   or assembly request whose key use was canceled withholds its signatures and
-  answers `locked`. For audited signing paths (`/sign`, bounded-base and
-  cosigner `/sign/component`, and rotating sign), a final session check runs
-  again after `SIGN_APPROVED` is written; if the session ended during the audit
-  write, the signatures are withheld, a countermanding `SIGN_FAILED` entry is
-  written (`LogSignWithheld`), and the request answers `locked`.
+  answers `locked` (on `/sign` and bounded-base `/sign/component`, an approved
+  request stopped before `SIGN_APPROVED` is audited as
+  `session_ended_after_approval`). After releasing its key use, every route
+  makes a final session check before returning: for audited signing paths
+  (`/sign`, bounded-base and cosigner `/sign/component`, and rotating sign)
+  that check runs after `SIGN_APPROVED` is written, withholding the signatures
+  and recording a countermanding `SIGN_FAILED` (`LogSignWithheld`) if the
+  session ended during the audit write; for `/sign/assemble` it runs directly
+  after the key use ends.
 - An entry into recovery keeps the keyring, cancels every registered key use,
-  and destroys and replaces the key session (as a lock does) with recovery's
-  view, which holds no keys. A request whose key use is canceled, whose next
-  key load hits the destroyed session, or whose post-audit check sees the
-  session ended withholds its signatures and answers `locked`, and a key
-  session pointer captured before recovery stays permanently locked even after
-  a later reconcile promotes back to unlocked.
+  and stops the key session with recovery's view, which holds no keys. Any
+  signing or assembly request whose key use is canceled, whose next key load
+  hits the stopped session, or whose post-release check sees that the session
+  it began in ended withholds its signatures and answers `locked`.
 
 A session end that comes after an operator answered overrides an approval,
 which could no longer sign, but not a rejection, which is recorded as the

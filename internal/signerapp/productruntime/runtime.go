@@ -114,10 +114,12 @@ type Runtime struct {
 	stageTables *stagetable.Store
 	stageWork   chan struct{}
 
-	// Key users are holders of loaded key material outside the session (the
-	// stage table worker and the rotating sign path). Lock cancels their context and waits for them to
-	// release before it clears the session, so no copy of a seed outlives
-	// the unlocked state.
+	// Key users are holders of loaded key material or source tokens outside an
+	// admin session (the stage table worker, rotating prepare and sign,
+	// ordinary /sign, bounded-base and cosigner /sign/component,
+	// /sign/assemble, cosigner external checks, and mnemonic export). Lock
+	// cancels their context and waits for them to release before it clears the
+	// session, so no copy of key material outlives the unlocked state.
 	keyUseMu     sync.Mutex
 	keyUseCtx    context.Context
 	keyUseCancel context.CancelFunc

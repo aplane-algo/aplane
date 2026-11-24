@@ -66,9 +66,8 @@ type Service struct {
 	// clearing the session. Every post-approval signing and assembly path
 	// (/sign, bounded-base and cosigner /sign/component, /sign/assemble)
 	// and the external check step hold a key use while they load or use
-	// secret material, releasing it before blocking audit writes. Nil uses
-	// the request's own context (tests only; production always wires
-	// Runtime.KeyUseContext).
+	// secret material, releasing it before blocking audit or console writes.
+	// Signing and assembly refuse when KeyUse is nil.
 	KeyUse func(ctx context.Context) (context.Context, func())
 }
 
@@ -165,7 +164,7 @@ func (s *Service) signComponentWithContext(ctx context.Context, req componentPla
 	// cannot hold a lock's drain, then recheck the session before returning.
 	endKeyUse()
 	records := s.logCosignerComponentApproved(plan, result)
-	if refused := s.postAuditRefused(ctx); refused != nil {
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}
@@ -204,10 +203,10 @@ func (s *Service) AssembleWithContext(ctx context.Context, req signerapi.Assembl
 	if err != nil {
 		return nil, s.classifyKeyUseError(ctx, useCtx, err)
 	}
-	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+	endKeyUse()
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		return nil, refused
 	}
-	endKeyUse()
 	return result, nil
 }
 
@@ -225,37 +224,43 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 
 	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
 	if useErr != nil {
-		if useErr.Kind == ErrorLocked {
-			s.logSignRejections(req, plan, plan.AllTxns[:len(req.Requests)], "session_ended_after_approval", useErr)
-		}
+		s.logSessionEndedAfterApproval(req, plan, useErr)
 		return nil, useErr
 	}
 	defer endKeyUse()
 
-	execResult, failAudit, err := s.Executor.executeGroupSigning(useCtx, plan, req, session)
+	execResult, deferred, err := s.Executor.executeGroupSigning(useCtx, plan, req, session)
 	if err != nil {
 		classified := s.classifyKeyUseError(ctx, useCtx, err)
 		endKeyUse()
-		failAudit.flush(s.Executor.AuditLog)
+		if classified.Kind == ErrorLocked {
+			s.logSessionEndedAfterApproval(req, plan, classified)
+		} else {
+			deferred.flushFailure(s.Executor.AuditLog)
+		}
 		return nil, classified
 	}
 	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+		endKeyUse()
+		s.logSessionEndedAfterApproval(req, plan, refused)
 		return nil, refused
 	}
-	// All loaded key material was zeroed before ExecuteGroupSigning returned.
-	// End the key use before writing audit logs so a stalled disk cannot hold
-	// a lock's drain, then recheck the session before releasing signatures.
+	// All loaded key material was zeroed before executeGroupSigning returned.
+	// End the key use before writing audit logs or console output so a stalled
+	// disk or terminal cannot hold a lock's drain, then recheck the session
+	// before releasing signatures.
 	endKeyUse()
 
 	var records []SignedRecord
 	if s.AuditLog != nil {
 		records = s.logSuccessfulSignatures(req, plan, auditedGroup(plan), outcome)
 	}
-	if refused := s.postAuditRefused(ctx); refused != nil {
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}
 
+	deferred.flushConsole(s.Executor.Console)
 	console := consoleOf(s.Console)
 	s.logSummary(req, plan, execResult.SignedTxns, console)
 
@@ -386,24 +391,16 @@ func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult)
 
 // openKeyUse registers a key-use window covering a signing or assembly
 // operation's key load and use, and checks that the request's session is
-// still active. The returned release is safe to call more than once and must
-// be called once loaded key material has been zeroed and before any blocking
-// audit write.
+// still active. It refuses when KeyUse is nil so no signing or assembly path
+// can load key material unregistered. The returned release is safe to call
+// more than once and must be called once loaded key material has been zeroed
+// and before any blocking audit or console write.
 func (s *Service) openKeyUse(ctx context.Context) (context.Context, func(), *ServiceError) {
-	if ctx == nil {
-		ctx = context.Background()
+	if s.KeyUse == nil {
+		return nil, nil, internal("signing service key use is not configured")
 	}
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, nil, lockedError()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, nil, canceledSignRequest(err)
-	}
-	useCtx, release := ctx, func() {}
-	if s.KeyUse != nil {
-		useCtx, release = s.KeyUse(ctx)
-		release = sync.OnceFunc(release)
-	}
+	useCtx, release := s.KeyUse(ctx)
+	release = sync.OnceFunc(release)
 	// Recheck after registration: KeyUse checks current unlocked state, not
 	// the request's session generation, so a lock+unlock or recovery+reconcile
 	// round-trip before registration passes KeyUse and is caught here by
@@ -415,15 +412,16 @@ func (s *Service) openKeyUse(ctx context.Context) (context.Context, func(), *Ser
 	return useCtx, release, nil
 }
 
-// keyUseRefused reports why work inside a key-use window must stop and
+// keyUseRefused reports why a signing or assembly request must stop and
 // withhold output: the request's session ended (lock, recovery, or round-trip),
-// the caller canceled the request, or the key-use context itself was canceled.
+// the caller canceled requestCtx, or (while a key-use window is open) useCtx
+// was canceled. Pass nil for useCtx after the key-use window has been released.
 func (s *Service) keyUseRefused(requestCtx, useCtx context.Context) *ServiceError {
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return lockedError()
 	}
-	if requestCtx != nil && requestCtx.Err() != nil {
-		return canceledSignRequest(requestCtx.Err())
+	if err := requestCtx.Err(); err != nil {
+		return canceledSignRequest(err)
 	}
 	if useCtx != nil && useCtx.Err() != nil {
 		return lockedError()
@@ -438,31 +436,20 @@ func (s *Service) classifyKeyUseError(requestCtx, useCtx context.Context, err *S
 	if err == nil {
 		return nil
 	}
-	if err.Kind == ErrorLocked {
-		return err
-	}
 	if refused := s.keyUseRefused(requestCtx, useCtx); refused != nil {
 		return refused
 	}
 	return err
 }
 
-// postAuditRefused is the final check before returning signatures after the
-// key-use window ended and SIGN_APPROVED was written. Checking both IsUnlocked
-// (the request's session generation) and ctx.Err() matches rotating sign's
-// post-audit releaseRefused check.
-func (s *Service) postAuditRefused(ctx context.Context) *ServiceError {
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return lockedError()
+func (s *Service) logSessionEndedAfterApproval(req signerapi.GroupSignRequest, plan *PlanResult, err *ServiceError) {
+	if err != nil && err.Kind == ErrorLocked {
+		s.logSignRejections(req, plan, plan.AllTxns[:len(req.Requests)], "session_ended_after_approval", err)
 	}
-	if ctx != nil && ctx.Err() != nil {
-		return canceledSignRequest(ctx.Err())
-	}
-	return nil
 }
 
 // logWithheldRecords writes SIGN_FAILED entries countermanding signatures that
-// were already audited as SIGN_APPROVED before postAuditRefused stopped return.
+// were already audited as SIGN_APPROVED before the final check stopped return.
 func (s *Service) logWithheldRecords(records []SignedRecord, refused *ServiceError) {
 	if s.AuditLog == nil || refused == nil || len(records) == 0 {
 		return

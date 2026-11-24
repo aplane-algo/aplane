@@ -19,7 +19,7 @@ contracts; these models cover narrower security-critical transitions.
 | `enrollment_queue.tla` | client enrollment registry and queue under the applied-vs-durable publication rule |
 | `recovery_binding.tla` | which generation the runtime binds, serves, and maintains after a failed post-commit reload |
 | `rotating_leaf_release.tla` | one-time leaf choice for a rotating leaf-family stage: release memory, audit restore after unlock, and the status-pass clear |
-| `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a rotating sign or mnemonic export may still release; what an unlock may publish, load and clear beside a lock, a recovery and a session in service |
+| `key_use_lock.tla` | how a lock ends every key use outside a session: registration, drain, session clear, and what a signing or assembly request or mnemonic export may still release; what an unlock may publish, load and clear beside a lock, a recovery and a session in service |
 | `setting_publish.tla` | when a writable setting's change takes effect relative to its durable audit intent and its save: restrictive before without blocking on audit, anything else audited first and published after |
 | `signer_invariants.tla` | the signer invariants ahead of the policy verdict, the positions each one judges, and a cosigner document's external checks after the verdict |
 
@@ -1031,3 +1031,17 @@ adds `"auditing"`, `audited`, `"audit_failed"`, the constant
 `setting_publish_negative_audit.cfg` violates SP5 after 3 distinct states at
 depth 2; existing negative controls keep violating SP1 at 5 states and SP3 at
 4 states, depth 2). `make formal-test` now has 48 runs.
+
+Changed 2026-11-24: ordinary `/sign`, bounded-base and cosigner-role
+`/sign/component`, and `/sign/assemble` now register `Runtime.KeyUseContext`
+through `Service.openKeyUse` (which refuses nil `KeyUse`), release their key
+use after zeroing loaded key material and before any blocking audit or console
+write, and run a final post-release `keyUseRefused(ctx, nil)` check (withholding
+signatures and recording `LogSignWithheld` on audited routes); the no-op
+`Service.BeforeExecute` hook is removed, and `external_checks.go` also releases
+its key use before auditing a refusal. In `key_use_lock.tla` only comments and
+anchors change because all four routes follow the modeled
+`SStart` → `SRegister` → `SMake` → `SRelease` → `SReturn` lifecycle (positive
+run unchanged at 3,537 distinct states at depth 15; deep run unchanged at 5,682
+at depth 16; all 15 negative controls unchanged). The companion, KU1, KU2, and
+`AGENTS.md` follow.

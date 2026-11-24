@@ -223,13 +223,11 @@ func (c *Coordinator) CancelSignRequest(requestID, reason string) SignRequestCan
 // as withdrawn, requests queued for the delivery turn stop waiting, and a
 // request from the ended session that asks for approval later is refused.
 // Each answers ErrApprovalCanceled wrapping ErrSessionEnded. It cancels no
-// request's context. A request that is planning or signing is answered
-// locked, not as a cancellation by its client, by the session check if it
-// has not passed it, or by the cut of its key use if it is a rotating sign.
-// Ordinary and component signing register no key use, so one already past
-// the check is stopped only by a key load after a lock cleanup cleared the
-// session, and not at all by an entry into recovery (ARCH_SIGNING.md,
-// session end). The withdrawn prompt is dismissed, with
+// request's context. A request that is planning or waiting at its gates is
+// answered locked, not as a cancellation by its client, by the session check,
+// and every signing and assembly path past its gates holds a registered key
+// use that every session end cuts (ARCH_SIGNING.md, session end). The
+// withdrawn prompt is dismissed, with
 // reason session_ended, by its own request, so the caller never writes to
 // the operator's connection.
 func (c *Coordinator) EndSessionSignRequests() {

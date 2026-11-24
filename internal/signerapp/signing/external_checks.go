@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -42,6 +43,7 @@ func (s *Service) runExternalChecks(ctx context.Context, plan *ComponentSignPlan
 	stepCtx, release := ctx, func() {}
 	if s.KeyUse != nil {
 		stepCtx, release = s.KeyUse(ctx)
+		release = sync.OnceFunc(release)
 	}
 	defer release()
 	resolver := s.genesisHashResolver()
@@ -71,6 +73,9 @@ func (s *Service) runExternalChecks(ctx context.Context, plan *ComponentSignPlan
 	if refusal.Outcome == policy.ExternalCheckTokenNotSetOutcome && s.IsUnlocked != nil && !s.IsUnlocked() {
 		return lockedError()
 	}
+	// Release the key use before writing the rejection audit entry so a
+	// stalled audit disk cannot hold a lock's drain.
+	release()
 	return s.refuseExternalCheck(plan, refusal)
 }
 

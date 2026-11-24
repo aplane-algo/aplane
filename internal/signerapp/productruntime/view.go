@@ -426,18 +426,12 @@ func (ir *Runtime) enterRecoveryViewLocked(kr *crypto.Keyring, view recoveryView
 
 // installRecoveryViewLocked installs view with kr, the keyring in service,
 // which the install keeps. No provider is registered, and the key session
-// stops and is replaced with a fresh inactive one (as performLockCleanup does),
-// so a request holding the old session pointer stays permanently locked even
-// after a later reconcile publishes unlocked, rather than seeing the old
-// session re-initialized or finding no key on a passthrough check.
+// stops: a request already past its session check whose next key load comes
+// after the entry answers locked, as after a lock, rather than finding no
+// key, which a passthrough check reads as a foreign account.
 func (ir *Runtime) installRecoveryViewLocked(kr *crypto.Keyring, view recoveryView) keystore.DetachedKeyring {
 	if ir.keySession != nil {
 		ir.keySession.Destroy()
-		if ir.keyStore != nil {
-			ir.keySession = keystore.NewKeySession(ir.keyStore)
-		} else {
-			ir.keySession = nil
-		}
 	}
 	ir.stageTables.Invalidate()
 	var detached keystore.DetachedKeyring

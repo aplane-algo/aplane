@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -475,6 +477,9 @@ func TestNonRotatingSigningEndsKeyUseBeforeAuditAndRechecksAfter(t *testing.T) {
 			if audit.withheld[0].record.TxID != audit.approved[0].record.TxID {
 				t.Fatalf("withheld TxID = %q, want approved TxID %q", audit.withheld[0].record.TxID, audit.approved[0].record.TxID)
 			}
+			if !strings.HasPrefix(audit.withheld[0].reason, "signature withheld after it was recorded as signed: ") {
+				t.Fatalf("withheld reason = %q, want standard prefix", audit.withheld[0].reason)
+			}
 		})
 
 		t.Run(path.name+"/caller_cancel_during_audit_withholds_signature", func(t *testing.T) {
@@ -496,6 +501,9 @@ func TestNonRotatingSigningEndsKeyUseBeforeAuditAndRechecksAfter(t *testing.T) {
 			}
 			if len(audit.approved) != 1 || len(audit.withheld) != 1 {
 				t.Fatalf("audit approved=%d withheld=%d, want 1/1", len(audit.approved), len(audit.withheld))
+			}
+			if !strings.HasPrefix(audit.withheld[0].reason, "signature withheld after it was recorded as signed: ") {
+				t.Fatalf("withheld reason = %q, want standard prefix", audit.withheld[0].reason)
 			}
 		})
 	}
@@ -704,7 +712,7 @@ func TestAssembleWithContextKeyUseRefusalAndMidAssemblyCancel(t *testing.T) {
 	})
 }
 
-// A non-canceled failure inside ExecuteGroupSigning (such as a missing key on
+// A non-canceled failure inside executeGroupSigning (such as a missing key on
 // load) must release KeyUse before writing LogSignFailed to the audit log, so
 // a stalled audit disk on a failing sign cannot hold a lock's drain.
 func TestOrdinarySignFailureReleasesKeyUseBeforeAuditLog(t *testing.T) {
@@ -716,10 +724,12 @@ func TestOrdinarySignFailureReleasesKeyUseBeforeAuditLog(t *testing.T) {
 	var keyUseActive atomic.Bool
 	var activeDuringFailAudit atomic.Bool
 	var failAuditCalls atomic.Int32
+	var gotAuth, gotSender, gotReason string
 
 	audit := &hookAuditLogger{
-		onFail: func(string, string, string) {
+		onFail: func(authAddress, txnSender, reason string) {
 			failAuditCalls.Add(1)
+			gotAuth, gotSender, gotReason = authAddress, txnSender, reason
 			if keyUseActive.Load() {
 				activeDuringFailAudit.Store(true)
 			}
@@ -744,5 +754,286 @@ func TestOrdinarySignFailureReleasesKeyUseBeforeAuditLog(t *testing.T) {
 	}
 	if activeDuringFailAudit.Load() {
 		t.Fatal("KeyUse was still active when LogSignFailed ran")
+	}
+	if gotAuth != f.edAddr || gotSender != f.edAddr || !strings.Contains(gotReason, "failed to load key") {
+		t.Fatalf("LogSignFailed = (%q, %q, %q), want (%q, %q, failed to load key...)", gotAuth, gotSender, gotReason, f.edAddr, f.edAddr)
+	}
+}
+
+// If the session ends during the last key load before cancellation propagates
+// into useCtx, every audited signing route must stop before writing
+// SIGN_APPROVED (with /sign and bounded components auditing
+// session_ended_after_approval after releasing KeyUse), and /sign/assemble
+// must still refuse at its post-release final session check.
+func TestSessionEndDuringLoadStopsBeforeAuditAndAssemblyReturn(t *testing.T) {
+	paths := []struct {
+		name           string
+		auditAfterAppr bool
+		run            func(*testing.T, *nonRotatingFixture, *Service, context.Context) (bool, *ServiceError)
+	}{
+		{"ordinary_sign", true, func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.ordinarySign(t, svc, ctx)
+		}},
+		{"bounded_component", true, func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.boundedComponentSign(t, svc, ctx)
+		}},
+		{"cosigner_component", false, func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.cosignerComponentSign(t, svc, ctx)
+		}},
+		{"assemble", false, func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			res, err := svc.AssembleWithContext(ctx, f.assemblyRequest(t, true), f.session)
+			return res != nil, err
+		}},
+	}
+
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newNonRotatingFixture(t)
+			var unlocked atomic.Bool
+			unlocked.Store(true)
+			var keyUseActive atomic.Bool
+			var released atomic.Bool
+			audit := &testAuditLogger{}
+			svc := f.newService(t, audit, &unlocked)
+			svc.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				keyUseActive.Store(true)
+				return ctx, func() {
+					keyUseActive.Store(false)
+					released.Store(true)
+				}
+			}
+			f.store.onGet = func(context.Context, string) {
+				// End the request's session without canceling useCtx, simulating a
+				// session end whose context cancellation has not yet arrived.
+				unlocked.Store(false)
+			}
+
+			ok, err := path.run(t, f, svc, context.Background())
+			if ok || err == nil || err.Kind != ErrorLocked {
+				t.Fatalf("run() = (%v, %v), want false + ErrorLocked", ok, err)
+			}
+			if !released.Load() || keyUseActive.Load() {
+				t.Fatalf("released=%v keyUseActive=%v, want true and false", released.Load(), keyUseActive.Load())
+			}
+			if len(audit.approved) != 0 || len(audit.withheld) != 0 {
+				t.Fatalf("audit approved=%d withheld=%d, want 0/0 (must stop before SIGN_APPROVED)", len(audit.approved), len(audit.withheld))
+			}
+			if path.auditAfterAppr {
+				if len(audit.rejected) != 1 || audit.rejected[0].reason != "session_ended_after_approval" {
+					t.Fatalf("audit rejected = %+v, want one session_ended_after_approval entry", audit.rejected)
+				}
+			}
+		})
+	}
+}
+
+// A client cancellation inside the key-use window cancels both requestCtx and
+// the child useCtx; every route must report ErrorUnavailable (503), not
+// ErrorLocked, and must not write session_ended_after_approval.
+func TestNonRotatingSigningClientCancelInsideWindowReturns503WithoutSessionEndedAudit(t *testing.T) {
+	paths := []struct {
+		name string
+		run  func(*testing.T, *nonRotatingFixture, *Service, context.Context) (bool, *ServiceError)
+	}{
+		{"ordinary_sign", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.ordinarySign(t, svc, ctx)
+		}},
+		{"bounded_component", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.boundedComponentSign(t, svc, ctx)
+		}},
+		{"cosigner_component", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.cosignerComponentSign(t, svc, ctx)
+		}},
+		{"assemble", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			res, err := svc.AssembleWithContext(ctx, f.assemblyRequest(t, true), f.session)
+			return res != nil, err
+		}},
+	}
+
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newNonRotatingFixture(t)
+			var unlocked atomic.Bool
+			unlocked.Store(true)
+			audit := &testAuditLogger{}
+			svc := f.newService(t, audit, &unlocked)
+			svc.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				useCtx, cancel := context.WithCancel(ctx)
+				return useCtx, cancel
+			}
+			reqCtx, cancelReq := context.WithCancel(context.Background())
+			defer cancelReq()
+			f.store.onGet = func(context.Context, string) {
+				cancelReq()
+			}
+
+			ok, err := path.run(t, f, svc, reqCtx)
+			if ok || err == nil || err.Kind != ErrorUnavailable {
+				t.Fatalf("run() = (%v, %v), want false + ErrorUnavailable", ok, err)
+			}
+			if len(audit.approved) != 0 || len(audit.rejected) != 0 {
+				t.Fatalf("audit approved=%d rejected=%+v, want 0/0 on client cancel", len(audit.approved), audit.rejected)
+			}
+		})
+	}
+}
+
+// Signing and assembly refuse with ErrorInternal when Service.KeyUse is nil,
+// so no path can load key material unregistered.
+func TestNonRotatingSigningRefusesNilKeyUse(t *testing.T) {
+	paths := []struct {
+		name string
+		run  func(*testing.T, *nonRotatingFixture, *Service, context.Context) (bool, *ServiceError)
+	}{
+		{"ordinary_sign", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.ordinarySign(t, svc, ctx)
+		}},
+		{"bounded_component", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.boundedComponentSign(t, svc, ctx)
+		}},
+		{"cosigner_component", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			return f.cosignerComponentSign(t, svc, ctx)
+		}},
+		{"assemble", func(t *testing.T, f *nonRotatingFixture, svc *Service, ctx context.Context) (bool, *ServiceError) {
+			res, err := svc.AssembleWithContext(ctx, f.assemblyRequest(t, true), f.session)
+			return res != nil, err
+		}},
+	}
+
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newNonRotatingFixture(t)
+			var unlocked atomic.Bool
+			unlocked.Store(true)
+			audit := &testAuditLogger{}
+			svc := f.newService(t, audit, &unlocked)
+			svc.KeyUse = nil
+
+			ok, err := path.run(t, f, svc, context.Background())
+			if ok || err == nil || err.Kind != ErrorInternal {
+				t.Fatalf("run() = (%v, %v), want false + ErrorInternal", ok, err)
+			}
+			if f.store.loads.Load() != 0 {
+				t.Fatalf("store loads = %d, want 0", f.store.loads.Load())
+			}
+			if len(audit.rejected) != 0 {
+				t.Fatalf("audit rejected = %+v, want 0 on unconfigured KeyUse", audit.rejected)
+			}
+		})
+	}
+}
+
+// approveGroupWithPlanContext itself checks IsUnlocked after approval returns
+// and records session_ended_after_approval (which rotating sign relies on,
+// since it runs its own post-approval steps before opening a KeyUse).
+func TestApproveGroupWithPlanRefusesWhenSessionEndedDuringApproval(t *testing.T) {
+	f := newNonRotatingFixture(t)
+	var unlocked atomic.Bool
+	unlocked.Store(true)
+	audit := &testAuditLogger{}
+	svc := f.newService(t, audit, &unlocked)
+	svc.Approval = &ApprovalService{
+		UserAutoApprove: false,
+		HasClient:       func() bool { return true },
+		KnownAddresses:  func() map[string]bool { return nil },
+		RequestSigningApprovalPrompt: promptFromDecision(func(string, string, string, string, uint64, uint64, []signerapproval.Violation, time.Duration) (bool, error) {
+			unlocked.Store(false)
+			return true, nil
+		}),
+	}
+	txn := paymentTransaction(t, f.edAddr, types.Address{0x5b}.String(), 100)
+	txn.Fee = 1_000
+	txn.GenesisHash = testDigest(t, apconfig.AlgorandTestnetGenesisHash)
+	req := signerapi.GroupSignRequest{
+		RequestID: "req-approve-session-end",
+		Requests: []signerapi.SignRequest{{
+			AuthAddress: f.edAddr,
+			TxnBytesHex: txnutil.EncodeWithPrefixHex(txn),
+		}},
+	}
+	plan, planErr := svc.Planner.PlanGroup(req)
+	if planErr != nil {
+		t.Fatalf("PlanGroup() error = %v", planErr)
+	}
+
+	_, gateErr := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+	if gateErr == nil || gateErr.Kind != ErrorLocked {
+		t.Fatalf("approveGroupWithPlanContext() error = %v, want ErrorLocked", gateErr)
+	}
+	if len(audit.rejected) != 1 || audit.rejected[0].reason != "session_ended_after_approval" {
+		t.Fatalf("audit rejected = %+v, want one session_ended_after_approval entry", audit.rejected)
+	}
+}
+
+type refusalExternalCheckRunner struct{}
+
+func (refusalExternalCheckRunner) Run(context.Context, *policy.Config, externalcheck.Request) (*externalcheck.Summary, *externalcheck.Refusal) {
+	return nil, &externalcheck.Refusal{
+		CheckID: "check-1",
+		Outcome: policy.ExternalCheckUnavailableOutcome,
+		Unit:    "txn 1",
+		Detail:  "denied",
+	}
+}
+
+type rejectHookAuditLogger struct {
+	testAuditLogger
+	onReject func()
+}
+
+func (l *rejectHookAuditLogger) LogSignRejected(authAddress, txnSender, reason string) {
+	l.testAuditLogger.LogSignRejected(authAddress, txnSender, reason)
+	if l.onReject != nil {
+		l.onReject()
+	}
+}
+
+func (l *rejectHookAuditLogger) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
+	l.testAuditLogger.LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID)
+	if l.onReject != nil {
+		l.onReject()
+	}
+}
+
+// External check refusals must release their key use before writing the
+// rejection audit entry so a stalled audit disk cannot hold a lock's drain.
+func TestExternalCheckRefusalReleasesKeyUseBeforeAuditLog(t *testing.T) {
+	f := newNonRotatingFixture(t)
+	var unlocked atomic.Bool
+	unlocked.Store(true)
+	var keyUseActive atomic.Bool
+	var activeDuringRejectAudit atomic.Bool
+	var rejectCalls atomic.Int32
+
+	audit := &rejectHookAuditLogger{
+		onReject: func() {
+			rejectCalls.Add(1)
+			if keyUseActive.Load() {
+				activeDuringRejectAudit.Store(true)
+			}
+		},
+	}
+	cfg := wildcardCosignerPolicy(t)
+	cfg.ExternalChecks = []policy.ExternalCheckV1{{ID: "check-1"}}
+	svc := f.newService(t, audit, &unlocked)
+	svc.PolicyFor = fixedPolicy(cfg)
+	svc.ExternalChecks = refusalExternalCheckRunner{}
+	svc.KeyUse = func(ctx context.Context) (context.Context, func()) {
+		keyUseActive.Store(true)
+		return ctx, func() { keyUseActive.Store(false) }
+	}
+
+	ok, err := f.cosignerComponentSign(t, svc, context.Background())
+	if ok || err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("cosignerComponentSign() = (%v, %v), want false + ErrorForbidden", ok, err)
+	}
+	if keyUseActive.Load() {
+		t.Fatal("KeyUse was not released after external check refusal")
+	}
+	if rejectCalls.Load() != 1 {
+		t.Fatalf("rejection audit calls = %d, want 1", rejectCalls.Load())
+	}
+	if activeDuringRejectAudit.Load() {
+		t.Fatal("KeyUse was still active when refuseExternalCheck wrote the audit entry")
 	}
 }
