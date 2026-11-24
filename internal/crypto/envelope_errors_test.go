@@ -22,7 +22,7 @@ func TestEnvelopeParseErrors(t *testing.T) {
 	if err := json.Unmarshal(standalone, &fields); err != nil {
 		t.Fatal(err)
 	}
-	fields.KDFMemory++
+	fields.KDFMemory = argon2MaxMemory + 1
 	wrongKDF, err := json.Marshal(fields)
 	if err != nil {
 		t.Fatal(err)
@@ -66,12 +66,12 @@ func TestEnvelopeParseErrors(t *testing.T) {
 			_, err := DecryptStandalone(bytes.Replace(standalone, []byte("{\n"), []byte("{\n  \"extra\": 1,\n"), 1), passphrase)
 			return err
 		}(), `failed to parse encrypted data: json: unknown field "extra"`},
-		{"standalone with other KDF parameters", func() error {
+		{"standalone with out-of-range KDF parameters", func() error {
 			_, err := DecryptStandalone(wrongKDF, passphrase)
 			return err
 		}(), fmt.Sprintf(
-			"standalone envelope KDF parameters (%d, %d, %d) are not this release's (%d, %d, %d)",
-			argon2Time, argon2Memory+1, argon2Threads, argon2Time, argon2Memory, argon2Threads,
+			"standalone envelope kdf_memory %d is outside supported range [%d, %d]",
+			argon2MaxMemory+1, argon2MinMemory, argon2MaxMemory,
 		)},
 		{"a standalone envelope opened as a term envelope", open(standalone), "envelope_version 2 is not a term envelope (expected 3)"},
 		{"a term envelope that is not JSON", open([]byte("not json")), "failed to parse encrypted data: "},

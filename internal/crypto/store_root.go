@@ -34,18 +34,16 @@ const (
 	storeRootSelectionMACHKDFInfo    = "aplane.store-root-selection-mac-key.v1"
 	maxStoreRootBytes                = 2 << 20
 	maxStoreRootKeystoreMarkerBytes  = 16 << 10
-	storeRootGCMNonceBytes           = 12
-	storeRootGCMTagBytes             = 16
 )
 
 // ErrInvalidPassphrase reports that the passphrase does not open the store
 // root: it is empty, or the sealed keyring fails AEAD authentication under the
 // KEK derived from it. AEAD cannot tell a wrong passphrase from altered sealed
-// keyring bytes, so this is the one store-root failure callers may report as
-// a wrong passphrase. Every other failure (an unreadable, unparsable or
-// unsupported root, a failed selection MAC, a damaged selected generation) is
-// a damaged store, which callers report as such and never as a passphrase
-// to retry.
+// keyring bytes or altered in-range KDF parameters or salt, so this is the one
+// store-root failure callers may report as a wrong passphrase. Every other
+// failure (an unreadable, unparsable or unsupported root, a failed selection
+// MAC, a damaged selected generation) is a damaged store, which callers report
+// as such and never as a passphrase to retry.
 var ErrInvalidPassphrase = errors.New("passphrase does not open the store root")
 
 // StoreRootSelection is the authenticated public projection of the one
@@ -524,18 +522,18 @@ func decodeStoreRootKeyringHeader(
 	if err != nil {
 		return keyringFile{}, nil, nil, nil, err
 	}
-	if len(nonce) != storeRootGCMNonceBytes {
+	if len(nonce) != gcmNonceBytes {
 		return keyringFile{}, nil, nil, nil, fmt.Errorf(
 			"store root keyring nonce has length %d, want %d",
 			len(nonce),
-			storeRootGCMNonceBytes,
+			gcmNonceBytes,
 		)
 	}
 	ciphertext, err := decodeCanonicalBase64("sealed store root keyring", file.SealedKeyring)
 	if err != nil {
 		return keyringFile{}, nil, nil, nil, err
 	}
-	if len(ciphertext) < storeRootGCMTagBytes {
+	if len(ciphertext) < gcmTagBytes {
 		return keyringFile{}, nil, nil, nil, fmt.Errorf("sealed store root keyring is too short")
 	}
 	canonical, err := json.Marshal(file)
