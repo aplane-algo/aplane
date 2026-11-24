@@ -21,9 +21,12 @@ const (
 	// under the other. Supported values:
 	//
 	//   - 22: two layers of height 11, a 4,400-byte signature and a
-	//     six-transaction group. Not a FIPS 205 parameter set.
+	//     six-transaction group. Not a FIPS 205 parameter set. Shipped under
+	//     aplane.rotating-triple-slhdsa.v1.
 	//   - 63: seven layers of height 9, SLH-DSA-SHA2-128s of FIPS 205, a
-	//     7,856-byte signature and a ten-transaction group.
+	//     7,856-byte signature and a ten-transaction group. Review-only:
+	//     ordinary builds refuse to compile at any height other than 22
+	//     (height_pin.go); height-63 builds require -tags testmode.
 	RotatingSlhdsaHeight = 22
 
 	// RotatingTripleSlhdsaV1 uses a stateless SLH-DSA key per stage under the
