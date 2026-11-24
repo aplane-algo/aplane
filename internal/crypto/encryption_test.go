@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -164,8 +165,8 @@ func TestDecryptStandaloneRejectsEnvelopeWithoutKDFParams(t *testing.T) {
 	}
 
 	_, err = DecryptStandalone(legacy, passphrase)
-	if err == nil || !strings.Contains(err.Error(), "are not this release's") {
-		t.Fatalf("DecryptStandalone legacy envelope error = %v, want exact KDF tuple rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "outside supported range") {
+		t.Fatalf("DecryptStandalone legacy envelope error = %v, want out-of-range KDF rejection", err)
 	}
 }
 
@@ -188,29 +189,165 @@ func TestDecryptStandaloneRejectsIncompleteKDFParams(t *testing.T) {
 	if err == nil {
 		t.Fatal("DecryptStandalone should reject incomplete KDF parameters")
 	}
-	if !strings.Contains(err.Error(), "are not this release's") {
-		t.Errorf("Expected exact KDF tuple error, got: %v", err)
+	if !strings.Contains(err.Error(), "kdf_threads 0 is not supported") {
+		t.Errorf("Expected kdf_threads rejection error, got: %v", err)
 	}
 }
 
-func TestDecryptStandaloneRejectsModifiedKDFParamsBeforeDerivation(t *testing.T) {
+func TestDecryptStandaloneRejectsOutOfRangeKDFParamsBeforeDerivation(t *testing.T) {
 	encrypted, err := EncryptStandalone([]byte("data"), []byte("pass"))
 	if err != nil {
 		t.Fatalf("EncryptStandalone() error = %v", err)
 	}
+	var base EncryptedDataStandalone
+	if err := json.Unmarshal(encrypted, &base); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*EncryptedDataStandalone)
+		wantErr string
+	}{
+		{"time zero", func(e *EncryptedDataStandalone) { e.KDFTime = 0 }, "kdf_time 0 is outside supported range"},
+		{"time below floor", func(e *EncryptedDataStandalone) { e.KDFTime = argon2MinTime - 1 }, "kdf_time 1 is outside supported range"},
+		{"time above ceiling", func(e *EncryptedDataStandalone) { e.KDFTime = argon2MaxTime + 1 }, "kdf_time 5 is outside supported range"},
+		{"time max uint32", func(e *EncryptedDataStandalone) { e.KDFTime = math.MaxUint32 }, "kdf_time 4294967295 is outside supported range"},
+		{"memory zero", func(e *EncryptedDataStandalone) { e.KDFMemory = 0 }, "kdf_memory 0 is outside supported range"},
+		{"memory below floor", func(e *EncryptedDataStandalone) { e.KDFMemory = argon2MinMemory - 1 }, "kdf_memory 65535 is outside supported range"},
+		{"memory above ceiling", func(e *EncryptedDataStandalone) { e.KDFMemory = argon2MaxMemory + 1 }, "kdf_memory 262145 is outside supported range"},
+		{"memory max uint32", func(e *EncryptedDataStandalone) { e.KDFMemory = math.MaxUint32 }, "kdf_memory 4294967295 is outside supported range"},
+		{"threads zero", func(e *EncryptedDataStandalone) { e.KDFThreads = 0 }, "kdf_threads 0 is not supported"},
+		{"threads below fixed", func(e *EncryptedDataStandalone) { e.KDFThreads = argon2Threads - 1 }, "kdf_threads 3 is not supported"},
+		{"threads above fixed", func(e *EncryptedDataStandalone) { e.KDFThreads = argon2Threads + 1 }, "kdf_threads 5 is not supported"},
+		{"threads max uint8", func(e *EncryptedDataStandalone) { e.KDFThreads = math.MaxUint8 }, "kdf_threads 255 is not supported"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			derived := false
+			kdfDeriveHook = func(uint32, uint32, uint8) { derived = true }
+			defer func() { kdfDeriveHook = nil }()
+
+			candidate := base
+			tc.mutate(&candidate)
+			modified, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			_, err = DecryptStandalone(modified, []byte("pass"))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("DecryptStandalone() error = %v, want substring %q", err, tc.wantErr)
+			}
+			if derived {
+				t.Fatal("Argon2id derivation ran despite out-of-range KDF parameters")
+			}
+		})
+	}
+}
+
+func sealStandaloneWithKDFForTest(t *testing.T, plaintext, passphrase []byte, kdfTime, kdfMemory uint32, kdfThreads uint8) []byte {
+	t.Helper()
+	salt, err := randomBytes(masterSaltLen)
+	if err != nil {
+		t.Fatalf("randomBytes(salt) error = %v", err)
+	}
+	key := deriveMasterKeyParams(passphrase, salt, kdfTime, kdfMemory, kdfThreads)
+	defer ZeroBytes(key)
+	gcm, err := newGCM(key)
+	if err != nil {
+		t.Fatalf("newGCM() error = %v", err)
+	}
+	nonce, ciphertext, err := sealWithRandomNonce(gcm, plaintext, nil)
+	if err != nil {
+		t.Fatalf("sealWithRandomNonce() error = %v", err)
+	}
+	encoded, err := json.MarshalIndent(EncryptedDataStandalone{
+		EnvelopeVersion: 2,
+		Salt:            base64.StdEncoding.EncodeToString(salt),
+		Nonce:           base64.StdEncoding.EncodeToString(nonce),
+		Ciphertext:      base64.StdEncoding.EncodeToString(ciphertext),
+		KDFTime:         kdfTime,
+		KDFMemory:       kdfMemory,
+		KDFThreads:      kdfThreads,
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent() error = %v", err)
+	}
+	return encoded
+}
+
+func TestDecryptStandaloneDerivesFromStoredInRangeKDFParams(t *testing.T) {
+	passphrase := []byte("stored-params-passphrase")
+	plaintext := []byte(`{"key_type":"ed25519","secret":"preserved"}`)
+
+	cases := []struct {
+		name    string
+		time    uint32
+		memory  uint32
+		threads uint8
+	}{
+		{"mid-range non-default", 3, 68 * 1024, argon2Threads},
+		{"exact ceiling", argon2MaxTime, argon2MaxMemory, argon2Threads},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sealed := sealStandaloneWithKDFForTest(t, plaintext, passphrase, tc.time, tc.memory, tc.threads)
+
+			var gotTime, gotMemory uint32
+			var gotThreads uint8
+			calls := 0
+			kdfDeriveHook = func(tm, mem uint32, thr uint8) {
+				calls++
+				gotTime, gotMemory, gotThreads = tm, mem, thr
+			}
+			defer func() { kdfDeriveHook = nil }()
+
+			decrypted, err := DecryptStandalone(sealed, passphrase)
+			if err != nil {
+				t.Fatalf("DecryptStandalone() error = %v", err)
+			}
+			if !bytes.Equal(decrypted, plaintext) {
+				t.Fatalf("DecryptStandalone() = %q, want %q", decrypted, plaintext)
+			}
+			if calls != 1 || gotTime != tc.time || gotMemory != tc.memory || gotThreads != tc.threads {
+				t.Fatalf("derived with (%d, %d, %d) x%d, want (%d, %d, %d) x1",
+					gotTime, gotMemory, gotThreads, calls, tc.time, tc.memory, tc.threads)
+			}
+		})
+	}
+
+	// Editing an in-range KDF parameter after sealing changes the derived key
+	// and must fail AES-GCM authentication.
+	sealed := mustEncryptStandalone(t, plaintext, passphrase)
 	var envelope EncryptedDataStandalone
-	if err := json.Unmarshal(encrypted, &envelope); err != nil {
+	if err := json.Unmarshal(sealed, &envelope); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	envelope.KDFMemory++
-	modified, err := json.Marshal(envelope)
+	tampered, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	_, err = DecryptStandalone(modified, []byte("pass"))
-	if err == nil || !strings.Contains(err.Error(), "are not this release's") {
-		t.Fatalf("DecryptStandalone() error = %v, want exact KDF tuple rejection", err)
+	var gotMemory uint32
+	kdfDeriveHook = func(_, mem uint32, _ uint8) { gotMemory = mem }
+	defer func() { kdfDeriveHook = nil }()
+	if _, err := DecryptStandalone(tampered, passphrase); err == nil || !strings.Contains(err.Error(), "failed to decrypt data") {
+		t.Fatalf("DecryptStandalone(in-range tampered KDF) error = %v, want decrypt failure", err)
 	}
+	if gotMemory != argon2Memory+1 {
+		t.Fatalf("derived memory = %d, want %d", gotMemory, argon2Memory+1)
+	}
+}
+
+func mustEncryptStandalone(t *testing.T, plaintext, passphrase []byte) []byte {
+	t.Helper()
+	sealed, err := EncryptStandalone(plaintext, passphrase)
+	if err != nil {
+		t.Fatalf("EncryptStandalone() error = %v", err)
+	}
+	return sealed
 }
 
 func TestDecryptStandaloneRejectsOversizedEnvelope(t *testing.T) {
@@ -300,12 +437,19 @@ func TestDecryptStandaloneRejectsInvalidNonceLength(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
+	derived := false
+	kdfDeriveHook = func(uint32, uint32, uint8) { derived = true }
+	defer func() { kdfDeriveHook = nil }()
+
 	_, err = DecryptStandalone(data, []byte("passphrase"))
 	if err == nil {
 		t.Fatal("DecryptStandalone() error = nil, want invalid nonce length")
 	}
 	if !strings.Contains(err.Error(), "invalid nonce length") {
 		t.Fatalf("DecryptStandalone() error = %v, want invalid nonce length", err)
+	}
+	if derived {
+		t.Fatal("Argon2id derivation ran despite invalid nonce length")
 	}
 }
 

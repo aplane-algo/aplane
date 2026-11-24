@@ -45,19 +45,22 @@ operator config.
 
 ## Encryption Format (envelope_version 2)
 
-Each ` + "`.apb`" + ` file is a JSON document with four fields:
+Each ` + "`.apb`" + ` file is a JSON document with these fields:
 
 - ` + "`envelope_version`" + `: Always 2 (self-contained standalone format)
 - ` + "`salt`" + `: Base64-encoded 32-byte random salt for Argon2id key derivation
 - ` + "`nonce`" + `: Base64-encoded 12-byte random nonce for AES-256-GCM
 - ` + "`ciphertext`" + `: Base64-encoded AES-256-GCM encrypted data
+- ` + "`kdf_time`" + `: Argon2id iterations (2 in this release)
+- ` + "`kdf_memory`" + `: Argon2id memory in KiB (65536 = 64 MiB in this release)
+- ` + "`kdf_threads`" + `: Argon2id parallelism (4 in this release)
 
 ### Key Derivation
 
-The encryption key is derived using Argon2id with the following parameters:
+The encryption key is derived using Argon2id with the ` + "`kdf_time`" + `, ` + "`kdf_memory`" + `, and ` + "`kdf_threads`" + ` values recorded in the file (written by this release as):
 
 - Time (iterations): 2
-- Memory: 64 MB (65536 KiB)
+- Memory: 64 MiB (65536 KiB)
 - Threads: 4
 - Output key length: 32 bytes (AES-256)
 
@@ -65,7 +68,7 @@ The encryption key is derived using Argon2id with the following parameters:
 
 1. Parse the JSON file
 2. Base64-decode the ` + "`salt`" + `, ` + "`nonce`" + `, and ` + "`ciphertext`" + ` fields
-3. Derive the AES-256 key: ` + "`Argon2id(passphrase, salt, time=2, memory=64MB, threads=4, keyLen=32)`" + `
+3. Derive the AES-256 key: ` + "`Argon2id(passphrase, salt, time=kdf_time, memory=kdf_memory, threads=kdf_threads, keyLen=32)`" + `
 4. Decrypt using AES-256-GCM with the derived key and nonce
 5. The decrypted plaintext is one canonical managed credential JSON object.
 

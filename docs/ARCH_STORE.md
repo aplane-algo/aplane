@@ -432,12 +432,15 @@ this store.
 The format is defined in `internal/crypto/store_root.go` and
 `internal/crypto/keyring.go`.
 
-The keyring subobject carries plaintext bounded Argon2id parameters and salt
-plus an AES-256-GCM-sealed payload containing the current term, sorted term
-set, and exact historical generation anchors. Keyring unwrap is the passphrase
-check; there is no separate verifier. The derived KEK is zeroed and never
-cached. Ordinary current-state opens authorize only the current term;
-historical terms require the separate exact-anchor path.
+The keyring subobject carries plaintext bounded Argon2id parameters (sealed with
+release defaults time 2, memory 65,536 KiB, parallelism 4; accepted by readers
+within time `[2, 4]`, memory `[65,536, 262,144]` KiB / 64–256 MiB, and fixed
+parallelism 4, deriving from the stored fields) and salt plus an
+AES-256-GCM-sealed payload containing the current term, sorted term set, and
+exact historical generation anchors. Keyring unwrap is the passphrase check;
+there is no separate verifier. The derived KEK is zeroed and never cached.
+Ordinary current-state opens authorize only the current term; historical terms
+require the separate exact-anchor path.
 
 Strict parsing rejects unknown or trailing fields, oversized/non-regular
 files, unsupported KDF parameters, invalid term ordering, a selection term
@@ -2226,10 +2229,11 @@ Export:
    its canonical plaintext the same way as `source_tokens/<selector>.apb`;
    the node default's token file is not exported
 
-Standalone envelope version 2 fixes the Argon2id tuple at time 2, memory
-65,536 KiB, and parallelism 4. Readers reject omitted, partial, or altered KDF
-parameters before decoding the envelope body or invoking Argon2id; changing the
-tuple requires a new envelope version. Encoded credential envelopes are limited
+Standalone envelope version 2 seals with Argon2id time 2, memory 65,536 KiB,
+and parallelism 4, and accepts time in `[2, 4]`, memory in `[65,536, 262,144]`
+KiB (64–256 MiB), and fixed parallelism 4 when decrypting, deriving from the
+validated stored fields. Readers reject omitted, partial, or out-of-range KDF
+parameters before invoking Argon2id. Encoded credential envelopes are limited
 to 1 MiB, policy envelopes to 2 MiB, source token envelopes to 8 KiB (a 4 KiB
 token file's plaintext re-encrypted under the export passphrase), and the
 sealed manifest to 8 MiB; archive readers enforce each bound while reading the

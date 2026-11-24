@@ -463,9 +463,13 @@ authorize only the current term. Retired terms are exposed only through the
 anchor-gated historical APIs in `internal/genstore`.
 
 The plaintext root header carries the bounded Argon2id parameters and salt
-needed to derive the KEK. The keyring payload is AES-256-GCM sealed; successful
-unwrap is the passphrase check. The KEK is zeroed before return and is not
-cached. Strict parsing and size/KDF limits run before expensive derivation.
+needed to derive the KEK. New roots are sealed with release defaults (time 2,
+memory 65,536 KiB, parallelism 4); readers accept time in `[2, 4]`, memory in
+`[65,536, 262,144]` KiB (64–256 MiB), and fixed parallelism 4, and derive from
+the stored parameters. The keyring payload is AES-256-GCM sealed (with the KDF
+parameters bound into the header AAD); successful unwrap is the passphrase
+check. The KEK is zeroed before return and is not cached. Strict parsing and
+size/KDF limits run before expensive derivation.
 A failed unwrap, or an empty passphrase, is `crypto.ErrInvalidPassphrase`, the
 only store-root error a caller may report as a wrong passphrase (AEAD cannot
 tell a wrong passphrase from altered sealed-keyring bytes). Every other
@@ -527,13 +531,14 @@ than treating the library YAML as active state.
 - standalone passphrase-based encryption used for backup/export is
   `envelope_version: 2`
 
-Standalone version 2 accepts exactly Argon2id time 2, memory 65,536 KiB, and
-parallelism 4. A single-credential envelope is limited to 1 MiB
-(`MaxStandaloneEnvelopeBytes`); larger envelopes, such as the sealed backup
-manifest and archived policy documents, pass an explicit bound to
-`DecryptStandaloneLimited`. Missing or
-different KDF values require a new envelope version and are rejected before
-Argon2id runs.
+Standalone version 2 seals with Argon2id time 2, memory 65,536 KiB, and
+parallelism 4, and accepts the same bounded range as `store-root.enc` when
+decrypting: time in `[2, 4]`, memory in `[65,536, 262,144]` KiB (64–256 MiB),
+and fixed parallelism 4, deriving from the validated stored parameters. A
+single-credential envelope is limited to 1 MiB (`MaxStandaloneEnvelopeBytes`);
+larger envelopes, such as the sealed backup manifest and archived policy
+documents, pass an explicit bound to `DecryptStandaloneLimited`. Missing or
+out-of-range KDF values are rejected before Argon2id runs.
 
 The term envelope's additional authenticated data binds the term and the
 object's logical identity: a class and a canonical selector.

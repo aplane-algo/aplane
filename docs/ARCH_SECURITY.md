@@ -1796,8 +1796,11 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 ```
 
 The KDF parameters and salt are in the clear because they are inputs to the
-unwrap, not secrets. The selection MAC binds the generation selector to the
-exact wrapped keyring, making authority and content selection one commit.
+unwrap, not secrets. Readers validate the KDF parameters against bounded ranges
+(time `[2, 4]`, memory `[65,536, 262,144]` KiB / 64–256 MiB, fixed parallelism
+4) before running Argon2id and derive from the stored parameters. The selection
+MAC binds the generation selector to the exact wrapped keyring, making authority
+and content selection one commit.
 
 **Keystore Marker (`.keystore`):**
 

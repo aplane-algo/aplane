@@ -46,11 +46,23 @@ func sealWithRandomNonce(gcm cipher.AEAD, plaintext, aad []byte) (nonce, ciphert
 }
 
 const (
-	// Argon2id parameters for new keystores (OWASP recommended: time≥2, memory≥64MB)
+	// Argon2id defaults for newly sealed envelopes (OWASP recommended: time>=2, memory>=64 MiB).
 	argon2Time    = 2         // iterations
-	argon2Memory  = 64 * 1024 // 64 MB
+	argon2Memory  = 64 * 1024 // 64 MiB (in KiB)
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
+
+	// Accepted Argon2id bounds when opening existing envelopes (store-root
+	// keyring v3 and standalone envelope v2). Floor matches today's release
+	// defaults; ceiling caps CPU and resident memory under mlockall() before
+	// Argon2id runs while allowing future parameter tuning without bumping the
+	// envelope version.
+	argon2MinTime   = argon2Time
+	argon2MaxTime   = 4
+	argon2MinMemory = argon2Memory
+	argon2MaxMemory = 256 * 1024 // 256 MiB (in KiB)
+
+	gcmNonceBytes = 12
 )
 
 // MaxStandaloneEnvelopeBytes is the maximum encoded size accepted for one
@@ -73,8 +85,16 @@ const (
 	masterSaltLen    = 32
 )
 
+// kdfDeriveHook is a test seam. When set, deriveMasterKeyParams reports the
+// parameters passed to Argon2id so tests can assert pre-derivation refusal
+// and derivation from stored envelope fields. Production leaves it nil.
+var kdfDeriveHook func(time, memory uint32, threads uint8)
+
 // deriveMasterKeyParams derives a key using explicit Argon2id parameters.
 func deriveMasterKeyParams(passphrase, salt []byte, time, memory uint32, threads uint8) []byte {
+	if kdfDeriveHook != nil {
+		kdfDeriveHook(time, memory, threads)
+	}
 	return argon2.IDKey(passphrase, salt, time, memory, threads, argon2KeyLen)
 }
 
@@ -174,13 +194,18 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode nonce: %w", err)
 	}
+	// Reject invalid nonce lengths before paying Argon2id cost;
+	// validateGCMNonce below still guards gcm.Open directly.
+	if len(nonce) != gcmNonceBytes {
+		return nil, fmt.Errorf("invalid nonce length %d (want %d)", len(nonce), gcmNonceBytes)
+	}
 
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted.Ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
 	}
 
-	key := deriveMasterKeyParams(passphrase, salt, argon2Time, argon2Memory, argon2Threads)
+	key := deriveMasterKeyParams(passphrase, salt, encrypted.KDFTime, encrypted.KDFMemory, encrypted.KDFThreads)
 	defer ZeroBytes(key)
 
 	gcm, err := newGCM(key)
