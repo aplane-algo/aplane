@@ -120,20 +120,29 @@ func TestNoProductionCodePublishesWhatNoBuildVerified(t *testing.T) {
 }
 
 // TestNoProductionCodeInstallsOrClearsTheKeystoreOutsideItsSeams keeps
-// FileKeyStore.Install and ClearKeys confined to the publish, recovery-view,
-// and lock/destroy cleanup paths. Every other caller would install a keyring
-// or key cache without a build, or drop them outside lock cleanup.
+// FileKeyStore.Install, installLocked, replaceKeyringLocked, and ClearKeys
+// confined to the publish, recovery-view, and lock/destroy cleanup paths.
+// Every other caller would install a keyring or key cache without a build, or
+// drop them outside lock cleanup.
 //
-// internal/keystore/keystoretest/keystoretest.go is allowed here because
-// TestProductionCodeDoesNotImportKeystoreTest keeps that package out of
-// production binaries. clientlog.Install is a separate package function and
-// is resolved by import path so an alias cannot hide a keystore Install.
+// Matching is by selector name (the same syntactic guard as the neighbouring
+// tests in this file). internal/keystore/keystoretest/keystoretest.go is
+// allowed here because TestProductionCodeDoesNotImportKeystoreTest keeps that
+// package out of production binaries. clientlog.Install is a separate package
+// function and is resolved by import path so an alias cannot hide a keystore
+// Install.
 func TestNoProductionCodeInstallsOrClearsTheKeystoreOutsideItsSeams(t *testing.T) {
 	const clientlogPkg = "github.com/aplane-algo/aplane/internal/clientlog"
 	allowed := map[string]map[string]map[string]bool{
 		"Install": {
 			"internal/keystore/file.go":                 {"ClearKeys": true},
 			"internal/signerapp/productruntime/view.go": {"publishLocked": true, "installRecoveryViewLocked": true},
+		},
+		"installLocked": {
+			"internal/keystore/file.go": {"Install": true},
+		},
+		"replaceKeyringLocked": {
+			"internal/keystore/file.go": {"installLocked": true},
 		},
 		"ClearKeys": {
 			"internal/signerapp/productruntime/runtime.go": {"Destroy": true, "performLockCleanup": true},

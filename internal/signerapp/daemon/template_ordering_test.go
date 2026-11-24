@@ -26,7 +26,7 @@ func TestReloadKeysPreservesGenericKeyMetadataAndRegistersTemplate(t *testing.T)
 
 	family := fmt.Sprintf("phase0-ordering-%d", time.Now().UnixNano())
 	keyType := "test." + family + ".v1"
-	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01} // #pragma version 6; int 1
+	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 
 	if genericlsig.Get(keyType) != nil {
 		t.Fatalf("test key type %q already registered; family generator must be unique", keyType)

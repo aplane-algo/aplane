@@ -37,6 +37,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
 // buildOnce runs the reload's build over the generation the store selects,
@@ -277,9 +278,18 @@ func countBuilds(server *Signer) (all, fromPassphrase *atomic.Int32) {
 	return all, fromPassphrase
 }
 
-func plantWitnessKey(t *testing.T, server *Signer) string {
+func plantKey(t *testing.T, server *Signer, payload *apkeys.Payload) {
 	t.Helper()
-	RegisterProviders()
+	if err := server.productRuntime().WithKeyring(func(kr *crypto.Keyring) error {
+		_, saveErr := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, kr)
+		return saveErr
+	}); err != nil {
+		t.Fatalf("SaveNewPayload(%s) error = %v", payload.Category, err)
+	}
+}
+
+func plantWitnessKey(t *testing.T, server *Signer) {
+	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -287,21 +297,10 @@ func plantWitnessKey(t *testing.T, server *Signer) string {
 	defer crypto.ZeroBytes(priv)
 	payload := apkeys.NewWitnessPayload(witness.Ed25519V1, pub, priv)
 	defer payload.ZeroSecrets()
-	var selector string
-	if err := server.productRuntime().WithKeyring(func(kr *crypto.Keyring) error {
-		res, saveErr := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, kr)
-		if saveErr != nil {
-			return saveErr
-		}
-		selector = res.Address
-		return nil
-	}); err != nil {
-		t.Fatalf("SaveNewPayload(witness) error = %v", err)
-	}
-	return selector
+	plantKey(t, server, payload)
 }
 
-func plantSpendingKey(t *testing.T, server *Signer) string {
+func plantSpendingKey(t *testing.T, server *Signer) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -311,18 +310,7 @@ func plantSpendingKey(t *testing.T, server *Signer) string {
 	payload := apkeys.NewEd25519Payload(pub, priv)
 	defer payload.ZeroSecrets()
 	payload.ValidRekeyTarget = true
-	var address string
-	if err := server.productRuntime().WithKeyring(func(kr *crypto.Keyring) error {
-		res, saveErr := apkeys.SaveNewPayload(mustActiveKeyPaths(t, server), payload, false, kr)
-		if saveErr != nil {
-			return saveErr
-		}
-		address = res.Address
-		return nil
-	}); err != nil {
-		t.Fatalf("SaveNewPayload(spending) error = %v", err)
-	}
-	return address
+	plantKey(t, server, payload)
 }
 
 func runWatcherReload(t *testing.T, server *Signer) error {
@@ -488,32 +476,13 @@ func TestBuildRecordsSelectionBeforeValidatingGeneration(t *testing.T) {
 }
 
 // A build scans keys before registering the generation's templates at publish,
-// so the scan's signature-size lookup sizes a dsa_lsig key through its base
-// key type on the first unlock and through the composed provider on later
-// reloads. Both must produce the exact same KeyScanInfo (including
-// LogicSigResources), and every registered composed/DSA provider with a base
-// key type must report the same CryptoSignatureSize as its base.
+// so the scan's signature-size lookup sizes an unbounded dsa_lsig key through
+// its base key type on the first unlock and through the composed provider on
+// later reloads. Both must produce the exact same KeyScanInfo (including
+// LogicSigResources), and each composed provider must report the same
+// CryptoSignatureSize as its base across every registered composable base.
 func TestKeyScanMatchesBeforeAndAfterComposedTemplateRegistration(t *testing.T) {
 	RegisterProviders()
-
-	type baseKeyTyper interface {
-		BaseKeyType() string
-	}
-	for _, dsa := range logicsigdsa.GetAll() {
-		withBase, ok := dsa.(baseKeyTyper)
-		if !ok {
-			continue
-		}
-		base := withBase.BaseKeyType()
-		if base == "" || base == dsa.KeyType() {
-			continue
-		}
-		baseSize := logicsigdsa.GetCryptoSignatureSize(base)
-		if baseSize <= 0 || dsa.CryptoSignatureSize() != baseSize {
-			t.Errorf("provider %q reports CryptoSignatureSize=%d, base %q reports %d",
-				dsa.KeyType(), dsa.CryptoSignatureSize(), base, baseSize)
-		}
-	}
 
 	server, cleanup := setupTestSigner(t)
 	t.Cleanup(cleanup)
@@ -529,14 +498,24 @@ func TestKeyScanMatchesBeforeAndAfterComposedTemplateRegistration(t *testing.T) 
 			baseKeyType: "aplane.falcon1024.v1",
 			family:      fmt.Sprintf("scan-inv-falcon-%d", time.Now().UnixNano()),
 			wantSigSize: 1423,
-			bytecode:    []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}, // #pragma version 6; int 1
+			bytecode:    []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01},
 		},
 		{
 			baseKeyType: "aplane.ed25519.v1",
 			family:      fmt.Sprintf("scan-inv-ed25519-%d", time.Now().UnixNano()),
 			wantSigSize: 64,
-			bytecode:    []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x02}, // #pragma version 6; int 2
+			bytecode:    []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x02},
 		},
+	}
+
+	coveredBases := make(map[string]bool, len(bases))
+	for _, tc := range bases {
+		coveredBases[tc.baseKeyType] = true
+	}
+	for _, dsa := range logicsigdsa.GetAll() {
+		if composeddsa.IsBaseRegistered(dsa.KeyType()) && !coveredBases[dsa.KeyType()] {
+			t.Fatalf("composable base %q is not covered by scan-invariance test; add it to bases", dsa.KeyType())
+		}
 	}
 
 	const argBytes = 32

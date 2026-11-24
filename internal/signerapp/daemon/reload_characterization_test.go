@@ -447,14 +447,8 @@ var reloadCallers = []reloadCaller{
 	},
 	{
 		name: "watcher",
-		run: func(_ *testing.T, server *Signer) string {
-			var onChange func() error
-			server.productRuntime().StopKeyWatcher()
-			server.productRuntime().EnsureKeyWatcher(func(_ []string, _ context.Context, reload func() error) error {
-				onChange = reload
-				return nil
-			})
-			return fmt.Sprintf("failed=%v", onChange() != nil)
+		run: func(t *testing.T, server *Signer) string {
+			return fmt.Sprintf("failed=%v", runWatcherReload(t, server) != nil)
 		},
 	},
 }
