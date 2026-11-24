@@ -47,22 +47,30 @@ func sealWithRandomNonce(gcm cipher.AEAD, plaintext, aad []byte) (nonce, ciphert
 
 const (
 	// Argon2id defaults for newly sealed envelopes (OWASP recommended: time>=2, memory>=64 MiB).
+	// Updating these also requires updating docs/ARCH_CRYPTO.md and internal/backup/readme.go
+	// (pinned by TestReleaseKDFDefaults).
 	argon2Time    = 2         // iterations
 	argon2Memory  = 64 * 1024 // 64 MiB (in KiB)
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
 
 	// Accepted Argon2id bounds when opening existing envelopes (store-root
-	// keyring v3 and standalone envelope v2). Floor matches today's release
-	// defaults; ceiling caps CPU and resident memory under mlockall() before
-	// Argon2id runs while allowing future parameter tuning without bumping the
-	// envelope version.
-	argon2MinTime   = argon2Time
-	argon2MaxTime   = 4
-	argon2MinMemory = argon2Memory
-	argon2MaxMemory = 256 * 1024 // 256 MiB (in KiB)
+	// keyring v3 and standalone envelope v2). The floor and accepted threads
+	// are literals representing the weakest setting any release has sealed
+	// with and must not move when the sealing defaults above increase;
+	// otherwise previously sealed stores and backups become unreadable.
+	// The ceiling bounds CPU and memory for a single derivation before
+	// Argon2id runs while allowing future default bumps without an envelope
+	// version change (under mlockall(), back-to-back or concurrent derivations
+	// peak higher; see Memory Protection in docs/ARCH_SECURITY.md).
+	argon2MinTime         = 2
+	argon2MaxTime         = 4
+	argon2MinMemory       = 64 * 1024  // 64 MiB (in KiB)
+	argon2MaxMemory       = 256 * 1024 // 256 MiB (in KiB)
+	argon2AcceptedThreads = 4
 
 	gcmNonceBytes = 12
+	gcmTagBytes   = 16
 )
 
 // MaxStandaloneEnvelopeBytes is the maximum encoded size accepted for one
@@ -194,8 +202,6 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode nonce: %w", err)
 	}
-	// Reject invalid nonce lengths before paying Argon2id cost;
-	// validateGCMNonce below still guards gcm.Open directly.
 	if len(nonce) != gcmNonceBytes {
 		return nil, fmt.Errorf("invalid nonce length %d (want %d)", len(nonce), gcmNonceBytes)
 	}
@@ -204,15 +210,15 @@ func DecryptStandaloneLimited(encryptedJSON, passphrase []byte, maxEnvelopeBytes
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode ciphertext: %w", err)
 	}
+	if len(ciphertext) < gcmTagBytes {
+		return nil, fmt.Errorf("ciphertext is too short")
+	}
 
 	key := deriveMasterKeyParams(passphrase, salt, encrypted.KDFTime, encrypted.KDFMemory, encrypted.KDFThreads)
 	defer ZeroBytes(key)
 
 	gcm, err := newGCM(key)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateGCMNonce(nonce, gcm); err != nil {
 		return nil, err
 	}
 

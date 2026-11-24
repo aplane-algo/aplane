@@ -5,6 +5,7 @@ package crypto
 
 import (
 	"bytes"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -207,5 +208,56 @@ func TestTermEnvelopeLenMatchesSeal(t *testing.T) {
 			}
 		}
 		kr.Zero()
+	}
+}
+
+func TestCheckKDFParamsBounds(t *testing.T) {
+	accepted := []struct {
+		name    string
+		time    uint32
+		memory  uint32
+		threads uint8
+	}{
+		{"exact floor", 2, 64 * 1024, 4},
+		{"exact ceiling", 4, 256 * 1024, 4},
+		{"max time min memory", 4, 64 * 1024, 4},
+		{"min time max memory", 2, 256 * 1024, 4},
+		{"mid range", 3, 128 * 1024, 4},
+	}
+	for _, tc := range accepted {
+		t.Run("accept/"+tc.name, func(t *testing.T) {
+			if err := checkKDFParams("test", tc.time, tc.memory, tc.threads); err != nil {
+				t.Fatalf("checkKDFParams(%d, %d, %d) = %v, want nil", tc.time, tc.memory, tc.threads, err)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name    string
+		time    uint32
+		memory  uint32
+		threads uint8
+		wantErr string
+	}{
+		{"time zero", 0, 64 * 1024, 4, "test kdf_time 0 is outside supported range [2, 4]"},
+		{"time below floor", 1, 64 * 1024, 4, "test kdf_time 1 is outside supported range [2, 4]"},
+		{"time above ceiling", 5, 64 * 1024, 4, "test kdf_time 5 is outside supported range [2, 4]"},
+		{"time max uint32", math.MaxUint32, 64 * 1024, 4, "test kdf_time 4294967295 is outside supported range [2, 4]"},
+		{"memory zero", 2, 0, 4, "test kdf_memory 0 is outside supported range [65536, 262144]"},
+		{"memory below floor", 2, 64*1024 - 1, 4, "test kdf_memory 65535 is outside supported range [65536, 262144]"},
+		{"memory above ceiling", 2, 256*1024 + 1, 4, "test kdf_memory 262145 is outside supported range [65536, 262144]"},
+		{"memory max uint32", 2, math.MaxUint32, 4, "test kdf_memory 4294967295 is outside supported range [65536, 262144]"},
+		{"threads zero", 2, 64 * 1024, 0, "test kdf_threads 0 is not supported (expected 4)"},
+		{"threads below fixed", 2, 64 * 1024, 3, "test kdf_threads 3 is not supported (expected 4)"},
+		{"threads above fixed", 2, 64 * 1024, 5, "test kdf_threads 5 is not supported (expected 4)"},
+		{"threads max uint8", 2, 64 * 1024, math.MaxUint8, "test kdf_threads 255 is not supported (expected 4)"},
+	}
+	for _, tc := range rejected {
+		t.Run("reject/"+tc.name, func(t *testing.T) {
+			err := checkKDFParams("test", tc.time, tc.memory, tc.threads)
+			if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("checkKDFParams(%d, %d, %d) = %v, want %q", tc.time, tc.memory, tc.threads, err, tc.wantErr)
+			}
+		})
 	}
 }

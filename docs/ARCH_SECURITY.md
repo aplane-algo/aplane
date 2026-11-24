@@ -1796,11 +1796,10 @@ barrier uses): the passphrase unwraps a stored key rather than becoming one.
 ```
 
 The KDF parameters and salt are in the clear because they are inputs to the
-unwrap, not secrets. Readers validate the KDF parameters against bounded ranges
-(time `[2, 4]`, memory `[65,536, 262,144]` KiB / 64–256 MiB, fixed parallelism
-4) before running Argon2id and derive from the stored parameters. The selection
-MAC binds the generation selector to the exact wrapped keyring, making authority
-and content selection one commit.
+unwrap, not secrets. Readers validate the KDF parameters against the bounded
+ranges defined in `docs/ARCH_CRYPTO.md` before running Argon2id and derive from
+the stored parameters. The selection MAC binds the generation selector to the
+exact wrapped keyring, making authority and content selection one commit.
 
 **Keystore Marker (`.keystore`):**
 
@@ -1830,7 +1829,11 @@ Memory protection consists of two measures that prevent private key material fro
 2. **Lock memory** (`mlockall()`) - prevents memory pages from being swapped to disk
 
 Core-dump disabling is usually available to the process. Memory locking may
-require root, `CAP_IPC_LOCK`, or a raised `RLIMIT_MEMLOCK`.
+require root, `CAP_IPC_LOCK`, or a raised `RLIMIT_MEMLOCK`. When `mlockall()`
+is active, `RLIMIT_MEMLOCK` needs headroom above the signer's baseline
+footprint for about twice the largest accepted Argon2id memory setting (and
+more if multiple unlocks or backup operations overlap), because consecutive
+derivations overlap before GC reclaims the previous arena.
 
 | Config | Behavior |
 |--------|----------|

@@ -375,7 +375,7 @@ func aadFor(term int64, ctx ObjectContext) []byte {
 
 // checkKDFParams validates Argon2id parameters before any derivation runs,
 // enforcing [argon2MinTime, argon2MaxTime], [argon2MinMemory, argon2MaxMemory],
-// and fixed parallelism argon2Threads. label names the envelope in the error.
+// and fixed parallelism argon2AcceptedThreads. label names the envelope in the error.
 func checkKDFParams(label string, kdfTime, kdfMemory uint32, kdfThreads uint8) error {
 	if kdfTime < argon2MinTime || kdfTime > argon2MaxTime {
 		return fmt.Errorf("%s kdf_time %d is outside supported range [%d, %d]",
@@ -385,9 +385,9 @@ func checkKDFParams(label string, kdfTime, kdfMemory uint32, kdfThreads uint8) e
 		return fmt.Errorf("%s kdf_memory %d is outside supported range [%d, %d]",
 			label, kdfMemory, argon2MinMemory, argon2MaxMemory)
 	}
-	if kdfThreads != argon2Threads {
+	if kdfThreads != argon2AcceptedThreads {
 		return fmt.Errorf("%s kdf_threads %d is not supported (expected %d)",
-			label, kdfThreads, argon2Threads)
+			label, kdfThreads, argon2AcceptedThreads)
 	}
 	return nil
 }

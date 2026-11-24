@@ -654,27 +654,27 @@ func sealStoreRootWithKDFForTest(t *testing.T, kr *Keyring, passphrase []byte, g
 	return root
 }
 
-func TestStoreRootSealsWithReleaseDefaultKDFParams(t *testing.T) {
-	kr, err := NewKeyring()
-	if err != nil {
-		t.Fatal(err)
+func TestStoreRootKeyringHeaderAADIncludesAllFields(t *testing.T) {
+	salt := bytes.Repeat([]byte{0x11}, masterSaltLen)
+	nonce := bytes.Repeat([]byte{0x22}, gcmNonceBytes)
+	base := storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 2, 65536, 4, salt, nonce)
+
+	variants := []struct {
+		name string
+		aad  []byte
+	}{
+		{"schema", storeRootKeyringHeaderAAD("aplane.keyring.v4", StoreRootKeyringEnvelopeVersion, 2, 65536, 4, salt, nonce)},
+		{"version", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion+1, 2, 65536, 4, salt, nonce)},
+		{"kdf_time", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 3, 65536, 4, salt, nonce)},
+		{"kdf_memory", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 2, 65537, 4, salt, nonce)},
+		{"kdf_threads", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 2, 65536, 5, salt, nonce)},
+		{"salt", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 2, 65536, 4, bytes.Repeat([]byte{0x33}, masterSaltLen), nonce)},
+		{"nonce", storeRootKeyringHeaderAAD(StoreRootKeyringSchema, StoreRootKeyringEnvelopeVersion, 2, 65536, 4, salt, bytes.Repeat([]byte{0x44}, gcmNonceBytes))},
 	}
-	defer kr.Zero()
-	encoded, err := SealStoreRoot(kr, []byte("passphrase"), testStoreRootGenerationA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root, err := parseStoreRoot(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var kf keyringFile
-	if err := json.Unmarshal(root.Keyring, &kf); err != nil {
-		t.Fatal(err)
-	}
-	if kf.KDFTime != argon2Time || kf.KDFMemory != argon2Memory || kf.KDFThreads != argon2Threads {
-		t.Fatalf("SealStoreRoot KDF = (%d, %d, %d), want release defaults (%d, %d, %d)",
-			kf.KDFTime, kf.KDFMemory, kf.KDFThreads, argon2Time, argon2Memory, argon2Threads)
+	for _, tc := range variants {
+		if bytes.Equal(base, tc.aad) {
+			t.Fatalf("storeRootKeyringHeaderAAD did not change when %s changed", tc.name)
+		}
 	}
 }
 
@@ -711,15 +711,16 @@ func TestStoreRootRejectsOutOfRangeKDFParamsBeforeDerivation(t *testing.T) {
 		{"memory above ceiling", func(k *keyringFile) { k.KDFMemory = argon2MaxMemory + 1 }, "keyring kdf_memory 262145 is outside supported range"},
 		{"memory max uint32", func(k *keyringFile) { k.KDFMemory = math.MaxUint32 }, "keyring kdf_memory 4294967295 is outside supported range"},
 		{"threads zero", func(k *keyringFile) { k.KDFThreads = 0 }, "keyring kdf_threads 0 is not supported"},
-		{"threads below fixed", func(k *keyringFile) { k.KDFThreads = argon2Threads - 1 }, "keyring kdf_threads 3 is not supported"},
-		{"threads above fixed", func(k *keyringFile) { k.KDFThreads = argon2Threads + 1 }, "keyring kdf_threads 5 is not supported"},
+		{"threads below fixed", func(k *keyringFile) { k.KDFThreads = argon2AcceptedThreads - 1 }, "keyring kdf_threads 3 is not supported"},
+		{"threads above fixed", func(k *keyringFile) { k.KDFThreads = argon2AcceptedThreads + 1 }, "keyring kdf_threads 5 is not supported"},
 		{"threads max uint8", func(k *keyringFile) { k.KDFThreads = math.MaxUint8 }, "keyring kdf_threads 255 is not supported"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			derived := false
-			kdfDeriveHook = func(uint32, uint32, uint8) { derived = true }
+			kdfDeriveHook = func(tm, mem uint32, thr uint8) {
+				t.Fatalf("Argon2id ran with (%d, %d, %d) despite out-of-range keyring KDF parameters", tm, mem, thr)
+			}
 			defer func() { kdfDeriveHook = nil }()
 
 			kf := validKF
@@ -743,9 +744,6 @@ func TestStoreRootRejectsOutOfRangeKDFParamsBeforeDerivation(t *testing.T) {
 			if errors.Is(err, ErrInvalidPassphrase) {
 				t.Fatalf("OpenStoreRoot() reported out-of-range KDF as ErrInvalidPassphrase: %v", err)
 			}
-			if derived {
-				t.Fatal("Argon2id derivation ran despite out-of-range keyring KDF parameters")
-			}
 			if _, err := AuthenticateStoreRoot(candidate, kr); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("AuthenticateStoreRoot() error = %v, want substring %q", err, tc.wantErr)
 			}
@@ -759,14 +757,17 @@ func TestStoreRootRejectsOutOfRangeKDFParamsBeforeDerivation(t *testing.T) {
 func TestStoreRootDerivesFromStoredInRangeKDFParams(t *testing.T) {
 	passphrase := []byte("stored-root-kdf-passphrase")
 
+	// Exact ceiling bounds are covered without heavy allocations in
+	// TestCheckKDFParamsBounds; here we exercise real derivation at the
+	// literal historical floor (2, 65536, 4) and a non-default in-range tuple.
 	cases := []struct {
 		name    string
 		time    uint32
 		memory  uint32
 		threads uint8
 	}{
-		{"mid-range non-default", 3, 68 * 1024, argon2Threads},
-		{"exact ceiling", argon2MaxTime, argon2MaxMemory, argon2Threads},
+		{"literal floor", 2, 65536, 4},
+		{"mid-range non-default", 3, 68 * 1024, 4},
 	}
 
 	for _, tc := range cases {

@@ -432,10 +432,9 @@ this store.
 The format is defined in `internal/crypto/store_root.go` and
 `internal/crypto/keyring.go`.
 
-The keyring subobject carries plaintext bounded Argon2id parameters (sealed with
-release defaults time 2, memory 65,536 KiB, parallelism 4; accepted by readers
-within time `[2, 4]`, memory `[65,536, 262,144]` KiB / 64–256 MiB, and fixed
-parallelism 4, deriving from the stored fields) and salt plus an
+The keyring subobject carries plaintext bounded Argon2id parameters (written
+with the release defaults and validated on open against the accepted range in
+`docs/ARCH_CRYPTO.md`, deriving from the stored fields) and salt plus an
 AES-256-GCM-sealed payload containing the current term, sorted term set, and
 exact historical generation anchors. Keyring unwrap is the passphrase check;
 there is no separate verifier. The derived KEK is zeroed and never cached.
@@ -2229,11 +2228,11 @@ Export:
    its canonical plaintext the same way as `source_tokens/<selector>.apb`;
    the node default's token file is not exported
 
-Standalone envelope version 2 seals with Argon2id time 2, memory 65,536 KiB,
-and parallelism 4, and accepts time in `[2, 4]`, memory in `[65,536, 262,144]`
-KiB (64–256 MiB), and fixed parallelism 4 when decrypting, deriving from the
-validated stored fields. Readers reject omitted, partial, or out-of-range KDF
-parameters before invoking Argon2id. Encoded credential envelopes are limited
+Standalone envelope version 2 uses the same Argon2id release defaults and
+bounded reader range as `store-root.enc` (see `docs/ARCH_CRYPTO.md`), deriving
+from the validated stored fields. Readers reject omitted, partial, or
+out-of-range KDF parameters before invoking Argon2id. Encoded credential
+envelopes are limited
 to 1 MiB, policy envelopes to 2 MiB, source token envelopes to 8 KiB (a 4 KiB
 token file's plaintext re-encrypted under the export passphrase), and the
 sealed manifest to 8 MiB; archive readers enforce each bound while reading the
