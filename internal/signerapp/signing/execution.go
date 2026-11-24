@@ -33,6 +33,33 @@ type AuditFailLogger interface {
 	LogSignFailed(authAddress, txnSender, reason string)
 }
 
+type signFailureEntry struct {
+	authAddress string
+	txnSender   string
+	reason      string
+}
+
+type bufferedFailLogger struct {
+	entries []signFailureEntry
+}
+
+func (b *bufferedFailLogger) LogSignFailed(authAddress, txnSender, reason string) {
+	b.entries = append(b.entries, signFailureEntry{
+		authAddress: authAddress,
+		txnSender:   txnSender,
+		reason:      reason,
+	})
+}
+
+func (b *bufferedFailLogger) flush(dst AuditFailLogger) {
+	if b == nil || dst == nil {
+		return
+	}
+	for _, entry := range b.entries {
+		dst.LogSignFailed(entry.authAddress, entry.txnSender, entry.reason)
+	}
+}
+
 // decodeHexRuntimeArgs decodes a request's hex runtime arguments by name.
 func decodeHexRuntimeArgs(lsigArgs map[string]string) (map[string][]byte, error) {
 	if len(lsigArgs) == 0 {
@@ -59,20 +86,31 @@ type ExecuteResult struct {
 }
 
 func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession) (*ExecuteResult, *ServiceError) {
+	res, failures, err := e.executeGroupSigning(ctx, plan, req, session)
+	failures.flush(e.AuditLog)
+	return res, err
+}
+
+// executeGroupSigning runs group signing without writing to e.AuditLog while
+// loaded key material or a caller's key-use window is active; callers flush
+// the returned failures only after releasing their key use.
+func (e *Executor) executeGroupSigning(ctx context.Context, plan *PlanResult, req signerapi.GroupSignRequest, session *keystore.KeySession) (*ExecuteResult, *bufferedFailLogger, *ServiceError) {
+	failures := &bufferedFailLogger{}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, canceledSignRequest(err)
+		return nil, failures, canceledSignRequest(err)
 	}
 	console := consoleOf(e.Console)
+	inner := &Executor{AuditLog: failures, Console: e.Console}
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
 	signedTxns := make([]string, len(allTxns))
 
 	for i := 0; i < len(txns); i++ {
 		if err := ctx.Err(); err != nil {
-			return nil, canceledSignRequest(err)
+			return nil, failures, canceledSignRequest(err)
 		}
 		if plan.PassthroughIndices[i] {
 			signedTxns[i] = hex.EncodeToString(plan.PassthroughSignedTxns[i])
@@ -91,13 +129,13 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		// the last refusal before a key loads should one ever reach here.
 		if i < len(plan.AuthKeyTypes) {
 			if msg, ok := cosignerSignRejectMessage(plan.AuthKeyTypes[i]); ok {
-				return nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
+				return nil, failures, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
 			}
 			if err := rejectRotatingKeyType(i, plan.AuthKeyTypes[i]); err != nil {
-				return nil, err
+				return nil, failures, err
 			}
 		}
-		signedBytes, keyType, signErr := e.signSingleTransaction(
+		signedBytes, keyType, signErr := inner.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
 			req.Requests[i].LsigArgs, plan.boundedItem(i), session, ctx,
 		)
@@ -105,9 +143,9 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 			// Forbidden and locked describe the whole request, not one slot,
 			// so they keep their message without a per-transaction prefix.
 			if signErr.Kind == ErrorForbidden || signErr.Kind == ErrorLocked {
-				return nil, signErr
+				return nil, failures, signErr
 			}
-			return nil, &ServiceError{Kind: signErr.Kind, Message: fmt.Sprintf("transaction %d: %s", i+1, signErr.Message)}
+			return nil, failures, &ServiceError{Kind: signErr.Kind, Message: fmt.Sprintf("transaction %d: %s", i+1, signErr.Message)}
 		}
 		signedTxns[i] = hex.EncodeToString(signedBytes)
 		console.Printf("  [%d] signed (%s)\n", i+1, keyType)
@@ -115,11 +153,11 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 
 	if len(plan.DummyTxns) > 0 {
 		if err := ctx.Err(); err != nil {
-			return nil, canceledSignRequest(err)
+			return nil, failures, canceledSignRequest(err)
 		}
 		signedDummyBytes, err := coresigning.SignDummyTransactions(allTxns[len(txns):])
 		if err != nil {
-			return nil, internal(fmt.Sprintf("failed to sign dummy transactions: %v", err))
+			return nil, failures, internal(fmt.Sprintf("failed to sign dummy transactions: %v", err))
 		}
 		for i, stxnBytes := range signedDummyBytes {
 			signedTxns[len(txns)+i] = hex.EncodeToString(stxnBytes)
@@ -127,7 +165,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		}
 	}
 
-	return &ExecuteResult{SignedTxns: signedTxns}, nil
+	return &ExecuteResult{SignedTxns: signedTxns}, failures, nil
 }
 
 func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
@@ -139,6 +177,9 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	}
 	keyMaterial, loadErr := session.GetKeyWithContext(ctx, authAddr)
 	if loadErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, "", canceledSignRequest(ctxErr)
+		}
 		if e.AuditLog != nil {
 			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
 		}

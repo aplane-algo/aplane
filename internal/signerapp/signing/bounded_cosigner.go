@@ -93,30 +93,50 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 	if validationErr != nil {
 		return nil, validationErr
 	}
-	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, groupReq, plan)
+	outcome, gateErr := s.approveGroupWithPlanContext(ctx, groupReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
-	defer release()
 	if bindErr := checkApprovalBinding(groupReq, plan); bindErr != nil {
 		return nil, bindErr
 	}
+	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
+	if useErr != nil {
+		if useErr.Kind == ErrorLocked {
+			s.logSignRejections(groupReq, plan, plan.AllTxns[:len(groupReq.Requests)], "session_ended_after_approval", useErr)
+		}
+		return nil, useErr
+	}
+	defer endKeyUse()
 	components := make([]signerapi.Component, 0, len(targets))
 	for _, targetIndex := range targets {
-		component, signErr := signBoundedBaseComponent(ctx, groupReq, plan, targetIndex, session)
+		if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+			return nil, refused
+		}
+		component, signErr := signBoundedBaseComponent(useCtx, groupReq, plan, targetIndex, session)
 		if signErr != nil {
-			return nil, signErr
+			return nil, s.classifyKeyUseError(ctx, useCtx, signErr)
 		}
 		components = append(components, component)
 	}
-	s.logBoundedComponentsApproved(req, plan, targets, outcome)
+	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+		return nil, refused
+	}
+	// Release the key use before the blocking audit write so a stalled disk
+	// cannot hold a lock's drain, then recheck the session before returning.
+	endKeyUse()
+	records := s.logBoundedComponentsApproved(req, plan, targets, outcome)
+	if refused := s.postAuditRefused(ctx); refused != nil {
+		s.logWithheldRecords(records, refused)
+		return nil, refused
+	}
 	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-cosigner base component(s)\n", len(components))
 	return &signerapi.ComponentResponse{RequestID: req.RequestID, Components: components}, nil
 }
 
-func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, plan *PlanResult, targets []int, outcome approvalOutcome) {
+func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, plan *PlanResult, targets []int, outcome approvalOutcome) []SignedRecord {
 	if s.AuditLog == nil || plan == nil {
-		return
+		return nil
 	}
 	groupReq := req.GroupSignRequest()
 	// The group is frozen: each component signs its target's final TxID. The
@@ -124,14 +144,18 @@ func (s *Service) logBoundedComponentsApproved(req signerapi.ComponentRequest, p
 	// and sends them as foreign positions to /sign and as passthrough to
 	// /sign/assemble, so no record counts them (signerSignedDummies).
 	group := auditedGroup(plan)
+	records := make([]SignedRecord, 0, len(targets))
 	for _, index := range targets {
 		if index < 0 || index >= len(groupReq.Requests) || index >= len(plan.AllTxns) {
 			continue
 		}
 		txReq := groupReq.Requests[index]
 		const details = "bounded-cosigner base component released after policy and operator approval"
-		s.AuditLog.LogSignApproved(group.record(index, txReq.AuthAddress, details, outcome))
+		record := group.record(index, txReq.AuthAddress, details, outcome)
+		s.AuditLog.LogSignApproved(record)
+		records = append(records, record)
 	}
+	return records
 }
 
 func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.Component, *ServiceError) {
@@ -142,6 +166,9 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 		return signerapi.Component{}, loadErr
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
+	if err := ctx.Err(); err != nil {
+		return signerapi.Component{}, canceledSignRequest(err)
+	}
 	if integrityErr := verifyBoundedPlanIntegrity(item, keyMaterial); integrityErr != nil {
 		return signerapi.Component{}, integrityErr
 	}
@@ -236,6 +263,9 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 		return "", loadErr
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
+	if err := ctx.Err(); err != nil {
+		return "", canceledSignRequest(err)
+	}
 	metadata := keyMaterial.BoundedAuthorization
 	if metadata == nil || metadata.Cosigner == nil {
 		return "", badRequest(fmt.Sprintf("target index %d is not a cosigner-enabled bounded account", target.TargetIndex))

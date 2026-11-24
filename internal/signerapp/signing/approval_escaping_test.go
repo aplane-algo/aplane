@@ -74,13 +74,11 @@ func signForEscapingTest(t *testing.T, req signerapi.GroupSignRequest, plan *Pla
 		GenerateTxnDescriptionFromTxn: describe,
 		IsUnlocked:                    func() bool { return true },
 		Console:                       got.console,
-		BeforeExecute: func() (func(), *ServiceError) {
-			return nil, forbidden("stop after approval")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign}),
+		KeyUse:                        refusedKeyUse(nil),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysRejectForeign}),
 	}
-	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil || !strings.Contains(err.Message, "stop after approval") {
-		t.Fatalf("signGroupWithPlanContext() error = %#v, want the stop after approval", err)
+	if _, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan); err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlanContext() error = %#v, want key-use stop after approval", err)
 	}
 	if got.approvals != 1 {
 		t.Fatalf("approval requests = %d, want 1", got.approvals)
@@ -297,9 +295,7 @@ func signHostileTypeForTest(t *testing.T, typ types.TxType, count int, autoAppro
 		GenerateTxnDescriptionFromTxn: DescribeTxnFunc(describeOnBuiltinNetworks),
 		IsUnlocked:                    func() bool { return true },
 		Console:                       console,
-		BeforeExecute: func() (func(), *ServiceError) {
-			return nil, forbidden("stop after approval")
-		},
+		KeyUse:                        refusedKeyUse(nil),
 		PolicyFor: fixedPolicy(&policy.Config{
 			TransactionTypes: policy.TransactionTypesV1{policy.TransactionTypeWildcard: policy.TransactionTypeReview},
 			Rekeys:           policy.RekeysRejectForeign,

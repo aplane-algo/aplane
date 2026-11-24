@@ -1,6 +1,6 @@
 # Key-Use Window Machine-Checkable Model
 
-> Status: TLC checked over the bounded finite state space (one rotating sign
+> Status: TLC checked over the bounded finite state space (one signing request
 > and one mnemonic export, each repeating, two unlock attempts, at most two
 > lock or recovery transitions); the recorded positive run generated 3537
 > distinct states at depth 15 with no counterexamples, and the deep
@@ -43,25 +43,30 @@
 > 10).
 
 The holders of loaded key material that register a key use with
-`Runtime.KeyUseContext` are the rotating key paths (prepare, sign and the stage
-table worker), mnemonic export, and a cosigner's external check step
-(`runExternalChecks`), which holds one while it reads its source tokens and
-makes its lookups so that a lock ends them and waits for it to let go. That
-step releases nothing to a caller: when its key use is canceled the request
-is refused as locked.
-Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
-assembly hold a decrypted key too but register none (see the limits below). For a rotating seed that is every load in
+`Runtime.KeyUseContext` are all signing and assembly paths — rotating prepare,
+sign and the stage table worker, ordinary `/sign`, bounded-base and
+cosigner-role `/sign/component`, and `/sign/assemble` — plus mnemonic export
+and a cosigner's external check step (`runExternalChecks`), which holds one
+while it reads its source tokens and makes its lookups so that a lock ends them
+and waits for it to let go. That external-check step releases nothing to a
+caller: when its key use is canceled the request is refused as locked.
+For non-rotating signing (`/sign`, bounded-base `/sign/component`), the key use
+starts after policy gates and operator approval (`Service.openKeyUse`), never
+spanning approval wait, and ends once loaded key material is zeroed and before
+blocking audit writes; cosigner `/sign/component` takes its signing key use
+after `runCosignerGates`, and `/sign/assemble` holds one across bounded target
+and passthrough key loads. For a rotating seed that is every load in
 prepare and sign: the identity read (`rotatingAccount`) and each stage
 derivation (`requestDeriver`) in both, and the sign's signing window after
 approval; the stage table fill and the release restore use the same identity
 read and deriver, and the fill's build of the next tree (`treeFrontier`) is a
-key use of its own. Every one of them opens its window through
+key use of its own. Every rotating load opens its window through
 `RotatingDeps.keyUse`, which refuses to open one without `KeyUse`, so none of
 them loads a seed unregistered. A lock cancels every registered key use and
-waits for each to release before it clears the session. Two holders release
-something to a caller: a rotating sign returns a signature, and a mnemonic
-export delivers a recovery phrase. This model asks what a lock guarantees
-about both, and what an unlock may do to the session in service.
+waits for each to release before it clears the session. Two holder kinds
+release something to a caller: a signing/assembly request returns signatures,
+and a mnemonic export delivers a recovery phrase. This model asks what a lock
+guarantees about both, and what an unlock may do to the session in service.
 
 The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 
@@ -69,7 +74,7 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
-| KU1 | A rotating signature is never returned once a lock or a recovery began after its sign started and before its final check | `KU1_NoSignatureAfterLock` |
+| KU1 | A signature (rotating, ordinary `/sign`, bounded-base or cosigner `/sign/component`, or `/sign/assemble`) is never returned once a lock or a recovery began after its request started and before its final check | `KU1_NoSignatureAfterLock` |
 | KU2 | The session is never cleared while a key use is registered | `KU2_NoKeyMaterialAtWipe` |
 | KU3 | An export never delivers a phrase after the session was cleared | `KU3_NoExportAfterWipe` |
 | KU4 | The session is never cleared while the signer is unlocked | `KU4_NoWipeWhileUnlocked` |
@@ -109,12 +114,25 @@ waits for it; KU2 and KU3 cover that case.
 
 ## What TLC actually verifies
 
-- `SStart`, `SRegister`, `SMake`, `SRelease`, and `SReturn` transcribe
-  the signing window of `SignRotatingWithContext` in
-  `internal/signerapp/signing/rotating_flow.go`, after approval:
-  the lock generation captured at the start, `deps.keyUse`, `releaseRefused`
-  before the seed is used, `rs.close` and `endKeyUse` before the audit write,
-  and `releaseRefused` on the request context before the response.
+- `SStart`, `SRegister`, `SMake`, `SRelease`, and `SReturn` transcribe both
+  the rotating signing window (`SignRotatingWithContext` in
+  `internal/signerapp/signing/rotating_flow.go`) and the non-rotating signing
+  and assembly windows (`signGroupWithPlanContext`, `signComponentWithContext`,
+  `AssembleWithContext`, `openKeyUse`, `keyUseRefused`, `postAuditRefused` in
+  `internal/signerapp/signing/service.go`, `ExecuteGroupSigning` in
+  `execution.go`, `PrepareBoundedComponentWithContext` and
+  `assembleBoundedTarget` in `bounded_cosigner.go`,
+  `signPreparedCosignerComponents` in `component_sign.go`, and
+  `assembleDecoded` / `rejectLocalCosignedPassthrough` in
+  `component_assemble.go`): the session generation captured at request start
+  (`deps.LockGeneration` / `newSigningServiceWithAudit`'s `inSession`), key-use
+  registration after approval and policy gates (`deps.keyUse` / `openKeyUse`),
+  key load, signing, zeroing and session/context check (`releaseRefused` /
+  `keyUseRefused`), key-use release before the blocking audit write, and the
+  post-audit session recheck (`releaseRefused` / `postAuditRefused`, writing
+  `LogSignWithheld` on refusal) before returning signatures. `/sign/assemble`
+  writes no post-release audit entry, so its `keyUseRefused` check before
+  `endKeyUse` is already its final check before returning.
 - `EStart`, `ERegister`, `ERead`, `EDeliver`, and `ERelease` transcribe
   `ExportKey` in `internal/signerapp/keyadmin/export.go`: the key use taken
   under the mutation lock, the context check before the read, the second check
@@ -230,8 +248,8 @@ The guards are constants:
 |---|---|---|
 | `RegisterChecksLock` | TRUE: `KeyUseContext` returns a cancelled context and a no-op release while locked | Without it a holder registering after the drain began gets a fresh context the drain neither cancels nor waits for |
 | `DrainWaits` | TRUE: `drainKeyUsers` waits on `keyUsers` before the session is cleared | Without it the session is cleared under a holder |
-| `FinalRecheck` | TRUE: `releaseRefused(requestCtx, ...)` after the audit write | Without it a lock during the audit write still lets the signature out |
-| `GenerationCheck` | TRUE: `releaseRefused` compares `LockGeneration()` with the value captured at the start | Without it a lock and an unlock between the release and the return go unnoticed |
+| `FinalRecheck` | TRUE: `releaseRefused(requestCtx, ...)` (rotating) and `postAuditRefused(ctx)` (non-rotating) after the audit write | Without it a lock during the audit write still lets the signature out |
+| `GenerationCheck` | TRUE: `releaseRefused` compares `LockGeneration()` and `postAuditRefused` / `openKeyUse` / `keyUseRefused` call `inSession` (`IsUnlockedIn(generation)`) captured at request start | Without it a lock and an unlock between the release and the return go unnoticed |
 | `RecoveryEndsSession` | TRUE: `SetRecovery` and `EnterRecovery` advance the session generation when they leave the unlocked state, and the key uses handed out are cancelled | Without it a recovery and a reconcile between the release and the return go unnoticed: the signer reads unlocked with the generation the sign captured |
 | `UnlockWaitsForCleanup` | TRUE: `BeginAttempt` waits (`awaitCleanups`) until every on-lock cleanup already decided has returned, and only then reads the lock generation; `FinishMaintenance` waits the same way before it compares the generation its token recorded | Without it an attempt that begins between a lock's state change and its session clear passes the fence, and the cleanup clears the session it published |
 | `LoserLocks` | TRUE: an attempt that loses at a fence (`PublishUnlocked`, `EnterRecovery`) locks the runtime and moves `lockGen` and the session (`lockForCleanupLocked`) before its cleanup runs | Without it, and without the hold, the losing attempt's cleanup runs in whatever state the signer is in, and clears a session another attempt published. Under the hold no other attempt runs, so it is layered there |
@@ -289,26 +307,29 @@ for each.
 
 ## Modeling choices and limits
 
-- One rotating sign and one export, each repeating. The stage table worker is
-  a third holder of the same mechanism; KU2 holds for any number of holders
-  because the drain waits for each registered key use. Prepare's seed loads
-  and the sign's two loads before approval are holders of the same kind: each
-  registers, loads, zeroes the seed and releases, returns nothing to a caller
-  while it holds the seed, and answers locked when its key use is refused or
-  cut short (the deriver reports that as `errKeyUseRefused`, decided where the
-  window was stopped). `Register`, a held step and `Release` describe them, so
-  KU2 covers them without new actions.
+- One signing request and one export, each repeating. The stage table worker,
+  rotating prepare, rotating pre-approval derivations and a cosigner's external
+  check step are holders of the same mechanism; KU2 holds for any number of
+  holders because the drain waits for each registered key use. Prepare's seed
+  loads and the rotating sign's two loads before approval register, load, zero
+  the seed and release, return nothing to a caller while holding the seed, and
+  answer locked when their key use is refused or cut short (the deriver reports
+  that as `errKeyUseRefused`, decided where the window was stopped). `Register`,
+  a held step and `Release` describe them, so KU2 covers them without new
+  actions.
 - Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
-  assembly are not key uses, and the model does not cover them. Their check
-  after the gates (`Service.beforeExecute` in
-  `internal/signerapp/signing/service.go`; the production `BeforeExecute` hook
-  adds nothing to it) is a moment, not a hold: a lock that begins after it
-  clears the session while a key decrypted before it is still signing. The
-  request returns that signature when it needs no later key load; a load after
-  the session is cleared fails, and the request answers locked. An entry into
-  recovery clears nothing, so such a request signs to completion. KU2 is about
-  registered key uses only. Making those paths key uses would be an extension
-  of this model.
+  `/sign/assemble` register key uses through `Service.openKeyUse` after their
+  gates and approval, never spanning human approval wait, and follow the same
+  `SStart` → `SRegister` → `SMake` → `SRelease` → `SReturn` lifecycle as
+  rotating sign (with `/sign/assemble` returning right after `SRelease` because
+  it writes no post-sign audit entry, so `SMake`'s `keyUseRefused` check before
+  `endKeyUse` is already its final check). `newSigningServiceWithAudit` in
+  `internal/signerapp/daemon/signing_service.go` is the sole production
+  constructor of signing services and always wires `KeyUse: ir.KeyUseContext`.
+  `installRecoveryViewLocked` also replaces `KeySession` on recovery entry (as
+  `performLockCleanup` does on lock), so a session pointer taken before
+  recovery stays permanently locked even after a later reconcile promotes back
+  to unlocked.
 - The source token index counts readers of its own: an index that a reload
   or a token change replaces is zeroed when its last reader releases
   (`internal/sourcetokens/index.go`). The model does not represent
@@ -324,7 +345,12 @@ for each.
 - The model takes as given that every load of key material is registered; it
   cannot see a load that is not. For rotating seeds,
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign
-  under the real `Runtime.Lock` and fails if one of them is not a key use.
+  under the real `Runtime.Lock` and fails if one of them is not a key use. For
+  non-rotating signing and assembly, `TestLockWaitsForEveryNonRotatingKeyLoad`
+  parks each of the five `GetKeyWithContext` load sites (`/sign`, bounded-base
+  `/sign/component`, cosigner `/sign/component`, `/sign/assemble` target, and
+  `/sign/assemble` local passthrough) under the real `Runtime.Lock` and fails
+  if any is unregistered or releases before zeroing the loaded key.
 - The sign's leaf choice, audit write and release memory belong to
   [FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md](FORMAL_TLA_ROTATING_LEAF_RELEASE_MODEL.md)
   and are not repeated here. The audit write is the gap between `SRelease` and

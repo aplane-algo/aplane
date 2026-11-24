@@ -856,3 +856,48 @@ func TestReconcileBuildFailureMapsOnlyLockedToStateChanged(t *testing.T) {
 		}
 	})
 }
+
+// Entering recovery destroys and replaces the KeySession object (as Lock does),
+// so a session pointer captured before recovery stays permanently locked even
+// after a reconcile promotes the signer back to unlocked.
+func TestRecoveryReplacesKeySessionAcrossReconcile(t *testing.T) {
+	ir, bound, p0 := viewInService(t)
+	beforeRecovery := ir.SnapshotKeySession()
+	if beforeRecovery == nil {
+		t.Fatal("SnapshotKeySession() = nil before recovery")
+	}
+
+	ir.EnterRecovery(nil)
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v, want recovery", ir.GetState())
+	}
+	if _, err := beforeRecovery.GetKeyWithContext(context.Background(), "ADDR"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("pre-recovery KeySession in recovery = %v, want ErrStoreLocked", err)
+	}
+
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		return &Loaded{
+			Selection:      &bound,
+			Contents:       viewKeys(bound),
+			PolicyVerified: true,
+			Policy:         p0,
+		}, nil
+	}, ReloadEffects{})
+	if _, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if !ir.IsUnlocked() {
+		t.Fatalf("state = %v, want unlocked after reconcile", ir.GetState())
+	}
+
+	afterReconcile := ir.SnapshotKeySession()
+	if afterReconcile == nil || afterReconcile == beforeRecovery {
+		t.Fatalf("SnapshotKeySession() after reconcile reused pre-recovery KeySession (%p)", afterReconcile)
+	}
+	if _, err := beforeRecovery.GetKeyWithContext(context.Background(), "ADDR"); !errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("pre-recovery KeySession after reconcile = %v, want ErrStoreLocked", err)
+	}
+	if _, err := afterReconcile.GetKeyWithContext(context.Background(), "ADDR"); errors.Is(err, keystore.ErrStoreLocked) {
+		t.Fatalf("post-reconcile KeySession = %v, want active (non-locked)", err)
+	}
+}

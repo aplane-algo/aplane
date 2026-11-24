@@ -50,13 +50,7 @@ func (fs *Signer) newSigningServiceWithAudit(ir *productruntime.Runtime, auditLo
 		AuditLog:                      auditLog,
 		GenerateTxnDescriptionFromTxn: describe,
 		IsUnlocked:                    inSession,
-		BeforeExecute: func() (func(), *signersigning.ServiceError) {
-			if !inSession() {
-				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
-			}
-			return func() {}, nil
-		},
-		PolicyFor: nodePolicy.PolicyFor,
+		PolicyFor:                     nodePolicy.PolicyFor,
 		HoldsCosignerKey: func(witnessKeyID string) bool {
 			_, err := ir.FindKeyFile(witnessKeyID)
 			return err == nil

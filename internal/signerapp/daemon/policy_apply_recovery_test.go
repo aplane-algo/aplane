@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -30,12 +31,11 @@ func TestUncertainPolicyCommitBlocksExecutionBeforeReload(t *testing.T) {
 	opts := testProductBuildOptions(server)
 	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
 		reloaded = true
-		// This is the production execution gate a concurrent signing request uses.
-		release, err := server.newSigningServiceWithAudit(ir, nil).BeforeExecute()
-		executionAllowed = err == nil
-		if release != nil {
-			release()
-		}
+		// This is the production session and key-use gate a concurrent signing request uses.
+		svc := server.newSigningServiceWithAudit(ir, nil)
+		useCtx, release := svc.KeyUse(context.Background())
+		executionAllowed = svc.IsUnlocked() || useCtx.Err() == nil
+		release()
 		return signerstartup.Build(ir, opts, kr)
 	}, productruntime.ReloadEffects{})
 	identityDir := server.keyPaths.ProductDir()

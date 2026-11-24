@@ -462,11 +462,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0]), AppCallInfo: req.AppCallInfo}},
 		Batch:     req.Batch,
 	}
-	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
+	outcome, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
-	defer release()
 
 	// A leaf family picks its one-time leaf from the stage's history, so a
 	// spend arriving before that history has been restored from the audit

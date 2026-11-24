@@ -1927,14 +1927,16 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
 2. Run the identity lock callback (`performLockCleanup`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
 3. Drain key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
    The key users are the holders that register with `KeyUseContext`: the
-   rotating stage-table worker, rotating prepare and sign, and mnemonic
-   export. Ordinary `/sign`, component signing (bounded-base and
-   cosigner-role) and assembly register none. Their last session check (after
-   the gates, or for assembly, which has no gates, before it assembles) is a
-   moment, not a hold, so the lock does not wait for a signature whose key is
-   already decrypted. While this step waits for a registered key user, their
-   key loads still succeed; once step 4 has cleared the key session a load
-   fails as locked, which the request answers as `locked`.
+   rotating stage-table worker, rotating prepare and sign, ordinary `/sign`,
+   bounded-base and cosigner-role `/sign/component`, `/sign/assemble`, cosigner
+   external checks, and mnemonic export. For signing paths that require
+   approval, the key use begins only after policy gates and operator approval
+   (never spanning approval wait) and releases once loaded key material is
+   zeroed and before blocking audit writes. Every in-flight signing or assembly
+   request sees its key use canceled, zeroes its loaded key material, releases
+   the key use, and withholds its signatures as `locked`. While this step waits
+   for a registered key user, the keyring stays intact until the user releases;
+   once step 4 clears the key session, any subsequent load fails as `locked`.
 4. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until in-flight `GetKeyWithContext` calls release the
      session; request-wide draining is owned by the request server lifecycle.

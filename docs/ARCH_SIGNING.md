@@ -1199,23 +1199,29 @@ it), so none is left looking approvable. Such a request answers `locked` ("the s
 session ended while the request waited for approval; send it again") and is
 audited as `approval_withdrawn_session_ended`, not as an operator rejection.
 A session end cancels no request's context. A request that is still planning,
-or waiting at its gates, meets the session check and answers `locked`. A
-rotating sign past that check is stopped at the cut of its key use, which
-every session end makes. Ordinary `/sign`, component signing (bounded-base and
-cosigner-role) and assembly register no key use, so for them the check is a
-moment, not a hold, and what stops one already past it depends on the session
-end:
+or waiting at its gates, meets the session check and answers `locked`. Every
+signing and assembly path past its gates and approval — rotating sign, ordinary
+`/sign`, bounded-base and cosigner-role `/sign/component`, and `/sign/assemble`
+— registers a key use (`KeyUseContext`) for its post-approval key load and use
+(never spanning operator approval wait) and releases it once loaded key
+material is zeroed and before any blocking audit write:
 
 - A lock, the start of store maintenance, or an unlock that lost to a lock
-  runs the lock cleanup, which clears the key session only after it has
-  drained the registered key users. A key load before that still succeeds;
-  one after it fails, and the request answers `locked`. A signature whose key
-  was already decrypted is not stopped: the cleanup does not wait for it, and
-  a request whose last key was already decrypted returns its signatures.
-- An entry into recovery keeps the keyring and stops the key session, with
-  recovery's view, which holds no keys. A key load after the entry fails and
-  the request answers `locked`, as after a lock; a signature whose key was
-  already decrypted is not stopped.
+  cancels every registered key use and waits for each to zero its loaded key
+  material and release before clearing the key session and keyring. Any signing
+  or assembly request whose key use was canceled withholds its signatures and
+  answers `locked`. For audited signing paths (`/sign`, bounded-base and
+  cosigner `/sign/component`, and rotating sign), a final session check runs
+  again after `SIGN_APPROVED` is written; if the session ended during the audit
+  write, the signatures are withheld, a countermanding `SIGN_FAILED` entry is
+  written (`LogSignWithheld`), and the request answers `locked`.
+- An entry into recovery keeps the keyring, cancels every registered key use,
+  and destroys and replaces the key session (as a lock does) with recovery's
+  view, which holds no keys. A request whose key use is canceled, whose next
+  key load hits the destroyed session, or whose post-audit check sees the
+  session ended withholds its signatures and answers `locked`, and a key
+  session pointer captured before recovery stays permanently locked even after
+  a later reconcile promotes back to unlocked.
 
 A session end that comes after an operator answered overrides an approval,
 which could no longer sign, but not a rejection, which is recorded as the

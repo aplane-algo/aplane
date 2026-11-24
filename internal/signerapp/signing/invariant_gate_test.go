@@ -74,9 +74,10 @@ func TestRejectNonparticipation(t *testing.T) {
 // signKeyregForTest runs txn through /sign's planned path with a policy that
 // allows every type and auto-approves, so only a signer invariant can stop it
 // before execution.
-func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRequest) (*ServiceError, bool) {
+func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRequest) (*ServiceError, bool, bool) {
 	t.Helper()
 	approvalCalled := false
+	reachedKeyUse := false
 	audit := &testAuditLogger{}
 	service := &Service{
 		AuditLog: audit,
@@ -91,10 +92,8 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			return nil, forbidden("reached execution")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes()}),
+		KeyUse:                        refusedKeyUse(&reachedKeyUse),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes()}),
 	}
 	_, err := service.signGroupWithPlanContext(context.Background(), req, nil, plan)
 	if err != nil && strings.Contains(err.Message, nonparticipationRefusal) {
@@ -105,7 +104,7 @@ func signKeyregForTest(t *testing.T, plan *PlanResult, req signerapi.GroupSignRe
 			t.Fatalf("audit = %#v / %#v, want the refusal audited as %q with its transaction's record", audit.rejected, audit.rejectedRecords, auditSignerInvariant)
 		}
 	}
-	return err, approvalCalled
+	return err, approvalCalled, reachedKeyUse
 }
 
 // Refused on /sign even though the policy allows keyreg and auto-approves:
@@ -117,19 +116,19 @@ func TestSignRefusesNonparticipationThatPolicyAllows(t *testing.T) {
 	}
 	single := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "5458aa"}}}
 
-	err, approvalCalled := signKeyregForTest(t, plan(keyregTxn(sender, false, true)), single)
+	err, approvalCalled, reachedKeyUse := signKeyregForTest(t, plan(keyregTxn(sender, false, true)), single)
 	requireNonparticipationRefusal(t, err, "transaction 1:")
-	if approvalCalled {
-		t.Fatal("the operator was asked about a refused keyreg")
+	if approvalCalled || reachedKeyUse {
+		t.Fatalf("approvalCalled=%v reachedKeyUse=%v; want refusal before approval", approvalCalled, reachedKeyUse)
 	}
 
 	for name, txn := range map[string]types.Transaction{
 		"offline keyreg": keyregTxn(sender, false, false),
 		"online keyreg":  keyregTxn(sender, true, false),
 	} {
-		err, _ := signKeyregForTest(t, plan(txn), single)
-		if err == nil || !strings.Contains(err.Message, "reached execution") {
-			t.Fatalf("%s: error = %v, want it to reach execution", name, err)
+		err, _, reachedKeyUse := signKeyregForTest(t, plan(txn), single)
+		if !reachedKeyUse || err == nil || err.Kind != ErrorLocked {
+			t.Fatalf("%s: reachedKeyUse=%v error = %v, want it to reach key use", name, reachedKeyUse, err)
 		}
 	}
 
@@ -141,8 +140,8 @@ func TestSignRefusesNonparticipationThatPolicyAllows(t *testing.T) {
 		{AuthAddress: "AUTHADDR", TxnBytesHex: "5458aa"},
 		{TxnBytesHex: "5458bb"},
 	}}
-	if err, _ := signKeyregForTest(t, foreignPlan, withForeign); err == nil || !strings.Contains(err.Message, "reached execution") {
-		t.Fatalf("foreign nonparticipating keyreg: error = %v, want it to reach execution", err)
+	if err, _, reachedKeyUse := signKeyregForTest(t, foreignPlan, withForeign); !reachedKeyUse || err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("foreign nonparticipating keyreg: reachedKeyUse=%v error = %v, want it to reach key use", reachedKeyUse, err)
 	}
 }
 
