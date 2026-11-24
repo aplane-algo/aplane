@@ -16,23 +16,26 @@ import (
 // Helper functions to reduce code duplication in autocomplete
 
 // getAllAddresses returns signer addresses + alias addresses (deduplicated, uppercase).
-// If ensureSignerCache is non-nil and the signer cache is empty, it calls the callback
-// to attempt a refresh (e.g., after signer unlock).
-func getAllAddresses(signerCache *cache.SignerCache, aliasCache *cache.AliasCache, ensureSignerCache func() error) []string {
-	if ensureSignerCache != nil && signerCache != nil && signerCache.Count() == 0 {
-		_ = ensureSignerCache()
+// If ensureSignerCache is non-nil and the signer address snapshot is empty, it calls
+// the callback to attempt a refresh (e.g., after signer unlock) and re-reads the snapshot.
+func getAllAddresses(signerAddresses func() []string, aliasCache *cache.AliasCache, ensureSignerCache func() error) []string {
+	var signerAddrs []string
+	if signerAddresses != nil {
+		signerAddrs = signerAddresses()
+		if len(signerAddrs) == 0 && ensureSignerCache != nil {
+			_ = ensureSignerCache()
+			signerAddrs = signerAddresses()
+		}
 	}
 	seen := make(map[string]bool)
 	var addrs []string
 
 	// Add signer addresses
-	if signerCache != nil && signerCache.Keys != nil {
-		for addr := range signerCache.Keys {
-			upper := strings.ToUpper(addr)
-			if !seen[upper] {
-				seen[upper] = true
-				addrs = append(addrs, upper)
-			}
+	for _, addr := range signerAddrs {
+		upper := strings.ToUpper(addr)
+		if !seen[upper] {
+			seen[upper] = true
+			addrs = append(addrs, upper)
 		}
 	}
 
@@ -186,7 +189,7 @@ type PluginSpec struct {
 // ContextCompleter wraps PrefixCompleter with context-aware completion
 type ContextCompleter struct {
 	prefix            *readline.PrefixCompleter
-	signerCache       *cache.SignerCache
+	signerAddresses   func() []string
 	aliasCache        *cache.AliasCache
 	asaCache          *cache.ASACache
 	setCache          *cache.SetCache
@@ -198,7 +201,7 @@ type ContextCompleter struct {
 func (c *ContextCompleter) getSuggestionsForArgSpec(spec cmdspec.ArgSpec) []string {
 	switch spec.Type {
 	case cmdspec.ArgTypeAddress:
-		return getAllAddresses(c.signerCache, c.aliasCache, c.ensureSignerCache)
+		return getAllAddresses(c.signerAddresses, c.aliasCache, c.ensureSignerCache)
 	case cmdspec.ArgTypeAsset:
 		suggestions := []string{"algo"}
 		if c.asaCache != nil {
@@ -248,7 +251,7 @@ func (c *ContextCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		return suggestions, offset
 	}
 
-	allAddresses := getAllAddresses(c.signerCache, c.aliasCache, c.ensureSignerCache)
+	allAddresses := getAllAddresses(c.signerAddresses, c.aliasCache, c.ensureSignerCache)
 
 	if suggestions, offset, ok := c.completeAlias(lineStr, allAddresses); ok {
 		return suggestions, offset
@@ -583,7 +586,7 @@ func (c *ContextCompleter) completeRekey(lineStr string, allAddresses []string) 
 // based on the current state of aliases, ASAs, sets, and signer keys.
 // ensureSignerCache is called on tab-complete when the signer cache is empty, to auto-refresh after unlock.
 // externalPlugins is optional; pass nil if no external plugins are discovered yet.
-func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACache, setCache *cache.SetCache, signerCache *cache.SignerCache, ensureSignerCache func() error, networkTokens []string, externalPlugins []*discovery.Plugin) readline.AutoCompleter {
+func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACache, setCache *cache.SetCache, signerAddresses func() []string, ensureSignerCache func() error, networkTokens []string, externalPlugins []*discovery.Plugin) readline.AutoCompleter {
 	// Build plugin completion specs from external plugins
 	var plugins []PluginSpec
 	var pluginItems []*readline.PrefixCompleter
@@ -620,7 +623,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 				// First argument: suggest addresses + dynamic sets
 				suggestions := []string{"@all", "@signers"}
-				suggestions = append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				suggestions = append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				return suggestions
 			}),
 		),
@@ -639,7 +642,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("optin",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"for", "nowait"}
-				suggestions = append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				suggestions = append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				for _, info := range asaCache.Assets {
 					suggestions = append(suggestions, info.UnitName)
 				}
@@ -653,28 +656,28 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("unrekey",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"nowait"}
-				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				return append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 			}),
 		),
 
 		readline.PcItem("keyreg",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"online", "offline", "nowait"}
-				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				return append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 			}),
 		),
 
 		readline.PcItem("close",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"to", "nowait"}
-				return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				return append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 			}),
 		),
 
 		readline.PcItem("optout",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"from", "to", "nowait"}
-				suggestions = append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				suggestions = append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				for _, info := range asaCache.Assets {
 					suggestions = append(suggestions, info.UnitName)
 				}
@@ -685,7 +688,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 		readline.PcItem("sweep",
 			readline.PcItemDynamic(func(line string) []string {
 				suggestions := []string{"from", "to", "leaving", "nowait", "algo"}
-				suggestions = append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+				suggestions = append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				for _, info := range asaCache.Assets {
 					suggestions = append(suggestions, info.UnitName)
 				}
@@ -698,13 +701,13 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 		readline.PcItem("participation",
 			readline.PcItemDynamic(func(line string) []string {
-				return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
+				return getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)
 			}),
 		),
 
 		readline.PcItem("validate",
 			readline.PcItemDynamic(func(line string) []string {
-				suggestions := getAllAddresses(signerCache, aliasCache, ensureSignerCache)
+				suggestions := getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)
 				for name := range setCache.Sets {
 					suggestions = append(suggestions, "@"+name)
 				}
@@ -731,7 +734,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 					if current.command == "sets" && !current.hasArg("to") {
 						suggestions = append(suggestions, "to")
 					}
-					return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+					return append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				}),
 			),
 			readline.PcItem("remove",
@@ -741,7 +744,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 					if current.command == "sets" && !current.hasArg("from") {
 						suggestions = append(suggestions, "from")
 					}
-					return append(suggestions, getAllAddresses(signerCache, aliasCache, ensureSignerCache)...)
+					return append(suggestions, getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)...)
 				}),
 			),
 			readline.PcItem("delete",
@@ -757,7 +760,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 		readline.PcItem("info",
 			readline.PcItemDynamic(func(line string) []string {
-				return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
+				return getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)
 			}),
 		),
 
@@ -783,7 +786,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 		readline.PcItem("delete",
 			readline.PcItemDynamic(func(line string) []string {
-				return getAllAddresses(signerCache, aliasCache, ensureSignerCache)
+				return getAllAddresses(signerAddresses, aliasCache, ensureSignerCache)
 			}),
 		),
 
@@ -861,7 +864,7 @@ func CreateDynamicCompleter(aliasCache *cache.AliasCache, asaCache *cache.ASACac
 
 	return &ContextCompleter{
 		prefix:            prefix,
-		signerCache:       signerCache,
+		signerAddresses:   signerAddresses,
 		aliasCache:        aliasCache,
 		asaCache:          asaCache,
 		setCache:          setCache,

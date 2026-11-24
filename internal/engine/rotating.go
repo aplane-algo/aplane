@@ -16,7 +16,7 @@ import (
 // IsRotatingAccount reports whether the signer serves address through the
 // rotating1 flow.
 func (e *Engine) IsRotatingAccount(address string) bool {
-	return e.signerCacheSigningFlow(address) == signerapi.SigningFlowRotating1
+	return e.SignerCacheSigningFlow(address) == signerapi.SigningFlowRotating1
 }
 
 // RotatingAccounts lists the signable rotating accounts.

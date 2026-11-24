@@ -40,8 +40,8 @@ func TestAuthorizationKindIsTheSignersReport(t *testing.T) {
 			eng := setupEngineWithMockAlgod(t, transport)
 			key := tc.key
 			key.Address = addr
-			if err := eng.populateSignerCache([]signerapi.KeyInfo{key}); err != nil {
-				t.Fatalf("populateSignerCache() error = %v", err)
+			if err := eng.PopulateSignerCache([]signerapi.KeyInfo{key}); err != nil {
+				t.Fatalf("PopulateSignerCache() error = %v", err)
 			}
 
 			signingCtx, err := eng.BuildSigningContext(context.Background(), addr)
@@ -70,12 +70,12 @@ func TestSignableAddressesLeaveOutAKeyWithoutAKnownKind(t *testing.T) {
 		transport.addAccount(addr, 1_000_000)
 	}
 	eng := setupEngineWithMockAlgod(t, transport)
-	if err := eng.populateSignerCache([]signerapi.KeyInfo{
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
 		{Address: known, KeyType: "ed25519", AuthorizationKind: "ed25519"},
 		{Address: noKind, KeyType: "ed25519"},
 		{Address: unknownKind, KeyType: "ed25519", AuthorizationKind: "quantum_magic"},
 	}); err != nil {
-		t.Fatalf("populateSignerCache() error = %v", err)
+		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	// A rekeyed account is known to the client by its alias.
 	eng.AliasCache.Aliases = map[string]string{

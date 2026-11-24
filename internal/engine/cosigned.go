@@ -37,7 +37,7 @@ var (
 type cosignedSignerCacheView struct{ core *Core }
 
 func (v cosignedSignerCacheView) AuthorizationKind(address string) (string, bool) {
-	kind, present := v.core.signerCacheAuthorizationKind(address)
+	kind, present := v.core.SignerCacheAuthorizationKind(address)
 	if !present {
 		return "", false
 	}
@@ -45,27 +45,27 @@ func (v cosignedSignerCacheView) AuthorizationKind(address string) (string, bool
 }
 
 func (v cosignedSignerCacheView) SigningFlow(address string) string {
-	return v.core.signerCacheSigningFlow(address)
+	return v.core.SignerCacheSigningFlow(address)
 }
 
 func (v cosignedSignerCacheView) CosignerComponentKeyType(address string) (string, bool) {
-	return v.core.signerCacheCosignerComponentKeyType(address)
+	return v.core.SignerCacheCosignerComponentKeyType(address)
 }
 
 func (v cosignedSignerCacheView) CosignerPublicKey(address string) (string, bool) {
-	return v.core.signerCacheCosignerPublicKey(address)
+	return v.core.SignerCacheCosignerPublicKey(address)
 }
 
 func (v cosignedSignerCacheView) BoundedContract(address string) (string, bool) {
-	return v.core.signerCacheBoundedContract(address)
+	return v.core.SignerCacheBoundedContract(address)
 }
 
 func (v cosignedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
-	return v.core.signerCacheBoundedMaxFee(address)
+	return v.core.SignerCacheBoundedMaxFee(address)
 }
 
 func (v cosignedSignerCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
-	return v.core.signerCacheLogicSigResourceProfile(address)
+	return v.core.SignerCacheLogicSigResourceProfile(address)
 }
 
 // cosignedSigner builds a cosigned.Signer bound to the engine's live connection,

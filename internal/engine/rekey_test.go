@@ -109,7 +109,9 @@ func TestPrepareRekey_RotatingTargetRefused(t *testing.T) {
 	transport.addAccount(sender, 1_000_000)
 	transport.addAccount(target, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.SetSigningFlowForAddress(target, signerapi.SigningFlowRotating1)
+	sc := eng.SignerCacheSnapshot()
+	sc.SetSigningFlowForAddress(target, signerapi.SigningFlowRotating1)
+	eng.SetSignerCache(sc)
 
 	result, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err == nil || result != nil {
@@ -129,7 +131,9 @@ func TestPrepareRekey_UnknownFlowTargetRefused(t *testing.T) {
 	transport.addAccount(sender, 1_000_000)
 	transport.addAccount(target, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.SetSigningFlowForAddress(target, "rotating2")
+	sc := eng.SignerCacheSnapshot()
+	sc.SetSigningFlowForAddress(target, "rotating2")
+	eng.SetSignerCache(sc)
 
 	result, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err == nil || result != nil {

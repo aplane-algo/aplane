@@ -365,7 +365,7 @@ func TestCheckPluginGroupJudgesFromTheFetchedKeys(t *testing.T) {
 	if err := f.eng.PopulateSignerCache(contradicting); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	cached := maps.Clone(f.eng.SignerCache.Keys)
+	cached := f.eng.SignerCacheKeysSnapshot()
 
 	for mode, c := range pluginRekeyResults(t, rekeySubmitTestTxn(rekeyTestOther, rekeyTestHTLC)) {
 		if _, err := f.app.CheckPluginGroup(context.Background(), c.result, interactive); err == nil || err.Error() != rekeyRefusal(c.position, rekeyTestHTLC, "aplane.htlc.v1") {
@@ -386,8 +386,8 @@ func TestCheckPluginGroupJudgesFromTheFetchedKeys(t *testing.T) {
 			t.Errorf("%s: the review's not-valid set is not the fetched list: %v", mode, facts.InvalidRekeyTargets)
 		}
 	}
-	if !maps.Equal(f.eng.SignerCache.Keys, cached) {
-		t.Fatalf("the check rewrote the signer cache: %v, was %v", f.eng.SignerCache.Keys, cached)
+	if got := f.eng.SignerCacheKeysSnapshot(); !maps.Equal(got, cached) {
+		t.Fatalf("the check rewrote the signer cache: %v, was %v", got, cached)
 	}
 }
 

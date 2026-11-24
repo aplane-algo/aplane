@@ -310,7 +310,7 @@ func (e *Engine) checkManagedSlotsReady(ctx context.Context, txns []types.Transa
 		}
 		if cosigned.HasCosignedEffectiveSigner(managed[j : j+1]) {
 			signer := e.AuthCache.ResolveEffectiveSigner(sender)
-			return fmt.Errorf("transaction %d: %s signs through the %q signing flow, which a presign-plan group cannot use", i+1, signer, e.signerCacheSigningFlow(signer))
+			return fmt.Errorf("transaction %d: %s signs through the %q signing flow, which a presign-plan group cannot use", i+1, signer, e.SignerCacheSigningFlow(signer))
 		}
 		if err := e.validateSlotLsigArgs(txn, lsigArgsAt(lsigArgs, i)); err != nil {
 			return fmt.Errorf("transaction %d: invalid LogicSig arguments: %w", i+1, err)

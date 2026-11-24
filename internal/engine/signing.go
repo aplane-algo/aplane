@@ -31,7 +31,7 @@ type SigningContext struct {
 // lists. The signer holds the account itself, so it signs for the account at
 // any stage.
 func (e *Core) signingAddressFor(sender, authAddr string) string {
-	if authAddr == "" || authAddr == sender || e.signerCacheSigningFlow(sender) == signerapi.SigningFlowRotating1 {
+	if authAddr == "" || authAddr == sender || e.SignerCacheSigningFlow(sender) == signerapi.SigningFlowRotating1 {
 		return sender
 	}
 	return authAddr
@@ -50,7 +50,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	}
 
 	// Check if signer reported locked state
-	if e.signerCacheIsLocked() {
+	if e.SignerCacheLocked() {
 		return nil, ErrSignerLocked
 	}
 
@@ -87,14 +87,14 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	// Check if we can sign (address is in SignerCache).
 	// If the cached auth address is stale (e.g., account was rekeyed mid-session),
 	// refresh from the blockchain once and retry.
-	if !e.signerCacheHasAddress(signingAddr) && cached {
+	if !e.SignerCacheHasAddress(signingAddr) && cached {
 		refreshedAuth, err := e.RefreshAuthAddressWithContext(ctx, address)
 		if err == nil {
 			signingAddr = e.signingAddressFor(address, refreshedAuth)
 			authAddr = refreshedAuth
 		}
 	}
-	if !e.signerCacheHasAddress(signingAddr) {
+	if !e.SignerCacheHasAddress(signingAddr) {
 		if signingAddr == address {
 			return nil, fmt.Errorf("%w: %s is not available for signing", ErrNoSigningKey, address)
 		}
@@ -103,8 +103,8 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 
 	// The key type and authorization kind are the signer's, from its /keys
 	// answer. A key it reports no kind this client knows for is refused here.
-	keyType := e.signerCacheKeyType(signingAddr)
-	authorizationKind, _ := e.signerCacheAuthorizationKind(signingAddr)
+	keyType := e.SignerCacheKeyType(signingAddr)
+	authorizationKind, _ := e.SignerCacheAuthorizationKind(signingAddr)
 	if authorizationKind == "" {
 		return nil, fmt.Errorf("%w: the signer reports no transaction authorization this client knows for %s", ErrNoSigningKey, signingAddr)
 	}

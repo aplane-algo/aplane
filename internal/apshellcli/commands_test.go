@@ -390,8 +390,7 @@ func TestCompleterMatchesCommandRegistry(t *testing.T) {
 		}
 	}
 
-	signers := cache.NewSignerCache()
-	completer := shellrepl.CreateDynamicCompleter(&cache.AliasCache{}, &cache.ASACache{}, &cache.SetCache{}, &signers, func() error { return nil }, nil, nil)
+	completer := shellrepl.CreateDynamicCompleter(&cache.AliasCache{}, &cache.ASACache{}, &cache.SetCache{}, func() []string { return nil }, func() error { return nil }, nil, nil)
 	candidates, _ := completer.Do([]rune(""), 0)
 	got := map[string]bool{}
 	for _, candidate := range candidates {

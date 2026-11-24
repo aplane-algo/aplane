@@ -17,12 +17,9 @@ func TestDeleteCommandAddressCompletion(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 	}
 
 	input := "delete " + address[:2]
@@ -44,12 +41,9 @@ func TestAliasCommandCompletesAddressAsSecondArgument(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 	}
 
 	input := "alias treasury " + address[:3]
@@ -71,12 +65,9 @@ func TestAddressCompletionUsesParsedKeywordPosition(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 	}
 
 	input := "optin usdc for " + address[:4]
@@ -128,12 +119,9 @@ func TestSetsAddCompletesAddressFromParsedPosition(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 	}
 
 	input := "sets add " + address[:3]
@@ -207,12 +195,9 @@ func TestRekeyRefreshCompletesAddress(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 	}
 
 	input := "rekey refresh " + address[:4]
@@ -234,12 +219,9 @@ func TestPluginCompletionUsesQuotedCommandParsing(t *testing.T) {
 	account := crypto.GenerateAccount()
 	address := account.Address.String()
 
-	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(address, "ed25519", "ed25519")
-
 	completer := &ContextCompleter{
-		signerCache: &signerCache,
-		aliasCache:  &cache.AliasCache{Aliases: map[string]string{}},
+		signerAddresses: func() []string { return []string{address} },
+		aliasCache:      &cache.AliasCache{Aliases: map[string]string{}},
 		plugins: []PluginSpec{
 			{
 				Name: "plugin",
@@ -311,11 +293,7 @@ func TestAliasDeleteCompletesSingleQuotedAliasName(t *testing.T) {
 // suggested remainder, trimmed.
 func completionsFor(t *testing.T, line string, addresses ...string) []string {
 	t.Helper()
-	signerCache := cache.NewSignerCache()
-	for _, address := range addresses {
-		signerCache.AddAddress(address, "ed25519", "ed25519")
-	}
-	completer := CreateDynamicCompleter(&cache.AliasCache{Aliases: map[string]string{}}, &cache.ASACache{}, &cache.SetCache{}, &signerCache, nil, nil, nil)
+	completer := CreateDynamicCompleter(&cache.AliasCache{Aliases: map[string]string{}}, &cache.ASACache{}, &cache.SetCache{}, func() []string { return addresses }, nil, nil, nil)
 	suggestions, offset := completer.Do([]rune(line), len(line))
 	typed := line[len(line)-offset:]
 	words := make([]string, 0, len(suggestions))
@@ -324,6 +302,34 @@ func completionsFor(t *testing.T, line string, addresses ...string) []string {
 	}
 	sort.Strings(words)
 	return words
+}
+
+func TestCompleterRefreshesEmptySignerSnapshotOnceAndReReads(t *testing.T) {
+	address := crypto.GenerateAccount().Address.String()
+	var current []string
+	ensureCalls := 0
+	completer := CreateDynamicCompleter(
+		&cache.AliasCache{Aliases: map[string]string{}},
+		&cache.ASACache{},
+		&cache.SetCache{},
+		func() []string { return current },
+		func() error {
+			ensureCalls++
+			current = []string{address}
+			return nil
+		},
+		nil,
+		nil,
+	)
+
+	input := "delete " + address[:4]
+	suggestions, offset := completer.Do([]rune(input), len(input))
+	if ensureCalls != 1 {
+		t.Fatalf("ensureSignerCache calls = %d, want 1", ensureCalls)
+	}
+	if offset != 4 || len(suggestions) != 1 || string(suggestions[0]) != address[4:]+" " {
+		t.Fatalf("suggestions = %q offset = %d, want %q / 4", suggestions, offset, address[4:]+" ")
+	}
 }
 
 func TestRotateCompletesAccountsCaseInsensitively(t *testing.T) {

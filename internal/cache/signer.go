@@ -5,6 +5,8 @@ package cache
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
@@ -28,6 +30,40 @@ func NewSignerCache() SignerCache {
 		BoundedContracts:          make(map[string]string),
 	}
 	return cache
+}
+
+// Clone returns a detached deep copy of the signer cache. Mutating the clone's
+// maps, slices, or nested profiles does not affect the receiver, and the clone
+// is unbound from any backing store.
+func (cache *SignerCache) Clone() SignerCache {
+	if cache == nil {
+		return NewSignerCache()
+	}
+	clone := SignerCache{
+		SchemaVersion:             cache.SchemaVersion,
+		Keys:                      maps.Clone(cache.Keys),
+		AuthorizationKinds:        maps.Clone(cache.AuthorizationKinds),
+		GenericLsigs:              maps.Clone(cache.GenericLsigs),
+		SigningFlows:              maps.Clone(cache.SigningFlows),
+		CosignerComponentKeyTypes: maps.Clone(cache.CosignerComponentKeyTypes),
+		CosignerPublicKeys:        maps.Clone(cache.CosignerPublicKeys),
+		BoundedMaxFees:            maps.Clone(cache.BoundedMaxFees),
+		BoundedContracts:          maps.Clone(cache.BoundedContracts),
+		Locked:                    cache.Locked,
+	}
+	if cache.LogicSigResources != nil {
+		clone.LogicSigResources = make(map[string]lsigresource.Profile, len(cache.LogicSigResources))
+		for address, profile := range cache.LogicSigResources {
+			clone.LogicSigResources[address] = profile.Clone()
+		}
+	}
+	if cache.SigningArgs != nil {
+		clone.SigningArgs = make(map[string][]SigningArgInfo, len(cache.SigningArgs))
+		for address, args := range cache.SigningArgs {
+			clone.SigningArgs[address] = slices.Clone(args)
+		}
+	}
+	return clone
 }
 
 // LoadSignerCacheFromStore loads the signer cache from the provided store.

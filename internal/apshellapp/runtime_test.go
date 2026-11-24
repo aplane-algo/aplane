@@ -6,6 +6,7 @@ package apshellapp
 import (
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -13,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressdisplay"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestExecutionStateReflectsEngine(t *testing.T) {
@@ -86,9 +88,13 @@ func TestSignableMarkerAgreesWithSignableAddresses(t *testing.T) {
 	known, noKind, unknownKind := types.Address{1}.String(), types.Address{2}.String(), types.Address{3}.String()
 	toKnown, toNoKind, toUnknownKind := types.Address{4}.String(), types.Address{5}.String(), types.Address{6}.String()
 	eng := engine.NewEngine("testnet")
-	eng.SignerCache.AddAddress(known, "ed25519", "ed25519")
-	eng.SignerCache.AddAddress(noKind, "ed25519", "")
-	eng.SignerCache.AddAddress(unknownKind, "ed25519", "quantum_magic")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: known, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: noKind, KeyType: "ed25519"},
+		{Address: unknownKind, KeyType: "ed25519", AuthorizationKind: "quantum_magic"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	// A rekeyed account is known to the client by its alias.
 	eng.AliasCache.Aliases = map[string]string{"to-known": toKnown, "to-no-kind": toNoKind, "to-unknown-kind": toUnknownKind}
 	eng.AuthCache.AuthAddresses = map[string]string{toKnown: known, toNoKind: noKind, toUnknownKind: unknownKind}
@@ -106,4 +112,39 @@ func TestSignableMarkerAgreesWithSignableAddresses(t *testing.T) {
 			t.Errorf("FormatAddress(%s) = %q (marked %v), but listed as signable = %v", address, formatted, marked, listed)
 		}
 	}
+}
+
+func TestDisplayAndCompleterDepsRaceSafeWithConcurrentSignerCacheUpdates(t *testing.T) {
+	addressdisplay.SetColorSupported(false)
+	defer addressdisplay.ResetColorSupport()
+
+	addr := types.Address{9}.String()
+	eng := engine.NewEngine("testnet")
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+	deps := app.CompleterDeps()
+	keys := []signerapi.KeyInfo{
+		{Address: addr, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			if i%2 == 0 {
+				_ = eng.PopulateSignerCache(keys)
+			} else {
+				eng.ResetSignerCache(false)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			_ = app.FormatAddress(addr)
+			_ = app.FormatKeyTypeForDisplay(addr, "ed25519")
+			_ = deps.SignerAddresses()
+		}
+	}()
+	wg.Wait()
 }

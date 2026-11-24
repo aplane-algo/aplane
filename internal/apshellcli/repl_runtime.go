@@ -35,7 +35,7 @@ func (r *REPLState) discoverCompleter() readline.AutoCompleter {
 		deps.AliasCache,
 		deps.ASACache,
 		deps.SetCache,
-		deps.SignerCache,
+		deps.SignerAddresses,
 		deps.EnsureSignerCache,
 		r.networkCompletions(),
 		externalPlugins,

@@ -544,6 +544,77 @@ func TestSignerCache_LoadTamperedCacheReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestSignerCache_CloneDeepCopiesEveryField(t *testing.T) {
+	original := NewSignerCache()
+	original.AddAddress("ADDR1", "aplane.falcon1024.v1", "logic_sig")
+	original.SetGenericLsig("ADDR1", true)
+	original.SetLogicSigResourceProfile("ADDR1", lsigresource.Profile{
+		ProgramBytes:  1200,
+		Spend:         &lsigresource.PathProfile{ArgumentBytes: 100, MaxOpcodeCost: 20_000},
+		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: 120, MaxOpcodeCost: 20_000},
+		ListedRekey:   &lsigresource.PathProfile{ArgumentBytes: 140, MaxOpcodeCost: 20_000},
+	})
+	original.SetSigningArgs("ADDR1", []SigningArgInfo{{Name: "secret", Type: "bytes", Required: true}})
+	original.SetSigningFlowForAddress("ADDR1", "cosigned1")
+	original.SetCosignerComponentKeyTypeForAddress("ADDR1", "aplane.witness-falcon1024.v1")
+	original.SetCosignerPublicKeyForAddress("ADDR1", "abcd")
+	original.SetBoundedMaxFeeForAddress("ADDR1", 5000)
+	original.SetBoundedContractForAddress("ADDR1", "bounded2")
+	original.Locked = true
+	original.BindStore(NewStore(t.TempDir()))
+
+	cloned := original.Clone()
+	if cloned.store != nil {
+		t.Fatal("Clone() kept backing store reference; snapshots must be detached")
+	}
+	if !cloned.Locked || cloned.SchemaVersion != original.SchemaVersion {
+		t.Fatalf("cloned scalars = Locked:%v SchemaVersion:%d, want %v/%d", cloned.Locked, cloned.SchemaVersion, original.Locked, original.SchemaVersion)
+	}
+
+	// Mutate every collection and nested value on the clone.
+	cloned.Keys["ADDR1"] = "mutated"
+	cloned.Keys["ADDR2"] = "ed25519"
+	cloned.AuthorizationKinds["ADDR1"] = "mutated"
+	cloned.GenericLsigs["ADDR1"] = false
+	cloned.LogicSigResources["ADDR1"].Spend.ArgumentBytes = 999
+	cloned.SigningArgs["ADDR1"][0].Name = "mutated"
+	cloned.SigningFlows["ADDR1"] = "mutated"
+	cloned.CosignerComponentKeyTypes["ADDR1"] = "mutated"
+	cloned.CosignerPublicKeys["ADDR1"] = "mutated"
+	cloned.BoundedMaxFees["ADDR1"] = 999
+	cloned.BoundedContracts["ADDR1"] = "mutated"
+	cloned.Locked = false
+
+	if original.Keys["ADDR1"] != "aplane.falcon1024.v1" || original.HasAddress("ADDR2") {
+		t.Fatalf("mutating clone affected original Keys: %+v", original.Keys)
+	}
+	if original.AuthorizationKinds["ADDR1"] != "logic_sig" {
+		t.Fatalf("mutating clone affected original AuthorizationKinds: %+v", original.AuthorizationKinds)
+	}
+	if !original.GenericLsigs["ADDR1"] {
+		t.Fatal("mutating clone affected original GenericLsigs")
+	}
+	if original.LogicSigResources["ADDR1"].Spend.ArgumentBytes != 100 {
+		t.Fatalf("mutating clone affected original LogicSigResources: %+v", original.LogicSigResources["ADDR1"].Spend)
+	}
+	if original.SigningArgs["ADDR1"][0].Name != "secret" {
+		t.Fatalf("mutating clone affected original SigningArgs: %+v", original.SigningArgs["ADDR1"])
+	}
+	if original.SigningFlows["ADDR1"] != "cosigned1" ||
+		original.CosignerComponentKeyTypes["ADDR1"] != "aplane.witness-falcon1024.v1" ||
+		original.CosignerPublicKeys["ADDR1"] != "abcd" ||
+		original.BoundedMaxFees["ADDR1"] != 5000 ||
+		original.BoundedContracts["ADDR1"] != "bounded2" ||
+		!original.Locked {
+		t.Fatalf("mutating clone affected original fields: %+v", original)
+	}
+
+	var nilCache *SignerCache
+	if empty := nilCache.Clone(); empty.Count() != 0 || empty.SchemaVersion != signerCachePayloadSchemaVersion {
+		t.Fatalf("(*SignerCache)(nil).Clone() = %+v, want empty initialized cache", empty)
+	}
+}
+
 // contains checks if s contains substr
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||

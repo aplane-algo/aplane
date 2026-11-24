@@ -26,7 +26,7 @@ import (
 func (e *Core) ConnectWithTunnel(ctx context.Context, target string, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
 	result, err := e.Connection.ConnectWithTunnel(
 		ctx, target, host, sshPort, identityFile, knownHostsPath, hostKeyApproval,
-		e.populateSignerCache,
+		e.PopulateSignerCache,
 		e.handleConnectionClosed(onDisconnect),
 	)
 	if err != nil {
@@ -162,7 +162,7 @@ func (e *Core) RequestGroupSignWithContext(ctx context.Context, requests []signe
 func (e *Core) handleConnectionClosed(onDisconnect func()) func() {
 	return func() {
 		e.resetSignerStatusRevision()
-		e.resetSignerCache(false)
+		e.ResetSignerCache(false)
 		if onDisconnect != nil {
 			onDisconnect()
 		}

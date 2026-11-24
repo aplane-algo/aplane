@@ -52,7 +52,7 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 	// before building anything. Any other flow this client cannot route an
 	// authorizer through is refused as well.
 	if !checkResult.IsUnrekey {
-		switch flow := e.signerCacheSigningFlow(params.To); {
+		switch flow := e.SignerCacheSigningFlow(params.To); {
 		case flow == signerapi.SigningFlowRotating1:
 			return nil, checkResult, errors.New(rotatingkey.RekeyTargetRefusal(params.To))
 		case !cosigned.CanAuthorizeOtherAccounts(flow):

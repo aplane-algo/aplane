@@ -71,7 +71,7 @@ func TestEngineWithOptions(t *testing.T) {
 
 	eng = NewEngine("testnet", WithSignerCache(signerCache))
 
-	if eng.SignerCache.Keys["ABC123"] != "ed25519" {
+	if eng.SignerCacheKeyType("ABC123") != "ed25519" {
 		t.Error("SignerCache not set correctly")
 	}
 
@@ -474,7 +474,7 @@ func TestAuthCacheRebuildLeavesTheSignerCacheFreeDuringQueries(t *testing.T) {
 
 			reset := make(chan struct{})
 			go func() {
-				eng.resetSignerCache(false)
+				eng.ResetSignerCache(false)
 				close(reset)
 			}()
 			select {

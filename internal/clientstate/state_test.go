@@ -198,11 +198,10 @@ func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) 
 	state := New("testnet")
 	state.DataDir = dataDir
 	state.CacheStore = store
-	state.SignerCache = cache.NewSignerCache()
-	state.SignerCache.BindStore(store)
-	state.SignerCache.AddAddress(address, "ed25519", "ed25519")
-	if err := state.SignerCache.SaveCache(); err != nil {
-		t.Fatalf("SaveCache() error = %v", err)
+	if err := state.PopulateAndSaveSignerCacheLocked([]signerapi.KeyInfo{
+		{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateAndSaveSignerCacheLocked() error = %v", err)
 	}
 
 	authCache := cache.NewAuthAddressCacheForStore(store)
@@ -215,8 +214,8 @@ func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) 
 	algodClient := newCountingAuthCacheTestAlgodClient(t, &accountInfoCalls)
 	initialized := NewInitialized("testnet", dataDir, algodClient)
 
-	if got := initialized.SignerCache.Count(); got != 1 {
-		t.Fatalf("SignerCache.Count() = %d, want 1", got)
+	if got := initialized.SignerCacheCount(); got != 1 {
+		t.Fatalf("SignerCacheCount() = %d, want 1", got)
 	}
 	gotAuth, ok := initialized.AuthCache.GetAuthAddress(address)
 	if !ok {
@@ -230,9 +229,8 @@ func TestNewInitializedLoadsPersistedAuthCacheWithoutAlgodRefresh(t *testing.T) 
 	}
 }
 
-func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
+func TestPopulateSignerCacheUpdatesMetadataAndSnapshotIsIsolated(t *testing.T) {
 	state := New("testnet")
-	original := &state.SignerCache
 
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address:                  "ADDR1",
@@ -250,29 +248,33 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	if &state.SignerCache != original {
-		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
+	snap := state.SignerCacheSnapshot()
+	if got := snap.GetKeyType("ADDR1"); got != "aplane.falcon1024.v1" {
+		t.Fatalf("snapshot key type = %q, want cosigned key type", got)
 	}
-	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024.v1" {
-		t.Fatalf("original pointer key type = %q, want cosigned key type", got)
-	}
-	if got, ok := original.CosignerPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
+	if got, ok := snap.CosignerPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Fatalf("cosigner public key = %q/%v, want cached value", got, ok)
 	}
-	if got, ok := original.CosignerComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
+	if got, ok := snap.CosignerComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
 		t.Fatalf("cosigner component key type = %q/%v, want cached value", got, ok)
 	}
-	if profile, ok := original.LogicSigResourceProfile("ADDR1"); !ok || profile.Spend == nil || profile.Spend.ArgumentBytes != 1_423 {
+	if profile, ok := snap.LogicSigResourceProfile("ADDR1"); !ok || profile.Spend == nil || profile.Spend.ArgumentBytes != 1_423 {
 		t.Fatalf("LogicSig resources = %+v/%v, want cached spend profile", profile, ok)
+	}
+
+	// Mutating a snapshot must not mutate State's cache.
+	snap.Keys["ADDR1"] = "mutated"
+	if got := state.SignerCacheKeyType("ADDR1"); got != "aplane.falcon1024.v1" {
+		t.Fatalf("mutating snapshot affected State cache: key type = %q", got)
 	}
 
 	if err := state.PopulateSignerCache(nil); err != nil {
 		t.Fatalf("PopulateSignerCache(nil) error = %v", err)
 	}
-	if original.Count() != 0 {
-		t.Fatalf("original pointer count after empty populate = %d, want 0", original.Count())
+	if state.SignerCacheCount() != 0 {
+		t.Fatalf("count after empty populate = %d, want 0", state.SignerCacheCount())
 	}
-	if got, ok := original.CosignerPublicKeyForAddress("ADDR1"); ok || got != "" {
+	if got, ok := state.SignerCacheCosignerPublicKey("ADDR1"); ok || got != "" {
 		t.Fatalf("cosigner public key after empty populate = %q/%v, want empty false", got, ok)
 	}
 }
@@ -298,23 +300,23 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
-	if got, ok := state.SignerCache.CosignerPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
+	if got, ok := state.SignerCacheCosignerPublicKey("BOUNDED"); !ok || got != "abcd" {
 		t.Fatalf("bounded cosigner public key = %q/%v", got, ok)
 	}
-	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowCosigned1 {
+	if got := state.SignerCacheSigningFlow("BOUNDED"); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("bounded cosigner flow = %q", got)
 	}
-	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("BOUNDED"); !ok || got != 10_000 {
+	if got, ok := state.SignerCacheBoundedMaxFee("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
 	}
-	if got, ok := state.SignerCache.BoundedContractForAddress("BOUNDED"); !ok || got != "bounded2" {
+	if got, ok := state.SignerCacheBoundedContract("BOUNDED"); !ok || got != "bounded2" {
 		t.Fatalf("bounded contract = %q/%v", got, ok)
 	}
 	// A plain host records its contract and no ceiling, not a zero one.
-	if got, ok := state.SignerCache.BoundedContractForAddress("PLAIN"); !ok || got != "plain1" {
+	if got, ok := state.SignerCacheBoundedContract("PLAIN"); !ok || got != "plain1" {
 		t.Fatalf("plain host contract = %q/%v", got, ok)
 	}
-	if got, ok := state.SignerCache.BoundedMaxFeeForAddress("PLAIN"); ok {
+	if got, ok := state.SignerCacheBoundedMaxFee("PLAIN"); ok {
 		t.Fatalf("plain host max fee = %d, want none", got)
 	}
 }
@@ -334,8 +336,8 @@ func TestPopulateSignerCacheRejectsMalformedLogicSigResourcesWithoutMutation(t *
 	if err == nil || !strings.Contains(err.Error(), "program_bytes must be greater than zero") {
 		t.Fatalf("PopulateSignerCache() error = %v, want invalid program_bytes", err)
 	}
-	if !state.SignerCache.HasAddress("GOOD") || state.SignerCache.HasAddress("BAD") {
-		t.Fatalf("signer cache mutated after invalid inventory: %+v", state.SignerCache.Keys)
+	if !state.SignerCacheHasAddress("GOOD") || state.SignerCacheHasAddress("BAD") {
+		t.Fatalf("signer cache mutated after invalid inventory: %+v", state.SignerCacheKeysSnapshot())
 	}
 }
 
@@ -560,24 +562,26 @@ func TestSignerCacheAcceptsTheKeysContractFixtures(t *testing.T) {
 	}
 }
 
-// PopulateSignerCache replaces every per-address entry the cache held and
-// clears Locked, keeping the store it is bound to.
+// PopulateAndSaveSignerCacheLocked replaces every per-address entry the cache
+// held and clears Locked, keeping the store it is bound to.
 func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 	state := newTestState(t)
-	state.SignerCache.Keys = map[string]string{"OLD": "ed25519"}
-	state.SignerCache.AuthorizationKinds = map[string]string{"OLD": "ed25519"}
-	state.SignerCache.GenericLsigs = map[string]bool{"OLD": true}
-	state.SignerCache.LogicSigResources = map[string]lsigresource.Profile{"OLD": {ProgramBytes: 1}}
-	state.SignerCache.SigningArgs = map[string][]cache.SigningArgInfo{"OLD": {{Name: "x"}}}
-	state.SignerCache.SigningFlows = map[string]string{"OLD": "cosigned1"}
-	state.SignerCache.CosignerComponentKeyTypes = map[string]string{"OLD": "t"}
-	state.SignerCache.CosignerPublicKeys = map[string]string{"OLD": "ab"}
-	state.SignerCache.BoundedMaxFees = map[string]uint64{"OLD": 7}
-	state.SignerCache.BoundedContracts = map[string]string{"OLD": "plain1"}
-	state.SignerCache.Locked = true
+	seed := cache.NewSignerCache()
+	seed.Keys = map[string]string{"OLD": "ed25519"}
+	seed.AuthorizationKinds = map[string]string{"OLD": "ed25519"}
+	seed.GenericLsigs = map[string]bool{"OLD": true}
+	seed.LogicSigResources = map[string]lsigresource.Profile{"OLD": {ProgramBytes: 1}}
+	seed.SigningArgs = map[string][]cache.SigningArgInfo{"OLD": {{Name: "x"}}}
+	seed.SigningFlows = map[string]string{"OLD": "cosigned1"}
+	seed.CosignerComponentKeyTypes = map[string]string{"OLD": "t"}
+	seed.CosignerPublicKeys = map[string]string{"OLD": "ab"}
+	seed.BoundedMaxFees = map[string]uint64{"OLD": 7}
+	seed.BoundedContracts = map[string]string{"OLD": "plain1"}
+	seed.Locked = true
+	state.SetSignerCache(seed)
 
 	maxFee := uint64(5000)
-	if err := state.PopulateSignerCache([]signerapi.KeyInfo{{
+	if err := state.PopulateAndSaveSignerCacheLocked([]signerapi.KeyInfo{{
 		Address:           "NEW",
 		KeyType:           "aplane.falcon1024.v1",
 		AuthorizationKind: "logic_sig",
@@ -589,12 +593,12 @@ func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 			MaxFee:   &maxFee,
 		},
 	}}); err != nil {
-		t.Fatalf("PopulateSignerCache() error = %v", err)
+		t.Fatalf("PopulateAndSaveSignerCacheLocked() error = %v", err)
 	}
-	if state.SignerCache.Locked {
+	if state.SignerCacheLocked() {
 		t.Fatal("Locked = true after populate, want false")
 	}
-	got, err := json.Marshal(state.SignerCache)
+	got, err := json.Marshal(state.SignerCacheSnapshot())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,9 +607,6 @@ func TestPopulateSignerCacheReplacesEveryEntry(t *testing.T) {
 		t.Fatalf("signer cache after populate\n got: %s\nwant: %s", got, want)
 	}
 
-	if err := state.SaveSignerCacheLocked(); err != nil {
-		t.Fatalf("SaveSignerCacheLocked() error = %v", err)
-	}
 	if reloaded := cache.LoadSignerCacheFromStore(state.CacheStore); reloaded.GetKeyType("NEW") != "aplane.falcon1024.v1" || reloaded.HasAddress("OLD") {
 		t.Fatalf("reloaded keys = %v, want only NEW", reloaded.Keys)
 	}
@@ -642,8 +643,62 @@ func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testi
 		t.Fatal(err)
 	}
 	for address, want := range map[string]string{"PARAMS": "", "BOTH": "bb", "STRUCT": "cc"} {
-		if got, ok := state.SignerCache.CosignerPublicKeyForAddress(address); ok != (want != "") || got != want {
+		if got, ok := state.SignerCacheCosignerPublicKey(address); ok != (want != "") || got != want {
 			t.Fatalf("%s cosigner key = %q/%v, want %q", address, got, ok, want)
 		}
 	}
+}
+
+func TestAliasMutationsRaceSafeWithConcurrentSignerCacheUpdates(t *testing.T) {
+	state := newTestState(t)
+	var accountInfoCalls int
+	state.AlgodClient = newCountingAuthCacheTestAlgodClient(t, &accountInfoCalls)
+
+	addr1 := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+	addr2 := "7777777777777777777777777777777777777777777777777774MSJUVU"
+	keys := []signerapi.KeyInfo{
+		{Address: addr1, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: addr2, KeyType: "aplane.falcon1024.v1", AuthorizationKind: "logic_sig"},
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			switch i % 3 {
+			case 0:
+				_ = state.PopulateSignerCache(keys)
+			case 1:
+				state.ResetSignerCache(false)
+			case 2:
+				state.ReloadSignerCache()
+			}
+		}
+	}()
+
+	// Alias mutations stay on the command goroutine (per State's concurrency
+	// contract) while the background goroutine simulates tunnel disconnect and
+	// signer-cache updates reading/writing signerCache under signerCacheMu.
+	for i := 0; i < 40; i++ {
+		if _, err := state.AddAliasWithContext(context.Background(), "alice", addr1); err != nil {
+			close(stop)
+			wg.Wait()
+			t.Fatalf("AddAliasWithContext() error = %v", err)
+		}
+		if _, _, err := state.RemoveAlias("alice"); err != nil {
+			close(stop)
+			wg.Wait()
+			t.Fatalf("RemoveAlias() error = %v", err)
+		}
+	}
+
+	close(stop)
+	wg.Wait()
 }

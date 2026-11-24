@@ -11,8 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/cache"
-	engconnect "github.com/aplane-algo/aplane/internal/engine/connect"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -40,12 +39,16 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 
 func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: testAddr(1), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	called := false
 	eng.handleConnectionClosed(func() { called = true })()
 
-	if eng.SignerCache.Count() != 0 {
-		t.Fatalf("SignerCache.Count() = %d, want 0", eng.SignerCache.Count())
+	if eng.SignerCacheCount() != 0 {
+		t.Fatalf("SignerCacheCount() = %d, want 0", eng.SignerCacheCount())
 	}
 	if !called {
 		t.Fatal("disconnect callback was not called")
@@ -54,17 +57,20 @@ func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T)
 
 func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.Connection = engconnect.NewState()
+	eng.Connection = connect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
-	eng.SignerCache = cache.NewSignerCache()
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: testAddr(1), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	eng.Disconnect()
 	if eng.Connection.IsConnected() {
 		t.Fatal("engine should be disconnected")
 	}
-	if eng.SignerCache.Count() != 0 {
+	if eng.SignerCacheCount() != 0 {
 		t.Fatal("signer cache should be reset by disconnect callback")
 	}
 }
@@ -73,11 +79,15 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 // must leave a live tunnel and the signer cache alone.
 func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.Connection = engconnect.NewState()
+	eng.Connection = connect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	eng.Connection.ConnectionTarget = "remote-a"
-	eng.SignerCache.AddAddress(testAddr(1), "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: testAddr(1), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	dir := t.TempDir()
 	_, err := eng.RequestEnrollmentWithContext(context.Background(), "127.0.0.1", 1, dir+"/id_ed25519", dir+"/known_hosts", "", nil, nil)
@@ -87,19 +97,23 @@ func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	if !eng.Connection.IsConnected() || eng.GetConnectionTarget() != "remote-a" {
 		t.Fatal("an enrollment request must not disconnect the live tunnel")
 	}
-	if eng.SignerCache.Count() != 1 {
+	if eng.SignerCacheCount() != 1 {
 		t.Fatal("an enrollment request must not reset the signer cache")
 	}
 }
 
 func TestHandleConnectionClosedWithoutCallbackStillResetsCache(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.SignerCache.AddAddress(testAddr(2), "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: testAddr(2), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	eng.handleConnectionClosed(nil)()
 
-	if eng.SignerCache.Count() != 0 {
-		t.Fatalf("SignerCache.Count() = %d, want 0", eng.SignerCache.Count())
+	if eng.SignerCacheCount() != 0 {
+		t.Fatalf("SignerCacheCount() = %d, want 0", eng.SignerCacheCount())
 	}
 }
 
@@ -115,9 +129,9 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				if j%2 == 0 {
-					_ = eng.populateSignerCache(keys)
+					_ = eng.PopulateSignerCache(keys)
 				} else {
-					eng.resetSignerCache(false)
+					eng.ResetSignerCache(false)
 				}
 			}
 		}()
@@ -131,8 +145,8 @@ func TestSignerCacheConcurrentRefreshAndReadIsRaceSafe(t *testing.T) {
 				_, _ = eng.CanSignForAddressWithKind(addr)
 				_ = eng.GetStatus()
 				_, _ = eng.ListAllAddresses()
-				_ = eng.isSignable(addr)
-				_ = eng.getAlgorithm(addr)
+				_ = eng.IsAccountSignable(addr)
+				_ = eng.SignerCacheAlgorithm(addr)
 			}
 		}()
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // lookalikeAddresses are two valid addresses that look alike: their keys
@@ -26,8 +27,12 @@ func lookalikeTestApp(t *testing.T, aliases map[string]string, held ...string) *
 	t.Helper()
 	eng := engine.NewEngine("testnet")
 	eng.AliasCache.Aliases = aliases
+	keys := make([]signerapi.KeyInfo, 0, len(held))
 	for _, address := range held {
-		eng.SignerCache.AddAddress(address, "falcon1024", "native_pq")
+		keys = append(keys, signerapi.KeyInfo{Address: address, KeyType: "falcon1024", AuthorizationKind: "native_pq"})
+	}
+	if err := eng.PopulateSignerCache(keys); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	return New(eng, config.DefaultConfig(), t.TempDir())
 }

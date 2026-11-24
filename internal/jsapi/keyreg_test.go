@@ -105,15 +105,20 @@ func newKeyregFixture(t *testing.T) *keyregFixture {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	for _, address := range []string{keyregEligible, keyregIneligible, keyregUnknown} {
-		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
+	addresses := []string{keyregEligible, keyregIneligible, keyregUnknown}
+	cachedKeys := make([]signerapi.KeyInfo, 0, len(addresses))
+	for _, address := range addresses {
+		cachedKeys = append(cachedKeys, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
+	}
+	if err := eng.PopulateSignerCache(cachedKeys); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	// Each account signs for itself, so only the eligibility read asks
 	// algod about the account.
 	if eng.AuthCache.AuthAddresses == nil {
 		eng.AuthCache.AuthAddresses = map[string]string{}
 	}
-	for address := range eng.SignerCache.Keys {
+	for _, address := range addresses {
 		eng.AuthCache.AuthAddresses[address] = ""
 	}
 	f.api = api

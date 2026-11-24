@@ -6,6 +6,7 @@ package engine
 import (
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -13,14 +14,15 @@ import (
 
 func TestAuthorizationFeeReserveUsesCompiledV42ResourceModel(t *testing.T) {
 	const address = "ADDR"
-	engine := NewEngine("test")
-	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+	sc := cache.NewSignerCache()
+	sc.SetLogicSigResourceProfile(address, lsigresource.Profile{
 		ProgramBytes: 4_500,
 		Spend: &lsigresource.PathProfile{
 			ArgumentBytes: 1_423,
 			MaxOpcodeCost: 20_000,
 		},
 	})
+	engine := NewEngine("test", WithSignerCache(sc))
 
 	got, err := engine.AuthorizationFeeReserve(address)
 	if err != nil {
@@ -36,11 +38,12 @@ func TestAuthorizationFeeReserveUsesCompiledV42ResourceModel(t *testing.T) {
 // over two transactions' 40,000), so it reserves two dummies' base fees.
 func TestAuthorizationFeeReserveCountsTheDummyProgramCost(t *testing.T) {
 	const address = "ADDR"
-	engine := NewEngine("test")
-	engine.SignerCache.SetLogicSigResourceProfile(address, lsigresource.Profile{
+	sc := cache.NewSignerCache()
+	sc.SetLogicSigResourceProfile(address, lsigresource.Profile{
 		ProgramBytes: 1_000,
 		Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 39_999},
 	})
+	engine := NewEngine("test", WithSignerCache(sc))
 
 	got, err := engine.AuthorizationFeeReserve(address)
 	if err != nil {
@@ -53,8 +56,9 @@ func TestAuthorizationFeeReserveCountsTheDummyProgramCost(t *testing.T) {
 
 func TestAuthorizationFeeReserveUsesNativeFalconContribution(t *testing.T) {
 	const address = "ADDR"
-	engine := NewEngine("test")
-	engine.SignerCache.AddAddress(address, "falcon1024", "native_pq")
+	sc := cache.NewSignerCache()
+	sc.AddAddress(address, "falcon1024", "native_pq")
+	engine := NewEngine("test", WithSignerCache(sc))
 
 	got, err := engine.AuthorizationFeeReserve(address)
 	if err != nil {
@@ -79,13 +83,14 @@ func TestAuthorizationFeeReserveSkipsOrdinaryAccountWithoutAlgod(t *testing.T) {
 // account itself, which signs at any stage, still reserves its own profile's.
 func TestAuthorizationFeeReserveDoesNotReadTheAuthCache(t *testing.T) {
 	const account, stage = "ACCOUNT", "STAGE"
-	engine := NewEngine("test")
-	engine.SignerCache.AddAddress(account, rotatingkey.RotatingTripleXmssV1, "logic_sig")
-	engine.SignerCache.SetSigningFlowForAddress(account, signerapi.SigningFlowRotating1)
-	engine.SignerCache.SetLogicSigResourceProfile(account, lsigresource.Profile{
+	sc := cache.NewSignerCache()
+	sc.AddAddress(account, rotatingkey.RotatingTripleXmssV1, "logic_sig")
+	sc.SetSigningFlowForAddress(account, signerapi.SigningFlowRotating1)
+	sc.SetLogicSigResourceProfile(account, lsigresource.Profile{
 		ProgramBytes: 4_500,
 		Spend:        &lsigresource.PathProfile{ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 	})
+	engine := NewEngine("test", WithSignerCache(sc))
 	if err := engine.AuthCache.UpdateAuthAddress(account, stage, "test"); err != nil {
 		t.Fatalf("UpdateAuthAddress() error = %v", err)
 	}
