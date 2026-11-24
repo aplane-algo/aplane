@@ -267,7 +267,7 @@ Use these terms consistently:
 | **Enabled in product store** | Library-visible compiled providers | An enabled `source:"compiled"` state record exposes the compiled key type to product discovery and generation surfaces. |
 | **Installed** | YAML templates | The selected generation has an encrypted `.template` file under `keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
 | **Template disabled** | Installed YAML templates | A `source:"yaml_*"` state record has `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |
-| **Registered on reload** | Enabled installed YAML templates | On unlock/reload, the signer decrypts enabled installed templates and registers their providers before key scanning. Disabled installed templates are skipped. |
+| **Registered on reload** | Enabled installed YAML templates | On unlock/reload, the signer decrypts and prepares enabled installed templates and scans keys during the build, then registers their providers at publish. Disabled installed templates are skipped. |
 
 Avoid using "inactive" as a durable technical term. Prefer precise phrases
 such as "library-visible but not enabled in the product store" or

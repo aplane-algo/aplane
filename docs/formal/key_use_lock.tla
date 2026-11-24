@@ -47,9 +47,9 @@ ends compare that reading. An attempt that finds the signer unlocked checks
 the passphrase and answers from the session in service, or, when a lock
 came during the check, that the signer locked; either way it ends there
 (AnswerCheck): it loads nothing, publishes nothing and clears nothing. A
-load replaces the keyring and the key maps, and a load that fails
-validation publishes an empty key snapshot, so a load under a session in
-service could leave a signer that says unlocked and cannot sign.
+load builds and then installs, and the install would replace the keyring,
+the key maps, the policy and the token index of a session in service that
+concurrent changes had moved on from; a build that fails closes nothing.
 
 An attempt on a signer locked or in recovery opens the store root and
 reconciles (Reconcile), loads (Load) and publishes (Publish), or, when the

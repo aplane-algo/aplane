@@ -205,11 +205,15 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   recovery entered after it began (KU5). Which generation its own reload
   bound when it publishes is not checked by any model; it is a
   model-extension candidate.
-  It builds with a keyring opened from the same store root and installs it
-  only when it publishes or enters recovery for a content defect; one whose
-  build fails otherwise keeps recovery's keyring and binding, so recovery
-  maintenance and the reconcile still run. It once closed the keyring, and
-  with it the binding, leaving recovery unable to act until a later unlock.
+  It builds with a keyring opened from the same store root and installs that
+  keyring only when it publishes; if it re-enters recovery (for a content
+  defect or a root that moved) or its build fails otherwise, it zeroes the
+  keyring it opened and keeps recovery's own keyring (updating recovery's
+  view and binding when it re-enters recovery, as pinned by
+  `internal/signerapp/productruntime/unlock_exits_test.go::TestAnUnlockInRecoveryThatEntersRecoveryKeepsRecoverysKeyring`),
+  so recovery maintenance and the reconcile still run. It once closed the
+  keyring, and with it the binding, leaving recovery unable to act until a
+  later unlock.
 - The normal configuration already exhausts the model's full finite state
   space, so no deep configuration exists for this module; this note is the
   record required by the roadmap working rules.
@@ -241,6 +245,8 @@ those expectations.
   and recovery maintenance) and [ARCH_STORE.md](ARCH_STORE.md#ownership-and-access).
 - Traceability: the Recovery Binding section and the Recovery binding
   module section in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
-- Concrete tests: `internal/keystore/scan_binding_test.go`,
+- Concrete tests: `internal/signerapp/productruntime/view_test.go`,
+  `internal/signerapp/daemon/reload_characterization_test.go`,
+  `internal/signerapp/daemon/build_test.go`,
   `internal/signerapp/daemon/archive_selection_test.go`, and
   `internal/signerapp/admin/policy_test.go`.

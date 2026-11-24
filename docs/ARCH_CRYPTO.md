@@ -409,8 +409,9 @@ Optional YAML templates have a source-library lifecycle:
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the product template store under
   the selected generation's `keytypes/<key_type>.template` and writes an enabled state record,
-- the runtime reload path applies key-type state records, skips disabled installed templates, activates enabled
-  installed templates, and registers providers before key scanning.
+- the runtime reload path builds first (reads key-type state records, skips disabled installed templates,
+  prepares enabled installed templates without registering them, and scans keys) and then registers the
+  prepared providers at publish.
 
 The user-facing mixed library is the KeyType Library. It can list both YAML
 template entries and compiled-provider entries. Template entries are installed
@@ -610,7 +611,7 @@ YAML templates follow this lifecycle:
 1. plaintext YAML exists in `library/templates/` or another supplied path
 2. new signer-store initialization or an admin installs it with `apadmin template import`
 3. installation encrypts the YAML into `keytypes/<key_type>.template` and writes an enabled state record
-4. reload/unlock registers enabled installed templates before key scanning
+4. reload/unlock prepares enabled installed templates and scans keys during the build, then registers their providers at publish
 5. disable sets the state record to `disabled` and keeps the encrypted `.template`
 6. remove deletes the state record and archives the encrypted `.template`
 
@@ -630,8 +631,12 @@ the product store's compiled-provider opt-in.
   code, encoding/json buffers) are listed under "Residual Copies" in
   ARCH_SECURITY.md.
 - Term keys are cached only while unlocked.
-- Template registration happens before key scanning on reload/unlock so key
-  discovery sees the correct enabled provider set.
+- On reload/unlock, the build prepares enabled installed templates and scans
+  keys before registering providers at publish. The scan's signature-size
+  lookup reads the process-wide registry (using the key type's provider if
+  already registered and its base key type otherwise) and yields the same
+  result before and after registration, pinned by
+  `internal/signerapp/daemon/build_test.go::TestKeyScanMatchesBeforeAndAfterComposedTemplateRegistration`.
 - The versioned `key_type` is the stable compatibility identifier across
   storage, UI, and protocols.
 

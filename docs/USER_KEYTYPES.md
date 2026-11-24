@@ -1111,9 +1111,10 @@ On unlock or reload, `apsigner`:
 
 1. Reads product key type state records.
 2. Skips disabled installed templates.
-3. Decrypts enabled installed YAML templates.
-4. Registers their providers before scanning keys.
-5. Validates compiled-provider enablement records against the current binary.
+3. Decrypts and prepares enabled installed YAML templates without registering them.
+4. Validates compiled-provider enablement records against the current binary.
+5. Scans keys using stored key metadata (sized through the key type's provider if already registered, and through its base key type otherwise).
+6. Registers the prepared template providers together with the scanned keys at publish.
 
 The state records are what `apsigner` trusts. A stray encrypted `.template`
 file without a matching state record is ignored on purpose.
