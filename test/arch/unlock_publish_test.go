@@ -5,6 +5,8 @@ package arch_test
 
 import (
 	"go/ast"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -114,5 +116,82 @@ func TestNoProductionCodePublishesWhatNoBuildVerified(t *testing.T) {
 			}
 			return true
 		})
+	})
+}
+
+// TestNoProductionCodeInstallsOrClearsTheKeystoreOutsideItsSeams keeps
+// FileKeyStore.Install, installLocked, replaceKeyringLocked, and ClearKeys
+// confined to the publish, recovery-view, and lock/destroy cleanup paths.
+// Every other caller would install a keyring or key cache without a build, or
+// drop them outside lock cleanup.
+//
+// Matching is by selector name (the same syntactic guard as the neighbouring
+// tests in this file). internal/keystore/keystoretest/keystoretest.go is
+// allowed here because TestProductionCodeDoesNotImportKeystoreTest keeps that
+// package out of production binaries. clientlog.Install is a separate package
+// function and is resolved by import path so an alias cannot hide a keystore
+// Install.
+func TestNoProductionCodeInstallsOrClearsTheKeystoreOutsideItsSeams(t *testing.T) {
+	const clientlogPkg = "github.com/aplane-algo/aplane/internal/clientlog"
+	allowed := map[string]map[string]map[string]bool{
+		"Install": {
+			"internal/keystore/file.go":                 {"ClearKeys": true},
+			"internal/signerapp/productruntime/view.go": {"publishLocked": true, "installRecoveryViewLocked": true},
+		},
+		"installLocked": {
+			"internal/keystore/file.go": {"Install": true},
+		},
+		"replaceKeyringLocked": {
+			"internal/keystore/file.go": {"installLocked": true},
+		},
+		"ClearKeys": {
+			"internal/signerapp/productruntime/runtime.go": {"Destroy": true, "performLockCleanup": true},
+		},
+	}
+	forEachProductionFile(t, func(rel string, parsed *ast.File) {
+		if rel == "internal/keystore/keystoretest/keystoretest.go" {
+			return
+		}
+		clientlogNames := map[string]bool{}
+		for _, spec := range parsed.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil || path != clientlogPkg {
+				continue
+			}
+			name := path[strings.LastIndex(path, "/")+1:]
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			clientlogNames[name] = true
+		}
+		for _, decl := range parsed.Decls {
+			fn, isFunc := decl.(*ast.FuncDecl)
+			// Every reference counts, a method value or expression as much as a call.
+			ast.Inspect(decl, func(node ast.Node) bool {
+				selector, ok := node.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				byFile, watched := allowed[selector.Sel.Name]
+				if !watched {
+					return true
+				}
+				if selector.Sel.Name == "Install" {
+					if ident, ok := selector.X.(*ast.Ident); ok && clientlogNames[ident.Name] {
+						return true
+					}
+				}
+				if isFunc && byFile[rel][fn.Name.Name] {
+					return true
+				}
+				owner := "<top-level>"
+				if isFunc {
+					owner = fn.Name.Name
+				}
+				t.Errorf("%s: %s refers to %s; keystore contents change only through publish, recovery-view install, or lock/destroy cleanup",
+					rel, owner, selector.Sel.Name)
+				return true
+			})
+		}
 	})
 }

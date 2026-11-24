@@ -20,13 +20,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func TestReloadKeysRegistersTemplatesBeforeKeyScan(t *testing.T) {
+func TestReloadKeysPreservesGenericKeyMetadataAndRegistersTemplate(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
 	family := fmt.Sprintf("phase0-ordering-%d", time.Now().UnixNano())
 	keyType := "test." + family + ".v1"
-	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01} // #pragma version 6; int 1
+	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 
 	if genericlsig.Get(keyType) != nil {
 		t.Fatalf("test key type %q already registered; family generator must be unique", keyType)
@@ -100,7 +100,7 @@ teal: |
 		t.Fatalf("signing args before template registration = %#v, want one preimage arg", preReloadInfo.SigningArgs)
 	}
 
-	// Production order: register templates first, then scan keys.
+	// Production reload: build prepares templates and scans keys, then publish registers the template.
 	if err := reloadKeysWithTemplatesForTest(server); err != nil {
 		t.Fatalf("reloadKeysWithTemplatesForTest() error = %v", err)
 	}
