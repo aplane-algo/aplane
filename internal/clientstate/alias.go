@@ -158,8 +158,10 @@ func (s *State) ownedAuthAddresses() map[string]bool {
 	for _, addr := range s.AliasCache.Aliases {
 		owned[addr] = true
 	}
-	for addr := range s.SignerCache.Keys {
+	s.signerCacheMu.RLock()
+	for addr := range s.signerCache.Keys {
 		owned[addr] = true
 	}
+	s.signerCacheMu.RUnlock()
 	return owned
 }

@@ -32,7 +32,8 @@ func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 	app.eng.Connection.SignerClient = client
 	cfgBefore := app.Config
 	registryBefore := app.eng.EndpointRegistry.Clone()
-	cacheBefore, _ := json.Marshal(app.eng.SignerCache)
+	cacheKeysBefore := app.eng.SignerCacheKeysSnapshot()
+	cacheLockedBefore := app.eng.IsSignerLocked()
 	filesBefore := snapshotStatusFiles(t, dir)
 	result, err := app.CosignerStatus(t.Context(), CosignerStatusRequest{})
 	if err != nil {
@@ -50,8 +51,7 @@ func TestCosignerStatusObservesLiveRoutesWithoutMutation(t *testing.T) {
 	if !strings.Contains(joined, "Witness Key ID: "+witness.GroupedID(id)) || strings.Contains(joined, "Witness Key ID: "+id) {
 		t.Fatalf("status did not group the display ID: %s", joined)
 	}
-	cacheAfter, _ := json.Marshal(app.eng.SignerCache)
-	if string(cacheBefore) != string(cacheAfter) || !reflect.DeepEqual(cfgBefore, app.Config) || !reflect.DeepEqual(registryBefore, app.eng.EndpointRegistry) || app.eng.Connection.SignerClient != client || !reflect.DeepEqual(filesBefore, snapshotStatusFiles(t, dir)) {
+	if !reflect.DeepEqual(cacheKeysBefore, app.eng.SignerCacheKeysSnapshot()) || cacheLockedBefore != app.eng.IsSignerLocked() || !reflect.DeepEqual(cfgBefore, app.Config) || !reflect.DeepEqual(registryBefore, app.eng.EndpointRegistry) || app.eng.Connection.SignerClient != client || !reflect.DeepEqual(filesBefore, snapshotStatusFiles(t, dir)) {
 		t.Fatal("status mutated client state")
 	}
 	data, err := json.Marshal(result)

@@ -23,7 +23,7 @@ type CompleterDeps struct {
 	AliasCache        *cache.AliasCache
 	ASACache          *cache.ASACache
 	SetCache          *cache.SetCache
-	SignerCache       *cache.SignerCache
+	SignerAddresses   func() []string
 	EnsureSignerCache func() error
 }
 
@@ -77,12 +77,13 @@ func (a *App) IsSimulateEnabled() bool {
 // lives here in the UI application layer; the caches it reads are engine
 // state.
 func (a *App) FormatAddress(address string) string {
-	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, &a.eng.SignerCache, &a.eng.AuthCache, algorithm.GetDisplayColor)
+	keyType, signable := a.eng.SigningKeyType(address)
+	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, keyType, signable, algorithm.GetDisplayColor)
 }
 
 // FormatKeyTypeForDisplay formats the displayed key type using cached signer/native key metadata.
 func (a *App) FormatKeyTypeForDisplay(address, keyType string) string {
-	nativeType := a.eng.SignerCache.GetKeyType(address)
+	nativeType := a.eng.SignerCacheKeyType(address)
 	if nativeType == "" {
 		nativeType = keyType
 	}
@@ -200,10 +201,10 @@ func (a *App) PluginsInfo(_ context.Context, args []string) (*PluginsCommandResu
 // CompleterDeps returns the interactive completion dependencies backed by current engine state.
 func (a *App) CompleterDeps() CompleterDeps {
 	return CompleterDeps{
-		AliasCache:  &a.eng.AliasCache,
-		ASACache:    &a.eng.AsaCache,
-		SetCache:    &a.eng.SetCache,
-		SignerCache: &a.eng.SignerCache,
+		AliasCache:      &a.eng.AliasCache,
+		ASACache:        &a.eng.AsaCache,
+		SetCache:        &a.eng.SetCache,
+		SignerAddresses: a.eng.SignerCacheAddresses,
 		EnsureSignerCache: func() error {
 			// Completion warmup runs on the interactive prompt path; no
 			// caller-scoped context exists there.

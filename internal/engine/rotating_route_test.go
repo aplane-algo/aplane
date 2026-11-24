@@ -92,7 +92,7 @@ func TestRotatingAccountIsSignableAtAnyStage(t *testing.T) {
 	// The chain shows a stage address the signer never lists; the account
 	// must still be listed as signable and as a rotating account.
 	eng.AuthCache.AuthAddresses[rotating.String()] = testAddress(9).String()
-	if !eng.isSignable(rotating.String()) {
+	if !eng.IsAccountSignable(rotating.String()) {
 		t.Fatal("rotating account at a later stage reported as not signable")
 	}
 	accounts := eng.RotatingAccounts()

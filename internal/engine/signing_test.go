@@ -27,7 +27,7 @@ func TestBuildSigningContext_SignerLocked(t *testing.T) {
 	transport := newAccountMockTransport(t)
 	transport.addAccount(testAddr(1), 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.Locked = true
+	eng.MarkSignerLocked()
 
 	_, err := eng.BuildSigningContext(context.Background(), testAddr(1))
 	if !errors.Is(err, ErrSignerLocked) {
@@ -73,9 +73,9 @@ func TestBuildSigningContext_RekeyedAccount_CacheHit(t *testing.T) {
 	})
 	transport.addAccount(authAddr, 1_000_000)
 
-	eng := setupEngineWithMockAlgod(t, transport)
-	// Ensure auth addr is in signer cache
-	eng.SignerCache.AddAddress(authAddr, "ed25519", "ed25519")
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.AddAddress(authAddr, "ed25519", "ed25519")
+	})
 
 	ctx, err := eng.BuildSigningContext(context.Background(), sender)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestBuildSigningContext_NotSignable(t *testing.T) {
 
 	eng := setupEngineWithMockAlgod(t, transport)
 	// Remove address from signer cache
-	eng.SignerCache = cache.NewSignerCache()
+	eng.ResetSignerCache(false)
 
 	_, err := eng.BuildSigningContext(context.Background(), addr)
 	if err == nil {
@@ -121,11 +121,12 @@ func TestBuildSigningContext_RekeyedNotSignable(t *testing.T) {
 	})
 	transport.addAccount(authAddr, 1_000_000)
 
-	eng := setupEngineWithMockAlgod(t, transport)
 	// sender is in signer cache but authAddr is NOT
 	// (setupEngineWithMockAlgod adds both since they're in transport.accounts,
 	// so remove authAddr to simulate not-signable)
-	delete(eng.SignerCache.Keys, authAddr)
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		delete(sc.Keys, authAddr)
+	})
 
 	_, err := eng.BuildSigningContext(context.Background(), sender)
 	if err == nil {
@@ -140,8 +141,9 @@ func TestBuildSigningContext_FalconKeyType(t *testing.T) {
 	addr := testAddr(1)
 	transport := newAccountMockTransport(t)
 	transport.addAccount(addr, 1_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
+	})
 
 	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {
@@ -224,8 +226,9 @@ func TestBuildSigningContext_StaleAuthCacheRefreshed(t *testing.T) {
 				Address: sender, Amount: 1_000_000, MinBalance: 100_000, AuthAddr: tc.chainAuth, Status: "Offline",
 			})
 			eng := setupEngineWithMockAlgod(t, transport)
-			eng.SignerCache = cache.NewSignerCache()
-			eng.SignerCache.AddAddress(tc.held, "ed25519", "ed25519")
+			sc := cache.NewSignerCache()
+			sc.AddAddress(tc.held, "ed25519", "ed25519")
+			eng.SetSignerCache(sc)
 			eng.AuthCache.AuthAddresses[sender] = tc.cached
 
 			ctx, err := eng.BuildSigningContext(context.Background(), sender)

@@ -14,6 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestPrepareAppDeploy_NoAlgodClient(t *testing.T) {
@@ -90,7 +91,11 @@ func TestPrepareAppDeployBuildsFromSuggestedParams(t *testing.T) {
 	for _, flat := range []bool{false, true} {
 		client, _, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
 		eng := NewEngine("testnet", WithAlgodClient(client))
-		eng.SignerCache.AddAddress(sender.String(), "ed25519", "ed25519")
+		if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+			{Address: sender.String(), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		}); err != nil {
+			t.Fatalf("PopulateSignerCache() error = %v", err)
+		}
 		eng.AuthCache.AuthAddresses = map[string]string{sender.String(): ""}
 
 		prep, err := eng.PrepareAppDeploy(context.Background(), deployTestParams(t, sender.String(), flat))
@@ -122,7 +127,11 @@ func TestPrepareAppDeployRemembersTheConsensusRead(t *testing.T) {
 	sender := types.Address{9}.String()
 	client, paramsCalls, _ := networkTestAlgod(t, testnet, "testnet-v1.0")
 	eng := NewEngine("testnet", WithAlgodClient(client))
-	eng.SignerCache.AddAddress(sender, "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: sender, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	eng.AuthCache.AuthAddresses = map[string]string{sender: ""}
 
 	prep, err := eng.PrepareAppDeploy(context.Background(), deployTestParams(t, sender, false))

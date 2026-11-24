@@ -98,8 +98,8 @@ func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []
 // (validateSubmitLsigArgs).
 func (e *Engine) validateSlotLsigArgs(txn types.Transaction, lsigArgs map[string][]byte) error {
 	signer := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
-	if e.signerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
-		return e.validateSignerLsigArgs(signer, lsigArgs)
+	if e.SignerCacheIsGenericLsig(signer) || len(lsigArgs) > 0 {
+		return e.ValidateSignerLsigArgs(signer, lsigArgs)
 	}
 	return nil
 }
@@ -255,7 +255,7 @@ func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) 
 		if effectiveSigner != sender {
 			return true
 		}
-		if e.signerCacheKeyType(effectiveSigner) == "" {
+		if e.SignerCacheKeyType(effectiveSigner) == "" {
 			return true
 		}
 	}
@@ -321,7 +321,7 @@ func (e *Engine) WaitForConfirmationResult(ctx context.Context, txid string, rou
 // CanSignForAddressWithKind checks whether the signer owns an address and
 // returns the authorization envelope its key type produces.
 func (e *Engine) CanSignForAddressWithKind(address string) (bool, algorithm.AuthorizationKind) {
-	kind, present := e.signerCacheAuthorizationKind(address)
+	kind, present := e.SignerCacheAuthorizationKind(address)
 	return present && kind != "", kind
 }
 

@@ -110,8 +110,8 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 	if got.Parameters["max_fee"] != "0" || len(got.Warnings) != 2 || got.Warnings[0] != "Fee limit 0 is too low to pay alone." || got.Warnings[1] != "a second note" {
 		t.Fatalf("GenerateKey() parameters = %v, warnings = %q", got.Parameters, got.Warnings)
 	}
-	if eng.SignerCache.GetKeyType(addr) != "ed25519" {
-		t.Fatalf("SignerCache key type = %q, want ed25519", eng.SignerCache.GetKeyType(addr))
+	if eng.SignerCacheKeyType(addr) != "ed25519" {
+		t.Fatalf("SignerCache key type = %q, want ed25519", eng.SignerCacheKeyType(addr))
 	}
 }
 
@@ -140,8 +140,8 @@ func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 	if err := eng.DeleteKey(context.Background(), addr); err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
-	if eng.SignerCache.Count() != 0 {
-		t.Fatalf("SignerCache.Count() = %d, want 0 after refresh", eng.SignerCache.Count())
+	if eng.SignerCacheCount() != 0 {
+		t.Fatalf("SignerCacheCount() = %d, want 0 after refresh", eng.SignerCacheCount())
 	}
 }
 
@@ -190,8 +190,8 @@ func TestEngineGenerateKeyIgnoresRefreshFailure(t *testing.T) {
 	if len(got.Warnings) != 0 {
 		t.Fatalf("GenerateKey() warnings = %q for a response with none", got.Warnings)
 	}
-	if eng.SignerCache.Count() != 0 {
-		t.Fatalf("SignerCache.Count() = %d, want unchanged cache after ignored refresh failure", eng.SignerCache.Count())
+	if eng.SignerCacheCount() != 0 {
+		t.Fatalf("SignerCacheCount() = %d, want unchanged cache after ignored refresh failure", eng.SignerCacheCount())
 	}
 }
 
@@ -215,8 +215,8 @@ func TestEngineDeleteKeyIgnoresRefreshFailure(t *testing.T) {
 	if err := eng.DeleteKey(context.Background(), addr); err != nil {
 		t.Fatalf("DeleteKey() error = %v, want nil despite refresh failure", err)
 	}
-	if eng.SignerCache.GetKeyType(addr) != "ed25519" {
-		t.Fatalf("SignerCache key type = %q, want original cache preserved", eng.SignerCache.GetKeyType(addr))
+	if eng.SignerCacheKeyType(addr) != "ed25519" {
+		t.Fatalf("SignerCache key type = %q, want original cache preserved", eng.SignerCacheKeyType(addr))
 	}
 }
 

@@ -238,7 +238,11 @@ func TestAddAliasResultMatchesSubsequentCacheBackedViews(t *testing.T) {
 	eng := setupTestEngine(t)
 
 	addr := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: addr, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	eng.AuthCache.AuthAddresses[addr] = ""
 
 	result, err := eng.AddAliasWithContext(context.Background(), "alice", addr)
@@ -745,14 +749,12 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	freshAddr := "7777777777777777777777777777777777777777777777777774MSJUVU"
 
 	eng := newEngine()
-	eng.SignerCache.BindStore(cacheStore)
-	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
-		{Address: staleAddr, KeyType: "ed25519"},
+	if err := eng.WithExclusiveLock(func() error {
+		return eng.PopulateAndSaveSignerCacheLocked([]signerapi.KeyInfo{
+			{Address: staleAddr, KeyType: "ed25519"},
+		})
 	}); err != nil {
-		t.Fatalf("PopulateSignerCache(stale) error = %v", err)
-	}
-	if err := eng.SignerCache.SaveCache(); err != nil {
-		t.Fatalf("SaveCache(stale) error = %v", err)
+		t.Fatalf("PopulateAndSaveSignerCacheLocked(stale) error = %v", err)
 	}
 
 	persistedBefore := cache.LoadSignerCacheFromStore(cacheStore)
@@ -761,35 +763,34 @@ func TestReconnectReplacesStaleSignerCacheWithFreshInventory(t *testing.T) {
 	}
 
 	eng.handleConnectionClosed(nil)()
-	if got := eng.SignerCache.Count(); got != 0 {
-		t.Fatalf("SignerCache.Count() after disconnect = %d, want 0", got)
+	if got := eng.SignerCacheCount(); got != 0 {
+		t.Fatalf("SignerCacheCount() after disconnect = %d, want 0", got)
 	}
 
-	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
-		{Address: freshAddr, KeyType: "aplane.falcon1024.v1"},
+	if err := eng.WithExclusiveLock(func() error {
+		return eng.PopulateAndSaveSignerCacheLocked([]signerapi.KeyInfo{
+			{Address: freshAddr, KeyType: "aplane.falcon1024.v1"},
+		})
 	}); err != nil {
-		t.Fatalf("PopulateSignerCache(fresh) error = %v", err)
-	}
-	if err := eng.SignerCache.SaveCache(); err != nil {
-		t.Fatalf("SaveCache(fresh) error = %v", err)
+		t.Fatalf("PopulateAndSaveSignerCacheLocked(fresh) error = %v", err)
 	}
 
-	if eng.SignerCache.HasAddress(staleAddr) {
+	if eng.SignerCacheHasAddress(staleAddr) {
 		t.Fatalf("stale signer address %q remained in in-memory cache after reconnect", staleAddr)
 	}
-	if got := eng.SignerCache.GetKeyType(freshAddr); got != "aplane.falcon1024.v1" {
+	if got := eng.SignerCacheKeyType(freshAddr); got != "aplane.falcon1024.v1" {
 		t.Fatalf("fresh signer key type = %q, want aplane.falcon1024.v1", got)
 	}
 
 	reloaded := newEngine()
-	if reloaded.SignerCache.HasAddress(staleAddr) {
+	if reloaded.SignerCacheHasAddress(staleAddr) {
 		t.Fatalf("stale signer address %q remained in persisted cache after reconnect", staleAddr)
 	}
-	if got := reloaded.SignerCache.GetKeyType(freshAddr); got != "aplane.falcon1024.v1" {
+	if got := reloaded.SignerCacheKeyType(freshAddr); got != "aplane.falcon1024.v1" {
 		t.Fatalf("reloaded fresh signer key type = %q, want aplane.falcon1024.v1", got)
 	}
-	if got := reloaded.SignerCache.Count(); got != 1 {
-		t.Fatalf("reloaded SignerCache.Count() = %d, want 1", got)
+	if got := reloaded.SignerCacheCount(); got != 1 {
+		t.Fatalf("reloaded SignerCacheCount() = %d, want 1", got)
 	}
 }
 

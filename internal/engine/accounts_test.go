@@ -112,9 +112,11 @@ func TestGetStatusWithCaches(t *testing.T) {
 	eng.SetCache.Sets = map[string][]string{
 		"team": {"ADDR1", "ADDR2"},
 	}
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR1": "ed25519",
-	}
+	eng.SetSignerCache(cache.SignerCache{
+		Keys: map[string]string{
+			"ADDR1": "ed25519",
+		},
+	})
 
 	result := eng.GetStatus()
 
@@ -136,10 +138,12 @@ func TestDisconnectClearsSignerCacheAndConnectedStatus(t *testing.T) {
 	eng := setupTestEngine(t)
 	eng.Connection.SignerClient = &util.Client{}
 	eng.Connection.ConnectionTarget = "ssh://signer"
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR1": "ed25519",
-		"ADDR2": "aplane.falcon1024.v1",
-	}
+	eng.SetSignerCache(cache.SignerCache{
+		Keys: map[string]string{
+			"ADDR1": "ed25519",
+			"ADDR2": "aplane.falcon1024.v1",
+		},
+	})
 
 	eng.Disconnect()
 	if eng.IsConnected() {
@@ -148,8 +152,8 @@ func TestDisconnectClearsSignerCacheAndConnectedStatus(t *testing.T) {
 	if got := eng.GetConnectionTarget(); got != "" {
 		t.Fatalf("GetConnectionTarget() = %q, want empty", got)
 	}
-	if got := eng.SignerCache.Count(); got != 0 {
-		t.Fatalf("SignerCache.Count() = %d, want 0 after disconnect cleanup", got)
+	if got := eng.SignerCacheCount(); got != 0 {
+		t.Fatalf("SignerCacheCount() = %d, want 0 after disconnect cleanup", got)
 	}
 
 	status := eng.GetStatus()
@@ -176,8 +180,12 @@ func TestListAccounts(t *testing.T) {
 	// Add aliases and signers
 	eng.AliasCache.Aliases["alice"] = "ADDR_ALICE"
 	eng.AliasCache.Aliases["bob"] = "ADDR_BOB"
-	eng.SignerCache.AddAddress("ADDR_ALICE", "ed25519", "ed25519")
-	eng.SignerCache.AddAddress("ADDR_SIGNER", "falcon1024", "native_pq")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "ADDR_ALICE", KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: "ADDR_SIGNER", KeyType: "falcon1024", AuthorizationKind: "native_pq"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	accounts, err = eng.ListAccounts()
 	if err != nil {
@@ -220,8 +228,12 @@ func TestGetSignableAddresses(t *testing.T) {
 	}
 
 	// Add signer keys
-	eng.SignerCache.AddAddress("ADDR1", "ed25519", "ed25519")
-	eng.SignerCache.AddAddress("ADDR2", "falcon1024", "native_pq")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "ADDR1", KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: "ADDR2", KeyType: "falcon1024", AuthorizationKind: "native_pq"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	addrs = eng.GetSignableAddresses()
 	if len(addrs) != 2 {
@@ -299,15 +311,19 @@ func TestIsSignable(t *testing.T) {
 	eng := setupTestEngine(t)
 
 	// Not signable initially
-	if eng.isSignable("ADDR1") {
-		t.Error("isSignable() should return false for unknown address")
+	if eng.IsAccountSignable("ADDR1") {
+		t.Error("IsAccountSignable() should return false for unknown address")
 	}
 
 	// Add to signer cache
-	eng.SignerCache.AddAddress("ADDR1", "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "ADDR1", KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
-	if !eng.isSignable("ADDR1") {
-		t.Error("isSignable() should return true for address in signer cache")
+	if !eng.IsAccountSignable("ADDR1") {
+		t.Error("IsAccountSignable() should return true for address in signer cache")
 	}
 
 	// Test with rekey
@@ -315,8 +331,8 @@ func TestIsSignable(t *testing.T) {
 		"REKEYED_ADDR": "ADDR1", // REKEYED_ADDR is controlled by ADDR1
 	}
 
-	if !eng.isSignable("REKEYED_ADDR") {
-		t.Error("isSignable() should return true for rekeyed address when auth addr is signable")
+	if !eng.IsAccountSignable("REKEYED_ADDR") {
+		t.Error("IsAccountSignable() should return true for rekeyed address when auth addr is signable")
 	}
 }
 
@@ -324,22 +340,24 @@ func TestGetAlgorithm(t *testing.T) {
 	eng := setupTestEngine(t)
 
 	// Unknown address
-	algo := eng.getAlgorithm("UNKNOWN")
+	algo := eng.SignerCacheAlgorithm("UNKNOWN")
 	if algo != "unknown" {
-		t.Errorf("getAlgorithm() = %v, want 'unknown'", algo)
+		t.Errorf("SignerCacheAlgorithm() = %v, want 'unknown'", algo)
 	}
 
 	// Direct signer
-	eng.SignerCache.Keys = map[string]string{
-		"ADDR1": "ed25519",
-		"ADDR2": "falcon1024",
-	}
+	eng.SetSignerCache(cache.SignerCache{
+		Keys: map[string]string{
+			"ADDR1": "ed25519",
+			"ADDR2": "falcon1024",
+		},
+	})
 
-	if eng.getAlgorithm("ADDR1") != "ed25519" {
-		t.Errorf("getAlgorithm(ADDR1) = %v, want 'ed25519'", eng.getAlgorithm("ADDR1"))
+	if eng.SignerCacheAlgorithm("ADDR1") != "ed25519" {
+		t.Errorf("SignerCacheAlgorithm(ADDR1) = %v, want 'ed25519'", eng.SignerCacheAlgorithm("ADDR1"))
 	}
-	if eng.getAlgorithm("ADDR2") != "falcon1024" {
-		t.Errorf("getAlgorithm(ADDR2) = %v, want 'falcon1024'", eng.getAlgorithm("ADDR2"))
+	if eng.SignerCacheAlgorithm("ADDR2") != "falcon1024" {
+		t.Errorf("SignerCacheAlgorithm(ADDR2) = %v, want 'falcon1024'", eng.SignerCacheAlgorithm("ADDR2"))
 	}
 
 	// Rekeyed account
@@ -347,8 +365,8 @@ func TestGetAlgorithm(t *testing.T) {
 		"REKEYED": "ADDR2",
 	}
 
-	if eng.getAlgorithm("REKEYED") != "falcon1024" {
-		t.Errorf("getAlgorithm(REKEYED) = %v, want 'falcon1024' (from auth addr)", eng.getAlgorithm("REKEYED"))
+	if eng.SignerCacheAlgorithm("REKEYED") != "falcon1024" {
+		t.Errorf("SignerCacheAlgorithm(REKEYED) = %v, want 'falcon1024' (from auth addr)", eng.SignerCacheAlgorithm("REKEYED"))
 	}
 }
 
@@ -369,7 +387,11 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 	}))
 	defer server.Close()
 	eng := setupTestEngine(t)
-	eng.SignerCache.AddAddress("CACHED", "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: "CACHED", KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	if _, err := eng.CurrentKeys(context.Background()); !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("CurrentKeys() with no signer client error = %v, want ErrNotConnected", err)
@@ -387,7 +409,7 @@ func TestCurrentKeysReturnsTheSignersListWithoutTouchingTheCache(t *testing.T) {
 	if !reflect.DeepEqual(keys, want) {
 		t.Fatalf("CurrentKeys() = %+v, want %+v", keys, want)
 	}
-	if got := eng.SignerCache.Keys; !reflect.DeepEqual(got, map[string]string{"CACHED": "ed25519"}) {
+	if got := eng.SignerCacheKeysSnapshot(); !reflect.DeepEqual(got, map[string]string{"CACHED": "ed25519"}) {
 		t.Fatalf("CurrentKeys() changed the signer cache: %v", got)
 	}
 

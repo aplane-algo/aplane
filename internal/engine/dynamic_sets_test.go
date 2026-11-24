@@ -16,6 +16,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
+
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // @all and @signers list their accounts sorted, so a command over one, and
@@ -24,11 +26,15 @@ func TestDynamicSetsAreSorted(t *testing.T) {
 	eng := setupTestEngine(t)
 	eng.AliasCache.Aliases = map[string]string{}
 	var want []string
+	var keys []signerapi.KeyInfo
 	for i := 0; i < 20; i++ {
 		address := crypto.GenerateAccount().Address.String()
 		eng.AliasCache.Aliases[fmt.Sprintf("a%02d", i)] = address
-		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
+		keys = append(keys, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
 		want = append(want, address)
+	}
+	if err := eng.PopulateSignerCache(keys); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	sort.Strings(want)
 

@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/docassets"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 func TestMCPJSONTextResultReturnsTextContent(t *testing.T) {
@@ -254,7 +255,11 @@ func TestMCPStructuredConcurrentReadOnlyCommandsReturnIndependentPayloads(t *tes
 	if _, err := eng.AddAliasWithContext(context.Background(), "alice", addr); err != nil {
 		t.Fatalf("AddAlias() error = %v", err)
 	}
-	eng.SignerCache.AddAddress(addr, "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: addr, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 
 	type outcome struct {
 		cmd  string

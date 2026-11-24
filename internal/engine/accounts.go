@@ -51,7 +51,7 @@ func (e *Engine) GetStatus() *StatusResult {
 		ASACacheCount:    asaCacheCount,
 		AliasCacheCount:  aliasCacheCount,
 		SetCacheCount:    setCacheCount,
-		SignerCacheCount: e.signerCacheCount(),
+		SignerCacheCount: e.SignerCacheCount(),
 	}
 }
 
@@ -204,9 +204,9 @@ func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
 	}
 	// Rebuild signer cache
 	if err := e.withClientDataLock(func() error {
-		return e.populateAndSaveSignerCacheUnderClientLock(keysResp.Keys)
+		return e.PopulateAndSaveSignerCacheLocked(keysResp.Keys)
 	}); err != nil {
-		if populateErr := e.populateSignerCache(keysResp.Keys); populateErr != nil {
+		if populateErr := e.PopulateSignerCache(keysResp.Keys); populateErr != nil {
 			return nil, fmt.Errorf("invalid signer key inventory: %w", populateErr)
 		}
 		cache.Debug("failed to save signer cache", "error", err)
@@ -231,8 +231,8 @@ func (e *Core) listSignersCached() map[string]string {
 
 	// Filter to only addresses we can actually sign for
 	for addr := range addressSet {
-		if e.isSignable(addr) {
-			result[addr] = e.getAlgorithm(addr)
+		if e.IsAccountSignable(addr) {
+			result[addr] = e.SignerCacheAlgorithm(addr)
 		}
 	}
 
@@ -261,10 +261,10 @@ func (e *Engine) ListAccounts() ([]AccountInfo, error) {
 	// Build result
 	var accounts []AccountInfo
 	for _, addr := range addresses {
-		isSignable := e.isSignable(addr)
+		isSignable := e.IsAccountSignable(addr)
 		algo := ""
 		if isSignable {
-			algo = e.getAlgorithm(addr)
+			algo = e.SignerCacheAlgorithm(addr)
 		}
 
 		source := "signer"
@@ -292,7 +292,7 @@ func (e *Engine) GetSignableAddresses() []string {
 	// Filter to only signable addresses
 	var signableAddresses []string
 	for addr := range addressSet {
-		if e.isSignable(addr) {
+		if e.IsAccountSignable(addr) {
 			signableAddresses = append(signableAddresses, addr)
 		}
 	}
@@ -457,37 +457,6 @@ func (e *Engine) ResolveAddress(addressOrAlias string) (address, alias string, e
 
 	foundAlias := e.AliasCache.GetAliasForAddress(resolved)
 	return resolved, foundAlias, nil
-}
-
-// isSignable checks if an address can be signed for
-func (e *Core) isSignable(address string) bool {
-	return e.isAccountSignable(address)
-}
-
-// getAlgorithm returns the signing algorithm for an address
-func (e *Core) getAlgorithm(address string) string {
-	authAddr, authExists := e.AuthCache.GetAuthAddress(address)
-
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-
-	// Check signer cache for key type
-	if e.SignerCache.Keys != nil {
-		if keyType, exists := e.SignerCache.Keys[address]; exists {
-			return keyType
-		}
-	}
-
-	// Check if rekeyed, and if so, get the auth address's key type
-	if authExists && authAddr != "" {
-		if e.SignerCache.Keys != nil {
-			if keyType, exists := e.SignerCache.Keys[authAddr]; exists {
-				return keyType
-			}
-		}
-	}
-
-	return "unknown"
 }
 
 func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {

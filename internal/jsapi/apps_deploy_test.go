@@ -93,7 +93,11 @@ func TestAppDeployReturnsAConfirmedDeployWithoutItsApp(t *testing.T) {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
-	eng.SignerCache.AddAddress(deployer, "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: deployer, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	if eng.AuthCache.AuthAddresses == nil {
 		eng.AuthCache.AuthAddresses = map[string]string{}
 	}

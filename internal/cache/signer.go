@@ -40,11 +40,6 @@ func LoadSignerCacheFromStore(store *Store) SignerCache {
 	return cache
 }
 
-// SaveCache saves the signer cache to disk with HMAC signature.
-func (cache *SignerCache) SaveCache() error {
-	return saveSignedCacheWithKey(cache.store, cache.store.path("signer_cache.json"), cache)
-}
-
 // SaveCacheLocked saves the signer cache while the caller already holds the
 // APCLIENT_DATA mutation lock.
 func (cache *SignerCache) SaveCacheLocked() error {

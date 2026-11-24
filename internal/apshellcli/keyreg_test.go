@@ -146,8 +146,12 @@ func keyregShell(t *testing.T, out *bytes.Buffer, refuse bool) (*REPLState, *key
 	}
 	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
+	cachedKeys := make([]signerapi.KeyInfo, 0, len(keys))
 	for address := range keys {
-		eng.SignerCache.AddAddress(address, "ed25519", "ed25519")
+		cachedKeys = append(cachedKeys, signerapi.KeyInfo{Address: address, KeyType: "ed25519", AuthorizationKind: "ed25519"})
+	}
+	if err := eng.PopulateSignerCache(cachedKeys); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	state := &REPLState{Out: out, App: apshellapp.New(eng, config.DefaultConfig(), t.TempDir())}
 	state.CommandRegistry = state.initCommandRegistry()

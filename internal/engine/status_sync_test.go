@@ -44,7 +44,7 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 	if keysCalls != 1 {
 		t.Fatalf("/keys calls = %d, want 1", keysCalls)
 	}
-	if got := eng.SignerCache.GetKeyType(addr); got != "ed25519" {
+	if got := eng.SignerCacheKeyType(addr); got != "ed25519" {
 		t.Fatalf("SignerCache key type = %q, want ed25519", got)
 	}
 }
@@ -133,7 +133,7 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	if !result.RevisionChanged || !result.CacheCleared {
 		t.Fatalf("result = %+v, want changed with cache clear", result)
 	}
-	if eng.SignerCache.Count() != 0 || !eng.SignerCache.Locked {
-		t.Fatalf("SignerCache count/locked = %d/%v, want 0/true", eng.SignerCache.Count(), eng.SignerCache.Locked)
+	if eng.SignerCacheCount() != 0 || !eng.IsSignerLocked() {
+		t.Fatalf("SignerCache count/locked = %d/%v, want 0/true", eng.SignerCacheCount(), eng.IsSignerLocked())
 	}
 }

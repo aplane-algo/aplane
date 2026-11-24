@@ -23,12 +23,6 @@ type Core struct {
 	Connection *connect.ConnectionState
 	watcher    *clientstate.CacheWatcher
 
-	// signerCacheMu guards State.SignerCache, the only cache mutated off the
-	// command goroutine: the SSH-tunnel disconnect callback resets it from the
-	// tunnel's monitor goroutine (handleConnectionClosed -> resetSignerCache).
-	// All other State caches are command-goroutine-confined; see the
-	// concurrency contract on clientstate.State.
-	signerCacheMu             sync.RWMutex
 	signerStatusMu            sync.Mutex
 	signerStatusRevisionSeen  bool
 	signerStatusKeysetRevSeen uint64

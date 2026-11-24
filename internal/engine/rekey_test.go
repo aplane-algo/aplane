@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
@@ -108,8 +109,9 @@ func TestPrepareRekey_RotatingTargetRefused(t *testing.T) {
 	transport := newAccountMockTransport(t)
 	transport.addAccount(sender, 1_000_000)
 	transport.addAccount(target, 1_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.SetSigningFlowForAddress(target, signerapi.SigningFlowRotating1)
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.SetSigningFlowForAddress(target, signerapi.SigningFlowRotating1)
+	})
 
 	result, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err == nil || result != nil {
@@ -128,8 +130,9 @@ func TestPrepareRekey_UnknownFlowTargetRefused(t *testing.T) {
 	transport := newAccountMockTransport(t)
 	transport.addAccount(sender, 1_000_000)
 	transport.addAccount(target, 1_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SignerCache.SetSigningFlowForAddress(target, "rotating2")
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.SetSigningFlowForAddress(target, "rotating2")
+	})
 
 	result, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err == nil || result != nil {

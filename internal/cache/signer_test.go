@@ -374,8 +374,8 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	original.Locked = true
 
 	// Save
-	if err := original.SaveCache(); err != nil {
-		t.Fatalf("SaveCache() error = %v", err)
+	if err := original.SaveCacheLocked(); err != nil {
+		t.Fatalf("SaveCacheLocked() error = %v", err)
 	}
 
 	// Load into a new cache
@@ -487,8 +487,8 @@ func TestSignerCache_LoadTamperedCacheReturnsEmpty(t *testing.T) {
 	original := NewSignerCache()
 	original.BindStore(store)
 	original.AddAddress("ADDR1", "ed25519", "ed25519")
-	if err := original.SaveCache(); err != nil {
-		t.Fatalf("SaveCache() error = %v", err)
+	if err := original.SaveCacheLocked(); err != nil {
+		t.Fatalf("SaveCacheLocked() error = %v", err)
 	}
 
 	filename := store.path("signer_cache.json")

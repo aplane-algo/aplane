@@ -90,7 +90,7 @@ func WithAliasCache(cache cache.AliasCache) EngineOption {
 // WithSignerCache sets the signer cache
 func WithSignerCache(cache cache.SignerCache) EngineOption {
 	return func(e *Engine) {
-		e.SignerCache = cache
+		e.SetSignerCache(cache)
 	}
 }
 
@@ -163,10 +163,10 @@ func (e *Core) SetNetwork(ctx context.Context, network string, algodClient *algo
 // ctx, for every account the client knows: the alias book's and the signer's.
 // Under the client-data lock, briefly, it reloads the alias book, takes the
 // addresses and snapshots the auth cache on disk. algod is then queried
-// holding no lock: the signer's addresses were copied under signerCacheMu,
-// released at once, so a tunnel disconnect, which resets the signer cache
-// from the tunnel's monitor goroutine, never waits on the queries, and
-// another apshell process on the same data directory is not kept from its
+// holding no lock: the signer's addresses were copied under State's signer
+// cache lock, released at once, so a tunnel disconnect, which resets the
+// signer cache from the tunnel's monitor goroutine, never waits on the queries,
+// and another apshell process on the same data directory is not kept from its
 // own writes. The answers are merged under the client-data lock again, as
 // every auth-cache write is: the alias book and the auth cache are reloaded,
 // an entry another process changed since the snapshot is kept over this
@@ -236,23 +236,7 @@ func (e *Core) ApplyClientCacheUpdates() error {
 		return nil
 	}
 	return e.withClientDataLock(func() error {
-		if changes.Alias {
-			e.ReloadAliasCache()
-		}
-		if changes.Set {
-			e.ReloadSetCache()
-		}
-		if changes.Signer {
-			e.signerCacheMu.Lock()
-			e.ReloadSignerCache()
-			e.signerCacheMu.Unlock()
-		}
-		if changes.ASA[e.Network] {
-			e.ReloadASACache()
-		}
-		if changes.Auth[e.Network] {
-			e.ReloadAuthCache()
-		}
+		e.ApplyCacheChanges(changes)
 		return nil
 	})
 }
@@ -300,7 +284,7 @@ func (e *Core) collectAllAddresses() map[string]bool {
 			addressSet[addr] = true
 		}
 	}
-	for addr := range e.signerCacheKeysSnapshot() {
+	for addr := range e.SignerCacheKeysSnapshot() {
 		addressSet[addr] = true
 	}
 	return addressSet
@@ -331,7 +315,7 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !e.IsConnected() || e.signerCacheCount() > 0 {
+	if !e.IsConnected() || e.SignerCacheCount() > 0 {
 		return nil
 	}
 
@@ -341,7 +325,7 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	}
 
 	if keysResp.Locked {
-		e.setSignerCacheLockedFlag(true)
+		e.MarkSignerLocked()
 		return nil
 	}
 
@@ -350,9 +334,9 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	}
 
 	if err := e.withClientDataLock(func() error {
-		return e.populateAndSaveSignerCacheUnderClientLock(keysResp.Keys)
+		return e.PopulateAndSaveSignerCacheLocked(keysResp.Keys)
 	}); err != nil {
-		if populateErr := e.populateSignerCache(keysResp.Keys); populateErr != nil {
+		if populateErr := e.PopulateSignerCache(keysResp.Keys); populateErr != nil {
 			return fmt.Errorf("invalid signer key inventory: %w", populateErr)
 		}
 		cache.Debug("failed to save signer cache", "error", err)

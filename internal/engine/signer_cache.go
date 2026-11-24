@@ -8,91 +8,10 @@ import (
 	"math"
 	"math/bits"
 
-	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signing"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
-
-func (e *Core) signerCacheCount() int {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.Count()
-}
-
-func (e *Core) signerCacheIsLocked() bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.Locked
-}
-
-func (e *Core) setSignerCacheLockedFlag(locked bool) {
-	e.signerCacheMu.Lock()
-	defer e.signerCacheMu.Unlock()
-	e.SignerCache.Locked = locked
-}
-
-func (e *Core) resetSignerCache(locked bool) {
-	e.signerCacheMu.Lock()
-	defer e.signerCacheMu.Unlock()
-	e.SignerCache = cache.NewSignerCache()
-	e.SignerCache.Locked = locked
-	e.SignerCache.BindStore(e.CacheStore)
-}
-
-func (e *Core) populateSignerCache(keys []signerapi.KeyInfo) error {
-	e.signerCacheMu.Lock()
-	defer e.signerCacheMu.Unlock()
-	return e.PopulateSignerCache(keys)
-}
-
-// populateAndSaveSignerCacheUnderClientLock refreshes the in-memory signer
-// cache and persists it while the caller holds the shared APCLIENT_DATA lock.
-func (e *Core) populateAndSaveSignerCacheUnderClientLock(keys []signerapi.KeyInfo) error {
-	e.signerCacheMu.Lock()
-	defer e.signerCacheMu.Unlock()
-	if err := e.PopulateSignerCache(keys); err != nil {
-		return err
-	}
-	return e.SaveSignerCacheLocked()
-}
-
-func (e *Core) signerCacheHasAddress(address string) bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.HasAddress(address)
-}
-
-func (e *Core) signerCacheKeyType(address string) string {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.GetKeyType(address)
-}
-
-func (e *Core) signerCacheLogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.LogicSigResourceProfile(address)
-}
-
-// signerCacheAuthorizationKind returns the authorization kind the signer
-// reported for an address on /keys, when this client knows it
-// (SignerCache.AuthorizationKind). The boolean reports whether the address is
-// present. A present address with an empty kind has none this client knows.
-// The prepare path (BuildSigningContext, CanSignForAddressWithKind) refuses
-// such a key, and cache.IsAccountSignable does not call it signable. A
-// pre-built group reads no kind: it leaves its authorization to the signer,
-// which holds the key.
-func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.AuthorizationKind, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	if !e.SignerCache.HasAddress(address) {
-		return "", false
-	}
-	return e.SignerCache.AuthorizationKind(address), true
-}
 
 // AuthorizationFeeReserve returns the additional microAlgo fee a standalone
 // transaction signed by signingAddr's key needs beyond its ordinary base fee.
@@ -103,8 +22,8 @@ func (e *Core) signerCacheAuthorizationKind(address string) (algorithm.Authoriza
 // the address that signs, SigningContext.SigningAddr: a rekeyed account's
 // auth address, a rotating account itself. The auth cache is not read.
 func (e *Core) AuthorizationFeeReserve(signingAddr string) (uint64, error) {
-	profile, ok := e.signerCacheLogicSigResourceProfile(signingAddr)
-	isNativeFalcon := e.signerCacheKeyType(signingAddr) == nativefalcon.KeyType
+	profile, ok := e.SignerCacheLogicSigResourceProfile(signingAddr)
+	isNativeFalcon := e.SignerCacheKeyType(signingAddr) == nativefalcon.KeyType
 	if !ok && !isNativeFalcon {
 		return 0, nil
 	}
@@ -173,79 +92,4 @@ func scaleFeeFactor(base, usage uint64) (uint64, bool) {
 		quotient++
 	}
 	return quotient, false
-}
-
-func (e *Core) signerCacheCosignerPublicKey(address string) (string, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.CosignerPublicKeyForAddress(address)
-}
-
-func (e *Core) signerCacheBoundedContract(address string) (string, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.BoundedContractForAddress(address)
-}
-
-func (e *Core) signerCacheBoundedMaxFee(address string) (uint64, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.BoundedMaxFeeForAddress(address)
-}
-
-func (e *Core) signerCacheSigningFlow(address string) string {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.SigningFlowForAddress(address)
-}
-
-func (e *Core) signerCacheCosignerComponentKeyType(address string) (string, bool) {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.CosignerComponentKeyTypeForAddress(address)
-}
-
-func (e *Core) signerCacheIsGenericLsig(address string) bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.IsGenericLsig(address)
-}
-
-func (e *Core) validateSignerLsigArgs(address string, args map[string][]byte) error {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.ValidateLsigArgs(address, args)
-}
-
-func (e *Core) signerCacheKeysSnapshot() map[string]string {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-
-	if e.SignerCache.Keys == nil {
-		return nil
-	}
-	keys := make(map[string]string, len(e.SignerCache.Keys))
-	for address, keyType := range e.SignerCache.Keys {
-		keys[address] = keyType
-	}
-	return keys
-}
-
-// SignerCacheAddresses returns, in no set order, the addresses the signer
-// cache lists: the signer's aplane keys as apshell last read them.
-func (e *Core) SignerCacheAddresses() []string {
-	keys := e.signerCacheKeysSnapshot()
-	addresses := make([]string, 0, len(keys))
-	for address := range keys {
-		addresses = append(addresses, address)
-	}
-	return addresses
-}
-
-// isAccountSignable applies cache.IsAccountSignable, the rule the display
-// marker uses too, under the signer cache lock.
-func (e *Core) isAccountSignable(address string) bool {
-	e.signerCacheMu.RLock()
-	defer e.signerCacheMu.RUnlock()
-	return cache.IsAccountSignable(address, &e.SignerCache, &e.AuthCache)
 }

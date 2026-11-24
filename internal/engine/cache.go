@@ -45,12 +45,12 @@ func (e *Core) RefreshAuthAddressWithContext(ctx context.Context, addr string) (
 // GetKeyType returns the signing algorithm for an address.
 // Handles rekeyed aliases by looking up the auth address's key type.
 func (e *Core) GetKeyType(addr string) string {
-	return e.getAlgorithm(addr)
+	return e.SignerCacheAlgorithm(addr)
 }
 
 // SignerKeyCount returns the number of keys in the signer cache.
 func (e *Core) SignerKeyCount() int {
-	return e.signerCacheCount()
+	return e.SignerCacheCount()
 }
 
 // ListRekeyedAccounts returns all rekeyed accounts from cache.
@@ -112,10 +112,10 @@ func (e *Core) ListAliases() *AliasListResult {
 
 	for _, name := range names {
 		address := e.AliasCache.Aliases[name]
-		isSignable := e.isAccountSignable(address)
+		isSignable := e.IsAccountSignable(address)
 		keyType := ""
 		if isSignable {
-			keyType = e.getAlgorithm(address)
+			keyType = e.SignerCacheAlgorithm(address)
 		}
 
 		result.Aliases = append(result.Aliases, AliasInfo{
@@ -142,10 +142,10 @@ func (e *Core) GetAlias(name string) *AliasInfo {
 		return nil
 	}
 
-	isSignable := e.isAccountSignable(address)
+	isSignable := e.IsAccountSignable(address)
 	keyType := ""
 	if isSignable {
-		keyType = e.getAlgorithm(address)
+		keyType = e.SignerCacheAlgorithm(address)
 	}
 
 	return &AliasInfo{
@@ -179,9 +179,9 @@ func (e *Core) AddAliasWithContext(ctx context.Context, name, address string) (*
 		OldAddress: mutation.OldAddress,
 	}
 
-	result.IsSignable = e.isAccountSignable(result.Address)
+	result.IsSignable = e.IsAccountSignable(result.Address)
 	if result.IsSignable {
-		result.KeyType = e.getAlgorithm(result.Address)
+		result.KeyType = e.SignerCacheAlgorithm(result.Address)
 	}
 
 	return result, nil

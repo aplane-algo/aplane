@@ -70,7 +70,7 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
 
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "cosigned-authorizer").Transaction
-	if got := eng.signerCacheKeyType(cosigned); got != "ed25519" {
+	if got := eng.SignerCacheKeyType(cosigned); got != "ed25519" {
 		t.Fatalf("precondition signer cache key type for cosigned authorizer = %q, want stale ed25519", got)
 	}
 	if eng.cosignedSigner().HasCosignedEffectiveSigner([]types.Transaction{txn}) {
@@ -84,16 +84,16 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != cosigned {
 		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, cosigned)
 	}
-	if got := eng.signerCacheKeyType(cosigned); got != "aplane.falcon1024.v1" {
+	if got := eng.SignerCacheKeyType(cosigned); got != "aplane.falcon1024.v1" {
 		t.Fatalf("signer cache key type for cosigned authorizer = %q, want the plain host", got)
 	}
-	if got, ok := eng.signerCacheCosignerPublicKey(cosigned); !ok || got != cosignerHex {
+	if got, ok := eng.SignerCacheCosignerPublicKey(cosigned); !ok || got != cosignerHex {
 		t.Fatalf("cosigner public key for cosigned authorizer = %q/%v, want %s/true", got, ok, cosignerHex)
 	}
-	if got, ok := eng.signerCacheCosignerComponentKeyType(cosigned); !ok || got != witness.Falcon1024V1 {
+	if got, ok := eng.SignerCacheCosignerComponentKeyType(cosigned); !ok || got != witness.Falcon1024V1 {
 		t.Fatalf("cosigner component key type for cosigned authorizer = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
 	}
-	if profile, ok := eng.signerCacheLogicSigResourceProfile(cosigned); !ok || profile.ProgramBytes != 1_500 {
+	if profile, ok := eng.SignerCacheLogicSigResourceProfile(cosigned); !ok || profile.ProgramBytes != 1_500 {
 		t.Fatalf("LogicSig resources for cosigned authorizer = %+v/%v, want structured profile", profile, ok)
 	}
 	if !eng.cosignedSigner().HasCosignedEffectiveSigner([]types.Transaction{txn}) {

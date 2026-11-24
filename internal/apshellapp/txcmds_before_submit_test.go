@@ -19,6 +19,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 var (
@@ -61,8 +62,12 @@ func beforeSubmitApp(t *testing.T) *App {
 	}
 	eng := engine.NewEngine("testnet", engine.WithAlgodClient(client))
 	// The source accounts' keys are listed, but no signer is connected.
-	eng.SignerCache.AddAddress(beforeSubmitFrom, "ed25519", "ed25519")
-	eng.SignerCache.AddAddress(beforeSubmitAuth, "ed25519", "ed25519")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: beforeSubmitFrom, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		{Address: beforeSubmitAuth, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
 	return New(eng, config.DefaultConfig(), t.TempDir())
 }
 
