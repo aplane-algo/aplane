@@ -108,7 +108,8 @@ func newAccountMockAlgodClient(t *testing.T, transport *accountMockTransport) *a
 }
 
 // setupEngineWithMockAlgod creates an engine with mock algod and pre-populated caches.
-func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport) *Engine {
+// Optional signerCacheTweaks mutate the initial signer cache before constructing the engine.
+func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport, signerCacheTweaks ...func(*cache.SignerCache)) *Engine {
 	t.Helper()
 
 	client := newAccountMockAlgodClient(t, transport)
@@ -116,6 +117,9 @@ func setupEngineWithMockAlgod(t *testing.T, transport *accountMockTransport) *En
 	signerCache := cache.NewSignerCache()
 	for addr := range transport.accounts {
 		signerCache.AddAddress(addr, "ed25519", "ed25519")
+	}
+	for _, tweak := range signerCacheTweaks {
+		tweak(&signerCache)
 	}
 
 	aliasCache := cache.AliasCache{Aliases: make(map[string]string)}

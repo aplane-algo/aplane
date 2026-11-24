@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/engine/connect"
+	engconnect "github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -57,7 +57,7 @@ func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T)
 
 func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.Connection = connect.NewState()
+	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
 	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
@@ -79,7 +79,7 @@ func TestEngineDisconnectDelegatesToConnectionState(t *testing.T) {
 // must leave a live tunnel and the signer cache alone.
 func TestEngineRequestEnrollmentLeavesTunnelConnected(t *testing.T) {
 	eng := NewEngine("testnet")
-	eng.Connection = connect.NewState()
+	eng.Connection = engconnect.NewState()
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.SSHTunnelClient = sshtunnel.NewClient("host", 22, "", "")
 	eng.Connection.ConnectionTarget = "remote-a"

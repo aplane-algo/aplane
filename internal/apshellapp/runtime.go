@@ -77,8 +77,8 @@ func (a *App) IsSimulateEnabled() bool {
 // lives here in the UI application layer; the caches it reads are engine
 // state.
 func (a *App) FormatAddress(address string) string {
-	snapshot := a.eng.SignerCacheSnapshot()
-	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, &snapshot, &a.eng.AuthCache, algorithm.GetDisplayColor)
+	keyType, signable := a.eng.SigningKeyType(address)
+	return addressdisplay.FormatAddress(address, &a.eng.AliasCache, keyType, signable, algorithm.GetDisplayColor)
 }
 
 // FormatKeyTypeForDisplay formats the displayed key type using cached signer/native key metadata.

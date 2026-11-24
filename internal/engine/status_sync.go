@@ -42,7 +42,7 @@ func (e *Engine) SyncSignerStatus(ctx context.Context) (*SignerStatusSyncResult,
 	}
 
 	if status.SignerLocked {
-		if firstSync || revisionChanged || e.SignerCacheCount() > 0 || !e.SignerCacheLocked() {
+		if firstSync || revisionChanged || e.SignerCacheCount() > 0 || !e.IsSignerLocked() {
 			e.ResetSignerCache(true)
 			result.CacheCleared = true
 		}
@@ -51,7 +51,7 @@ func (e *Engine) SyncSignerStatus(ctx context.Context) (*SignerStatusSyncResult,
 		return result, nil
 	}
 
-	needsRefresh := revisionChanged || e.SignerCacheLocked() || e.SignerCacheCount() != status.KeyCount
+	needsRefresh := revisionChanged || e.IsSignerLocked() || e.SignerCacheCount() != status.KeyCount
 	if needsRefresh {
 		if _, err := e.RefreshKeys(ctx); err != nil {
 			return result, err

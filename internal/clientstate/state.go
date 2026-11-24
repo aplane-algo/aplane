@@ -144,7 +144,7 @@ func (s *State) ApplyCacheChanges(changes CacheChanges) {
 // existing cache so a malformed inventory cannot silently lose budgeting
 // metadata or replace a previously valid snapshot.
 func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
-	next, err := buildSignerCache(keys, s.CacheStore)
+	next, err := buildSignerCache(keys)
 	if err != nil {
 		return err
 	}
@@ -156,24 +156,25 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) error {
 
 // PopulateAndSaveSignerCacheLocked rebuilds the in-memory signer cache and
 // persists that snapshot while the caller already holds the shared
-// APCLIENT_DATA mutation lock. Disk I/O runs on a detached clone after
-// releasing signerCacheMu so concurrent disconnects never wait on persistence.
+// APCLIENT_DATA mutation lock. Disk I/O runs after releasing signerCacheMu so
+// concurrent disconnects never wait on persistence; safe because no method
+// mutates a published cache's maps in place (writers replace the struct value
+// or set only the Locked bool on s.signerCache).
 func (s *State) PopulateAndSaveSignerCacheLocked(keys []signerapi.KeyInfo) error {
-	next, err := buildSignerCache(keys, s.CacheStore)
+	next, err := buildSignerCache(keys)
 	if err != nil {
 		return err
 	}
-	toSave := next.Clone()
-	toSave.BindStore(s.CacheStore)
+	next.BindStore(s.CacheStore)
 
 	s.signerCacheMu.Lock()
 	s.signerCache = next
 	s.signerCacheMu.Unlock()
 
-	return toSave.SaveCacheLocked()
+	return next.SaveCacheLocked()
 }
 
-func buildSignerCache(keys []signerapi.KeyInfo, store *cache.Store) (cache.SignerCache, error) {
+func buildSignerCache(keys []signerapi.KeyInfo) (cache.SignerCache, error) {
 	logicSigProfiles := make(map[string]lsigresource.Profile)
 	for _, keyInfo := range keys {
 		if keyInfo.LogicSigResources == nil {
@@ -187,7 +188,6 @@ func buildSignerCache(keys []signerapi.KeyInfo, store *cache.Store) (cache.Signe
 	}
 
 	next := cache.NewSignerCache()
-	next.BindStore(store)
 	for _, keyInfo := range keys {
 		next.AddAddress(keyInfo.Address, keyInfo.KeyType, keyInfo.AuthorizationKind)
 
@@ -290,13 +290,11 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 	return converted, nil
 }
 
-// SetSignerCache replaces the in-memory signer cache with a detached deep copy
-// of next.
+// SetSignerCache replaces the in-memory signer cache with next.
+// Callers must not mutate next's maps after passing it in.
 func (s *State) SetSignerCache(next cache.SignerCache) {
-	cloned := next.Clone()
-	cloned.BindStore(s.CacheStore)
 	s.signerCacheMu.Lock()
-	s.signerCache = cloned
+	s.signerCache = next
 	s.signerCacheMu.Unlock()
 }
 
@@ -305,25 +303,16 @@ func (s *State) SetSignerCache(next cache.SignerCache) {
 func (s *State) ResetSignerCache(locked bool) {
 	next := cache.NewSignerCache()
 	next.Locked = locked
-	next.BindStore(s.CacheStore)
 	s.signerCacheMu.Lock()
 	s.signerCache = next
 	s.signerCacheMu.Unlock()
 }
 
-// SetSignerCacheLocked updates the signer cache's locked flag.
-func (s *State) SetSignerCacheLocked(locked bool) {
+// MarkSignerLocked marks the signer cache as reflecting a locked signer.
+func (s *State) MarkSignerLocked() {
 	s.signerCacheMu.Lock()
-	s.signerCache.Locked = locked
+	s.signerCache.Locked = true
 	s.signerCacheMu.Unlock()
-}
-
-// SignerCacheSnapshot returns a detached deep copy of the signer cache under
-// signerCacheMu.
-func (s *State) SignerCacheSnapshot() cache.SignerCache {
-	s.signerCacheMu.RLock()
-	defer s.signerCacheMu.RUnlock()
-	return s.signerCache.Clone()
 }
 
 // SignerCacheKeysSnapshot returns a copy of the cached address-to-key-type map.
@@ -352,8 +341,8 @@ func (s *State) SignerCacheCount() int {
 	return s.signerCache.Count()
 }
 
-// SignerCacheLocked reports whether the signer last reported a locked state.
-func (s *State) SignerCacheLocked() bool {
+// IsSignerLocked reports whether the signer last reported a locked state.
+func (s *State) IsSignerLocked() bool {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
 	return s.signerCache.Locked
@@ -398,6 +387,17 @@ func (s *State) IsAccountSignable(address string) bool {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
 	return cache.IsAccountSignable(address, &s.signerCache, &s.AuthCache)
+}
+
+// SigningKeyType returns the key type of the key that signs for address, and
+// whether apshell calls the account signable (cache.IsAccountSignable).
+func (s *State) SigningKeyType(address string) (string, bool) {
+	s.signerCacheMu.RLock()
+	defer s.signerCacheMu.RUnlock()
+	if !cache.IsAccountSignable(address, &s.signerCache, &s.AuthCache) {
+		return "", false
+	}
+	return s.signerCache.GetKeyType(cache.SigningAddress(address, &s.signerCache, &s.AuthCache)), true
 }
 
 // SignerCacheAuthorizationKind returns the authorization kind the signer

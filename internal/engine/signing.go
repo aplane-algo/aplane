@@ -50,7 +50,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 	}
 
 	// Check if signer reported locked state
-	if e.SignerCacheLocked() {
+	if e.IsSignerLocked() {
 		return nil, ErrSignerLocked
 	}
 

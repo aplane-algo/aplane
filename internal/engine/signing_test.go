@@ -27,7 +27,7 @@ func TestBuildSigningContext_SignerLocked(t *testing.T) {
 	transport := newAccountMockTransport(t)
 	transport.addAccount(testAddr(1), 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
-	eng.SetSignerCacheLocked(true)
+	eng.MarkSignerLocked()
 
 	_, err := eng.BuildSigningContext(context.Background(), testAddr(1))
 	if !errors.Is(err, ErrSignerLocked) {
@@ -73,11 +73,9 @@ func TestBuildSigningContext_RekeyedAccount_CacheHit(t *testing.T) {
 	})
 	transport.addAccount(authAddr, 1_000_000)
 
-	eng := setupEngineWithMockAlgod(t, transport)
-	// Ensure auth addr is in signer cache
-	sc := eng.SignerCacheSnapshot()
-	sc.AddAddress(authAddr, "ed25519", "ed25519")
-	eng.SetSignerCache(sc)
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.AddAddress(authAddr, "ed25519", "ed25519")
+	})
 
 	ctx, err := eng.BuildSigningContext(context.Background(), sender)
 	if err != nil {
@@ -123,13 +121,12 @@ func TestBuildSigningContext_RekeyedNotSignable(t *testing.T) {
 	})
 	transport.addAccount(authAddr, 1_000_000)
 
-	eng := setupEngineWithMockAlgod(t, transport)
 	// sender is in signer cache but authAddr is NOT
 	// (setupEngineWithMockAlgod adds both since they're in transport.accounts,
 	// so remove authAddr to simulate not-signable)
-	sc := eng.SignerCacheSnapshot()
-	delete(sc.Keys, authAddr)
-	eng.SetSignerCache(sc)
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		delete(sc.Keys, authAddr)
+	})
 
 	_, err := eng.BuildSigningContext(context.Background(), sender)
 	if err == nil {
@@ -144,10 +141,9 @@ func TestBuildSigningContext_FalconKeyType(t *testing.T) {
 	addr := testAddr(1)
 	transport := newAccountMockTransport(t)
 	transport.addAccount(addr, 1_000_000)
-	eng := setupEngineWithMockAlgod(t, transport)
-	sc := eng.SignerCacheSnapshot()
-	sc.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
-	eng.SetSignerCache(sc)
+	eng := setupEngineWithMockAlgod(t, transport, func(sc *cache.SignerCache) {
+		sc.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
+	})
 
 	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {

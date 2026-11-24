@@ -133,7 +133,7 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	if !result.RevisionChanged || !result.CacheCleared {
 		t.Fatalf("result = %+v, want changed with cache clear", result)
 	}
-	if eng.SignerCacheCount() != 0 || !eng.SignerCacheLocked() {
-		t.Fatalf("SignerCache count/locked = %d/%v, want 0/true", eng.SignerCacheCount(), eng.SignerCacheLocked())
+	if eng.SignerCacheCount() != 0 || !eng.IsSignerLocked() {
+		t.Fatalf("SignerCache count/locked = %d/%v, want 0/true", eng.SignerCacheCount(), eng.IsSignerLocked())
 	}
 }

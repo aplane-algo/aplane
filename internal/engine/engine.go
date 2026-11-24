@@ -325,7 +325,7 @@ func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	}
 
 	if keysResp.Locked {
-		e.SetSignerCacheLocked(true)
+		e.MarkSignerLocked()
 		return nil
 	}
 

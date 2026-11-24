@@ -114,6 +114,32 @@ func TestSignableMarkerAgreesWithSignableAddresses(t *testing.T) {
 	}
 }
 
+func TestFormatAddressMarksRotatingAccountAtAnyStage(t *testing.T) {
+	addressdisplay.SetColorSupported(false)
+	defer addressdisplay.ResetColorSupport()
+
+	rot := types.Address{7}.String()
+	ordinary := types.Address{8}.String()
+	stage := types.Address{9}.String()
+
+	eng := engine.NewEngine("testnet")
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: rot, KeyType: "aplane.rotating-triple-wotsc.v1", AuthorizationKind: "logic_sig", SigningFlow: signerapi.SigningFlowRotating1},
+		{Address: ordinary, KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	eng.AuthCache.AuthAddresses = map[string]string{rot: stage, ordinary: stage}
+	app := New(eng, config.DefaultConfig(), t.TempDir())
+
+	if got := app.FormatAddress(rot); got != rot+" @" {
+		t.Fatalf("FormatAddress(rotating) = %q, want signable marker", got)
+	}
+	if got := app.FormatAddress(ordinary); got != ordinary {
+		t.Fatalf("FormatAddress(rekeyed-away ordinary) = %q, want no marker", got)
+	}
+}
+
 func TestDisplayAndCompleterDepsRaceSafeWithConcurrentSignerCacheUpdates(t *testing.T) {
 	addressdisplay.SetColorSupported(false)
 	defer addressdisplay.ResetColorSupport()
