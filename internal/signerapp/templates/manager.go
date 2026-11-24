@@ -280,12 +280,14 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 	}
 }
 
-// RegisterKeystoreTemplates registers all keystore-backed template families.
-// The ordering is compatibility-sensitive: generic and composed templates must
-// be registered before key scanning occurs so provider metadata is available.
-// Recoverable reload problems are surfaced through the returned report; the
-// error return is reserved for manager misconfiguration and unrecoverable work
-// that should stop the caller's reload flow.
+// RegisterKeystoreTemplates prepares and registers all keystore-backed template
+// families in one call, for offline tooling and tests. Runtime reloads use
+// PrepareKeystoreTemplates during Build, scan keys before registration using
+// stored key metadata and the base key type's signature size, and register the
+// prepared batch at publish. Recoverable reload problems are surfaced through
+// the returned report; the error return is reserved for manager
+// misconfiguration and unrecoverable work that should stop the caller's reload
+// flow.
 func (m *Manager) RegisterKeystoreTemplates(kr *crypto.Keyring) (RegistrationReport, error) {
 	prepared, err := m.PrepareKeystoreTemplates(kr)
 	if err != nil {

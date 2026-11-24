@@ -412,9 +412,9 @@ func (ir *Runtime) SourceTokenFor(selector, source string) (string, bool) {
 // SourceTokenNamesFor returns the source names one cosigner policy selector
 // has a token for, from the index published at the time of the call: the
 // live tokens a policy check's missing-token advisory checks a document
-// against. known is false unless the signer is unlocked: a locked signer has
-// no index, and one in recovery may hold an index of a generation the store
-// has since left, so which tokens are set is not known.
+// against. known is false unless the signer is unlocked: neither a locked
+// signer nor one in recovery holds a token index, so which tokens are set is
+// not known.
 func (ir *Runtime) SourceTokenNamesFor(selector string) (names []string, known bool) {
 	if !ir.IsUnlocked() {
 		return nil, false
