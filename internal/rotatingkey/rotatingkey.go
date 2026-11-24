@@ -11,13 +11,6 @@
 package rotatingkey
 
 const (
-	// RotatingSlhdsaShippedHeight is the SLH-DSA hypertree height shipped
-	// under aplane.rotating-triple-slhdsa.v1. Ordinary builds pin
-	// RotatingSlhdsaHeight to this value and refuse key generation at any
-	// other height; non-shipped heights (such as the height-63 review build)
-	// require -tags testmode.
-	RotatingSlhdsaShippedHeight = 22
-
 	// RotatingSlhdsaHeight is the SLH-DSA hypertree height the rotating
 	// SLH-DSA key type is built with: the one build-time choice of that type.
 	// lsig/rotatingtripleslhdsa/stage carries a frozen verifier, template,
@@ -32,7 +25,8 @@ const (
 	//     aplane.rotating-triple-slhdsa.v1.
 	//   - 63: seven layers of height 9, SLH-DSA-SHA2-128s of FIPS 205, a
 	//     7,856-byte signature and a ten-transaction group. Review-only:
-	//     generating keys at height 63 requires -tags testmode.
+	//     ordinary builds refuse to compile at any height other than 22
+	//     (height_pin.go); height-63 builds require -tags testmode.
 	RotatingSlhdsaHeight = 22
 
 	// RotatingTripleSlhdsaV1 uses a stateless SLH-DSA key per stage under the

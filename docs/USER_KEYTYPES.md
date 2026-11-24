@@ -869,9 +869,10 @@ that each sign a few messages; it is not a FIPS 205 parameter set. Its
 transaction-type, rekey, close-out and validity restrictions are the same as
 XMSS. It uses 6 transactions per spend (5 resource dummies), with a minimum
 group fee of 0.006 ALGO. The SLH signature is 4400 bytes, split over two
-arguments. The hypertree height is fixed when the signer is built; a build
-with the standard SLH-DSA-SHA2-128s height, which exists for evaluation,
-derives different accounts from the same seed and needs 10 transactions.
+arguments. The hypertree height is fixed when the signer is built; an ordinary
+build compiles only at height 22, while a `-tags testmode` build at the
+standard SLH-DSA-SHA2-128s height, which exists for evaluation, derives
+different accounts from the same seed and needs 10 transactions.
 [The evaluation record](SLHDSA_EVALUATION.md) has the measured lifecycle
 costs, the lifetime-use assumptions and the review and qualification work
 that remains.

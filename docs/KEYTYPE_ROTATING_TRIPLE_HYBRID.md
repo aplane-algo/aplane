@@ -801,11 +801,12 @@ constant and rebuilding gives the standard SLH-DSA-SHA2-128s shape at ten
 transactions, with every stage address changed, since the shape is
 embedded in the stage program. It exists so the standard set stays
 reachable for review and measurement; it is not an operator setting.
-Released builds use height 22 (pinned by an ordinary-build test), fixed for the
-key type's lifetime, and a height 63 build derives different accounts from the
-same seed. Key generation at any height other than 22 is refused outside
-`-tags testmode` builds; if a height-63 key type graduates after independent
-review, it ships under its own key-type identifier.
+Released builds use height 22, fixed for the key type's lifetime, and a
+height 63 build derives different accounts from the same seed. Ordinary builds
+fail to compile at any height other than 22 (`internal/rotatingkey/height_pin.go`);
+the height-63 review build requires `-tags testmode` (see
+[SLHDSA_EVALUATION.md](SLHDSA_EVALUATION.md)). If a height-63 key type
+graduates after independent review, it ships under its own key-type identifier.
 
 **Alternatives considered.**
 
@@ -1265,8 +1266,8 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
   labels and tags, signing procedures and stage 0 public records did not
   change, but every stage address did, the account address among them. A
   rotating account created by an earlier build cannot be opened by a build
-  with this change. This was a pre-release decision: the next release is
-  install-fresh and there were no outside users. No second template, version
+  with this change. This was done before outside users existed, with an
+  install-fresh next release. No second template, version
   switch or migration exists, and nothing reads the old programs. After a
   release with these addresses in use, the same change would mint new
   versions.
@@ -1276,13 +1277,14 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
   construction. This document groups them under a shared design name; it
   introduces no additional key type, scheme negotiation or conversion of
   existing accounts.
-- `aplane.rotating-triple-slhdsa.v1` ships at hypertree height 22 (its
-  2026-10-27 rescaling and the 2026-11-14 stage-number change above were both
-  pre-release changes under `.v1`). Key generation at any height other than 22
-  (including the height-63 review build) is refused outside `-tags testmode`
-  builds, and an ordinary-build test pins `RotatingSlhdsaHeight` to 22. A
-  height-63 key type that graduates after independent review ships under its
-  own key-type identifier rather than altering `.v1`.
+- `aplane.rotating-triple-slhdsa.v1` ships at hypertree height 22. Its
+  2026-10-27 rescaling came before its first release, v0.45.0; the
+  stage-number change above came after six releases had shipped `.v1` and
+  first shipped in v0.50.0. Ordinary builds fail to compile at any height
+  other than 22 (`internal/rotatingkey/height_pin.go`), so height-63 review
+  builds require `-tags testmode`. A height-63 key type that graduates after
+  independent review ships under its own key-type identifier rather than
+  altering `.v1`.
 - Pre-release development templates may derive different addresses and must
   be identified rather than reinterpreted as released v1 templates.
 - The shared signing-flow identifier remains `rotating1`. Clients route on
