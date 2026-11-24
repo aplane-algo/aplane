@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -166,6 +168,59 @@ func TestAReconcileALockOvertookAnswersLocked(t *testing.T) {
 	lockDone.Wait()
 	if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.State != signerruntime.SignerStateLocked.String() {
 		t.Fatalf("ReconcileStore() overtaken by a lock = %+v, want the locked answer", result)
+	}
+}
+
+// A lock that overtakes ReconcileStore during its generational reconcile step
+// (whether that step succeeds or fails, and from unlocked or recovery) must
+// answer signer_locked with state locked, never recovery_blocked.
+func TestReconcileStoreOvertakenByLockDuringStepAnswersLocked(t *testing.T) {
+	for _, startRecovery := range []bool{false, true} {
+		for _, stepErr := range []error{nil, errors.New("simulated step error after lock")} {
+			name := fmt.Sprintf("fromRecovery=%v/stepErr=%v", startRecovery, stepErr != nil)
+			t.Run(name, func(t *testing.T) {
+				server := characterizedSigner(t)
+				ir := server.productRuntime()
+				if startRecovery {
+					ir.EnterRecovery(nil)
+				}
+				stagingDir := filepath.Join(server.keyPaths.GenerationsDir(), storepaths.GenerationStagingPrefix+"lock-probe")
+				if err := os.MkdirAll(stagingDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				generationsDir := server.keyPaths.GenerationsDir()
+				var lockOnce sync.Once
+				var lockDone sync.WaitGroup
+				fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+					if op == fsutil.OpDirSync && path == generationsDir {
+						lockOnce.Do(func() {
+							lockDone.Add(1)
+							go func() {
+								defer lockDone.Done()
+								ir.Lock()
+							}()
+							for ir.GetState() != signerruntime.SignerStateLocked {
+								time.Sleep(time.Millisecond)
+							}
+						})
+						return stepErr
+					}
+					return nil
+				}
+				t.Cleanup(func() { fsutil.TestHook = nil })
+
+				result := server.adminServices().backupServices().ReconcileStore()
+				lockDone.Wait()
+				fsutil.TestHook = nil
+
+				if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.State != signerruntime.SignerStateLocked.String() {
+					t.Fatalf("ReconcileStore() overtaken during step = %+v, want %s/%s", result, protocol.ErrCodeSignerLocked, signerruntime.SignerStateLocked.String())
+				}
+				if ir.GetState() != signerruntime.SignerStateLocked {
+					t.Fatalf("state = %v, want locked", ir.GetState())
+				}
+			})
+		}
 	}
 }
 

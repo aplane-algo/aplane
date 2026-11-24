@@ -238,6 +238,53 @@ func TestCosignerExternalChecksEndWhenTheNodeLocks(t *testing.T) {
 	}
 }
 
+// If recovery clears the source token index before key-use context
+// cancellation reaches an in-flight external check, a missing token while the
+// session is no longer unlocked must answer locked and record no cosigner
+// policy rejection. While unlocked, a genuinely unset token still refuses
+// under external_check:<id>:token_not_set.
+func TestCosignerExternalChecksTokenClearedBySessionEndAnswersLocked(t *testing.T) {
+	newTokenGate := func(t *testing.T, unlocked bool) *externalGate {
+		t.Helper()
+		g := newExternalGate(t)
+		src := g.cfg.ExternalSources["screening"]
+		src.Token = &policy.ExternalTokenV1{Header: "Authorization", Prefix: "Bearer "}
+		g.cfg.ExternalSources["screening"] = src
+		g.svc.IsUnlocked = func() bool { return unlocked }
+		g.svc.KeyUse = func(ctx context.Context) (context.Context, func()) { return ctx, func() {} }
+		g.svc.ExternalChecks = &externalcheck.Runner{
+			Fetcher: &externalcheck.Fetcher{},
+			Tokens:  func(string, string) (string, bool) { return "", false },
+		}
+		return g
+	}
+
+	t.Run("ended session answers locked without rejection audit", func(t *testing.T) {
+		g := newTokenGate(t, false)
+		err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed))
+		if err == nil || err.Kind != ErrorLocked {
+			t.Fatalf("error = %#v, want locked", err)
+		}
+		if len(g.audit.limited) != 0 {
+			t.Fatalf("ended session was audited as a refusal: %+v", g.audit.limited)
+		}
+		if g.hits.Load() != 0 {
+			t.Fatalf("%d lookups made, want 0", g.hits.Load())
+		}
+	})
+
+	t.Run("unlocked session still refuses missing token", func(t *testing.T) {
+		g := newTokenGate(t, true)
+		err := g.svc.runCosignerGates(context.Background(), g.plan(g.allowed))
+		if err == nil || err.Kind != ErrorForbidden || !strings.Contains(err.Message, "external_check:screen:token_not_set") {
+			t.Fatalf("error = %#v, want token_not_set refusal", err)
+		}
+		if len(g.audit.limited) != 1 {
+			t.Fatalf("audit entries = %d, want 1", len(g.audit.limited))
+		}
+	})
+}
+
 // A canceled request ends its lookups and is reported as canceled.
 func TestCosignerExternalChecksEndWhenTheRequestIsCanceled(t *testing.T) {
 	g := newExternalGate(t)

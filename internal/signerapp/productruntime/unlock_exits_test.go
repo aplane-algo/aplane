@@ -299,7 +299,7 @@ func TestARoleConflictOnAnUnlockInRecoveryInstallsNothing(t *testing.T) {
 // root's opening, or during the reconcile. The keyring is the attempt's from
 // its opening to its install, so no exit may leave it unzeroed.
 func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
-	for _, when := range []string{"after the opening", "during the reconcile"} {
+	for _, when := range []string{"after the opening", "during the reconcile", "during a failing reconcile"} {
 		t.Run(when, func(t *testing.T) {
 			ir, _, loads, _ := unlockedRuntimeForTest(t)
 			ir.Lock()
@@ -324,8 +324,12 @@ func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
 				return kr, selection, err
 			}
 			reconcile := func(*crypto.Keyring) error {
-				if when == "during the reconcile" {
+				switch when {
+				case "during the reconcile":
 					lockNow()
+				case "during a failing reconcile":
+					lockNow()
+					return errors.New("injected reconcile failure")
 				}
 				return nil
 			}
@@ -405,5 +409,39 @@ func TestAPassphraseChangeOpensTheRootOnceAndServesThatKeyring(t *testing.T) {
 	}
 	if *opens != 1 || built == nil || served != built || zeroed(served) {
 		t.Fatalf("%d opening(s), built with %p, serving %p; want one opening and that keyring, usable", *opens, built, served)
+	}
+}
+
+// An unlock begun in recovery installs the freshly opened keyring and zeroes
+// recovery's replaced keyring once its users finish.
+func TestUnlockFromRecoveryZeroesReplacedKeyring(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	ir.EnterRecovery(nil)
+	var recoverys *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { recoverys = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if zeroed(recoverys) {
+		t.Fatal("setup: recovery's keyring already zeroed")
+	}
+	var opened *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		opened = kr
+		return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+	}, ReloadEffects{})
+
+	outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), noReconcile, nil)
+	if err != nil || outcome.Recovery || !ir.IsUnlocked() {
+		t.Fatalf("Unlock() = %+v, %v in state %v; want unlocked", outcome, err, ir.GetState())
+	}
+	if !zeroed(recoverys) {
+		t.Fatal("recovery's replaced keyring was not zeroed after publishUnlock")
+	}
+	var served *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { served = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if opened == nil || served != opened || served == recoverys || zeroed(served) {
+		t.Fatalf("served keyring = %p (opened=%p, replaced=%p), want usable new keyring", served, opened, recoverys)
 	}
 }

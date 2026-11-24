@@ -58,12 +58,17 @@ func (s *Service) runExternalChecks(ctx context.Context, plan *ComponentSignPlan
 		plan.ExternalChecks = summary
 		return nil
 	}
-	// A step that ended because the request was canceled or the node locked
-	// is reported as that, not as a refusal by a source.
+	// A step that ended because the request was canceled, the node locked, or
+	// the session ended (for example an entry into recovery clearing the token
+	// index before context cancellation propagates) is reported as that, not as
+	// a refusal by a source.
 	if err := ctx.Err(); err != nil {
 		return canceledSignRequest(err)
 	}
 	if stepCtx.Err() != nil {
+		return lockedError()
+	}
+	if refusal.Outcome == policy.ExternalCheckTokenNotSetOutcome && s.IsUnlocked != nil && !s.IsUnlocked() {
 		return lockedError()
 	}
 	return s.refuseExternalCheck(plan, refusal)

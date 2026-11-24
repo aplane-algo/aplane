@@ -372,8 +372,8 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 			return result
 		}
 		if errors.Is(err, productruntime.ErrReconcileStateChanged) {
-			// A lock overtook a reconcile that published cleanly: it
-			// entered no recovery, and the lock stands.
+			// A lock overtook the reconcile during its store step, build, or
+			// promotion: it entered no recovery, and the lock stands.
 			result.Code = protocol.ErrCodeSignerLocked
 			result.State = ir.GetState().String()
 			return result

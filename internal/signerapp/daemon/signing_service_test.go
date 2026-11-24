@@ -4,13 +4,19 @@
 package daemon
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
@@ -19,7 +25,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/externalcheck"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
+	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
+	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
 // A signing service resolves every key against the policy snapshot captured
@@ -221,5 +232,133 @@ func TestSigningServiceReadsSourceTokensFromTheRuntimeIndex(t *testing.T) {
 	ir.Lock()
 	if _, ok := runner.Tokens(keyID, "screening"); ok {
 		t.Fatal("a token was found after the signer locked")
+	}
+}
+
+type rejectCountingAudit struct {
+	signingAudit
+	rejections atomic.Int32
+}
+
+func (a *rejectCountingAudit) LogSignRejectedRecord(signersigning.SignedRecord, string) {
+	a.rejections.Add(1)
+}
+
+// An in-flight cosigner external check whose token lookup races with a reload
+// entering recovery (clearing the source token index) must answer locked and
+// record no cosigner policy rejection.
+func TestCosignerExternalCheckDuringRecoveryReloadAnswersLocked(t *testing.T) {
+	server := characterizedSigner(t)
+	ir := server.productRuntime()
+	bound, err := ir.ActivePaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentKey, err := witness.ID(witness.Ed25519V1, bytes.Repeat([]byte{0xab}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := types.Address{25}.String()
+	allowed := types.Address{26}.String()
+	doc := policytest.MustDocument(noderole.RoleCosigner, policy.DefaultKey, fmt.Sprintf(`{
+		"transfer_policy": {
+			"routes": [{
+				"id": "allow_test",
+				"networks": ["testnet"],
+				"sources": [%q],
+				"assets": ["algo"],
+				"destinations": [%q]
+			}]
+		},
+		"external_sources": {
+			"screening": {
+				"base_url": "https://127.0.0.1:1",
+				"token": {"header": "Authorization", "prefix": "Bearer "}
+			}
+		},
+		"external_checks": [{
+			"id": "screen",
+			"source": "screening",
+			"scope": "movement",
+			"networks": ["*"],
+			"path": "/screen/{destination}",
+			"require": [{"pointer": "/score", "op": "le", "number": "30"}]
+		}]
+	}`, source, allowed))
+	np, err := policyruntime.Compile(noderole.RoleCosigner, server.config, []policy.StoredDocument{{Key: policy.DefaultKey, Bytes: []byte(doc)}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir.SetVerifiedPolicyState(np, nil, nil)
+	tokFile, err := sourcetokens.SetToken(nil, policy.DefaultKey, "screening", []byte("live-token"), time.Unix(1_785_200_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokFile.Zero()
+	ir.PublishSourceTokens(sourcetokens.NewIndex([]*sourcetokens.File{tokFile}))
+
+	// Configure Reload to fail with a content defect so it enters recovery
+	// via the failure rule and clears ir.sourceTokens.
+	ir.SetBuildFunc(func(*crypto.Keyring) (*productruntime.Loaded, error) {
+		return &productruntime.Loaded{Selection: &bound}, fmt.Errorf("%w: injected defect", signertemplates.ErrGenerationValidation)
+	}, productruntime.ReloadEffects{})
+
+	audit := &rejectCountingAudit{signingAudit: &signingAuditLogger{log: server.auditLog}}
+	svc := server.newSigningServiceWithAudit(ir, audit)
+	svc.HoldsCosignerKey = func(string) bool { return true }
+	runner := svc.ExternalChecks.(*externalcheck.Runner)
+	baseTokens := runner.Tokens
+	var tokenLookups atomic.Int32
+	runner.Tokens = func(selector, sourceName string) (string, bool) {
+		tokenLookups.Add(1)
+		// Enter recovery via Reload right before reading the token, hitting
+		// the window where recovery clears sourceTokens while the external
+		// check holds its key use.
+		_, _ = ir.Reload()
+		return baseTokens(selector, sourceName)
+	}
+
+	rawGenHash, err := base64.StdEncoding.DecodeString(testnetGenesisB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var genHash types.Digest
+	copy(genHash[:], rawGenHash)
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:      types.Address{25},
+			Fee:         1000,
+			FirstValid:  1000,
+			LastValid:   2000,
+			GenesisID:   "testnet-v1.0",
+			GenesisHash: genHash,
+		},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: types.Address{26},
+			Amount:   1,
+		},
+	}
+	req := signerapi.ComponentRequest{
+		RequestID:     "cmp-recovery-token-race",
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		Targets: []signerapi.ComponentTarget{{
+			TargetIndex:  0,
+			Kind:         signerapi.ComponentTargetKindCosigner,
+			ComponentKey: componentKey,
+		}},
+	}
+	_, signErr := svc.SignComponentsWithContext(context.Background(), req, ir.SnapshotKeySession())
+	if tokenLookups.Load() != 1 {
+		t.Fatalf("token lookups = %d, want 1 (external check did not reach token lookup; err=%#v)", tokenLookups.Load(), signErr)
+	}
+	if signErr == nil || signErr.Kind != signersigning.ErrorLocked {
+		t.Fatalf("SignComponentsWithContext() error = %#v, want locked", signErr)
+	}
+	if !ir.IsRecovery() {
+		t.Fatalf("state = %v, want recovery", ir.GetState())
+	}
+	if audit.rejections.Load() != 0 {
+		t.Fatalf("cosigner policy rejection audits = %d, want 0", audit.rejections.Load())
 	}
 }
