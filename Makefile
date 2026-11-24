@@ -438,7 +438,7 @@ vet: compile-docassets
 testmode-check: compile-docassets
 	@echo "Compile-checking testmode-tagged sources..."
 	@go build -tags testmode $$(go list -tags testmode -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/aplane-algo/aplane/temp/')
-	@go vet -tags testmode ./cmd/apadmin/
+	@go vet -tags testmode ./cmd/apadmin/ ./lsig/rotatingtripleslhdsa/signerreg/
 	@echo "✓ testmode sources compile"
 
 # Fail if go.mod / go.sum are not tidy.

@@ -38,8 +38,12 @@ func Register() {
 
 // NewKeyPayload derives stage 0 from seed on the network named by
 // genesisHash and returns the key file payload and the account address. The
-// caller owns the payload and must zero it.
+// caller owns the payload and must zero it. Outside -tags testmode builds, it
+// refuses any hypertree height other than the shipped height (22).
 func NewKeyPayload(seed *rotatinghybrid.Seed, genesisHash [rotatinghybrid.GenesisHashSize]byte) (*keys.Payload, string, error) {
+	if err := checkGenerationHeight(rotatingkey.RotatingSlhdsaHeight); err != nil {
+		return nil, "", err
+	}
 	d, err := signerops.NewDeriver(seed, genesisHash)
 	if err != nil {
 		return nil, "", err

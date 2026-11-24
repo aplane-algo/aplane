@@ -745,7 +745,10 @@ The design record for this new implementation of an established contract:
    HT layers, three HT layers, Ed25519, Falcon, 9343 bytes, cost
    40890 + 41 times steps, ceiling 187260, ten transactions). The two
    heights are different accounts for the same seed. Released builds use
-   22; the constant is for evaluation, not an operator setting.
+   22 (pinned by an ordinary-build test); the constant is for evaluation, not
+   an operator setting. Generating keys at any height other than 22 is refused
+   outside `-tags testmode` builds, and a height-63 key type that graduates
+   after independent review ships under its own key-type identifier.
 7. **Evidence:** strict parser and salted/unsalted stock-assembler equality;
    pinned stage identities, network separation, per-component signature
    rejection, repeated stateless signing and secret erasure; library

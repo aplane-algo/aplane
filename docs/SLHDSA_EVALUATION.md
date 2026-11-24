@@ -18,7 +18,11 @@ correctly, and the rescaled shape is pinned by golden vectors of its own.
 The height is a build-time constant (`internal/rotatingkey.RotatingSlhdsaHeight`)
 with frozen artifacts for 22 and 63, so a build of the standard shape
 remains available for review and measurement; it is a different account
-for the same seed, not a setting.
+for the same seed, not a setting. `aplane.rotating-triple-slhdsa.v1` ships at
+height 22 (pinned by an ordinary-build test); generating keys at any other
+height, including height 63, is refused outside `-tags testmode` builds. If the
+standard height-63 shape graduates after independent review, it ships under its
+own key-type identifier rather than altering `.v1`.
 
 ## Why the hypertree was rescaled
 
