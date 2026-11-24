@@ -5,6 +5,8 @@ package backupadmin
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -280,4 +283,107 @@ func TestIdempotentRestoreEnteringRecoveryWhileWaitingForLockFollowsCommit(t *te
 	if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("idempotent RestoreBackup() in recovery with failing reload = %+v, want Success=false Code=%s", result, protocol.ResultCodeRecoveryBlocked)
 	}
+}
+
+// A committing restore that starts unlocked and enters recovery while waiting
+// for the store mutation lock must apply recovery-mode rules under the lock:
+// validate destination authority outside repaired credentials and omit the
+// rollback capability on the committed generation.
+func TestCommittedRestoreEnteringRecoveryWhileWaitingForLockUsesRecoveryRules(t *testing.T) {
+	t.Run("clean destination omits rollback capability", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		service := directRestoreTestService(paths, ir)
+
+		deps := &blockingMutationDeps{
+			Deps:    service.Deps,
+			entered: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+		blockedService := Service{Deps: deps, Runtime: ir}
+
+		var wg sync.WaitGroup
+		var result adminproto.RestoreBackupResult
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result = blockedService.RestoreBackup(adminproto.RestoreBackupRequest{
+				OperationID:      "commit-recovery-no-rollback",
+				ArchivePath:      archivePath,
+				ExportPassphrase: []byte("export-passphrase"),
+			})
+		}()
+
+		select {
+		case <-deps.entered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("RestoreBackup did not reach WithStoreMutation")
+		}
+		ir.EnterRecovery(errors.New("simulated recovery before lock acquisition"))
+		close(deps.release)
+		wg.Wait()
+
+		if !result.Success || result.GenerationID == "" {
+			t.Fatalf("RestoreBackup() = %+v, want committed success in recovery", result)
+		}
+		manifest, err := genstore.ReadManifest(resolveAtomicTestGeneration(t, paths))
+		if err != nil {
+			t.Fatalf("ReadManifest: %v", err)
+		}
+		if manifest.RollbackCapability != nil {
+			t.Fatalf("manifest.RollbackCapability = %+v, want nil for recovery-mode restore", manifest.RollbackCapability)
+		}
+		rollback := service.RollbackRestore(adminproto.RollbackRestoreRequest{
+			OperationID: "refuse-recovery-restore-rollback",
+		})
+		if rollback.Success || rollback.Code != protocol.ResultCodeRestoreRollbackRefused {
+			t.Fatalf("RollbackRestore() = %+v, want %s", rollback, protocol.ResultCodeRestoreRollbackRefused)
+		}
+	})
+
+	t.Run("damaged destination outside repaired credentials is refused", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		var reloads atomic.Int64
+		ir := testUnlockedBackupIdentityRuntime(t, paths, &reloads)
+		archivePath, _ := writeCredentialOnlyManagedArchive(t, paths)
+		service := directRestoreTestService(paths, ir)
+
+		deps := &blockingMutationDeps{
+			Deps:    service.Deps,
+			entered: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+		service.Deps = deps
+
+		var wg sync.WaitGroup
+		var result adminproto.RestoreBackupResult
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result = service.RestoreBackup(adminproto.RestoreBackupRequest{
+				OperationID:      "commit-recovery-damaged-dest",
+				ArchivePath:      archivePath,
+				ExportPassphrase: []byte("export-passphrase"),
+			})
+		}()
+
+		select {
+		case <-deps.entered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("RestoreBackup did not reach WithStoreMutation")
+		}
+		active := resolveAtomicTestGeneration(t, paths)
+		if err := os.WriteFile(filepath.Join(active.KeysDir(), "UNSELECTED.key"), []byte("corrupt"), 0o600); err != nil {
+			t.Fatalf("write unselected corrupt key: %v", err)
+		}
+		ir.EnterRecovery(errors.New("simulated recovery before lock acquisition"))
+		close(deps.release)
+		wg.Wait()
+
+		if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked {
+			t.Fatalf("RestoreBackup() with damaged destination in recovery = %+v, want Success=false Code=%s", result, protocol.ResultCodeRecoveryBlocked)
+		}
+	})
 }

@@ -549,14 +549,9 @@ func (ir *Runtime) FinishStoreMaintenance(
 		// ReloadWithPassphrase ran while maintenance held the signer locked, so
 		// afterReload skipped the unlocked-only notifications. Deliver them now
 		// if the signer is still unlocked (a lock that raced right after
-		// FinishMaintenance broadcasts its own locked state).
-		if ir.IsUnlocked() {
-			effects := ir.reloadEffectsSnapshot()
-			if effects.NotifyKeysChanged != nil {
-				effects.NotifyKeysChanged(ir.KeyCount())
-			}
-			ir.WakeStageWork()
-		}
+		// FinishMaintenance broadcasts its own locked state). Under the store
+		// mutation lock, ir.KeyCount() matches the ReloadWithPassphrase publish count.
+		ir.notifyUnlockedReload(ir.reloadEffectsSnapshot(), ir.KeyCount())
 		return true
 	}
 	ir.notifyLocked()

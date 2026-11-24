@@ -285,24 +285,46 @@ func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, pub
 	return s.signer.ImportClientKey(ctx, publicKey, label)
 }
 
+func restoreCommitted(result adminproto.RestoreBackupResult) bool {
+	return len(result.Restored) > 0 || len(result.PoliciesRestored) > 0 || len(result.SourceTokensRestored) > 0
+}
+
+// finishBackupRecoveryExit runs the post-commit recovery-exit rescan after a
+// restore or rollback succeeded while the signer was in recovery. When the
+// rescan leaves the signer in recovery, it returns ResultCodeRecoveryBlocked
+// and the formatted message; when a lock overtook the rescan, it leaves the
+// caller's success answer intact with the signer locked.
+func (s signerAdminServices) finishBackupRecoveryExit(
+	ir *productruntime.Runtime,
+	blockedMsg func(error) string,
+) (report *signertemplates.ReloadReport, code, errMsg string) {
+	report, err := s.exitRecoveryIfReconciled(ir)
+	switch {
+	case err == nil:
+		return report, "", ""
+	case ir.IsRecovery():
+		return nil, protocol.ResultCodeRecoveryBlocked, blockedMsg(err)
+	default:
+		return nil, "", ""
+	}
+}
+
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	ir := s.Runtime
 	result := s.Service.RestoreBackup(req)
 	if result.Success && ir.IsRecovery() {
-		report, err := s.daemon.exitRecoveryIfReconciled(ir)
-		switch {
-		case err == nil:
-			if report != nil {
-				result.KeyCount = report.KeyCount
+		report, code, msg := s.daemon.finishBackupRecoveryExit(ir, func(err error) string {
+			if restoreCommitted(result) {
+				return fmt.Sprintf("restore committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
 			}
-		case ir.IsRecovery():
+			return fmt.Sprintf("restore made no changes, but signer stayed in recovery mode: %v", err)
+		})
+		if code != "" {
 			result.Success = false
-			result.Code = protocol.ResultCodeRecoveryBlocked
-			if result.GenerationID != "" {
-				result.Error = fmt.Sprintf("restore committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
-			} else {
-				result.Error = fmt.Sprintf("restore completed, but signer stayed in recovery mode: %v", err)
-			}
+			result.Code = code
+			result.Error = msg
+		} else if report != nil {
+			result.KeyCount = report.KeyCount
 		}
 	}
 	s.daemon.rearmWatcherAfterGenerationFlip(ir)
@@ -315,16 +337,15 @@ func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequ
 	if result.Success && ir.IsRecovery() {
 		// A rollback that runs in recovery publishes recovery's view, with no
 		// keys; the reconcile that lifts recovery publishes them.
-		report, err := s.daemon.exitRecoveryIfReconciled(ir)
-		switch {
-		case err == nil:
-			if report != nil {
-				result.KeyCount = report.KeyCount
-			}
-		case ir.IsRecovery():
+		report, code, msg := s.daemon.finishBackupRecoveryExit(ir, func(err error) string {
+			return fmt.Sprintf("rollback committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
+		})
+		if code != "" {
 			result.Success = false
-			result.Code = protocol.ResultCodeRecoveryBlocked
-			result.Error = fmt.Sprintf("rollback committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
+			result.Code = code
+			result.Error = msg
+		} else if report != nil {
+			result.KeyCount = report.KeyCount
 		}
 	}
 	s.daemon.rearmWatcherAfterGenerationFlip(ir)
@@ -396,9 +417,9 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 			return err
 		}
 		if !explicit && !ir.IsRecovery() {
-			// A concurrent unlock already reconciled and promoted the signer
-			// out of recovery before this rescan acquired the lock; do not run
-			// a non-explicit rescan on an unlocked signer.
+			// A concurrent unlock or explicit reconcile already promoted the
+			// signer out of recovery before this rescan acquired the lock; do
+			// not run a non-explicit rescan on an unlocked signer.
 			report = &signertemplates.ReloadReport{KeyCount: ir.KeyCount()}
 			return nil
 		}

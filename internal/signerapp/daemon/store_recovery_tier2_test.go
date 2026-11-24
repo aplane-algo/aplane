@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,7 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 )
 
@@ -224,6 +227,54 @@ func setupGenerationalBackupFixture(t *testing.T, deleteAfterBackup bool) (*Sign
 	return server, filepath.Base(archivePath), cleanup
 }
 
+type signallingBackupDeps struct {
+	backupadmin.Deps
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (d *signallingBackupDeps) WithStoreMutation(fn func() error) error {
+	d.once.Do(func() { close(d.waiting) })
+	return d.Deps.WithStoreMutation(fn)
+}
+
+func backupServicesWithLockSignal(server *Signer) (signerBackupServices, <-chan struct{}) {
+	svc := server.adminServices().backupServices()
+	waiting := make(chan struct{})
+	svc.Deps = &signallingBackupDeps{Deps: svc.Deps, waiting: waiting}
+	return svc, waiting
+}
+
+func waitForSignal(t *testing.T, ch <-chan struct{}, label string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timed out waiting for %s", label)
+	}
+}
+
+func wireLockOnSecondBuild(server *Signer) *sync.WaitGroup {
+	ir := server.productRuntime()
+	opts := testProductBuildOptions(server)
+	var builds atomic.Int32
+	var lockDone sync.WaitGroup
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*productruntime.Loaded, error) {
+		if builds.Add(1) == 2 {
+			lockDone.Add(1)
+			go func() {
+				defer lockDone.Done()
+				ir.Lock()
+			}()
+			for ir.GetState() != signerruntime.SignerStateLocked {
+				time.Sleep(time.Millisecond)
+			}
+		}
+		return signerstartup.Build(ir, opts, kr)
+	}, productruntime.ReloadEffects{})
+	return &lockDone
+}
+
 // A restore started while unlocked can meet recovery entered while it waits
 // for the store mutation lock. Sampling recovery inside the lock and deciding
 // recovery exit from post-call state ensures the restore exits recovery (or
@@ -246,20 +297,16 @@ func TestRestoreBackupEnteringRecoveryWhileWaitingForStoreLock(t *testing.T) {
 			}
 
 			release := holdStoreMutation(t, server)
-			started := make(chan struct{})
+			svc, waiting := backupServicesWithLockSignal(server)
 			resultCh := make(chan adminproto.RestoreBackupResult, 1)
 			go func() {
-				close(started)
-				resultCh <- server.adminServices().backupServices().RestoreBackup(adminproto.RestoreBackupRequest{
+				resultCh <- svc.RestoreBackup(adminproto.RestoreBackupRequest{
 					OperationID:      "restore-lock-race-" + tc.name,
 					ArchivePath:      archiveName,
 					ExportPassphrase: []byte("export-passphrase"),
 				})
 			}()
-			<-started
-			// Wait briefly so RestoreBackup is past pre-lock checks and parked
-			// on the store mutation lock while still unlocked.
-			time.Sleep(30 * time.Millisecond)
+			waitForSignal(t, waiting, "RestoreBackup to reach store mutation lock")
 
 			ir.EnterRecovery(errors.New("simulated watcher defect before lock release"))
 			if !ir.IsRecovery() {
@@ -285,48 +332,96 @@ func TestRestoreBackupEnteringRecoveryWhileWaitingForStoreLock(t *testing.T) {
 		})
 	}
 
-	t.Run("failed post-restore rescan reports recovery_blocked", func(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		deleteAfterBackup bool
+		wantSubstr        string
+		forbidSubstr      string
+	}{
+		{
+			name:              "failed post-restore rescan after committed restore reports recovery_blocked",
+			deleteAfterBackup: true,
+			wantSubstr:        "restore committed as generation ",
+		},
+		{
+			name:              "failed post-restore rescan after idempotent restore does not claim a commit",
+			deleteAfterBackup: false,
+			wantSubstr:        "restore made no changes, but signer stayed in recovery mode",
+			forbidSubstr:      "committed as generation",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, archiveName, cleanup := setupGenerationalBackupFixture(t, tc.deleteAfterBackup)
+			defer cleanup()
+			ir := server.productRuntime()
+
+			var builds atomic.Int32
+			wireBuildWith(server, func(bool) error {
+				// Build 1 is FollowCommit inside RestoreBackup; build 2 is
+				// exitRecoveryIfReconciled.
+				if builds.Add(1) >= 2 {
+					return errors.New("simulated post-restore rescan failure")
+				}
+				return nil
+			})
+
+			release := holdStoreMutation(t, server)
+			svc, waiting := backupServicesWithLockSignal(server)
+			resultCh := make(chan adminproto.RestoreBackupResult, 1)
+			go func() {
+				resultCh <- svc.RestoreBackup(adminproto.RestoreBackupRequest{
+					OperationID:      "restore-stays-in-recovery-" + tc.name,
+					ArchivePath:      archiveName,
+					ExportPassphrase: []byte("export-passphrase"),
+				})
+			}()
+			waitForSignal(t, waiting, "RestoreBackup to reach store mutation lock")
+			ir.EnterRecovery(errors.New("simulated recovery before lock release"))
+			release()
+
+			var result adminproto.RestoreBackupResult
+			select {
+			case result = <-resultCh:
+			case <-time.After(10 * time.Second):
+				t.Fatal("RestoreBackup did not finish")
+			}
+			if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked {
+				t.Fatalf("RestoreBackup() = %+v, want Success=false Code=%s", result, protocol.ResultCodeRecoveryBlocked)
+			}
+			if !strings.Contains(result.Error, tc.wantSubstr) {
+				t.Fatalf("RestoreBackup() error = %q, want substring %q", result.Error, tc.wantSubstr)
+			}
+			if tc.deleteAfterBackup && !strings.Contains(result.Error, result.GenerationID) {
+				t.Fatalf("RestoreBackup() error = %q, want generation ID %q", result.Error, result.GenerationID)
+			}
+			if tc.forbidSubstr != "" && strings.Contains(result.Error, tc.forbidSubstr) {
+				t.Fatalf("RestoreBackup() error = %q, must not contain %q", result.Error, tc.forbidSubstr)
+			}
+			if !ir.IsRecovery() {
+				t.Fatalf("state = %s, want recovery", ir.GetState())
+			}
+		})
+	}
+
+	t.Run("lock overtaking post-restore rescan keeps success and locked state", func(t *testing.T) {
 		server, archiveName, cleanup := setupGenerationalBackupFixture(t, true)
 		defer cleanup()
 		ir := server.productRuntime()
+		ir.EnterRecovery(errors.New("simulated recovery before restore"))
+		lockDone := wireLockOnSecondBuild(server)
 
-		var builds atomic.Int32
-		wireBuildWith(server, func(bool) error {
-			// Build 1 is FollowCommit inside RestoreBackup; build 2 is
-			// exitRecoveryIfReconciled.
-			if builds.Add(1) >= 2 {
-				return errors.New("simulated post-restore rescan failure")
-			}
-			return nil
+		result := server.adminServices().backupServices().RestoreBackup(adminproto.RestoreBackupRequest{
+			OperationID:      "restore-rescan-overtaken-by-lock",
+			ArchivePath:      archiveName,
+			ExportPassphrase: []byte("export-passphrase"),
 		})
+		lockDone.Wait()
 
-		release := holdStoreMutation(t, server)
-		started := make(chan struct{})
-		resultCh := make(chan adminproto.RestoreBackupResult, 1)
-		go func() {
-			close(started)
-			resultCh <- server.adminServices().backupServices().RestoreBackup(adminproto.RestoreBackupRequest{
-				OperationID:      "restore-stays-in-recovery",
-				ArchivePath:      archiveName,
-				ExportPassphrase: []byte("export-passphrase"),
-			})
-		}()
-		<-started
-		time.Sleep(30 * time.Millisecond)
-		ir.EnterRecovery(errors.New("simulated recovery before lock release"))
-		release()
-
-		var result adminproto.RestoreBackupResult
-		select {
-		case result = <-resultCh:
-		case <-time.After(10 * time.Second):
-			t.Fatal("RestoreBackup did not finish")
+		if !result.Success || result.Code != "" {
+			t.Fatalf("RestoreBackup() overtaken by lock during rescan = %+v, want Success=true Code=\"\"", result)
 		}
-		if result.Success || result.Code != protocol.ResultCodeRecoveryBlocked {
-			t.Fatalf("RestoreBackup() = %+v, want Success=false Code=%s", result, protocol.ResultCodeRecoveryBlocked)
-		}
-		if !ir.IsRecovery() {
-			t.Fatalf("state = %s, want recovery", ir.GetState())
+		if ir.GetState() != signerruntime.SignerStateLocked {
+			t.Fatalf("state = %s, want locked", ir.GetState())
 		}
 	})
 }
@@ -356,16 +451,14 @@ func TestRollbackRestoreEnteringRecoveryWhileWaitingForStoreLock(t *testing.T) {
 		ir := server.productRuntime()
 
 		release := holdStoreMutation(t, server)
-		started := make(chan struct{})
+		svc, waiting := backupServicesWithLockSignal(server)
 		resultCh := make(chan adminproto.RollbackRestoreResult, 1)
 		go func() {
-			close(started)
-			resultCh <- server.adminServices().backupServices().RollbackRestore(adminproto.RollbackRestoreRequest{
+			resultCh <- svc.RollbackRestore(adminproto.RollbackRestoreRequest{
 				OperationID: "rollback-lock-race",
 			})
 		}()
-		<-started
-		time.Sleep(30 * time.Millisecond)
+		waitForSignal(t, waiting, "RollbackRestore to reach store mutation lock")
 		ir.EnterRecovery(errors.New("simulated watcher defect before rollback lock release"))
 		release()
 
@@ -397,16 +490,14 @@ func TestRollbackRestoreEnteringRecoveryWhileWaitingForStoreLock(t *testing.T) {
 		})
 
 		release := holdStoreMutation(t, server)
-		started := make(chan struct{})
+		svc, waiting := backupServicesWithLockSignal(server)
 		resultCh := make(chan adminproto.RollbackRestoreResult, 1)
 		go func() {
-			close(started)
-			resultCh <- server.adminServices().backupServices().RollbackRestore(adminproto.RollbackRestoreRequest{
+			resultCh <- svc.RollbackRestore(adminproto.RollbackRestoreRequest{
 				OperationID: "rollback-stays-in-recovery",
 			})
 		}()
-		<-started
-		time.Sleep(30 * time.Millisecond)
+		waitForSignal(t, waiting, "RollbackRestore to reach store mutation lock")
 		ir.EnterRecovery(errors.New("simulated recovery before rollback lock release"))
 		release()
 
@@ -421,6 +512,26 @@ func TestRollbackRestoreEnteringRecoveryWhileWaitingForStoreLock(t *testing.T) {
 		}
 		if !ir.IsRecovery() {
 			t.Fatalf("state = %s, want recovery", ir.GetState())
+		}
+	})
+
+	t.Run("lock overtaking post-rollback rescan keeps success and locked state", func(t *testing.T) {
+		server, cleanup := setupRestored(t)
+		defer cleanup()
+		ir := server.productRuntime()
+		ir.EnterRecovery(errors.New("simulated recovery before rollback"))
+		lockDone := wireLockOnSecondBuild(server)
+
+		result := server.adminServices().backupServices().RollbackRestore(adminproto.RollbackRestoreRequest{
+			OperationID: "rollback-rescan-overtaken-by-lock",
+		})
+		lockDone.Wait()
+
+		if !result.Success || result.Code != "" {
+			t.Fatalf("RollbackRestore() overtaken by lock during rescan = %+v, want Success=true Code=\"\"", result)
+		}
+		if ir.GetState() != signerruntime.SignerStateLocked {
+			t.Fatalf("state = %s, want locked", ir.GetState())
 		}
 	})
 }

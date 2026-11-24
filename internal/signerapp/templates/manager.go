@@ -495,12 +495,12 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 				continue
 			}
 			// Disabled YAML templates are skipped by registration, so their
-			// content is otherwise never checked. Run the same decrypt,
-			// Prepare, and recorded-fingerprint validation registration applies
-			// to enabled ones — without registering the provider. Enabled
-			// templates were just loaded by registration.
+			// content is otherwise never checked. Run the same decrypt and
+			// Prepare validation registration applies to enabled ones —
+			// without registering the provider. Enabled templates were just
+			// loaded by registration.
 			if rec.State == keytypestate.StateDisabled {
-				if err := validateTemplateContent(dir, name, rec, kr, registrarsBySource[rec.Source]); err != nil {
+				if err := validateTemplateContent(dir, name, keyType, kr, registrarsBySource[rec.Source]); err != nil {
 					defects = append(defects, NamespaceDefect{Text: fmt.Sprintf("disabled template %q failed validation: %v", name, err), Entry: name})
 				}
 			}
@@ -523,11 +523,9 @@ func sweepKeyTypeNamespace(active storepaths.GenPaths, kr *crypto.Keyring, recor
 	return defects, disabledOrphaned
 }
 
-// validateTemplateContent decrypts a template file, runs its registrar's
-// Prepare validation without registering anything, and verifies its
-// compatibility fingerprint against rec.Fingerprint using the same rule
-// enabled templates use.
-func validateTemplateContent(dir, name string, rec keytypestate.Record, kr *crypto.Keyring, registrar TemplateRegistrar) error {
+// validateTemplateContent decrypts a template file and runs its registrar's
+// Prepare validation without registering anything.
+func validateTemplateContent(dir, name, keyType string, kr *crypto.Keyring, registrar TemplateRegistrar) error {
 	data, err := templatestore.LoadTemplateFromPath(filepath.Join(dir, name), kr)
 	if err != nil {
 		return err
@@ -535,15 +533,8 @@ func validateTemplateContent(dir, name string, rec keytypestate.Record, kr *cryp
 	if registrar.Prepare == nil {
 		return fmt.Errorf("no registrar for source")
 	}
-	prepared, err := registrar.Prepare(rec.KeyType, data)
-	if err != nil {
+	if _, err := registrar.Prepare(keyType, data); err != nil {
 		return err
-	}
-	switch keytypestate.CompareForReload(rec, prepared.Fingerprint, "") {
-	case keytypestate.OutcomeExternalEdit:
-		return fmt.Errorf("template fingerprint %q does not match recorded fingerprint %q", prepared.Fingerprint, rec.Fingerprint)
-	case keytypestate.OutcomeOrphanedRecord:
-		return fmt.Errorf("template produced no compatibility fingerprint")
 	}
 	return nil
 }

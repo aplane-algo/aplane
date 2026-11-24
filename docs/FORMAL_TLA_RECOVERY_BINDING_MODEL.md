@@ -165,8 +165,8 @@ requires exactly that `RB1_MaintenanceFollowsRoot` violation.
   recovery until `daemon/admin_services.go` runs `exitRecoveryIfReconciled`
   based on post-call state (`ir.IsRecovery()`), reporting `recovery_blocked`
   if that rescan still leaves the signer in recovery and skipping the
-  non-explicit rescan under the lock if a concurrent unlock already promoted
-  out of recovery. The model over-approximates by letting any successful
+  non-explicit rescan under the lock if a concurrent unlock or explicit
+  reconcile already promoted out of recovery. The model over-approximates by letting any successful
   reload leave recovery and does not model the separate post-restore/rollback
   `exitRecoveryIfReconciled` rescan (a model-extension candidate); every
   invariant it checks still holds, and the code's path is one of the runs the

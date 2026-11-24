@@ -326,7 +326,7 @@ func (m Model) handleRefusedBackupUndo(result protocol.RollbackRestoreResultMess
 		return m, nil, false
 	}
 	m.backups.undoPending = false
-	if result.Code == protocol.ResultCodeRestoreRollbackFailed || m.backupsRecovery() {
+	if result.Code == protocol.ResultCodeRestoreRollbackFailed || result.Code == protocol.ResultCodeRecoveryBlocked || m.backupsRecovery() {
 		return m, nil, false
 	}
 	m.setBackupsStatus("Undo refused: "+backupResultText(result.Error, "there is no restore to undo"), true)

@@ -414,6 +414,7 @@ func (m Model) handleRollbackRestoreResultMsg(msg RollbackRestoreResultMsg) (tea
 		if next, cmd, ok := m.handleRefusedBackupUndo(msg.Result); ok {
 			return next, cmd
 		}
+		m.backups.undoPending = false
 		if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed || msg.Result.Code == protocol.ResultCodeRecoveryBlocked {
 			m.signerState = signerRuntimeRecovery
 		}
