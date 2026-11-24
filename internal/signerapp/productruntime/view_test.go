@@ -810,3 +810,49 @@ func TestReconcileOvertakenByLockDuringStepReturnsStateChanged(t *testing.T) {
 		}
 	}
 }
+
+// On a failing reconcile build, Reconcile maps to ErrReconcileStateChanged
+// only when a lock overtook the reconcile; an ordinary build failure stays a
+// credential-reload error with the signer in recovery.
+func TestReconcileBuildFailureMapsOnlyLockedToStateChanged(t *testing.T) {
+	t.Run("lock during failing build returns ErrReconcileStateChanged", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		var lockDone sync.WaitGroup
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			lockDone.Add(1)
+			go func() {
+				defer lockDone.Done()
+				ir.Lock()
+			}()
+			for ir.GetState() != signerruntime.SignerStateLocked {
+				time.Sleep(time.Millisecond)
+			}
+			return &Loaded{Selection: &bound}, errors.New("build failed after lock")
+		}, ReloadEffects{})
+
+		_, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true)
+		lockDone.Wait()
+		if !errors.Is(err, ErrReconcileStateChanged) {
+			t.Fatalf("Reconcile() error = %v, want %v", err, ErrReconcileStateChanged)
+		}
+		if ir.GetState() != signerruntime.SignerStateLocked {
+			t.Fatalf("state = %v, want locked", ir.GetState())
+		}
+	})
+
+	t.Run("ordinary failing build stays recovery error", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		buildErr := errors.New("injected build failure")
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			return &Loaded{Selection: &bound}, buildErr
+		}, ReloadEffects{})
+
+		_, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true)
+		if err == nil || errors.Is(err, ErrReconcileStateChanged) || !errors.Is(err, buildErr) {
+			t.Fatalf("Reconcile() error = %v, want wrapped %v (not ErrReconcileStateChanged)", err, buildErr)
+		}
+		if !ir.IsRecovery() {
+			t.Fatalf("state = %v, want recovery", ir.GetState())
+		}
+	})
+}

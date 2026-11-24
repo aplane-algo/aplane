@@ -240,13 +240,40 @@ type rejectCountingAudit struct {
 	rejections atomic.Int32
 }
 
-func (a *rejectCountingAudit) LogSignRejectedRecord(signersigning.SignedRecord, string) {
+func (a *rejectCountingAudit) LogSignRejected(authAddress, txnSender, reason string) {
 	a.rejections.Add(1)
+	if a.signingAudit != nil {
+		a.signingAudit.LogSignRejected(authAddress, txnSender, reason)
+	}
 }
 
-// An in-flight cosigner external check whose token lookup races with a reload
+func (a *rejectCountingAudit) LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID string) {
+	a.rejections.Add(1)
+	if l, ok := a.signingAudit.(signersigning.AuditRejectPolicyRuleLogger); ok && l != nil {
+		l.LogSignRejectedWithPolicyRule(authAddress, txnSender, reason, policyRuleID)
+	}
+}
+
+func (a *rejectCountingAudit) LogCosignerComponentRejected(authAddress, txnSender, reason, policyRuleID string) {
+	a.rejections.Add(1)
+	if l, ok := a.signingAudit.(signersigning.AuditCosignerRejectLogger); ok && l != nil {
+		l.LogCosignerComponentRejected(authAddress, txnSender, reason, policyRuleID)
+	}
+}
+
+func (a *rejectCountingAudit) LogSignRejectedRecord(record signersigning.SignedRecord, reason string) {
+	a.rejections.Add(1)
+	if a.signingAudit != nil {
+		a.signingAudit.LogSignRejectedRecord(record, reason)
+	}
+}
+
+// End-to-end check wiring productruntime.Runtime to signing.Service: an
+// in-flight cosigner external check whose token lookup races with a reload
 // entering recovery (clearing the source token index) must answer locked and
-// record no cosigner policy rejection.
+// record no cosigner policy rejection. The signing unit test
+// TestCosignerExternalChecksTokenClearedBySessionEndAnswersLocked is the
+// deterministic pin for the async AfterFunc cancellation window.
 func TestCosignerExternalCheckDuringRecoveryReloadAnswersLocked(t *testing.T) {
 	server := characterizedSigner(t)
 	ir := server.productRuntime()

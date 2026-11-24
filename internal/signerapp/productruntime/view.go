@@ -80,11 +80,9 @@ func (ir *Runtime) SetBuildFunc(fn BuildFunc, effects ReloadEffects) {
 	ir.passphraseLock.Unlock()
 }
 
-// ErrReconcileStateChanged reports a reconcile that published cleanly but
-// that a lock overtook: one begun in recovery found it could not promote,
-// and one begun unlocked found the signer no longer unlocked. The lock
-// stands, and no recovery was entered.
-var ErrReconcileStateChanged = errors.New("runtime state changed while store reconciliation completed")
+// ErrReconcileStateChanged reports that a lock overtook the reconcile
+// (during its store step, build, or promotion); the lock stands.
+var ErrReconcileStateChanged = errors.New("a lock overtook store reconciliation")
 
 // ErrEnteredRecovery marks a reload's failure that ended in recovery's view:
 // a role conflict, a store in doubt, a root that moved or does not
@@ -181,27 +179,22 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // view of what the root selects, before the lock is released (RB2). The
 // rescan after a restore passes false: it starts in recovery and stays there
 // on a failure. A lock that overtakes the reconcile during its step, build, or
-// promotion is ErrReconcileStateChanged and enters no recovery: the lock
-// stands.
+// promotion returns ErrReconcileStateChanged; the lock stands.
 func (ir *Runtime) Reconcile(step func(*crypto.Keyring) error, explicit bool) (*signertemplates.ReloadReport, error) {
 	// Under the store mutation lock the state can only move to locked.
-	stateBefore := ir.GetState()
-	fromRecovery := stateBefore == signerruntime.SignerStateRecovery
+	fromRecovery := ir.IsRecovery()
 	if err := ir.WithKeyring(step); err != nil {
 		if explicit {
 			_, _ = ir.reloadView(reloadMode{inDoubt: true, cause: err})
 		}
-		if stateBefore != signerruntime.SignerStateLocked && ir.GetState() == signerruntime.SignerStateLocked {
+		if ir.GetState() == signerruntime.SignerStateLocked {
 			return nil, ErrReconcileStateChanged
 		}
 		return nil, err
 	}
 	report, err := ir.reloadView(reloadMode{reconcile: true, fromRecovery: fromRecovery, failureInDoubt: explicit})
 	if err != nil {
-		if errors.Is(err, ErrReconcileStateChanged) {
-			return report, err
-		}
-		if stateBefore != signerruntime.SignerStateLocked && (ir.GetState() == signerruntime.SignerStateLocked || errors.Is(err, keystore.ErrStoreLocked)) {
+		if errors.Is(err, ErrReconcileStateChanged) || ir.GetState() == signerruntime.SignerStateLocked {
 			return report, ErrReconcileStateChanged
 		}
 		return report, fmt.Errorf("current generation failed credential reload: %w", err)
@@ -416,7 +409,10 @@ type recoveryView struct {
 
 // enterRecoveryViewLocked enters recovery — moving the state and ending the
 // session's key uses and approvals before installing view (which clears the
-// source token index). A locked signer stays locked and the view is not
+// source token index). Ending key uses before the token clear is defence in
+// depth: context.AfterFunc delivers cancellation asynchronously, so the
+// external-check consumer's session check decides the locked answer
+// deterministically. A locked signer stays locked and the view is not
 // installed. It reports whether it entered, and returns the keyring the
 // install replaced.
 func (ir *Runtime) enterRecoveryViewLocked(kr *crypto.Keyring, view recoveryView) (bool, keystore.DetachedKeyring) {

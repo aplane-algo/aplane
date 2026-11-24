@@ -152,9 +152,9 @@ waits for it; KU2 and KU3 cover that case.
   moves, and the entry immediately cancels the key uses that session handed
   out and withdraws its pending approvals (`cancelKeyUses` and
   `endSignRequests` right after `SetRecovery` moves the state in
-  `reloadViewLocked` and `enterRecoveryViewLocked` — before an in-doubt build
-  runs and before `installRecoveryViewLocked` clears the source token index), without waiting for them; an attempt's own entry
-  begins locked or in
+  `reloadViewLocked` and `enterRecoveryViewLocked`, before an in-doubt build
+  runs and before `installRecoveryViewLocked` clears the source token index),
+  without waiting for them; an attempt's own entry begins locked or in
   recovery, with no session left to end. The session generation is a
   counter of its own, apart from the lock generation the unlock's first
   fence compares, so an unlock that overlaps an entry into recovery does not
