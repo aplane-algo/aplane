@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -624,4 +625,234 @@ func TestAnUnlockThatLosesToALockLeavesNothingButItsPolicy(t *testing.T) {
 	if got := registry.registered(); len(got) != 1 {
 		t.Fatalf("the losing unlock registered %v, want its one batch", got)
 	}
+}
+
+// An in-doubt recovery entry (uncertain commit or explicit reconcile whose
+// store step failed) must cancel active key uses and withdraw pending
+// approvals when the state moves to recovery, before the recovery build runs.
+func TestInDoubtRecoveryCancelsKeyUsesAndApprovalsBeforeItsBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(ir *Runtime)
+	}{
+		{
+			name: "uncertain commit",
+			run: func(ir *Runtime) {
+				_, _ = ir.FollowCommit(genstore.Uncertain)
+			},
+		},
+		{
+			name: "explicit reconcile failing step",
+			run: func(ir *Runtime) {
+				_, _ = ir.Reconcile(func(*crypto.Keyring) error { return errors.New("step failed") }, true)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ir, bound, _ := viewInService(t)
+			shown := make(chan struct{}, 1)
+			ir.SetApprovalCoordinator(signerapproval.New(
+				func() bool { return true },
+				func(*signerapproval.SignRequest) bool { shown <- struct{}{}; return true },
+				func(*signerapproval.SignRequestCanceled) bool { return true },
+			))
+			useCtx, releaseUse := ir.KeyUseContext(context.Background())
+			defer releaseUse()
+			if useCtx.Err() != nil {
+				t.Fatalf("setup: key use already canceled: %v", useCtx.Err())
+			}
+
+			reqCtx, finishReq := ir.BeginSigningRequest(context.Background(), "sign-in-doubt")
+			defer finishReq()
+			approvalErrCh := make(chan error, 1)
+			go func() {
+				_, err := ir.RequestSigningApprovalPrompt(reqCtx, signerapproval.Prompt{
+					RequestID: "sign-in-doubt", Address: "A", TxnSender: "A", Description: "d",
+				}, time.Minute)
+				approvalErrCh <- err
+			}()
+			<-shown
+
+			buildEntered := make(chan struct{})
+			releaseBuild := make(chan struct{})
+			ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+				close(buildEntered)
+				<-releaseBuild
+				return &Loaded{Selection: &bound}, nil
+			}, ReloadEffects{})
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				tc.run(ir)
+			}()
+
+			select {
+			case <-buildEntered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("in-doubt build did not start")
+			}
+
+			// While the build is still blocked, both the held key use and the
+			// pending approval must already be ended.
+			select {
+			case <-useCtx.Done():
+			case <-time.After(time.Second):
+				close(releaseBuild)
+				t.Fatal("key use stayed live while in-doubt build ran")
+			}
+			select {
+			case err := <-approvalErrCh:
+				if !errors.Is(err, signerapproval.ErrSessionEnded) {
+					close(releaseBuild)
+					t.Fatalf("approval error = %v, want ErrSessionEnded", err)
+				}
+			case <-time.After(time.Second):
+				close(releaseBuild)
+				t.Fatal("pending approval stayed up while in-doubt build ran")
+			}
+
+			close(releaseBuild)
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("in-doubt recovery did not finish")
+			}
+			if !ir.IsRecovery() {
+				t.Fatalf("state = %v, want recovery", ir.GetState())
+			}
+		})
+	}
+}
+
+// A lock that lands during an in-doubt build stands: afterReload must not
+// invoke the recovery hook, and the signer ends locked with no keyring, no
+// keys, and no source token index.
+func TestLockDuringInDoubtBuildSuppressesRecoveryHookAndLeavesSignerLocked(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	told := false
+	ir.SetReloadRecoveryHook(func(error) { told = true })
+
+	var lockDone sync.WaitGroup
+	ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+		lockDone.Add(1)
+		go func() {
+			defer lockDone.Done()
+			ir.Lock()
+		}()
+		for ir.GetState() != signerruntime.SignerStateLocked {
+			time.Sleep(time.Millisecond)
+		}
+		return &Loaded{
+			Selection:      &bound,
+			PolicyVerified: true,
+			Policy:         &policyruntime.NodePolicy{},
+			Tokens:         viewTokens(t, "tok-indoubt"),
+			Contents:       viewKeys(bound),
+		}, nil
+	}, ReloadEffects{})
+
+	_, _ = ir.FollowCommit(genstore.Uncertain)
+	lockDone.Wait()
+
+	if told {
+		t.Fatal("recovery hook fired even though a lock overtook the in-doubt build")
+	}
+	if ir.GetState() != signerruntime.SignerStateLocked || ir.KeyCount() != 0 {
+		t.Fatalf("state %v with %d key(s), want locked with 0", ir.GetState(), ir.KeyCount())
+	}
+	if err := ir.WithKeyring(func(*crypto.Keyring) error { return nil }); err == nil {
+		t.Fatal("locked signer still holds a keyring")
+	}
+	if _, ok := ir.sourceTokens.TokenFor(sourcetokens.DefaultSelector, "screening"); ok {
+		t.Fatal("locked signer still holds a source token index")
+	}
+}
+
+// A lock that overtakes Reconcile during its store step — whether the step
+// succeeds or fails, and whether the reconcile began unlocked or in recovery
+// — must return ErrReconcileStateChanged with the signer locked.
+func TestReconcileOvertakenByLockDuringStepReturnsStateChanged(t *testing.T) {
+	for _, startRecovery := range []bool{false, true} {
+		for _, stepErr := range []error{nil, errors.New("step failed after lock")} {
+			for _, explicit := range []bool{true, false} {
+				if !startRecovery && !explicit {
+					continue
+				}
+				name := fmt.Sprintf("fromRecovery=%v/stepErr=%v/explicit=%v", startRecovery, stepErr != nil, explicit)
+				t.Run(name, func(t *testing.T) {
+					ir, _, _ := viewInService(t)
+					if startRecovery {
+						ir.EnterRecovery(nil)
+					}
+					var lockDone sync.WaitGroup
+					_, err := ir.Reconcile(func(*crypto.Keyring) error {
+						lockDone.Add(1)
+						go func() {
+							defer lockDone.Done()
+							ir.Lock()
+						}()
+						for ir.GetState() != signerruntime.SignerStateLocked {
+							time.Sleep(time.Millisecond)
+						}
+						return stepErr
+					}, explicit)
+					lockDone.Wait()
+
+					if !errors.Is(err, ErrReconcileStateChanged) {
+						t.Fatalf("Reconcile() error = %v, want %v", err, ErrReconcileStateChanged)
+					}
+					if ir.GetState() != signerruntime.SignerStateLocked {
+						t.Fatalf("state = %v, want locked", ir.GetState())
+					}
+				})
+			}
+		}
+	}
+}
+
+// On a failing reconcile build, Reconcile maps to ErrReconcileStateChanged
+// only when a lock overtook the reconcile; an ordinary build failure stays a
+// credential-reload error with the signer in recovery.
+func TestReconcileBuildFailureMapsOnlyLockedToStateChanged(t *testing.T) {
+	t.Run("lock during failing build returns ErrReconcileStateChanged", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		var lockDone sync.WaitGroup
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			lockDone.Add(1)
+			go func() {
+				defer lockDone.Done()
+				ir.Lock()
+			}()
+			for ir.GetState() != signerruntime.SignerStateLocked {
+				time.Sleep(time.Millisecond)
+			}
+			return &Loaded{Selection: &bound}, errors.New("build failed after lock")
+		}, ReloadEffects{})
+
+		_, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true)
+		lockDone.Wait()
+		if !errors.Is(err, ErrReconcileStateChanged) {
+			t.Fatalf("Reconcile() error = %v, want %v", err, ErrReconcileStateChanged)
+		}
+		if ir.GetState() != signerruntime.SignerStateLocked {
+			t.Fatalf("state = %v, want locked", ir.GetState())
+		}
+	})
+
+	t.Run("ordinary failing build stays recovery error", func(t *testing.T) {
+		ir, bound, _ := viewInService(t)
+		buildErr := errors.New("injected build failure")
+		ir.SetBuildFunc(func(*crypto.Keyring) (*Loaded, error) {
+			return &Loaded{Selection: &bound}, buildErr
+		}, ReloadEffects{})
+
+		_, err := ir.Reconcile(func(*crypto.Keyring) error { return nil }, true)
+		if err == nil || errors.Is(err, ErrReconcileStateChanged) || !errors.Is(err, buildErr) {
+			t.Fatalf("Reconcile() error = %v, want wrapped %v (not ErrReconcileStateChanged)", err, buildErr)
+		}
+		if !ir.IsRecovery() {
+			t.Fatalf("state = %v, want recovery", ir.GetState())
+		}
+	})
 }

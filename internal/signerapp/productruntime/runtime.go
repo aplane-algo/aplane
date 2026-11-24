@@ -642,6 +642,10 @@ func (ir *Runtime) unlockHeld(passphrase []byte, reconcile func(*crypto.Keyring)
 		return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
 	}
 	if err := reconcile(kr); err != nil {
+		if ir.lockRuntime.LostToLock(attempt) {
+			kr.Zero()
+			return UnlockOutcome{}, false, signerruntime.ErrLockedDuringUnlock
+		}
 		// The store needs recovery: the attempt builds for recovery's view,
 		// so it is bound to what the root selects and shows the policy the
 		// build verified.

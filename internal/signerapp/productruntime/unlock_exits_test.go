@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -299,7 +300,7 @@ func TestARoleConflictOnAnUnlockInRecoveryInstallsNothing(t *testing.T) {
 // root's opening, or during the reconcile. The keyring is the attempt's from
 // its opening to its install, so no exit may leave it unzeroed.
 func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
-	for _, when := range []string{"after the opening", "during the reconcile"} {
+	for _, when := range []string{"after the opening", "during the reconcile", "during a failing reconcile"} {
 		t.Run(when, func(t *testing.T) {
 			ir, _, loads, _ := unlockedRuntimeForTest(t)
 			ir.Lock()
@@ -324,8 +325,12 @@ func TestAnUnlockThatLosesBeforeItsBuildZeroesTheKeyringItOpened(t *testing.T) {
 				return kr, selection, err
 			}
 			reconcile := func(*crypto.Keyring) error {
-				if when == "during the reconcile" {
+				switch when {
+				case "during the reconcile":
 					lockNow()
+				case "during a failing reconcile":
+					lockNow()
+					return errors.New("injected reconcile failure")
 				}
 				return nil
 			}
@@ -405,5 +410,113 @@ func TestAPassphraseChangeOpensTheRootOnceAndServesThatKeyring(t *testing.T) {
 	}
 	if *opens != 1 || built == nil || served != built || zeroed(served) {
 		t.Fatalf("%d opening(s), built with %p, serving %p; want one opening and that keyring, usable", *opens, built, served)
+	}
+}
+
+// An unlock begun in recovery installs the freshly opened keyring and zeroes
+// recovery's replaced keyring only once existing WithKeyring users finish.
+func TestUnlockFromRecoveryZeroesReplacedKeyring(t *testing.T) {
+	ir, bound, _ := viewInService(t)
+	ir.EnterRecovery(nil)
+
+	holding := make(chan struct{})
+	releaseUser := make(chan struct{})
+	userDone := make(chan struct{})
+	var recoverys *crypto.Keyring
+	var stillUsable bool
+	go func() {
+		defer close(userDone)
+		if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
+			recoverys = kr
+			close(holding)
+			<-releaseUser
+			stillUsable = !zeroed(kr)
+			return nil
+		}); err != nil {
+			t.Errorf("WithKeyring(holder) = %v", err)
+		}
+	}()
+	select {
+	case <-holding:
+	case <-time.After(3 * time.Second):
+		t.Fatal("setup: WithKeyring holder did not start")
+	}
+	if zeroed(recoverys) {
+		close(releaseUser)
+		<-userDone
+		t.Fatal("setup: recovery's keyring already zeroed")
+	}
+
+	var opened *crypto.Keyring
+	ir.SetBuildFunc(func(kr *crypto.Keyring) (*Loaded, error) {
+		opened = kr
+		return &Loaded{Selection: &bound, Contents: viewKeys(bound)}, nil
+	}, ReloadEffects{})
+
+	type unlockRes struct {
+		outcome UnlockOutcome
+		err     error
+	}
+	unlockDone := make(chan unlockRes, 1)
+	go func() {
+		outcome, err := ir.Unlock([]byte(secondUnlockPassphrase), noReconcile, nil)
+		unlockDone <- unlockRes{outcome: outcome, err: err}
+	}()
+
+	// Wait until publishLocked has installed the new keyring and released
+	// passphraseLock, so publishUnlock is waiting in detached.ZeroWhenUnused().
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var current *crypto.Keyring
+		_ = ir.WithKeyring(func(kr *crypto.Keyring) error { current = kr; return nil })
+		if current != nil && current != recoverys {
+			break
+		}
+		if time.Now().After(deadline) {
+			close(releaseUser)
+			<-userDone
+			t.Fatal("publishUnlock did not install the new keyring while old user held recovery's keyring")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// While the user still holds recovery's keyring, ZeroWhenUnused must not
+	// have zeroed it or returned.
+	if zeroed(recoverys) {
+		close(releaseUser)
+		<-userDone
+		t.Fatal("recovery's replaced keyring was zeroed while a WithKeyring user still held it")
+	}
+	select {
+	case res := <-unlockDone:
+		close(releaseUser)
+		<-userDone
+		t.Fatalf("Unlock() returned (%+v, %v) before the replaced keyring's user finished", res.outcome, res.err)
+	default:
+	}
+
+	close(releaseUser)
+	<-userDone
+	if !stillUsable {
+		t.Fatal("recovery's replaced keyring became zeroed before the user exited")
+	}
+	var res unlockRes
+	select {
+	case res = <-unlockDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Unlock() did not finish after replaced keyring's user exited")
+	}
+	if res.err != nil || res.outcome.Recovery || !ir.IsUnlocked() {
+		t.Fatalf("Unlock() = %+v, %v in state %v; want unlocked", res.outcome, res.err, ir.GetState())
+	}
+	if !zeroed(recoverys) {
+		t.Fatal("recovery's replaced keyring was not zeroed after its user finished")
+	}
+	var served *crypto.Keyring
+	if err := ir.WithKeyring(func(kr *crypto.Keyring) error { served = kr; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if opened == nil || served != opened || served == recoverys || zeroed(served) {
+		t.Fatalf("served keyring = %p (opened=%p, replaced=%p), want usable new keyring", served, opened, recoverys)
 	}
 }

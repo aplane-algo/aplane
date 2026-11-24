@@ -372,8 +372,7 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 			return result
 		}
 		if errors.Is(err, productruntime.ErrReconcileStateChanged) {
-			// A lock overtook a reconcile that published cleanly: it
-			// entered no recovery, and the lock stands.
+			// A lock overtook the reconcile; the lock stands.
 			result.Code = protocol.ErrCodeSignerLocked
 			result.State = ir.GetState().String()
 			return result
@@ -404,8 +403,8 @@ func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 // reconcile that fails enters recovery before the lock is released, the order
 // recovery_binding.tla's ReloadFail with RecoveryBeforeRelease transcribes
 // (RB2). The recovery-exit rescan passes false: it starts in recovery, so a
-// failure leaves it there. A promotion refused after a clean publish
-// (productruntime.ErrReconcileStateChanged) enters no recovery either way
+// failure leaves it there. A reconcile overtaken by a lock
+// (productruntime.ErrReconcileStateChanged) leaves the lock standing
 // (productruntime.Runtime.Reconcile).
 func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtime, explicit bool) (*signertemplates.ReloadReport, error) {
 	var report *signertemplates.ReloadReport

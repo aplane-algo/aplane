@@ -149,8 +149,11 @@ waits for it; KU2 and KU3 cover that case.
   throughout. Recovery keeps the keyring and nothing drains; its view drops
   the key maps, the key cache and the source token index, which nothing
   reads in recovery. It ends the unlocked session: the session generation
-  moves, and the entry cancels the key uses that session handed out
-  (`cancelKeyUses`, in `afterReload`, once the passphrase lock is released),
+  moves, and the entry immediately cancels the key uses that session handed
+  out and withdraws its pending approvals (`cancelKeyUses` and
+  `endSignRequests` right after `SetRecovery` moves the state in
+  `reloadViewLocked` and `enterRecoveryViewLocked`, before an in-doubt build
+  runs and before `installRecoveryViewLocked` clears the source token index),
   without waiting for them; an attempt's own entry begins locked or in
   recovery, with no session left to end. The session generation is a
   counter of its own, apart from the lock generation the unlock's first
@@ -175,7 +178,8 @@ waits for it; KU2 and KU3 cover that case.
   locked or in recovery: the store root opened with the passphrase, the
   check of the reading (`LostToLock`), and the reconcile with the keyring
   that opening gave. An attempt that lost stops there with nothing to
-  clear; a reconcile that fails leads to the recovery end. `Load` is the
+  clear; a reconcile that fails checks `LostToLock` before building for the
+  recovery end, so a lost attempt builds nothing. `Load` is the
   second check, the build on the keyring that opening gave, the attempt's
   one derivation of the passphrase, which changes nothing live,
   and its install; a content defect the build finds leads to the recovery
