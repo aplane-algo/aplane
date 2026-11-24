@@ -285,12 +285,45 @@ func (s signerAdminServices) ImportClientKey(ctx adminserver.SessionContext, pub
 	return s.signer.ImportClientKey(ctx, publicKey, label)
 }
 
+func restoreCommitted(result adminproto.RestoreBackupResult) bool {
+	return len(result.Restored) > 0 || len(result.PoliciesRestored) > 0 || len(result.SourceTokensRestored) > 0
+}
+
+// finishBackupRecoveryExit runs the post-commit recovery-exit rescan after a
+// restore or rollback succeeded while the signer was in recovery. When the
+// rescan leaves the signer in recovery, it returns ResultCodeRecoveryBlocked
+// and the formatted message; when a lock overtook the rescan, it leaves the
+// caller's success answer intact with the signer locked.
+func (s signerAdminServices) finishBackupRecoveryExit(
+	ir *productruntime.Runtime,
+	blockedMsg func(error) string,
+) (report *signertemplates.ReloadReport, code, errMsg string) {
+	report, err := s.exitRecoveryIfReconciled(ir)
+	switch {
+	case err == nil:
+		return report, "", ""
+	case ir.IsRecovery():
+		return nil, protocol.ResultCodeRecoveryBlocked, blockedMsg(err)
+	default:
+		return nil, "", ""
+	}
+}
+
 func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest) adminproto.RestoreBackupResult {
 	ir := s.Runtime
-	wasRecovery := ir.IsRecovery()
 	result := s.Service.RestoreBackup(req)
-	if result.Success && wasRecovery {
-		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
+	if result.Success && ir.IsRecovery() {
+		report, code, msg := s.daemon.finishBackupRecoveryExit(ir, func(err error) string {
+			if restoreCommitted(result) {
+				return fmt.Sprintf("restore committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
+			}
+			return fmt.Sprintf("restore made no changes, but signer stayed in recovery mode: %v", err)
+		})
+		if code != "" {
+			result.Success = false
+			result.Code = code
+			result.Error = msg
+		} else if report != nil {
 			result.KeyCount = report.KeyCount
 		}
 	}
@@ -300,12 +333,18 @@ func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest)
 
 func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequest) adminproto.RollbackRestoreResult {
 	ir := s.Runtime
-	wasRecovery := ir.IsRecovery()
 	result := s.Service.RollbackRestore(req)
-	if result.Success && wasRecovery {
-		// A rollback begun in recovery publishes recovery's view, with no
+	if result.Success && ir.IsRecovery() {
+		// A rollback that runs in recovery publishes recovery's view, with no
 		// keys; the reconcile that lifts recovery publishes them.
-		if report, ok := s.daemon.exitRecoveryIfReconciled(ir); ok && report != nil {
+		report, code, msg := s.daemon.finishBackupRecoveryExit(ir, func(err error) string {
+			return fmt.Sprintf("rollback committed as generation %s, but signer stayed in recovery mode: %v", result.GenerationID, err)
+		})
+		if code != "" {
+			result.Success = false
+			result.Code = code
+			result.Error = msg
+		} else if report != nil {
 			result.KeyCount = report.KeyCount
 		}
 	}
@@ -377,6 +416,13 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 		if err := ir.RequireUnlockedOrRecovery(); err != nil {
 			return err
 		}
+		if !explicit && !ir.IsRecovery() {
+			// A concurrent unlock or explicit reconcile already promoted the
+			// signer out of recovery before this rescan acquired the lock; do
+			// not run a non-explicit rescan on an unlocked signer.
+			report = &signertemplates.ReloadReport{KeyCount: ir.KeyCount()}
+			return nil
+		}
 		report, err = ir.Reconcile(func(kr *crypto.Keyring) error {
 			return s.reconcileGenerationsLocked(ir, kr)
 		}, explicit)
@@ -396,7 +442,7 @@ func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *productruntime.
 
 // exitRecoveryIfReconciled promotes recovery only after the generation store
 // reconciles and validates cleanly.
-func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime) (*signertemplates.ReloadReport, bool) {
+func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime) (*signertemplates.ReloadReport, error) {
 	// The rescan re-runs generational reconciliation and fail-closed
 	// validation of the selected generation; recovery only lifts when the
 	// committed state proves clean.
@@ -404,19 +450,19 @@ func (s signerAdminServices) exitRecoveryIfReconciled(ir *productruntime.Runtime
 	switch {
 	case errors.Is(err, productruntime.ErrNeitherUnlockedNorRecovery):
 		logInfof("reconciliation rescan skipped: %v", err)
-		return nil, false
+		return nil, err
 	case errors.Is(err, productruntime.ErrReconcileStateChanged):
 		logInfof("reconciliation rescan overtaken by a lock: %v", err)
-		return nil, false
+		return nil, err
 	}
 	if err != nil {
 		logInfof("staying in recovery mode: signer store failed reconciliation rescan: %v", err)
-		return nil, false
+		return nil, err
 	}
 	if hub := s.signer.adminHub(); hub != nil {
 		hub.NotifyStatus(ir.GetState().String(), ir.KeyCount(), ir.StatusAlerts())
 	}
-	return report, true
+	return report, nil
 }
 
 func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {

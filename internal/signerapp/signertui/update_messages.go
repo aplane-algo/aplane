@@ -400,7 +400,7 @@ func (m Model) handleRestoreBackupResultMsg(msg RestoreBackupResultMsg) (tea.Mod
 	var cmds []tea.Cmd
 	if msg.Result.Success {
 		cmds = append(cmds, m.sendListKeysCmd(), m.sendListKeyTypesCmd())
-	} else if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed {
+	} else if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed || msg.Result.Code == protocol.ResultCodeRecoveryBlocked {
 		m.signerState = signerRuntimeRecovery
 	}
 	return m, tea.Batch(cmds...)
@@ -414,7 +414,8 @@ func (m Model) handleRollbackRestoreResultMsg(msg RollbackRestoreResultMsg) (tea
 		if next, cmd, ok := m.handleRefusedBackupUndo(msg.Result); ok {
 			return next, cmd
 		}
-		if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed {
+		m.backups.undoPending = false
+		if msg.Result.Code == protocol.ResultCodeRestoreRollbackFailed || msg.Result.Code == protocol.ResultCodeRecoveryBlocked {
 			m.signerState = signerRuntimeRecovery
 		}
 		m.restore.recoveryError = msg.Result.Error

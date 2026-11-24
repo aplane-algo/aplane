@@ -219,3 +219,39 @@ func TestARecoveryBlockedReplyAfterALockLeavesTheSignerLocked(t *testing.T) {
 		t.Fatalf("operation %+v, want it ended", m.operation)
 	}
 }
+
+func TestRestoreRecoveryBlockedEntersRecoveryAndRoutesDisplayToRecoveryScreen(t *testing.T) {
+	m := Model{viewState: ViewRestoring, signerState: signerRuntimeUnlocked}
+	const errMsg = "restore committed as generation g2, but signer stayed in recovery mode: defect"
+	got, _ := updateForTest(t, m, RestoreBackupResultMsg{Result: protocol.RestoreBackupResultMessage{
+		Success:      false,
+		GenerationID: "g2",
+		Code:         protocol.ResultCodeRecoveryBlocked,
+		Error:        errMsg,
+	}})
+	if got.signerState != signerRuntimeRecovery || got.viewState != ViewRestoreDisplay {
+		t.Fatalf("restore recovery_blocked = state %v view %v, want recovery + restore display", got.signerState, got.viewState)
+	}
+	next, _ := got.handleRestoreDisplayKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	after := next.(Model)
+	if after.viewState != ViewStoreRecovery || after.signerState != signerRuntimeRecovery {
+		t.Fatalf("dismissing recovery-blocked restore display = state %v view %v, want recovery screen", after.signerState, after.viewState)
+	}
+}
+
+func TestRollbackRecoveryBlockedEntersRecoveryScreen(t *testing.T) {
+	m := Model{viewState: ViewRestoring, signerState: signerRuntimeUnlocked}
+	const errMsg = "rollback committed as generation g3, but signer stayed in recovery mode: defect"
+	got, _ := updateForTest(t, m, RollbackRestoreResultMsg{Result: protocol.RollbackRestoreResultMessage{
+		Success:      false,
+		GenerationID: "g3",
+		Code:         protocol.ResultCodeRecoveryBlocked,
+		Error:        errMsg,
+	}})
+	if got.signerState != signerRuntimeRecovery || got.viewState != ViewStoreRecovery {
+		t.Fatalf("rollback recovery_blocked = state %v view %v, want recovery screen", got.signerState, got.viewState)
+	}
+	if got.restore.recoveryError != errMsg {
+		t.Fatalf("recoveryError = %q, want %q", got.restore.recoveryError, errMsg)
+	}
+}

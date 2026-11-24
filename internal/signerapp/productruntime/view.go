@@ -466,12 +466,7 @@ func (ir *Runtime) afterReload(end reloadEnd) {
 			effects.Audit.LogKeyReload(end.keyCount)
 		}
 		fmt.Printf("🔄 Keys reloaded: %d key(s) available\n", end.keyCount)
-		if ir.IsUnlocked() {
-			if effects.NotifyKeysChanged != nil {
-				effects.NotifyKeysChanged(end.keyCount)
-			}
-			ir.WakeStageWork()
-		}
+		ir.notifyUnlockedReload(effects, end.keyCount)
 	}
 	if end.recovery {
 		ir.watcherMu.Lock()
@@ -481,6 +476,16 @@ func (ir *Runtime) afterReload(end reloadEnd) {
 			hook(end.cause)
 		}
 	}
+}
+
+func (ir *Runtime) notifyUnlockedReload(effects ReloadEffects, keyCount int) {
+	if !ir.IsUnlocked() {
+		return
+	}
+	if effects.NotifyKeysChanged != nil {
+		effects.NotifyKeysChanged(keyCount)
+	}
+	ir.WakeStageWork()
 }
 
 func (ir *Runtime) reloadEffectsSnapshot() ReloadEffects {

@@ -179,11 +179,12 @@ func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc", "enter", " ":
 		result := m.restore.result
 		if m.signerState == signerRuntimeRecovery {
-			// The daemon is still in recovery — even after a successful
-			// restore, if the server-side recovery-exit rescan failed
-			// no unlocked push is coming, and ordinary administration must
-			// stay unavailable (ARCH_ADMIN). The blocking recovery screen is
-			// the only valid destination.
+			// The daemon is still in recovery — for example after a restore
+			// whose post-commit recovery-exit rescan left the signer
+			// recovery-blocked (ResultCodeRecoveryBlocked) or after an earlier
+			// recovery status push — so ordinary administration must stay
+			// unavailable (ARCH_ADMIN). The blocking recovery screen is the
+			// only valid destination.
 			return m.openStoreRecovery()
 		}
 		m.resetRestoreFlow()

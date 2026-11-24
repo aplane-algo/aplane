@@ -1914,7 +1914,10 @@ generation's policy is not left visible, and holds no keys, no source token
 index and no active key session; it registers no provider. A build that
 succeeds while the signer is in recovery (a restore or a rollback begun
 there) publishes recovery's view of the new generation, and the reconcile
-that follows publishes the whole view as it promotes. Every entry into
+that follows publishes the whole view as it promotes; if that reconcile
+leaves the signer in recovery, the restore or rollback answers
+`recovery_blocked` (`success: false`) with any committed generation still
+selected. Every entry into
 recovery outside an unlock publishes that view, so in recovery the key
 count is 0 and every per-key policy document shows as not held. The
 watcher's and an in-place write's reloads (key generation, import and
@@ -2445,7 +2448,11 @@ promoted back into service. A rollback mint uses
 
 Reload failure after a committed restore enters recovery mode and blocks
 signing. The committed generation stays selected; the operator reconciles or
-explicitly rolls back. Uncertain
+explicitly rolls back. Likewise, if a restore or rollback commits (or a
+recovery-mode no-op restore completes) and the post-commit recovery-exit
+rescan still leaves the signer in recovery, the reply answers `success: false`
+with `code: "recovery_blocked"` and any committed generation stays selected.
+Uncertain
 commit durability, failed rollback after mutation, or failed reconciliation
 enters recovery mode and blocks signing. A crash after a complete root replacement loads the committed
 generation on restart; uncommitted staging is discarded.

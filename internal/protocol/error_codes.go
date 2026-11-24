@@ -102,11 +102,15 @@ const (
 	ResultCodeConfirmationRequired = "confirmation_required"
 	// ResultCodeRecoveryBlocked reports a signer left in recovery mode, with
 	// signing blocked until the operator resolves the store from recovery:
-	// an unlock that succeeded into it (the passphrase was right, but the
-	// store failed reconciliation or generation validation, or the reload
-	// its publish ran entered it), and a key or template change that was
-	// written and whose reload then entered it, for a content defect in the
-	// selected generation or a store root that no longer authenticates.
+	// an unlock that succeeded into it (success:true — the passphrase was
+	// right, but the store failed reconciliation or generation validation, or
+	// the reload its publish ran entered it), a key or template change that
+	// was written and whose reload then entered it (for a content defect in
+	// the selected generation or a store root that no longer authenticates),
+	// or a restore or rollback that committed (or completed as a recovery
+	// no-op) whose reload or post-commit recovery-exit rescan left the signer
+	// in recovery (success:false, with any committed generation still
+	// selected).
 	ResultCodeRecoveryBlocked = "recovery_blocked"
 	// ResultCodePassphraseChangeFailed reports a change_store_passphrase
 	// that failed for a reason other than its passphrases, including a store

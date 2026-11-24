@@ -659,7 +659,12 @@ transaction type is one more entry in `fields` and needs no client change.
   been skipped. Archive-level failures (authentication, manifest and
   structure, size limits, a member that does not read or decrypt, a
   duplicate selector, an address the archive lacks) refuse the whole
-  restore, as in [ARCH_STORE.md](ARCH_STORE.md#live-direct-restore).
+  restore, as in [ARCH_STORE.md](ARCH_STORE.md#live-direct-restore). When a
+  restore commits (or completes as a recovery no-op) and the post-restore
+  recovery-exit rescan still leaves the signer in recovery mode, the reply
+  answers `success: false` with `code: "recovery_blocked"` (with any committed
+  generation still selected, matching the existing failure convention for a
+  recovery no-op whose in-lock reload fails).
 - A reply's credential lists are bounded so it fits one admin frame
   whatever the archive holds: `skipped[]` in a preview, restore or import
   result, and `restored[]`, `identical[]` and `conflicts[]` in a restore
@@ -675,7 +680,10 @@ transaction type is one more entry in `fields` and needs no client change.
 - `rollback_restore` -> `rollback_restore_result`: `success`, operation
   ID, generation ID, key count, `code`, `error`. It applies only to the
   current clean rollback-eligible `credential-restore` generation; a rollback
-  generation is not eligible for another rollback.
+  generation is not eligible for another rollback. If the rollback committed
+  and the post-rollback recovery-exit rescan still leaves the signer in
+  recovery mode, it answers `success: false` with `code: "recovery_blocked"`
+  and the committed rollback generation stays selected.
 - `reconcile_store` -> `reconcile_store_result`: `success`, current
   generation ID, signer state, `code`, `error`. It exits recovery mode only
   after the visible store validates cleanly.

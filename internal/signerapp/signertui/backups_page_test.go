@@ -193,6 +193,27 @@ func TestBackupUndoRefusalReturnsToBackups(t *testing.T) {
 	}
 }
 
+func TestBackupUndoRecoveryBlockedOpensRecoveryScreen(t *testing.T) {
+	m := backupsModel()
+	m, _ = pressKey(t, m, "u", "y")
+	if m.viewState != ViewRestoring || !m.backups.undoPending {
+		t.Fatalf("undo: view %v pending %v", m.viewState, m.backups.undoPending)
+	}
+	const errMsg = "rollback committed as generation g2, but signer stayed in recovery mode: rescan defect"
+	m, _ = update(t, m, RollbackRestoreResultMsg{Result: protocol.RollbackRestoreResultMessage{
+		Success:      false,
+		GenerationID: "g2",
+		Code:         protocol.ResultCodeRecoveryBlocked,
+		Error:        errMsg,
+	}})
+	if m.signerState != signerRuntimeRecovery || m.viewState != ViewStoreRecovery || m.backups.undoPending {
+		t.Fatalf("recovery_blocked undo: state %v view %v pending %v, want recovery screen with undo cleared", m.signerState, m.viewState, m.backups.undoPending)
+	}
+	if m.restore.recoveryError != errMsg {
+		t.Fatalf("recoveryError = %q, want %q", m.restore.recoveryError, errMsg)
+	}
+}
+
 // --- export ---
 
 func exportFixture(t *testing.T) (Model, []byte, string) {
