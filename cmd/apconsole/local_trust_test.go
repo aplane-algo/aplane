@@ -244,6 +244,11 @@ func stubLocalSignerHostKeyProbe(t *testing.T, fn func(string, int, ssh.PublicKe
 
 func writeLoopbackClientConfig(t *testing.T) string {
 	t.Helper()
+	return writeClientConfigForURL(t, "ssh://127.0.0.1:56870")
+}
+
+func writeClientConfigForURL(t *testing.T, url string) string {
+	t.Helper()
 	clientDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte("network: testnet\n"), 0o600); err != nil {
 		t.Fatalf("write client config: %v", err)
@@ -253,7 +258,7 @@ schema_version: 2
 endpoints:
   primary:
     role: signer
-    url: ssh://127.0.0.1:56870
+    url: `+url+`
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
 `)
@@ -706,21 +711,28 @@ func TestTrustLocalSignerHostKeyWarnsOfOtherTrustedKeys(t *testing.T) {
 		name string
 		line string
 		warn bool
+		port string
 	}{
-		{"no brackets", "127.0.0.1:56870 " + keyText(oldKey), true},
-		{"trailing comma", addr + ", " + keyText(oldKey), true},
-		{"several hosts", "[localhost]:56870," + addr + " " + keyText(oldKey), true},
-		{"hashed host", knownhosts.HashHostname(addr) + " " + keyText(oldKey), true},
-		{"wildcard", "[127.0.0.*]:56870 " + keyText(oldKey), true},
-		{"several hosts with the current key", "[localhost]:56870," + addr + " " + keyText(hostKey), false},
-		{"another port", "[127.0.0.1]:56871 " + keyText(oldKey), false},
-		{"another host", "other.example.com " + keyText(oldKey), false},
-		{"plain line, which is replaced", addr + " " + keyText(oldKey), false},
-		{"unparsable file", "other.example.com ssh-ed25519 AAAA", false},
+		{name: "no brackets", line: "127.0.0.1:56870 " + keyText(oldKey), warn: true},
+		{name: "trailing comma", line: addr + ", " + keyText(oldKey), warn: true},
+		{name: "several hosts", line: "[localhost]:56870," + addr + " " + keyText(oldKey), warn: true},
+		{name: "hashed host", line: knownhosts.HashHostname(addr) + " " + keyText(oldKey), warn: true},
+		{name: "wildcard", line: "[127.0.0.*]:56870 " + keyText(oldKey), warn: true},
+		{name: "port 22 in brackets", line: "[127.0.0.1]:22 " + keyText(oldKey), warn: true, port: "22"},
+		{name: "several hosts with the current key", line: "[localhost]:56870," + addr + " " + keyText(hostKey)},
+		{name: "another port", line: "[127.0.0.1]:56871 " + keyText(oldKey)},
+		{name: "another host", line: "other.example.com " + keyText(oldKey)},
+		{name: "plain line, which is replaced", line: addr + " " + keyText(oldKey)},
+		{name: "plain line on port 22, which is replaced", line: "127.0.0.1 " + keyText(oldKey), port: "22"},
+		{name: "unparsable file", line: "other.example.com ssh-ed25519 AAAA"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clientDir := writeLoopbackClientConfig(t)
+			port := tt.port
+			if port == "" {
+				port = "56870"
+			}
+			clientDir := writeClientConfigForURL(t, "ssh://127.0.0.1:"+port)
 			stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
 			knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
 			if err := os.Mkdir(filepath.Dir(knownHostsPath), 0o700); err != nil {

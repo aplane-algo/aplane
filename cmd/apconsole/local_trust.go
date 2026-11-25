@@ -116,7 +116,8 @@ func pinLoopbackHostKey(knownHostsPath, address, line string) (bool, error) {
 	}
 
 	// apshell appends without a lock, so a key it saved during the write went
-	// to the replaced file. Carry it over.
+	// to the replaced file. Carry it over. One it opened the file for but has
+	// yet to write is still lost, and apshell asks for that key again.
 	late, err := io.ReadAll(replaced)
 	if err != nil {
 		return false, fmt.Errorf("read replaced known_hosts: %w", err)

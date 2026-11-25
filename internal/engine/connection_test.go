@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,8 +54,9 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 }
 
 // A connect that fails after the key inventory arrived leaves nothing of it
-// behind. The connection's lock holds the connect between the two, so the
-// drop always lands there.
+// behind, and the caller's disconnect callback alone: it never had a
+// connection to lose. The connection's lock holds the connect between the two,
+// so the drop always lands there.
 func TestEngineConnectWithTunnelResetsCacheWhenConnectFailsAfterKeys(t *testing.T) {
 	warned := make(chan struct{}, 1)
 	prev := slog.Default()
@@ -79,9 +81,11 @@ func TestEngineConnectWithTunnelResetsCacheWhenConnectFailsAfterKeys(t *testing.
 	eng.signerStatusRevisionSeen = true
 	eng.signerStatusKeysetRevSeen = 7
 
+	var disconnects atomic.Int32
 	failed := make(chan error, 1)
 	go func() {
-		_, err := eng.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil, nil)
+		_, err := eng.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil,
+			func() { disconnects.Add(1) })
 		failed <- err
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -112,6 +116,9 @@ func TestEngineConnectWithTunnelResetsCacheWhenConnectFailsAfterKeys(t *testing.
 	}
 	if eng.signerStatusRevisionSeen || eng.signerStatusKeysetRevSeen != 0 {
 		t.Fatal("a failed connect left the signer status revision set")
+	}
+	if got := disconnects.Load(); got != 0 {
+		t.Fatalf("onDisconnect called %d times for a failed connect, want 0", got)
 	}
 }
 
