@@ -196,18 +196,6 @@ type ReadBackupChunkResult struct {
 	Error    string
 }
 
-type InitializeStoreRequest struct {
-	Passphrase []byte
-}
-
-type InitializeStoreResult struct {
-	Success       bool
-	MetadataDir   string
-	HelperWarning string
-	Code          string
-	Error         string
-}
-
 type ChangeStorePassphraseRequest struct {
 	CurrentPassphrase []byte
 	NewPassphrase     []byte

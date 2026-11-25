@@ -32,7 +32,6 @@ type AuthOutcome int
 const (
 	AuthOutcomeFailed AuthOutcome = iota
 	AuthOutcomeAuthenticated
-	AuthOutcomeBootstrapHandled
 	// AuthOutcomeTimedOut means the connection's login deadline passed
 	// before it authenticated; the client was told with login_timeout.
 	AuthOutcomeTimedOut
@@ -169,7 +168,7 @@ func (s *Session) contextFor(identity *auth.Identity) SessionContext {
 }
 
 // AuthenticateOutcome performs the admin handshake and returns whether the
-// connection authenticated, failed, or handled a one-shot bootstrap request.
+// connection authenticated or failed.
 func (s *Session) AuthenticateOutcome() AuthOutcome {
 	authReq := protocol.AuthRequiredMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired},
@@ -198,9 +197,6 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		if err != nil {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidMessageFormat, "invalid message format")
 			return AuthOutcomeFailed
-		}
-		if base.Type == protocol.MsgTypeInitializeStore {
-			return s.handlePreAuthInitialize(base.ID, raw)
 		}
 		if base.Type != protocol.MsgTypeAuth && base.Type != protocol.MsgTypeAuthOnly {
 			s.sendAuthResult(false, protocol.ErrCodeExpectedAuthMessage, "expected auth message")
@@ -305,45 +301,6 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		s.sendAuthResult(true, "", "")
 		return AuthOutcomeAuthenticated
 	}
-}
-
-// decodeInitializeStore decodes a pre-login initialize_store request; a decode
-// that fails after filling the passphrase zeroes it. Tests replace it to watch
-// the decoded passphrase.
-var decodeInitializeStore = decodeRequest[protocol.InitializeStoreMessage]
-
-// handlePreAuthInitialize answers an initialize_store frame read before login,
-// and zeroes the frame, which carries the new store passphrase.
-func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutcome {
-	defer protocol.SensitiveBytes(raw).Zero()
-	if s.nodeFailure != nil && s.nodeFailure() != nil {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeNodeFailClosed,
-			Error: "signer node is fail-closed; restart required",
-		}))
-		return AuthOutcomeBootstrapHandled
-	}
-	if !s.isLocal() {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeAuthorizationDenied,
-			Error: "initialize_store is only available on local AP Admin",
-		}))
-		return AuthOutcomeBootstrapHandled
-	}
-	msg, err := decodeInitializeStore(raw)
-	if err != nil {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeInvalidRequest,
-			Error: "invalid initialize store message",
-		}))
-		return AuthOutcomeBootstrapHandled
-	}
-	defer msg.Passphrase.Zero()
-	passphrase := msg.Passphrase.Clone()
-	defer zeroBytes(passphrase)
-	result := s.productServices.InitializeStore(adminproto.InitializeStoreRequest{Passphrase: passphrase})
-	_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(msg.ID, result))
-	return AuthOutcomeBootstrapHandled
 }
 
 func (s *Session) WriteJSON(v interface{}) error {

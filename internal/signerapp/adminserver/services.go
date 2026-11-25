@@ -21,7 +21,6 @@ type ProductServices interface {
 	// implementation that drops the sentinel ends the login on every typo.
 	VerifyPassphrase(passphrase []byte) error
 	UnlockIdentity(ctx context.Context, passphrase []byte) (bool, int, string, string)
-	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
 	ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
 	// EnrolledKeys lists the enrolled client keys.

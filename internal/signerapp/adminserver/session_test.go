@@ -86,7 +86,6 @@ type stubServices struct {
 	readBackupChunkResult    adminproto.ReadBackupChunkResult
 
 	changePassphraseCalls  int
-	initializeStoreCalls   int
 	previewRestoreCalls    int
 	restoreBackupCalls     int
 	rollbackRestoreCalls   int
@@ -116,7 +115,6 @@ type stubServices struct {
 	lastImportMnemonic     []byte // a copy, taken while the service had the phrase
 	lastBackupRequest      adminproto.BackupIdentityRequest
 	lastDeleteBackup       adminproto.DeleteBackupRequest
-	lastInitializeStore    adminproto.InitializeStoreRequest
 	lastChangePassphrase   adminproto.ChangeStorePassphraseRequest
 	lastPreviewRestore     adminproto.PreviewRestoreRequest
 	lastRestoreBackup      adminproto.RestoreBackupRequest
@@ -138,7 +136,6 @@ type stubServices struct {
 	backupResult           adminproto.BackupIdentityResult
 	listBackupsResult      adminproto.ListBackupsResult
 	deleteBackupResult     adminproto.DeleteBackupResult
-	initializeStoreResult  adminproto.InitializeStoreResult
 	changePassphraseResult adminproto.ChangeStorePassphraseResult
 	previewRestoreResult   adminproto.RestorePreviewResult
 	restoreBackupResult    adminproto.RestoreBackupResult
@@ -163,13 +160,6 @@ func (s *stubServices) UnlockIdentity(ctx context.Context, passphrase []byte) (b
 	s.unlockCalls++
 	s.unlockCtx = ctx
 	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
-}
-func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
-	s.initializeStoreCalls++
-	s.lastInitializeStore = adminproto.InitializeStoreRequest{
-		Passphrase: append([]byte(nil), req.Passphrase...),
-	}
-	return s.initializeStoreResult
 }
 func (s *stubServices) ChangeStorePassphrase(_ context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	s.changePassphraseCalls++
@@ -564,78 +554,6 @@ func TestAuthOnlyDispatchRejectsMutationAndPinsPublicReadAllowlist(t *testing.T)
 	}
 }
 
-func TestSessionAuthenticateOutcomeHandlesLocalInitialize(t *testing.T) {
-	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
-		Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := &stubServices{
-		initializeStoreResult: adminproto.InitializeStoreResult{
-			Success:     true,
-			MetadataDir: "/data/identities/default",
-		},
-	}
-	conn := &queueConn{reads: [][]byte{initMsg}}
-	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
-
-	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
-		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
-	}
-	if string(svc.lastInitializeStore.Passphrase) != "new-passphrase" {
-		t.Fatalf("InitializeStore passphrase = %q, want new-passphrase", string(svc.lastInitializeStore.Passphrase))
-	}
-	if len(conn.writes) != 2 {
-		t.Fatalf("writes = %d, want auth_required and initialize result", len(conn.writes))
-	}
-	var result protocol.InitializeStoreResultMessage
-	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-	if !result.Success || result.MetadataDir != "/data/identities/default" {
-		t.Fatalf("initialize result = %#v", result)
-	}
-}
-
-func TestSessionAuthenticateOutcomeRejectsInitializeAfterNodeFailure(t *testing.T) {
-	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
-		Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := &stubServices{}
-	conn := &queueConn{reads: [][]byte{initMsg}}
-	session := NewSession(conn, SessionDeps{
-		Product: svc,
-		NodeFailure: func() error {
-			return productruntime.ErrNodeFailClosed
-		},
-	}, OriginLocal)
-
-	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
-		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
-	}
-	if svc.initializeStoreCalls != 0 {
-		t.Fatalf("InitializeStore calls = %d, want 0", svc.initializeStoreCalls)
-	}
-	if len(conn.writes) != 2 {
-		t.Fatalf("writes = %d, want auth_required and initialize result", len(conn.writes))
-	}
-	var result protocol.InitializeStoreResultMessage
-	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-	if result.ID != "init-1" || result.Code != protocol.ErrCodeNodeFailClosed {
-		t.Fatalf("initialize result = %#v, want node-fail-closed response for init-1", result)
-	}
-}
-
 func TestSessionDispatchInvalidTypedRequestPreservesRequestID(t *testing.T) {
 	conn := &queueConn{}
 	session := NewSession(conn, SessionDeps{}, OriginLocal)
@@ -805,7 +723,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=9" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=10" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }
@@ -1022,33 +940,6 @@ func (s *stubServices) ExportKey(_ context.Context, req adminproto.ExportKeyRequ
 	return result
 }
 
-func TestSessionAuthenticateOutcomeRefusesRemoteInitialize(t *testing.T) {
-	initMsg, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
-		Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &stubServices{}
-	conn := &queueConn{reads: [][]byte{initMsg}}
-	session := NewSession(conn, SessionDeps{Product: svc}, OriginRemote)
-
-	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled {
-		t.Fatalf("AuthenticateOutcome() = %v, want %v", got, AuthOutcomeBootstrapHandled)
-	}
-	if svc.lastInitializeStore.Passphrase != nil {
-		t.Fatal("InitializeStore ran for a remote session")
-	}
-	var result protocol.InitializeStoreResultMessage
-	if err := json.Unmarshal(conn.writes[len(conn.writes)-1], &result); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-	if result.Success || result.Code != protocol.ErrCodeAuthorizationDenied {
-		t.Fatalf("result = %+v, want authorization_denied", result)
-	}
-}
-
 func isZeroedFrame(frame []byte) bool {
 	for _, b := range frame {
 		if b != 0 {
@@ -1107,66 +998,30 @@ func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
 	}
 }
 
-// An initialize_store frame read before login is zeroed once handled,
-// including when it is refused before the store is touched.
-func TestSessionPreAuthInitializeZeroesFrame(t *testing.T) {
-	newFrame := func() []byte {
-		frame, err := protocol.MarshalAdminMessage(protocol.InitializeStoreMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "init-1"},
-			Passphrase:  protocol.NewSensitiveBytes("new-passphrase"),
-		})
+// A frame that is not a login ends the login, is zeroed, since it may carry a
+// passphrase, and reaches no service.
+func TestSessionAuthenticateRefusesAndZeroesAnyOtherFrame(t *testing.T) {
+	for msgType, sample := range allDispatchRequestSamples() {
+		frame, err := protocol.MarshalAdminMessage(populateRequestSample(sample))
 		if err != nil {
 			t.Fatal(err)
 		}
-		return frame
-	}
-
-	handled := newFrame()
-	svc := &stubServices{initializeStoreResult: adminproto.InitializeStoreResult{Success: true}}
-	session := NewSession(&queueConn{reads: [][]byte{handled}}, SessionDeps{Product: svc}, OriginLocal)
-	if got := session.AuthenticateOutcome(); got != AuthOutcomeBootstrapHandled || svc.initializeStoreCalls != 1 {
-		t.Fatalf("AuthenticateOutcome() = %v with %d initialize calls", got, svc.initializeStoreCalls)
-	}
-	if !isZeroedFrame(handled) {
-		t.Fatalf("initialize frame left as %q", handled)
-	}
-
-	refused := newFrame()
-	remote := NewSession(&queueConn{}, SessionDeps{Product: &stubServices{}}, OriginRemote)
-	if got := remote.handlePreAuthInitialize("init-1", refused); got != AuthOutcomeBootstrapHandled {
-		t.Fatalf("handlePreAuthInitialize() = %v", got)
-	}
-	if !isZeroedFrame(refused) {
-		t.Fatalf("refused initialize frame left as %q", refused)
-	}
-}
-
-// A pre-login initialize_store whose decode fails after its passphrase was
-// decoded (a later id of the wrong type) has that passphrase zeroed, and is
-// refused as an invalid request.
-func TestSessionPreAuthInitializeZeroesAPartlyDecodedPassphrase(t *testing.T) {
-	var decoded [][]byte
-	original := decodeInitializeStore
-	decodeInitializeStore = func(raw []byte) (protocol.InitializeStoreMessage, error) {
-		msg, err := original(raw)
-		decoded = append(decoded, msg.Passphrase)
-		return msg, err
-	}
-	t.Cleanup(func() { decodeInitializeStore = original })
-
-	conn := &queueConn{}
-	svc := &stubServices{}
-	session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
-	raw := []byte(`{"kind":"request","type":"initialize_store","passphrase":"partly-decoded","id":7}`)
-	if got := session.handlePreAuthInitialize("init-1", raw); got != AuthOutcomeBootstrapHandled {
-		t.Fatalf("handlePreAuthInitialize() = %v", got)
-	}
-	if len(decoded) != 1 || len(decoded[0]) == 0 || !isZeroedFrame(decoded[0]) {
-		t.Fatalf("partly decoded passphrase left as %q", decoded)
-	}
-	var reply protocol.InitializeStoreResultMessage
-	if svc.initializeStoreCalls != 0 || len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &reply) != nil || reply.Code != protocol.ErrCodeInvalidRequest {
-		t.Fatalf("malformed initialize_store ran %d times, answered %q", svc.initializeStoreCalls, conn.writes)
+		conn := &queueConn{reads: [][]byte{frame}}
+		svc := &stubServices{runtime: productruntime.New(productruntime.Config{})}
+		session := NewSession(conn, svc.templateDeps(), OriginLocal)
+		if got := session.AuthenticateOutcome(); got != AuthOutcomeFailed {
+			t.Fatalf("%s before login = %v, want failed", msgType, got)
+		}
+		var result protocol.AuthResultMessage
+		if err := json.Unmarshal(conn.writes[len(conn.writes)-1], &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Success || result.Code != protocol.ErrCodeExpectedAuthMessage {
+			t.Errorf("%s before login was answered %+v, want expected_auth_message", msgType, result)
+		}
+		if !isZeroedFrame(frame) {
+			t.Errorf("%s before login left its frame as %q", msgType, frame)
+		}
 	}
 }
 
@@ -1201,10 +1056,10 @@ func TestSessionAuthenticateAdminProtocolVersionRule(t *testing.T) {
 		version string // the auth frame's protocol_version, or "" for none
 		wantErr string // "" when the frame authenticates
 	}{
-		{name: "current", version: `9`},
-		{name: "older", version: `8`, wantErr: "admin protocol version mismatch: client=8 server=9"},
-		{name: "newer", version: `10`, wantErr: "admin protocol version mismatch: client=10 server=9"},
-		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=9"},
+		{name: "current", version: `10`},
+		{name: "older", version: `9`, wantErr: "admin protocol version mismatch: client=9 server=10"},
+		{name: "newer", version: `11`, wantErr: "admin protocol version mismatch: client=11 server=10"},
+		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=10"},
 		{name: "major and minor", version: `{"major":9,"minor":0}`, wantErr: "invalid auth message format"},
 	}
 	for _, tt := range tests {

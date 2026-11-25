@@ -60,20 +60,13 @@ The `apadmin` TUI may see `client_exists` before auth for displacement
 negotiation. `client_exists`, `displace_confirm`, and `displaced` are not part
 of the generic transport contract.
 
-Before authenticating, a client may answer `auth_required` with
-`initialize_store` instead of `auth`. The server handles that one request
-without a passphrase-authenticated session, only over local IPC, and then ends
-the bootstrap exchange. `initialize_store` is not part of the authenticated
-dispatch table: after auth it is rejected as `unknown_message_type`.
-
 Admin sessions bind directly to the one product runtime. The auth shape has
 no runtime selector. Every admin request except the bodyless
-`displace_confirm` displacement reply (`auth`, `auth_only`,
-`initialize_store`, and every post-auth request in the dispatch table) uses
-strict known-field JSON decoding: unknown fields at any depth are rejected
-before passphrase verification or handler work (`invalid_auth_message` during
-auth, `invalid_request` inside `initialize_store_result` for
-`initialize_store`, and `invalid_request` for dispatched requests), trailing
+`displace_confirm` displacement reply (`auth`, `auth_only`, and every post-auth
+request in the dispatch table) uses strict known-field JSON decoding: unknown
+fields at any depth are rejected before passphrase verification or handler work
+(`invalid_auth_message` during auth, and `invalid_request` for dispatched
+requests), trailing
 data after the JSON value is rejected with `invalid_message_format`, and any
 sensitive fields decoded before a decode failure are zeroed.
 
@@ -105,7 +98,7 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the admin protocol version is the single integer 9
+- the admin protocol version is the single integer 10
   (`protocol.AdminProtocolVersion`); clients send it in
   `auth.protocol_version`, and the server refuses any other value, a
   missing one included, during authentication; apadmin, apapprover and
@@ -160,7 +153,6 @@ Client to Server:
   request allowlist)
 - `unlock`
 - `lock_identity`
-- `initialize_store`
 - `change_store_passphrase`
 - `displace_confirm` (pre-auth confirmation that permits a later controlling
   `auth` session to replace the active owner; ignored for `auth_only` ownership)
@@ -171,7 +163,6 @@ Server to Client:
 - `auth_result`
 - `unlock_result`
 - `lock_identity_result`
-- `initialize_store_result`
 - `change_store_passphrase_result`
 - `status`
 - `error`
@@ -362,7 +353,6 @@ Server to Client:
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
-- `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the product store's keyring root and format marker and may write the configured passphrase helper
 - `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, optional `source_token_files_migrated` (the active and archived source token files re-encrypted under the new term), optional `prior_generations`, optional `helper_warning`, optional `root_committed`, `code`, `error`; local IPC only, rejects identical current/new passphrases, seals the current generation, builds a successor generation re-encrypted under a fresh key term (live encrypted artifacts and integrity sidecars), and makes the new passphrase, term, and generation authoritative in one store-root replacement; `root_committed` reports whether that replacement became visible (it can be true alongside an error when root durability needs recovery confirmation); reports retained historical generations, preserves post-commit progress fields on failures, and treats passphrase-helper failure as a post-commit warning; `code` is `invalid_passphrase` when a passphrase is missing, the new one equals the current one, or the current one does not open the store root, `passphrase_helper_error` when the unlock.yaml passphrase helper configuration cannot be loaded, and `passphrase_change_failed` when the change itself fails, including a store root or selected generation that cannot be opened (`internal/protocol` defines both result codes)
 - `status`: `state`, `key_count`, optional `warnings[]` (operator alerts the
   signer raised on its own, currently rotating account alerts; each `status`
@@ -449,7 +439,7 @@ interlocks.
 - `generate_key`: `key_type`, optional `name`, optional `expected_fingerprint`, optional `expected_boundary_digest`, optional `parameters`; accepted over IPC, but generated recovery material is not returned over the admin protocol. the rotating key types (such as `aplane.rotating-triple-wotsc.v1`) require the parameter `network` (a network the signer knows, or a base64 genesis hash)
 - `generate_result`: `success`, optional `address`, `key_type`, `parameters`, `warnings`, `code`, `error`. `code` is `recovery_blocked` when the key was written but the reload after it entered recovery, for a content defect in the selected generation or a store root that no longer authenticates; `error` then names the cause, `address` and `key_type` name the key that was written, and the signer has pushed a `status` in recovery before the reply. `delete_result` and `import_result` answer the same way, `import_result` naming the imported key. Any key change whose reload fails was still written: its audit event is recorded before the reload, and a deletion removes the account's stage table either way. `warnings` is an optional list of strings, the signer's notes about the account it created, left out when there are none. They are the same kinds as `prepare_generate_result.warnings`, computed again at generation, so the list can differ from the review's when the signer's keys changed in between. A warning refused nothing and `success` stays true
 - `delete_key`: `address` -> `delete_result`: `success`, optional `code`, `error`
-- `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. A session not on the local IPC socket gets `authorization_denied`, as for `import_key`, `prepare_generate_key` and `initialize_store`: the server that accepts a connection states its origin, and these run only for a local one. Other key classes return `forbidden`. Every native key is eligible, since every native Falcon credential keeps its recovery entropy. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. apadmin key details offers `m` for a native key type (`ed25519`, `falcon1024`) and no other; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.
+- `export_key`: `address`, `passphrase` -> `export_result`: `success`, `address`, `key_type`, `mnemonic`, `word_count`, optional `code` and `error`. Native `ed25519` and `falcon1024` only, on authenticated local IPC with an unlocked healthy store and fresh passphrase verification. A session not on the local IPC socket gets `authorization_denied`, as for `import_key` and `prepare_generate_key`: the server that accepts a connection states its origin, and these run only for a local one. Other key classes return `forbidden`. Every native key is eligible, since every native Falcon credential keeps its recovery entropy. Successful responses contain 25 words. The signer sends a successful `export_result` while it still holds the key for use and audits `KEY_EXPORTED` with outcome `released` only once that write succeeded; a failed write is audited as a failure. apadmin key details offers `m` for a native key type (`ed25519`, `falcon1024`) and no other; the phrase stays visible for two minutes from reveal and clears on dismissal, lock, or session end. This is an explicit export operation; generate responses still omit recovery material.
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
 - `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, optional `public_key_hex`, `display_teal`, `code`, `error`
 - `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing. The fingerprint covers behavior and a YAML template's `valid_rekey_target`. A stored fingerprint that is not byte-identical to the registered one, another version prefix or no prefix included, is a `conflict`; `unavailable` means no registered definition or fingerprint could be resolved to compare it with

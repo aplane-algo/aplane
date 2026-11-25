@@ -289,8 +289,6 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	case adminserver.AuthOutcomeAuthenticated:
 		cleanupRuntime = !session.AuthenticatedOnly()
 		setPreAuthReadDeadline(adminConn, time.Time{})
-	case adminserver.AuthOutcomeBootstrapHandled:
-		return
 	case adminserver.AuthOutcomeTimedOut:
 		logWarnf("IPC client did not log in within %s; connection closed", s.loginTimeout())
 		return

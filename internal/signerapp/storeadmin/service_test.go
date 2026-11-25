@@ -43,14 +43,6 @@ type recordingAuditLog struct {
 	events []auditEvent
 }
 
-func (l *recordingAuditLog) LogStoreInitialized(metadataDir string) {
-	l.events = append(l.events, auditEvent{kind: "store_initialized"})
-}
-
-func (l *recordingAuditLog) LogStoreInitializeFailed(reason string) {
-	l.events = append(l.events, auditEvent{kind: "store_initialize_failed", reason: reason})
-}
-
 func (l *recordingAuditLog) LogPassphraseChanged(_ context.Context, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated int) {
 	l.events = append(l.events, auditEvent{
 		kind:                     "passphrase_changed",
@@ -65,88 +57,21 @@ func (l *recordingAuditLog) LogPassphraseChangeFailed(_ context.Context, reason 
 	l.events = append(l.events, auditEvent{kind: "passphrase_change_failed", reason: reason})
 }
 
-func TestInitializeStoreRejectsNilRuntime(t *testing.T) {
-	result := Service{}.InitializeStore(adminproto.InitializeStoreRequest{
-		Passphrase: []byte("passphrase"),
-	})
-	if result.Code != protocol.ErrCodeNoRuntimeBound {
-		t.Fatalf("Code = %q, want %q", result.Code, protocol.ErrCodeNoRuntimeBound)
-	}
-}
-
-func TestInitializeStoreRejectsEmptyPassphraseAndAudits(t *testing.T) {
-	audit := &recordingAuditLog{}
-	ir := testIdentityRuntime()
-
-	result := Service{Runtime: ir, AuditLog: audit}.InitializeStore(adminproto.InitializeStoreRequest{})
-	if result.Code != protocol.ErrCodeInvalidPassphrase {
-		t.Fatalf("Code = %q, want %q", result.Code, protocol.ErrCodeInvalidPassphrase)
-	}
-	if len(audit.events) != 1 {
-		t.Fatalf("audit events = %#v, want one event", audit.events)
-	}
-	if got := audit.events[0]; got.kind != "store_initialize_failed" || got.reason != "passphrase is required" {
-		t.Fatalf("audit event = %#v, want product store initialize failure", got)
-	}
-}
-
-type initializeTestDeps struct {
+type storeTestDeps struct {
 	dataDir string
 	paths   storepaths.Paths
 	cfg     serverconfig.ServerConfig
 	mu      sync.Mutex
 }
 
-func (d *initializeTestDeps) DataDir() string                    { return d.dataDir }
-func (d *initializeTestDeps) Config() *serverconfig.ServerConfig { return &d.cfg }
-func (d *initializeTestDeps) KeyPaths() storepaths.Paths         { return d.paths }
-func (d *initializeTestDeps) Logf(string, ...interface{})        {}
-func (d *initializeTestDeps) WithStoreMutation(fn func() error) error {
+func (d *storeTestDeps) DataDir() string                    { return d.dataDir }
+func (d *storeTestDeps) Config() *serverconfig.ServerConfig { return &d.cfg }
+func (d *storeTestDeps) KeyPaths() storepaths.Paths         { return d.paths }
+func (d *storeTestDeps) Logf(string, ...interface{})        {}
+func (d *storeTestDeps) WithStoreMutation(fn func() error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return fn()
-}
-
-func TestInitializeStoreReleasesMutationLockBeforeUnlock(t *testing.T) {
-	clientreg.RegisterClient()
-	dataDir := t.TempDir()
-	deps := &initializeTestDeps{
-		dataDir: dataDir,
-		paths:   storepaths.NewPaths(dataDir),
-	}
-	ir := testIdentityRuntime()
-	unlockCalled := false
-	service := Service{
-		Deps:    deps,
-		Runtime: ir,
-		UnlockIdentity: func(_ []byte) (bool, int, string, string) {
-			unlockCalled = true
-			if err := deps.WithStoreMutation(func() error {
-				return nil
-			}); err != nil {
-				return false, 0, err.Error(), ""
-			}
-			return true, 0, "", ""
-		},
-	}
-	done := make(chan adminproto.InitializeStoreResult, 1)
-	go func() {
-		done <- service.InitializeStore(adminproto.InitializeStoreRequest{
-			Passphrase: []byte("initialize-passphrase"),
-		})
-	}()
-
-	select {
-	case result := <-done:
-		if !result.Success {
-			t.Fatalf("InitializeStore() result = %#v", result)
-		}
-		if !unlockCalled {
-			t.Fatal("InitializeStore() did not invoke unlock")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("InitializeStore() deadlocked by re-entering the store mutation lock")
-	}
 }
 
 func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
@@ -206,7 +131,7 @@ func TestChangeStorePassphraseRejectsInvalidInputsAndAudits(t *testing.T) {
 // code, so the operator is not told a right passphrase is wrong.
 func TestChangeStorePassphraseReportsADamagedStoreApartFromAWrongPassphrase(t *testing.T) {
 	dataDir := t.TempDir()
-	deps := &initializeTestDeps{dataDir: dataDir, paths: storepaths.NewPaths(dataDir)}
+	deps := &storeTestDeps{dataDir: dataDir, paths: storepaths.NewPaths(dataDir)}
 	current := []byte("current-passphrase")
 	if _, err := storeinit.Initialize(append([]byte(nil), current...), storeinit.Options{
 		ValidateCandidate: func(storeinit.FirstGenerationCandidate) error { return nil },
@@ -291,7 +216,7 @@ func TestChangeStorePassphraseAuditsAllFourMigrationCounts(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dataDir := t.TempDir()
-			deps := &initializeTestDeps{dataDir: dataDir, paths: storepaths.NewPaths(dataDir)}
+			deps := &storeTestDeps{dataDir: dataDir, paths: storepaths.NewPaths(dataDir)}
 			current := []byte("current-passphrase")
 			if _, err := storeinit.Initialize(append([]byte(nil), current...), storeinit.Options{
 				ValidateCandidate: func(storeinit.FirstGenerationCandidate) error { return nil },

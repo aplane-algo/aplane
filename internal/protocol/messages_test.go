@@ -21,8 +21,6 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeUnlockResult,
 		MsgTypeLockIdentity,
 		MsgTypeLockIdentityResult,
-		MsgTypeInitializeStore,
-		MsgTypeInitializeStoreResult,
 		MsgTypeChangeStorePass,
 		MsgTypeChangeStorePassResult,
 		MsgTypeBackup,
@@ -153,11 +151,10 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 }
 
 // Pinned so a change of the version is a deliberate edit, made by the rule in
-// docs/ARCH_ADMIN.md ("Transport notes"). 9 renamed the policy and ASA set
-// results' identity_locked to signer_locked.
-func TestAdminProtocolVersionIsV9(t *testing.T) {
-	if AdminProtocolVersion != 9 {
-		t.Fatalf("AdminProtocolVersion = %d, want 9", AdminProtocolVersion)
+// docs/ARCH_ADMIN.md ("Transport notes"). 10 removed initialize_store.
+func TestAdminProtocolVersionIsV10(t *testing.T) {
+	if AdminProtocolVersion != 10 {
+		t.Fatalf("AdminProtocolVersion = %d, want 10", AdminProtocolVersion)
 	}
 }
 
@@ -541,34 +538,6 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"success": false,
 				"code":    ErrCodeAuthorizationDenied,
 				"error":   "authorization denied",
-			},
-		},
-		{
-			name: "initialize_store",
-			msg: InitializeStoreMessage{
-				BaseMessage: BaseMessage{Type: MsgTypeInitializeStore, ID: "init-1"},
-				Passphrase:  NewSensitiveBytes("new-passphrase"),
-			},
-			wantMap: map[string]any{
-				"type":       MsgTypeInitializeStore,
-				"id":         "init-1",
-				"passphrase": "new-passphrase",
-			},
-		},
-		{
-			name: "initialize_store_result",
-			msg: InitializeStoreResultMessage{
-				BaseMessage:   BaseMessage{Type: MsgTypeInitializeStoreResult, ID: "init-1"},
-				Success:       true,
-				MetadataDir:   "/data/identities/default",
-				HelperWarning: "helper write failed",
-			},
-			wantMap: map[string]any{
-				"type":           MsgTypeInitializeStoreResult,
-				"id":             "init-1",
-				"success":        true,
-				"metadata_dir":   "/data/identities/default",
-				"helper_warning": "helper write failed",
 			},
 		},
 		{
@@ -1418,7 +1387,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":9}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":10}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},
@@ -1448,23 +1417,6 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 			},
 			zero: func(msg any) {
 				msg.(*UnlockMessage).Passphrase.Zero()
-			},
-		},
-		{
-			name:       "initialize_store",
-			raw:        []byte(`{"kind":"request","type":"initialize_store","id":"init-1","passphrase":"init-secret"}`),
-			msg:        &InitializeStoreMessage{},
-			fieldNames: []string{"passphrase"},
-			values:     []string{"init-secret"},
-			check: func(t *testing.T, msg any) {
-				t.Helper()
-				init := msg.(*InitializeStoreMessage)
-				if got := string(init.Passphrase); got != "init-secret" {
-					t.Fatalf("InitializeStoreMessage.Passphrase = %q, want init-secret", got)
-				}
-			},
-			zero: func(msg any) {
-				msg.(*InitializeStoreMessage).Passphrase.Zero()
 			},
 		},
 		{

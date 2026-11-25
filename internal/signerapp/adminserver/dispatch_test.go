@@ -186,7 +186,7 @@ func populateValue(v reflect.Value, depth int) {
 	}
 }
 
-// Every request type in dispatchTable (plus auth and initialize_store) must
+// Every request type in dispatchTable (plus auth) must
 // round-trip cleanly with all fields populated under strict decoding, and
 // reject an unknown field with ErrCodeInvalidRequest.
 func TestDispatchTableStrictDecodeRoundTripAndUnknownFieldRefusal(t *testing.T) {
@@ -246,21 +246,6 @@ func TestDispatchTableStrictDecodeRoundTripAndUnknownFieldRefusal(t *testing.T) 
 		defer decoded.Passphrase.Zero()
 		if err != nil {
 			t.Fatalf("decodeRequest(auth) error = %v", err)
-		}
-	})
-
-	t.Run("initialize_store_populated", func(t *testing.T) {
-		sample := populateRequestSample(protocol.InitializeStoreMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeInitializeStore, ID: "i"},
-		}).(protocol.InitializeStoreMessage)
-		raw, err := protocol.MarshalAdminMessage(sample)
-		if err != nil {
-			t.Fatalf("MarshalAdminMessage(initialize_store) error = %v", err)
-		}
-		decoded, err := decodeRequest[protocol.InitializeStoreMessage](raw)
-		defer decoded.Passphrase.Zero()
-		if err != nil {
-			t.Fatalf("decodeRequest(initialize_store) error = %v", err)
 		}
 	})
 }
@@ -385,32 +370,6 @@ func TestDecodeRequestStrictUnknownFieldsTrailingDataAndZeroing(t *testing.T) {
 		defer msg.Passphrase.Zero()
 		if string(msg.Passphrase) != "secret-value" {
 			t.Fatalf("passphrase = %q, want secret-value", string(msg.Passphrase))
-		}
-	})
-
-	t.Run("pre-auth initialize_store unknown field zeroes passphrase", func(t *testing.T) {
-		var decoded [][]byte
-		original := decodeInitializeStore
-		decodeInitializeStore = func(raw []byte) (protocol.InitializeStoreMessage, error) {
-			msg, err := original(raw)
-			decoded = append(decoded, msg.Passphrase)
-			return msg, err
-		}
-		t.Cleanup(func() { decodeInitializeStore = original })
-
-		conn := &queueConn{}
-		svc := &stubServices{}
-		session := NewSession(conn, SessionDeps{Product: svc}, OriginLocal)
-		raw := []byte(`{"kind":"request","type":"initialize_store","id":"init-2","passphrase":"secret-init","extra":1}`)
-		if got := session.handlePreAuthInitialize("init-2", raw); got != AuthOutcomeBootstrapHandled {
-			t.Fatalf("handlePreAuthInitialize() = %v", got)
-		}
-		if len(decoded) != 1 || len(decoded[0]) == 0 || !isZeroedFrame(decoded[0]) {
-			t.Fatalf("partially decoded initialize passphrase left as %q", decoded)
-		}
-		var reply protocol.InitializeStoreResultMessage
-		if svc.initializeStoreCalls != 0 || len(conn.writes) != 1 || json.Unmarshal(conn.writes[0], &reply) != nil || reply.Code != protocol.ErrCodeInvalidRequest {
-			t.Fatalf("initialize_store with unknown field ran %d times, answered %q", svc.initializeStoreCalls, conn.writes)
 		}
 	})
 }

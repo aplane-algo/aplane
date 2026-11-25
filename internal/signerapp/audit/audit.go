@@ -30,14 +30,13 @@ const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 // few rotated files, so an unbounded stream of them would rotate every earlier
 // entry out of the log within minutes. Each stream is limited separately:
 // those that need no authentication (unauthenticated AUTH_FAILED entries, admin
-// login failures, enroll connections and store initialization failures; the
-// enrollment queue bounds enrollment requests itself), and cosigner component
-// rejections (which an authenticated but compromised signer side can provoke at
-// will; cosigner signatures themselves are never limited). A burst is logged
-// individually; beyond it, one entry is logged per refill interval and the
-// rest are counted in a *_SUPPRESSED summary written within one summary
-// interval. This limits the rate, not the total: a flood kept up for days still
-// rotates the log.
+// login failures and enroll connections; the enrollment queue bounds enrollment
+// requests itself), and cosigner component rejections (which an authenticated
+// but compromised signer side can provoke at will; cosigner signatures
+// themselves are never limited). A burst is logged individually; beyond it, one
+// entry is logged per refill interval and the rest are counted in a
+// *_SUPPRESSED summary written within one summary interval. This limits the
+// rate, not the total: a flood kept up for days still rotates the log.
 const (
 	authFailureBurst           = 20
 	authFailureRefillInterval  = 6 * time.Second
@@ -90,9 +89,6 @@ const (
 	AuditCredentialRestoreUncertain       AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
 	AuditCredentialRestoreRollback        AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
 	AuditStoreReconciled                  AuditEventType = "STORE_RECONCILED"
-	AuditStoreInitialized                 AuditEventType = "STORE_INITIALIZED"
-	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
-	AuditStoreInitFailuresSuppressed      AuditEventType = "STORE_INITIALIZE_FAILURES_SUPPRESSED"
 	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
 	AuditCosignerReferenceChanged         AuditEventType = "COSIGNER_REFERENCE_CHANGED"
@@ -259,11 +255,10 @@ type AuditLogger struct {
 	// closed is set by Close; nothing is written, or reopened, after it.
 	closed bool
 
-	authFailures            entryLimiter
-	adminLoginFailures      entryLimiter
-	cosignerRejections      entryLimiter
-	enrollSessions          entryLimiter
-	storeInitializeFailures entryLimiter
+	authFailures       entryLimiter
+	adminLoginFailures entryLimiter
+	cosignerRejections entryLimiter
+	enrollSessions     entryLimiter
 
 	// enrollSessionsLogged holds the remote address of each open enroll
 	// connection whose connect was logged, so that its disconnect is too, and
@@ -274,8 +269,7 @@ type AuditLogger struct {
 // limiters is every stream of entries that is rate limited.
 func (a *AuditLogger) limiters() []*entryLimiter {
 	return []*entryLimiter{
-		&a.authFailures, &a.adminLoginFailures, &a.cosignerRejections,
-		&a.enrollSessions, &a.storeInitializeFailures,
+		&a.authFailures, &a.adminLoginFailures, &a.cosignerRejections, &a.enrollSessions,
 	}
 }
 
@@ -315,7 +309,6 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
 	logger.adminLoginFailures.init(AuditAdminLoginFailuresSuppressed, "admin login failures")
 	logger.enrollSessions.init(AuditEnrollSessionsSuppressed, "enroll connections")
-	logger.storeInitializeFailures.init(AuditStoreInitFailuresSuppressed, "store initialization failures")
 	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
 }
@@ -1123,9 +1116,8 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 }
 
 // LogIdentityUnlocked logs how an unlock ended, whether an admin login, an
-// unlock command, a store initialization or the startup asked for it: outcome
-// is unlocked, recovery or failed, and code and reason say why it is not
-// unlocked.
+// unlock command or the startup asked for it: outcome is unlocked, recovery or
+// failed, and code and reason say why it is not unlocked.
 func (a *AuditLogger) LogIdentityUnlocked(ctx context.Context, outcome string, keyCount int, code, reason string) {
 	entry := contextAuditFields(ctx)
 	entry.Event = AuditIdentityUnlocked
@@ -1560,25 +1552,6 @@ func (a *AuditLogger) LogDeletedArchivePruneContext(
 		entry.Outcome = "failed"
 		entry.Reason = result.Error
 	}
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogStoreInitialized(metadataDir string) {
-	entry := productPrincipalAuditFields()
-	entry.Event = AuditStoreInitialized
-	entry.Outcome = "initialized"
-	entry.Reason = metadataDir
-	a.Log(entry)
-}
-
-func (a *AuditLogger) LogStoreInitializeFailed(reason string) {
-	if a == nil || !a.storeInitializeFailures.admit(a) {
-		return
-	}
-	entry := productPrincipalAuditFields()
-	entry.Event = AuditStoreInitializeFailed
-	entry.Outcome = "failed"
-	entry.Reason = reason
 	a.Log(entry)
 }
 
