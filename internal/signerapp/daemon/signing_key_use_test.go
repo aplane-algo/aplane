@@ -808,63 +808,122 @@ func (c *blockingConsole) Printf(format string, args ...any) {
 func (c *blockingConsole) Println(...any) {}
 func (c *blockingConsole) Sync()          {}
 
-// A stalled stdout/console while printing per-transaction progress for /sign
-// must never hold a KeyUse or block Runtime.Lock from clearing the keyring.
-func TestStalledConsoleDoesNotBlockLockOnOrdinarySign(t *testing.T) {
-	fx := newNonRotatingDaemonFixture(t, noderole.RoleSigner)
-	svc := fx.newService(&signingAuditLogger{log: fx.server.auditLog})
-	con := &blockingConsole{
-		match:   "signed (",
-		parked:  make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	var releaseOnce sync.Once
-	unblock := func() { releaseOnce.Do(func() { close(con.release) }) }
-	defer unblock()
-
-	svc.Executor.Console = con
-	svc.Console = con
-
-	session := keystore.NewKeySession(fx.newStore(""))
-	session.InitializeSession()
-	t.Cleanup(session.Destroy)
-	req := fx.ordinaryRequest(t)
-
-	done := make(chan *signersigning.ServiceError, 1)
-	go func() {
-		_, err := svc.SignGroupWithContext(context.Background(), req, session)
-		done <- err
-	}()
-
-	select {
-	case <-con.parked:
-	case err := <-done:
-		t.Fatalf("SignGroupWithContext finished before console print: err=%v", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("SignGroupWithContext never reached executor console print")
-	}
-
-	locked := make(chan struct{})
-	go func() {
-		fx.ir.Lock()
-		close(locked)
-	}()
-	select {
-	case <-locked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Lock blocked on a stalled console write (KeyUse must end before console output)")
-	}
-	if fx.ir.IsUnlocked() {
-		t.Fatal("runtime is still unlocked after Lock() returned")
-	}
-	if _, err := fx.ir.SnapshotKeySession().GetKeyWithContext(context.Background(), fx.edAddr); !errors.Is(err, keystore.ErrStoreLocked) {
-		t.Fatalf("SnapshotKeySession after Lock = %v, want ErrStoreLocked", err)
+// A stalled stdout/console while printing progress or summary lines after
+// signing must neither hold a KeyUse (blocking Runtime.Lock from clearing the
+// keyring) nor return a signature once stdout resumes after the lock.
+func TestStalledConsoleDoesNotBlockLockOrLeakSignature(t *testing.T) {
+	cases := []struct {
+		name    string
+		match   string
+		prepare func(*testing.T, *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError)
+	}{
+		{
+			name:  "ordinary_sign/per_txn",
+			match: "signed (",
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.ordinaryRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.SignGroupWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
+			},
+		},
+		{
+			name:  "ordinary_sign/summary",
+			match: "Successfully signed",
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.ordinaryRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.SignGroupWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
+			},
+		},
+		{
+			name:  "bounded_component/summary",
+			match: "bounded-cosigner base component",
+			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
+				req := fx.boundedComponentRequest(t)
+				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
+					res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+					return res != nil, err
+				}
+			},
+		},
 	}
 
-	unblock()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("SignGroupWithContext never finished after console unblocked")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newNonRotatingDaemonFixture(t, noderole.RoleSigner)
+			run := tc.prepare(t, fx)
+			audit := &auditInterruptLogger{signingAudit: &signingAuditLogger{log: fx.server.auditLog}}
+			svc := fx.newService(audit)
+			con := &blockingConsole{
+				match:   tc.match,
+				parked:  make(chan struct{}),
+				release: make(chan struct{}),
+			}
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(con.release) }) }
+			defer unblock()
+
+			svc.Executor.Console = con
+			svc.Console = con
+
+			session := keystore.NewKeySession(fx.newStore(""))
+			session.InitializeSession()
+			t.Cleanup(session.Destroy)
+
+			type outcome struct {
+				gotOutput bool
+				err       *signersigning.ServiceError
+			}
+			done := make(chan outcome, 1)
+			go func() {
+				got, err := run(svc, session)
+				done <- outcome{gotOutput: got, err: err}
+			}()
+
+			select {
+			case <-con.parked:
+			case res := <-done:
+				t.Fatalf("request finished before console print matching %q: output=%v err=%v", tc.match, res.gotOutput, res.err)
+			case <-time.After(10 * time.Second):
+				t.Fatalf("request never reached console print matching %q", tc.match)
+			}
+
+			locked := make(chan struct{})
+			go func() {
+				fx.ir.Lock()
+				close(locked)
+			}()
+			select {
+			case <-locked:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Lock blocked on a stalled console write (KeyUse must end before console output)")
+			}
+			if fx.ir.IsUnlocked() {
+				t.Fatal("runtime is still unlocked after Lock() returned")
+			}
+			if _, err := fx.ir.SnapshotKeySession().GetKeyWithContext(context.Background(), fx.edAddr); !errors.Is(err, keystore.ErrStoreLocked) {
+				t.Fatalf("SnapshotKeySession after Lock = %v, want ErrStoreLocked", err)
+			}
+
+			unblock()
+			select {
+			case res := <-done:
+				if res.gotOutput || res.err == nil || res.err.Kind != signersigning.ErrorLocked {
+					t.Fatalf("result after lock during stalled console = (output=%v, err=%v), want (false, ErrorLocked)", res.gotOutput, res.err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("request never finished after console unblocked")
+			}
+			if audit.approved.Load() != 1 || audit.withheld.Load() != 1 {
+				t.Fatalf("audit approved=%d withheld=%d, want 1/1", audit.approved.Load(), audit.withheld.Load())
+			}
+			if reason := audit.withheldReason.Load(); reason == nil || !strings.HasPrefix(*reason, "signature withheld after it was recorded as signed: ") {
+				t.Fatalf("withheld reason = %v, want standard prefix", reason)
+			}
+		})
 	}
 }

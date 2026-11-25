@@ -127,15 +127,16 @@ func (s *Service) PrepareBoundedComponentWithContext(ctx context.Context, req si
 		s.logSessionEndedAfterApproval(groupReq, plan, refused)
 		return nil, refused
 	}
-	// Release the key use before the blocking audit write so a stalled disk
-	// cannot hold a lock's drain, then recheck the session before returning.
+	// Release the key use before blocking console or audit writes so a stalled
+	// terminal or disk cannot hold a lock's drain, then recheck the session
+	// before returning.
 	endKeyUse()
+	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-cosigner base component(s)\n", len(components))
 	records := s.logBoundedComponentsApproved(req, plan, targets, outcome)
 	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}
-	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-cosigner base component(s)\n", len(components))
 	return &signerapi.ComponentResponse{RequestID: req.RequestID, Components: components}, nil
 }
 

@@ -246,10 +246,12 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 		return nil, refused
 	}
 	// All loaded key material was zeroed before executeGroupSigning returned.
-	// End the key use before writing audit logs or console output so a stalled
-	// disk or terminal cannot hold a lock's drain, then recheck the session
+	// End the key use before writing console output or audit logs so a stalled
+	// terminal or disk cannot hold a lock's drain, then recheck the session
 	// before releasing signatures.
 	endKeyUse()
+	deferred.flushConsole(s.Executor.Console)
+	s.logSummary(req, plan, execResult.SignedTxns, consoleOf(s.Console))
 
 	var records []SignedRecord
 	if s.AuditLog != nil {
@@ -259,10 +261,6 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.Gr
 		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}
-
-	deferred.flushConsole(s.Executor.Console)
-	console := consoleOf(s.Console)
-	s.logSummary(req, plan, execResult.SignedTxns, console)
 
 	return &SignGroupResult{
 		Signed:    execResult.SignedTxns,
