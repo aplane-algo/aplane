@@ -695,7 +695,7 @@ STORE_RELEASE_BIN_DIR ?= $(CURDIR)/bin/amd64
 # they do not clone the shared integration fixture or contact algod.
 store-lifecycle-test:
 	@echo "Running blank-store lifecycle tests..."
-	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestFreshStoreBackupRestoreAndSign|TestStorePassphraseRotationPreservesSigningAndPriorGeneration)$$'
+	@APLANE_STORE_INTEGRATION=1 go test $(STORE_INTEGRATION_GO_ARGS) $(STORE_INTEGRATION_TEST_PKG) -run '^(TestFreshStoreBackupRestoreAndSign|TestStorePassphraseRotationPreservesSigningAndPriorGeneration|TestASecondSignerOnADataDirectoryIsRefused)$$'
 
 # Opt-in release-layout capacity gate. It processes the full deleted-archive
 # warning threshold and records copy, re-encryption, seal, and retained-disk

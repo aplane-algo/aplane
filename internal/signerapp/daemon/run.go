@@ -76,6 +76,26 @@ func Run(dataDir string) int {
 	}
 	defer func() { _ = storeGuard.Close() }()
 
+	// One signer per data directory, checked before anything below touches the
+	// store: a second one would clean up the first's unfinished work, and
+	// unlock and reconcile the store, before it found the admin socket in use.
+	// It comes after the shared store lock, which apstore holds exclusively while
+	// it initializes, rebuilds or migrates a store: a start refused there must
+	// create no file in it.
+	signerGuard, err := storelock.AcquireSigner(resolvedDataDir)
+	if err != nil {
+		if errors.Is(err, storelock.ErrBusy) {
+			if abs, err := filepath.Abs(resolvedDataDir); err == nil {
+				resolvedDataDir = abs
+			}
+			logErrorf("another apsigner is already using %s; stop it first", resolvedDataDir)
+			return 1
+		}
+		logErrorf("failed to acquire the signer lock: %v", err)
+		return 1
+	}
+	defer func() { _ = signerGuard.Close() }()
+
 	logInfof("APlane Signing Server")
 	logInfof("============================================")
 	logInfof("Data directory: %s", resolvedDataDir)

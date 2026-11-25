@@ -1039,6 +1039,12 @@ default unit: two units that share `/run/apsigner/aplane.sock` can displace or
 misdirect their admin clients. Select a non-default instance explicitly with
 `--ipc-path`.
 
+Only one `apsigner` runs on a data directory. A second one exits with `another
+apsigner is already using <directory>; stop it first`, so a deployment that
+replaces a signer waits for the old one to exit before it starts the new one. A
+directory on storage shared between machines is covered only if its file system
+honors file locks between them.
+
 ---
 
 ## Product Runtime Layout

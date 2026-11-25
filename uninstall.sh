@@ -843,6 +843,7 @@ if [ "$DATA_DIR_RETAINED" = "1" ]; then
                 config.yaml.aplane-installer.new) note="installer template (safe to remove)" ;;
                 .ssh)                             note="SSH tunnel host keys" ;;
                 .apstore.lock)                    note="keystore lock file" ;;
+                .apsigner.lock)                   note="running-signer lock file" ;;
                 .prod)                            note="managed install marker" ;;
                 install)                          note="installer state" ;;
                 .bashrc|.bash_logout|.bash_history|.profile) note="shell skeleton (no signer data)" ;;

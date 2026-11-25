@@ -93,8 +93,10 @@ func TestPermissionsPreflightBypassesModeGuardAndStoreLock(t *testing.T) {
 		t.Fatalf("acquireOfflineMutationLockForArgs(preflight) error = %v", err)
 	}
 	release()
-	if _, err := os.Lstat(filepath.Join(dataDir, ".apstore.lock")); !os.IsNotExist(err) {
-		t.Fatalf("preflight lock path exists: %v", err)
+	for _, name := range []string{".apstore.lock", ".apsigner.lock"} {
+		if _, err := os.Lstat(filepath.Join(dataDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("preflight created %s: %v", name, err)
+		}
 	}
 }
 

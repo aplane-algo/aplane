@@ -91,6 +91,7 @@ func TestPreflightSharedRejectsSymlinkWithoutTouchingReferent(t *testing.T) {
 	for _, relative := range []string{
 		".prod",
 		".apstore.lock",
+		".apsigner.lock",
 		"install",
 		filepath.Join("install", "service-principal.json"),
 		filepath.Join("install", "uninstall.sh"),

@@ -8,7 +8,9 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -130,6 +132,59 @@ func TestStorePassphraseRotationPreservesSigningAndPriorGeneration(t *testing.T)
 
 // TestReleaseArtifactStoreDrill deliberately avoids test-only process features
 // so APLANE_TEST_BIN_DIR can point it at the exact release binaries.
+// A second apsigner on a running one's data directory exits and names the
+// directory, however it was spelled. It leaves the first's unfinished work alone,
+// and the first keeps signing. A signer killed outright keeps nobody out: the
+// next one starts, and the unfinished work is its own to clean up.
+func TestASecondSignerOnADataDirectoryIsRefused(t *testing.T) {
+	const passphrase = "one-signer-passphrase"
+	env := newFreshStoreEnv(t, passphrase)
+	env.initialize()
+	env.startSigner(passphrase)
+	address := mustGenerateEd25519(t, env)
+	mustWaitForAddresses(t, env, address)
+
+	paths := storepaths.NewPaths(env.dataDir)
+	unfinished := []string{
+		filepath.Join(paths.ProductBackupsDir(), ".import-probe.part"),
+		filepath.Join(paths.GenerationsDir(), storepaths.GenerationStagingPrefix+"probe", "keys.txt"),
+	}
+	for _, path := range unfinished {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("unfinished"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	output, err := runCommand(t, suiteBinaries.apsigner, env.dataDir, "",
+		[]string{"TEST_PASSPHRASE=" + passphrase, "DISABLE_MEMORY_LOCK=1"}, "-d", ".")
+	want := "another apsigner is already using " + env.dataDir + "; stop it first"
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(output, want) {
+		t.Fatalf("a second signer: %v, want exit 1 saying %q; it wrote:\n%s", err, want, output)
+	}
+	for _, path := range unfinished {
+		if data, err := os.ReadFile(path); err != nil || string(data) != "unfinished" {
+			t.Errorf("%s = %q, %v; want it left alone", path, data, err)
+		}
+	}
+	assertCanSign(t, env, address)
+
+	if err := env.crashSigner(); err != nil {
+		t.Fatal(err)
+	}
+	env.startSigner(passphrase)
+	mustWaitForAddresses(t, env, address)
+	assertCanSign(t, env, address)
+	for _, path := range unfinished {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("the next signer left %s: %v", path, err)
+		}
+	}
+}
+
 func TestReleaseArtifactStoreDrill(t *testing.T) {
 	const (
 		sourcePass = "release-artifact-source"

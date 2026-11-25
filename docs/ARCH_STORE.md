@@ -32,6 +32,7 @@ routing, client enrollment, or approval prompts.
   node.yaml
   audit.log
   .apstore.lock
+  .apsigner.lock
   .prod                     # systemd-managed marker
   install/                  # root-owned installer metadata (release.json, service-principal.json)
   library/
@@ -123,6 +124,10 @@ Layout notes:
   explicitly selected, preserving the normal
   `APSIGNER_DATA`/`APSIGNER_IPC_PATH` pairing.
 - `.apstore.lock` is the cooperative signer-store lock used by live signer startup and the local `apstore rebuild` rescue path
+- `.apsigner.lock` is the lock one running `apsigner` holds exclusively on its
+  data directory. A second one exits before it touches the store: two would
+  commit over each other, clean up each other's unfinished work, and could reuse
+  a rotating account's one-time leaf, since each remembers only its own releases
 - signer-managed backup archives are written under
   `<data_dir>/backups/default/`; the archive contains `README.md`,
   `apb/*.apb` encrypted canonical credential payloads, `policies/*.apb`
@@ -373,8 +378,8 @@ state directs the operator to the permission migration command.
 Installer-owned management scripts, release metadata, operator metadata, and
 the template library are installed only after migration succeeds. In
 particular, recursive template ownership repair never runs against a tree
-that has not been migrated. The shell installer does not repair `.apstore.lock`; the descriptor-based
-Go migrator owns that operation.
+that has not been migrated. The shell installer does not repair `.apstore.lock` or `.apsigner.lock`; the
+descriptor-based Go migrator owns that operation.
 
 ### Implemented rollout
 

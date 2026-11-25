@@ -243,6 +243,7 @@ config.yaml
 node.yaml
 audit.log
 .apstore.lock
+.apsigner.lock
 aplane.sock               # same-UID IPC socket default; systemd uses /run/apsigner/aplane.sock
 install/release.json      # systemd installs
 library/templates/
@@ -974,7 +975,8 @@ projections of shell application results, not a separate backend model.
 
 1. Load server config.
 2. Acquire the shared store lock (fails if an offline `apstore` mutation holds
-   it exclusively).
+   it exclusively), then the exclusive signer lock (fails if another `apsigner`
+   uses the data directory). Nothing in the store is touched before both.
 3. Validate that `identities/` has no entry other than a real `default/` directory.
 4. Load root node role from `node.yaml`.
 5. Build the one product `productruntime.Runtime` for `default`.
@@ -1294,6 +1296,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | SSH host key | secret server credential | `.ssh/ssh_host_key` | `sshtunnel.Server` host key | `internal/sshtunnel`, startup/install | Generated locally; clients pin through known-hosts flow. |
 | IPC socket path | runtime endpoint | systemd default `/run/apsigner/aplane.sock`; same-UID local default `<data_dir>/aplane.sock`; explicit override supported | local admin transport listener | `internal/adminipc`, `internal/serverconfig`, `internal/signerapp/daemon`, `internal/signerapp/ipcbind`, `internal/adminproto`, `internal/transport` | Production runtime parent is service-owned `0750`, socket is `0660`, and local admin protocol still requires passphrase auth. |
 | Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/daemon`, `cmd/apstore`, `internal/signerapp/policycmd` | Non-blocking advisory flock. The running daemon holds it shared for its lifetime. Offline `apstore` and policy-rescue mutations take it exclusively, and offline rescue reads take it shared. A conflict fails with `ErrBusy`. It keeps offline mutation out while the daemon runs. Live in-daemon mutations are serialized by in-process locks, not by this file. |
+| Signer lock | runtime/durable coordination | `.apsigner.lock` | one running signer | `internal/storelock`, `internal/signerapp/daemon` | Non-blocking exclusive advisory flock. The daemon takes it after the shared store lock and before it touches the store, and holds it for its lifetime; a second one on the same data directory exits. The kernel drops it when the process ends, so nothing stale is left. It depends on the file system honoring `flock`. It is per data directory, so it does not see a copied store, or one another data directory reaches through a symlinked `identities`. |
 | Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `internal/signerapp/daemon` | Mode `0600`, rotated by size; not authority for signing or recovery. |
 | Managed backup locker | authoritative backup inventory | `backups/default/*.tar.gz` (or `.tgz`) | backup list/restore preview/direct restore input | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
 | Backup import residue | ephemeral validation state | `backups/default/.import-*.part`, `.import-claimed-*.part`, `.import-validation-*/` | unpublished upload, immutable validation claim, and same-filesystem deep-validation workspace | `internal/signerapp/backupadmin` | Owner-private, excluded from managed inventory, removed on normal completion or daemon startup. |
