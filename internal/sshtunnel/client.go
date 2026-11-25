@@ -17,8 +17,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -649,7 +651,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		onEnrollmentStart(clientFingerprint)
 	}
 
-	output, err := io.ReadAll(stdout)
+	output, err := io.ReadAll(io.LimitReader(stdout, maxEnrollmentReplyBytes+1))
 	if err != nil {
 		if ctx.Err() != nil {
 			return none, ctx.Err()
@@ -659,6 +661,11 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if ctx.Err() != nil {
 		return none, ctx.Err()
 	}
+	if len(output) > maxEnrollmentReplyBytes {
+		// Close without Wait: a server streaming unbounded output may never exit.
+		_ = session.Close()
+		return none, fmt.Errorf("enrollment response exceeded %d bytes", maxEnrollmentReplyBytes)
+	}
 
 	// Wait for command to complete
 	if err := session.Wait(); err != nil {
@@ -666,7 +673,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 			return none, ctx.Err()
 		}
 		if errMsg := strings.TrimSpace(string(output)); errMsg != "" {
-			return none, fmt.Errorf("%s", errMsg)
+			return none, fmt.Errorf("%s", safeEnrollmentText(errMsg))
 		}
 		return none, fmt.Errorf("enrollment failed: %w", err)
 	}
@@ -683,9 +690,41 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		return none, fmt.Errorf("unexpected enrollment response: %s", quoteClientText(reply))
 	}
 	if clientFingerprint != "" && result.Fingerprint != clientFingerprint {
-		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", result.Fingerprint, clientFingerprint)
+		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", safeEnrollmentText(result.Fingerprint), clientFingerprint)
 	}
 	return result, nil
+}
+
+const (
+	// maxEnrollmentReplyBytes caps stdout read from an enrollment session.
+	// Legitimate replies are a single status line ("pending SHA256:...",
+	// "enrolled SHA256:...") or a short ERROR line.
+	maxEnrollmentReplyBytes = 4096
+	// maxEnrollmentErrorBytes caps untrusted server text surfaced in an
+	// enrollment error message.
+	maxEnrollmentErrorBytes = 256
+)
+
+// safeEnrollmentText escapes non-printing characters without adding quotes
+// (the server already quotes its ERROR text) and caps length at a valid rune
+// boundary so an escape sequence is never sliced in half.
+func safeEnrollmentText(s string) string {
+	escaped := termsafe.Line(s)
+	if len(escaped) <= maxEnrollmentErrorBytes {
+		return escaped
+	}
+	var b strings.Builder
+	b.Grow(maxEnrollmentErrorBytes + 3)
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		piece := termsafe.Line(s[i : i+size])
+		if b.Len()+len(piece) > maxEnrollmentErrorBytes {
+			break
+		}
+		b.WriteString(piece)
+		i += size
+	}
+	return b.String() + "..."
 }
 
 // enrollmentCommandLine renders the exec command for an enrollment request.
@@ -858,11 +897,22 @@ func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, con
 		return nil, nil, err
 	}
 
-	// Intercept global requests: capture server signals, forward the rest
+	filteredReqs, done := c.interceptGlobalRequests(reqs)
+	client := ssh.NewClient(sshConn, chans, filteredReqs)
+	return client, done, nil
+}
+
+// interceptGlobalRequests captures server signals (revocation and connection
+// limit notices) and forwards the rest non-blockingly until reqs closes when
+// the SSH connection ends. Always draining reqs prevents the SSH mux from
+// stalling on its 16-slot global-request channel, and closing filteredReqs on
+// exit terminates ssh.NewClient's internal request consumer.
+func (c *Client) interceptGlobalRequests(reqs <-chan *ssh.Request) (<-chan *ssh.Request, chan struct{}) {
 	filteredReqs := make(chan *ssh.Request, 16)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer close(filteredReqs)
 		for req := range reqs {
 			switch req.Type {
 			case RevokedRequestType:
@@ -882,31 +932,19 @@ func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, con
 				}
 				continue
 			}
-			if !forwardInterceptedGlobalRequest(ctx, filteredReqs, req) {
-				return
-			}
+			forwardInterceptedGlobalRequest(filteredReqs, req)
 		}
-		close(filteredReqs)
 	}()
-
-	client := ssh.NewClient(sshConn, chans, filteredReqs)
-	return client, done, nil
+	return filteredReqs, done
 }
 
-func forwardInterceptedGlobalRequest(ctx context.Context, filteredReqs chan<- *ssh.Request, req *ssh.Request) bool {
+func forwardInterceptedGlobalRequest(filteredReqs chan<- *ssh.Request, req *ssh.Request) {
 	select {
 	case filteredReqs <- req:
-		return true
-	case <-ctx.Done():
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-		return false
 	default:
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
-		return true
 	}
 }
 

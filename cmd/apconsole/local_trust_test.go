@@ -379,3 +379,166 @@ func TestLoadSSHPublicKeyZeroesTheHostKeyBytes(t *testing.T) {
 		t.Fatal("the host key bytes read were left in memory")
 	}
 }
+
+func TestTrustLocalSignerHostKeyReplacesRotatedKeyAndPreservesSpecialLines(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	oldKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	newKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	otherKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	oldKey := loadTestSSHPublicKey(t, oldKeyPath)
+	newKey := loadTestSSHPublicKey(t, newKeyPath)
+	otherKey := loadTestSSHPublicKey(t, otherKeyPath)
+
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+
+	addr := "[127.0.0.1]:56870"
+	oldLine := knownhosts.Line([]string{addr}, oldKey)
+	newLine := knownhosts.Line([]string{addr}, newKey)
+	revokedLine := "@revoked " + knownhosts.Line([]string{addr}, oldKey)
+	caLine := "@cert-authority " + knownhosts.Line([]string{addr}, otherKey)
+	hashedLine := "|1|c2FsdA==|aGFzaA== " + strings.TrimSpace(string(ssh.MarshalAuthorizedKey(otherKey)))
+	multiHostLine := knownhosts.Line([]string{addr, "localhost"}, otherKey)
+	otherHostLine := knownhosts.Line([]string{"[127.0.0.1]:56871"}, otherKey)
+	commentLine := "# local signer trust file"
+
+	knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	initial := strings.Join([]string{
+		commentLine,
+		revokedLine,
+		caLine,
+		hashedLine,
+		multiHostLine,
+		oldLine,
+		otherHostLine,
+		"",
+	}, "\n")
+	if err := os.WriteFile(knownHostsPath, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0)
+	if err != nil {
+		t.Fatalf("trustLocalSignerHostKey() error = %v", err)
+	}
+	if !strings.Contains(notice, addr) {
+		t.Fatalf("notice = %q, want address %s", notice, addr)
+	}
+	if mode := fileMode(t, knownHostsPath); mode != 0o600 {
+		t.Fatalf("known_hosts mode = %o, want 600", mode)
+	}
+
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	want := strings.Join([]string{
+		commentLine,
+		revokedLine,
+		caLine,
+		hashedLine,
+		multiHostLine,
+		otherHostLine,
+		newLine,
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("known_hosts mismatch:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	// Second call is a no-op once newLine is the sole plain entry for addr.
+	notice, err = trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0)
+	if err != nil || notice != "" {
+		t.Fatalf("second trustLocalSignerHostKey() = (%q, %v), want empty no-op", notice, err)
+	}
+}
+
+func TestTrustLocalSignerHostKeyRemovesStaleEntryEvenWhenCurrentKeyAlsoPresent(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	oldKey := loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))
+	newKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	newKey := loadTestSSHPublicKey(t, newKeyPath)
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+
+	addr := "[127.0.0.1]:56870"
+	oldLine := knownhosts.Line([]string{addr}, oldKey)
+	newLine := knownhosts.Line([]string{addr}, newKey)
+
+	knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Simulates a file written before rotation cleanup: old and new keys both present.
+	if err := os.WriteFile(knownHostsPath, []byte(oldLine+"\n"+newLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0)
+	if err != nil {
+		t.Fatalf("trustLocalSignerHostKey() error = %v", err)
+	}
+	if notice == "" {
+		t.Fatal("expected rewrite notice when cleaning up stale entry beside current entry")
+	}
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != newLine+"\n" {
+		t.Fatalf("known_hosts = %q, want sole %q", string(data), newLine+"\n")
+	}
+}
+
+func TestTrustLocalSignerHostKeyAppendsNewlineWhenExistingLacksTrailingNewline(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	newKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	newKey := loadTestSSHPublicKey(t, newKeyPath)
+	otherKey := loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+
+	knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	otherLine := knownhosts.Line([]string{"other.example.com"}, otherKey)
+	if err := os.WriteFile(knownHostsPath, []byte(otherLine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0); err != nil {
+		t.Fatalf("trustLocalSignerHostKey() error = %v", err)
+	}
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := otherLine + "\n" + knownhosts.Line([]string{"[127.0.0.1]:56870"}, newKey) + "\n"
+	if string(data) != want {
+		t.Fatalf("known_hosts = %q, want %q", string(data), want)
+	}
+}
+
+func TestTrustLocalSignerHostKeyRefusesSymlinkKnownHosts(t *testing.T) {
+	clientDir := writeLoopbackClientConfig(t)
+	newKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+
+	sshDir := filepath.Join(clientDir, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "real_known_hosts")
+	if err := os.WriteFile(target, []byte("other.example.com ssh-ed25519 AAAA\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(sshDir, "known_hosts")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0); err == nil {
+		t.Fatal("trustLocalSignerHostKey() succeeded on symlink known_hosts, want refusal")
+	}
+}

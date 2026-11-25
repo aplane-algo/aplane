@@ -18,6 +18,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -71,34 +72,85 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 	address := knownhosts.Normalize(net.JoinHostPort(host, strconv.Itoa(sshPort)))
 	line := knownhosts.Line([]string{address}, hostKey)
 
-	if existing, err := os.ReadFile(knownHostsPath); err == nil {
-		for _, existingLine := range strings.Split(string(existing), "\n") {
-			if existingLine == line {
-				return "", nil
-			}
-		}
-	} else if !os.IsNotExist(err) {
+	existing, _, err := fsutil.ReadRegularFile(knownHostsPath)
+	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("read known_hosts: %w", err)
+	}
+	updated, changed := updateKnownHostsForLoopback(existing, address, line)
+	if !changed {
+		return "", nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
 		return "", fmt.Errorf("create known_hosts directory: %w", err)
 	}
-	f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("open known_hosts: %w", err)
-	}
-	if _, err := f.WriteString(line + "\n"); err != nil {
-		_ = f.Close()
+	if err := fsutil.WriteFileDurable(knownHostsPath, updated); err != nil {
 		return "", fmt.Errorf("write known_hosts: %w", err)
 	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("close known_hosts: %w", err)
-	}
-	if err := os.Chmod(knownHostsPath, 0o600); err != nil {
-		return "", fmt.Errorf("chmod known_hosts: %w", err)
-	}
 	return fmt.Sprintf("trusted local signer SSH host key for %s", address), nil
+}
+
+// updateKnownHostsForLoopback ensures line is the sole plain single-host entry
+// for address. Stale plain single-host entries for address are dropped;
+// markers (@revoked, @cert-authority), hashed hosts (|1|...), multi-host
+// lines, comments, blank lines, and entries for other hosts are kept verbatim.
+func updateKnownHostsForLoopback(existing []byte, address, line string) ([]byte, bool) {
+	content := string(existing)
+	exactMatches := 0
+	staleMatches := 0
+
+	var kept strings.Builder
+	kept.Grow(len(content) + len(line) + 2)
+
+	for len(content) > 0 {
+		rawLine := content
+		if idx := strings.IndexByte(content, '\n'); idx >= 0 {
+			rawLine = content[:idx+1]
+			content = content[idx+1:]
+		} else {
+			content = ""
+		}
+
+		trimmedLine := strings.TrimRight(rawLine, "\r\n")
+		if isPlainSingleHostKnownHostsLine(trimmedLine, address) {
+			if trimmedLine == line {
+				exactMatches++
+			} else {
+				staleMatches++
+			}
+			continue
+		}
+		kept.WriteString(rawLine)
+	}
+
+	if exactMatches == 1 && staleMatches == 0 {
+		return nil, false
+	}
+	if kept.Len() > 0 && !strings.HasSuffix(kept.String(), "\n") {
+		kept.WriteByte('\n')
+	}
+	kept.WriteString(line)
+	kept.WriteByte('\n')
+	return []byte(kept.String()), true
+}
+
+func isPlainSingleHostKnownHostsLine(trimmedLine, address string) bool {
+	fields := strings.Fields(trimmedLine)
+	if len(fields) < 3 {
+		return false
+	}
+	hostField := fields[0]
+	if hostField == "" {
+		return false
+	}
+	switch hostField[0] {
+	case '#', '@', '|':
+		return false
+	}
+	if strings.ContainsAny(hostField, ",*?!") {
+		return false
+	}
+	return strings.EqualFold(hostField, address)
 }
 
 // loadSSHPublicKeyFromPrivateKey returns the public half of the signer's SSH
