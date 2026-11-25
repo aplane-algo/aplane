@@ -337,19 +337,19 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 		{
 			name: "during initialize",
 			setup: func(m *Manager) {
-				m.initializePluginHook = func(*Instance, runtimeConfig) error {
+				m.initializePluginHook = func(context.Context, *Instance, runtimeConfig) error {
 					return io.ErrUnexpectedEOF
 				}
 			},
 			run: func(m *Manager) error {
-				_, err := m.StartPlugin("mithras")
+				_, err := m.StartPlugin(context.Background(), "mithras")
 				return err
 			},
 		},
 		{
 			name: "during execute",
 			setup: func(m *Manager) {
-				m.initializePluginHook = func(*Instance, runtimeConfig) error { return nil }
+				m.initializePluginHook = func(context.Context, *Instance, runtimeConfig) error { return nil }
 			},
 			run: func(m *Manager) error {
 				_, err := m.ExecuteCommand(context.Background(), "mithras", "echo", nil, jsonrpc.Context{})
@@ -359,7 +359,7 @@ func TestFailedPluginReportsHiddenStderr(t *testing.T) {
 		{
 			name: "during signTransactions",
 			setup: func(m *Manager) {
-				m.initializePluginHook = func(*Instance, runtimeConfig) error { return nil }
+				m.initializePluginHook = func(context.Context, *Instance, runtimeConfig) error { return nil }
 			},
 			run: func(m *Manager) error {
 				_, err := m.SignTransactions(context.Background(), "mithras", jsonrpc.SignTransactionsParams{})

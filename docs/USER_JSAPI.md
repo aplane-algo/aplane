@@ -877,7 +877,9 @@ an `arg:` word, such as `"arg:preimage=text:x"` or
 transactions, as on the command line (see
 [ARCH_PLUGINS.md](ARCH_PLUGINS.md#logicsig-arguments-arg)); it is not passed
 to the plugin. Each step's transactions are reviewed and submitted, and a step that returns a
-`continuation` is followed, so the call returns only after the last step:
+`continuation` is followed, up to a limit (see
+[ARCH_PLUGINS.md](ARCH_PLUGINS.md#multi-step-workflows-continuations)), so the
+call returns only after the last step:
 `success`, `message`, `data` and `presentation` are the last step's. When any
 step submitted transactions, `data.txids` lists every transaction ID it
 submitted, in order (in simulate mode, the IDs of the simulated transactions;

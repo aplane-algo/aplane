@@ -78,14 +78,14 @@ func within(t *testing.T, limit time.Duration, what string, fn func() error) err
 // of a frame, refuses later calls.
 func TestCallTimeoutCoversAStalledWrite(t *testing.T) {
 	c, _, _ := unreadClient(t)
-	err := within(t, 2*time.Second, "CallWithTimeout", func() error {
-		return c.CallWithTimeout(MethodExecute, bigParams(), nil, 100*time.Millisecond)
+	err := within(t, 2*time.Second, "CallContext", func() error {
+		return c.CallContext(context.Background(), MethodExecute, bigParams(), nil, 100*time.Millisecond)
 	})
 	if !errors.Is(err, ErrWriteStalled) {
-		t.Fatalf("CallWithTimeout() error = %v, want %v", err, ErrWriteStalled)
+		t.Fatalf("CallContext() error = %v, want %v", err, ErrWriteStalled)
 	}
 	err = within(t, time.Second, "the next call", func() error {
-		return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 30*time.Second)
+		return c.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 30*time.Second)
 	})
 	if !errors.Is(err, ErrWriteStalled) {
 		t.Fatalf("next call error = %v, want %v", err, ErrWriteStalled)
@@ -110,10 +110,10 @@ func TestCallContextCoversAStalledWrite(t *testing.T) {
 // fails the client, not at its own, longer, timeout.
 func TestCallQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 	c, entered, _ := unreadClient(t)
-	go func() { _ = c.CallWithTimeout(MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
+	go func() { _ = c.CallContext(context.Background(), MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
 	<-entered
 	err := within(t, 2*time.Second, "the queued call", func() error {
-		return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 30*time.Second)
+		return c.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 30*time.Second)
 	})
 	if !errors.Is(err, ErrWriteStalled) {
 		t.Fatalf("queued call error = %v, want %v", err, ErrWriteStalled)
@@ -123,7 +123,7 @@ func TestCallQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 // Shutdown waits only briefly behind a frame the plugin is not reading.
 func TestShutdownDoesNotWaitForAStalledWrite(t *testing.T) {
 	c, entered, _ := unreadClient(t)
-	go func() { _ = c.CallWithTimeout(MethodExecute, bigParams(), nil, 30*time.Second) }()
+	go func() { _ = c.CallContext(context.Background(), MethodExecute, bigParams(), nil, 30*time.Second) }()
 	<-entered
 	err := within(t, 500*time.Millisecond, "Shutdown", func() error {
 		return c.Shutdown(5 * time.Second)
@@ -137,21 +137,12 @@ func TestShutdownDoesNotWaitForAStalledWrite(t *testing.T) {
 // ends when that request fails the client.
 func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
 	c, entered, toClient := unreadClient(t)
-	go func() { _ = c.CallWithTimeout(MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
+	go func() { _ = c.CallContext(context.Background(), MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
 	<-entered
 	if _, err := toClient.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\n")); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if err := c.GetLastError(); err != nil && strings.Contains(err.Error(), "callback response") {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("callback reply still waiting; last error = %v", c.GetLastError())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForReplyWriterToEnd(t, replyWriters())
 }
 
 // A write that has returned has freed the writer, so a Shutdown right after a
@@ -229,7 +220,7 @@ func TestEndedContextSendsNothingAndKeepsTheClient(t *testing.T) {
 			return c.writeFrame(ended, NewRequest(MethodExecute, ExecuteParams{}, nil), 0)
 		}},
 		{name: "call with no time left", send: func(c *Client) error {
-			return c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 0)
+			return c.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 0)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -258,7 +249,9 @@ func TestWaitingCallReportsTheClientsFirstFailure(t *testing.T) {
 		entered := make(chan struct{})
 		c := NewClient(&bytes.Buffer{}, &enteredWriter{w: io.Discard, entered: entered})
 		callErr := make(chan error, 1)
-		go func() { callErr <- c.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second) }()
+		go func() {
+			callErr <- c.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 5*time.Second)
+		}()
 		<-entered
 		time.Sleep(5 * time.Millisecond) // let the call reach its wait for the answer
 		c.failPending(first)

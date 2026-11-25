@@ -113,6 +113,9 @@ func TestCancelledCallStartsNoPlugin(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	if _, err := m.StartPlugin(ctx, "silent"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("StartPlugin() error = %v, want the cancellation", err)
+	}
 	if _, err := m.ExecuteCommand(ctx, "silent", "work", nil, jsonrpc.Context{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ExecuteCommand() error = %v, want the cancellation", err)
 	}

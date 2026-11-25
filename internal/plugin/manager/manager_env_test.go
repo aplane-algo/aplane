@@ -4,6 +4,7 @@
 package manager
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func TestPluginStartsWithItsEnvironmentAndInitialize(t *testing.T) {
 			Timeout:    10,
 		},
 	}})
-	if _, err := m.StartPlugin("env-probe"); err != nil {
+	if _, err := m.StartPlugin(context.Background(), "env-probe"); err != nil {
 		t.Fatalf("StartPlugin() error = %v", err)
 	}
 	defer m.StopAll()

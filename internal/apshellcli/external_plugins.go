@@ -49,16 +49,29 @@ func execPlugin(r *REPLState, cmdName string, args []string) (*PluginResult, boo
 // transactions at the client review.
 var errPluginTransactionCancelled = errors.New("transaction cancelled by user")
 
+const (
+	// maxPluginContinuations bounds the steps that follow the first one. It is
+	// far above what a real workflow needs, since the steps before it have
+	// already been submitted and stopping there leaves the workflow half done.
+	maxPluginContinuations = 64
+	// maxEmptyPluginSteps bounds the steps in a row that have no transactions
+	// and ask for another. Nothing is shown or asked in such a step, so a run
+	// of them would hold an MCP session for good.
+	maxEmptyPluginSteps = 8
+)
+
 // processPluginResultStructured processes a plugin result chain, collecting structured output.
 // Top-level Success, Message, and Data are always updated from the latest result in the chain,
 // so the final MCP response reflects the last step's state. Each step's
-// transactions are reviewed and submitted before its continuation runs, and
-// the chain ends only when a step returns no continuation. It is the one
+// transactions are reviewed and submitted before its continuation runs. The
+// chain ends when a step returns no continuation, and fails when one asks for
+// another past maxPluginContinuations or maxEmptyPluginSteps. It is the one
 // continuation loop: the REPL, MCP and JS plugin() all run plugins through it.
 // The command's arg: words apply to the first result only, which, when it
 // succeeds, must have transactions for them to reach; a failed first result
 // is reported as the plugin's own failure. A continuation's results get none.
 func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonrpc.ExecuteResult, lsigArgs cmdspec.LsigArgs, plugin *discovery.Plugin) error {
+	continuations, emptySteps := 0, 0
 	for {
 		// Update top-level fields from the current result
 		pr.Success = result.Success
@@ -93,6 +106,9 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			}
 			pr.humanSteps = append(pr.humanSteps, pluginHumanStep{Output: submit.Output, Warnings: submit.Warnings})
 			pr.Steps = append(pr.Steps, appresult.PluginStep{Message: result.Message, TxIDs: submit.TxIDs})
+			emptySteps = 0
+		} else {
+			emptySteps++
 		}
 
 		if result.Continuation == nil {
@@ -103,6 +119,14 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 			}
 			return nil
 		}
+
+		if emptySteps > maxEmptyPluginSteps {
+			return fmt.Errorf("plugin run stopped: more than %d steps in a row had no transactions and asked for another", maxEmptyPluginSteps)
+		}
+		if continuations == maxPluginContinuations {
+			return fmt.Errorf("plugin run stopped: it asked for more than %d continuation steps", maxPluginContinuations)
+		}
+		continuations++
 
 		contResult, err := r.app().ContinuePluginCommand(r.commandContext(), plugin, result.Continuation)
 		if err != nil {

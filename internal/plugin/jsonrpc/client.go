@@ -34,6 +34,11 @@ var errWriterBusy = errors.New("another frame is still being written")
 // stop behind one that is not.
 const shutdownWriterWait = 100 * time.Millisecond
 
+// maxQueuedReplies bounds the replies waiting to be written to a plugin. A
+// plugin that sends requests faster than it reads the replies loses the excess:
+// refusing them would take a reply, and it is the replies that are stuck.
+const maxQueuedReplies = 16
+
 // Client handles JSON-RPC communication with a plugin
 type Client struct {
 	writer  io.Writer
@@ -49,9 +54,13 @@ type Client struct {
 	writeSlot chan struct{}
 	// done closes when the client fails (terminalErr is set).
 	done chan struct{}
+	// readDone closes when readLoop returns.
+	readDone chan struct{}
+	// replies holds the replies to the plugin's requests for writeReplies.
+	replies chan *Response
 
-	// Error handling
-	lastError   error
+	// terminalErr is the client's first failure, which every later call
+	// returns.
 	terminalErr error
 }
 
@@ -70,12 +79,9 @@ func NewClient(reader io.Reader, writer io.Writer) *Client {
 		pending:   make(map[uint64]chan *Response),
 		writeSlot: make(chan struct{}, 1),
 		done:      make(chan struct{}),
+		readDone:  make(chan struct{}),
+		replies:   make(chan *Response, maxQueuedReplies),
 	}
-}
-
-// CallWithTimeout makes a JSON-RPC call with a custom timeout
-func (c *Client) CallWithTimeout(method string, params interface{}, result interface{}, timeout time.Duration) error {
-	return c.CallContext(context.Background(), method, params, result, timeout)
 }
 
 // CallContext makes a JSON-RPC call that also ends when ctx does, returning
@@ -164,13 +170,22 @@ func (c *Client) call(ctx context.Context, method string, params interface{}, re
 	}
 }
 
-// Start begins reading responses from the plugin
+// Start begins reading from the plugin and answering its requests.
 func (c *Client) Start() {
 	go c.readLoop()
+	go c.writeReplies()
+}
+
+// ReadDone closes once the client has stopped reading the plugin's output. done
+// doesn't say that: the client also fails while it is still reading, on a
+// stalled write.
+func (c *Client) ReadDone() <-chan struct{} {
+	return c.readDone
 }
 
 // readLoop continuously reads responses from the plugin
 func (c *Client) readLoop() {
+	defer close(c.readDone)
 	for c.scanner.Scan() {
 		line := c.scanner.Bytes()
 		if len(line) == 0 {
@@ -179,19 +194,15 @@ func (c *Client) readLoop() {
 
 		var frame rpcFrame
 		if err := json.Unmarshal(line, &frame); err != nil {
-			c.setLastError(fmt.Errorf("failed to unmarshal JSON-RPC frame: %w", err))
 			continue
 		}
 
 		if frame.Method != "" {
-			// Off the read goroutine: a reply the plugin does not read must
-			// not stop its answers to apshell's calls being read.
-			go c.handleInboundRequest(frame)
+			c.handleInboundRequest(frame)
 			continue
 		}
 		// A response carries a result member (possibly null) or an error.
 		if len(frame.Result) == 0 && frame.Error == nil {
-			c.setLastError(fmt.Errorf("invalid JSON-RPC frame without method, result, or error"))
 			continue
 		}
 		response := Response{
@@ -202,7 +213,6 @@ func (c *Client) readLoop() {
 		}
 		id, err := normalizeResponseID(response.ID)
 		if err != nil {
-			c.setLastError(fmt.Errorf("invalid response id: %w", err))
 			continue
 		}
 
@@ -241,17 +251,32 @@ func (c *Client) handleInboundRequest(frame rpcFrame) {
 	}
 }
 
-// respondToInbound sends rpcErr as the reply to request id. A notification,
-// with no id, gets no reply.
+// respondToInbound queues rpcErr as the reply to request id, or drops it when
+// the queue is full. A notification, with no id, gets no reply.
 func (c *Client) respondToInbound(id interface{}, rpcErr *Error) {
 	if id == nil {
 		return
 	}
-	// No call bounds a reply, so it waits for as long as the client lasts. A
-	// plugin that stops reading also stops answering the call in progress, and
-	// that call's end tears the plugin down.
-	if err := c.writeFrame(context.Background(), &Response{Jsonrpc: Version, Error: rpcErr, ID: id}, 0); err != nil {
-		c.setLastError(fmt.Errorf("failed to write callback response: %w", err))
+	select {
+	case c.replies <- &Response{Jsonrpc: Version, Error: rpcErr, ID: id}:
+	default:
+	}
+}
+
+// writeReplies writes the queued replies, off the read goroutine: a reply the
+// plugin does not read must not stop its answers to apshell's calls being read.
+// No call bounds a reply, so it waits for as long as the client lasts. A plugin
+// that stops reading also stops answering the call in progress, and that call's
+// end tears the plugin down. A reply that can't be written is dropped: the
+// client has failed, or its input is gone and the next call will fail it.
+func (c *Client) writeReplies() {
+	for {
+		select {
+		case reply := <-c.replies:
+			_ = c.writeFrame(context.Background(), reply, 0)
+		case <-c.done:
+			return
+		}
 	}
 }
 
@@ -354,12 +379,6 @@ func normalizeResponseID(id interface{}) (uint64, error) {
 	}
 }
 
-func (c *Client) setLastError(err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lastError = err
-}
-
 func (c *Client) deliverResponse(id uint64, response *Response) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -378,7 +397,6 @@ func (c *Client) failPending(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.lastError = err
 	if c.terminalErr == nil {
 		c.terminalErr = err
 		close(c.done)
@@ -393,13 +411,6 @@ func (c *Client) terminalError() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.terminalErr
-}
-
-// GetLastError returns the last error encountered during reading
-func (c *Client) GetLastError() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.lastError
 }
 
 // Close closes the client (doesn't close underlying reader/writer)
