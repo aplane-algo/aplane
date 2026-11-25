@@ -70,10 +70,10 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                holds it for reading from its build to its install.
 //	keysLock        guards the keys/keyTypes/keyMetadata maps. keysetRev is
 //	                bumped while keysLock is held (and atomically readable).
-//	watcherMu       guards watcherCancel, dirty, and the reloadLock callback
-//	                pointer. It is never nested with passphraseLock or keysLock;
-//	                reloadFromWatcher copies the callback out before releasing
-//	                watcherMu.
+//	watcherMu       guards the key watcher's state, dirty, and the reloadLock
+//	                callback pointer. It is never nested with passphraseLock
+//	                or keysLock; reloadFromWatcher copies the callback out
+//	                before releasing watcherMu.
 //	policyMu        guards nodePolicy, asaSet and policyAlerts. Held alone.
 //	clientsMu       guards clients, pending and their unsynced and intended
 //	                markers. Held alone.
@@ -148,11 +148,17 @@ type Runtime struct {
 	keysetRev   atomic.Uint64 // Process-local revision of the published key snapshot.
 	keysLock    sync.RWMutex
 
-	watcherCancel   context.CancelFunc
-	watcherMu       sync.Mutex
-	watcherStarting bool // A watcher start is in flight; prevents duplicate starts
-	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
-	reloadLock      func() sync.Locker
+	// The key watcher. watcherCancel and watcherStart are nil while none
+	// runs. watcherGeneration is the generation whose directories it watches,
+	// "" when it watches only the store root or a reconcile renews it.
+	watcherMu         sync.Mutex
+	watcherCancel     context.CancelFunc
+	watcherStart      WatcherStartFunc
+	watcherGeneration string
+	watcherStarting   bool // A watcher start is in flight; prevents duplicate starts
+	watcherClosed     bool // Shutdown has begun: no watcher starts from now on
+	dirty             bool // Filesystem changes detected while locked; reconcile on next unlock
+	reloadLock        func() sync.Locker
 
 	// buildFn and reloadEffects are the reload's build and what it tells
 	// the process, guarded by passphraseLock (SetBuildFunc).
@@ -1644,24 +1650,20 @@ func (ir *Runtime) ReloadWithPassphrase(passphrase []byte) (*signertemplates.Rel
 
 // --- Watcher ---
 
-// EnsureKeyWatcher starts the file watcher if not already running.
-// Watches the keys directory and key type state/template records.
+// EnsureKeyWatcher starts the file watcher if none is running, and moves one
+// that is not on the generation in service. It watches the store root, and that
+// generation's keys and key type records; a reload that changes the generation
+// moves it there itself (moveKeyWatcher).
 // The watcher stays running across lock/unlock transitions: when unlocked
 // it reloads immediately; when locked or in recovery it marks the identity
 // dirty for reconciliation on the next unlock (reloadFromWatcher).
 // If the identity was marked dirty, it reconciles at once on an unlocked
-// signer and leaves it marked otherwise.
+// signer and leaves it marked otherwise. That takes the store mutation lock,
+// which the caller must not hold.
 func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	ir.watcherMu.Lock()
 	wasDirty := ir.dirty
 	ir.dirty = false
-	// Claim the start under the same critical section as the running check so
-	// two concurrent callers cannot both start a watcher (the loser used to
-	// leak its fsnotify watcher when the winner's cancel was overwritten).
-	alreadyRunning := ir.watcherCancel != nil || ir.watcherStarting
-	if !alreadyRunning {
-		ir.watcherStarting = true
-	}
 	ir.watcherMu.Unlock()
 
 	// Reconcile any changes that accumulated while locked. This takes the
@@ -1669,46 +1671,100 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	if wasDirty {
 		ir.reconcileDirty()
 	}
+	ir.armKeyWatcher(startFn)
+}
 
-	if alreadyRunning {
-		return
+// moveKeyWatcher moves a running watcher to the generation in service, which
+// the reload it follows may have changed: fsnotify watches bind to inodes, so
+// a store-root commit leaves them on the superseded generation. It does not
+// reconcile a dirty store as EnsureKeyWatcher does, so a reload calls it under
+// the store mutation lock.
+func (ir *Runtime) moveKeyWatcher() {
+	ir.watcherMu.Lock()
+	startFn := ir.watcherStart
+	ir.watcherMu.Unlock()
+	if startFn != nil {
+		ir.armKeyWatcher(startFn)
 	}
+}
 
-	// Watch keys and key-type records through the authenticated generation
-	// capability. The identity directory observes store-root replacement.
-	// fsnotify watches bind to inodes, so a root commit leaves these watches
-	// on the superseded generation until a caller re-arms the watcher
-	// (restore, rollback, and reconcile do).
-	dirs := []string{ir.keyPaths.ProductDir()}
-	if active, err := ir.ActivePaths(); err == nil {
-		dirs = append(dirs, active.KeysDir(), active.KeyTypeRecordsDir())
-	} else {
-		fmt.Printf("⚠️  Warning: cannot watch the active generation's keys: %v\n", err)
-		fmt.Println("Only store-root replacement will trigger a key reload")
-	}
-
+// armKeyWatcher starts a watcher unless the one running watches the generation
+// in service already, and then ends the one it replaces. With no generation in
+// service (a signer locked, or in a recovery bound to none) a running watcher
+// stays as it is, and one started sees only store-root replacement until the
+// next reload moves it.
+func (ir *Runtime) armKeyWatcher(startFn WatcherStartFunc) {
 	// The reload callback either reloads (if unlocked) or marks dirty
 	// (otherwise), deciding under the store mutation lock.
 	reloadOrDirty := func() error {
 		_, err := ir.reloadFromWatcher()
 		return err
 	}
+	// Again after each start: a reload that changes the generation during one
+	// finds the start claimed, and leaves moving the watcher to this.
+	for {
+		_, generation, _ := ir.watcherTarget()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := startFn(dirs, ctx, reloadOrDirty); err != nil {
-		cancel()
+		// Claim the start under the same critical section as the running check
+		// so two concurrent callers cannot both start a watcher.
+		ir.watcherMu.Lock()
+		running := ir.watcherCancel != nil
+		if ir.watcherClosed || ir.watcherStarting || (running && (generation == "" || generation == ir.watcherGeneration)) {
+			ir.watcherMu.Unlock()
+			return
+		}
+		ir.watcherStarting = true
+		ir.watcherMu.Unlock()
+
+		// Read again now that no one else can move the watcher: it may have
+		// moved on from a generation read before the claim. Reading it under
+		// watcherMu instead would let a stalled key read, which holds the
+		// keystore's cache lock, hold shutdown.
+		dirs, claimed, targetErr := ir.watcherTarget()
+		if claimed != generation {
+			ir.watcherMu.Lock()
+			ir.watcherStarting = false
+			ir.watcherMu.Unlock()
+			continue
+		}
+		if targetErr != nil {
+			fmt.Printf("⚠️  Warning: cannot watch the active generation's keys: %v\n", targetErr)
+			fmt.Println("Only store-root replacement will trigger a key reload")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		err := startFn(dirs, ctx, reloadOrDirty)
+
 		ir.watcherMu.Lock()
 		ir.watcherStarting = false
+		started := err == nil && !ir.watcherClosed
+		end := cancel // of the watcher that did not start, or of the one replaced
+		if started {
+			end = ir.watcherCancel
+			ir.watcherCancel, ir.watcherStart, ir.watcherGeneration = cancel, startFn, generation
+		}
 		ir.watcherMu.Unlock()
-		fmt.Printf("⚠️  Warning: Failed to start file watcher: %v\n", err)
-		fmt.Println("Keys will not auto-reload when filesystem changes")
-		return
+		if end != nil {
+			end()
+		}
+		if err != nil {
+			fmt.Printf("⚠️  Warning: Failed to start file watcher: %v\n", err)
+			fmt.Println("Keys will not auto-reload when filesystem changes")
+		}
+		if !started {
+			return
+		}
 	}
+}
 
-	ir.watcherMu.Lock()
-	ir.watcherStarting = false
-	ir.watcherCancel = cancel
-	ir.watcherMu.Unlock()
+// watcherTarget is what a watcher started now would watch, and the ID of the
+// generation in service, "" and an error when there is none.
+func (ir *Runtime) watcherTarget() (dirs []string, generation string, err error) {
+	dirs = []string{ir.keyPaths.ProductDir()}
+	active, err := ir.ActivePaths()
+	if err != nil {
+		return dirs, "", err
+	}
+	return append(dirs, active.KeysDir(), active.KeyTypeRecordsDir()), active.GenerationID(), nil
 }
 
 // MarkDirty records that filesystem changes were detected while locked.
@@ -1753,7 +1809,7 @@ func (ir *Runtime) StopKeyWatcher() {
 
 	if ir.watcherCancel != nil {
 		ir.watcherCancel()
-		ir.watcherCancel = nil
+		ir.watcherCancel, ir.watcherStart, ir.watcherGeneration = nil, nil, ""
 	}
 }
 
@@ -1806,9 +1862,12 @@ func (ir *Runtime) EndKeyUses(ctx context.Context) error {
 	return nil
 }
 
-// refuseKeyUses stops the key watcher and makes KeyUseContext refuse every
-// new key use from now on. It is idempotent.
+// refuseKeyUses stops the key watcher for good and makes KeyUseContext refuse
+// every new key use from now on. It is idempotent.
 func (ir *Runtime) refuseKeyUses() {
+	ir.watcherMu.Lock()
+	ir.watcherClosed = true
+	ir.watcherMu.Unlock()
 	ir.StopKeyWatcher()
 	ir.keyUseMu.Lock()
 	ir.destroyed = true

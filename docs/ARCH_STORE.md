@@ -1086,7 +1086,8 @@ There are three supported mutation contexts:
 
 Reload failure does not imply one uniform rollback rule. Install, import, and
 installed-YAML enable restore their prior durable state when reload or
-acceptance validation fails. Compiled-provider enable, YAML or compiled
+acceptance validation fails, in the generation they wrote, even if the reload
+left another in service or a lock left none. Compiled-provider enable, YAML or compiled
 disable/deactivation, and installed-template removal leave their completed
 durable change in place and report the reload failure; removal still reports
 that it occurred. The lifecycle must not be described as fully transactional.
@@ -1184,7 +1185,9 @@ key depends on that `key_type`; compiled-provider disable has the same
 unused-key guard because it removes the product store's compiled-provider opt-in. The
 unused check requires the product store's current term key, scans existing keys, and returns
 `key_type_in_use` on the live admin protocol when the guard blocks installed
-template disable/removal or compiled-provider disable. Live key type
+template disable/removal or compiled-provider disable. An entry in `keys/` that
+the scan can't read as a credential may be a key that uses the key type, so the
+guard refuses for one too, with the operation's own failure code. Live key type
 enable/disable, template install, non-generic key generation, key import, and
 key delete operations are serialized by the product store mutation lock so key creation cannot race a
 lifecycle decision made from a stale state snapshot. The underlying IPC message
@@ -2096,11 +2099,16 @@ Mechanism:
 - does not watch `source_tokens/`: the daemon is the only writer of token
   files and publishes the token index itself after each write
 - a `store-root.enc` replacement is a reload candidate; reload authenticates the new
-  active generation. Restore, rollback, and reconcile then re-arm the watcher on
-  the new generation's directories; after a policy apply, ASA set update, or passphrase change the
-  key and key type watches stay on the superseded generation until the next
-  re-arm or restart, so only store-root replacement triggers a reload for
-  out-of-band file edits in that window
+  active generation
+- every reload or unlock that leaves another generation in service ends by
+  moving the running watcher onto that generation's directories, whatever
+  committed it (a policy apply, an ASA set update, a restore, a rollback, a
+  passphrase change) and whether it ends unlocked or in recovery. A reconcile
+  renews the watches of the generation it leaves in service, in case its
+  directories were replaced. Where none is in service (a lock, a recovery bound
+  to none) the watcher stays where it was. If the move fails, the watcher keeps
+  its old directories, still sees store-root replacement, and the next reload
+  tries again
 - missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload; one that finds
   a content defect in the selected generation enters recovery

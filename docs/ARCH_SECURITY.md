@@ -1988,7 +1988,7 @@ All service stops share one 5 s shutdown deadline.
    exit.
 5. Call `EndKeyUses(ctx)` on the product runtime, with a 5 s deadline of its
    own:
-   - `StopKeyWatcher()` — prevents new reloads.
+   - stop the key watcher, for good: none starts again.
    - refuse every new key use (`KeyUseContext` returns a cancelled context, as
      while locked; the signer is not locked, which would run the lock cleanup
      and its unbounded drain).

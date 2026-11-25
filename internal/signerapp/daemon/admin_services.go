@@ -327,7 +327,7 @@ func (s signerBackupServices) RestoreBackup(req adminproto.RestoreBackupRequest)
 			result.KeyCount = report.KeyCount
 		}
 	}
-	s.daemon.rearmWatcherAfterGenerationFlip(ir)
+	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	return result
 }
 
@@ -348,17 +348,16 @@ func (s signerBackupServices) RollbackRestore(req adminproto.RollbackRestoreRequ
 			result.KeyCount = report.KeyCount
 		}
 	}
-	s.daemon.rearmWatcherAfterGenerationFlip(ir)
+	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	return result
 }
 
 func (s signerBackupServices) ReconcileStore() adminproto.ReconcileStoreResult {
 	ir := s.Runtime
 	result := adminproto.ReconcileStoreResult{}
-	// Re-arm on every exit. A recovery session may have inherited a watcher
-	// bound before an uncertain store-root replacement, including when this attempt
-	// fails before promotion.
-	defer s.daemon.rearmWatcherAfterGenerationFlip(ir)
+	// Leaving recovery needs a watcher, which an unlock that entered it did not
+	// start, and a reload of the changes one saw meanwhile.
+	defer ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	report, err := s.daemon.reconcileReloadAndPromote(ir, true)
 	if err != nil {
 		result.Error = err.Error()
@@ -428,15 +427,6 @@ func (s signerAdminServices) reconcileReloadAndPromote(ir *productruntime.Runtim
 		return err
 	})
 	return report, err
-}
-
-// rearmWatcherAfterGenerationFlip rebinds the key watcher to the new current
-// generation's directories after a pointer flip: fsnotify watches bind to
-// inodes, so the watches armed before the flip still point at the prior
-// generation.
-func (s signerAdminServices) rearmWatcherAfterGenerationFlip(ir *productruntime.Runtime) {
-	ir.StopKeyWatcher()
-	ir.EnsureKeyWatcher(startKeyWatcherForDir)
 }
 
 // exitRecoveryIfReconciled promotes recovery only after the generation store

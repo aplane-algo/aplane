@@ -181,6 +181,12 @@ func (ir *Runtime) Reload() (*signertemplates.ReloadReport, error) {
 // on a failure. A lock that overtakes the reconcile during its step, build, or
 // promotion returns ErrReconcileStateChanged; the lock stands.
 func (ir *Runtime) Reconcile(step func(*crypto.Keyring) error, explicit bool) (*signertemplates.ReloadReport, error) {
+	// A reconcile is the operator's repair, so it renews the key watcher too:
+	// directories replaced under the same generation leave its watches on the
+	// old ones.
+	ir.watcherMu.Lock()
+	ir.watcherGeneration = ""
+	ir.watcherMu.Unlock()
 	// Under the store mutation lock the state can only move to locked.
 	fromRecovery := ir.IsRecovery()
 	if err := ir.WithKeyring(step); err != nil {
@@ -444,8 +450,9 @@ func (ir *Runtime) installRecoveryViewLocked(kr *crypto.Keyring, view recoveryVi
 	return detached
 }
 
-// afterReload does what follows a reload once passphraseLock is released:
-// the node fail-closed callback, the audit and the logs, then the
+// afterReload does what follows a reload once passphraseLock is released: it
+// moves the key watcher to the generation the reload left in service, then the
+// node fail-closed callback, the audit and the logs, then the
 // keys-changed notification and the stage table wake, only while the signer
 // is still unlocked (a lock that landed during the reload has told its
 // sessions), and last the recovery hook. Key uses and approvals for an entry
@@ -454,6 +461,7 @@ func (ir *Runtime) afterReload(end reloadEnd) {
 	for _, detached := range end.detached {
 		detached.ZeroWhenUnused()
 	}
+	ir.moveKeyWatcher()
 	effects := ir.reloadEffectsSnapshot()
 	if end.failClosed != nil && effects.NodeFailClosed != nil {
 		effects.NodeFailClosed(fmt.Errorf("node role inventory conflict in product store: %w", end.failClosed))

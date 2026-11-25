@@ -1508,7 +1508,9 @@ The rules that order depends on:
    waits for another lock; key-use cancellation and the end of approvals
    run after it is released.
 5. The watcher starts after the unlock releases `storeMutationLock`: its
-   reload of changes seen while locked takes that lock.
+   reload of changes seen while locked takes that lock. A reload that moves a
+   running watcher to another generation does so under the lock, and reloads
+   nothing for it.
 6. A reload on the keyring in service (`productruntime.Runtime.reloadView`,
    after a store-root commit and in a reconcile) holds `passphraseLock` for
    reading from taking the keyring to the end of its install, so a lock's
@@ -1564,7 +1566,8 @@ transition:
 - when the runtime is unlocked, the watcher reloads immediately on qualifying filesystem changes; a reload that finds a content defect in the selected generation enters recovery,
 - when the runtime is locked or in recovery, the watcher remains active and marks the runtime dirty, so a defect it found is not lifted by removing the file: a reconcile or an unlock is,
 - the next unlock that publishes reconciles dirty state by reloading,
-- watchers are stopped on runtime shutdown, not on every ordinary lock.
+- a reload or unlock that leaves another generation in service moves the watcher onto it, and a reconcile renews it,
+- watchers are stopped on runtime shutdown, not on every ordinary lock, and none starts after it.
 
 Watcher-triggered reloads acquire the same process-wide mutation lock used by
 admin template/key/config mutations. Admin mutation paths that already hold the

@@ -271,7 +271,8 @@ func ListEnabled(paths storepaths.Paths) ([]string, error) {
 }
 
 // RequireUnused scans existing identity keys and returns ErrKeyTypeInUse if any
-// key uses keyType.
+// key uses keyType. An entry it can't read as a key may be one that does, so it
+// refuses for that too.
 func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring) error {
 	active, err := genstore.Resolve(paths)
 	if err != nil {
@@ -294,11 +295,14 @@ func RequireUnused(paths storepaths.Paths, keyType string, kr *apcrypto.Keyring)
 			addresses = append(addresses, address)
 		}
 	}
-	if len(addresses) == 0 {
-		return nil
+	if len(addresses) > 0 {
+		sort.Strings(addresses)
+		return &InUseError{KeyType: keyType, Addresses: addresses}
 	}
-	sort.Strings(addresses)
-	return &InUseError{KeyType: keyType, Addresses: addresses}
+	if len(scan.Warnings) > 0 {
+		return fmt.Errorf("cannot verify that key type %s is unused: %d malformed key file(s) in the current generation (first: %s)", keyType, len(scan.Warnings), scan.Warnings[0].Message())
+	}
+	return nil
 }
 
 // CanGenerate reports whether keyType is generatable by the product store. It returns

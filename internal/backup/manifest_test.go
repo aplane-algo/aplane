@@ -294,3 +294,16 @@ func TestSealedManifestSizeCapMatchesReader(t *testing.T) {
 		t.Fatalf("WriteSealedManifest() error = %v, want a sealed-size refusal", err)
 	}
 }
+
+// A manifest is never sealed under the empty passphrase the reader refuses.
+func TestWriteSealedManifestRefusesAnEmptyPassphrase(t *testing.T) {
+	for _, passphrase := range [][]byte{nil, {}} {
+		root := t.TempDir()
+		if err := WriteSealedManifest(root, noderole.RoleSigner, time.Unix(1_700_000_000, 0), passphrase, nil); err == nil || !strings.Contains(err.Error(), "requires the export passphrase") {
+			t.Fatalf("WriteSealedManifest(%v) error = %v, want the passphrase refusal", passphrase, err)
+		}
+		if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+			t.Fatalf("a refused seal wrote %v, %v", entries, err)
+		}
+	}
+}
