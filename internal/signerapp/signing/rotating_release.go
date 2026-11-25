@@ -456,8 +456,8 @@ type AuditedRelease struct {
 	TxID      string
 	LastValid uint64
 	// Reused reports that the log holds two distinct transactions from the
-	// same stage on the same leaf. Entries the log rotated past are unknown, so
-	// false means "none seen", not "none made".
+	// same stage on the same leaf. Entries the log lost are unknown, so false
+	// means "none seen", not "none made".
 	Reused bool
 	// Leaves lists the stage's releases the log holds, oldest first.
 	Leaves []LeafRelease

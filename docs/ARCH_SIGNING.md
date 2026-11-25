@@ -2202,7 +2202,8 @@ Alerts: the signer remembers the newest release per account (stage, TxID,
 `last_valid`, and for a leaf family every leaf the stage has released) in
 process memory, rebuilt at unlock from the newest `ROTATING_RELEASE` audit
 entry per account (read from the audit log and its two rotated predecessors;
-entries the log has rotated past are simply absent). The rebuild merges with
+each rotation copies forward every account's newest stage: all of it up to 64
+releases, and every used leaf past that). The rebuild merges with
 what the stage released while the log was being read, so a leaf used in
 that window stays listed, and an audited release from a stage the account
 has already moved past is ignored. A spend from a leaf family that arrives
@@ -2236,7 +2237,7 @@ the history was lost leaves both leaves used. A release that repeats a leaf
 over a different TxID marks the record as reused (an identical retry does
 not, nor does one TxID on two leaves), and the mark survives until the
 account moves past the stage; the audit reader applies the same rules
-across the entries it can see, so a reuse older than the retained log goes
+across the entries it can see, so a reuse whose entries the log lost goes
 unreported. An earlier release from the same stage
 that expired while a newer one is still within its window is reported
 through the newer one: the stage is the same, and the newer transaction

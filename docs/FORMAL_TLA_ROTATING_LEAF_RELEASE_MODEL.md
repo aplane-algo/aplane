@@ -112,8 +112,11 @@ right, and it also covers a sign whose own chain read was behind, which this
 model does not have (see the limits).
 
 Loss is separate. `AuditMayFail`, `AuditMayLose`, and `RestoreMayFail` model
-the best-effort audit write (a failure is reported, not fatal), a log that
-rotated past old entries, and a restore that fails for a reason other than a
+the best-effort audit write (a failure is reported, not fatal), an audit log
+that lost entries (a file damaged, deleted or replaced; two rotations running
+whose copy of the live stage failed, `internal/signerapp/audit/rotating_carry.go`
+`carryReleases`; or the copies of a stage past 64 releases, which keep every
+used leaf and the reuse but not every transaction), and a restore that fails for a reason other than a
 lock and opens the wait. Each
 sets the ghost `lossy`, and LF1 and LF2 are claimed only while it is FALSE.
 This is the stated contract in the code ("state chooses the leaf, never
@@ -148,12 +151,14 @@ for each.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it. The
-  reader keeps that promise (`readRotatingReleasesFrom`, which both
+  reader keeps that promise (`releaseHistory.add`, which both
   `AuditLogger.ReadRotatingReleases` and the path-based reader use): an
   entry from an earlier stage, which a sign on a lagging chain read can log
   after a later stage's, never replaces the later stage's list, and the list
   holds every logged pair of leaf and transaction once, as the model's
-  `<<leaf, tx>>` set does (`releaseAccumulator.add`). The memory merge
+  `<<leaf, tx>>` set does (`releaseAccumulator.add`). A rotation's copies
+  (`carryReleases`) repeat logged pairs, which the reader lists once, so they
+  add none; what they leave out is `AuditLose`. The memory merge
   (`mergeLeaves`) and a live record dedupe on the same pair, as
   `RestoreApply`'s and `Sign`'s unions do. `RestoreBegin` takes the
   log at one instant, and so does the signer's read
@@ -162,7 +167,8 @@ for each.
   rotation cannot move a file between two opens and hide it. It reads them
   after the mutex is released and may see entries appended since, which are
   releases the memory records live anyway: a sign from the session before
-  the restore, whose signature is withheld, or a stateless one. The model
+  the restore, whose signature is withheld, or a stateless one; or a
+  rotation's copies, which repeat releases the log holds. The model
   adds no audit entry while a restore is armed; the code may, and these are
   the entries it adds.
 - `Lock` cuts a restore in flight short. It also stands for recovery, which stops a

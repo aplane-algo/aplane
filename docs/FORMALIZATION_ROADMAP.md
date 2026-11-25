@@ -356,7 +356,7 @@ rotating model-extension candidate below to the leaf choice; the prepare-time
 `rekey_to` mutation, stage-proof, timing, and open-test refusals, and the
 stage-table recovery grants remain unmodeled). LF1-LF3 hold over 6,868,682
 states (depth 34; deep 46,925,814 at depth 38) with the stated loss sources
-(failed audit write, rotated log, failed restore) tagged and excluded from the
+(failed audit write, lost log entries, failed restore) tagged and excluded from the
 claim. Two negative controls each violate LF1: `WaitForRestore = FALSE`
 (sign before the post-unlock restore) in 259 states at depth 6, and
 `SeqGuard = FALSE` (a stale status observation erases a newer release) in
