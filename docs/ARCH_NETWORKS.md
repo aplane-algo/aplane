@@ -71,6 +71,11 @@ Algorand networks. Their genesis-hash mappings are compiled into the source:
 Custom config cannot remap those built-in hashes and cannot assign custom
 hashes to the reserved token names.
 
+A client may point any token at any algod, so `apshell` also refuses a reserved
+token whose algod reports another genesis hash: `network` does not switch to
+it, and nothing is planned, signed or submitted on it. Any other token,
+`localnet` included, may stand for any chain.
+
 The source of truth is `internal/config/genesishash.go`.
 
 ## Client Behavior
@@ -98,7 +103,9 @@ the algod endpoint. Top-level `algod` is not part of the current client config
 schema.
 
 The `network <token>` command switches the active client context after syntax
-and allow-list validation. The token then drives endpoint lookup and local
+and allow-list validation, and only once the token's algod reports a supported
+consensus version and, for a reserved token, that network's genesis hash
+(`engine.ValidateAlgodNetwork`). The token then drives endpoint lookup and local
 client state selection. Cache paths are token-scoped, so `voi_mainnet` has a
 different client cache namespace than `testnet`.
 
@@ -173,17 +180,18 @@ remains network-independent: during `/plan` or `/sign` it validates the
 transaction genesis hash for policy context, then applies the shared v42/v43
 LogicSig and native-PQ rules.
 
-The same read gives the client the active algod's genesis hash and genesis ID,
-and the client refuses any transaction that is not for that network before it
-is sent to `/plan` or `/sign` (`internal/engine/active_network.go`,
+The same read gives the client the active algod's genesis hash and genesis ID.
+Before anything is sent to `/plan` or `/sign`, the client refuses an active
+token reserved for a network with another genesis hash, and any transaction
+that is not for the algod's network (`internal/engine/active_network.go`,
 `checkActiveNetwork`). The signer's gate refuses only a genesis hash it does not
 recognize; a transaction for another network it knows would be signed under
 that network's policy and then sent to the active algod, whose operator would
 hold a transaction valid on the other network. The check compares each
 transaction's genesis hash, and its genesis ID when it sets one, and names the
 position by zero-based index. Transactions apshell builds take their genesis
-from the active algod and pass; it matters for those that carry their own: a
-plugin draft (default and `presign-plan` group modes), a plugin's
+from the active algod and pass that comparison; it matters for those that carry
+their own: a plugin draft (default and `presign-plan` group modes), a plugin's
 `pregrouped-signed` group, which is refused before it is sent to algod, a
 transaction file given to `sign` or JS `sign()`, and the requests JS `plan()`
 sends, passthrough entries by their inner transaction. A `plan()` request whose

@@ -538,7 +538,7 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 		if err != nil {
 			t.Fatalf("algod.MakeClient() error = %v", err)
 		}
-		eng.AlgodClient = algodClient
+		eng.Network, eng.AlgodClient = "plan-test", algodClient
 
 		var gotReq signerapi.GroupSignRequest
 		var planned []string

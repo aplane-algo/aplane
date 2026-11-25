@@ -4,10 +4,12 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -140,6 +142,109 @@ func TestCheckActiveNetworkRefusesAnAlgodWithoutAGenesisHash(t *testing.T) {
 	}
 }
 
+// reservedNetworkCase is a network name and the genesis hash its algod reports.
+// reported is how a refusal names that hash, empty when the pair is accepted.
+type reservedNetworkCase struct {
+	name        string
+	network     string
+	genesisHash []byte
+	reported    string
+}
+
+func reservedNetworkCases(t *testing.T) []reservedNetworkCase {
+	t.Helper()
+	hashes := map[string]string{
+		config.NetworkMainnet: config.AlgorandMainnetGenesisHash,
+		config.NetworkTestnet: config.AlgorandTestnetGenesisHash,
+		config.NetworkBetanet: config.AlgorandBetanetGenesisHash,
+	}
+	private := bytes.Repeat([]byte{7}, 32)
+	var cases []reservedNetworkCase
+	for network := range hashes {
+		for served, hash := range hashes {
+			c := reservedNetworkCase{name: network + " name, " + served + " algod", network: network, genesisHash: testGenesisHash(t, hash)}
+			if served != network {
+				c.reported = hash + " (" + served + ")"
+			}
+			cases = append(cases, c)
+		}
+		cases = append(cases, reservedNetworkCase{network + " name, private algod", network, private, base64.StdEncoding.EncodeToString(private)})
+	}
+	for served, hash := range hashes {
+		cases = append(cases, reservedNetworkCase{"custom name, " + served + " algod", "my-network", testGenesisHash(t, hash), ""})
+	}
+	return append(cases,
+		reservedNetworkCase{"localnet name, private algod", "localnet", private, ""},
+		reservedNetworkCase{"custom name, private algod", "my-network", private, ""})
+}
+
+func checkReservedNetworkResult(t *testing.T, err error, network, reported string) {
+	t.Helper()
+	if reported == "" {
+		if err != nil {
+			t.Fatalf("error = %v, want accepted", err)
+		}
+		return
+	}
+	want := fmt.Sprintf("network name %q is reserved for Algorand's %s, but its algod's genesis hash is %s", network, network, reported)
+	if err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+}
+
+// A reserved network name is refused over an algod that serves another chain,
+// although the transaction is for the chain that algod serves. Any other name
+// may stand for any chain.
+func TestCheckActiveNetworkRefusesAReservedNameForAnotherChain(t *testing.T) {
+	sender := crypto.GenerateAccount().Address.String()
+	for _, tt := range reservedNetworkCases(t) {
+		t.Run(tt.name, func(t *testing.T) {
+			client, _, _ := networkTestAlgod(t, tt.genesisHash, "served-v1")
+			eng := NewEngine(tt.network, WithAlgodClient(client))
+			err := eng.checkActiveNetwork(context.Background(), []types.Transaction{
+				networkTestTxn(t, sender, tt.genesisHash, "served-v1"),
+			})
+			checkReservedNetworkResult(t, err, tt.network, tt.reported)
+		})
+	}
+}
+
+func TestValidateAlgodNetworkRefusesAReservedNameForAnotherChain(t *testing.T) {
+	for _, tt := range reservedNetworkCases(t) {
+		t.Run(tt.name, func(t *testing.T) {
+			client, _, _ := networkTestAlgod(t, tt.genesisHash, "served-v1")
+			checkReservedNetworkResult(t, ValidateAlgodNetwork(context.Background(), tt.network, client), tt.network, tt.reported)
+		})
+	}
+	for _, length := range []int{0, 31, 33, 1 << 20} {
+		t.Run(fmt.Sprintf("reserved name, genesis hash of %d bytes", length), func(t *testing.T) {
+			client, _, _ := networkTestAlgod(t, make([]byte, length), "")
+			checkReservedNetworkResult(t, ValidateAlgodNetwork(context.Background(), "testnet", client), "testnet", fmt.Sprintf("%d bytes long", length))
+		})
+	}
+	t.Run("custom name, no genesis hash", func(t *testing.T) {
+		client, _, _ := networkTestAlgod(t, nil, "")
+		checkReservedNetworkResult(t, ValidateAlgodNetwork(context.Background(), "my-network", client), "my-network", "")
+	})
+}
+
+// The reserved name is checked against a remembered read as well: suggested
+// parameters fetched for a transaction never pass through the algod query.
+func TestCheckActiveNetworkChecksTheReservedNameOnARememberedRead(t *testing.T) {
+	mainnet := testGenesisHash(t, config.AlgorandMainnetGenesisHash)
+	client, paramsCalls, _ := networkTestAlgod(t, mainnet, "mainnet-v1.0")
+	eng := NewEngine("testnet", WithAlgodClient(client))
+	if _, err := eng.getSuggestedParamsWithFee(context.Background(), 0, false); err != nil {
+		t.Fatalf("getSuggestedParamsWithFee() error = %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		checkReservedNetworkResult(t, eng.checkActiveNetwork(context.Background(), nil), "testnet", config.AlgorandMainnetGenesisHash+" (mainnet)")
+	}
+	if got := paramsCalls.Load(); got != 1 {
+		t.Fatalf("SuggestedParams calls = %d, want 1", got)
+	}
+}
+
 // The check costs no algod call of its own: it reuses the suggested
 // parameters a transaction was built from, and one read serves the
 // consensus check and the genesis check.
@@ -174,7 +279,9 @@ func TestCheckActiveNetworkReusesTheSuggestedParamsRead(t *testing.T) {
 // (sign) and a plugin draft in the default group mode, both through
 // checkReadyToSign, a presign-plan draft, and JS plan()'s requests, sign-mode
 // and passthrough alike. A pregrouped-signed group, which no signer signs, is
-// refused before it is sent to algod.
+// refused before it is sent to algod. Each path also refuses, as early, a
+// reserved name whose algod serves another network, whatever network the
+// transactions are for.
 func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 	testnet := testGenesisHash(t, config.AlgorandTestnetGenesisHash)
 	mainnet := testGenesisHash(t, config.AlgorandMainnetGenesisHash)
@@ -235,31 +342,42 @@ func TestPathsRefuseATransactionForAnotherNetworkBeforeSigning(t *testing.T) {
 			return err
 		}},
 	}
+	algods := []struct {
+		name        string
+		genesisHash []byte
+		genesisID   string
+		refusal     string
+	}{
+		{"", testnet, "testnet-v1.0", "transaction at index 0 is for another network"},
+		{", testnet name over a mainnet algod", mainnet, "mainnet-v1.0", `network name "testnet" is reserved for Algorand's testnet`},
+	}
 	for _, path := range paths {
-		t.Run(path.name, func(t *testing.T) {
-			var signerCalls atomic.Int32
-			signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				signerCalls.Add(1)
-				http.Error(w, "signer must not be called", http.StatusInternalServerError)
-			}))
-			t.Cleanup(signer.Close)
-			client, _, otherAlgodCalls := networkTestAlgod(t, testnet, "testnet-v1.0")
-			eng := NewEngine("testnet", WithAlgodClient(client))
-			eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
+		for _, served := range algods {
+			t.Run(path.name+served.name, func(t *testing.T) {
+				var signerCalls atomic.Int32
+				signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					signerCalls.Add(1)
+					http.Error(w, "signer must not be called", http.StatusInternalServerError)
+				}))
+				t.Cleanup(signer.Close)
+				client, _, otherAlgodCalls := networkTestAlgod(t, served.genesisHash, served.genesisID)
+				eng := NewEngine("testnet", WithAlgodClient(client))
+				eng.Connection.SignerClient = signerclient.NewSignerClient(signer.URL)
 
-			// The refusal is reported as itself, not as a failure of a step
-			// (such as planning) that never started.
-			err = path.run(eng)
-			if err == nil || !strings.HasPrefix(err.Error(), "transaction at index 0 is for another network") {
-				t.Fatalf("error = %v, want the transaction at index 0 refused as for another network", err)
-			}
-			if got := signerCalls.Load(); got != 0 {
-				t.Fatalf("signer calls = %d, want 0", got)
-			}
-			if got := otherAlgodCalls.Load(); got != 0 {
-				t.Fatalf("algod calls other than suggested parameters = %d, want 0", got)
-			}
-		})
+				// The refusal is reported as itself, not as a failure of a step
+				// (such as planning) that never started.
+				err = path.run(eng)
+				if err == nil || !strings.HasPrefix(err.Error(), served.refusal) {
+					t.Fatalf("error = %v, want it refused: %s", err, served.refusal)
+				}
+				if got := signerCalls.Load(); got != 0 {
+					t.Fatalf("signer calls = %d, want 0", got)
+				}
+				if got := otherAlgodCalls.Load(); got != 0 {
+					t.Fatalf("algod calls other than suggested parameters = %d, want 0", got)
+				}
+			})
+		}
 	}
 }
 

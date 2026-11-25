@@ -66,14 +66,14 @@ func countingConsensusTestAlgod(t *testing.T, version string) (*algod.Client, *h
 	return client, server, &calls
 }
 
-func TestValidateAlgodConsensusAcceptsSupportedVersionsWithNilContext(t *testing.T) {
+func TestValidateAlgodNetworkAcceptsSupportedVersionsWithNilContext(t *testing.T) {
 	for _, version := range []protocol.ConsensusVersion{protocol.ConsensusV42, protocol.ConsensusV43} {
 		t.Run(string(version), func(t *testing.T) {
 			client, server := consensusTestAlgod(t, string(version), nil)
 			defer server.Close()
 			var ctx context.Context
-			if err := ValidateAlgodConsensus(ctx, client); err != nil {
-				t.Fatalf("ValidateAlgodConsensus() error = %v", err)
+			if err := ValidateAlgodNetwork(ctx, "private", client); err != nil {
+				t.Fatalf("ValidateAlgodNetwork() error = %v", err)
 			}
 		})
 	}

@@ -106,7 +106,9 @@ enable the bundled LocalNet plugin, and add `localnet` to a non-empty
 Network names are context tokens: 1-64 lowercase letters, digits, `_`, or `-`,
 starting with a letter or digit. Built-in Algorand tokens are `mainnet`,
 `testnet`, and `betanet`; custom tokens such as `localnet` and `voi_mainnet`
-are also valid.
+are also valid. A built-in token must point at that network's own algod:
+`apshell` won't switch to one whose algod serves a different chain, or plan,
+sign or submit on it. Give that chain a token of its own.
 
 ```yaml
 network: testnet

@@ -128,7 +128,7 @@ func scriptedPluginShell(t *testing.T, results ...map[string]any) (*REPLState, *
 // scriptedPluginShellWithAlgod is scriptedPluginShell on an algod.
 func scriptedPluginShellWithAlgod(t *testing.T, client *algod.Client, results ...map[string]any) (*REPLState, *scriptedPlugin) {
 	t.Helper()
-	eng := newIsolatedTestEngine(t, "testnet")
+	eng := newIsolatedTestEngine(t, pluginTestNetwork)
 	eng.AlgodClient = client
 	return scriptedPluginShellOnEngine(t, eng, results...)
 }
@@ -344,7 +344,10 @@ func TestPluginFailedResultIsNeitherSubmittedNorContinued(t *testing.T) {
 	}
 }
 
-// pluginTestGenesis is the network the confirmation-test algod serves.
+// pluginTestNetwork is a custom network, the one the confirmation-test algod
+// serves, and pluginTestGenesis its genesis hash.
+const pluginTestNetwork = "plugin-test"
+
 var pluginTestGenesis = bytes.Repeat([]byte{7}, 32)
 
 // pregroupedStep is a plugin step returning a signed, grouped pair of
@@ -353,7 +356,7 @@ func pregroupedStep(t *testing.T, note string, continuation map[string]any) (map
 	t.Helper()
 	acct := crypto.GenerateAccount()
 	sp := types.SuggestedParams{Fee: 1000, FirstRoundValid: 1, LastRoundValid: 1001,
-		GenesisHash: pluginTestGenesis, GenesisID: "plugin-test", FlatFee: true}
+		GenesisHash: pluginTestGenesis, GenesisID: pluginTestNetwork, FlatFee: true}
 	txns := make([]types.Transaction, 2)
 	for i := range txns {
 		txn, err := transaction.MakePaymentTxn(acct.Address.String(), acct.Address.String(), 0, []byte(note+string(rune('a'+i))), "", sp)
@@ -396,7 +399,7 @@ func confirmationFailingAlgod(t *testing.T, confirmedGroups int32) (*algod.Clien
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
 				ConsensusVersion: string(protocol.ConsensusV42), MinFee: 1000, LastRound: 10,
-				GenesisHash: pluginTestGenesis, GenesisId: "plugin-test",
+				GenesisHash: pluginTestGenesis, GenesisId: pluginTestNetwork,
 			})
 		case r.URL.Path == "/v2/transactions" && r.Method == http.MethodPost:
 			sent.Add(1)
@@ -537,7 +540,7 @@ func simulationFailingAlgod(t *testing.T, okGroups int32) (*algod.Client, *atomi
 		case "/v2/transactions/params":
 			_ = json.NewEncoder(w).Encode(models.TransactionParametersResponse{
 				ConsensusVersion: string(protocol.ConsensusV42), MinFee: 1000, LastRound: 10,
-				GenesisHash: pluginTestGenesis, GenesisId: "plugin-test",
+				GenesisHash: pluginTestGenesis, GenesisId: pluginTestNetwork,
 			})
 		case "/v2/transactions/simulate":
 			group := models.SimulateTransactionGroupResult{TxnResults: make([]models.SimulateTransactionResult, 2)}
@@ -668,7 +671,7 @@ func TestJSPluginReportsARekeyRuleRefusal(t *testing.T) {
 		second, refusal := refused(f)
 		first, firstIDs := pregroupedStep(t, "fund", map[string]any{"command": "wf", "args": []string{"_rekey"}})
 		client, sent := confirmationFailingAlgod(t, 1)
-		f.eng.AlgodClient = client
+		f.eng.Network, f.eng.AlgodClient = pluginTestNetwork, client
 		state, _ := scriptedPluginShellOnEngine(t, f.eng, first, second)
 		state.AutoConfirm, state.LineReader = false, func() (string, error) { return "y", nil }
 

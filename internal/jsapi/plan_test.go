@@ -143,7 +143,7 @@ func planTestAPI(t *testing.T, answer func(drafts []types.Transaction) signerapi
 	if err != nil {
 		t.Fatalf("algod.MakeClient() error = %v", err)
 	}
-	eng.AlgodClient = algodClient
+	eng.Network, eng.AlgodClient = planTestGenesisID, algodClient
 
 	signerClient := signerclient.NewSignerClient("http://signer.test")
 	signerClient.Client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {

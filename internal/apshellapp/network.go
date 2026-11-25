@@ -31,7 +31,9 @@ func (a *App) SwitchNetwork(ctx context.Context, req SwitchNetworkRequest) (*Swi
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", req.Network, err)
 	}
-	if err := engine.ValidateAlgodConsensus(ctx, algodClient); err != nil {
+	// Every signing path checks this again. It is checked here as well because
+	// SetNetwork rebuilds the network's auth cache from this algod.
+	if err := engine.ValidateAlgodNetwork(ctx, req.Network, algodClient); err != nil {
 		return nil, fmt.Errorf("cannot switch to %s: %w", req.Network, err)
 	}
 

@@ -65,12 +65,16 @@ func checkSupportedConsensus(version string) error {
 	return nil
 }
 
-// ValidateAlgodConsensus verifies that algod is running a reviewed consensus
-// contract (v42 or v43). Clients perform this live check; apsigner uses their
-// shared compiled authorization contract and does not query algod.
-func ValidateAlgodConsensus(ctx context.Context, client *algod.Client) error {
-	_, err := querySupportedAlgodConsensus(ctx, client)
-	return err
+// ValidateAlgodNetwork verifies that algod is running a reviewed consensus
+// contract (v42 or v43) and, when network is a reserved name, that it serves
+// that network. Clients perform this live check; apsigner uses their shared
+// compiled authorization contract and does not query algod.
+func ValidateAlgodNetwork(ctx context.Context, network string, client *algod.Client) error {
+	params, err := querySupportedAlgodConsensus(ctx, client)
+	if err != nil {
+		return err
+	}
+	return checkReservedNetwork(network, params.GenesisHash)
 }
 
 func querySupportedAlgodConsensus(ctx context.Context, client *algod.Client) (types.SuggestedParams, error) {

@@ -401,7 +401,8 @@ Each transaction must be for the network apshell is on: its genesis hash, and
 its genesis ID when it has one, must be the active algod's. A file written on
 mainnet and signed while apshell is on testnet is refused before the signer
 sees it, naming the transaction's zero-based index. Plugin transactions are
-checked the same way.
+checked the same way. On `mainnet`, `testnet` or `betanet`, the algod must
+itself serve that network.
 
 **Examples:**
 ```
@@ -805,6 +806,8 @@ network <network>
 ```
 
 **Note:** May be restricted by `config.yaml` `networks_allowed` settings.
+`mainnet`, `testnet` and `betanet` are refused when the configured algod serves
+a different chain.
 
 ---
 
