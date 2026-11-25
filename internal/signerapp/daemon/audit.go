@@ -22,9 +22,9 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 
 // optionalAuditLog returns log as the audit interface I a service takes, or
 // I's nil when the daemon runs without an audit log (audit.log could not be
-// opened at startup). Every service gets its logger through here: a nil
-// *AuditLogger assigned to an interface makes a non-nil interface, so the
-// service's `!= nil` guards pass and its first entry panics.
+// opened at startup). Every service that asks whether it has a logger gets it
+// through here: a nil *AuditLogger, though safe to call, makes a non-nil
+// interface, so the service's `!= nil` guards would pass.
 func optionalAuditLog[I any](log *AuditLogger) I {
 	var sink I
 	if log != nil {

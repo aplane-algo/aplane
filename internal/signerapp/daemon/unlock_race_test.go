@@ -94,7 +94,7 @@ func TestAnUnlockThatHasLostToALockLoadsNothing(t *testing.T) {
 	loads := countPassphraseLoads(server)
 	lockDone, landed := lockAtTheQuarantine(t, server, nil)
 
-	success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)
+	success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	fsutil.TestHook = nil
 	if !landed() {
 		t.Fatal("the lock did not land: the reconcile quarantined nothing")
@@ -115,7 +115,7 @@ func TestALockDuringAnUnlocksFailedReconcileStands(t *testing.T) {
 	ir.EnterRecovery(nil)
 	lockDone, landed := lockAtTheQuarantine(t, server, errors.New("injected quarantine failure"))
 
-	success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)
+	success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	fsutil.TestHook = nil
 	if !landed() {
 		t.Fatal("the lock did not land: the reconcile quarantined nothing")
@@ -152,7 +152,7 @@ func TestAnUnlockWaitsForALocksCleanupUnderTheStoreMutationLock(t *testing.T) {
 	}
 	unlocked := make(chan answer, 1)
 	go func() {
-		success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)
+		success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 		unlocked <- answer{success, errMsg}
 	}()
 	<-unlockWaiting
@@ -220,7 +220,7 @@ func TestAnUnlockDuringAPassphraseChangeWaitsForIt(t *testing.T) {
 		}
 		started = true
 		go func() {
-			success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+			success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 			unlocked <- answer{success, errMsg, code}
 		}()
 		<-unlockWaiting // it waits on the lock the change holds
@@ -240,7 +240,7 @@ func TestAnUnlockDuringAPassphraseChangeWaitsForIt(t *testing.T) {
 	if got := <-unlocked; got.success || got.code != protocol.ErrCodeInvalidPassphrase {
 		t.Fatalf("UnlockIdentity(old passphrase) = %+v after the change, want invalid_passphrase", got)
 	}
-	if success, _, errMsg, code := server.adminServices().UnlockIdentity(newPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), newPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(new passphrase) = (%v, %q, %q), want a success", success, errMsg, code)
 	}
 }

@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -129,7 +130,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -142,7 +143,7 @@ func TestUnlockFailsClosedOnMalformedGenerationContent(t *testing.T) {
 		t.Fatalf("remove garbage: %v", err)
 	}
 	ir.Lock()
-	success, _, errMsg, code = svc.UnlockIdentity(testPassphrase)
+	success, _, errMsg, code = svc.UnlockIdentity(context.Background(), testPassphrase)
 	if !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
@@ -171,7 +172,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -183,7 +184,7 @@ func TestUnlockFailsClosedOnMalformedKeyTypeRecord(t *testing.T) {
 		t.Fatalf("remove garbage record: %v", err)
 	}
 	ir.Lock()
-	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
 }
@@ -213,7 +214,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 	}
 	ir.Lock()
 
-	success, keyCount, errMsg, code := svc.UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery entry", success, keyCount, errMsg, code)
 	}
@@ -227,7 +228,7 @@ func TestUnlockFailsClosedOnUnexpectedEntriesInGeneration(t *testing.T) {
 		}
 	}
 	ir.Lock()
-	if success, _, errMsg, code := svc.UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want clean unlock", success, errMsg, code)
 	}
 }
@@ -292,7 +293,7 @@ func TestUnlockOfADamagedStoreRootIsNotAnInvalidPassphrase(t *testing.T) {
 	svc := server.adminServices()
 	ir.Lock()
 
-	if success, _, errMsg, code := svc.UnlockIdentity([]byte("wrong passphrase")); success || code != protocol.ErrCodeInvalidPassphrase {
+	if success, _, errMsg, code := svc.UnlockIdentity(context.Background(), []byte("wrong passphrase")); success || code != protocol.ErrCodeInvalidPassphrase {
 		t.Fatalf("UnlockIdentity(wrong) = (%v, %q, %q), want invalid_passphrase", success, errMsg, code)
 	}
 
@@ -300,7 +301,7 @@ func TestUnlockOfADamagedStoreRootIsNotAnInvalidPassphrase(t *testing.T) {
 	if err := os.WriteFile(rootPath, []byte("not a store root"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	success, _, errMsg, code := svc.UnlockIdentity(testPassphrase)
+	success, _, errMsg, code := svc.UnlockIdentity(context.Background(), testPassphrase)
 	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "parse store root") {
 		t.Fatalf("UnlockIdentity(damaged root) = (%v, %q, %q), want unlock_failed naming the cause", success, errMsg, code)
 	}
@@ -445,7 +446,7 @@ func TestAStoreChangeLandsBeforeOrAfterAWholeUnlock(t *testing.T) {
 			}
 			gateStoreMutation(server, gate)
 
-			success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+			success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 			if !success || errMsg != "" || code != tc.code {
 				t.Fatalf("UnlockIdentity() = (%v, %q, %q), want a success with code %q", success, errMsg, code, tc.code)
 			}
@@ -490,7 +491,7 @@ func TestAFailedReloadThatKeepsTheKeyringLeavesRecoveryItsKeyring(t *testing.T) 
 		}
 		return nil
 	})
-	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); success || !strings.Contains(errMsg, "injected") {
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); success || !strings.Contains(errMsg, "injected") {
 		t.Fatalf("UnlockIdentity() = (%v, %q), want the load's failure", success, errMsg)
 	}
 	if loads != 1 {
@@ -542,7 +543,7 @@ func TestAFailedUnlockLoadInRecoveryLeavesRecoveryAKeyring(t *testing.T) {
 	}
 
 	undo := failLoadsAfterTheKeyringOpens(server)
-	success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	undo()
 	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "policy verification failed") {
 		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want the load's policy verification failure", success, errMsg, code)
@@ -579,7 +580,7 @@ func TestAFailedFirstUnlockLoadClosesTheKeyringItOpened(t *testing.T) {
 	ir.Lock()
 
 	undo := failLoadsAfterTheKeyringOpens(server)
-	success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	undo()
 	if success || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, "policy verification failed") {
 		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want the load's policy verification failure", success, errMsg, code)
@@ -594,7 +595,7 @@ func TestAFailedFirstUnlockLoadClosesTheKeyringItOpened(t *testing.T) {
 		t.Fatalf("ActivePaths() error = %v after a failed first unlock, want no binding", err)
 	}
 
-	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success || !ir.IsUnlocked() {
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success || !ir.IsUnlocked() {
 		t.Fatalf("UnlockIdentity() once the cause is gone = (%v, %q), state %v; want unlocked", success, errMsg, ir.GetState())
 	}
 }
@@ -607,7 +608,7 @@ func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	ir := server.productRuntime()
-	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success {
 		t.Fatalf("first UnlockIdentity() failed: %s", errMsg)
 	}
 	generation, unlocked := ir.UnlockedGeneration()
@@ -616,7 +617,7 @@ func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
 	}
 	builds, _ := countBuilds(server)
 
-	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	if !success || errMsg != "" || code != "" || keyCount != ir.KeyCount() {
 		t.Fatalf("second UnlockIdentity() = (%v, %d, %q, %q), want a plain success with the session's key count", success, keyCount, errMsg, code)
 	}
@@ -632,7 +633,7 @@ func TestAnUnlockOfAnUnlockedSignerReloadsNothing(t *testing.T) {
 
 	// A wrong passphrase is refused, and leaves the session as it was.
 	wrong := []byte("not-the-passphrase")
-	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(wrong); success || errMsg == "" {
+	if success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), wrong); success || errMsg == "" {
 		t.Fatalf("UnlockIdentity(wrong passphrase) on an unlocked signer = (%v, %q), want a refusal", success, errMsg)
 	}
 	if builds.Load() != 0 || !ir.IsUnlockedIn(generation) {
@@ -659,7 +660,7 @@ func TestTwoUnlocksAtOnceReloadOnce(t *testing.T) {
 		errMsg   string
 	}
 	unlock := func(results chan<- outcome) {
-		success, keyCount, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase)
+		success, keyCount, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 		results <- outcome{success, keyCount, errMsg}
 	}
 	second := make(chan outcome, 1)
@@ -715,7 +716,7 @@ func TestAFailedReconcileLeavesASessionPublishedBesideIt(t *testing.T) {
 		errMsg, code string
 	}
 	unlock := func(results chan<- outcome) {
-		success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+		success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 		results <- outcome{success, keyCount, errMsg, code}
 	}
 	second := make(chan outcome, 1)
@@ -782,7 +783,7 @@ func TestAReconcileOfALockedSignerIsRefusedUnderTheLock(t *testing.T) {
 		},
 	}})
 
-	if success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want a plain success", success, errMsg, code)
 	}
 	if !errors.Is(reconcileErr, keystore.ErrStoreLocked) {
@@ -839,7 +840,7 @@ func TestAnUnlockWhoseDirtyReconciliationEntersRecoveryAnswersRecovery(t *testin
 		return fmt.Errorf("%w: a defect that appeared after the unlock's load", signertemplates.ErrGenerationValidation)
 	})
 
-	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery_blocked", success, keyCount, errMsg, code)
 	}

@@ -74,10 +74,9 @@ func TestRestoreBackupRequiresDurableIntentBeforeService(t *testing.T) {
 func TestRestoreBackupAbortsWhenDurableIntentFails(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		audit  AuthorizationAudit
+		audit  Audit
 		advice string
 	}{
-		{"no audit capability", &recordingAuthorizationAudit{}, "restart the daemon"},
 		{"no audit logger", &recordingCredentialRestoreAudit{intentErr: fmt.Errorf("%w; refusing restore", ErrAuditUnavailable)}, "restart the daemon"},
 		{"a failed write", &recordingCredentialRestoreAudit{intentErr: errors.New("sync failed")}, "sync failed. Repair the cause, such as a full disk or wrong permissions, and retry"},
 	} {
@@ -229,7 +228,7 @@ func TestBackupExportAuditStartsAgainAfterEOF(t *testing.T) {
 	}
 }
 
-func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) {
+func TestABackupTransferThatSucceedsIsRecorded(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	svc := &stubServices{
@@ -242,7 +241,7 @@ func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) 
 			Success: true, FileName: "export.tar.gz", Data: []byte("chunk"),
 		},
 	}
-	audit := &backupSuccessOnlyAudit{}
+	audit := &recordingBackupTransferAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
 	session := NewSession(&queueConn{}, deps, OriginLocal)
@@ -265,14 +264,14 @@ func TestBackupTransferSuccessAuditsDoNotRequireFailureCapability(t *testing.T) 
 	}
 }
 
-func TestBackupTransferFailureAuditDoesNotRequireSuccessCapabilities(t *testing.T) {
+func TestABackupTransferThatFailsIsRecorded(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 	ir.SetUnlocked()
 	svc := &stubServices{
 		commitBackupImportResult: adminproto.CommitBackupImportResult{Error: "invalid archive"},
 		readBackupChunkResult:    adminproto.ReadBackupChunkResult{Error: "read failed"},
 	}
-	audit := &backupFailureOnlyAudit{}
+	audit := &recordingBackupTransferAudit{}
 	deps := svc.backupDeps()
 	deps.Audit = audit
 	session := NewSession(&queueConn{}, deps, OriginLocal)
@@ -346,38 +345,17 @@ type recordingCredentialRestoreAudit struct {
 
 type recordingBackupTransferAudit struct {
 	recordingAuthorizationAudit
+	importedCalls      int
+	lastImport         adminproto.CommitBackupImportResult
 	failedCalls        int
 	exportStartedCalls int
 	lastFailure        string
 	lastExport         string
 }
 
-type backupSuccessOnlyAudit struct {
-	recordingAuthorizationAudit
-	importedCalls      int
-	lastImport         adminproto.CommitBackupImportResult
-	exportStartedCalls int
-}
-
-func (a *backupSuccessOnlyAudit) LogBackupImportedContext(_ SessionContext, result adminproto.CommitBackupImportResult) {
+func (a *recordingBackupTransferAudit) LogBackupImportedContext(_ SessionContext, result adminproto.CommitBackupImportResult) {
 	a.importedCalls++
 	a.lastImport = result
-}
-
-func (a *backupSuccessOnlyAudit) LogBackupExportStartedContext(SessionContext, string) {
-	a.exportStartedCalls++
-}
-
-type backupFailureOnlyAudit struct {
-	recordingAuthorizationAudit
-	failedCalls int
-}
-
-func (a *backupFailureOnlyAudit) LogBackupFailedContext(SessionContext, string) {
-	a.failedCalls++
-}
-
-func (*recordingBackupTransferAudit) LogBackupImportedContext(SessionContext, adminproto.CommitBackupImportResult) {
 }
 
 func (a *recordingBackupTransferAudit) LogBackupFailedContext(_ SessionContext, reason string) {
@@ -393,9 +371,4 @@ func (a *recordingBackupTransferAudit) LogBackupExportStartedContext(_ SessionCo
 func (a *recordingCredentialRestoreAudit) LogCredentialRestoreIntentDurableContext(SessionContext, string, string, bool) error {
 	a.intentCalls++
 	return a.intentErr
-}
-
-func (a *recordingCredentialRestoreAudit) LogCredentialRestoreContext(SessionContext, adminproto.RestoreBackupResult) {
-}
-func (a *recordingCredentialRestoreAudit) LogCredentialRestoreRollbackContext(SessionContext, adminproto.RollbackRestoreResult) {
 }

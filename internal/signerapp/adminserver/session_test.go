@@ -56,6 +56,7 @@ type stubServices struct {
 	newIdentity  *auth.Identity
 	verifyCalls  int
 	unlockCalls  int
+	unlockCtx    context.Context
 
 	listLibraryCalls       int
 	installLibraryCalls    int
@@ -158,8 +159,9 @@ func (s *stubServices) VerifyPassphrase(passphrase []byte) error {
 	s.verifyErrs = s.verifyErrs[1:]
 	return err
 }
-func (s *stubServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
+func (s *stubServices) UnlockIdentity(ctx context.Context, passphrase []byte) (bool, int, string, string) {
 	s.unlockCalls++
+	s.unlockCtx = ctx
 	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
 }
 func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
@@ -401,6 +403,7 @@ func (s stubServices) deps() SessionDeps {
 		Product:  &s,
 		Settings: &s,
 		Keys:     &s,
+		Audit:    &stubAudit{},
 	}
 }
 
@@ -410,6 +413,7 @@ func (s *stubServices) templateDeps() SessionDeps {
 		Settings:  s,
 		Keys:      s,
 		Templates: s,
+		Audit:     &stubAudit{},
 	}
 }
 
@@ -417,6 +421,7 @@ func (s *stubServices) backupDeps() SessionDeps {
 	return SessionDeps{
 		Product: s,
 		Backups: s,
+		Audit:   &stubAudit{},
 	}
 }
 
@@ -864,7 +869,10 @@ func TestSessionAuthenticateEndsOnADamagedStoreRoot(t *testing.T) {
 		verifyErrs: []error{errors.New("read store root: open store-root.enc: permission denied")},
 		unlockOK:   true,
 	}
-	session := NewSession(conn, svc.templateDeps(), OriginLocal)
+	audit := &loginAudit{}
+	deps := svc.templateDeps()
+	deps.Audit = audit
+	session := NewSession(conn, deps, OriginLocal)
 
 	if got := session.AuthenticateOutcome(); got != AuthOutcomeFailed {
 		t.Fatalf("AuthenticateOutcome() = %v, want AuthOutcomeFailed", got)
@@ -884,6 +892,9 @@ func TestSessionAuthenticateEndsOnADamagedStoreRoot(t *testing.T) {
 	}
 	if result.Error == "invalid passphrase" || strings.Contains(result.Error, "permission denied") {
 		t.Fatalf("auth result error = %q, want the store-root failure without its cause", result.Error)
+	}
+	if fmt.Sprint(audit.failures) != "[the store root could not be opened]" {
+		t.Fatalf("recorded login failures = %v, want the store root's, without its cause", audit.failures)
 	}
 	if !isZeroedFrame(first) {
 		t.Fatalf("login frame left as %q", first)
@@ -1072,7 +1083,7 @@ func TestSessionAuthenticateZeroesLoginFrames(t *testing.T) {
 	wrong := mustAuthFrame(t, "wrong-secret", "")
 	right := mustAuthFrame(t, "right-secret", "")
 	svc := &stubServices{runtime: ir, verifyErrs: []error{algocrypto.ErrInvalidPassphrase}, newIdentity: auth.NewProductIdentity("ipc-passphrase")}
-	session := NewSession(&queueConn{reads: [][]byte{wrong, right}}, SessionDeps{Product: svc}, OriginLocal)
+	session := NewSession(&queueConn{reads: [][]byte{wrong, right}}, SessionDeps{Product: svc, Audit: &stubAudit{}}, OriginLocal)
 
 	if session.AuthenticateOutcome() != AuthOutcomeAuthenticated {
 		t.Fatal("authenticated = false, want the second attempt to succeed")

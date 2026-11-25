@@ -38,6 +38,7 @@ func (a *recordingAuthorizer) Authorize(ctx context.Context, identity *auth.Iden
 }
 
 type recordingAuthorizationAudit struct {
+	stubAudit
 	calls    int
 	ctx      SessionContext
 	action   auth.Action
@@ -209,7 +210,7 @@ func boundPolicySession(svc *stubServices) (*Session, *recordingAuthorizer, *que
 	return session, authorizer, conn
 }
 
-func boundAuditedPolicySession(svc *stubServices, audit AuthorizationAudit) (*Session, *recordingAuthorizer, *queueConn, AuthorizationAudit) {
+func boundAuditedPolicySession(svc *stubServices, audit Audit) (*Session, *recordingAuthorizer, *queueConn, Audit) {
 	ir := productruntime.New(productruntime.Config{})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}

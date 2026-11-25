@@ -9,64 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
-
-func TestAdminSessionAuditSatisfiesHandlerProbes(t *testing.T) {
-	audit := (&Signer{}).adminSessionDeps().Audit
-	if _, ok := audit.(interface {
-		LogIdentityLockedContext(adminserver.SessionContext, string)
-		LogBackupCreatedContext(adminserver.SessionContext, string)
-		LogBackupImportedContext(adminserver.SessionContext, adminproto.CommitBackupImportResult)
-		LogBackupFailedContext(adminserver.SessionContext, string)
-		LogBackupExportStartedContext(adminserver.SessionContext, string)
-		LogBackupRestorePreviewedContext(adminserver.SessionContext, adminproto.RestorePreviewResult)
-		LogBackupRestorePreviewFailedContext(adminserver.SessionContext, string)
-	}); !ok {
-		t.Fatal("production audit does not satisfy identity/backup handler probes")
-	}
-	if _, ok := audit.(interface {
-		LogCredentialRestoreIntentDurableContext(adminserver.SessionContext, string, string, bool) error
-	}); !ok {
-		t.Fatal("production audit does not satisfy durable credential-restore intent probe")
-	}
-	if _, ok := audit.(interface {
-		LogCredentialRestoreContext(adminserver.SessionContext, adminproto.RestoreBackupResult)
-		LogCredentialRestoreRollbackContext(adminserver.SessionContext, adminproto.RollbackRestoreResult)
-	}); !ok {
-		t.Fatal("production audit does not satisfy credential-restore outcome probes")
-	}
-	if _, ok := audit.(interface {
-		LogGenerationQuarantinePruneIntentDurableContext(
-			adminserver.SessionContext,
-			string,
-			[]string,
-		) error
-		LogGenerationQuarantinePruneContext(
-			adminserver.SessionContext,
-			string,
-			adminproto.PruneGenerationQuarantineResult,
-		)
-	}); !ok {
-		t.Fatal("production audit does not satisfy quarantine-prune handler probes")
-	}
-	if _, ok := audit.(interface {
-		LogPolicyApplyIntentDurableContext(adminserver.SessionContext, string, adminproto.ApplyPolicyRequest) error
-		LogPolicyApplyResultContext(adminserver.SessionContext, string, adminproto.ApplyPolicyResult)
-		LogASASetUpdateIntentDurableContext(adminserver.SessionContext, string, string, string, string, uint64) error
-		LogASASetAddResultContext(adminserver.SessionContext, string, adminproto.AddASARequest, adminproto.AddASAResult)
-		LogASASetRemoveResultContext(adminserver.SessionContext, string, adminproto.RemoveASARequest, adminproto.RemoveASAResult)
-	}); !ok {
-		t.Fatal("production audit does not satisfy policy and ASA set mutation probes")
-	}
-	if _, ok := audit.(interface {
-		LogSettingSaveErrorContext(adminserver.SessionContext, string, string, bool, string)
-	}); !ok {
-		t.Fatal("production audit does not satisfy the setting save error probe")
-	}
-}
 
 func TestDurableCredentialRestoreIntentGate(t *testing.T) {
 	auditPath := filepath.Join(t.TempDir(), "audit.log")
@@ -75,8 +20,7 @@ func TestDurableCredentialRestoreIntentGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = auditLog.Close() }()
-	svc := (&Signer{auditLog: auditLog}).adminServices()
-	if err := svc.LogCredentialRestoreIntentDurableContext(
+	if err := auditLog.LogCredentialRestoreIntentDurableContext(
 		adminserver.SessionContext{}, "restore-1", "backup.tar.gz", true,
 	); err != nil {
 		t.Fatal(err)
@@ -88,11 +32,6 @@ func TestDurableCredentialRestoreIntentGate(t *testing.T) {
 	if !strings.Contains(string(data), "CREDENTIAL_RESTORE_INTENT") || !strings.Contains(string(data), "restore-1") {
 		t.Fatalf("audit log missing durable restore intent: %q", data)
 	}
-	if err := (&Signer{}).adminServices().LogCredentialRestoreIntentDurableContext(
-		adminserver.SessionContext{}, "restore-2", "backup.tar.gz", false,
-	); err == nil {
-		t.Fatal("missing audit logger did not fail closed")
-	}
 }
 
 func TestDurableGenerationQuarantinePruneIntentGate(t *testing.T) {
@@ -102,8 +41,7 @@ func TestDurableGenerationQuarantinePruneIntentGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = auditLog.Close() }()
-	svc := (&Signer{auditLog: auditLog}).adminServices()
-	if err := svc.LogGenerationQuarantinePruneIntentDurableContext(
+	if err := auditLog.LogGenerationQuarantinePruneIntentDurableContext(
 		adminserver.SessionContext{},
 		"prune-1",
 		[]string{"gen-1700000000-0123abcd"},
@@ -117,13 +55,6 @@ func TestDurableGenerationQuarantinePruneIntentGate(t *testing.T) {
 	if !strings.Contains(string(data), "GENERATION_QUARANTINE_PRUNE_INTENT") ||
 		!strings.Contains(string(data), "gen-1700000000-0123abcd") {
 		t.Fatalf("audit log missing durable quarantine-prune intent: %q", data)
-	}
-	if err := (&Signer{}).adminServices().LogGenerationQuarantinePruneIntentDurableContext(
-		adminserver.SessionContext{},
-		"prune-2",
-		[]string{"gen-1700000000-0123abcd"},
-	); err == nil {
-		t.Fatal("missing audit logger did not fail closed")
 	}
 }
 

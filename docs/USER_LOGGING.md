@@ -45,14 +45,15 @@ Each line is a JSON object with the following fields:
 | `approval_source` | string | On client-signing `SIGN_APPROVED`: how the signature was authorized (`human`, `user_auto_approve`, or `always_approve`) |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
 | `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
-| `key_count` | int | Number of keys: loaded, on start and reload events; restored, on a restore outcome; that a restore would admit, on a restore preview |
+| `key_count` | int | Number of keys: loaded, on start, reload, unlock and reconcile events; restored, on a restore outcome; that a restore would admit, on a restore preview |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `skipped_keys` | string[] | On a restore outcome, a restore preview or a backup import: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), selectors only, at most 64 |
 | `skipped_keys_omitted` | int | Keys left out of `skipped_keys` |
 | `replace_existing` | bool | Whether a credential restore was authorized to replace existing entries |
 | `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
-| `result_code` | string | Result code of a failed or uncertain policy or ASA set change |
-| `changed` | bool | On a succeeded policy or ASA set change only: whether it minted a generation (`false` is written, for a policy apply that changed nothing) |
+| `result_code` | string | Result code of a failed or uncertain policy or ASA set change, and of a failed unlock, reconcile, backup deletion or key type change |
+| `changed` | bool | On a succeeded policy or ASA set change: whether it minted a generation (`false` is written, for a policy apply that changed nothing). On a `KEY_TYPE_CHANGED`: whether the store changed, left out of a failure that does not say |
+| `key_type_action`, `key_type` | string | On a `KEY_TYPE_CHANGED`: `install`, `import`, `remove`, `activate` or `deactivate`, and the key type |
 | `generation_id` | string | Generation a change minted, also when its commit is uncertain |
 | `policy_updates`, `policy_removals` | string[] | Selectors a policy apply submits or removes, at most 64 each |
 | `policy_updates_omitted`, `policy_removals_omitted` | int | Selectors left out of those lists |
@@ -98,6 +99,7 @@ Fields are omitted when empty.
 | `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage; `skipped_keys` names the keys in it a restore would skip |
 | `BACKUP_EXPORT_STARTED` | An authenticated client began reading a managed backup archive; a non-zero initial offset is still audited |
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
+| `BACKUP_DELETED` | A managed backup was deleted, or could not be (`outcome` `failed`); `reason` is the path requested |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface; `key_count` counts the keys a restore would admit and `skipped_keys` names the ones it would skip |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
@@ -105,11 +107,13 @@ Fields are omitted when empty.
 | `CREDENTIAL_RESTORE_FAILED` | Credential restore failed; a reload failure after commit enters recovery mode and requires explicit reconciliation or eligible rollback |
 | `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` may have landed but could not be confirmed (visible but not confirmed durable, or not readable back); signing remains recovery-blocked pending reconciliation |
 | `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded, failed, or may have committed (`commit_uncertain`, with the generation) |
+| `STORE_RECONCILED` | An explicit store reconcile succeeded or failed (`outcome`) |
 | `STORE_INITIALIZED` | Store initialization succeeded through authenticated local IPC |
 | `STORE_INITIALIZE_FAILED` | Store initialization failed through authenticated local IPC |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
 | `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported, promoted, or removed |
+| `KEY_TYPE_CHANGED` | A template was installed, imported or removed, or a key type activated or deactivated (`key_type_action`), or could not be (`outcome` `failed`) |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, `key_count` (the keys restored), and `skipped_keys`, in
@@ -207,6 +211,8 @@ LogicSig argument values.
 | Event | Description |
 |-------|-------------|
 | `AUTH_FAILED` | Authentication attempt failed; `remote_addr` identifies the client |
+| `ADMIN_LOGIN_FAILED` | An admin login was refused: a wrong passphrase, or a store root that could not be opened (`reason`) |
+| `ADMIN_LOGIN_FAILURES_SUPPRESSED` | Admin login failures beyond the same rate limit, counted separately, were counted instead of logged individually; `suppressed_count` is the number |
 | `AUTH_FAILURES_SUPPRESSED` | Unauthenticated failures beyond the rate limit (a burst of 20, then one per 6 seconds) were counted instead of logged individually; `suppressed_count` is the number |
 | `COSIGNER_REJECTIONS_SUPPRESSED` | Cosigner rejections (policy rejections and signer-invariant refusals) beyond the same rate limit were counted instead of logged individually; `suppressed_count` is the number. Cosigner signatures are always logged individually |
 | `AUTHORIZATION_DENIED` | Authenticated admin principal lacked authorization for the requested action/resource |
@@ -217,7 +223,8 @@ LogicSig argument values.
 |-------|-------------|
 | `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`): `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal), and `ssh_fingerprint` names the key |
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended |
-| `IDENTITY_LOCKED` | Signing authority locked through an authenticated admin session |
+| `IDENTITY_LOCKED` | Signing authority locked by a request from an authenticated admin session. A lock when an admin session ends (`lock_on_disconnect`) writes none: it follows that session's `SESSION_DISCONNECTED` |
+| `IDENTITY_UNLOCKED` | How an unlock ended (`outcome` `unlocked`, `recovery` or `failed`), whether an admin login, an `unlock` command, a store initialization or the startup asked for it |
 | `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |
 | `SETTING_CHANGED` | Admin setting change saved (`reason` `setting=<key> old=<old> new=<new>`) |
 | `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause |

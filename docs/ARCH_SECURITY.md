@@ -1315,6 +1315,12 @@ Denial behavior:
   failure, and on shutdown. A flood stays visible without rotating earlier
   entries out of the log. Authorization denials of an authenticated
   principal are not rate limited.
+- An admin login the passphrase check refuses writes `ADMIN_LOGIN_FAILED`,
+  for a wrong passphrase or a store root that could not be opened, with the
+  session ID and no principal. It is rate limited the same way, with a
+  separate budget and an `ADMIN_LOGIN_FAILURES_SUPPRESSED` summary, so a flood
+  of client authentication failures cannot hide it. No entry carries the
+  passphrase or its length.
 - Cosigner rejections (`SIGN_REJECTED` for a cosigner component: a policy
   rejection, `cosigner_policy_rejected:`, or a signer-invariant refusal,
   `signer_invariant:`) are rate limited the same way, with a separate budget
@@ -1340,6 +1346,8 @@ Events:
 - `ROTATING_RELEASE`
 - `AUTH_FAILED`
 - `AUTH_FAILURES_SUPPRESSED`
+- `ADMIN_LOGIN_FAILED`
+- `ADMIN_LOGIN_FAILURES_SUPPRESSED`
 - `COSIGNER_REJECTIONS_SUPPRESSED`
 - `AUTHORIZATION_DENIED`
 - `KEY_RELOAD`
@@ -1351,6 +1359,7 @@ Events:
 - `BACKUP_IMPORTED`
 - `BACKUP_EXPORT_STARTED`
 - `BACKUP_FAILED`
+- `BACKUP_DELETED`
 - `BACKUP_RESTORE_PREVIEWED`
 - `BACKUP_RESTORE_PREVIEW_FAILED`
 - `CREDENTIAL_RESTORE_INTENT`
@@ -1358,11 +1367,13 @@ Events:
 - `CREDENTIAL_RESTORE_FAILED`
 - `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN`
 - `CREDENTIAL_RESTORE_ROLLBACK`
+- `STORE_RECONCILED`
 - `STORE_INITIALIZED`
 - `STORE_INITIALIZE_FAILED`
 - `PASSPHRASE_CHANGED`
 - `PASSPHRASE_CHANGE_FAILED`
 - `COSIGNER_REFERENCE_CHANGED`
+- `KEY_TYPE_CHANGED`
 - `GENERATION_QUARANTINE_INTENT`
 - `GENERATION_QUARANTINED`
 - `GENERATION_QUARANTINE_PRUNE_INTENT`
@@ -1386,6 +1397,7 @@ Events:
 - `SESSION_CONNECTED`
 - `SESSION_DISCONNECTED`
 - `IDENTITY_LOCKED`
+- `IDENTITY_UNLOCKED`
 - `SETTING_CHANGE_INTENT`
 - `SETTING_CHANGED`
 - `SETTING_SAVE_ERROR`
@@ -1532,6 +1544,9 @@ Backup-audit semantics:
   offset; reaching EOF closes the inferred transfer for subsequent auditing
 - `BACKUP_FAILED` is emitted when backup creation, import commit, or export
   streaming fails; `reason` contains the failure reason
+- `BACKUP_DELETED` is emitted for every request to delete a managed archive,
+  with `outcome` `deleted` or `failed`; `reason` contains the path as requested
+  and, on failure, the error
 - `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path, `key_count` the keys a restore would admit, and `skipped_keys` the ones it would skip
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
 - `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
@@ -1559,6 +1574,31 @@ Store-management audit semantics:
   promotes, or removes a cosigner-reference record; `outcome` is the action
   (or `failed`) and `witness_key_id` identifies the authority, with no
   public-key material in the entry
+- `KEY_TYPE_CHANGED` is emitted for every admin command that changes the key
+  types the node offers: `key_type_action` is `install`, `import`, `remove`,
+  `activate` or `deactivate`, and `key_type` names the type. `changed` says
+  whether the store changed: on a success always, and on a failure only when
+  it did and stayed (a removal whose reload then failed). A failed install,
+  import or activation leaves `changed` out, because its answer does not say
+  whether the store changed
+- `IDENTITY_UNLOCKED` is emitted for every unlock: an admin login's, the
+  `unlock` command's, a store initialization's and the startup's. `outcome` is
+  `unlocked`, `recovery` (with `result_code` `recovery_blocked` and the cause)
+  or `failed` (with the code and cause). The startup's and an initialization's
+  are the product principal's; a startup passphrase the store refuses is
+  recorded before the daemon exits, and a helper that returns none is not. An
+  unlock that finds the signer unlocked changes nothing, so only a refusal of
+  its passphrase is recorded. The entry is the request's outcome, not the state
+  after it: a lock from another session can come first in the log. Only a lock
+  request writes `IDENTITY_LOCKED`; a lock that an admin session's end brings
+  (`lock_on_disconnect`) follows its `SESSION_DISCONNECTED`
+- `STORE_RECONCILED` is emitted for every explicit reconcile, with `outcome`
+  `succeeded` or `failed`; what it quarantined has entries of its own
+- `IDENTITY_UNLOCKED`, `STORE_RECONCILED`, `BACKUP_DELETED`, `KEY_TYPE_CHANGED`
+  and `ADMIN_LOGIN_FAILED` are best effort, as the key-management events are. An
+  audit failure never refuses what they record: a full disk must not stop the
+  operator from unlocking, or from deleting a backup to make room. Policy, ASA
+  set and source token changes are the ones that need a record first (below)
 - admin setting changes (`update_admin_setting`) are audited according to
   their direction (see [Writable Settings](ARCH_ADMIN.md#writable-settings)):
   - a non-restrictive update (turning `user_auto_approve` on, turning
@@ -1647,7 +1687,7 @@ Store-management audit semantics:
   skips lines over 1 MiB, so logs from earlier releases still load.
 - the older durable intents (restore, quarantine prune, abandoned-generation
   discard, deleted-archive prune) keep their result codes but share the
-  policy changes' advice: with no audit logger the forwarder returns
+  policy changes' advice: with no audit log the intent returns
   `ErrAuditUnavailable` and the refusal says to repair and restart; a
   failed write says to repair and retry. The release
   history reader skips any audit line over 1 MiB rather than failing, so

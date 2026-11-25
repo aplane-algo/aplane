@@ -307,14 +307,14 @@ var reloadCallers = []reloadCaller{
 		name: "unlock from locked",
 		from: func(_ *testing.T, server *Signer) { server.productRuntime().Lock() },
 		run: func(_ *testing.T, server *Signer) string {
-			return unlockCode(server.adminServices().UnlockIdentity(testPassphrase))
+			return unlockCode(server.adminServices().UnlockIdentity(context.Background(), testPassphrase))
 		},
 	},
 	{
 		name: "unlock from recovery",
 		from: func(_ *testing.T, server *Signer) { server.productRuntime().EnterRecovery(nil) },
 		run: func(_ *testing.T, server *Signer) string {
-			return unlockCode(server.adminServices().UnlockIdentity(testPassphrase))
+			return unlockCode(server.adminServices().UnlockIdentity(context.Background(), testPassphrase))
 		},
 	},
 	{

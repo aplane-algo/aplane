@@ -48,7 +48,7 @@ type Session struct {
 	templateServices   TemplateServices
 	inspectionServices StoreInspectionServices
 	authorizer         auth.Authorizer
-	audit              AuthorizationAudit
+	audit              Audit
 	nodeFailure        func() error
 
 	mu                sync.Mutex
@@ -148,9 +148,12 @@ func (s *Session) authorizeIdentity(identity *auth.Identity, action auth.Action,
 }
 
 func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Action, resource auth.Resource, reason string) {
-	if s.audit == nil {
-		return
-	}
+	s.audit.LogAuthorizationDenied(s.contextFor(identity), action, resource, reason)
+}
+
+// contextFor is the session's context for an audit record, attributed to
+// identity where the session has no principal yet, as at login.
+func (s *Session) contextFor(identity *auth.Identity) SessionContext {
 	ctx := s.SessionContext()
 	principal := principalFromIdentity(identity)
 	if ctx.AdminPrincipal.ID == "" {
@@ -162,7 +165,7 @@ func (s *Session) logAuthorizationDenied(identity *auth.Identity, action auth.Ac
 	if ctx.ApproverPrincipal.ID == "" {
 		ctx.ApproverPrincipal = principal
 	}
-	s.audit.LogAuthorizationDenied(ctx, action, resource, reason)
+	return ctx
 }
 
 // AuthenticateOutcome performs the admin handshake and returns whether the
@@ -252,10 +255,12 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 				// would pass, so the login ends instead of asking again.
 				// The cause stays in the signer log; a pre-auth reply
 				// carries none of it.
+				s.audit.LogAdminLoginFailedContext(s.SessionContext(), "the store root could not be opened")
 				s.sendAuthResult(false, protocol.ErrCodeAuthenticationFailed,
 					"the signer cannot open its store root; see the signer log")
 				return AuthOutcomeFailed
 			}
+			s.audit.LogAdminLoginFailedContext(s.SessionContext(), "wrong passphrase")
 			s.sendAuthResult(false, protocol.ErrCodeInvalidPassphrase, "invalid passphrase")
 			continue
 		}
@@ -274,7 +279,8 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		if !authenticateOnly && !ir.IsUnlocked() {
-			success, _, errMsg, code := s.productServices.UnlockIdentity(passphraseBytes)
+			ctx := WithSessionContext(s.Context(), s.contextFor(sessionIdentity))
+			success, _, errMsg, code := s.productServices.UnlockIdentity(ctx, passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {
 				if code == "" {

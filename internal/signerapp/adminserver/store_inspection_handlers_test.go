@@ -196,7 +196,7 @@ func TestHandleImportCosignerReferenceDenialStopsMutation(t *testing.T) {
 	inspection := &inspectionStub{}
 	authorizer := &recordingAuthorizer{err: auth.ErrForbidden}
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer}, OriginLocal)
+	session := NewSession(conn, SessionDeps{Inspection: inspection, Authorizer: authorizer, Audit: &stubAudit{}}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 
 	session.HandleImportCosignerReference(&protocol.ImportCosignerReferenceMessage{
@@ -265,7 +265,7 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 	for _, test := range []struct {
 		name     string
 		confirm  bool
-		audit    AuthorizationAudit
+		audit    Audit
 		wantCode string
 		// wantAdvice is what the refusal tells the operator to do.
 		wantAdvice string
@@ -275,13 +275,6 @@ func TestHandlePruneGenerationQuarantineFailsClosedWithoutConfirmationOrAudit(t 
 			confirm:  false,
 			audit:    &quarantinePruneAudit{},
 			wantCode: protocol.ResultCodeConfirmationRequired,
-		},
-		{
-			name:       "durable audit required",
-			confirm:    true,
-			audit:      &recordingAuthorizationAudit{},
-			wantCode:   protocol.ResultCodeQuarantineAuditFailed,
-			wantAdvice: "restart the daemon",
 		},
 		{
 			name:       "no audit logger",
@@ -394,13 +387,12 @@ func TestHandlePruneDeletedArchiveFailsClosedBeforeMutation(t *testing.T) {
 		name         string
 		confirm      bool
 		authorizeErr error
-		audit        AuthorizationAudit
+		audit        Audit
 		wantCode     string
 		wantAdvice   string
 	}{
 		{name: "authorization", confirm: true, authorizeErr: auth.ErrForbidden, audit: &archivePruneAudit{}, wantCode: protocol.ErrCodeAuthorizationDenied},
 		{name: "confirmation", audit: &archivePruneAudit{}, wantCode: protocol.ResultCodeConfirmationRequired},
-		{name: "audit unavailable", confirm: true, audit: &recordingAuthorizationAudit{}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "restart the daemon"},
 		{name: "no audit logger", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("%w; refusing", ErrAuditUnavailable)}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "restart the daemon"},
 		{name: "audit failure", confirm: true, audit: &archivePruneAudit{intentErr: fmt.Errorf("disk full")}, wantCode: protocol.ResultCodeArchiveAuditFailed, wantAdvice: "disk full. Repair the cause, such as a full disk or wrong permissions, and retry"},
 	} {
@@ -451,10 +443,9 @@ func (a *abandonedDiscardAudit) LogGenerationAbandonedDiscardIntentDurableContex
 func TestHandleDiscardAbandonedGenerationsFailsClosedWithoutDurableAudit(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		audit  AuthorizationAudit
+		audit  Audit
 		advice string
 	}{
-		{"no audit capability", &recordingAuthorizationAudit{}, "restart the daemon"},
 		{"no audit logger", &abandonedDiscardAudit{intentErr: fmt.Errorf("%w; refusing", ErrAuditUnavailable)}, "restart the daemon"},
 		{"a failed write", &abandonedDiscardAudit{intentErr: fmt.Errorf("disk full")}, "disk full. Repair the cause, such as a full disk or wrong permissions, and retry"},
 	} {

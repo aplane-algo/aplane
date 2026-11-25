@@ -88,7 +88,7 @@ func (watcherTestASAChain) ReadAsset(context.Context, []byte, uint64) (models.As
 func lockThenUnlock(t *testing.T, server *Signer, passphrase []byte) {
 	t.Helper()
 	server.productRuntime().Lock()
-	if ok, _, msg, code := server.adminServices().UnlockIdentity(passphrase); !ok || code != "" {
+	if ok, _, msg, code := server.adminServices().UnlockIdentity(context.Background(), passphrase); !ok || code != "" {
 		t.Fatalf("UnlockIdentity() = %v, %q, %q", ok, msg, code)
 	}
 }
@@ -206,7 +206,7 @@ func TestAPassphraseChangeThatEndsLockedLeavesTheWatcher(t *testing.T) {
 	if n := watched.count(); n != 1 || watched.last.Err() != nil {
 		t.Fatalf("%d watchers started, the last running = %v; want the first, left running", n, watched.last.Err() == nil)
 	}
-	if ok, _, msg, code := server.adminServices().UnlockIdentity(newPassphrase); !ok || code != "" {
+	if ok, _, msg, code := server.adminServices().UnlockIdentity(context.Background(), newPassphrase); !ok || code != "" {
 		t.Fatalf("UnlockIdentity() = %v, %q, %q", ok, msg, code)
 	}
 	watched.requireOnTheActiveGeneration(t, ir, 2)

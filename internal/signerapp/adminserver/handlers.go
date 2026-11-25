@@ -108,11 +108,7 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	// request refused before any save is not a save error.
 	var saveErr *adminproto.SettingSaveError
 	if errors.As(err, &saveErr) {
-		if audit, ok := s.audit.(interface {
-			LogSettingSaveErrorContext(SessionContext, string, string, bool, string)
-		}); ok {
-			audit.LogSettingSaveErrorContext(s.SessionContext(), saveErr.Key, saveErr.Value, saveErr.InEffect, saveErr.Err.Error())
-		}
+		s.audit.LogSettingSaveErrorContext(s.SessionContext(), saveErr.Key, saveErr.Value, saveErr.InEffect, saveErr.Err.Error())
 	}
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
@@ -162,17 +158,13 @@ func (s *Session) HandleApplyPolicy(msg *protocol.ApplyPolicyMessage) {
 		ExpectedPolicySetSHA256: msg.ExpectedPolicySetSHA256,
 		ExpectedSnapshotSHA256:  msg.ExpectedSnapshotSHA256,
 	}
-	audit, _ := s.audit.(policyApplyAudit)
-	var record func() error
-	if audit != nil {
-		record = func() error { return audit.LogPolicyApplyIntentDurableContext(s.SessionContext(), msg.ID, req) }
-	}
-	if code, refusal := s.recordMutationIntent("policy apply", record, true); code != "" {
+	intent := s.audit.LogPolicyApplyIntentDurableContext(s.SessionContext(), msg.ID, req)
+	if code, refusal := mutationIntentRefusal("policy apply", intent, true); code != "" {
 		_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, adminproto.ApplyPolicyResult{Code: code, Error: refusal}))
 		return
 	}
 	result := s.settingsServices.ApplyPolicy(req)
-	audit.LogPolicyApplyResultContext(s.SessionContext(), msg.ID, result)
+	s.audit.LogPolicyApplyResultContext(s.SessionContext(), msg.ID, result)
 	_ = s.WriteJSON(ProtocolApplyPolicyResultMessage(msg.ID, result))
 }
 
@@ -201,11 +193,7 @@ func (s *Session) HandleImportCosignerReference(msg *protocol.ImportCosignerRefe
 		return
 	}
 	result := s.inspectionServices.ImportCosignerReference(adminproto.ImportCosignerReferenceRequest{Name: msg.Name, EnvelopeJSON: msg.EnvelopeJSON})
-	if audit, ok := s.audit.(interface {
-		LogCosignerReferenceChangedContext(SessionContext, string, string, string, bool)
-	}); ok {
-		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Success)
-	}
+	s.audit.LogCosignerReferenceChangedContext(s.SessionContext(), "import", msg.Name, result.Reference.ComponentKey, result.Success)
 	_ = s.WriteJSON(ProtocolCosignerReferenceMessage(
 		msg.ID,
 		protocol.MsgTypeImportCosignerReferenceResult,
@@ -221,11 +209,7 @@ func (s *Session) HandleRemoveCosignerReference(msg *protocol.RemoveCosignerRefe
 		return
 	}
 	result := s.inspectionServices.RemoveCosignerReference(adminproto.RemoveCosignerReferenceRequest{Name: msg.Name})
-	if audit, ok := s.audit.(interface {
-		LogCosignerReferenceChangedContext(SessionContext, string, string, string, bool)
-	}); ok {
-		audit.LogCosignerReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, result.Success)
-	}
+	s.audit.LogCosignerReferenceChangedContext(s.SessionContext(), "remove", msg.Name, result.ComponentKey, result.Success)
 	_ = s.WriteJSON(ProtocolRemoveCosignerReferenceResultMessage(msg.ID, result))
 }
 
@@ -264,25 +248,8 @@ func (s *Session) HandlePruneGenerationQuarantine(
 		))
 		return
 	}
-	audit, ok := s.audit.(interface {
-		LogGenerationQuarantinePruneIntentDurableContext(
-			SessionContext,
-			string,
-			[]string,
-		) error
-	})
-	if !ok {
-		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
-			msg.ID,
-			adminproto.PruneGenerationQuarantineResult{
-				Code:  protocol.ResultCodeQuarantineAuditFailed,
-				Error: auditRefusalText("quarantine prune aborted", nil),
-			},
-		))
-		return
-	}
 	generationIDs := append([]string(nil), msg.GenerationIDs...)
-	if err := audit.LogGenerationQuarantinePruneIntentDurableContext(
+	if err := s.audit.LogGenerationQuarantinePruneIntentDurableContext(
 		s.SessionContext(), msg.ID, generationIDs,
 	); err != nil {
 		_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(
@@ -297,15 +264,7 @@ func (s *Session) HandlePruneGenerationQuarantine(
 	result := s.inspectionServices.PruneGenerationQuarantine(
 		adminproto.PruneGenerationQuarantineRequest{GenerationIDs: generationIDs},
 	)
-	if audit, ok := s.audit.(interface {
-		LogGenerationQuarantinePruneContext(
-			SessionContext,
-			string,
-			adminproto.PruneGenerationQuarantineResult,
-		)
-	}); ok {
-		audit.LogGenerationQuarantinePruneContext(s.SessionContext(), msg.ID, result)
-	}
+	s.audit.LogGenerationQuarantinePruneContext(s.SessionContext(), msg.ID, result)
 	_ = s.WriteJSON(ProtocolPruneGenerationQuarantineResultMessage(msg.ID, result))
 }
 
@@ -328,18 +287,8 @@ func (s *Session) HandleDiscardAbandonedGenerations(
 		})
 		return
 	}
-	audit, ok := s.audit.(interface {
-		LogGenerationAbandonedDiscardIntentDurableContext(SessionContext, string, []string) error
-	})
-	if !ok {
-		respond(adminproto.DiscardAbandonedGenerationsResult{
-			Code:  protocol.ResultCodeAbandonedAuditFailed,
-			Error: auditRefusalText("abandoned generation discard aborted", nil),
-		})
-		return
-	}
 	ids := append([]string(nil), msg.GenerationIDs...)
-	if err := audit.LogGenerationAbandonedDiscardIntentDurableContext(s.SessionContext(), msg.ID, ids); err != nil {
+	if err := s.audit.LogGenerationAbandonedDiscardIntentDurableContext(s.SessionContext(), msg.ID, ids); err != nil {
 		respond(adminproto.DiscardAbandonedGenerationsResult{
 			Code:  protocol.ResultCodeAbandonedAuditFailed,
 			Error: auditRefusalText("abandoned generation discard aborted", err),
@@ -349,11 +298,7 @@ func (s *Session) HandleDiscardAbandonedGenerations(
 	result := s.inspectionServices.DiscardAbandonedGenerations(
 		adminproto.DiscardAbandonedGenerationsRequest{GenerationIDs: ids},
 	)
-	if audit, ok := s.audit.(interface {
-		LogGenerationAbandonedDiscardContext(SessionContext, string, adminproto.DiscardAbandonedGenerationsResult)
-	}); ok {
-		audit.LogGenerationAbandonedDiscardContext(s.SessionContext(), msg.ID, result)
-	}
+	s.audit.LogGenerationAbandonedDiscardContext(s.SessionContext(), msg.ID, result)
 	respond(result)
 }
 
@@ -380,17 +325,8 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 		}))
 		return
 	}
-	audit, ok := s.audit.(interface {
-		LogDeletedArchivePruneIntentDurableContext(SessionContext, string, []string) error
-	})
-	if !ok {
-		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
-			Code: protocol.ResultCodeArchiveAuditFailed, Error: auditRefusalText("archive prune aborted", nil),
-		}))
-		return
-	}
 	entries := append([]string(nil), msg.Entries...)
-	if err := audit.LogDeletedArchivePruneIntentDurableContext(s.SessionContext(), msg.ID, entries); err != nil {
+	if err := s.audit.LogDeletedArchivePruneIntentDurableContext(s.SessionContext(), msg.ID, entries); err != nil {
 		_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, adminproto.PruneDeletedArchiveResult{
 			Code:  protocol.ResultCodeArchiveAuditFailed,
 			Error: auditRefusalText("archive prune aborted", err),
@@ -398,11 +334,7 @@ func (s *Session) HandlePruneDeletedArchive(msg *protocol.PruneDeletedArchiveMes
 		return
 	}
 	result := s.inspectionServices.PruneDeletedArchive(adminproto.PruneDeletedArchiveRequest{Entries: entries})
-	if audit, ok := s.audit.(interface {
-		LogDeletedArchivePruneContext(SessionContext, string, adminproto.PruneDeletedArchiveResult)
-	}); ok {
-		audit.LogDeletedArchivePruneContext(s.SessionContext(), msg.ID, result)
-	}
+	s.audit.LogDeletedArchivePruneContext(s.SessionContext(), msg.ID, result)
 	_ = s.WriteJSON(ProtocolPruneDeletedArchiveResultMessage(msg.ID, result))
 }
 
@@ -415,7 +347,7 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	passphraseBytes := msg.Passphrase.Clone()
 	defer zeroBytes(passphraseBytes)
 
-	success, keyCount, errStr, code := s.productServices.UnlockIdentity(passphraseBytes)
+	success, keyCount, errStr, code := s.productServices.UnlockIdentity(s.auditContext(), passphraseBytes)
 	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr, code))
 }
 
@@ -439,11 +371,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	// The lock withdraws every signing request in flight, the one on screen
 	// and those queued behind it, as having outlived its session.
 	ir.Lock()
-	if audit, ok := s.audit.(interface {
-		LogIdentityLockedContext(SessionContext, string)
-	}); ok {
-		audit.LogIdentityLockedContext(s.SessionContext(), msg.Reason)
-	}
+	s.audit.LogIdentityLockedContext(s.SessionContext(), msg.Reason)
 	_ = s.WriteJSON(ProtocolLockIdentityResultMessage(msg.ID, nil))
 }
 
@@ -462,17 +390,9 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 		Addresses:        append([]string(nil), msg.Addresses...),
 	})
 	if result.Success {
-		if audit, ok := s.audit.(interface {
-			LogBackupCreatedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupCreatedContext(s.SessionContext(), result.ArchivePath)
-		}
-	} else if result.Error != "" {
-		if audit, ok := s.audit.(interface {
-			LogBackupFailedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupFailedContext(s.SessionContext(), result.Error)
-		}
+		s.audit.LogBackupCreatedContext(s.SessionContext(), result.ArchivePath)
+	} else {
+		s.audit.LogBackupFailedContext(s.SessionContext(), result.Error)
 	}
 	_ = s.WriteJSON(ProtocolBackupResultMessage(msg.ID, result))
 }
@@ -496,6 +416,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 		return
 	}
 	result := s.backupServices.DeleteBackup(adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
+	s.audit.LogBackupDeletedContext(s.SessionContext(), msg.ArchivePath, result)
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
 }
 
@@ -537,17 +458,9 @@ func (s *Session) HandleCommitBackupImport(msg *protocol.CommitBackupImportMessa
 		ExportPassphrase: msg.ExportPassphrase.Clone(),
 	})
 	if result.Success {
-		if audit, ok := s.audit.(interface {
-			LogBackupImportedContext(SessionContext, adminproto.CommitBackupImportResult)
-		}); ok {
-			audit.LogBackupImportedContext(s.SessionContext(), result)
-		}
-	} else if result.Error != "" {
-		if audit, ok := s.audit.(interface {
-			LogBackupFailedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupFailedContext(s.SessionContext(), "backup import failed: "+result.Error)
-		}
+		s.audit.LogBackupImportedContext(s.SessionContext(), result)
+	} else {
+		s.audit.LogBackupFailedContext(s.SessionContext(), "backup import failed: "+result.Error)
 	}
 	_ = s.WriteJSON(ProtocolCommitBackupImportResultMessage(msg.ID, result))
 }
@@ -572,19 +485,11 @@ func (s *Session) HandleReadBackupChunk(msg *protocol.ReadBackupChunkMessage) {
 	}
 	result := s.backupServices.ReadBackupChunk(adminproto.ReadBackupChunkRequest{FileName: msg.FileName, Offset: msg.Offset})
 	if result.Success {
-		if audit, ok := s.audit.(interface {
-			LogBackupExportStartedContext(SessionContext, string)
-		}); ok {
-			if s.markBackupExportChunk(result.FileName, result.Offset, result.EOF) {
-				audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
-			}
+		if s.markBackupExportChunk(result.FileName, result.Offset, result.EOF) {
+			s.audit.LogBackupExportStartedContext(s.SessionContext(), result.FileName)
 		}
-	} else if result.Error != "" {
-		if audit, ok := s.audit.(interface {
-			LogBackupFailedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
-		}
+	} else {
+		s.audit.LogBackupFailedContext(s.SessionContext(), "backup export failed: "+result.Error)
 	}
 	_ = s.WriteJSON(ProtocolBackupChunkMessage(msg.ID, result))
 }
@@ -624,15 +529,9 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 		ExportPassphrase: exportPassphrase,
 	})
 	if result.Error != "" {
-		if audit, ok := s.audit.(interface {
-			LogBackupRestorePreviewFailedContext(SessionContext, string)
-		}); ok {
-			audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), result.Error)
-		}
-	} else if audit, ok := s.audit.(interface {
-		LogBackupRestorePreviewedContext(SessionContext, adminproto.RestorePreviewResult)
-	}); ok {
-		audit.LogBackupRestorePreviewedContext(s.SessionContext(), result)
+		s.audit.LogBackupRestorePreviewFailedContext(s.SessionContext(), result.Error)
+	} else {
+		s.audit.LogBackupRestorePreviewedContext(s.SessionContext(), result)
 	}
 	_ = s.WriteJSON(ProtocolRestorePreviewMessage(msg.ID, result))
 }
@@ -645,18 +544,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	if !s.authorize(msg.ID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
-	audit, ok := s.audit.(interface {
-		LogCredentialRestoreIntentDurableContext(SessionContext, string, string, bool) error
-	})
-	if !ok {
-		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
-			OperationID: msg.ID,
-			Code:        protocol.ResultCodeRestoreAuditFailed,
-			Error:       auditRefusalText("restore aborted", nil),
-		}))
-		return
-	}
-	if err := audit.LogCredentialRestoreIntentDurableContext(
+	if err := s.audit.LogCredentialRestoreIntentDurableContext(
 		s.SessionContext(), msg.ID, msg.ArchivePath, msg.ReplaceExisting,
 	); err != nil {
 		_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, adminproto.RestoreBackupResult{
@@ -675,11 +563,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 		ExportPassphrase: exportPassphrase,
 		ReplaceExisting:  msg.ReplaceExisting,
 	})
-	if audit, ok := s.audit.(interface {
-		LogCredentialRestoreContext(SessionContext, adminproto.RestoreBackupResult)
-	}); ok {
-		audit.LogCredentialRestoreContext(s.SessionContext(), result)
-	}
+	s.audit.LogCredentialRestoreContext(s.SessionContext(), result)
 	_ = s.WriteJSON(ProtocolRestoreBackupResultMessage(msg.ID, result))
 }
 
@@ -693,11 +577,7 @@ func (s *Session) HandleRollbackRestore(msg *protocol.RollbackRestoreMessage) {
 	result := s.backupServices.RollbackRestore(adminproto.RollbackRestoreRequest{
 		OperationID: msg.ID,
 	})
-	if audit, ok := s.audit.(interface {
-		LogCredentialRestoreRollbackContext(SessionContext, adminproto.RollbackRestoreResult)
-	}); ok {
-		audit.LogCredentialRestoreRollbackContext(s.SessionContext(), result)
-	}
+	s.audit.LogCredentialRestoreRollbackContext(s.SessionContext(), result)
 	_ = s.WriteJSON(ProtocolRollbackRestoreResultMessage(msg.ID, result))
 }
 
@@ -708,7 +588,9 @@ func (s *Session) HandleReconcileStore(requestID string) {
 	if !s.authorize(requestID, auth.ActionIdentityRestore, auth.Resource{Type: "identity"}) {
 		return
 	}
-	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, s.backupServices.ReconcileStore()))
+	result := s.backupServices.ReconcileStore()
+	s.audit.LogStoreReconciledContext(s.SessionContext(), result)
+	_ = s.WriteJSON(ProtocolReconcileStoreResultMessage(requestID, result))
 }
 
 func (s *Session) HandleListKeys(requestID string) {
@@ -762,6 +644,7 @@ func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTempl
 		KeyType:      msg.KeyType,
 		TemplateType: msg.TemplateType,
 	})
+	s.logKeyTypeAdded("install", result.KeyType, result.Success, result.AlreadyExists, result.Code, result.Error)
 	_ = s.WriteJSON(ProtocolInstallLibraryTemplateResultMessage(msg.ID, result))
 }
 
@@ -814,6 +697,7 @@ func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTem
 	result := s.templateServices.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte(msg.TemplateYAML),
 	})
+	s.logKeyTypeAdded("import", result.KeyType, result.Success, result.AlreadyExists, result.Code, result.Error)
 	_ = s.WriteJSON(ProtocolImportInstalledTemplateResultMessage(msg.ID, result))
 }
 
@@ -827,6 +711,7 @@ func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTem
 	result := s.templateServices.RemoveInstalledTemplate(adminproto.RemoveInstalledTemplateRequest{
 		KeyType: msg.KeyType,
 	})
+	s.logKeyTypeRemoved("remove", result.KeyType, result.Success, result.Removed, result.Code, result.Error)
 	_ = s.WriteJSON(ProtocolRemoveInstalledTemplateResultMessage(msg.ID, result))
 }
 
@@ -840,6 +725,7 @@ func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
 	result := s.templateServices.ActivateKeyType(adminproto.ActivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
+	s.logKeyTypeAdded("activate", result.KeyType, result.Success, result.AlreadyExists, result.Code, result.Error)
 	_ = s.WriteJSON(ProtocolActivateKeyTypeResultMessage(msg.ID, result))
 }
 
@@ -853,7 +739,30 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 	result := s.templateServices.DeactivateKeyType(adminproto.DeactivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
+	s.logKeyTypeRemoved("deactivate", result.KeyType, result.Success, result.Removed, result.Code, result.Error)
 	_ = s.WriteJSON(ProtocolDeactivateKeyTypeResultMessage(msg.ID, result))
+}
+
+// logKeyTypeAdded records a command that adds a key type. The answer of a
+// failed one does not say whether the store changed: most are rolled back, and
+// a rollback can fail.
+func (s *Session) logKeyTypeAdded(action, keyType string, success, alreadyExists bool, code, errText string) {
+	change := KeyTypeChange{Action: action, KeyType: keyType, Success: success, Code: code, Error: errText}
+	if success {
+		changed := !alreadyExists
+		change.Changed = &changed
+	}
+	s.audit.LogKeyTypeChangedContext(s.SessionContext(), change)
+}
+
+// logKeyTypeRemoved records a command that removes a key type. removed is set
+// on a failure too, when the reload after the removal is what failed.
+func (s *Session) logKeyTypeRemoved(action, keyType string, success, removed bool, code, errText string) {
+	change := KeyTypeChange{Action: action, KeyType: keyType, Success: success, Code: code, Error: errText}
+	if success || removed {
+		change.Changed = &removed
+	}
+	s.audit.LogKeyTypeChangedContext(s.SessionContext(), change)
 }
 
 func (s *Session) HandleListKeyTypes(requestID string) {

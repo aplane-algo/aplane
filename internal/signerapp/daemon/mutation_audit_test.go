@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +29,9 @@ func auditEntries(t *testing.T, path string, events ...string) []map[string]any 
 	}
 	var out []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
 		var entry map[string]any
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("audit line %q: %v", line, err)
@@ -147,22 +149,6 @@ func TestASASetUpdateAuditThroughTheDaemon(t *testing.T) {
 	}
 }
 
-// Without a logger the forwarders fail closed with ErrAuditUnavailable, so
-// the session tells the operator to restart rather than retry.
-func TestMutationIntentForwardersFailClosedWithoutALogger(t *testing.T) {
-	svc := (&Signer{}).adminServices()
-	if err := svc.LogPolicyApplyIntentDurableContext(adminserver.SessionContext{}, "apply-1", adminproto.ApplyPolicyRequest{}); !errors.Is(err, adminserver.ErrAuditUnavailable) {
-		t.Fatalf("policy intent without a logger: %v", err)
-	}
-	if err := svc.LogASASetUpdateIntentDurableContext(adminserver.SessionContext{}, "add-1", "add", "mainnet", "", 9); !errors.Is(err, adminserver.ErrAuditUnavailable) {
-		t.Fatalf("ASA intent without a logger: %v", err)
-	}
-	// Outcomes without a logger are dropped, never a panic.
-	svc.LogPolicyApplyResultContext(adminserver.SessionContext{}, "apply-1", adminproto.ApplyPolicyResult{})
-	svc.LogASASetAddResultContext(adminserver.SessionContext{}, "add-1", adminproto.AddASARequest{}, adminproto.AddASAResult{})
-	svc.LogASASetRemoveResultContext(adminserver.SessionContext{}, "rm-1", adminproto.RemoveASARequest{}, adminproto.RemoveASAResult{})
-}
-
 // Rejected requests of any size leave the audit log small and readable: its
 // entries stay bounded, and the release history still loads at unlock.
 func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
@@ -223,33 +209,15 @@ func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
 	}
 }
 
-// The older durable intents fail closed with ErrAuditUnavailable too, so
-// their handlers advise a restart rather than a retry.
-func TestOlderIntentForwardersReportAMissingLogger(t *testing.T) {
-	svc := (&Signer{}).adminServices()
-	ctx := adminserver.SessionContext{}
-	for name, err := range map[string]error{
-		"restore":           svc.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", "backup.tar.gz", false),
-		"quarantine prune":  svc.LogGenerationQuarantinePruneIntentDurableContext(ctx, "prune-1", []string{"gen-1"}),
-		"abandoned discard": svc.LogGenerationAbandonedDiscardIntentDurableContext(ctx, "discard-1", []string{"gen-1"}),
-		"archive prune":     svc.LogDeletedArchivePruneIntentDurableContext(ctx, "archive-1", []string{"keys/A.key"}),
-	} {
-		if !errors.Is(err, adminserver.ErrAuditUnavailable) {
-			t.Errorf("%s without a logger: %v, want ErrAuditUnavailable", name, err)
-		}
-	}
-}
-
-// Through the production adapter, multi-megabyte inputs to the older events
-// leave small entries and a readable log.
-func TestOlderEventsStayBoundedThroughTheDaemonAdapter(t *testing.T) {
+// Multi-megabyte inputs to the older events leave small entries and a readable
+// log.
+func TestOlderEventsStayBounded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	logger, err := NewAuditLogger(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = logger.Close() }()
-	svc := (&Signer{auditLog: logger}).adminServices()
 	ctx := adminserver.SessionContext{SessionID: "s-1"}
 	huge := strings.Repeat("x", 2<<20)
 	ids := make([]string, 10_000)
@@ -257,12 +225,12 @@ func TestOlderEventsStayBoundedThroughTheDaemonAdapter(t *testing.T) {
 		ids[i] = fmt.Sprintf("gen-%d", i)
 	}
 	ids[0] = huge
-	svc.LogIdentityLockedContext(ctx, huge)
+	logger.LogIdentityLockedContext(ctx, huge)
 	for _, err := range []error{
-		svc.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", huge, false),
-		svc.LogGenerationQuarantinePruneIntentDurableContext(ctx, "prune-1", ids),
-		svc.LogGenerationAbandonedDiscardIntentDurableContext(ctx, "discard-1", ids),
-		svc.LogDeletedArchivePruneIntentDurableContext(ctx, "archive-1", ids),
+		logger.LogCredentialRestoreIntentDurableContext(ctx, "restore-1", huge, false),
+		logger.LogGenerationQuarantinePruneIntentDurableContext(ctx, "prune-1", ids),
+		logger.LogGenerationAbandonedDiscardIntentDurableContext(ctx, "discard-1", ids),
+		logger.LogDeletedArchivePruneIntentDurableContext(ctx, "archive-1", ids),
 	} {
 		if err != nil {
 			t.Fatal(err)

@@ -124,13 +124,21 @@ func BuildUnlockPlan(opts *bootstrap.Startup, keystoreExists bool, testPassphras
 	}, nil
 }
 
+// PassphraseError reports a startup passphrase that failed to open the store
+// root. It wraps crypto.ErrInvalidPassphrase for a wrong one.
+type PassphraseError struct{ err error }
+
+func (e *PassphraseError) Error() string { return e.err.Error() }
+
+func (e *PassphraseError) Unwrap() error { return e.err }
+
 // startupPassphraseError reports a startup passphrase, from source, that
 // failed to open the store root. Only a passphrase that does not open the
 // root is reported as one, with hint appended; any other failure is the store
 // root itself (unreadable or damaged), and its cause is kept.
 func startupPassphraseError(source, hint string, err error) error {
 	if errors.Is(err, crypto.ErrInvalidPassphrase) {
-		return fmt.Errorf("%s does not open the existing keystore%s: %w", source, hint, err)
+		return &PassphraseError{fmt.Errorf("%s does not open the existing keystore%s: %w", source, hint, err)}
 	}
-	return fmt.Errorf("the keystore's store root could not be opened to check %s: %w", source, err)
+	return &PassphraseError{fmt.Errorf("the keystore's store root could not be opened to check %s: %w", source, err)}
 }

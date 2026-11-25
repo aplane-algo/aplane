@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -41,7 +42,7 @@ func unlockIntoRecovery(t *testing.T, server *Signer) {
 	t.Helper()
 	ir := server.productRuntime()
 	ir.Lock()
-	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want recovery", success, keyCount, errMsg, code)
 	}
@@ -75,7 +76,7 @@ func TestADamagedKeyTokenFileEntersRecoveryAndRestoreRepairsIt(t *testing.T) {
 
 	ir := server.productRuntime()
 	ir.Lock()
-	if success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(repaired) = (%v, %q, %q), want a clean unlock", success, errMsg, code)
 	}
 	if ir.IsRecovery() || !ir.IsUnlocked() {
@@ -101,7 +102,7 @@ func TestADamagedDefaultTokenFileEntersRecoveryUntilDiscarded(t *testing.T) {
 	}
 	ir := server.productRuntime()
 	ir.Lock()
-	if success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase); !success || errMsg != "" || code != "" {
+	if success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success || errMsg != "" || code != "" {
 		t.Fatalf("UnlockIdentity(discarded) = (%v, %q, %q), want a clean unlock", success, errMsg, code)
 	}
 	if ir.IsRecovery() || !ir.IsUnlocked() {
@@ -125,7 +126,7 @@ func TestATokenFileOnASignerNodeFailsTheNodeClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	ir.Lock()
-	success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	if success || code == protocol.ResultCodeRecoveryBlocked || errMsg == "" {
 		t.Fatalf("UnlockIdentity() = (%v, %q, %q), want a failed unlock", success, errMsg, code)
 	}

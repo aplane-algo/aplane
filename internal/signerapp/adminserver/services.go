@@ -20,7 +20,7 @@ type ProductServices interface {
 	// as a store root it cannot open and ends instead of asking again, so an
 	// implementation that drops the sentinel ends the login on every typo.
 	VerifyPassphrase(passphrase []byte) error
-	UnlockIdentity(passphrase []byte) (bool, int, string, string)
+	UnlockIdentity(ctx context.Context, passphrase []byte) (bool, int, string, string)
 	InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult
 	ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult
 	NewSessionIdentity(method string) *auth.Identity
@@ -125,18 +125,70 @@ type StoreInspectionServices interface {
 	PruneDeletedArchive(req adminproto.PruneDeletedArchiveRequest) adminproto.PruneDeletedArchiveResult
 }
 
-type AuthorizationAudit interface {
+// Audit records admin commands. The daemon's audit logger implements it, and a
+// daemon with no audit log passes one that records nothing and refuses every
+// durable intent with ErrAuditUnavailable: a command that must be recorded
+// before it runs is refused then, and every other command runs unrecorded.
+type Audit interface {
 	LogAuthorizationDenied(ctx SessionContext, action auth.Action, resource auth.Resource, reason string)
+	LogAdminLoginFailedContext(ctx SessionContext, reason string)
+	LogIdentityLockedContext(ctx SessionContext, reason string)
+	LogSettingSaveErrorContext(ctx SessionContext, key, value string, inEffect bool, cause string)
+
+	LogPolicyApplyIntentDurableContext(ctx SessionContext, operationID string, req adminproto.ApplyPolicyRequest) error
+	LogPolicyApplyResultContext(ctx SessionContext, operationID string, result adminproto.ApplyPolicyResult)
+	LogASASetUpdateIntentDurableContext(ctx SessionContext, operationID, action, network, genesisHash string, assetID uint64) error
+	LogASASetAddResultContext(ctx SessionContext, operationID string, req adminproto.AddASARequest, result adminproto.AddASAResult)
+	LogASASetRemoveResultContext(ctx SessionContext, operationID string, req adminproto.RemoveASARequest, result adminproto.RemoveASAResult)
+	// Neither source token method takes the token.
+	LogSourceTokenChangeIntentDurableContext(ctx SessionContext, operationID, action, selector, source string) error
+	LogSourceTokenChangeResultContext(ctx SessionContext, operationID, action, selector, source string, result adminproto.SourceTokenChangeResult)
+	LogCosignerReferenceChangedContext(ctx SessionContext, action, name, componentKey string, success bool)
+	LogKeyTypeChangedContext(ctx SessionContext, change KeyTypeChange)
+
+	LogBackupCreatedContext(ctx SessionContext, archivePath string)
+	LogBackupImportedContext(ctx SessionContext, result adminproto.CommitBackupImportResult)
+	LogBackupExportStartedContext(ctx SessionContext, fileName string)
+	LogBackupFailedContext(ctx SessionContext, reason string)
+	LogBackupDeletedContext(ctx SessionContext, archivePath string, result adminproto.DeleteBackupResult)
+	LogBackupRestorePreviewedContext(ctx SessionContext, result adminproto.RestorePreviewResult)
+	LogBackupRestorePreviewFailedContext(ctx SessionContext, reason string)
+	LogCredentialRestoreIntentDurableContext(ctx SessionContext, operationID, archivePath string, replaceExisting bool) error
+	LogCredentialRestoreContext(ctx SessionContext, result adminproto.RestoreBackupResult)
+	LogCredentialRestoreRollbackContext(ctx SessionContext, result adminproto.RollbackRestoreResult)
+	LogStoreReconciledContext(ctx SessionContext, result adminproto.ReconcileStoreResult)
+
+	LogGenerationQuarantinePruneIntentDurableContext(ctx SessionContext, operationID string, generationIDs []string) error
+	LogGenerationQuarantinePruneContext(ctx SessionContext, operationID string, result adminproto.PruneGenerationQuarantineResult)
+	LogGenerationAbandonedDiscardIntentDurableContext(ctx SessionContext, operationID string, generationIDs []string) error
+	LogGenerationAbandonedDiscardContext(ctx SessionContext, operationID string, result adminproto.DiscardAbandonedGenerationsResult)
+	LogDeletedArchivePruneIntentDurableContext(ctx SessionContext, operationID string, entries []string) error
+	LogDeletedArchivePruneContext(ctx SessionContext, operationID string, result adminproto.PruneDeletedArchiveResult)
+}
+
+// KeyTypeChange is what a command that changes the key types the node offers
+// did.
+type KeyTypeChange struct {
+	Action  string // install, import, remove, activate or deactivate
+	KeyType string
+	Success bool
+	// Changed is whether the command changed the store. It is nil for a
+	// failure that does not say.
+	Changed *bool
+	Code    string
+	Error   string
 }
 
 type SessionDeps struct {
-	Product     ProductServices
-	Settings    SettingsServices
-	Keys        KeyServices
-	Backups     BackupServices
-	Templates   TemplateServices
-	Inspection  StoreInspectionServices
-	Authorizer  auth.Authorizer
-	Audit       AuthorizationAudit
+	Product    ProductServices
+	Settings   SettingsServices
+	Keys       KeyServices
+	Backups    BackupServices
+	Templates  TemplateServices
+	Inspection StoreInspectionServices
+	Authorizer auth.Authorizer
+	// Audit is called without a nil check, so it is never nil: a daemon with
+	// no audit log passes one that refuses and drops (see Audit).
+	Audit       Audit
 	NodeFailure func() error
 }

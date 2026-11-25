@@ -63,21 +63,15 @@ func (s *Session) changeSourceToken(id, resultType, action, selector, source str
 	if !s.authorize(id, auth.ActionPolicyUpdate, sourceTokenResource(selector)) {
 		return
 	}
-	audit, _ := s.audit.(sourceTokenAudit)
-	var record func() error
-	if audit != nil {
-		record = func() error {
-			return audit.LogSourceTokenChangeIntentDurableContext(s.SessionContext(), id, action, selector, source)
-		}
-	}
-	if code, refusal := s.recordMutationIntent("source token change", record, false); code != "" {
+	intent := s.audit.LogSourceTokenChangeIntentDurableContext(s.SessionContext(), id, action, selector, source)
+	if code, refusal := mutationIntentRefusal("source token change", intent, false); code != "" {
 		_ = s.WriteJSON(ProtocolSourceTokenChangeResultMessage(id, resultType, adminproto.SourceTokenChangeResult{
 			Selector: selector, Source: source, Code: code, Error: refusal,
 		}))
 		return
 	}
 	result := change()
-	audit.LogSourceTokenChangeResultContext(s.SessionContext(), id, action, selector, source, result)
+	s.audit.LogSourceTokenChangeResultContext(s.SessionContext(), id, action, selector, source, result)
 	_ = s.WriteJSON(ProtocolSourceTokenChangeResultMessage(id, resultType, result))
 }
 

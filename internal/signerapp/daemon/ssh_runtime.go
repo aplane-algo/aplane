@@ -31,12 +31,10 @@ type sshRuntimeStopper interface {
 // not announced: the request itself is, when it is queued.
 func (fs *Signer) sshSessionCallback(auditLog *AuditLogger) sshtunnel.SessionCallback {
 	return func(event sshtunnel.SessionEvent) {
-		if auditLog != nil {
-			if event.Connected {
-				auditLog.LogSSHSessionConnected(event.RemoteAddr, event.Fingerprint, event.EnrolledKey)
-			} else {
-				auditLog.LogSSHSessionDisconnected(event.RemoteAddr, event.Fingerprint, event.EnrolledKey)
-			}
+		if event.Connected {
+			auditLog.LogSSHSessionConnected(event.RemoteAddr, event.Fingerprint, event.EnrolledKey)
+		} else {
+			auditLog.LogSSHSessionDisconnected(event.RemoteAddr, event.Fingerprint, event.EnrolledKey)
 		}
 		if !event.EnrolledKey {
 			return

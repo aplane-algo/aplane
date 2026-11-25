@@ -60,6 +60,9 @@ const (
 	AuditSessionConnected                 AuditEventType = "SESSION_CONNECTED"
 	AuditSessionDisconnected              AuditEventType = "SESSION_DISCONNECTED"
 	AuditIdentityLocked                   AuditEventType = "IDENTITY_LOCKED"
+	AuditIdentityUnlocked                 AuditEventType = "IDENTITY_UNLOCKED"
+	AuditAdminLoginFailed                 AuditEventType = "ADMIN_LOGIN_FAILED"
+	AuditAdminLoginFailuresSuppressed     AuditEventType = "ADMIN_LOGIN_FAILURES_SUPPRESSED"
 	AuditSettingChangeIntent              AuditEventType = "SETTING_CHANGE_INTENT"
 	AuditSettingChanged                   AuditEventType = "SETTING_CHANGED"
 	AuditSettingSaveError                 AuditEventType = "SETTING_SAVE_ERROR"
@@ -74,6 +77,7 @@ const (
 	AuditKeyRejected                      AuditEventType = "KEY_REJECTED"
 	AuditBackupCreated                    AuditEventType = "BACKUP_CREATED"
 	AuditBackupFailed                     AuditEventType = "BACKUP_FAILED"
+	AuditBackupDeleted                    AuditEventType = "BACKUP_DELETED"
 	AuditBackupRestorePreviewed           AuditEventType = "BACKUP_RESTORE_PREVIEWED"
 	AuditBackupRestorePreviewFailed       AuditEventType = "BACKUP_RESTORE_PREVIEW_FAILED"
 	AuditCredentialRestoreIntent          AuditEventType = "CREDENTIAL_RESTORE_INTENT"
@@ -81,11 +85,13 @@ const (
 	AuditCredentialRestoreFailed          AuditEventType = "CREDENTIAL_RESTORE_FAILED"
 	AuditCredentialRestoreUncertain       AuditEventType = "CREDENTIAL_RESTORE_COMMIT_UNCERTAIN"
 	AuditCredentialRestoreRollback        AuditEventType = "CREDENTIAL_RESTORE_ROLLBACK"
+	AuditStoreReconciled                  AuditEventType = "STORE_RECONCILED"
 	AuditStoreInitialized                 AuditEventType = "STORE_INITIALIZED"
 	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
 	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
 	AuditCosignerReferenceChanged         AuditEventType = "COSIGNER_REFERENCE_CHANGED"
+	AuditKeyTypeChanged                   AuditEventType = "KEY_TYPE_CHANGED"
 	AuditBackupImported                   AuditEventType = "BACKUP_IMPORTED"
 	AuditBackupExportStarted              AuditEventType = "BACKUP_EXPORT_STARTED"
 	AuditGenerationQuarantineIntent       AuditEventType = "GENERATION_QUARANTINE_INTENT"
@@ -186,8 +192,9 @@ type AuditEntry struct {
 	RotatingIndex uint32 `json:"rotating_index,omitempty"`
 	// POLICY_APPLY_* and ASA_SET_UPDATE_*: see policy_audit.go.
 	ResultCode string `json:"result_code,omitempty"`
-	// Changed is set on a success entry only, false included, so a no-op
-	// is told apart from an entry that does not say.
+	// Changed is set on a success entry, false included, so a no-op is told
+	// apart from an entry that does not say. A failed KEY_TYPE_CHANGED sets it
+	// when the change it made stayed.
 	Changed                 *bool    `json:"changed,omitempty"`
 	PolicyUpdates           []string `json:"policy_updates,omitempty"`
 	PolicyUpdatesOmitted    int      `json:"policy_updates_omitted,omitempty"`
@@ -205,6 +212,10 @@ type AuditEntry struct {
 	SourceTokenAction string `json:"source_token_action,omitempty"`
 	PolicySelector    string `json:"policy_selector,omitempty"`
 	ExternalSource    string `json:"external_source,omitempty"`
+	// KEY_TYPE_CHANGED: install, import, remove, activate or deactivate, and
+	// the key type.
+	KeyTypeAction string `json:"key_type_action,omitempty"`
+	KeyType       string `json:"key_type,omitempty"`
 }
 
 // auditFile is the audit log's open file. *os.File is the only one in
@@ -244,7 +255,13 @@ type AuditLogger struct {
 	closed bool
 
 	authFailures       entryLimiter
+	adminLoginFailures entryLimiter
 	cosignerRejections entryLimiter
+}
+
+// limiters is every stream of entries that is rate limited.
+func (a *AuditLogger) limiters() []*entryLimiter {
+	return []*entryLimiter{&a.authFailures, &a.adminLoginFailures, &a.cosignerRejections}
 }
 
 // entryLimiter is a token bucket over one stream of audit entries, with a
@@ -281,6 +298,7 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 
 	logger := &AuditLogger{file: file, path: path, written: written, partial: endsMidLine(path, written)}
 	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
+	logger.adminLoginFailures.init(AuditAdminLoginFailuresSuppressed, "admin login failures")
 	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
 }
@@ -311,6 +329,7 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.BasePolicySetSHA256, &entry.PolicySetSHA256, &entry.ASAAction,
 		&entry.Network, &entry.GenesisHash, &entry.GroupID,
 		&entry.SourceTokenAction, &entry.PolicySelector, &entry.ExternalSource,
+		&entry.KeyTypeAction, &entry.KeyType,
 	} {
 		*field = boundText(*field, maxAuditField)
 	}
@@ -365,8 +384,13 @@ func boundOperationID(id string) string {
 	return id[:cut] + "…sha256:" + hex.EncodeToString(sum[:])
 }
 
-// Log writes an audit entry, best effort: a failure is a warning on stderr.
+// Log writes an audit entry, best effort: a failure is a warning on stderr. A
+// nil logger, which a daemon whose audit log could not be opened has, writes
+// nothing.
 func (a *AuditLogger) Log(entry AuditEntry) {
+	if a == nil {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closed {
@@ -463,8 +487,12 @@ func (a *AuditLogger) writeLineLocked(line []byte) error {
 // entry counts as recorded only after both the write and the fsync succeed.
 // Rotation failure alone is tolerated (the entry still lands durably in the
 // oversized current file), matching Log; every path that would silently drop
-// or leave the entry unsynced returns an error instead.
+// or leave the entry unsynced returns an error instead. A nil logger returns
+// adminserver.ErrAuditUnavailable.
 func (a *AuditLogger) logDurable(entry AuditEntry) error {
+	if a == nil {
+		return adminserver.ErrAuditUnavailable
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closed {
@@ -551,14 +579,14 @@ func (a *AuditLogger) reopenCurrent() {
 // closing the log, for a shutdown that leaves the log open because something
 // may still write to it. Close flushes them too.
 func (a *AuditLogger) FlushSummaries() {
-	for _, l := range []*entryLimiter{&a.authFailures, &a.cosignerRejections} {
+	for _, l := range a.limiters() {
 		l.flush(a)
 	}
 }
 
 // Close closes the audit log file
 func (a *AuditLogger) Close() error {
-	for _, l := range []*entryLimiter{&a.authFailures, &a.cosignerRejections} {
+	for _, l := range a.limiters() {
 		l.mu.Lock()
 		l.closed = true
 		l.mu.Unlock()
@@ -776,7 +804,7 @@ func (a *AuditLogger) LogSignRejectedAttributed(attr Attribution, address, txnSe
 // LogCosignerComponentRejectedAttributed logs a cosigner policy rejection of
 // one component target, subject to the cosigner-rejection rate limit.
 func (a *AuditLogger) LogCosignerComponentRejectedAttributed(attr Attribution, witnessKeyID, txnSender, reason, policyRuleID string) {
-	if !a.cosignerRejections.admit(a) {
+	if a == nil || !a.cosignerRejections.admit(a) {
 		return
 	}
 	a.Log(signRejectedEntry(attr, witnessKeyID, txnSender, reason, policyRuleID))
@@ -837,10 +865,25 @@ func (a *AuditLogger) LogSignWithheldAttributed(attr Attribution, address, txnSe
 
 // LogAuthFailed logs an authentication failure before a principal is known.
 func (a *AuditLogger) LogAuthFailed(remoteAddr, reason string) {
-	if !a.authFailures.admit(a) {
+	if a == nil || !a.authFailures.admit(a) {
 		return
 	}
 	a.LogAuthFailedAttributed("", remoteAddr, reason)
+}
+
+// LogAdminLoginFailedContext logs an admin login the passphrase check refused.
+// It has a limit of its own: a flood of client authentication failures, which
+// anyone who reaches the SSH port can cause, must not hide a local one. The
+// passphrase is never part of an entry.
+func (a *AuditLogger) LogAdminLoginFailedContext(ctx adminserver.SessionContext, reason string) {
+	if a == nil || !a.adminLoginFailures.admit(a) {
+		return
+	}
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditAdminLoginFailed
+	entry.Outcome = "failed"
+	entry.Reason = reason
+	a.Log(entry)
 }
 
 func (l *entryLimiter) init(summaryEvent AuditEventType, subject string) {
@@ -1044,6 +1087,20 @@ func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, r
 	a.Log(entry)
 }
 
+// LogIdentityUnlocked logs how an unlock ended, whether an admin login, an
+// unlock command, a store initialization or the startup asked for it: outcome
+// is unlocked, recovery or failed, and code and reason say why it is not
+// unlocked.
+func (a *AuditLogger) LogIdentityUnlocked(ctx context.Context, outcome string, keyCount int, code, reason string) {
+	entry := contextAuditFields(ctx)
+	entry.Event = AuditIdentityUnlocked
+	entry.Outcome = outcome
+	entry.KeyCount = keyCount
+	entry.ResultCode = code
+	entry.Reason = reason
+	a.Log(entry)
+}
+
 // LogSettingChangeIntentDurable records a non-restrictive admin setting
 // update durably before the setting is saved or published.
 func (a *AuditLogger) LogSettingChangeIntentDurable(ctx context.Context, operationID, key, oldValue, newValue string) error {
@@ -1216,6 +1273,36 @@ func (a *AuditLogger) LogBackupFailedContext(ctx adminserver.SessionContext, rea
 	entry.Event = AuditBackupFailed
 	entry.Outcome = "failed"
 	entry.Reason = reason
+	a.Log(entry)
+}
+
+// LogBackupDeletedContext records a request to delete a managed backup, which
+// archivePath names as the request did.
+func (a *AuditLogger) LogBackupDeletedContext(ctx adminserver.SessionContext, archivePath string, result adminproto.DeleteBackupResult) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditBackupDeleted
+	entry.Outcome = "deleted"
+	entry.Reason = archivePath
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.ResultCode = result.Code
+		entry.Reason = boundText(archivePath, maxAuditField) + ": " + result.Error
+	}
+	a.Log(entry)
+}
+
+// LogStoreReconciledContext records an explicit reconcile of the store. What it
+// quarantined has entries of its own.
+func (a *AuditLogger) LogStoreReconciledContext(ctx adminserver.SessionContext, result adminproto.ReconcileStoreResult) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditStoreReconciled
+	entry.Outcome = "succeeded"
+	entry.GenerationID = result.GenerationID
+	entry.KeyCount = result.KeyCount
+	if !result.Success {
+		entry.Outcome = "failed"
+		entry.ResultCode, entry.Reason = result.Code, result.Error
+	}
 	a.Log(entry)
 }
 
@@ -1491,6 +1578,21 @@ func (a *AuditLogger) LogCosignerReferenceChangedContext(ctx adminserver.Session
 	}
 	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
 	entry.WitnessKeyID = componentKey
+	a.Log(entry)
+}
+
+// LogKeyTypeChangedContext records a command that changes the key types the
+// node offers: a template installed, imported or removed, or a key type
+// activated or deactivated.
+func (a *AuditLogger) LogKeyTypeChangedContext(ctx adminserver.SessionContext, change adminserver.KeyTypeChange) {
+	entry := sessionAuditFields(ctx)
+	entry.Event = AuditKeyTypeChanged
+	entry.Outcome = "succeeded"
+	entry.KeyTypeAction, entry.KeyType, entry.Changed = change.Action, change.KeyType, change.Changed
+	if !change.Success {
+		entry.Outcome = "failed"
+		entry.ResultCode, entry.Reason = change.Code, change.Error
+	}
 	a.Log(entry)
 }
 

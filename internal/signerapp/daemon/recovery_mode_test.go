@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestUnlockIdentityEntersRecoveryWithoutPublishingSigningState(t *testing.T)
 	})
 	service := (&Signer{runtime: ir}).adminServices()
 
-	success, keyCount, errMsg, code := service.UnlockIdentity(passphrase)
+	success, keyCount, errMsg, code := service.UnlockIdentity(context.Background(), passphrase)
 	if !success || keyCount != 0 || errMsg != "" || code != protocol.ResultCodeRecoveryBlocked {
 		t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q)", success, keyCount, errMsg, code)
 	}

@@ -7,13 +7,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // Live policy, ASA set and source token changes change what the node
-// accepts, so each one needs an audit record before it runs. After authorization, the handler
-// durably appends the request's intent; if the audit log is missing or the
+// accepts, so each one needs an audit record before it runs. After
+// authorization, the handler durably appends the request's intent; if the audit log is missing or the
 // write fails, the change is refused and the service is never called. After
 // the service returns, the handler appends exactly one outcome entry, best
 // effort: a failure to write it is reported by the logger and never changes
@@ -24,35 +23,11 @@ import (
 // be opened at startup, and only a restart opens it again.
 var ErrAuditUnavailable = errors.New("the daemon has no audit log")
 
-type policyApplyAudit interface {
-	LogPolicyApplyIntentDurableContext(SessionContext, string, adminproto.ApplyPolicyRequest) error
-	LogPolicyApplyResultContext(SessionContext, string, adminproto.ApplyPolicyResult)
-}
-
-type asaSetAudit interface {
-	LogASASetUpdateIntentDurableContext(SessionContext, string, string, string, string, uint64) error
-	LogASASetAddResultContext(SessionContext, string, adminproto.AddASARequest, adminproto.AddASAResult)
-	LogASASetRemoveResultContext(SessionContext, string, adminproto.RemoveASARequest, adminproto.RemoveASAResult)
-}
-
-// sourceTokenAudit records source token changes by selector and source
-// name. Neither method takes the token.
-type sourceTokenAudit interface {
-	LogSourceTokenChangeIntentDurableContext(ctx SessionContext, operationID, action, selector, source string) error
-	LogSourceTokenChangeResultContext(ctx SessionContext, operationID, action, selector, source string, result adminproto.SourceTokenChangeResult)
-}
-
-// recordMutationIntent runs record, which durably appends a change's intent,
-// and returns the code and message refusing the change when it cannot: no
-// record (no audit log), ErrAuditUnavailable, or a failed write. what names
-// the change; rescue adds the offline policy path to the advice.
-func (s *Session) recordMutationIntent(what string, record func() error, rescue bool) (string, string) {
-	var err error
-	if record == nil {
-		err = ErrAuditUnavailable
-	} else {
-		err = record()
-	}
+// mutationIntentRefusal returns the code and message refusing a change whose
+// intent could not be recorded: err is ErrAuditUnavailable or a failed write,
+// and nil refuses nothing. what names the change; rescue adds the offline
+// policy path to the advice.
+func mutationIntentRefusal(what string, err error, rescue bool) (string, string) {
 	if err == nil {
 		return "", ""
 	}
@@ -70,10 +45,9 @@ func (s *Session) recordMutationIntent(what string, record func() error, rescue 
 // auditIntentRefusal explains an intent that could not be recorded, with
 // advice that fits the cause: a daemon with no audit log needs a restart,
 // since only startup opens one; a failed write can be retried once repaired.
-// A nil err means the session has no audit capability at all, which is the
-// first case. prefix starts the message, such as "restore aborted".
+// prefix starts the message, such as "restore aborted".
 func auditIntentRefusal(prefix string, err error) (unavailable bool, message string) {
-	if err == nil || errors.Is(err, ErrAuditUnavailable) {
+	if errors.Is(err, ErrAuditUnavailable) {
 		return true, prefix + ": the daemon has no audit log, because it could not be opened at startup (see the daemon log). Repair the audit log's storage or permissions, then restart the daemon; retrying the request alone cannot help."
 	}
 	return false, fmt.Sprintf("%s: the audit log could not record the request: %v. Repair the cause, such as a full disk or wrong permissions, and retry.", prefix, err)

@@ -396,7 +396,7 @@ func TestReloadAndUnlockFailClosedOnConflictingKeyType(t *testing.T) {
 					t.Fatalf("state after Lock() = %v, want locked", ir.GetState())
 				}
 
-				success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+				success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 				if success || keyCount != 0 || code != protocol.ErrCodeUnlockFailed || !strings.Contains(errMsg, keyclass.ErrNodeRoleConflict.Error()) {
 					t.Fatalf("UnlockIdentity() = (%v, %d, %q, %q), want unlock_failed carrying ErrNodeRoleConflict", success, keyCount, errMsg, code)
 				}

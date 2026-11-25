@@ -39,19 +39,13 @@ func (s *Session) HandleAddASA(msg *protocol.AddASAMessage) {
 		return
 	}
 	req := adminproto.AddASARequest{Confirmed: AdminASAObservation(msg.Confirmed)}
-	audit, _ := s.audit.(asaSetAudit)
-	var record func() error
-	if audit != nil {
-		record = func() error {
-			return audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "add", req.Confirmed.Network, req.Confirmed.GenesisHash, req.Confirmed.AssetID)
-		}
-	}
-	if code, refusal := s.recordMutationIntent("ASA set change", record, false); code != "" {
+	intent := s.audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "add", req.Confirmed.Network, req.Confirmed.GenesisHash, req.Confirmed.AssetID)
+	if code, refusal := mutationIntentRefusal("ASA set change", intent, false); code != "" {
 		_ = s.WriteJSON(protocol.AddASAResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAddASAResult, ID: msg.ID}, Code: code, Error: refusal})
 		return
 	}
 	result := s.settingsServices.AddASA(req)
-	audit.LogASASetAddResultContext(s.SessionContext(), msg.ID, req, result)
+	s.audit.LogASASetAddResultContext(s.SessionContext(), msg.ID, req, result)
 	_ = s.WriteJSON(protocol.AddASAResultMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAddASAResult, ID: msg.ID},
 		Success:         result.Success,
@@ -68,19 +62,13 @@ func (s *Session) HandleRemoveASA(msg *protocol.RemoveASAMessage) {
 		return
 	}
 	req := adminproto.RemoveASARequest{Network: msg.Network, GenesisHash: msg.GenesisHash, AssetID: msg.AssetID}
-	audit, _ := s.audit.(asaSetAudit)
-	var record func() error
-	if audit != nil {
-		record = func() error {
-			return audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "remove", req.Network, req.GenesisHash, req.AssetID)
-		}
-	}
-	if code, refusal := s.recordMutationIntent("ASA set change", record, false); code != "" {
+	intent := s.audit.LogASASetUpdateIntentDurableContext(s.SessionContext(), msg.ID, "remove", req.Network, req.GenesisHash, req.AssetID)
+	if code, refusal := mutationIntentRefusal("ASA set change", intent, false); code != "" {
 		_ = s.WriteJSON(protocol.RemoveASAResultMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveASAResult, ID: msg.ID}, Code: code, Error: refusal})
 		return
 	}
 	result := s.settingsServices.RemoveASA(req)
-	audit.LogASASetRemoveResultContext(s.SessionContext(), msg.ID, req, result)
+	s.audit.LogASASetRemoveResultContext(s.SessionContext(), msg.ID, req, result)
 	out := protocol.RemoveASAResultMessage{
 		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeRemoveASAResult, ID: msg.ID},
 		Success:         result.Success,
