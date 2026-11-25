@@ -76,12 +76,13 @@ func (s *ConnectionState) ConnectWithTunnel(
 
 	client.SetDisconnectCallback(func() {
 		s.Mu.Lock()
-		if s.SSHTunnelClient == client {
+		published := s.SSHTunnelClient == client
+		if published {
 			_ = s.SSHTunnelClient.Close()
 			s.clearLocked()
 		}
 		s.Mu.Unlock()
-		if onDisconnect != nil {
+		if published && onDisconnect != nil {
 			onDisconnect()
 		}
 	})
@@ -107,13 +108,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	keysResp, err := signerClient.GetKeysWithContext(ctx)
 	if err != nil {
 		failed()
-		switch client.DisconnectReason() {
-		case sshtunnel.DisconnectReasonConnectionLimit:
-			return nil, fmt.Errorf("signer connection limit reached")
-		case sshtunnel.DisconnectReasonKeyRevoked:
-			return nil, fmt.Errorf("client key was revoked by the signer")
-		}
-		return nil, fmt.Errorf("failed to verify connection: %w", err)
+		return nil, connectVerifyError(client, err)
 	}
 	if onKeys != nil {
 		if err := onKeys(keysResp.Keys); err != nil {
@@ -122,7 +117,14 @@ func (s *ConnectionState) ConnectWithTunnel(
 		}
 	}
 
+	// A drop before this point found nothing of its own to clear. It is seen
+	// here, because the client clears IsConnected before it runs the callback.
 	s.Mu.Lock()
+	if !client.IsConnected() {
+		s.Mu.Unlock()
+		failed()
+		return nil, connectVerifyError(client, errors.New("connection closed before setup completed"))
+	}
 	s.SignerClient = signerClient
 	s.ConnectionTarget = target
 	s.SSHTunnelClient = client
@@ -132,6 +134,17 @@ func (s *ConnectionState) ConnectWithTunnel(
 
 	connected = true
 	return &Result{Target: target, KeyCount: len(keysResp.Keys), Locked: keysResp.Locked}, nil
+}
+
+func connectVerifyError(client *sshtunnel.Client, err error) error {
+	switch client.DisconnectReason() {
+	case sshtunnel.DisconnectReasonConnectionLimit:
+		return fmt.Errorf("signer connection limit reached")
+	case sshtunnel.DisconnectReasonKeyRevoked:
+		return fmt.Errorf("client key was revoked by the signer")
+	default:
+		return fmt.Errorf("failed to verify connection: %w", err)
+	}
 }
 
 // Disconnect closes any active signer connection.

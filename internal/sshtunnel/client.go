@@ -17,8 +17,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/termsafe"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -617,6 +619,12 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	}
 	defer func() { _ = sshClient.Close() }()
 
+	// A server can let a client in without asking for a key. Its answer then
+	// names no key this client used.
+	if clientFingerprint == "" {
+		return none, errors.New("the server did not authenticate this client's SSH key")
+	}
+
 	// Open a session channel
 	session, err := sshClient.NewSession()
 	if err != nil {
@@ -649,7 +657,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		onEnrollmentStart(clientFingerprint)
 	}
 
-	output, err := io.ReadAll(stdout)
+	output, err := io.ReadAll(io.LimitReader(stdout, maxEnrollmentReplyBytes+1))
 	if err != nil {
 		if ctx.Err() != nil {
 			return none, ctx.Err()
@@ -659,6 +667,11 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if ctx.Err() != nil {
 		return none, ctx.Err()
 	}
+	if len(output) > maxEnrollmentReplyBytes {
+		// No Wait: a server that streams without end may never exit. The
+		// deferred closes end the session.
+		return none, fmt.Errorf("enrollment response exceeded %d bytes", maxEnrollmentReplyBytes)
+	}
 
 	// Wait for command to complete
 	if err := session.Wait(); err != nil {
@@ -666,9 +679,10 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 			return none, ctx.Err()
 		}
 		if errMsg := strings.TrimSpace(string(output)); errMsg != "" {
-			return none, fmt.Errorf("%s", errMsg)
+			return none, fmt.Errorf("%s", safeEnrollmentText(errMsg))
 		}
-		return none, fmt.Errorf("enrollment failed: %w", err)
+		// An exit signal's name and message are the server's text too.
+		return none, fmt.Errorf("enrollment failed: %s", safeEnrollmentText(err.Error()))
 	}
 
 	reply := strings.TrimSpace(string(output))
@@ -682,10 +696,42 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if result.Fingerprint == "" {
 		return none, fmt.Errorf("unexpected enrollment response: %s", quoteClientText(reply))
 	}
-	if clientFingerprint != "" && result.Fingerprint != clientFingerprint {
-		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", result.Fingerprint, clientFingerprint)
+	if result.Fingerprint != clientFingerprint {
+		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", safeEnrollmentText(result.Fingerprint), clientFingerprint)
 	}
 	return result, nil
+}
+
+const (
+	// maxEnrollmentReplyBytes caps stdout read from an enrollment session.
+	// Legitimate replies are a single status line ("pending SHA256:...",
+	// "enrolled SHA256:...") or a short ERROR line.
+	maxEnrollmentReplyBytes = 4096
+	// maxEnrollmentErrorBytes caps untrusted server text surfaced in an
+	// enrollment error message.
+	maxEnrollmentErrorBytes = 256
+)
+
+// safeEnrollmentText escapes non-printing characters without adding quotes
+// (the server already quotes its ERROR text) and caps length at a valid rune
+// boundary so an escape sequence is never sliced in half.
+func safeEnrollmentText(s string) string {
+	escaped := termsafe.Line(s)
+	if len(escaped) <= maxEnrollmentErrorBytes {
+		return escaped
+	}
+	var b strings.Builder
+	b.Grow(maxEnrollmentErrorBytes + 3)
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		piece := termsafe.Line(s[i : i+size])
+		if b.Len()+len(piece) > maxEnrollmentErrorBytes {
+			break
+		}
+		b.WriteString(piece)
+		i += size
+	}
+	return b.String() + "..."
 }
 
 // enrollmentCommandLine renders the exec command for an enrollment request.
@@ -847,67 +893,48 @@ func (c *Client) handleDisconnect() {
 	}
 }
 
-// dialAndIntercept connects to the SSH server and intercepts global requests
-// from the server (revocation and connection-limit notices) before forwarding
-// them to ssh.NewClient. The returned channel closes once the interceptor has
-// drained the request stream, which the SSH mux closes when the connection
-// ends.
+// dialAndIntercept connects to the SSH server and answers its global requests
+// (interceptGlobalRequests). The returned channel closes once the request
+// stream is drained, which the SSH mux closes when the connection ends.
 func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, chan struct{}, error) {
 	sshConn, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Intercept global requests: capture server signals, forward the rest
-	filteredReqs := make(chan *ssh.Request, 16)
+	// ssh.NewClient only refuses the requests it is given, so the interceptor
+	// answers them all and NewClient gets none.
+	noReqs := make(chan *ssh.Request)
+	close(noReqs)
+	done := c.interceptGlobalRequests(reqs)
+	return ssh.NewClient(sshConn, chans, noReqs), done, nil
+}
+
+// interceptGlobalRequests answers the server's global requests, recording
+// revocation and connection-limit notices and refusing the rest. It drains
+// reqs until the SSH connection ends, since the mux stalls once its 16-slot
+// channel fills; the returned channel closes when that is done.
+func (c *Client) interceptGlobalRequests(reqs <-chan *ssh.Request) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for req := range reqs {
+			reason := ""
 			switch req.Type {
 			case RevokedRequestType:
-				c.mu.Lock()
-				c.disconnectReason = DisconnectReasonKeyRevoked
-				c.mu.Unlock()
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-				continue
+				reason = DisconnectReasonKeyRevoked
 			case ConnectionLimitRequestType:
+				reason = DisconnectReasonConnectionLimit
+			}
+			if reason != "" {
 				c.mu.Lock()
-				c.disconnectReason = DisconnectReasonConnectionLimit
+				c.disconnectReason = reason
 				c.mu.Unlock()
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-				continue
 			}
-			if !forwardInterceptedGlobalRequest(ctx, filteredReqs, req) {
-				return
-			}
+			_ = req.Reply(reason != "", nil)
 		}
-		close(filteredReqs)
 	}()
-
-	client := ssh.NewClient(sshConn, chans, filteredReqs)
-	return client, done, nil
-}
-
-func forwardInterceptedGlobalRequest(ctx context.Context, filteredReqs chan<- *ssh.Request, req *ssh.Request) bool {
-	select {
-	case filteredReqs <- req:
-		return true
-	case <-ctx.Done():
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-		return false
-	default:
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-		return true
-	}
+	return done
 }
 
 // dialWithContext connects to SSH server with context support

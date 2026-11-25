@@ -5,9 +5,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -68,37 +71,136 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.Server
 		return "", err
 	}
 
-	address := knownhosts.Normalize(net.JoinHostPort(host, strconv.Itoa(sshPort)))
+	hostPort := net.JoinHostPort(host, strconv.Itoa(sshPort))
+	address := knownhosts.Normalize(hostPort)
 	line := knownhosts.Line([]string{address}, hostKey)
 
-	if existing, err := os.ReadFile(knownHostsPath); err == nil {
-		for _, existingLine := range strings.Split(string(existing), "\n") {
-			if existingLine == line {
-				return "", nil
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("read known_hosts: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
-		return "", fmt.Errorf("create known_hosts directory: %w", err)
-	}
-	f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	changed, err := pinLoopbackHostKey(knownHostsPath, address, line)
 	if err != nil {
-		return "", fmt.Errorf("open known_hosts: %w", err)
+		return "", err
 	}
-	if _, err := f.WriteString(line + "\n"); err != nil {
-		_ = f.Close()
-		return "", fmt.Errorf("write known_hosts: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("close known_hosts: %w", err)
-	}
-	if err := os.Chmod(knownHostsPath, 0o600); err != nil {
-		return "", fmt.Errorf("chmod known_hosts: %w", err)
+	warnOtherTrustedHostKeys(knownHostsPath, hostPort, hostKey)
+	if !changed {
+		return "", nil
 	}
 	return fmt.Sprintf("trusted local signer SSH host key for %s", address), nil
+}
+
+// pinLoopbackHostKey makes line the only plain entry for address in
+// known_hosts, and reports whether the file had to change. A symlink is
+// followed, as apshell follows it, so the file both use is the one replaced.
+func pinLoopbackHostKey(knownHostsPath, address, line string) (bool, error) {
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0o700); err != nil {
+		return false, fmt.Errorf("create known_hosts directory: %w", err)
+	}
+	replaced, err := os.OpenFile(knownHostsPath, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return false, fmt.Errorf("open known_hosts: %w", err)
+	}
+	defer func() { _ = replaced.Close() }()
+	existing, err := io.ReadAll(replaced)
+	if err != nil {
+		return false, fmt.Errorf("read known_hosts: %w", err)
+	}
+	updated, changed := updateKnownHostsForLoopback(existing, address, line)
+	if !changed {
+		return false, nil
+	}
+
+	target, err := filepath.EvalSymlinks(knownHostsPath)
+	if err != nil {
+		return false, fmt.Errorf("resolve known_hosts: %w", err)
+	}
+	if err := fsutil.WriteFileDurable(target, updated); err != nil {
+		return false, fmt.Errorf("write known_hosts: %w", err)
+	}
+
+	// apshell appends without a lock, so a key it saved during the write went
+	// to the replaced file. Carry it over. One it opened the file for but has
+	// yet to write is still lost, and apshell asks for that key again.
+	late, err := io.ReadAll(replaced)
+	if err != nil {
+		return false, fmt.Errorf("read replaced known_hosts: %w", err)
+	}
+	if len(late) > 0 {
+		if err := appendKnownHosts(target, late); err != nil {
+			return false, fmt.Errorf("carry over known_hosts entries: %w", err)
+		}
+	}
+	return true, nil
+}
+
+func appendKnownHosts(path string, data []byte) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+// warnOtherTrustedHostKeys reports each known_hosts line that accepts a key
+// other than hostKey for hostPort. Only plain lines naming the host alone are
+// replaced, so a rotated-out key stays trusted on any other kind of line.
+func warnOtherTrustedHostKeys(knownHostsPath, hostPort string, hostKey ssh.PublicKey) {
+	accepts, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		return // the shell reports a file it can't parse
+	}
+	// No line holds the all-zero key, so the mismatch lists every key accepted.
+	noKey, err := ssh.NewPublicKey(ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)))
+	if err != nil {
+		return
+	}
+	var mismatch *knownhosts.KeyError
+	if !errors.As(accepts(hostPort, &net.TCPAddr{}, noKey), &mismatch) {
+		return
+	}
+	for _, known := range mismatch.Want {
+		if !bytes.Equal(known.Key.Marshal(), hostKey.Marshal()) {
+			logWarnf("%s line %d also trusts another SSH host key for the local signer at %s", known.Filename, known.Line, hostPort)
+		}
+	}
+}
+
+// updateKnownHostsForLoopback ensures line is the sole plain single-host entry
+// for address. Stale plain single-host entries for address are dropped;
+// markers (@revoked, @cert-authority), hashed hosts (|1|...), multi-host
+// lines, comments, blank lines, and entries for other hosts are kept verbatim.
+func updateKnownHostsForLoopback(existing []byte, address, line string) ([]byte, bool) {
+	content := string(existing)
+	exactMatches := 0
+	staleMatches := 0
+
+	var kept strings.Builder
+	kept.Grow(len(content) + len(line) + 2)
+
+	for rawLine := range strings.Lines(content) {
+		trimmedLine := strings.TrimRight(rawLine, "\r\n")
+		fields := strings.Fields(trimmedLine)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], address) {
+			if trimmedLine == line {
+				exactMatches++
+			} else {
+				staleMatches++
+			}
+			continue
+		}
+		kept.WriteString(rawLine)
+	}
+
+	if exactMatches == 1 && staleMatches == 0 {
+		return nil, false
+	}
+	if kept.Len() > 0 && !strings.HasSuffix(kept.String(), "\n") {
+		kept.WriteByte('\n')
+	}
+	kept.WriteString(line)
+	kept.WriteByte('\n')
+	return []byte(kept.String()), true
 }
 
 // loadSSHPublicKeyFromPrivateKey returns the public half of the signer's SSH

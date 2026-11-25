@@ -4,16 +4,22 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	engconnect "github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/internal/sshtunnel/sshtest"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
@@ -21,6 +27,13 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 	eng := NewEngine("testnet")
 	eng.Connection.SignerClient = signerclient.NewSignerClient("http://localhost:1")
 	eng.Connection.ConnectionTarget = "remote-a"
+	if err := eng.PopulateSignerCache([]signerapi.KeyInfo{
+		{Address: testAddr(1), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+	}); err != nil {
+		t.Fatalf("PopulateSignerCache() error = %v", err)
+	}
+	eng.signerStatusRevisionSeen = true
+	eng.signerStatusKeysetRevSeen = 7
 
 	result, err := eng.ConnectWithTunnel(context.Background(), "remote-b", "host", 22, "", "", nil, nil)
 	if err == nil {
@@ -35,7 +48,83 @@ func TestEngineConnectWithTunnelMapsAlreadyConnectedError(t *testing.T) {
 	if result != nil {
 		t.Fatalf("result = %+v, want nil on ErrAlreadyConnected path", result)
 	}
+	if eng.SignerCacheCount() != 1 || !eng.signerStatusRevisionSeen || eng.signerStatusKeysetRevSeen != 7 {
+		t.Fatal("a refused connect must leave the live connection's cache and status revision alone")
+	}
 }
+
+// A connect that fails after the key inventory arrived leaves nothing of it
+// behind, and the caller's disconnect callback alone: it never had a
+// connection to lose. The connection's lock holds the connect between the two,
+// so the drop always lands there.
+func TestEngineConnectWithTunnelResetsCacheWhenConnectFailsAfterKeys(t *testing.T) {
+	warned := make(chan struct{}, 1)
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(writerFunc(func(line []byte) (int, error) {
+		if bytes.Contains(line, []byte("revoked by the signer")) {
+			select {
+			case warned <- struct{}{}:
+			default:
+			}
+		}
+		return len(line), nil
+	}), nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	eng := NewEngine("testnet")
+	node := sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		eng.Connection.Mu.Lock()
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{
+			{Address: testAddr(1), KeyType: "ed25519", AuthorizationKind: "ed25519"},
+		}})
+	}))
+	eng.signerStatusRevisionSeen = true
+	eng.signerStatusKeysetRevSeen = 7
+
+	var disconnects atomic.Int32
+	failed := make(chan error, 1)
+	go func() {
+		_, err := eng.ConnectWithTunnel(context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath, nil,
+			func() { disconnects.Add(1) })
+		failed <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for eng.SignerCacheCount() == 0 {
+		select {
+		case err := <-failed:
+			t.Fatalf("ConnectWithTunnel() returned %v before the keys arrived", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the connect never read the key inventory")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	node.Server.CloseConnectionsForFingerprint(node.Fingerprint, sshtunnel.DisconnectReasonKeyRevoked)
+	select {
+	case <-warned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the client never noticed the drop")
+	}
+	eng.Connection.Mu.Unlock()
+
+	if err := <-failed; err == nil || !strings.Contains(err.Error(), "revoked by the signer") {
+		t.Fatalf("ConnectWithTunnel() error = %v, want the revocation", err)
+	}
+	if got := eng.SignerCacheCount(); got != 0 {
+		t.Fatalf("SignerCacheCount() = %d after a failed connect, want 0", got)
+	}
+	if eng.signerStatusRevisionSeen || eng.signerStatusKeysetRevSeen != 0 {
+		t.Fatal("a failed connect left the signer status revision set")
+	}
+	if got := disconnects.Load(); got != 0 {
+		t.Fatalf("onDisconnect called %d times for a failed connect, want 0", got)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func TestHandleConnectionClosedResetsSignerCacheAndInvokesCallback(t *testing.T) {
 	eng := NewEngine("testnet")

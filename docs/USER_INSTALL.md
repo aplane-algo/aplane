@@ -192,6 +192,7 @@ Bubble Tea console while preserving the same apshell, apadmin, and apsigner
 transport interfaces. Unlock the signer pane, then run `enroll` in
 the shell pane. Local `apconsole` probes the live loopback SSH endpoint before
 pinning the local signer's SSH host key into the client `known_hosts` file.
+When the signer's host key has changed, the new pin replaces the old one.
 Approve the request in the signer pane; that enrolls the client's SSH key at
 the signer. Then run `connect` in the shell pane.
 

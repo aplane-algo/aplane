@@ -4,18 +4,25 @@
 package sshtunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestKeepaliveStopSignalStopIsConcurrentSafe(t *testing.T) {
@@ -262,21 +269,435 @@ func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 	})
 }
 
-func TestForwardInterceptedGlobalRequestDoesNotBlockWhenFull(t *testing.T) {
-	filtered := make(chan *ssh.Request, 1)
-	filtered <- &ssh.Request{Type: "queued"}
-	done := make(chan bool, 1)
+func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) {
+	tmpDir := t.TempDir()
+	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
+	_, hostPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostSigner, err := ssh.NewSignerFromKey(hostPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCfg := &ssh.ServerConfig{
+		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			if bytes.Equal(key.Marshal(), clientPub.Marshal()) {
+				return nil, nil
+			}
+			return nil, errors.New("unknown key")
+		},
+	}
+	serverCfg.AddHostKey(hostSigner)
 
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	setupEnded := make(chan struct{})
+	serverSent := make(chan error, 1)
 	go func() {
-		done <- forwardInterceptedGlobalRequest(context.Background(), filtered, &ssh.Request{Type: "overflow"})
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
+			serverSent <- acceptErr
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		sshConn, chans, reqs, hsErr := ssh.NewServerConn(conn, serverCfg)
+		if hsErr != nil {
+			serverSent <- hsErr
+			return
+		}
+		go ssh.DiscardRequests(reqs)
+		go func() {
+			for ch := range chans {
+				_ = ch.Reject(ssh.Prohibited, "no channels")
+			}
+		}()
+		<-setupEnded
+		// None of these waits for a reply, so together they overfill the
+		// client mux's 16-slot buffer unless the client drains it.
+		for i := 0; i < 64; i++ {
+			if _, _, err := sshConn.SendRequest("noise@example.com", false, nil); err != nil {
+				serverSent <- err
+				return
+			}
+		}
+		for _, request := range []struct {
+			name string
+			want bool
+		}{
+			{"noise@example.com", false},
+			{ConnectionLimitRequestType, true},
+			{"noise@example.com", false},
+		} {
+			ok, _, err := sshConn.SendRequest(request.name, true, nil)
+			if err == nil && ok != request.want {
+				err = fmt.Errorf("client answered %s with %v, want %v", request.name, ok, request.want)
+			}
+			if err != nil {
+				serverSent <- err
+				return
+			}
+		}
+		_ = sshConn.Close()
+		serverSent <- nil
 	}()
 
+	host, port := splitHostPort(t, ln.Addr().String())
+	knownHostsPath := filepath.Join(tmpDir, "known_hosts")
+	line := knownhosts.Line([]string{hostWithPort(host, port)}, hostSigner.PublicKey()) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(host, port, identityPath, knownHostsPath)
+	authMethod, agentConn, err := client.authMethod(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentConn != nil {
+		defer func() { _ = agentConn.Close() }()
+	}
+	hkcb, err := client.hostKeyCallback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumersBefore := sshRequestConsumers()
+	dialCtx, cancel := context.WithCancel(t.Context())
+	sshClient, done, err := client.dialAndIntercept(dialCtx, "tcp", ln.Addr().String(), &ssh.ClientConfig{
+		User:            productSSHUsername,
+		Auth:            []ssh.AuthMethod{authMethod},
+		HostKeyCallback: hkcb,
+		Timeout:         5 * time.Second,
+	})
+	if err != nil {
+		cancel()
+		t.Fatalf("dialAndIntercept() error = %v", err)
+	}
+	// Canceling setup ctx must not abort the interceptor or stall draining.
+	cancel()
+	close(setupEnded)
+
 	select {
-	case ok := <-done:
-		if !ok {
-			t.Fatal("forwardInterceptedGlobalRequest() = false, want true for dropped overflow")
+	case err := <-serverSent:
+		if err != nil {
+			t.Fatalf("server global-request burst failed: %v", err)
 		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("forwardInterceptedGlobalRequest blocked on full channel")
+	case <-time.After(3 * time.Second):
+		t.Fatal("the client stopped answering global requests")
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("interceptor did not close after SSH connection closed")
+	}
+	waitDone := make(chan struct{})
+	go func() {
+		_ = sshClient.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("sshClient.Wait() did not return after connection closed")
+	}
+	if reason := client.DisconnectReason(); reason != DisconnectReasonConnectionLimit {
+		t.Fatalf("DisconnectReason() = %q, want the notice the server sent", reason)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for sshRequestConsumers() > consumersBefore {
+		if time.Now().After(deadline) {
+			t.Fatal("ssh.Client's global-request goroutine outlived the connection")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// sshRequestConsumers counts the goroutines ssh.Client runs to answer global
+// requests.
+func sshRequestConsumers() int {
+	stacks := make([]byte, 1<<20)
+	stacks = stacks[:runtime.Stack(stacks, true)]
+	return bytes.Count(stacks, []byte("ssh.(*Client).handleGlobalRequests("))
+}
+
+// acceptAnyKey is a server config that authenticates every client key.
+func acceptAnyKey() *ssh.ServerConfig {
+	return &ssh.ServerConfig{
+		PublicKeyCallback: func(_ ssh.ConnMetadata, _ ssh.PublicKey) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+	}
+}
+
+// startMockEnrollmentSSHServer serves one enrollment exec session whose custom
+// handler controls exact stdout writes, exit status, and channel lifetime.
+func startMockEnrollmentSSHServer(t *testing.T, serverCfg *ssh.ServerConfig, onExec func(ch ssh.Channel)) (host string, port int, identityPath, knownHostsPath string) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	_, _, identityPath = generateClientIdentityFile(t, tmpDir)
+	_, hostPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostSigner, err := ssh.NewSignerFromKey(hostPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCfg.AddHostKey(hostSigner)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, chans, reqs, hsErr := ssh.NewServerConn(conn, serverCfg)
+		if hsErr != nil {
+			return
+		}
+		go ssh.DiscardRequests(reqs)
+		for newCh := range chans {
+			if newCh.ChannelType() != "session" {
+				_ = newCh.Reject(ssh.UnknownChannelType, "only session")
+				continue
+			}
+			ch, chReqs, chErr := newCh.Accept()
+			if chErr != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = ch.Close() }()
+				for req := range chReqs {
+					if req.Type == "exec" {
+						if req.WantReply {
+							_ = req.Reply(true, nil)
+						}
+						onExec(ch)
+						return
+					}
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+				}
+			}()
+		}
+	}()
+
+	host, port = splitHostPort(t, ln.Addr().String())
+	knownHostsPath = filepath.Join(tmpDir, "known_hosts")
+	line := knownhosts.Line([]string{hostWithPort(host, port)}, hostSigner.PublicKey()) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return host, port, identityPath, knownHostsPath
+}
+
+// A server that streams without end, and one that goes silent just past the
+// cap, are refused at the cap: the client neither reads on nor waits for an
+// exit status that never comes.
+func TestRequestEnrollmentRejectsOversizedReplyWithoutHanging(t *testing.T) {
+	hold := make(chan struct{})
+	t.Cleanup(func() { close(hold) })
+	streamEnded := make(chan struct{})
+	servers := map[string]func(ch ssh.Channel){
+		"streams without end": func(ch ssh.Channel) {
+			defer close(streamEnded)
+			chunk := bytes.Repeat([]byte("A"), 1024)
+			for {
+				if _, err := ch.Write(chunk); err != nil {
+					return
+				}
+			}
+		},
+		"silent one byte past the cap": func(ch ssh.Channel) {
+			_, _ = ch.Write(bytes.Repeat([]byte("A"), maxEnrollmentReplyBytes+1))
+			<-hold
+		},
+	}
+	for name, onExec := range servers {
+		t.Run(name, func(t *testing.T) {
+			host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, acceptAnyKey(), onExec)
+			// Longer than the wait below, so the context never ends the request.
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				_, err := NewClient(host, port, identityPath, knownHostsPath).RequestEnrollment(ctx, "")
+				result <- err
+			}()
+			select {
+			case err := <-result:
+				want := fmt.Sprintf("enrollment response exceeded %d bytes", maxEnrollmentReplyBytes)
+				if err == nil || err.Error() != want {
+					t.Fatalf("RequestEnrollment() error = %v, want %q", err, want)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("RequestEnrollment() was still waiting on an oversized reply after 5s")
+			}
+		})
+	}
+	select {
+	case <-streamEnded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the streaming server's session outlived the refused request")
+	}
+}
+
+// A reply of exactly the cap is read whole.
+func TestRequestEnrollmentReadsAReplyOfExactlyTheCap(t *testing.T) {
+	host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, acceptAnyKey(), func(ch ssh.Channel) {
+		_, _ = ch.Write(bytes.Repeat([]byte("A"), maxEnrollmentReplyBytes))
+		_ = sendExitStatus(ch, 0)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err := NewClient(host, port, identityPath, knownHostsPath).RequestEnrollment(ctx, "")
+	if err == nil || !strings.Contains(err.Error(), "unexpected enrollment response") {
+		t.Fatalf("RequestEnrollment() error = %v, want the reply read and refused as unexpected", err)
+	}
+}
+
+// A server that lets the client in without its key could name any key as
+// enrolled, in any text, so nothing is sent to it.
+func TestRequestEnrollmentRefusesAServerThatSkipsKeyAuthentication(t *testing.T) {
+	var execs atomic.Int32
+	host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, &ssh.ServerConfig{NoClientAuth: true}, func(ch ssh.Channel) {
+		execs.Add(1)
+		_, _ = ch.Write([]byte("enrolled SHA256:x\x1b[2J\n"))
+		_ = sendExitStatus(ch, 0)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	client := NewClient(host, port, identityPath, knownHostsPath)
+	started := false
+	client.SetEnrollmentStartCallback(func(string) { started = true })
+	result, err := client.RequestEnrollment(ctx, "")
+	if err == nil || !strings.Contains(err.Error(), "did not authenticate this client's SSH key") {
+		t.Fatalf("RequestEnrollment() = (%+v, %v), want a refusal", result, err)
+	}
+	if result != (EnrollmentResult{}) || started || execs.Load() != 0 {
+		t.Fatalf("result=%+v started=%v execs=%d, want none", result, started, execs.Load())
+	}
+}
+
+// With no reply to show, the error is the exit signal's own text, which the
+// server chooses.
+func TestRequestEnrollmentEscapesExitSignalText(t *testing.T) {
+	host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, acceptAnyKey(), func(ch ssh.Channel) {
+		_, _ = ch.SendRequest("exit-signal", false, ssh.Marshal(struct {
+			Signal     string
+			CoreDumped bool
+			Message    string
+			Language   string
+		}{Signal: "KI\x1b[31mLL", Message: "bad\x1b[2J\u202e" + strings.Repeat("x", 4*maxEnrollmentErrorBytes)}))
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err := NewClient(host, port, identityPath, knownHostsPath).RequestEnrollment(ctx, "")
+	if err == nil {
+		t.Fatal("RequestEnrollment() error = nil, want the exit signal")
+	}
+	msg := err.Error()
+	if strings.ContainsRune(msg, '\x1b') || strings.ContainsRune(msg, '\u202e') {
+		t.Fatalf("error contains raw control or bidi characters: %q", msg)
+	}
+	if !strings.HasPrefix(msg, "enrollment failed: ") || !strings.Contains(msg, `KI\x1b[31mLL`) || !strings.Contains(msg, `bad\x1b[2J\u202e`) {
+		t.Fatalf("error = %q, want the signal and message escaped", msg)
+	}
+	if limit := len("enrollment failed: ") + maxEnrollmentErrorBytes + len("..."); len(msg) > limit {
+		t.Fatalf("error is %d bytes, want at most %d", len(msg), limit)
+	}
+}
+
+func TestRequestEnrollmentEscapesServerErrorWithoutDoubleQuoting(t *testing.T) {
+	host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, acceptAnyKey(), func(ch ssh.Channel) {
+		_, _ = ch.Write([]byte("ERROR: \"rejected \x1b[2J\u202e\nnow\"\n"))
+		_ = sendExitStatus(ch, 1)
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	client := NewClient(host, port, identityPath, knownHostsPath)
+	_, err := client.RequestEnrollment(ctx, "")
+	if err == nil {
+		t.Fatal("RequestEnrollment() error = nil, want server error")
+	}
+	msg := err.Error()
+	if strings.ContainsAny(msg, "\x1b\n") || strings.ContainsRune(msg, '\u202e') {
+		t.Fatalf("error contains raw control/bidi characters: %q", msg)
+	}
+	if !strings.Contains(msg, `\x1b[2J`) || !strings.Contains(msg, `\u202e`) {
+		t.Fatalf("error did not escape control sequences: %q", msg)
+	}
+	if strings.HasPrefix(msg, `"`) || strings.Contains(msg, `\"`) {
+		t.Fatalf("error was double-quoted: %q", msg)
+	}
+	if !strings.HasPrefix(msg, `ERROR: "rejected `) {
+		t.Fatalf("error lost original ERROR prefix/quotes: %q", msg)
+	}
+}
+
+func TestRequestEnrollmentEscapesMismatchedFingerprint(t *testing.T) {
+	host, port, identityPath, knownHostsPath := startMockEnrollmentSSHServer(t, acceptAnyKey(), func(ch ssh.Channel) {
+		_, _ = ch.Write([]byte("enrolled SHA256:evil\x1b[31m\u202e\n"))
+		_ = sendExitStatus(ch, 0)
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	client := NewClient(host, port, identityPath, knownHostsPath)
+	_, err := client.RequestEnrollment(ctx, "")
+	if err == nil {
+		t.Fatal("RequestEnrollment() error = nil, want fingerprint mismatch")
+	}
+	msg := err.Error()
+	if strings.ContainsAny(msg, "\x1b\n") || strings.ContainsRune(msg, '\u202e') {
+		t.Fatalf("mismatch error contains raw control characters: %q", msg)
+	}
+	if !strings.Contains(msg, `SHA256:evil\x1b[31m\u202e`) {
+		t.Fatalf("mismatch error = %q, want escaped fingerprint", msg)
+	}
+}
+
+func TestSafeEnrollmentTextCapsLengthCleanly(t *testing.T) {
+	// The leading byte puts the cap inside an escape, and inside a rune.
+	for name, raw := range map[string]string{
+		"escapes": "a" + strings.Repeat("\x1b", 120),
+		"runes":   "a" + strings.Repeat("é", 200),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := safeEnrollmentText(raw)
+			if !utf8.ValidString(got) {
+				t.Fatalf("safeEnrollmentText produced invalid UTF-8: %q", got)
+			}
+			text, cut := strings.CutSuffix(got, "...")
+			if !cut || len(text) > maxEnrollmentErrorBytes {
+				t.Fatalf("safeEnrollmentText() = %d bytes of text, cut=%v, want at most %d and a mark", len(text), cut, maxEnrollmentErrorBytes)
+			}
+			if strings.ContainsRune(got, '\x1b') {
+				t.Fatalf("safeEnrollmentText left raw ESC: %q", got)
+			}
+			unit := `\x1b`
+			if name == "runes" {
+				unit = "é"
+			}
+			if rest := strings.TrimPrefix(text, "a"); strings.Repeat(unit, len(rest)/len(unit)) != rest {
+				t.Fatalf("safeEnrollmentText cut %s in half: %q", unit, text)
+			}
+		})
+	}
+	short := `ERROR: "invalid label"`
+	if got := safeEnrollmentText(short); got != short {
+		t.Fatalf("safeEnrollmentText(%q) = %q, want it unchanged", short, got)
 	}
 }
