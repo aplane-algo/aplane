@@ -33,10 +33,10 @@ func (s Service) GetPolicyDocumentAt(req adminproto.GetPolicyDocumentRequest) ad
 		env.ASASet = set
 		_, snapshot, err := policyapply.Snapshot(env, np)
 		if err != nil {
-			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_context_unavailable", Error: err.Error()}
+			return adminproto.PolicyDocumentResult{Key: req.Key, Code: protocol.ResultCodePolicyContextUnavailable, Error: err.Error()}
 		}
 		if snapshot != req.ExpectedSnapshotSHA256 {
-			return adminproto.PolicyDocumentResult{Key: req.Key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}
+			return adminproto.PolicyDocumentResult{Key: req.Key, Code: protocol.ResultCodePolicySnapshotChanged, Error: "the node's policy or its context changed since the snapshot; read it again"}
 		}
 	}
 	return policyapply.Document(np, req.Key)
@@ -60,7 +60,7 @@ func (s Service) GetPolicyContext() adminproto.PolicyContextView {
 func (s Service) CheckPolicy(req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	current, set := s.Runtime.PolicyState()
 	if current == nil {
-		return adminproto.CheckPolicyResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.CheckPolicyResult{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	env := s.policyEnv(nil)
 	env.ASASet = set
@@ -80,10 +80,10 @@ func (s Service) ApplyPolicy(req adminproto.ApplyPolicyRequest) adminproto.Apply
 	})
 	if err != nil {
 		if errors.Is(err, keystore.ErrStoreLocked) {
-			return adminproto.ApplyPolicyResult{Code: "identity_locked", Error: "identity is locked; unlock the signer before applying policy"}
+			return adminproto.ApplyPolicyResult{Code: protocol.ErrCodeSignerLocked, Error: "identity is locked; unlock the signer before applying policy"}
 		}
 		return adminproto.ApplyPolicyResult{
-			Code:                policyapply.Code(err, "policy_apply_failed"),
+			Code:                policyapply.Code(err, protocol.ResultCodePolicyApplyFailed),
 			Error:               err.Error(),
 			Errors:              outcome.Problems,
 			CommitUncertain:     outcome.Uncertain,
@@ -138,7 +138,7 @@ func (s Service) commitAndReload(ir *productruntime.Runtime, req adminproto.Appl
 	}
 	if _, err := ir.FollowCommit(genstore.Committed); err != nil {
 		outcome.Uncertain = true
-		return policyapply.Error{Code: "policy_reload_failed", Msg: "policy committed as generation " +
+		return policyapply.Error{Code: protocol.ResultCodePolicyReloadFailed, Msg: "policy committed as generation " +
 			outcome.GenerationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
 	}
 	return nil

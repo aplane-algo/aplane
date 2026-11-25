@@ -59,7 +59,7 @@ type ASAChain interface {
 func (s Service) ListASASet() adminproto.ListASASetResult {
 	_, set := s.Runtime.PolicyState()
 	if set == nil {
-		return adminproto.ListASASetResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.ListASASetResult{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	tokens := chainTokens(s.networks())
 	var out []adminproto.ASAInfo
@@ -81,19 +81,19 @@ func (s Service) ListASASet() adminproto.ListASASetResult {
 func (s Service) LookupASA(req adminproto.LookupASARequest) adminproto.LookupASAResult {
 	_, set := s.Runtime.PolicyState()
 	if set == nil {
-		return adminproto.LookupASAResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.LookupASAResult{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	genesis, err := s.chainFor(req.Network)
 	if err != nil {
-		return adminproto.LookupASAResult{Code: "unknown_network", Error: err.Error()}
+		return adminproto.LookupASAResult{Code: protocol.ResultCodeASAUnknownNetwork, Error: err.Error()}
 	}
 	id := asaset.Identity{Genesis: genesis, AssetID: req.AssetID}
-	if code, err := addableIdentity(id, set); err != nil {
-		return adminproto.LookupASAResult{Code: code, Error: err.Error()}
+	if err := addableIdentity(id, set); err != nil {
+		return adminproto.LookupASAResult{Code: asaCode(err, protocol.ResultCodeASALookupFailed), Error: err.Error()}
 	}
 	obs, err := s.observe(req.Network, genesis, req.AssetID)
 	if err != nil {
-		return adminproto.LookupASAResult{Code: "lookup_failed", Error: err.Error()}
+		return adminproto.LookupASAResult{Code: protocol.ResultCodeASALookupFailed, Error: err.Error()}
 	}
 	return adminproto.LookupASAResult{Success: true, Asset: obs}
 }
@@ -104,19 +104,19 @@ func (s Service) AddASA(req adminproto.AddASARequest) adminproto.AddASAResult {
 	confirmed := req.Confirmed
 	genesis, err := s.chainFor(confirmed.Network)
 	if err != nil {
-		return adminproto.AddASAResult{Code: "unknown_network", Error: err.Error()}
+		return adminproto.AddASAResult{Code: protocol.ResultCodeASAUnknownNetwork, Error: err.Error()}
 	}
 	if genesis.String() != confirmed.GenesisHash {
-		return adminproto.AddASAResult{Code: "confirmation_stale", Error: fmt.Sprintf("network %q now names another chain than the one confirmed; look the asset up again", confirmed.Network)}
+		return adminproto.AddASAResult{Code: protocol.ResultCodeASAConfirmationStale, Error: fmt.Sprintf("network %q now names another chain than the one confirmed; look the asset up again", confirmed.Network)}
 	}
 	// The second read happens before the store lock: network I/O is never
 	// done while holding it.
 	current, err := s.observe(confirmed.Network, genesis, confirmed.AssetID)
 	if err != nil {
-		return adminproto.AddASAResult{Code: "lookup_failed", Error: err.Error()}
+		return adminproto.AddASAResult{Code: protocol.ResultCodeASALookupFailed, Error: err.Error()}
 	}
 	if current != confirmed {
-		return adminproto.AddASAResult{Code: "confirmation_stale", Error: "the asset's parameters changed since they were confirmed; look it up and confirm again"}
+		return adminproto.AddASAResult{Code: protocol.ResultCodeASAConfirmationStale, Error: "the asset's parameters changed since they were confirmed; look it up and confirm again"}
 	}
 	entry := asaset.Entry{
 		Identity:              asaset.Identity{Genesis: genesis, AssetID: confirmed.AssetID},
@@ -134,15 +134,15 @@ func (s Service) AddASA(req adminproto.AddASARequest) adminproto.AddASAResult {
 		// concurrent change is a conflict, not a silent retry.
 		again, err := s.chainFor(confirmed.Network)
 		if err != nil || again != genesis {
-			return nil, asaError{"confirmation_stale", fmt.Sprintf("network %q changed while the asset was being confirmed; look it up again", confirmed.Network)}
+			return nil, asaError{protocol.ResultCodeASAConfirmationStale, fmt.Sprintf("network %q changed while the asset was being confirmed; look it up again", confirmed.Network)}
 		}
-		if code, err := addableIdentity(entry.Identity, set); err != nil {
-			return nil, asaError{code, err.Error()}
+		if err := addableIdentity(entry.Identity, set); err != nil {
+			return nil, err
 		}
 		return set.With(entry)
 	})
 	if err != nil {
-		return adminproto.AddASAResult{Code: asaCode(err, "asa_add_failed"), Error: err.Error(), CommitUncertain: uncertain, GenerationID: generationID}
+		return adminproto.AddASAResult{Code: asaCode(err, protocol.ResultCodeASAAddFailed), Error: err.Error(), CommitUncertain: uncertain, GenerationID: generationID}
 	}
 	return adminproto.AddASAResult{Success: true, GenerationID: generationID, Asset: asaInfo(entry, confirmed.Network, false)}
 }
@@ -159,7 +159,7 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 		genesis, err = s.chainFor(req.Network)
 	}
 	if err != nil {
-		return adminproto.RemoveASAResult{Code: "unknown_network", Error: err.Error()}
+		return adminproto.RemoveASAResult{Code: protocol.ResultCodeASAUnknownNetwork, Error: err.Error()}
 	}
 	id := asaset.Identity{Genesis: genesis, AssetID: req.AssetID}
 	var generationID string
@@ -170,9 +170,9 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 		next, found := set.Without(id)
 		if !found {
 			if builtinIdentity(id) {
-				return nil, asaError{"asa_builtin", fmt.Sprintf("%s is built in and cannot be removed", id)}
+				return nil, asaError{protocol.ResultCodeASABuiltin, fmt.Sprintf("%s is built in and cannot be removed", id)}
 			}
-			return nil, asaError{"not_found", fmt.Sprintf("%s is not in this node's ASA set", id)}
+			return nil, asaError{protocol.ResultCodeNotFound, fmt.Sprintf("%s is not in this node's ASA set", id)}
 		}
 		// A confirmation a later release made built-in is shadowed: the
 		// built-in entry is the one used, so removing the confirmation
@@ -198,12 +198,12 @@ func (s Service) RemoveASA(req adminproto.RemoveASARequest) adminproto.RemoveASA
 			for i := range blocking {
 				blocking[i].Pointer = policyapply.TruncateText(blocking[i].Pointer, policyapply.MaxProblemTextBytes)
 			}
-			return nil, asaError{"asa_referenced", fmt.Sprintf("%s is named by %d policy reference(s); change those documents first", id, total)}
+			return nil, asaError{protocol.ResultCodeASAReferenced, fmt.Sprintf("%s is named by %d policy reference(s); change those documents first", id, total)}
 		}
 		return next, nil
 	})
 	if err != nil {
-		return adminproto.RemoveASAResult{Code: asaCode(err, "asa_remove_failed"), Error: err.Error(), Blocking: blocking, BlockingOmitted: blockingOmitted, CommitUncertain: uncertain, GenerationID: generationID, GenesisHash: genesis.String()}
+		return adminproto.RemoveASAResult{Code: asaCode(err, protocol.ResultCodeASARemoveFailed), Error: err.Error(), Blocking: blocking, BlockingOmitted: blockingOmitted, CommitUncertain: uncertain, GenerationID: generationID, GenesisHash: genesis.String()}
 	}
 	return adminproto.RemoveASAResult{Success: true, GenerationID: generationID, GenesisHash: genesis.String()}
 }
@@ -240,7 +240,7 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 			if mintErr != nil {
 				if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 					*uncertain = true
-					return asaError{"asa_commit_uncertain", fmt.Sprintf("the ASA set may have committed as generation %s; signing is blocked pending reconciliation: %v", id, mintErr)}
+					return asaError{protocol.ResultCodeASACommitUncertain, fmt.Sprintf("the ASA set may have committed as generation %s; signing is blocked pending reconciliation: %v", id, mintErr)}
 				}
 				*generationID = ""
 				return fmt.Errorf("asa set change failed before commit: %w", mintErr)
@@ -256,12 +256,12 @@ func (s Service) mutateASASet(generationID *string, uncertain *bool, change func
 		}
 		if _, err := ir.FollowCommit(genstore.Committed); err != nil {
 			*uncertain = true
-			return asaError{"asa_reload_failed", "the ASA set committed as generation " + *generationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
+			return asaError{protocol.ResultCodeASAReloadFailed, "the ASA set committed as generation " + *generationID + " but runtime reload failed; signing is blocked pending recovery: " + err.Error()}
 		}
 		return nil
 	})
 	if errors.Is(err, keystore.ErrStoreLocked) {
-		return asaError{"identity_locked", "identity is locked; unlock the signer before changing the ASA set"}
+		return asaError{protocol.ErrCodeSignerLocked, "identity is locked; unlock the signer before changing the ASA set"}
 	}
 	return err
 }
@@ -330,14 +330,14 @@ func (s Service) now() time.Time {
 }
 
 // addableIdentity refuses a built-in asset and one already confirmed.
-func addableIdentity(id asaset.Identity, set *asaset.Set) (string, error) {
+func addableIdentity(id asaset.Identity, set *asaset.Set) error {
 	if builtinIdentity(id) {
-		return "asa_builtin", fmt.Errorf("%s is built in; it needs no confirmation", id)
+		return asaError{protocol.ResultCodeASABuiltin, fmt.Sprintf("%s is built in; it needs no confirmation", id)}
 	}
 	if _, ok := set.Lookup(id); ok {
-		return "asa_already_confirmed", fmt.Errorf("%s is already in this node's ASA set", id)
+		return asaError{protocol.ResultCodeASAAlreadyConfirmed, fmt.Sprintf("%s is already in this node's ASA set", id)}
 	}
-	return "", nil
+	return nil
 }
 
 func builtinIdentity(id asaset.Identity) bool {

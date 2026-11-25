@@ -152,12 +152,12 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 	}
 }
 
-// Pinned so a change of the version is a deliberate edit. The move to one
-// integer kept 8: builds before it sent {major, minor}, which neither side
-// can read from the other, so such a pair fails whatever the number is.
-func TestAdminProtocolVersionIsV8(t *testing.T) {
-	if AdminProtocolVersion != 8 {
-		t.Fatalf("AdminProtocolVersion = %d, want 8", AdminProtocolVersion)
+// Pinned so a change of the version is a deliberate edit, made by the rule in
+// docs/ARCH_ADMIN.md ("Transport notes"). 9 renamed the policy and ASA set
+// results' identity_locked to signer_locked.
+func TestAdminProtocolVersionIsV9(t *testing.T) {
+	if AdminProtocolVersion != 9 {
+		t.Fatalf("AdminProtocolVersion = %d, want 9", AdminProtocolVersion)
 	}
 }
 
@@ -1418,7 +1418,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":8}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":9}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

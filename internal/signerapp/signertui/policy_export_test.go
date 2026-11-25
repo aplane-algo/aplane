@@ -97,7 +97,7 @@ func answerExport(t *testing.T, m Model, docs map[string]string, tokens map[stri
 		if m.policies.export.listingTokens {
 			reply := protocol.SourceTokenListResultMessage{BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}}
 			if tokens == nil {
-				reply.Code, reply.Error = "identity_locked", "the signer is locked"
+				reply.Code, reply.Error = protocol.ErrCodeSignerLocked, "the signer is locked"
 			} else {
 				reply.Success = true
 				if len(selectors) > 0 {
@@ -199,7 +199,7 @@ func TestPolicyExportWithoutTokenNamesSaysSo(t *testing.T) {
 		},
 		"a failed listing": func(m Model) (tea.Model, tea.Cmd) {
 			next, cmd, ok := m.handlePolicyExportSourceTokens(sourceTokenListMsg{
-				BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Code: "identity_locked", Error: "locked",
+				BaseMessage: protocol.BaseMessage{ID: m.policies.export.pendingID}, Code: protocol.ErrCodeSignerLocked, Error: "locked",
 			})
 			if !ok {
 				t.Fatal("the reply was not the export's")

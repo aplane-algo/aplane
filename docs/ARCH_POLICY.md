@@ -1353,8 +1353,10 @@ when the answer is not already no.
    its check uses refuses here, before any lookup. A request may need at most
    32 lookups.
 2. **Fetch** (`externalcheck.Fetcher`). At most 4 lookups are in flight per
-   request and 16 per URL origin (`scheme://host:port`) across the node. Each
-   lookup has its source's timeout, and all of a request's lookups share a
+   request and 16 per URL origin (`scheme://host:port`) across the node,
+   however a source writes it: the host's case, an address's spelling, and the
+   scheme's default port written or left out make no other origin. Each lookup
+   has its source's timeout, and all of a request's lookups share a
    10-second deadline. The audit record tells the two apart by the context's
    cause: a lookup that ran past its source's timeout fails with `timeout
    after 2s` (the source's `timeout_ms`), and one the shared deadline ended
@@ -1672,7 +1674,7 @@ decision.
 - Online changes require an unlocked signer store and reload the runtime
   from the committed generation. The unlocked state is checked under the
   store mutation lock, so a change made while an unlock is still in flight
-  on another connection is refused with `identity_locked` rather than
+  on another connection is refused with `signer_locked` rather than
   committed before the unlock publishes. Offline rescue works on a stopped
   store and does not take this path.
 - Every digest covers the exact stored bytes; there is no canonical

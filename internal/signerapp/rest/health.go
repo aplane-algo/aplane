@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/version"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -28,7 +29,7 @@ func (s Service) Health(ir *productruntime.Runtime) *signerapi.HealthResponse {
 		Service:      "Signer",
 		BuildVersion: version.String(),
 		SignerLocked: locked,
-		Warnings:     s.publicStoreHealthWarnings(ir),
+		Warnings:     s.storeHealthWarnings(ir, publicInspectionFailure),
 	}
 }
 
@@ -57,7 +58,7 @@ func (s Service) Status(ir *productruntime.Runtime) *signerapi.StatusResponse {
 		KeyCount:            keyCount,
 		KeysetRevision:      keysetRevision,
 		ApprovalWaitSeconds: approvalWaitSeconds,
-		Warnings:            statusWarnings(ir),
+		Warnings:            s.statusWarnings(ir),
 		Notes:               statusNotes(ir),
 		Rotating:            rotatingStatuses(ir),
 	}
@@ -75,8 +76,8 @@ func rotatingStatuses(ir *productruntime.Runtime) []signerapi.RotatingAccountSta
 // any rotating account alerts and policy admission alerts. Both name
 // accounts or policy content, so they never appear on the unauthenticated
 // health endpoint.
-func statusWarnings(ir *productruntime.Runtime) []string {
-	warnings := storeHealthWarnings(ir)
+func (s Service) statusWarnings(ir *productruntime.Runtime) []string {
+	warnings := s.storeHealthWarnings(ir, inspectionFailure)
 	if ir != nil {
 		warnings = append(warnings, ir.StatusAlerts()...)
 	}
@@ -91,38 +92,48 @@ func statusNotes(ir *productruntime.Runtime) []string {
 	return ir.RotatingNotes()
 }
 
-// storeHealthCacheTTL bounds how often the unauthenticated health endpoint
-// inspects the store: it lists and stats every deleted-archive member.
+// storeHealthCacheTTL bounds how often the health and status endpoints inspect
+// the store: each inspection lists and stats every deleted-archive member.
 const storeHealthCacheTTL = 5 * time.Second
 
-// StoreHealthCache reuses the health endpoint's store inspection for
-// storeHealthCacheTTL per active generation.
+// StoreHealthCache reuses the last store inspection for storeHealthCacheTTL
+// per active generation, for the health and status endpoints alike.
 type StoreHealthCache struct {
 	mu            sync.Mutex
 	now           func() time.Time // tests may replace the clock
 	generationDir string
 	checkedAt     time.Time
-	warnings      []string
+	usage         genstore.DeletedArchiveUsage
+	err           error
 }
 
-func (c *StoreHealthCache) get(generationDir string, compute func() []string) []string {
+func (c *StoreHealthCache) inspect(active storepaths.GenPaths) (genstore.DeletedArchiveUsage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
 	if c.now != nil {
 		now = c.now()
 	}
-	if c.generationDir == generationDir && !c.checkedAt.IsZero() && now.Sub(c.checkedAt) < storeHealthCacheTTL {
-		return c.warnings
+	if c.generationDir != active.Dir() || c.checkedAt.IsZero() || now.Sub(c.checkedAt) >= storeHealthCacheTTL {
+		c.generationDir, c.checkedAt = active.Dir(), now
+		c.usage, c.err = genstore.InspectDeletedArchive(active)
 	}
-	c.generationDir, c.checkedAt, c.warnings = generationDir, now, compute()
-	return c.warnings
+	return c.usage, c.err
 }
 
-// publicStoreHealthWarnings is the unauthenticated form of the store
-// warnings: cached, and without error detail such as store paths, which the
-// authenticated /status response carries.
-func (s Service) publicStoreHealthWarnings(ir *productruntime.Runtime) []string {
+// publicInspectionFailure is the unauthenticated form of a failed inspection,
+// without detail such as store paths, which inspectionFailure carries.
+func publicInspectionFailure(error) string {
+	return "deleted archive health check failed; authenticated /status has details"
+}
+
+func inspectionFailure(err error) string {
+	return fmt.Sprintf("deleted archive health check failed: %v", err)
+}
+
+// storeHealthWarnings are the store's warnings, with a failed inspection worded
+// by failure.
+func (s Service) storeHealthWarnings(ir *productruntime.Runtime, failure func(error) string) []string {
 	if ir == nil {
 		return nil
 	}
@@ -130,40 +141,19 @@ func (s Service) publicStoreHealthWarnings(ir *productruntime.Runtime) []string 
 	if err != nil {
 		return nil
 	}
-	compute := func() []string {
-		usage, err := genstore.InspectDeletedArchive(active)
-		if err != nil {
-			return []string{"deleted archive health check failed; authenticated /status has details"}
-		}
-		return deletedArchiveWarnings(usage)
+	inspect := genstore.InspectDeletedArchive
+	if s.Deps.StoreHealth != nil {
+		inspect = s.Deps.StoreHealth.inspect
 	}
-	if s.Deps.StoreHealth == nil {
-		return compute()
-	}
-	return s.Deps.StoreHealth.get(active.Dir(), compute)
-}
-
-func deletedArchiveWarnings(usage genstore.DeletedArchiveUsage) []string {
-	if usage.Warning() {
+	usage, err := inspect(active)
+	switch {
+	case err != nil:
+		return []string{failure(err)}
+	case usage.Warning():
 		return []string{fmt.Sprintf(
 			"deleted archive emergency reserve is consumed (%d entries, %d encoded bytes); authenticated prune is required",
 			usage.Entries, usage.EncodedBytes,
 		)}
 	}
 	return nil
-}
-
-func storeHealthWarnings(ir *productruntime.Runtime) []string {
-	if ir == nil {
-		return nil
-	}
-	active, err := ir.ActivePaths()
-	if err != nil {
-		return nil
-	}
-	usage, err := genstore.InspectDeletedArchive(active)
-	if err != nil {
-		return []string{fmt.Sprintf("deleted archive health check failed: %v", err)}
-	}
-	return deletedArchiveWarnings(usage)
 }

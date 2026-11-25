@@ -351,7 +351,9 @@ func (c Contents) KeyTypes() map[string]string {
 // GetSigningSummary returns one scan-time snapshot of address -> non-sensitive
 // signing metadata. The returned map, its Parameters maps, and its
 // BoundedAuthorization records are freshly built per call and owned by the
-// caller — no further defensive cloning is required.
+// caller — no further defensive cloning is required. Only tests read it, and
+// the test seam productruntime.Runtime.PublishSnapshot: production reads the
+// runtime's published snapshot.
 func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
@@ -384,7 +386,7 @@ func (c Contents) SigningSummaries() map[string]SigningSummary {
 }
 
 // GetPublicKeyHexMap returns a copy of the address -> publicKeyHex cache.
-// Used for the /keys endpoint. Returns empty string for generic LSig keys.
+// Returns empty string for generic LSig keys.
 func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()

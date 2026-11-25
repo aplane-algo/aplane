@@ -2366,7 +2366,8 @@ stored provenance was available. These fields do not change `/sign` behavior.
 - `warnings`: optional persistent operator-facing health warnings. Clients
   should display non-empty warnings and must tolerate this field being omitted.
   They include rotating account alerts (see Rotating accounts); those name
-  accounts and never appear on `/health`.
+  accounts and never appear on `/health`. The store inspection behind the deleted
+  archive's warnings is shared with `/health` and reused for 5 seconds.
 - `notes`: optional informational lines that need no action, such as a
   rotating account's release still in flight, a live stage the signer is
   still scanning for, or an authorizer it could not place. Clients must
@@ -2473,7 +2474,7 @@ stored metadata resolve the provider and any composed template's base primitive.
 - `warnings`: optional persistent operator-facing health warnings. `/health`
   is unauthenticated, so its warnings omit error detail such as store paths
   (the authenticated `/status` warnings keep it), and the store inspection
-  behind them is reused for 5 seconds.
+  behind them, shared with `/status`, is reused for 5 seconds.
 
 ### Sign Cancellation Semantics
 

@@ -29,6 +29,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policyadmission"
 	"github.com/aplane-algo/aplane/internal/policycontext"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
@@ -103,10 +104,10 @@ func Code(err error, fallback string) string {
 // can be replaced but never removed.
 func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.PolicyDocument, remove []string) (*policyruntime.NodePolicy, []adminproto.PolicyProblem, error) {
 	if env.Role != noderole.RoleSigner && env.Role != noderole.RoleCosigner {
-		return nil, nil, Error{"policy_unavailable", fmt.Sprintf("unsupported node role %q", env.Role)}
+		return nil, nil, Error{protocol.ResultCodePolicyUnavailable, fmt.Sprintf("unsupported node role %q", env.Role)}
 	}
 	if len(docs) == 0 && len(remove) == 0 {
-		return nil, nil, Error{"invalid_policy_request", "the request changes no documents"}
+		return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, "the request changes no documents"}
 	}
 	byKey := make(map[string]policy.StoredDocument)
 	if current != nil {
@@ -117,13 +118,13 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	seen := map[string]bool{}
 	for _, key := range remove {
 		if key == policy.DefaultKey {
-			return nil, nil, Error{"invalid_policy_request", "the node default cannot be removed; apply a new one instead"}
+			return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, "the node default cannot be removed; apply a new one instead"}
 		}
 		if err := storepaths.ValidatePolicySelector(key); err != nil {
-			return nil, nil, Error{"invalid_policy_request", err.Error()}
+			return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, err.Error()}
 		}
 		if _, ok := byKey[key]; !ok {
-			return nil, nil, Error{"invalid_policy_request", fmt.Sprintf("cannot remove the policy for %s: it has none of its own", key)}
+			return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, fmt.Sprintf("cannot remove the policy for %s: it has none of its own", key)}
 		}
 		seen[key] = true
 		delete(byKey, key)
@@ -131,20 +132,20 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	for _, doc := range docs {
 		if doc.Key != policy.DefaultKey {
 			if err := storepaths.ValidatePolicySelector(doc.Key); err != nil {
-				return nil, nil, Error{"invalid_policy_request", err.Error()}
+				return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, err.Error()}
 			}
 		}
 		if seen[doc.Key] {
-			return nil, nil, Error{"invalid_policy_request", fmt.Sprintf("the policy for %s is listed twice or both replaced and removed", doc.Key)}
+			return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, fmt.Sprintf("the policy for %s is listed twice or both replaced and removed", doc.Key)}
 		}
 		seen[doc.Key] = true
 		byKey[doc.Key] = policy.StoredDocument{Key: doc.Key, Bytes: []byte(doc.Document)}
 	}
 	if _, ok := byKey[policy.DefaultKey]; !ok {
-		return nil, nil, Error{"invalid_policy_request", "the node has no default policy; apply one with key \"default\""}
+		return nil, nil, Error{protocol.ResultCodeInvalidPolicyRequest, "the node has no default policy; apply one with key \"default\""}
 	}
 	if len(byKey)-1 > MaxPolicies {
-		return nil, nil, Error{"policy_set_too_large", fmt.Sprintf(
+		return nil, nil, Error{protocol.ResultCodePolicySetTooLarge, fmt.Sprintf(
 			"the change leaves %d key policy documents; a node holds at most %d", len(byKey)-1, MaxPolicies)}
 	}
 	var resulting []policy.StoredDocument
@@ -169,7 +170,7 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 	// Removals need no repair first.
 	ctx, err := NodeContext(env)
 	if err != nil {
-		return nil, nil, Error{"policy_context_unavailable", fmt.Sprintf("the node's policy context is unavailable: %v", err)}
+		return nil, nil, Error{protocol.ResultCodePolicyContextUnavailable, fmt.Sprintf("the node's policy context is unavailable: %v", err)}
 	}
 	for i, doc := range docs {
 		problems = append(problems, admissionProblems(ctx, doc.Key, decoded[i])...)
@@ -190,7 +191,7 @@ func Candidate(env Env, current *policyruntime.NodePolicy, docs []adminproto.Pol
 func Check(env Env, current *policyruntime.NodePolicy, req adminproto.CheckPolicyRequest) adminproto.CheckPolicyResult {
 	candidate, problems, err := Candidate(env, current, req.Documents, req.Remove)
 	if err != nil {
-		return adminproto.CheckPolicyResult{Code: Code(err, "policy_check_failed"), Error: err.Error()}
+		return adminproto.CheckPolicyResult{Code: Code(err, protocol.ResultCodePolicyCheckFailed), Error: err.Error()}
 	}
 	result := adminproto.CheckPolicyResult{Success: true, Valid: len(problems) == 0, Errors: problems}
 	if candidate != nil {
@@ -306,11 +307,11 @@ func Snapshot(env Env, np *policyruntime.NodePolicy) (*policycontext.Context, st
 // surface.
 func ContextView(env Env, np *policyruntime.NodePolicy) adminproto.PolicyContextView {
 	if np == nil || env.ASASet == nil {
-		return adminproto.PolicyContextView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.PolicyContextView{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	ctx, snapshot, err := Snapshot(env, np)
 	if err != nil {
-		return adminproto.PolicyContextView{Code: "policy_context_unavailable", Error: err.Error()}
+		return adminproto.PolicyContextView{Code: protocol.ResultCodePolicyContextUnavailable, Error: err.Error()}
 	}
 	view := adminproto.PolicyContextView{
 		Success:         true,
@@ -378,34 +379,34 @@ type Outcome struct {
 // mutation lock and env.Keyring.
 func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	if strings.TrimSpace(req.ExpectedPolicySetSHA256) == "" {
-		return Outcome{}, Error{"expected_policy_set_sha256_required", "apply requires the policy_set_sha256 of the policy it replaces"}
+		return Outcome{}, Error{protocol.ResultCodeExpectedPolicySetSHA256Required, "apply requires the policy_set_sha256 of the policy it replaces"}
 	}
 	active, err := genstore.ResolveStoreRootWithKeyring(env.KeyPaths, env.Keyring)
 	if err != nil {
-		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("resolve active generation: %v", err)}
+		return Outcome{}, Error{protocol.ResultCodePolicyVerifyFailed, fmt.Sprintf("resolve active generation: %v", err)}
 	}
 	current, err := policyruntime.Load(env.Role, env.Config, active, env.Keyring)
 	if err != nil {
-		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("verify active policy: %v", err)}
+		return Outcome{}, Error{protocol.ResultCodePolicyVerifyFailed, fmt.Sprintf("verify active policy: %v", err)}
 	}
 	if !strings.EqualFold(req.ExpectedPolicySetSHA256, current.SetSHA256()) {
-		return Outcome{}, Error{"policy_snapshot_changed", "active policy changed; reload it and try again"}
+		return Outcome{}, Error{protocol.ResultCodePolicySnapshotChanged, "active policy changed; reload it and try again"}
 	}
 	// The review covered the policy and its context: the ASA set and the
 	// network mapping it was checked and rendered against.
 	if strings.TrimSpace(req.ExpectedSnapshotSHA256) == "" {
-		return Outcome{}, Error{"expected_snapshot_sha256_required", "apply requires the snapshot_sha256 of the policy and context it was reviewed against"}
+		return Outcome{}, Error{protocol.ResultCodeExpectedSnapshotSHA256Required, "apply requires the snapshot_sha256 of the policy and context it was reviewed against"}
 	}
 	set, err := asasetstore.Load(active, env.Keyring)
 	if err != nil {
-		return Outcome{}, Error{"policy_verify_failed", fmt.Sprintf("verify active asa set: %v", err)}
+		return Outcome{}, Error{protocol.ResultCodePolicyVerifyFailed, fmt.Sprintf("verify active asa set: %v", err)}
 	}
 	reviewEnv := env
 	reviewEnv.ASASet = set
 	if _, snapshot, err := Snapshot(reviewEnv, current); err != nil {
-		return Outcome{}, Error{"policy_context_unavailable", err.Error()}
+		return Outcome{}, Error{protocol.ResultCodePolicyContextUnavailable, err.Error()}
 	} else if !strings.EqualFold(req.ExpectedSnapshotSHA256, snapshot) {
-		return Outcome{}, Error{"policy_snapshot_changed", "the node's ASA set or network mapping changed since this change was reviewed; review it again"}
+		return Outcome{}, Error{protocol.ResultCodePolicySnapshotChanged, "the node's ASA set or network mapping changed since this change was reviewed; review it again"}
 	}
 	// Admission is checked against the same verified set the snapshot was.
 	candidate, problems, err := Candidate(reviewEnv, current, req.Documents, req.Remove)
@@ -416,7 +417,7 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 		// An apply result carries errors only, so the omission note goes
 		// with them.
 		bounded, note := BoundProblems(problems, nil)
-		return Outcome{Problems: append(bounded, note...)}, Error{"policy_validation_failed", "policy documents are invalid"}
+		return Outcome{Problems: append(bounded, note...)}, Error{protocol.ResultCodePolicyValidationFailed, "policy documents are invalid"}
 	}
 	evidence := Outcome{BasePolicySetSHA256: current.SetSHA256(), PolicySetSHA256: candidate.SetSHA256()}
 	if candidate.SetSHA256() == current.SetSHA256() {
@@ -442,11 +443,11 @@ func Commit(env Env, req adminproto.ApplyPolicyRequest) (Outcome, error) {
 	if mintErr != nil {
 		if genstore.MintOutcomeOf(mintErr) != genstore.NotCommitted {
 			evidence.GenerationID, evidence.Uncertain = generationID, true
-			return evidence, Error{"policy_commit_uncertain", fmt.Sprintf(
+			return evidence, Error{protocol.ResultCodePolicyCommitUncertain, fmt.Sprintf(
 				"policy may have committed as generation %s; signing is blocked pending reconciliation: %v",
 				generationID, mintErr)}
 		}
-		return Outcome{BasePolicySetSHA256: evidence.BasePolicySetSHA256}, Error{"policy_save_failed", fmt.Sprintf("policy apply failed before commit: %v", mintErr)}
+		return Outcome{BasePolicySetSHA256: evidence.BasePolicySetSHA256}, Error{protocol.ResultCodePolicySaveFailed, fmt.Sprintf("policy apply failed before commit: %v", mintErr)}
 	}
 	evidence.GenerationID = generationID
 	return evidence, nil
@@ -476,7 +477,7 @@ func writeChange(staged storepaths.GenPaths, role noderole.Role, req adminproto.
 // View projects a node's policy for the admin surface.
 func View(np *policyruntime.NodePolicy, held map[string]bool, generationID string) adminproto.PolicyView {
 	if np == nil {
-		return adminproto.PolicyView{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.PolicyView{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	view := adminproto.PolicyView{
 		Success:         true,
@@ -497,10 +498,10 @@ func View(np *policyruntime.NodePolicy, held map[string]bool, generationID strin
 // policy.DefaultKey for the node default.
 func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumentResult {
 	if np == nil {
-		return adminproto.PolicyDocumentResult{Code: "policy_unavailable", Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
+		return adminproto.PolicyDocumentResult{Code: protocol.ResultCodePolicyUnavailable, Error: "policy is not loaded; unlock the signer, or reconcile the store in recovery"}
 	}
 	if key == "" {
-		return adminproto.PolicyDocumentResult{Code: "policy_document_not_found", Error: "name the document: \"default\" or a key"}
+		return adminproto.PolicyDocumentResult{Code: protocol.ResultCodePolicyDocumentNotFound, Error: "name the document: \"default\" or a key"}
 	}
 	for _, doc := range np.Documents {
 		if doc.Key == key {
@@ -509,7 +510,7 @@ func Document(np *policyruntime.NodePolicy, key string) adminproto.PolicyDocumen
 			}
 		}
 	}
-	return adminproto.PolicyDocumentResult{Key: key, Code: "policy_document_not_found", Error: fmt.Sprintf("no policy of its own for key %s; it follows the node default", key)}
+	return adminproto.PolicyDocumentResult{Key: key, Code: protocol.ResultCodePolicyDocumentNotFound, Error: fmt.Sprintf("no policy of its own for key %s; it follows the node default", key)}
 }
 
 // HeldPolicyKeys returns the selectors among a key index's selector-to-file

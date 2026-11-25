@@ -245,6 +245,9 @@ type KeyPublicMetadata struct {
 	// ValidRekeyTarget is the valid_rekey_target the aplane key recorded when
 	// it was created.
 	ValidRekeyTarget bool
+	// TemplateFingerprint is the fingerprint of the template the key was made
+	// with, empty when it recorded none.
+	TemplateFingerprint string
 }
 
 // Config is the construction parameters for the product Runtime.
@@ -1379,6 +1382,7 @@ func keyMetadataOf(summaries map[string]keystore.SigningSummary, publicKeys map[
 			LogicSigResources:    summary.LogicSigResources,
 			SigningArgs:          summary.SigningArgs,
 			ValidRekeyTarget:     summary.ValidRekeyTarget,
+			TemplateFingerprint:  summary.TemplateFingerprint,
 		}
 	}
 	return metadata

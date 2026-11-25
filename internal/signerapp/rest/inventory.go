@@ -35,54 +35,48 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 	if ir == nil {
 		return []signerapi.KeyInfo{}
 	}
-	ks := ir.KeyStore()
-	if ks == nil {
-		return []signerapi.KeyInfo{}
-	}
 
-	// KeySnapshot skips the per-key metadata deep-clone; the metadata this
-	// listing needs comes from GetSigningSummary below.
-	keysCopy, keyTypesCopy := ir.KeySnapshot()
-	publicKeyHexMap := ks.GetPublicKeyHexMap()
-	signingSummary := ks.GetSigningSummary()
-
-	keyList := make([]signerapi.KeyInfo, 0, len(keysCopy))
-	for address := range keysCopy {
-		keyType := keyTypesCopy[address]
-		summary := signingSummary[address]
-		category := summary.Category
+	// One snapshot of the published keys: a reload installs the keystore's own
+	// maps first, so reading those too could pair a key with another revision's
+	// metadata.
+	snapshot := ir.KeyIndexSnapshot()
+	keyList := make([]signerapi.KeyInfo, 0, len(snapshot.KeyFiles))
+	for address := range snapshot.KeyFiles {
+		keyType := snapshot.KeyTypes[address]
+		metadata := snapshot.KeyMetadata[address]
+		category := metadata.Category
 
 		keyInfo := signerapi.KeyInfo{
 			Address:           address,
-			PublicKeyHex:      publicKeyHexMap[address],
+			PublicKeyHex:      metadata.PublicKeyHex,
 			KeyType:           keyType,
 			AuthorizationKind: authorizationKindForCategory(category),
 			IsGenericLsig:     keys.IsGenericKey(category),
 			IsWitnessKey:      keys.IsWitnessKey(category),
 			// The value the aplane key recorded at creation, not the key
 			// type's current declaration (that is /keytypes').
-			ValidRekeyTarget: summary.ValidRekeyTarget,
+			ValidRekeyTarget: metadata.ValidRekeyTarget,
 		}
-		keyInfo.LogicSigResources = publicLogicSigResourceProfile(summary.LogicSigResources)
+		keyInfo.LogicSigResources = publicLogicSigResourceProfile(metadata.LogicSigResources)
 		if rotatingkey.IsRotatingKeyType(keyType) {
 			// Stage keys never leave the signer; only the account address does.
 			keyInfo.PublicKeyHex = ""
 			keyInfo.SigningFlow = signerapi.SigningFlowRotating1
 		}
-		if summary.BoundedAuthorization != nil {
-			keyInfo.Parameters = boundedAccountParameters(summary.Parameters)
+		if metadata.BoundedAuthorization != nil {
+			keyInfo.Parameters = boundedAccountParameters(metadata.Parameters)
 			// Without a cosigner a bounded account signs through ordinary
 			// /sign, so it advertises no flow.
-			if cosigner := summary.BoundedAuthorization.Cosigner; cosigner != nil {
+			if cosigner := metadata.BoundedAuthorization.Cosigner; cosigner != nil {
 				keyInfo.SigningFlow = signerapi.SigningFlowCosigned1
 				keyInfo.CosignerComponentKeyType = cosigner.ComponentKeyType
 			}
-			keyInfo.BoundedAuthorization = boundedInfo(summary.BoundedAuthorization)
+			keyInfo.BoundedAuthorization = boundedInfo(metadata.BoundedAuthorization)
 		}
-		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, summary.TemplateFingerprint, summary.Parameters, summary.BoundedAuthorization)
+		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, metadata.TemplateFingerprint, metadata.Parameters, metadata.BoundedAuthorization)
 
-		if len(summary.SigningArgs) > 0 {
-			keyInfo.SigningArgs = keytypemeta.RuntimeArgs(summary.SigningArgs)
+		if len(metadata.SigningArgs) > 0 {
+			keyInfo.SigningArgs = keytypemeta.RuntimeArgs(metadata.SigningArgs)
 		}
 
 		keyList = append(keyList, keyInfo)

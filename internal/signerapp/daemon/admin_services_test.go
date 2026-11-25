@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
@@ -513,8 +514,8 @@ func TestApplyPolicyFailsWhenLocked(t *testing.T) {
 	ir.Lock()
 
 	result := applySignerPolicyDoc(t, server, policytest.Signer(t, policy.DefaultKey, `{"max_fee_microalgos":"4321"}`))
-	if result.Success || result.Code != "identity_locked" || !strings.Contains(result.Error, "unlock the signer before applying policy") {
-		t.Fatalf("ApplyPolicy() = %+v, want identity_locked", result)
+	if result.Success || result.Code != protocol.ErrCodeSignerLocked || !strings.Contains(result.Error, "unlock the signer before applying policy") {
+		t.Fatalf("ApplyPolicy() = %+v, want signer_locked", result)
 	}
 }
 

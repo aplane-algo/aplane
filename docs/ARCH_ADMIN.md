@@ -105,12 +105,19 @@ Transport notes:
   same-UID local mode may use `<data_dir>/aplane.sock`, and custom private
   managed stores require an explicit IPC path so an unreadable selected root
   cannot silently retarget a client to the singleton system signer,
-- the admin protocol version is the single integer 8
+- the admin protocol version is the single integer 9
   (`protocol.AdminProtocolVersion`); clients send it in
   `auth.protocol_version`, and the server refuses any other value, a
   missing one included, during authentication; apadmin, apapprover and
   apsigner ship together, so there is no skew tolerance and `auth_required`
   carries no version,
+- the version is bumped by any change to what is already on the wire: a message
+  type, field, value or code that is removed, renamed, retyped or given another
+  meaning, or a request field that becomes required. An addition does not bump
+  it: the other side refuses a new request or request field, ignores a new
+  notification or result field, and shows a new code's text. In doubt, bump. A
+  mixed pair is unsupported either way; the bump only makes it fail at login
+  instead of partway through an operation,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -747,7 +754,7 @@ Apply rules, the same on both node roles:
 - The server verifies the active policy, checks the concurrency base, validates the change, and mints one new generation (operation `policy-apply`) carrying the documents and fresh sidecars, then reloads the bound product runtime without a restart. A change that leaves the policy set unchanged commits nothing.
 - Failure is fail-closed: request, validation, stale-base, locked-store, or current-policy verification errors leave the active generation unchanged.
 - A runtime in recovery mode refuses `apply_policy` with `recovery_blocked`: recovery admits only reconcile, rollback, restore, and prune, and no policy generation is minted on top of a store that failed validation.
-- Any other runtime that is not unlocked refuses `apply_policy` with `identity_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one a lock reached while the request waited for the store mutation lock, whose keyring stays open until the lock's cleanup has run: a commit there whose reload failed would call `SetRecovery` on a locked signer, which does nothing. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
+- Any other runtime that is not unlocked refuses `apply_policy` with `signer_locked` (`identity is locked; unlock the signer before applying policy`), checked under the store mutation lock. That includes one a lock reached while the request waited for the store mutation lock, whose keyring stays open until the lock's cleanup has run: a commit there whose reload failed would call `SetRecovery` on a locked signer, which does nothing. Offline `apadmin policy rescue` works on a stopped store and is unaffected.
 - `apply_policy`, `add_asa`, `remove_asa`, `source_token_set`, `source_token_remove`, and non-restrictive `update_admin_setting` changes each write a durable audit intent before applying, and refuse the change when they cannot: `audit_unavailable` when the daemon has no audit log (it could not be opened at startup; only a restart opens it again, so the error says to repair it and restart rather than retry), and `audit_write_failed` when the append or sync failed (repair and retry). A policy refusal also names `apadmin policy rescue` as the offline alternative. See [ARCH_SECURITY.md](ARCH_SECURITY.md) for the event contract.
 - Restore, quarantine prune, abandoned-generation discard and deleted-archive prune keep their own audit result codes (`restore_audit_failed`, `quarantine_audit_failed`, `abandoned_discard_audit_failed`, `archive_audit_failed`) and give the same restart-or-retry advice.
 - `commit_uncertain` means the generation may be visible but its durability or the runtime reload is unconfirmed, or the root could not be read back after a failed write; signing is blocked pending reconciliation or recovery.
@@ -755,7 +762,7 @@ Apply rules, the same on both node roles:
 Result codes include `expected_policy_set_sha256_required`,
 `expected_snapshot_sha256_required`, `policy_snapshot_changed`, `policy_validation_failed` (with `errors[]`),
 `invalid_policy_request`, `policy_set_too_large`, `policy_unavailable`, `policy_document_not_found`, `policy_verify_failed`,
-`identity_locked`, `recovery_blocked`, `policy_commit_uncertain`,
+`signer_locked`, `recovery_blocked`, `policy_commit_uncertain`,
 `policy_reload_failed`, and `policy_save_failed`.
 
 `get_policy`, `get_policy_document`, `get_policy_context`, and `check_policy` require `policy.view`; `apply_policy` requires
@@ -804,14 +811,14 @@ policy context, so `list_asa_set` and `lookup_asa` require `policy.view` and
   the asset; a direct route term over several networks counts on each of
   them.
 - `add_asa` and `remove_asa` are refused with `recovery_blocked` in
-  recovery and with `identity_locked` (`identity is locked; unlock the
+  recovery and with `signer_locked` (`identity is locked; unlock the
   signer before changing the ASA set`) on any other runtime that is not
   unlocked, an unlock still in flight included, both checked under the store
   mutation lock, as for `apply_policy`.
 
 ASA set result codes include `policy_unavailable`, `unknown_network`,
 `asa_builtin`, `asa_already_confirmed`, `lookup_failed`,
-`confirmation_stale`, `asa_referenced`, `not_found`, `identity_locked`,
+`confirmation_stale`, `asa_referenced`, `not_found`, `signer_locked`,
 `recovery_blocked`, `asa_commit_uncertain`, and `asa_reload_failed`.
 
 Source token messages. A cosigner node keeps the tokens of the external
@@ -1104,10 +1111,8 @@ including `key_type_in_use` for template disable/removal or compiled-provider di
 `restore_rate_limited` for managed restore preview/restore throttling, and
 `applied_not_saved` for a restrictive setting change that is in effect but
 whose save failed before its file replaced the old one. The Go
-source of truth for these result-local codes is `internal/protocol`, except the
-policy result codes (for example `policy_snapshot_changed`, `policy_unavailable`,
-and `identity_locked`), which `internal/signerapp/policyapply` and
-`internal/signerapp/admin` define; producers and CLI consumers must share those
+source of truth for these result-local codes is `internal/protocol`, the policy
+and ASA set codes included; producers and CLI consumers must share those
 constants instead of maintaining parallel
 string lists. See the corresponding payload sections and contract tests before
 treating the central protocol list as exhaustive. Consumers should dispatch on

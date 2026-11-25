@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -221,6 +222,35 @@ func TestPlainHTTPDialsOnlyLoopback(t *testing.T) {
 	}
 }
 
+// One origin has one form, however a source that policy admits writes it: the
+// host's case, an address's spelling, and the scheme's default port written,
+// left out or left empty. Origins that differ stay apart.
+func TestOriginHasOneForm(t *testing.T) {
+	for want, spellings := range map[string][]string{
+		"https://example.com:443": {"https://example.com/a", "https://Example.COM/b?q=1", "HTTPS://example.com:443",
+			"https://EXAMPLE.com:443/c", "https://example.com:", "https://example.com:/d"},
+		"https://example.com:8443":   {"https://example.com:8443", "https://EXAMPLE.com:8443/x"},
+		"https://example.com:80":     {"https://example.com:80"},
+		"http://localhost:80":        {"http://localhost", "http://localhost:80/", "http://localhost:"},
+		"http://localhost:443":       {"http://localhost:443"},
+		"http://127.0.0.1:80":        {"http://127.0.0.1", "http://127.0.0.1:80"},
+		"http://[::1]:80":            {"http://[::1]", "http://[0::1]:", "http://[0:0:0:0:0:0:0:1]:80"},
+		"https://[2001:db8::1]:443":  {"https://[2001:DB8::1]:443/x", "https://[2001:0db8::1]", "https://[2001:db8:0::1]:"},
+		"https://[2001:db8::1]:444":  {"https://[2001:db8::1]:444"},
+		"https://example.com443:443": {"https://example.com443"},
+	} {
+		for _, raw := range spellings {
+			target, err := url.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := canonicalOrigin(target); got != want {
+				t.Errorf("canonicalOrigin(%s) = %s, want %s", raw, got, want)
+			}
+		}
+	}
+}
+
 func TestInFlightLimitIsPerOrigin(t *testing.T) {
 	var inFlight, peak atomic.Int32
 	release := make(chan struct{})
@@ -237,12 +267,20 @@ func TestInFlightLimitIsPerOrigin(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
+	// Before the server closes, which waits for every lookup, a failure's too.
+	letGo := sync.OnceFunc(func() { close(release) })
+	defer letGo()
 	f := &Fetcher{}
 	const total = MaxInFlightPerOrigin + 6
 	done := make(chan error, total)
 	for i := 0; i < total; i++ {
+		// Half the lookups write the one origin another way.
+		base := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+		if i%2 == 0 {
+			base = strings.Replace(srv.URL, "127.0.0.1", "LocalHost", 1)
+		}
 		go func() {
-			_, err := f.Get(context.Background(), lookupFor(srv.URL, "/x", policy.ExternalSourceV1{TimeoutMS: 5000}), "")
+			_, err := f.Get(context.Background(), lookupFor(base, "/x", policy.ExternalSourceV1{TimeoutMS: 5000}), "")
 			done <- err
 		}()
 	}
@@ -254,7 +292,7 @@ func TestInFlightLimitIsPerOrigin(t *testing.T) {
 	if got := inFlight.Load(); got != MaxInFlightPerOrigin {
 		t.Fatalf("%d lookups in flight to one origin, want %d", got, MaxInFlightPerOrigin)
 	}
-	close(release)
+	letGo()
 	for i := 0; i < total; i++ {
 		if err := <-done; err != nil {
 			t.Fatalf("Get() error = %v", err)

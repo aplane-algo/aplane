@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -739,7 +740,7 @@ func TestSessionAuthenticateBindsProductRuntime(t *testing.T) {
 func TestSessionAuthenticateRejectsUnknownFieldBeforePassphrase(t *testing.T) {
 	ir := productruntime.New(productruntime.Config{})
 
-	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":8}`)
+	authMsg := []byte(`{"kind":"request","type":"auth","passphrase":"secret","unexpected_selector":"bob","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + `}`)
 
 	conn := &queueConn{reads: [][]byte{authMsg}}
 	svc := &stubServices{
@@ -799,7 +800,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=8" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=9" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }
@@ -1189,11 +1190,11 @@ func TestSessionAuthenticateAdminProtocolVersionRule(t *testing.T) {
 		version string // the auth frame's protocol_version, or "" for none
 		wantErr string // "" when the frame authenticates
 	}{
-		{name: "current", version: `8`},
-		{name: "older", version: `7`, wantErr: "admin protocol version mismatch: client=7 server=8"},
-		{name: "newer", version: `9`, wantErr: "admin protocol version mismatch: client=9 server=8"},
-		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=8"},
-		{name: "major and minor", version: `{"major":8,"minor":0}`, wantErr: "invalid auth message format"},
+		{name: "current", version: `9`},
+		{name: "older", version: `8`, wantErr: "admin protocol version mismatch: client=8 server=9"},
+		{name: "newer", version: `10`, wantErr: "admin protocol version mismatch: client=10 server=9"},
+		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=9"},
+		{name: "major and minor", version: `{"major":9,"minor":0}`, wantErr: "invalid auth message format"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

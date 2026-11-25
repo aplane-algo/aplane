@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -30,7 +31,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -66,7 +67,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -117,7 +118,7 @@ func TestAuthenticateClientRejectsNewAdminAfterNodeFailure(t *testing.T) {
 	defer cleanup()
 	server.nodeFailState.Fail(errors.New("identity role conflict"))
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	recorder := &ipcJSONRecorderConn{}
 	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConnWithReader(recorder, protocol.NewFrameReader(strings.NewReader(authLine))),
@@ -299,7 +300,7 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	defer func() { _ = logger.Close() }()
 	server.auditLog = logger
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	conn := newIPCMockConn(authLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
@@ -358,7 +359,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	unknownLine := `{"kind":"request","type":"definitely_unknown","id":"req-1"}` + "\n"
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
@@ -574,7 +575,7 @@ func TestHandleRegisteredClientAnswersBadFramesInOrder(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":8}` + "\n"
+	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `","protocol_version":` + strconv.Itoa(protocol.AdminProtocolVersion) + "}\n"
 	frames := "not json\n" +
 		`{"kind":"response","type":"list_keys","id":"req-2"}` + "\n" +
 		`{"kind":"request","type":"definitely_unknown","id":"req-3"}` + "\n"
