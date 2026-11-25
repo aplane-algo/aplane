@@ -163,6 +163,10 @@ Validation:
   to `10s`, `"0"` disables background `/status` polling, and nonzero values
   below `1s` are rejected
 - `networks.<token>.algod` is normalized into the runtime algod map
+- a reserved token (`mainnet`, `testnet`, `betanet`) must point at an algod with
+  that network's genesis hash. Loading the file does not check it: `apshell`
+  refuses to switch to a token whose algod reports another, and to plan, sign or
+  submit on one
 - the companion Go, TypeScript, and Python SDKs accept exactly apshell's
   `config.yaml` field names, at every depth, and refuse any other, top-level
   `endpoint`, `ssh`, `signer_port` and `algod` included, with apshell's

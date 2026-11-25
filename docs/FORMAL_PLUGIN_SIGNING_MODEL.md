@@ -303,8 +303,10 @@ what was reviewed.
   msgpack away and claims nothing about it; the Go tests in
   `plugin_pregrouped_test.go`, `plugin_presign_test.go` and
   `plugin_transactions_test.go` cover it.
-- **The network precondition is checked, not modeled.** The client refuses any
-  transaction whose genesis hash, or set genesis ID, is not the active algod's
+- **The network precondition is checked, not modeled.** The client refuses a
+  reserved network name (`mainnet`, `testnet`, `betanet`) whose algod reports
+  another genesis hash, and any transaction whose genesis hash, or set genesis
+  ID, is not the active algod's
   (`internal/engine/active_network.go::checkActiveNetwork`). On the plugin paths
   it runs late, after the modeled client gates: after `CheckPluginGroup`'s
   decode and PS8's first rekey judgment, after the client review (PS3's

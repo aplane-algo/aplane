@@ -20,14 +20,15 @@ import (
 
 // checkActiveNetwork is the network precondition of the engine's paths that
 // send transactions to the signer or to algod: the active algod runs a
-// reviewed consensus contract, and each transaction is for the network that
-// algod serves. The signer refuses a genesis hash it does not recognize, but
-// one it recognizes for another network would be signed under that network's
-// policy and then sent to this algod, whose operator would hold a transaction
-// valid on the other network. A transaction apshell builds takes its genesis
-// from this algod; plugin drafts, plugin-signed groups, transaction files and
-// JS plan() requests carry their own, so each is compared here: the genesis
-// hash always, the genesis ID when the transaction sets one.
+// reviewed consensus contract, it serves the network the active name is
+// reserved for (checkReservedNetwork), and each transaction is for the network
+// that algod serves. The signer refuses a genesis hash it does not recognize,
+// but one it recognizes for another network would be signed under that
+// network's policy and then sent to this algod, whose operator would hold a
+// transaction valid on the other network. A transaction apshell builds takes
+// its genesis from this algod; plugin drafts, plugin-signed groups, transaction
+// files and JS plan() requests carry their own, so each is compared here: the
+// genesis hash always, the genesis ID when the transaction sets one.
 //
 // It runs in checkReadyToSign, before every /sign route (ordinary, rotating
 // and cosigned: built-in commands, the default plugin mode, sign files and JS
@@ -50,6 +51,9 @@ func (e *Core) checkActiveNetwork(ctx context.Context, txns []types.Transaction)
 	if len(network.genesisHash) != len(types.Digest{}) {
 		return fmt.Errorf("algod reported a genesis hash of %d bytes, want %d", len(network.genesisHash), len(types.Digest{}))
 	}
+	if err := checkReservedNetwork(e.Network, network.genesisHash); err != nil {
+		return err
+	}
 	for i, txn := range txns {
 		if !bytes.Equal(txn.GenesisHash[:], network.genesisHash) {
 			return fmt.Errorf("transaction at index %d is for another network: genesis hash %s, the active algod's is %s",
@@ -61,6 +65,20 @@ func (e *Core) checkActiveNetwork(ctx context.Context, txns []types.Transaction)
 		}
 	}
 	return nil
+}
+
+// checkReservedNetwork refuses a genesis hash that is not the one a reserved
+// network name stands for: a testnet whose algod serves mainnet spends real
+// funds. Any other name is the user's own, for whatever chain its algod serves.
+func checkReservedNetwork(network string, genesisHash []byte) error {
+	if !config.IsReservedNetworkID(network) {
+		return nil
+	}
+	if served, ok := config.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(genesisHash); ok && served == network {
+		return nil
+	}
+	return fmt.Errorf("network name %q is reserved for Algorand's %s, but its algod's genesis hash is %s",
+		network, network, describeGenesisHash(genesisHash))
 }
 
 // planRequestTransactions decodes the transaction each /plan request carries,
@@ -96,8 +114,12 @@ func planRequestTransactions(requests []signerapi.SignRequest) ([]types.Transact
 }
 
 // describeGenesisHash names a genesis hash in base64, with its network when
-// it is one of the known networks.
+// it is one of the known networks. One of the wrong length, which may be as
+// long as an algod cares to send, is named by that length.
 func describeGenesisHash(hash []byte) string {
+	if len(hash) != len(types.Digest{}) {
+		return fmt.Sprintf("%d bytes long", len(hash))
+	}
 	encoded := base64.StdEncoding.EncodeToString(hash)
 	if network, ok := config.DefaultGenesisHashNetworkResolver().NetworkForGenesisHashBytes(hash); ok {
 		return fmt.Sprintf("%s (%s)", encoded, network)

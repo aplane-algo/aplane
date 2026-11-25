@@ -594,7 +594,8 @@ does, with the same `authCacheWarning` when that fails.
 running supported consensus v42 or v43, signs, submits, and optionally waits.
 Each transaction must be for the active algod's network: a genesis hash, or a
 set genesis ID, that differs from the algod's is refused before signing, as
-`transaction at index N is for another network`.
+`transaction at index N is for another network`. On `mainnet`, `testnet` or
+`betanet`, the algod must itself serve that network.
 
 `plan()` sends transaction sign requests to the signer group planner without
 signing or triggering approval. As with `sign()`, each request's transaction,
@@ -642,7 +643,9 @@ currently accepts `"f1"` (Falcon-1024). It is mutually exclusive with
 whose `signedTxnHex` carries a LogicSig must also include `lsigResources`; the
 signer checks the program and argument byte counts against the signed envelope
 and uses the declared reviewed opcode ceiling. `plan()` validates that the live
-client algod is running supported consensus v42 or v43 before contacting apsigner.
+client algod is running supported consensus v42 or v43, and that it serves the
+active network when that is `mainnet`, `testnet` or `betanet`, before contacting
+apsigner.
 
 `plan()` checks the signer's answer before it returns it, as the
 `presign-plan` plugin flow checks its plan. Each returned transaction must be
