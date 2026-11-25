@@ -32,8 +32,8 @@ const (
 	// maxHeldStderrLines is how many hidden stderr lines each plugin keeps for
 	// the report after a failure.
 	maxHeldStderrLines = 20
-	// stderrDrainWait bounds the wait for a failed plugin's last stderr lines.
-	// A plugin that exited reaches EOF at once; one that hung uses all of it.
+	// stderrDrainWait bounds the wait for a failed plugin's last stderr lines,
+	// which end at once when it has been stopped.
 	stderrDrainWait = 200 * time.Millisecond
 )
 
@@ -55,8 +55,10 @@ type Instance struct {
 	stderr    io.ReadCloser
 	stateLock *pluginStateLock
 
-	// stderrDone closes when monitorStderr returns. It is nil for instances
-	// that have no stderr monitor.
+	// stdoutDone closes when the client stops reading stdout, and stderrDone
+	// when monitorStderr returns. Each is nil for an instance whose pipe
+	// nothing reads, as in tests.
+	stdoutDone <-chan struct{}
 	stderrDone chan struct{}
 	// heldStderr is the newest stderr that wasn't logged, kept for a failure
 	// report. It is raw plugin text; the logging handler escapes it.
@@ -81,7 +83,7 @@ type Manager struct {
 	dataDir string
 
 	startPluginInstanceHook func(*discovery.Plugin) (*Instance, error)
-	initializePluginHook    func(*Instance, runtimeConfig) error
+	initializePluginHook    func(context.Context, *Instance, runtimeConfig) error
 }
 
 type runtimeConfig struct {
@@ -151,7 +153,7 @@ func (m *Manager) SetTestHooks(hooks TestHooks) {
 	defer m.mu.Unlock()
 	m.startPluginInstanceHook = hooks.StartPluginInstance
 	if hooks.InitializePlugin != nil {
-		m.initializePluginHook = func(instance *Instance, _ runtimeConfig) error {
+		m.initializePluginHook = func(_ context.Context, instance *Instance, _ runtimeConfig) error {
 			return hooks.InitializePlugin(instance)
 		}
 	} else {
@@ -258,8 +260,13 @@ func (m *Manager) FindByName(name string) (*discovery.Plugin, error) {
 	return nil, fmt.Errorf("plugin not found: %s", name)
 }
 
-// StartPlugin starts a plugin if not already running
-func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
+// StartPlugin returns the running plugin, starting it if needed. Its initialize
+// call ends when ctx does, and the plugin is then stopped within abandonGrace. A
+// ctx already ended starts no plugin, and leaves a running one alone.
+func (m *Manager) StartPlugin(ctx context.Context, pluginName string) (*Instance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("plugin not called: %w", err)
+	}
 	// Check if already running (read lock)
 	m.mu.RLock()
 	if inst, ok := m.instances[pluginName]; ok {
@@ -305,9 +312,13 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := initFn(instance, cfg); err != nil {
+	if err := initFn(ctx, instance, cfg); err != nil {
+		if ctx.Err() != nil {
+			instance.stop(abandonGrace)
+		} else {
+			instance.Stop()
+		}
 		instance.reportHeldStderr()
-		instance.Stop()
 		return nil, fmt.Errorf("failed to initialize plugin: %w", err)
 	}
 
@@ -391,7 +402,12 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
-	// Create JSON-RPC client
+	return newInstance(plugin, cmd, stdin, stdout, stderr, stateLock), nil
+}
+
+// newInstance is the instance of a started plugin process, with both its
+// output pipes being read.
+func newInstance(plugin *discovery.Plugin, cmd *exec.Cmd, stdin io.WriteCloser, stdout, stderr io.ReadCloser, stateLock *pluginStateLock) *Instance {
 	client := jsonrpc.NewClient(stdout, stdin)
 	client.Start()
 
@@ -405,13 +421,11 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin) (*Instance, erro
 		stderr:    stderr,
 		stateLock: stateLock,
 
+		stdoutDone: client.ReadDone(),
 		stderrDone: make(chan struct{}),
 	}
-
-	// Monitor stderr in background
 	go instance.monitorStderr()
-
-	return instance, nil
+	return instance
 }
 
 // pluginEnv is the environment a plugin starts with, before the sandbox filters
@@ -426,7 +440,7 @@ func pluginEnv(host []string, stateDir string) []string {
 }
 
 // initializePlugin sends the initialize request to the plugin
-func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error {
+func (m *Manager) initializePlugin(ctx context.Context, instance *Instance, cfg runtimeConfig) error {
 	params := jsonrpc.InitializeParams{
 		Network:    cfg.network,
 		AlgodURL:   cfg.algodURL,
@@ -434,7 +448,7 @@ func (m *Manager) initializePlugin(instance *Instance, cfg runtimeConfig) error 
 	}
 
 	var result jsonrpc.InitializeResult
-	err := instance.Client.CallWithTimeout(jsonrpc.MethodInitialize, params, &result, callTimeout(instance))
+	err := instance.Client.CallContext(ctx, jsonrpc.MethodInitialize, params, &result, callTimeout(instance))
 	if err != nil {
 		return err
 	}
@@ -525,8 +539,8 @@ func (i *Instance) takeHeldStderr() []string {
 // reportHeldStderr logs the held stderr of a plugin that just failed, as warnings
 // so they show at the default level, because that output is often the only record
 // of why it failed. That is the host's decision; the text still carries the plugin
-// prefix. Call it before stopping the instance: Stop closes the pipe, which would
-// lose lines still in flight.
+// prefix. Call it after stopping the instance, so it has what the plugin said while
+// it exited.
 func (i *Instance) reportHeldStderr() {
 	if i.stderrDone != nil {
 		select {
@@ -549,11 +563,7 @@ const abandonGrace = time.Second
 // then stops the plugin, which is still running the abandoned command,
 // within abandonGrace. A ctx already ended starts no plugin.
 func (m *Manager) ExecuteCommand(ctx context.Context, pluginName, command string, args []string, pluginContext jsonrpc.Context) (*jsonrpc.ExecuteResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("command not run: %w", err)
-	}
-	// Start plugin if needed
-	instance, err := m.StartPlugin(pluginName)
+	instance, err := m.StartPlugin(ctx, pluginName)
 	if err != nil {
 		return nil, err
 	}
@@ -580,12 +590,12 @@ func (m *Manager) call(ctx context.Context, pluginName string, instance *Instanc
 	if err == nil {
 		return nil
 	}
-	instance.reportHeldStderr()
 	if ctx.Err() != nil {
 		m.abandonInstance(pluginName, instance)
 	} else {
 		m.discardInstance(pluginName, instance)
 	}
+	instance.reportHeldStderr()
 	return err
 }
 
@@ -605,10 +615,7 @@ func callTimeout(instance *Instance) time.Duration {
 // plugin's signing material is never exported to APlane. It ends when ctx does,
 // as ExecuteCommand does, and a ctx already ended starts no plugin.
 func (m *Manager) SignTransactions(ctx context.Context, pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("plugin signTransactions not run: %w", err)
-	}
-	instance, err := m.StartPlugin(pluginName)
+	instance, err := m.StartPlugin(ctx, pluginName)
 	if err != nil {
 		return nil, err
 	}
@@ -690,8 +697,12 @@ func (i *Instance) Stop() {
 	i.stop(5 * time.Second)
 }
 
-// stop terminates the instance: its stdin closes, and its process is killed
-// if it has not exited within grace.
+// stop terminates the instance. Its stdin closes, which tells it to exit, and
+// its output is read to the end meanwhile, so what it says while exiting is kept
+// and writing it doesn't fail. Its process is killed if it has not exited, or
+// its output not ended, within grace. The output is then waited for no longer:
+// where the sandbox lets a child outlive the plugin, it can hold a pipe open for
+// good. A call in flight ends at once.
 func (i *Instance) stop(grace time.Duration) {
 	defer func() {
 		if i.stateLock != nil {
@@ -702,25 +713,29 @@ func (i *Instance) stop(grace time.Duration) {
 		return
 	}
 
-	// Close pipes (best-effort cleanup)
-	_ = i.stdin.Close()
-	_ = i.stdout.Close()
-	_ = i.stderr.Close()
-
-	// Give process time to exit cleanly
-	done := make(chan error, 1)
-	go func() {
-		done <- i.Process.Wait()
-	}()
-
-	select {
-	case <-done:
-		// Process exited cleanly
-	case <-time.After(grace):
-		// Force kill (best effort)
+	expired := make(chan struct{})
+	kill := time.AfterFunc(grace, func() {
 		_ = i.Process.Process.Kill()
-		<-done
-	}
+		close(expired)
+	})
+	defer kill.Stop()
 
 	i.Client.Close()
+	_ = i.stdin.Close()
+	// Wait closes the pipes, so it comes after their readers are done. Each pipe
+	// is closed once nothing reads it, or a plugin still writing to it would
+	// block.
+	for _, pipe := range []struct {
+		io.Closer
+		read <-chan struct{}
+	}{{i.stdout, i.stdoutDone}, {i.stderr, i.stderrDone}} {
+		if pipe.read != nil {
+			select {
+			case <-pipe.read:
+			case <-expired:
+			}
+		}
+		_ = pipe.Close()
+	}
+	_ = i.Process.Wait()
 }

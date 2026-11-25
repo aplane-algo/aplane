@@ -57,7 +57,12 @@ APlane Shell supports **external plugins** — standalone executables that run a
 6. **Idle**: Plugin remains running between commands
 7. **Cleanup**: Plugin receives `shutdown` call when APlane Shell exits, then
    has its stdin closed. The call is skipped if an earlier request is still
-   being written to its stdin after a brief wait
+   being written to its stdin after a brief wait. The host reads the plugin's
+   output until it ends, so a plugin can still write while it exits. A plugin
+   that has not exited, or whose output has not ended, five seconds after its
+   stdin closed is killed. Where the sandbox lets a child process outlive the
+   plugin, as on macOS, one that keeps the plugin's stdout or stderr open uses
+   up those five seconds
 
 ### Plugin Stderr
 
@@ -79,10 +84,11 @@ component, where a plugin called `cache` could pass as the host.
 | `apshell --mcp` | Host stderr | Shown; this is the host's log, not a display |
 
 While `info` is off, the host keeps the last 20 lines of each plugin. If an
-`initialize`, `execute`, or `signTransactions` call fails, it logs those lines as
-warnings before returning the error, because a crashed plugin's stderr is often
-the only record of why. Promoting them is the host's decision, and they keep the
-plugin prefix. With `info` on, the lines were already logged and aren't repeated.
+`initialize`, `execute`, or `signTransactions` call fails, it stops the plugin
+and logs those lines as warnings before returning the error, because a crashed
+plugin's stderr is often the only record of why. Promoting them is the host's
+decision, and they keep the plugin prefix. With `info` on, the lines were
+already logged and aren't repeated.
 A result with `success: false` is a normal outcome and reports nothing extra, so
 put anything the user must see in `message`.
 
@@ -567,7 +573,8 @@ apshell serves no plugin-initiated methods. It answers a request from the
 plugin that has an `id` with a JSON-RPC error: `-32600` for a `jsonrpc` other
 than `"2.0"` or an `id` that is neither a number nor a string, and otherwise
 `-32601` with the message `method not found: <method>`. A notification, with
-no `id`, gets no reply.
+no `id`, gets no reply. At most 16 replies wait for the plugin to read them;
+while that many are waiting, its further requests get no reply.
 
 ### Execution Context
 
@@ -664,6 +671,11 @@ For complex protocols that require multiple transaction submissions with confirm
 4. Continuation context is available in `params.context.continuation`
 5. Plugin returns Step 2 transactions + continuation (or final result)
 6. Process repeats until no continuation is returned
+
+A run follows at most 64 continuations, and at most 8 steps in a row that have
+no transactions. A step that asks for more fails the run; every step up to and
+including it stays submitted. The total is meant to stop a plugin that never ends, not to
+limit a workflow.
 
 The REPL, MCP and JavaScript `plugin()` follow continuations through one loop
 (`internal/apshellcli/external_plugins.go::processPluginResultStructured`),
@@ -1450,8 +1462,9 @@ or
 - A command or signing call ends when the shell command that made it is
   cancelled (Ctrl+C at the shell, or apconsole quitting); the plugin, still
   working on the abandoned request, has its stdin closed and one second to
-  exit, so it can finish writing its own state, before it is killed. A call
-  whose command is cancelled before it starts runs no plugin
+  exit, so it can finish writing its own state, before it is killed. The same
+  holds while the command is starting the plugin. A call whose command is
+  cancelled before it starts runs no plugin
 
 **Integrity Verification:**
 - All plugins must include `checksums.sha256` with SHA256 hashes

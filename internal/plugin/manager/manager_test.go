@@ -56,11 +56,11 @@ func TestStartPluginDoesNotHoldManagerLockDuringStartup(t *testing.T) {
 		m.configSnapshot() // Takes the manager lock, so holding it here would hang.
 		return newTestPluginInstance(t), nil
 	}
-	m.initializePluginHook = func(instance *Instance, cfg runtimeConfig) error { return nil }
+	m.initializePluginHook = func(_ context.Context, instance *Instance, cfg runtimeConfig) error { return nil }
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := m.StartPlugin("plugin-a")
+		_, err := m.StartPlugin(context.Background(), "plugin-a")
 		done <- err
 	}()
 
@@ -134,7 +134,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	}
 
 	initCalls := 0
-	m.initializePluginHook = func(instance *Instance, cfg runtimeConfig) error {
+	m.initializePluginHook = func(_ context.Context, instance *Instance, cfg runtimeConfig) error {
 		initCalls++
 		if initCalls == 1 {
 			return errors.New("helper init failed")
@@ -142,7 +142,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 		return nil
 	}
 
-	_, err := m.StartPlugin("plugin-a")
+	_, err := m.StartPlugin(context.Background(), "plugin-a")
 	if err == nil || err.Error() != "failed to initialize plugin: helper init failed" {
 		t.Fatalf("StartPlugin(fail-init) error = %v, want initialize failure", err)
 	}
@@ -157,7 +157,7 @@ func TestStartPluginInitializationFailureDoesNotRetainStaleInstance(t *testing.T
 	}
 	waitForStoppedProcess(t, started[0].Process)
 
-	inst, err := m.StartPlugin("plugin-a")
+	inst, err := m.StartPlugin(context.Background(), "plugin-a")
 	if err != nil {
 		t.Fatalf("StartPlugin(retry) error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 			},
 		},
 	}
-	m.initializePluginHook = func(instance *Instance, cfg runtimeConfig) error { return nil }
+	m.initializePluginHook = func(_ context.Context, instance *Instance, cfg runtimeConfig) error { return nil }
 
 	var started []*Instance
 	attempt := 0
@@ -280,7 +280,7 @@ func TestInitializePluginRequiresPluginOwnedProtocolDeclaration(t *testing.T) {
 			})
 			defer inst.Stop()
 
-			err := NewManagerWithDataDir("").initializePlugin(inst, runtimeConfig{network: "testnet"})
+			err := NewManagerWithDataDir("").initializePlugin(context.Background(), inst, runtimeConfig{network: "testnet"})
 			if got := <-seenHostProtocol; got {
 				t.Fatal("initialize request exposed a protocol token that legacy plugins could echo")
 			}
@@ -312,7 +312,7 @@ func TestInitializePluginSendsTheRuntimeConfig(t *testing.T) {
 	defer inst.Stop()
 
 	cfg := runtimeConfig{network: "localnet", algodURL: "http://localhost:4001", algodToken: "tok"}
-	if err := NewManagerWithDataDir("").initializePlugin(inst, cfg); err != nil {
+	if err := NewManagerWithDataDir("").initializePlugin(context.Background(), inst, cfg); err != nil {
 		t.Fatalf("initializePlugin() error = %v", err)
 	}
 	const want = `{"algodToken":"tok","algodUrl":"http://localhost:4001","network":"localnet"}`

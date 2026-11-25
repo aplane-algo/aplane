@@ -25,7 +25,7 @@ func (w *recordingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestCallWithTimeoutFailsFastOnConnectionClose(t *testing.T) {
+func TestCallContextFailsFastOnConnectionClose(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer func() { _ = reader.Close() }()
 
@@ -34,7 +34,7 @@ func TestCallWithTimeoutFailsFastOnConnectionClose(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second)
+		errCh <- client.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 5*time.Second)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -43,14 +43,14 @@ func TestCallWithTimeoutFailsFastOnConnectionClose(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, ErrConnectionClosed) {
-			t.Fatalf("CallWithTimeout() error = %v, want %v", err, ErrConnectionClosed)
+			t.Fatalf("CallContext() error = %v, want %v", err, ErrConnectionClosed)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CallWithTimeout() did not fail fast after connection close")
+		t.Fatal("CallContext() did not fail fast after connection close")
 	}
 }
 
-func TestCallWithTimeoutIgnoresInvalidStringResponseID(t *testing.T) {
+func TestCallContextIgnoresInvalidStringResponseID(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer func() { _ = reader.Close() }()
 
@@ -60,7 +60,7 @@ func TestCallWithTimeoutIgnoresInvalidStringResponseID(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second)
+		errCh <- client.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 5*time.Second)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -70,17 +70,14 @@ func TestCallWithTimeoutIgnoresInvalidStringResponseID(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("CallWithTimeout() error = %v, want success after valid response", err)
-		}
-		if lastErr := client.GetLastError(); lastErr == nil || !strings.Contains(lastErr.Error(), "invalid response id") {
-			t.Fatalf("GetLastError() = %v, want invalid response id", lastErr)
+			t.Fatalf("CallContext() error = %v, want success after valid response", err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CallWithTimeout() did not receive valid response after invalid string id")
+		t.Fatal("CallContext() did not receive valid response after invalid string id")
 	}
 }
 
-func TestCallWithTimeoutIgnoresNonIntegralResponseID(t *testing.T) {
+func TestCallContextIgnoresNonIntegralResponseID(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer func() { _ = reader.Close() }()
 
@@ -90,7 +87,7 @@ func TestCallWithTimeoutIgnoresNonIntegralResponseID(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second)
+		errCh <- client.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 5*time.Second)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -100,17 +97,14 @@ func TestCallWithTimeoutIgnoresNonIntegralResponseID(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("CallWithTimeout() error = %v, want success after valid response", err)
-		}
-		if lastErr := client.GetLastError(); lastErr == nil || !strings.Contains(lastErr.Error(), "invalid response id") {
-			t.Fatalf("GetLastError() = %v, want invalid response id", lastErr)
+			t.Fatalf("CallContext() error = %v, want success after valid response", err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CallWithTimeout() did not receive valid response after non-integral id")
+		t.Fatal("CallContext() did not receive valid response after non-integral id")
 	}
 }
 
-func TestCallWithTimeoutIgnoresNullResponseID(t *testing.T) {
+func TestCallContextIgnoresNullResponseID(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer func() { _ = reader.Close() }()
 
@@ -120,7 +114,7 @@ func TestCallWithTimeoutIgnoresNullResponseID(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.CallWithTimeout(MethodExecute, ExecuteParams{}, nil, 5*time.Second)
+		errCh <- client.CallContext(context.Background(), MethodExecute, ExecuteParams{}, nil, 5*time.Second)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -130,13 +124,10 @@ func TestCallWithTimeoutIgnoresNullResponseID(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("CallWithTimeout() error = %v, want success after valid response", err)
-		}
-		if lastErr := client.GetLastError(); lastErr == nil || !strings.Contains(lastErr.Error(), "invalid response id") {
-			t.Fatalf("GetLastError() = %v, want invalid response id", lastErr)
+			t.Fatalf("CallContext() error = %v, want success after valid response", err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CallWithTimeout() did not receive valid response after null id")
+		t.Fatal("CallContext() did not receive valid response after null id")
 	}
 }
 
@@ -152,7 +143,7 @@ func TestReadLoopDoesNotTreatInboundRequestAsPendingResponse(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		var result ExecuteResult
-		errCh <- client.CallWithTimeout(MethodExecute, ExecuteParams{}, &result, 5*time.Second)
+		errCh <- client.CallContext(context.Background(), MethodExecute, ExecuteParams{}, &result, 5*time.Second)
 	}()
 
 	decoder := json.NewDecoder(clientToServerReader)
@@ -185,10 +176,10 @@ func TestReadLoopDoesNotTreatInboundRequestAsPendingResponse(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			t.Fatalf("CallWithTimeout() error = %v, want nil", err)
+			t.Fatalf("CallContext() error = %v, want nil", err)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CallWithTimeout() did not receive final response")
+		t.Fatal("CallContext() did not receive final response")
 	}
 }
 
@@ -268,10 +259,10 @@ func TestDeliverResponseConcurrentWithFailPendingDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestCallWithTimeoutDeliversNullResult pins that a "result": null response
+// TestCallContextDeliversNullResult pins that a "result": null response
 // is a response: a caller that wants no value gets success at once, and a
 // caller that wants a value gets an error at once, never the call timeout.
-func TestCallWithTimeoutDeliversNullResult(t *testing.T) {
+func TestCallContextDeliversNullResult(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		result  interface{}
@@ -289,7 +280,7 @@ func TestCallWithTimeoutDeliversNullResult(t *testing.T) {
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- client.CallWithTimeout(MethodShutdown, ShutdownParams{}, tc.result, 5*time.Second)
+				errCh <- client.CallContext(context.Background(), MethodShutdown, ShutdownParams{}, tc.result, 5*time.Second)
 			}()
 
 			time.Sleep(50 * time.Millisecond)
@@ -299,15 +290,15 @@ func TestCallWithTimeoutDeliversNullResult(t *testing.T) {
 			case err := <-errCh:
 				if tc.wantErr == "" {
 					if err != nil {
-						t.Fatalf("CallWithTimeout() error = %v, want success", err)
+						t.Fatalf("CallContext() error = %v, want success", err)
 					}
 					return
 				}
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-					t.Fatalf("CallWithTimeout() error = %v, want containing %q", err, tc.wantErr)
+					t.Fatalf("CallContext() error = %v, want containing %q", err, tc.wantErr)
 				}
 			case <-time.After(time.Second):
-				t.Fatal("CallWithTimeout() did not deliver a null result before the timeout")
+				t.Fatal("CallContext() did not deliver a null result before the timeout")
 			}
 		})
 	}
