@@ -163,7 +163,7 @@ type AuditEntry struct {
 	ArchiveEntriesOmitted int    `json:"archive_entries_omitted,omitempty"`
 	SkippedKeysOmitted    int    `json:"skipped_keys_omitted,omitempty"`
 	GroupTxIDsOmitted     int    `json:"group_txids_omitted,omitempty"`
-	SuppressedCount       int    `json:"suppressed_count,omitempty"` // AUTH_FAILURES_SUPPRESSED: failures not logged individually
+	SuppressedCount       int    `json:"suppressed_count,omitempty"` // *_SUPPRESSED: what was not logged individually
 	ClientLabel           string `json:"client_label,omitempty"`     // CLIENT_ENROLLED / CLIENT_KEY_REVOKED: display label of the key
 	ClosedConnections     int    `json:"closed_connections,omitempty"`
 	// SESSION_CONNECTED / SESSION_DISCONNECTED for an SSH client connection:

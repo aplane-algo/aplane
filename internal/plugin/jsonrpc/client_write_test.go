@@ -33,6 +33,11 @@ func (e *enteredWriter) Write(p []byte) (int, error) {
 // pipe nobody reads. The test writes the plugin's output to toClient.
 func unreadClient(t *testing.T) (c *Client, entered chan struct{}, toClient io.Writer) {
 	t.Helper()
+	return unreadClientStarted(t, (*Client).Start)
+}
+
+func unreadClientStarted(t *testing.T, start func(*Client)) (c *Client, entered chan struct{}, toClient io.Writer) {
+	t.Helper()
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +54,7 @@ func unreadClient(t *testing.T) (c *Client, entered chan struct{}, toClient io.W
 	})
 	entered = make(chan struct{})
 	c = NewClient(outR, &enteredWriter{w: inW, entered: entered})
-	c.Start()
+	start(c)
 	return c, entered, outW
 }
 
@@ -136,13 +141,19 @@ func TestShutdownDoesNotWaitForAStalledWrite(t *testing.T) {
 // A reply to a plugin's request, waiting to write behind a stalled request,
 // ends when that request fails the client.
 func TestCallbackReplyQueuedBehindAStalledWriteEndsWithIt(t *testing.T) {
-	c, entered, toClient := unreadClient(t)
-	go func() { _ = c.CallContext(context.Background(), MethodExecute, bigParams(), nil, 300*time.Millisecond) }()
+	var ended <-chan struct{}
+	c, entered, _ := unreadClientStarted(t, func(c *Client) { ended = startWatched(c) })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = c.CallContext(ctx, MethodExecute, bigParams(), nil, time.Minute) }()
 	<-entered
-	if _, err := toClient.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"ping"}` + "\n")); err != nil {
-		t.Fatal(err)
+	// The queue has room for one more than it holds only once the reply at its
+	// head has been taken, to wait behind the request.
+	for range cap(c.replies) + 1 {
+		c.replies <- &Response{Jsonrpc: Version, ID: 7}
 	}
-	waitForReplyWriterToEnd(t, replyWriters())
+	cancel()
+	waitForReplyWriter(t, ended)
 }
 
 // A write that has returned has freed the writer, so a Shutdown right after a

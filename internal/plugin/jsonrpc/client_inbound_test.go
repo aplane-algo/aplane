@@ -5,7 +5,6 @@ package jsonrpc
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -202,10 +201,15 @@ func TestInboundReplyDoesNotHoldUpTheReadLoop(t *testing.T) {
 // written so far, that one included.
 func stalledReplies(t *testing.T) (client *Client, toClient io.Writer, release chan struct{}, countWrites func() int) {
 	t.Helper()
+	return stalledRepliesStarted(t, (*Client).Start)
+}
+
+func stalledRepliesStarted(t *testing.T, start func(*Client)) (client *Client, toClient io.Writer, release chan struct{}, countWrites func() int) {
+	t.Helper()
 	fromPlugin, toClientW := io.Pipe()
 	w := &gatedWriter{first: make(chan struct{}), held: make(chan struct{}), release: make(chan struct{})}
 	client = NewClient(fromPlugin, w)
-	client.Start()
+	start(client)
 	release = make(chan struct{})
 	var once sync.Once
 	go func() {
@@ -320,35 +324,47 @@ func TestInboundNotificationsTakeNoReplySlots(t *testing.T) {
 // Closing the client, or the plugin's output ending, ends the goroutine that
 // writes replies, with one stalled and more queued.
 func TestReplyWriterEndsWithTheClient(t *testing.T) {
-	client, toClient, _, _ := stalledReplies(t)
-	if _, err := toClient.Write([]byte(`{"jsonrpc":"2.0","method":"ping","id":1}` + "\n")); err != nil {
-		t.Fatal(err)
+	for name, end := range map[string]func(c *Client, toClient io.Closer){
+		"client closed": func(c *Client, _ io.Closer) { c.Close() },
+		"output ended":  func(_ *Client, toClient io.Closer) { _ = toClient.Close() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var ended <-chan struct{}
+			client, toClient, _, _ := stalledRepliesStarted(t, func(c *Client) { ended = startWatched(c) })
+			if err := sendRequests(toClient, 1); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-ended:
+				t.Fatal("the goroutine writing replies ended with the client still open")
+			case <-time.After(20 * time.Millisecond):
+			}
+			end(client, toClient.(io.Closer))
+			waitForReplyWriter(t, ended)
+		})
 	}
-	if replyWriters() == 0 {
-		t.Fatal("no goroutine is writing replies")
-	}
-	before := replyWriters()
-	client.Close()
-	waitForReplyWriterToEnd(t, before)
 }
 
-// waitForReplyWriterToEnd waits for one of the before goroutines that were
-// writing replies to end.
-func waitForReplyWriterToEnd(t *testing.T, before int) {
+// startWatched starts c as Start does. The channel it returns closes when the
+// goroutine that writes c's replies ends.
+func startWatched(c *Client) <-chan struct{} {
+	ended := make(chan struct{})
+	go c.readLoop()
+	go func() {
+		defer close(ended)
+		c.writeReplies()
+	}()
+	return ended
+}
+
+// waitForReplyWriter waits for the goroutine startWatched watches to end.
+func waitForReplyWriter(t *testing.T, ended <-chan struct{}) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for replyWriters() >= before {
-		if time.Now().After(deadline) {
-			t.Fatal("the goroutine writing replies outlived the client")
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the goroutine writing replies outlived the client")
 	}
-}
-
-func replyWriters() int {
-	stacks := make([]byte, 1<<20)
-	stacks = stacks[:runtime.Stack(stacks, true)]
-	return bytes.Count(stacks, []byte("(*Client).writeReplies("))
 }
 
 // ReadDone closes when the plugin's output ends, and not when the client fails
