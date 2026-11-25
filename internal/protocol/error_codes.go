@@ -116,9 +116,9 @@ const (
 	// that failed for a reason other than its passphrases, including a store
 	// root or selected generation that cannot be opened.
 	ResultCodePassphraseChangeFailed = "passphrase_change_failed"
-	// ResultCodePassphraseHelperError reports an initialize or passphrase
-	// change refused because the unlock.yaml passphrase helper configuration
-	// could not be loaded.
+	// ResultCodePassphraseHelperError reports a passphrase change refused
+	// because the unlock.yaml passphrase helper configuration could not be
+	// loaded.
 	ResultCodePassphraseHelperError = "passphrase_helper_error"
 	// ResultCodeAppliedNotSaved reports a failed result whose change is in
 	// effect but was not saved at all: the save failed before the new file

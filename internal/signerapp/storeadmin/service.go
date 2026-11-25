@@ -17,7 +17,6 @@ import (
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
-	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepass"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -31,90 +30,14 @@ type Deps interface {
 }
 
 type AuditLogger interface {
-	LogStoreInitialized(metadataDir string)
-	LogStoreInitializeFailed(reason string)
 	LogPassphraseChanged(ctx context.Context, keysMigrated, templatesMigrated, policySidecarsMigrated, sourceTokenFilesMigrated int)
 	LogPassphraseChangeFailed(ctx context.Context, reason string)
 }
 
-type UnlockIdentityFunc func(passphrase []byte) (bool, int, string, string)
-
 type Service struct {
-	Deps           Deps
-	Runtime        *productruntime.Runtime
-	AuditLog       AuditLogger
-	UnlockIdentity UnlockIdentityFunc
-}
-
-func (s Service) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
-	ir := s.Runtime
-	if ir == nil {
-		return adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeNoRuntimeBound,
-			Error: "product runtime unavailable",
-		}
-	}
-	if len(req.Passphrase) == 0 {
-		s.logStoreInitializeFailed("passphrase is required")
-		return adminproto.InitializeStoreResult{
-			Code:  protocol.ErrCodeInvalidPassphrase,
-			Error: "passphrase is required",
-		}
-	}
-
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
-	if err != nil {
-		s.logStoreInitializeFailed(err.Error())
-		return adminproto.InitializeStoreResult{
-			Code:  protocol.ResultCodePassphraseHelperError,
-			Error: err.Error(),
-		}
-	}
-	passphraseCmdCfg := passphraseCommandConfigFromUnlock(unlockCfg)
-
-	var helperWarning string
-	var initResult storeinit.Result
-	err = s.Deps.WithStoreMutation(func() error {
-		var initErr error
-		initResult, initErr = storeinit.Initialize(req.Passphrase, storeinit.Options{
-			DataDir:           s.Deps.DataDir(),
-			Paths:             s.Deps.KeyPaths(),
-			Logf:              s.Deps.Logf,
-			ValidateCandidate: storevalidate.FirstGeneration,
-		})
-		if initErr != nil {
-			return initErr
-		}
-		if passphraseCmdCfg != nil {
-			if err := serverconfig.WritePassphrase(passphraseCmdCfg, req.Passphrase); err != nil {
-				helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
-			}
-		}
-		return nil
-	})
-	// UnlockIdentity owns its own generation/rotation reconciliation
-	// mutations. Invoke it only after releasing the non-reentrant identity
-	// mutation lock used for initialization.
-	if err == nil {
-		success, _, errMsg, _ := s.UnlockIdentity(req.Passphrase)
-		if !success {
-			err = fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
-		}
-	}
-	if err != nil {
-		s.logStoreInitializeFailed(err.Error())
-		return adminproto.InitializeStoreResult{
-			Code:          "initialize_store_failed",
-			Error:         err.Error(),
-			HelperWarning: helperWarning,
-		}
-	}
-	s.logStoreInitialized(initResult.MetadataDir)
-	return adminproto.InitializeStoreResult{
-		Success:       true,
-		MetadataDir:   initResult.MetadataDir,
-		HelperWarning: helperWarning,
-	}
+	Deps     Deps
+	Runtime  *productruntime.Runtime
+	AuditLog AuditLogger
 }
 
 func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
@@ -235,18 +158,6 @@ func passphraseCommandConfigFromUnlock(unlockCfg *unlockconfig.UnlockConfig) *se
 	return &serverconfig.PassphraseCommandConfig{
 		Argv: unlockCfg.PassphraseCommandArgv,
 		Env:  unlockCfg.PassphraseCommandEnv,
-	}
-}
-
-func (s Service) logStoreInitialized(metadataDir string) {
-	if s.AuditLog != nil {
-		s.AuditLog.LogStoreInitialized(metadataDir)
-	}
-}
-
-func (s Service) logStoreInitializeFailed(reason string) {
-	if s.AuditLog != nil {
-		s.AuditLog.LogStoreInitializeFailed(reason)
 	}
 }
 

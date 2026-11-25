@@ -19,7 +19,7 @@ const (
 // in auth.protocol_version and the server accepts only this exact value:
 // apadmin, apapprover and apsigner ship together, so there is no skew to
 // tolerate. docs/ARCH_ADMIN.md ("Transport notes") says which changes bump it.
-const AdminProtocolVersion = 9
+const AdminProtocolVersion = 10
 
 // Admin protocol message type constants
 const (
@@ -34,8 +34,6 @@ const (
 	MsgTypeUnlockResult             = "unlock_result"
 	MsgTypeLockIdentity             = "lock_identity"
 	MsgTypeLockIdentityResult       = "lock_identity_result"
-	MsgTypeInitializeStore          = "initialize_store"
-	MsgTypeInitializeStoreResult    = "initialize_store_result"
 	MsgTypeChangeStorePass          = "change_store_passphrase"
 	MsgTypeChangeStorePassResult    = "change_store_passphrase_result"
 	MsgTypeBackup                   = "backup"
@@ -284,20 +282,6 @@ type LockIdentityResultMessage struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code,omitempty"`
 	Error   string `json:"error,omitempty"`
-}
-
-type InitializeStoreMessage struct {
-	BaseMessage
-	Passphrase SensitiveBytes `json:"passphrase"`
-}
-
-type InitializeStoreResultMessage struct {
-	BaseMessage
-	Success       bool   `json:"success"`
-	MetadataDir   string `json:"metadata_dir,omitempty"`
-	HelperWarning string `json:"helper_warning,omitempty"`
-	Code          string `json:"code,omitempty"`
-	Error         string `json:"error,omitempty"`
 }
 
 type ChangeStorePassphraseMessage struct {

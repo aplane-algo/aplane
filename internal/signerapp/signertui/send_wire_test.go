@@ -27,7 +27,7 @@ func TestSendCommandsWriteTheirMessages(t *testing.T) {
 		cmd  func(Model) tea.Cmd
 		want string
 	}{
-		{"auth", func(m Model) tea.Cmd { return m.sendAuthCmd([]byte("pass")) }, `{"type":"auth","id":"auth-T","passphrase":"pass","protocol_version":9,"kind":"request"}`},
+		{"auth", func(m Model) tea.Cmd { return m.sendAuthCmd([]byte("pass")) }, `{"type":"auth","id":"auth-T","passphrase":"pass","protocol_version":10,"kind":"request"}`},
 		{"unlock", func(m Model) tea.Cmd { return m.sendUnlockCmd([]byte("pass")) }, `{"type":"unlock","id":"unlock-T","passphrase":"pass","kind":"request"}`},
 		{"lock", func(m Model) tea.Cmd { return m.sendLockIdentityCmd("why") }, `{"type":"lock_identity","id":"lock-T","reason":"why","kind":"request"}`},
 		{"sign approve", func(m Model) tea.Cmd { return m.sendSignResponseCmd("sign-1", true) }, `{"type":"sign_response","id":"sign-1","approved":true,"kind":"request"}`},

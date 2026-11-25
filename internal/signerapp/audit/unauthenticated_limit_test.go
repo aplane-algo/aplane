@@ -28,8 +28,6 @@ var unauthenticatedStreams = []struct {
 		func(e AuditEntry) bool { return e.Event == AuditAdminLoginFailed }, AuditAdminLoginFailuresSuppressed},
 	{"enroll connection", func(a *AuditLogger) { a.LogSSHSessionConnected("192.0.2.1:1", "SHA256:unknown", false) },
 		func(e AuditEntry) bool { return e.Reason == "ssh-enroll" }, AuditEnrollSessionsSuppressed},
-	{"store initialization", func(a *AuditLogger) { a.LogStoreInitializeFailed("passphrase is required") },
-		func(e AuditEntry) bool { return e.Event == AuditStoreInitializeFailed }, AuditStoreInitFailuresSuppressed},
 }
 
 // Each stream a caller who has not authenticated can write to is limited and

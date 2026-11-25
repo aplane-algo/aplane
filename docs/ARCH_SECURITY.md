@@ -1324,15 +1324,12 @@ Denial behavior:
   separate budget and an `ADMIN_LOGIN_FAILURES_SUPPRESSED` summary, so a flood
   of client authentication failures cannot hide it. No entry carries the
   passphrase or its length.
-- Two more kinds of entry that need no authentication are rate limited the
-  same way, each with a budget and a summary of its own: `enroll` connections,
-  which any key that reaches the SSH port can open
-  (`ENROLL_SESSIONS_SUPPRESSED`), and `STORE_INITIALIZE_FAILED`, which a request
-  on the admin socket can cause before login
-  (`STORE_INITIALIZE_FAILURES_SUPPRESSED`). A connection's `SESSION_CONNECTED`
-  takes the budget, and its `SESSION_DISCONNECTED` is written exactly when that
-  was. An enrolled key's connections are not limited. The enrollment queue, of
-  16, bounds `CLIENT_ENROLLMENT_REQUESTED`.
+- `enroll` connections, which any key that reaches the SSH port can open, are
+  rate limited the same way, with a budget and a summary of their own
+  (`ENROLL_SESSIONS_SUPPRESSED`). A connection's `SESSION_CONNECTED` takes the
+  budget, and its `SESSION_DISCONNECTED` is written exactly when that was. An
+  enrolled key's connections are not limited. The enrollment queue, of 16,
+  bounds `CLIENT_ENROLLMENT_REQUESTED`.
 - Cosigner rejections (`SIGN_REJECTED` for a cosigner component: a policy
   rejection, `cosigner_policy_rejected:`, or a signer-invariant refusal,
   `signer_invariant:`) are rate limited the same way, with a separate budget
@@ -1381,9 +1378,6 @@ Events:
 - `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN`
 - `CREDENTIAL_RESTORE_ROLLBACK`
 - `STORE_RECONCILED`
-- `STORE_INITIALIZED`
-- `STORE_INITIALIZE_FAILED`
-- `STORE_INITIALIZE_FAILURES_SUPPRESSED`
 - `PASSPHRASE_CHANGED`
 - `PASSPHRASE_CHANGE_FAILED`
 - `COSIGNER_REFERENCE_CHANGED`
@@ -1580,8 +1574,6 @@ Backup-audit semantics:
 
 Store-management audit semantics:
 
-- `STORE_INITIALIZED` is emitted when a local IPC store initialization, which needs no login, succeeds
-- `STORE_INITIALIZE_FAILED` is emitted when one fails
 - `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key, template, policy-sidecar, and source-token-file counts are recorded in `reason`
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
 - `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports,
@@ -1596,10 +1588,10 @@ Store-management audit semantics:
   import or activation leaves `changed` out, because its answer does not say
   whether the store changed
 - `IDENTITY_UNLOCKED` is emitted for every unlock: an admin login's, the
-  `unlock` command's, a store initialization's and the startup's. `outcome` is
+  `unlock` command's and the startup's. `outcome` is
   `unlocked`, `recovery` (with `result_code` `recovery_blocked` and the cause)
-  or `failed` (with the code and cause). The startup's and an initialization's
-  are the product principal's; a startup passphrase the store refuses is
+  or `failed` (with the code and cause). The startup's is the product
+  principal's; a startup passphrase the store refuses is
   recorded before the daemon exits, and a helper that returns none is not. An
   unlock that finds the signer unlocked changes nothing, so only a refusal of
   its passphrase is recorded. The entry is the request's outcome, not the state
@@ -2156,7 +2148,7 @@ This applies to:
 - **apadmin passphrase fields**: the login, unlock, backup export and confirm, restore, backup import and mnemonic export passphrases are byte buffers, never strings. `internal/secretbuf` grows them and zeroes every allocation they outgrow, and backspace zeroes the removed bytes. Each is zeroed once submitted, except that a login or unlock passphrase stays for another try until an attempt succeeds or ends in a serious error. Each is also zeroed when its form is left, when the signer locks or enters recovery, when the admin session ends and at program shutdown, except that a recovery keeps the passphrase of a backup import under way, whose commit sends it. A typed source token is zeroed at the same points. The recovery phrase typed into the import form is text the input component keeps, so it is dropped rather than zeroed, at each of those points but program shutdown. Each send works on its own copy, which belongs to the send command and is zeroed once that command has run, even when no client is connected and nothing is sent.
 - **appass**: its passphrase and confirmation entries are byte buffers grown through `internal/secretbuf`. A mismatched confirmation zeroes that entry, and leaving the form or ending the program zeroes both; the confirmed passphrase moves to the action, which zeroes it once done, along with the copy read back from `appass-systemd-creds` for the round-trip check.
 - **Key file payloads**: the payload's wire struct holds the hex text of a key's `private_key` and `recovery_entropy` in zeroable buffers, zeroed once it is used, on save and on load. A load still reads each value as a string in its canonical-JSON check (see Residual Copies for that and for what encoding/json keeps).
-- **Admin frames**: the signer zeroes each login and `initialize_store` frame once it is handled, a login frame with a wrong passphrase before the next attempt is read, and each frame of an authenticated admin session once its message is handled. A request whose decode fails after some fields were filled has every `SensitiveBytes` value it already decoded zeroed (`protocol.ZeroSensitive`), a pre-login `initialize_store` included. Every handler whose request carries a `SensitiveBytes` field (unlock, backup, backup import commit, store passphrase change, restore preview, restore, installed template import, key export and key import) zeroes it on every exit path, including a refusal before the work runs. On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding). The IPC transport's `Authenticate`, `AuthenticateOnly` and `Unlock` take the passphrase as bytes, so apadmin's batch workflows, `apadmin policy` and apapprover hand over the buffer they read and zero it, with no string copy on the way; apapprover zeroes its passphrase once the login is done.
+- **Admin frames**: the signer zeroes each frame read before login once it is handled, a login frame with a wrong passphrase before the next attempt is read, and each frame of an authenticated admin session once its message is handled. A request whose decode fails after some fields were filled has every `SensitiveBytes` value it already decoded zeroed (`protocol.ZeroSensitive`). Every handler whose request carries a `SensitiveBytes` field (unlock, backup, backup import commit, store passphrase change, restore preview, restore, installed template import, key export and key import) zeroes it on every exit path, including a refusal before the work runs. On the client, both transports zero each frame they encode, the auth and unlock passphrase copies are zeroed after the send, and a request is encoded once (its ID is read from the envelope, not from a second encoding). The IPC transport's `Authenticate`, `AuthenticateOnly` and `Unlock` take the passphrase as bytes, so apadmin's batch workflows, `apadmin policy` and apapprover hand over the buffer they read and zero it, with no string copy on the way; apapprover zeroes its passphrase once the login is done.
 
 #### Residual Copies
 
@@ -2202,12 +2194,11 @@ when memory protection is enabled, until the runtime reuses or frees it.
   encoder's strings remain. apadmin then draws the phrase on screen as a
   string, as it does every rendered value.
 - **Admin request frames.** The signer decodes every strict admin request
-  (`auth`, `auth_only`, `initialize_store`, and every post-auth request in
-  `dispatchTable`) through `decodeRequest`, which uses a strict `json.Decoder`
+  (`auth`, `auth_only`, and every post-auth request in `dispatchTable`) through `decodeRequest`, which uses a strict `json.Decoder`
   (`DisallowUnknownFields`) so unexpected fields are refused. The decoder
   copies the frame into an internal buffer that cannot be zeroed, so every
   request carrying a `SensitiveBytes` field (`auth`, `auth_only`,
-  `initialize_store`, `unlock`, `change_store_passphrase`, `backup`,
+  `unlock`, `change_store_passphrase`, `backup`,
   `commit_backup_import`, `preview_restore`, `restore_backup`, `export_key`,
   `import_key`, `import_installed_template`, and `source_token_set`) leaves a
   copy of its secret in that buffer, both on success and on decode refusal.

@@ -218,10 +218,6 @@ func unlockFailureCode(err error) string {
 	return protocol.ErrCodeUnlockFailed
 }
 
-func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
-	return s.storeApp().InitializeStore(req)
-}
-
 func (s signerAdminServices) ChangeStorePassphrase(ctx context.Context, req adminproto.ChangeStorePassphraseRequest) adminproto.ChangeStorePassphraseResult {
 	return s.storeApp().ChangeStorePassphrase(ctx, req)
 }
@@ -815,11 +811,6 @@ func (s signerAdminServices) storeApp() storeadmin.Service {
 		Deps:     signerAdminAppDeps(s),
 		Runtime:  s.ProductRuntime(),
 		AuditLog: optionalAuditLog[storeadmin.AuditLogger](s.signer.auditLog),
-		// An initialize request has no login behind it, so its unlock is the
-		// product principal's, as its own entries are.
-		UnlockIdentity: func(passphrase []byte) (bool, int, string, string) {
-			return s.UnlockIdentity(context.Background(), passphrase)
-		},
 	}
 }
 

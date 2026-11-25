@@ -268,20 +268,6 @@ func ProtocolBackupChunkMessage(id string, result adminproto.ReadBackupChunkResu
 	return protocol.BackupChunkMessage{BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeBackupChunk, ID: id}, Success: result.Success, FileName: result.FileName, Offset: result.Offset, Data: result.Data, EOF: result.EOF, Code: result.Code, Error: result.Error}
 }
 
-func ProtocolInitializeStoreResultMessage(id string, result adminproto.InitializeStoreResult) protocol.InitializeStoreResultMessage {
-	return protocol.InitializeStoreResultMessage{
-		BaseMessage: protocol.BaseMessage{
-			Type: protocol.MsgTypeInitializeStoreResult,
-			ID:   id,
-		},
-		Success:       result.Success,
-		MetadataDir:   result.MetadataDir,
-		HelperWarning: result.HelperWarning,
-		Code:          result.Code,
-		Error:         result.Error,
-	}
-}
-
 func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.ChangeStorePassphraseResult) protocol.ChangeStorePassphraseResultMessage {
 	return protocol.ChangeStorePassphraseResultMessage{
 		BaseMessage: protocol.BaseMessage{

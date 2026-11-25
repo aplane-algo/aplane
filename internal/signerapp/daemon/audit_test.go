@@ -58,8 +58,6 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	logger.LogAuthFailedAttributed("alice", "10.0.0.1", "invalid_credentials")
 	logger.LogSSHSessionConnected("10.0.0.1", "SHA256:abc", true)
 	logger.LogSSHSessionDisconnected("10.0.0.1", "SHA256:abc", true)
-	logger.LogStoreInitialized("/data/identities/default")
-	logger.LogStoreInitializeFailed("already initialized")
 	logger.LogPassphraseChanged(context.Background(), 2, 1, 3, 4)
 	logger.LogPassphraseChangeFailed(context.Background(), "invalid passphrase")
 
@@ -69,8 +67,8 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 14 {
-		t.Fatalf("expected 14 audit entries, got %d", len(lines))
+	if len(lines) != 12 {
+		t.Fatalf("expected 12 audit entries, got %d", len(lines))
 	}
 
 	for i, line := range lines {
@@ -112,7 +110,7 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 		sshDisc.RequesterPrincipal != auth.ClientPrincipalPrefix+"SHA256:abc" {
 		t.Fatalf("ssh disconnect attribution = %#v", sshDisc)
 	}
-	if err := json.Unmarshal([]byte(lines[12]), &passChanged); err != nil {
+	if err := json.Unmarshal([]byte(lines[10]), &passChanged); err != nil {
 		t.Fatalf("decode passphrase changed entry: %v", err)
 	}
 	wantReason := "keys_migrated=2 templates_migrated=1 policy_sidecars_migrated=3 source_token_files_migrated=4"

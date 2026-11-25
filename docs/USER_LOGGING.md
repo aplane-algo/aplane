@@ -108,9 +108,6 @@ Fields are omitted when empty.
 | `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` | A restore's replacement `store-root.enc` may have landed but could not be confirmed (visible but not confirmed durable, or not readable back); signing remains recovery-blocked pending reconciliation |
 | `CREDENTIAL_RESTORE_ROLLBACK` | Explicit restore rollback succeeded, failed, or may have committed (`commit_uncertain`, with the generation) |
 | `STORE_RECONCILED` | An explicit store reconcile succeeded or failed (`outcome`) |
-| `STORE_INITIALIZED` | Store initialization succeeded through local IPC; the request needs no login |
-| `STORE_INITIALIZE_FAILED` | Store initialization failed through local IPC |
-| `STORE_INITIALIZE_FAILURES_SUPPRESSED` | Store initialization failures beyond the rate limit (see [Authentication](#authentication)), counted separately, were counted instead of logged individually; `suppressed_count` is the number |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
 | `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported, promoted, or removed |
@@ -226,7 +223,7 @@ LogicSig argument values.
 | `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`): `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal; rate limited, see [Authentication](#authentication)), and `ssh_fingerprint` names the key |
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended; written for an `enroll` connection exactly when its `SESSION_CONNECTED` was |
 | `IDENTITY_LOCKED` | Signing authority locked by a request from an authenticated admin session. A lock when an admin session ends (`lock_on_disconnect`) writes none: it follows that session's `SESSION_DISCONNECTED` |
-| `IDENTITY_UNLOCKED` | How an unlock ended (`outcome` `unlocked`, `recovery` or `failed`), whether an admin login, an `unlock` command, a store initialization or the startup asked for it |
+| `IDENTITY_UNLOCKED` | How an unlock ended (`outcome` `unlocked`, `recovery` or `failed`), whether an admin login, an `unlock` command or the startup asked for it |
 | `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |
 | `SETTING_CHANGED` | Admin setting change saved (`reason` `setting=<key> old=<old> new=<new>`) |
 | `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause |
