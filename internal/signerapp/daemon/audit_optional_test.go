@@ -5,12 +5,14 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/enrollment"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -19,7 +21,7 @@ import (
 
 // The daemon keeps running when audit.log cannot be opened, with a nil
 // *AuditLogger. A service handed that pointer as an interface sees a non-nil
-// logger and panics on its first entry, so every service must see none.
+// logger, so every service that asks must see none.
 func TestServicesBuiltWithoutAnAuditLogSeeNoLogger(t *testing.T) {
 	fs := &Signer{}
 	if got := fs.adminServices().adminApp().Audit; got != nil {
@@ -40,6 +42,21 @@ func TestServicesBuiltWithoutAnAuditLogSeeNoLogger(t *testing.T) {
 	if got := fs.restServiceWithSigningAudit(nil).Deps.KeyAdmin.AuditLog; got != nil {
 		t.Errorf("attributed REST key admin AuditLog = %#v, want nil", got)
 	}
+}
+
+// An admin session calls its audit log without asking whether it has one, so
+// it gets the nil logger itself: an intent through it is refused, which refuses
+// the change, and any other record is dropped.
+func TestAnAdminSessionWithoutAnAuditLogGetsTheNilLogger(t *testing.T) {
+	audit := (&Signer{}).adminSessionDeps().Audit
+	if audit == nil {
+		t.Fatal("an admin session got no Audit, and would panic on its first record")
+	}
+	if err := audit.LogPolicyApplyIntentDurableContext(adminserver.SessionContext{}, "apply-1", adminproto.ApplyPolicyRequest{}); !errors.Is(err, adminserver.ErrAuditUnavailable) {
+		t.Fatalf("a durable intent = %v, want ErrAuditUnavailable", err)
+	}
+	audit.LogAdminLoginFailedContext(adminserver.SessionContext{}, "wrong passphrase")
+	audit.LogBackupDeletedContext(adminserver.SessionContext{}, "b.tar.gz", adminproto.DeleteBackupResult{Success: true})
 }
 
 // A passphrase change in that mode completes without a panic after its

@@ -119,7 +119,7 @@ func TestHandleLockIdentityWithdrawsPendingApprovals(t *testing.T) {
 	}
 
 	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{}, OriginLocal)
+	session := NewSession(conn, SessionDeps{Audit: &stubAudit{}}, OriginLocal)
 	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{
 		BaseMessage: protocol.BaseMessage{ID: "lock-1"},

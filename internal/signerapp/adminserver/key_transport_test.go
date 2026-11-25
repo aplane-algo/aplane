@@ -91,7 +91,7 @@ func newKeyTransportTestSessionAt(origin Origin) (*Session, *queueConn, *stubSer
 	ir.SetUnlocked()
 	conn := &queueConn{}
 	svc := &stubServices{}
-	session := NewSession(conn, SessionDeps{Keys: svc}, origin)
+	session := NewSession(conn, SessionDeps{Keys: svc, Audit: &stubAudit{}}, origin)
 	session.Bind(auth.NewProductIdentity("test"), ir)
 	return session, conn, svc
 }

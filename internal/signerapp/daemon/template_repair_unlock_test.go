@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -62,7 +63,7 @@ func TestOfflineTemplateRepairLetsTheSignerUnlock(t *testing.T) {
 		// A fresh process has registered no template.
 		lsigprovider.Unregister(edited)
 		lsigprovider.Unregister(orphaned)
-		success, _, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+		success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 		if !success {
 			t.Fatalf("UnlockIdentity() failed: %s", errMsg)
 		}

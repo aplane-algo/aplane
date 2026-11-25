@@ -34,7 +34,7 @@ func (a *mutationAudit) LogSourceTokenChangeResultContext(ctx SessionContext, id
 	a.results = append(a.results, result)
 }
 
-func boundSourceTokenSession(svc *stubServices, audit AuthorizationAudit) (*Session, *recordingAuthorizer, *queueConn) {
+func boundSourceTokenSession(svc *stubServices, audit Audit) (*Session, *recordingAuthorizer, *queueConn) {
 	ir := productruntime.New(productruntime.Config{})
 	authorizer := &recordingAuthorizer{}
 	conn := &queueConn{}
@@ -173,11 +173,10 @@ func TestSourceTokenChangesRecordIntentThenOneOutcome(t *testing.T) {
 func TestSourceTokenChangesRefuseWithoutADurableIntent(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
-		audit AuthorizationAudit
+		audit Audit
 		code  string
 	}{
-		{"no audit sink", nil, protocol.ResultCodeAuditUnavailable},
-		{"a sink without the probes", denialOnlyAudit{}, protocol.ResultCodeAuditUnavailable},
+		{"no logger", &stubAudit{}, protocol.ResultCodeAuditUnavailable},
 		{"a failed write", &mutationAudit{intentErr: errors.New("sync audit log: no space left on device")}, protocol.ResultCodeAuditWriteFailed},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

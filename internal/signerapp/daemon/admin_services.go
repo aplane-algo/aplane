@@ -74,14 +74,16 @@ func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	}
 	svc := fs.adminServices()
 	return adminserver.SessionDeps{
-		Product:     svc,
-		Settings:    svc.adminApp(),
-		Keys:        svc.keyApp(),
-		Backups:     svc.backupServices(),
-		Templates:   svc.templateServices(),
-		Inspection:  svc,
-		Authorizer:  fs.authorizer,
-		Audit:       svc,
+		Product:    svc,
+		Settings:   svc.adminApp(),
+		Keys:       svc.keyApp(),
+		Backups:    svc.backupServices(),
+		Templates:  svc.templateServices(),
+		Inspection: svc,
+		Authorizer: fs.authorizer,
+		// Not optionalAuditLog: the session calls it unconditionally, and a nil
+		// *AuditLogger refuses and drops as a daemon with no audit log should.
+		Audit:       fs.auditLog,
 		NodeFailure: fs.nodeFailure,
 	}
 }
@@ -102,7 +104,7 @@ func (s signerAdminServices) VerifyPassphrase(passphrase []byte) error {
 	return err
 }
 
-func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, string, string) {
+func (s signerAdminServices) UnlockIdentity(ctx context.Context, passphrase []byte) (bool, int, string, string) {
 	ir := s.ProductRuntime()
 	// Reconciliation authenticates the sole store root before it relocates
 	// or deletes residue. A valid root with damaged selected content still
@@ -113,6 +115,7 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 	}, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	s.signer.recordUnlock(ctx, outcome, err)
 	if err != nil {
 		return failedUnlock(err)
 	}
@@ -121,6 +124,23 @@ func (s signerAdminServices) UnlockIdentity(passphrase []byte) (bool, int, strin
 		return true, 0, "", protocol.ResultCodeRecoveryBlocked
 	}
 	return true, outcome.KeyCount, "", ""
+}
+
+// recordUnlock audits how an unlock request ended. One that found the signer
+// unlocked changed nothing, so only its refusal is recorded.
+func (fs *Signer) recordUnlock(ctx context.Context, outcome productruntime.UnlockOutcome, err error) {
+	switch {
+	case err != nil:
+		fs.auditLog.LogIdentityUnlocked(ctx, "failed", 0, unlockFailureCode(err), err.Error())
+	case outcome.Recovery:
+		cause := ""
+		if outcome.Cause != nil {
+			cause = outcome.Cause.Error()
+		}
+		fs.auditLog.LogIdentityUnlocked(ctx, "recovery", 0, protocol.ResultCodeRecoveryBlocked, cause)
+	case !outcome.AlreadyUnlocked:
+		fs.auditLog.LogIdentityUnlocked(ctx, "unlocked", outcome.KeyCount, "", "")
+	}
 }
 
 // logUnlockOutcome logs why an unlock request entered recovery, which its
@@ -157,25 +177,18 @@ func (s signerAdminServices) reconcileGenerationsLocked(ir *productruntime.Runti
 	if err != nil {
 		return err
 	}
-	if len(preview.Quarantined) > 0 {
-		if s.signer.auditLog == nil {
-			return fmt.Errorf("reconcile: durable audit unavailable; refusing generation quarantine")
-		}
-		for _, candidate := range preview.Quarantined {
-			if err := s.signer.auditLog.LogGenerationQuarantineIntentDurable(candidate); err != nil {
-				return fmt.Errorf(
-					"reconcile: record durable quarantine intent for %s: %w",
-					candidate.GenerationID,
-					err,
-				)
-			}
+	for _, candidate := range preview.Quarantined {
+		if err := s.signer.auditLog.LogGenerationQuarantineIntentDurable(candidate); err != nil {
+			return fmt.Errorf(
+				"reconcile: record durable quarantine intent for %s: %w",
+				candidate.GenerationID,
+				err,
+			)
 		}
 	}
 	report, err := genstore.ReconcileStoreRoot(ir.KeyPaths(), kr)
-	if s.signer.auditLog != nil {
-		for _, quarantined := range report.Quarantined {
-			s.signer.auditLog.LogGenerationQuarantined(quarantined)
-		}
+	for _, quarantined := range report.Quarantined {
+		s.signer.auditLog.LogGenerationQuarantined(quarantined)
 	}
 	if err != nil {
 		return err
@@ -215,13 +228,6 @@ func (s signerAdminServices) ChangeStorePassphrase(ctx context.Context, req admi
 
 func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {
 	return auth.NewProductIdentity(method)
-}
-
-func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
-	if s.signer.auditLog == nil {
-		return
-	}
-	s.signer.auditLog.LogAuthorizationDenied(ctx, action, resource, reason)
 }
 
 func (s signerAdminServices) EnrolledKeys() []protocol.EnrolledKeyInfo {
@@ -767,18 +773,6 @@ func adminCosignerReference(record cosignerrefs.Record) adminproto.CosignerRefer
 	}
 }
 
-func (s signerAdminServices) LogSessionConnectedContext(ctx adminserver.SessionContext) {
-	if s.signer.auditLog != nil {
-		s.signer.auditLog.LogSessionConnectedContext(ctx)
-	}
-}
-
-func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.SessionContext) {
-	if s.signer.auditLog != nil {
-		s.signer.auditLog.LogSessionDisconnectedContext(ctx)
-	}
-}
-
 func (s signerAdminServices) adminApp() signeradmin.Service {
 	return signeradmin.Service{
 		Deps:     signerAdminAppDeps(s),
@@ -818,10 +812,14 @@ func (s signerAdminServices) templateServices() signerTemplateServices {
 
 func (s signerAdminServices) storeApp() storeadmin.Service {
 	return storeadmin.Service{
-		Deps:           signerAdminAppDeps(s),
-		Runtime:        s.ProductRuntime(),
-		AuditLog:       optionalAuditLog[storeadmin.AuditLogger](s.signer.auditLog),
-		UnlockIdentity: s.UnlockIdentity,
+		Deps:     signerAdminAppDeps(s),
+		Runtime:  s.ProductRuntime(),
+		AuditLog: optionalAuditLog[storeadmin.AuditLogger](s.signer.auditLog),
+		// An initialize request has no login behind it, so its unlock is the
+		// product principal's, as its own entries are.
+		UnlockIdentity: func(passphrase []byte) (bool, int, string, string) {
+			return s.UnlockIdentity(context.Background(), passphrase)
+		},
 	}
 }
 

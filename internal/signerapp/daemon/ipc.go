@@ -268,7 +268,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		if cleanupRuntime && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient()) {
 			// Route disconnect cleanup through the bound identity
 			if wasActiveClient && s.signer != nil {
-				s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
+				s.signer.auditLog.LogSessionDisconnectedContext(session.SessionContext())
 			}
 			boundIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
 
@@ -334,7 +334,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	}
 
 	if s.signer != nil {
-		s.signer.adminServices().LogSessionConnectedContext(session.SessionContext())
+		s.signer.auditLog.LogSessionConnectedContext(session.SessionContext())
 	}
 
 	// Send initial status after successful authentication

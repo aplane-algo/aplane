@@ -576,6 +576,9 @@ type UnlockOutcome struct {
 	// reconcile or its load found the store needing it, or the reload of
 	// changes seen while locked, run once it published, entered recovery.
 	Recovery bool
+	// AlreadyUnlocked is set when the request found the signer unlocked, and
+	// so changed nothing.
+	AlreadyUnlocked bool
 	// KeyCount is the published key count of an unlocked signer.
 	KeyCount int
 	// Cause is why the request entered recovery. It is nil when the reload of
@@ -715,7 +718,7 @@ func (ir *Runtime) answerFromSession(attempt signerruntime.Attempt, passphrase [
 	if !ir.lockRuntime.Unchanged(attempt) {
 		return UnlockOutcome{}, signerruntime.ErrLockedDuringUnlock
 	}
-	return UnlockOutcome{KeyCount: keyCount}, nil
+	return UnlockOutcome{AlreadyUnlocked: true, KeyCount: keyCount}, nil
 }
 
 // --- Approval ---

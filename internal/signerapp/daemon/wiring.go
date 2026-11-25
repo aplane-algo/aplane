@@ -18,15 +18,11 @@ type lazyReloadAuditLogger struct {
 }
 
 func (l lazyReloadAuditLogger) LogKeyReload(keyCount int) {
-	if l.fs.auditLog != nil {
-		l.fs.auditLog.LogKeyReload(keyCount)
-	}
+	l.fs.auditLog.LogKeyReload(keyCount)
 }
 
 func (l lazyReloadAuditLogger) LogKeyRejected(keyFile, reason string) {
-	if l.fs.auditLog != nil {
-		l.fs.auditLog.LogKeyRejected(keyFile, reason)
-	}
+	l.fs.auditLog.LogKeyRejected(keyFile, reason)
 }
 
 // productBuildHooks returns the process callbacks product runtime assembly

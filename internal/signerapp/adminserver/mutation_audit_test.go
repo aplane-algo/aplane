@@ -9,20 +9,18 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 // mutationAudit records the mutation audit calls a session makes, in order,
 // with the actor each one was given. intentErr fails every intent.
 type mutationAudit struct {
+	stubAudit
 	intentErr error
 	events    []string
 	actors    []string
 	results   []any
 }
-
-func (a *mutationAudit) LogAuthorizationDenied(SessionContext, auth.Action, auth.Resource, string) {}
 
 func (a *mutationAudit) note(event string, ctx SessionContext) {
 	a.events = append(a.events, event)
@@ -113,13 +111,11 @@ func TestPolicyAndASAChangesRecordIntentThenOneOutcome(t *testing.T) {
 func TestPolicyAndASAChangesRefuseWithoutADurableIntent(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
-		audit AuthorizationAudit
+		audit Audit
 		code  string
 		hint  string
 	}{
-		{"no audit sink", nil, protocol.ResultCodeAuditUnavailable, "restart the daemon"},
-		{"a sink without the probes", denialOnlyAudit{}, protocol.ResultCodeAuditUnavailable, "restart the daemon"},
-		{"no logger", &mutationAudit{intentErr: ErrAuditUnavailable}, protocol.ResultCodeAuditUnavailable, "retrying the request alone cannot help"},
+		{"no logger", &mutationAudit{intentErr: ErrAuditUnavailable}, protocol.ResultCodeAuditUnavailable, "restart the daemon; retrying the request alone cannot help"},
 		{"a failed write", &mutationAudit{intentErr: errors.New("sync audit log: no space left on device")}, protocol.ResultCodeAuditWriteFailed, "no space left on device"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -146,7 +142,3 @@ func TestPolicyAndASAChangesRefuseWithoutADurableIntent(t *testing.T) {
 		})
 	}
 }
-
-type denialOnlyAudit struct{}
-
-func (denialOnlyAudit) LogAuthorizationDenied(SessionContext, auth.Action, auth.Resource, string) {}

@@ -39,9 +39,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 			err = auth.ErrInvalidCredentials
 		}
 		if err != nil {
-			if fs.auditLog != nil {
-				fs.auditLog.LogAuthFailed(r.RemoteAddr, authFailureReason(err))
-			}
+			fs.auditLog.LogAuthFailed(r.RemoteAddr, authFailureReason(err))
 			if errors.Is(err, productruntime.ErrNodeFailClosed) {
 				writeErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 				return
@@ -53,9 +51,7 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 		authCtx := auth.ContextWithIdentity(ctx, ident)
 		if fs.authorizer != nil {
 			if err := fs.authorizer.Authorize(authCtx, ident, action, resource); err != nil {
-				if fs.auditLog != nil {
-					fs.auditLog.LogAuthFailedAttributed(ident.ID, r.RemoteAddr, "unauthorized: "+string(action))
-				}
+				fs.auditLog.LogAuthFailedAttributed(ident.ID, r.RemoteAddr, "unauthorized: "+string(action))
 				writeErrorJSON(w, http.StatusForbidden, "Forbidden")
 				return
 			}

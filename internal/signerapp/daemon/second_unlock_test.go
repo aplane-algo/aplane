@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +80,7 @@ func TestASecondUnlockKeepsTheSessionInService(t *testing.T) {
 	// A load from here fails after it has opened the keyring: the networks
 	// the configuration names no longer pass policy verification.
 	server.config.GenesisHashNetworks = map[string]string{"not-a-genesis-hash": "lab"}
-	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(testPassphrase)
+	success, keyCount, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), testPassphrase)
 	server.config.GenesisHashNetworks = nil
 
 	if !success || errMsg != "" || code != "" || keyCount != keys {
@@ -167,7 +168,7 @@ func TestATokenChangeBesideASecondUnlockStands(t *testing.T) {
 			}
 
 			_, loads := countBuilds(server)
-			if success, _, errMsg, _ := server.adminServices().UnlockIdentity(testPassphrase); !success {
+			if success, _, errMsg, _ := server.adminServices().UnlockIdentity(context.Background(), testPassphrase); !success {
 				t.Fatalf("second UnlockIdentity() failed: %s", errMsg)
 			}
 			if loads.Load() != 0 {

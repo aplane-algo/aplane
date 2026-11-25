@@ -123,9 +123,7 @@ func (fs *Signer) RevokeClientKey(ctx adminserver.SessionContext, fingerprint st
 	if sshServer := fs.currentSSHServer(); sshServer != nil {
 		closed = sshServer.CloseConnectionsForFingerprint(fingerprint, "key revoked")
 	}
-	if fs.auditLog != nil {
-		fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
-	}
+	fs.auditLog.LogClientKeyRevokedContext(ctx, fingerprint, entry.Label, closed)
 	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevoked, fingerprint)
 	if err != nil {
 		logWarnf("client key revoked: %s (closed %d connection(s)) but the registry write is not yet durable: %v", fingerprint, closed, err)
@@ -146,9 +144,7 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, finger
 	}
 	entry, enrolled, cleared, err := fs.productRuntime().ApproveEnrollment(fingerprint, label)
 	if enrolled {
-		if fs.auditLog != nil {
-			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
-		}
+		fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, entry.Label, entry.RemoteAddr)
 		if err != nil {
 			logWarnf("client key enrolled: %s (label %+q, requested from %s) but the approval did not complete: %v", fingerprint, entry.Label, entry.RemoteAddr, err)
 		} else {
@@ -173,9 +169,7 @@ func (fs *Signer) ApproveClientEnrollment(ctx adminserver.SessionContext, finger
 func (fs *Signer) RejectClientEnrollment(ctx adminserver.SessionContext, fingerprint string) error {
 	entry, rejected, err := fs.productRuntime().RejectEnrollment(fingerprint)
 	if rejected {
-		if fs.auditLog != nil {
-			fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
-		}
+		fs.auditLog.LogClientEnrollmentRejectedContext(ctx, fingerprint, entry.Label)
 		if err != nil {
 			logWarnf("client enrollment request rejected: %s but the queue write is not yet durable: %v", fingerprint, err)
 		} else {
@@ -230,9 +224,7 @@ func (fs *Signer) ImportClientKey(ctx adminserver.SessionContext, publicKey, lab
 	fingerprint := ssh.FingerprintSHA256(key)
 	added, cleared, err := fs.productRuntime().ImportClientKey(key, label)
 	if added {
-		if fs.auditLog != nil {
-			fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
-		}
+		fs.auditLog.LogClientEnrolledContext(ctx, fingerprint, label, "")
 		if err != nil {
 			logWarnf("client key imported: %s (label %+q) but the import did not complete: %v", fingerprint, label, err)
 		} else {
@@ -261,10 +253,8 @@ func (fs *Signer) RevokeAllClientKeys(ctx adminserver.SessionContext) (int, int,
 	if sshServer := fs.currentSSHServer(); sshServer != nil {
 		closed = sshServer.CloseAllClientConnections("all client keys revoked")
 	}
-	if fs.auditLog != nil {
-		for _, entry := range entries {
-			fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
-		}
+	for _, entry := range entries {
+		fs.auditLog.LogClientKeyRevokedContext(ctx, entry.Fingerprint, entry.Label, 0)
 	}
 	fs.notifyEnrollmentChanged(protocol.EnrollmentChangeRevokedAll, "")
 	if err != nil {

@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -168,7 +169,7 @@ func TestTheUnlockAnswerForEachOutcome(t *testing.T) {
 			if passphrase == nil {
 				passphrase = testPassphrase
 			}
-			success, _, errMsg, code := server.adminServices().UnlockIdentity(passphrase)
+			success, _, errMsg, code := server.adminServices().UnlockIdentity(context.Background(), passphrase)
 			if got := fmt.Sprintf("%v %s %s", success, code, errMsg); !strings.HasPrefix(got, tc.want) {
 				t.Fatalf("UnlockIdentity() = %q, want %q", got, tc.want)
 			}

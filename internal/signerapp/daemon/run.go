@@ -19,6 +19,7 @@ import (
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/security"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -139,10 +140,21 @@ func Run(dataDir string) int {
 		logInfof("memory locked (keys will not swap to disk)")
 	}
 
+	// The audit log opens before the startup passphrase is checked, so that one
+	// the store refuses is recorded.
+	auditLog, err := NewAuditLogger(filepath.Join(resolvedDataDir, "audit.log"))
+	if err != nil {
+		logWarnf("failed to initialize audit log: %v", err)
+		// Continue without audit logging - not fatal
+	} else {
+		logInfof("audit logging enabled (audit.log)")
+	}
+
 	// Comprehensive startup validation (config + runtime)
 	// This handles required vs optional checks and prints warnings
 	startupInfo, unlockPlan, err := signerstartup.ValidateAndBuildUnlockPlan(startupOpts, runtime, os.Getenv("TEST_PASSPHRASE"))
 	if err != nil {
+		recordStartupPassphraseRefusal(auditLog, err)
 		logErrorf("%v", err)
 		return 1
 	}
@@ -170,15 +182,6 @@ func Run(dataDir string) int {
 
 	if startLocked {
 		logInfof("keys will be loaded after unlock via apadmin TUI")
-	}
-
-	// Initialize audit logger
-	auditLog, err := NewAuditLogger(filepath.Join(resolvedDataDir, "audit.log"))
-	if err != nil {
-		logWarnf("failed to initialize audit log: %v", err)
-		// Continue without audit logging - not fatal
-	} else {
-		logInfof("audit logging enabled (audit.log)")
 	}
 
 	authorizer := authz.NewProductSingleAuthorizer()
@@ -248,9 +251,7 @@ func Run(dataDir string) int {
 	keysSnapshot, _ := ir.KeySnapshot()
 	keyCount := len(keysSnapshot)
 
-	if auditLog != nil {
-		auditLog.LogServerStart(keyCount)
-	}
+	auditLog.LogServerStart(keyCount)
 
 	httpServer := buildHTTPServer(server, port)
 	cancelHTTPRequests := withCancelableRequests(httpServer)
@@ -349,6 +350,21 @@ func (fs *Signer) lifecyclePlan(ir *productruntime.Runtime, httpServer *http.Ser
 	}
 }
 
+// recordStartupPassphraseRefusal audits a startup passphrase the store root
+// refused, which is checked before there is a runtime to unlock. No other
+// startup failure is an unlock.
+func recordStartupPassphraseRefusal(auditLog *AuditLogger, err error) {
+	var refused *signerstartup.PassphraseError
+	if !errors.As(err, &refused) {
+		return
+	}
+	code := protocol.ErrCodeUnlockFailed
+	if errors.Is(err, crypto.ErrInvalidPassphrase) {
+		code = protocol.ErrCodeInvalidPassphrase
+	}
+	auditLog.LogIdentityUnlocked(context.Background(), "failed", 0, code, err.Error())
+}
+
 // unlockAtStartup unlocks the store with the passphrase a helper or the test
 // environment supplied, and zeroes the passphrase. It reports false, having
 // logged why, when the daemon cannot start.
@@ -363,6 +379,7 @@ func (s *Signer) unlockAtStartup(ir *productruntime.Runtime, passphrase []byte) 
 	outcome, err := ir.Unlock(passphrase, func(kr *crypto.Keyring) error {
 		return adminServices.reconcileGenerationsLocked(ir, kr)
 	}, nil)
+	s.recordUnlock(context.Background(), outcome, err)
 	if err != nil {
 		logErrorf("error unlocking the store: %v", err)
 		return false
