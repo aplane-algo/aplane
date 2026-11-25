@@ -27,8 +27,8 @@ type sshRuntimeStopper interface {
 
 // sshSessionCallback audits each client session and announces an enrolled
 // key's connection coming or going, since the Enrolled Clients list shows
-// which keys are connected. Enrollment-request connections are audited but
-// not announced: the request itself is, when it is queued.
+// which keys are connected. Enrollment-request connections are audited, up to
+// a rate limit, but not announced: the request itself is, when it is queued.
 func (fs *Signer) sshSessionCallback(auditLog *AuditLogger) sshtunnel.SessionCallback {
 	return func(event sshtunnel.SessionEvent) {
 		if event.Connected {
