@@ -60,8 +60,8 @@ Each line is a JSON object with the following fields:
 | `expected_policy_set_sha256`, `expected_snapshot_sha256` | string | The digests an apply request expects: the request's claim, not verified state |
 | `base_policy_set_sha256`, `policy_set_sha256` | string | The verified policy set an apply changed, and the set it left |
 | `asa_action` | string | `add` or `remove` |
-| `suppressed_count` | int | On a `*_SUPPRESSED` event: how many were not logged individually |
 | `network`, `genesis_hash`, `asset_id` | | The asset an ASA set change names; on an outcome, the chain it was resolved to |
+| `suppressed_count` | int | On a `*_SUPPRESSED` event: how many were not logged individually |
 
 Fields are omitted when empty.
 
