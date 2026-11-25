@@ -1037,3 +1037,99 @@ func TestExternalCheckRefusalReleasesKeyUseBeforeAuditLog(t *testing.T) {
 		t.Fatal("KeyUse was still active when refuseExternalCheck wrote the audit entry")
 	}
 }
+
+// A session end inside the key use of an approved /sign or bounded component
+// is audited as session_ended_after_approval once per signed position, after
+// the key use is released, and as nothing else.
+func TestSessionEndInsideKeyUseIsAuditedOnceAfterRelease(t *testing.T) {
+	twoBounded := func(t *testing.T, f *nonRotatingFixture, svc *Service) *ServiceError {
+		a := paymentTransaction(t, f.boundedAddr, types.Address{0x61}.String(), 100)
+		b := paymentTransaction(t, f.boundedAddr, types.Address{0x62}.String(), 100)
+		a.Fee, b.Fee = 1_000, 1_000
+		a.GenesisHash = testDigest(t, apconfig.AlgorandTestnetGenesisHash)
+		b.GenesisHash = a.GenesisHash
+		gid, err := algocrypto.ComputeGroupID([]types.Transaction{a, b})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.Group, b.Group = gid, gid
+		_, signErr := svc.PrepareBoundedComponentWithContext(context.Background(), signerapi.ComponentRequest{
+			RequestID:     "req-two-bounded",
+			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(a), txnutil.EncodeWithPrefixHex(b)},
+			Targets: []signerapi.ComponentTarget{
+				{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: f.boundedAddr},
+				{TargetIndex: 1, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: f.boundedAddr},
+			},
+		}, f.session)
+		return signErr
+	}
+	ordinary := func(t *testing.T, f *nonRotatingFixture, svc *Service) *ServiceError {
+		_, err := f.ordinarySign(t, svc, context.Background())
+		return err
+	}
+	bounded := func(t *testing.T, f *nonRotatingFixture, svc *Service) *ServiceError {
+		_, err := f.boundedComponentSign(t, svc, context.Background())
+		return err
+	}
+	cases := []struct {
+		name      string
+		failLoad  bool
+		positions int
+		run       func(*testing.T, *nonRotatingFixture, *Service) *ServiceError
+	}{
+		{"ordinary/after_the_load", false, 1, ordinary},
+		{"ordinary/the_load_fails", true, 1, ordinary},
+		{"bounded/after_the_load", false, 1, bounded},
+		{"bounded/the_load_fails", true, 1, bounded},
+		{"bounded/before_the_second_target", false, 2, twoBounded},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newNonRotatingFixture(t)
+			var unlocked, active atomic.Bool
+			unlocked.Store(true)
+			var heldDuringAudit atomic.Bool
+			audit := &rejectHookAuditLogger{onReject: func() {
+				if active.Load() {
+					heldDuringAudit.Store(true)
+				}
+			}}
+			svc := f.newService(t, audit, &unlocked)
+			svc.Executor.AuditLog = audit
+			svc.KeyUse = func(ctx context.Context) (context.Context, func()) {
+				active.Store(true)
+				return ctx, func() { active.Store(false) }
+			}
+			f.store.onGet = func(_ context.Context, addr string) {
+				unlocked.Store(false)
+				if tc.failLoad {
+					f.store.mu.Lock()
+					delete(f.store.keys, addr)
+					f.store.mu.Unlock()
+				}
+			}
+
+			err := tc.run(t, f, svc)
+			if err == nil || err.Kind != ErrorLocked {
+				t.Fatalf("error = %v, want ErrorLocked", err)
+			}
+			if f.store.loads.Load() != 1 {
+				t.Fatalf("key loads = %d, want 1", f.store.loads.Load())
+			}
+			if len(audit.rejected) != tc.positions {
+				t.Fatalf("rejected = %+v, want %d entries", audit.rejected, tc.positions)
+			}
+			for _, entry := range audit.rejected {
+				if entry.reason != "session_ended_after_approval" {
+					t.Fatalf("rejected reason = %q, want session_ended_after_approval", entry.reason)
+				}
+			}
+			if len(audit.approved) != 0 || len(audit.failed) != 0 || len(audit.withheld) != 0 {
+				t.Fatalf("approved=%d failed=%d withheld=%d, want none", len(audit.approved), len(audit.failed), len(audit.withheld))
+			}
+			if heldDuringAudit.Load() {
+				t.Fatal("the key use was still held during the audit write")
+			}
+		})
+	}
+}

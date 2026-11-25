@@ -1331,13 +1331,13 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 	}
 }
 
-// refusedKeyUse records that a request passed every pre-execution gate and
-// reached key-use registration, then returns an already-canceled context so
-// openKeyUse stops with ErrorLocked without touching a KeySession.
 func passthroughKeyUse(ctx context.Context) (context.Context, func()) {
 	return ctx, func() {}
 }
 
+// refusedKeyUse records that a request passed every pre-execution gate and
+// reached key-use registration, then returns an already-canceled context so
+// openKeyUse stops with ErrorLocked without touching a KeySession.
 func refusedKeyUse(called *bool) func(context.Context) (context.Context, func()) {
 	return func(ctx context.Context) (context.Context, func()) {
 		if called != nil {

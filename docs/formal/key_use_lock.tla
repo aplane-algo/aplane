@@ -82,9 +82,10 @@ Thirteen guards are switchable:
                       uncancelled context the drain does not wait for.
   DrainWaits          Wipe waits for every key use registered before
                       DrainBegin.
-  FinalRecheck        an audited sign rechecks after its audit write and
-                      returns nothing when the signer locked (releaseRefused
-                      for rotating, postAuditRefused for non-rotating).
+  FinalRecheck        a sign rechecks after its release (and after any audit
+                      write) and returns nothing when the signer locked
+                      (releaseRefused for rotating, keyUseRefused for the
+                      others).
   GenerationCheck     that recheck compares the session generation captured at
                       the start (LockGeneration / inSession), not just the
                       current state, so a lock and an unlock in between still

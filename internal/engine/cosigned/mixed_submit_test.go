@@ -496,7 +496,7 @@ func (c *capturedSignRequest) get() signerapi.GroupSignRequest {
 // newUserSignerSignTestServer mocks the user signer's POST /sign. It mirrors the
 // real server's request-shape validation, signs sign-mode positions (returning a
 // stand-in signed transaction), and returns "" for foreign positions — exactly
-// as ExecuteGroupSigning does.
+// as executeGroupSigning does.
 func newUserSignerSignTestServer(t *testing.T, captured *capturedSignRequest) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
