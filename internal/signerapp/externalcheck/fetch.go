@@ -15,8 +15,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -72,7 +74,7 @@ func (f *Fetcher) Get(ctx context.Context, lookup Lookup, token string) (*Answer
 	if err != nil {
 		return nil, errors.New("the request URL does not parse")
 	}
-	release, err := f.acquire(ctx, target.Scheme+"://"+target.Host)
+	release, err := f.acquire(ctx, canonicalOrigin(target))
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +230,26 @@ func describeFetchError(err error, ctx context.Context) error {
 		return errUnreachable
 	}
 	return errors.New("the lookup failed")
+}
+
+// canonicalOrigin is target's URL origin in one form, scheme://host:port, so that
+// sources which write it differently share its places: a name in lower case, an
+// address in its canonical form, and the scheme's port where none is written.
+// url.Parse has put the scheme in lower case.
+func canonicalOrigin(target *url.URL) string {
+	host := strings.ToLower(target.Hostname())
+	if addr, err := netip.ParseAddr(host); err == nil {
+		host = addr.String()
+	}
+	port := target.Port()
+	switch {
+	case port != "":
+	case target.Scheme == "https":
+		port = "443"
+	case target.Scheme == "http":
+		port = "80"
+	}
+	return target.Scheme + "://" + net.JoinHostPort(host, port)
 }
 
 // acquire takes one of origin's in-flight places, waiting for one until ctx

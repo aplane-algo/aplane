@@ -176,7 +176,7 @@ func (f *fakeOnlineSession) sourceTokenList(request protocol.SourceTokenListMess
 		})
 	}
 	if f.tokens == nil {
-		return protocol.MarshalAdminMessage(protocol.SourceTokenListResultMessage{BaseMessage: base, Code: "identity_locked", Error: "the signer is locked"})
+		return protocol.MarshalAdminMessage(protocol.SourceTokenListResultMessage{BaseMessage: base, Code: protocol.ErrCodeSignerLocked, Error: "the signer is locked"})
 	}
 	var order []string
 	if _, ok := f.tokens[policy.DefaultKey]; ok {

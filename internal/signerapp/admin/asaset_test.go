@@ -198,11 +198,11 @@ func TestASASetChangeDuringAnUnlockInFlightIsRefused(t *testing.T) {
 		t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (add answered %s)", after, added.Code)
 	}
 	const want = "identity is locked; unlock the signer before changing the ASA set"
-	if added.Success || added.Code != "identity_locked" || added.Error != want || added.CommitUncertain || added.GenerationID != "" {
-		t.Fatalf("AddASA() during an unlock = %+v, want identity_locked: %s", added, want)
+	if added.Success || added.Code != protocol.ErrCodeSignerLocked || added.Error != want || added.CommitUncertain || added.GenerationID != "" {
+		t.Fatalf("AddASA() during an unlock = %+v, want signer_locked: %s", added, want)
 	}
-	if removed.Success || removed.Code != "identity_locked" || removed.Error != want || removed.CommitUncertain || removed.GenerationID != "" {
-		t.Fatalf("RemoveASA() during an unlock = %+v, want identity_locked: %s", removed, want)
+	if removed.Success || removed.Code != protocol.ErrCodeSignerLocked || removed.Error != want || removed.CommitUncertain || removed.GenerationID != "" {
+		t.Fatalf("RemoveASA() during an unlock = %+v, want signer_locked: %s", removed, want)
 	}
 	if after := currentGeneration(t, svc, ir); after != before {
 		t.Fatalf("an ASA set change during an unlock committed %s -> %s", before, after)

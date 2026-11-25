@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyapply"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -214,7 +215,7 @@ func (b *offlineBackend) Context(context.Context) (adminproto.PolicyContextView,
 func (b *offlineBackend) Document(_ context.Context, key, expectedSnapshot string) (adminproto.PolicyDocumentResult, error) {
 	if expectedSnapshot != "" {
 		if _, snapshot, err := policyapply.Snapshot(b.env, b.current); err != nil || snapshot != expectedSnapshot {
-			return adminproto.PolicyDocumentResult{Key: key, Code: "policy_snapshot_changed", Error: "the node's policy or its context changed since the snapshot; read it again"}, nil
+			return adminproto.PolicyDocumentResult{Key: key, Code: protocol.ResultCodePolicySnapshotChanged, Error: "the node's policy or its context changed since the snapshot; read it again"}, nil
 		}
 	}
 	return policyapply.Document(b.current, key), nil
@@ -234,7 +235,7 @@ func (b *offlineBackend) Apply(_ context.Context, req adminproto.ApplyPolicyRequ
 	outcome, err := policyapply.Commit(b.env, req)
 	if err != nil {
 		return adminproto.ApplyPolicyResult{
-			Code: policyapply.Code(err, "policy_apply_failed"), Error: err.Error(),
+			Code: policyapply.Code(err, protocol.ResultCodePolicyApplyFailed), Error: err.Error(),
 			Errors: outcome.Problems, CommitUncertain: outcome.Uncertain,
 		}, nil
 	}

@@ -489,8 +489,8 @@ func TestPolicyApplyDuringAnUnlockInFlightIsRefused(t *testing.T) {
 		t.Fatalf("the signer ended unlocked over generation %s, which its reload did not follow (apply answered %s)", after, result.Code)
 	}
 	const want = "identity is locked; unlock the signer before applying policy"
-	if result.Success || result.Code != "identity_locked" || result.Error != want || result.CommitUncertain || result.GenerationID != "" {
-		t.Fatalf("ApplyPolicy() during an unlock = %+v, want identity_locked: %s", result, want)
+	if result.Success || result.Code != protocol.ErrCodeSignerLocked || result.Error != want || result.CommitUncertain || result.GenerationID != "" {
+		t.Fatalf("ApplyPolicy() during an unlock = %+v, want signer_locked: %s", result, want)
 	}
 	if after := currentGeneration(t, svc, ir); after != before {
 		t.Fatalf("an apply during an unlock committed %s -> %s", before, after)

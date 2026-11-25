@@ -40,8 +40,8 @@ func TestSourceTokenNamesGathersEveryPage(t *testing.T) {
 
 // A failed reply, and a listing that does not move on, are errors.
 func TestSourceTokenNamesRefusesAListingThatDoesNotEnd(t *testing.T) {
-	if _, _, err := (&SourceTokenNames{}).Add(protocol.SourceTokenListResultMessage{Code: "identity_locked", Error: "locked"}); err == nil ||
-		protocol.CodeForError(err) != "identity_locked" {
+	if _, _, err := (&SourceTokenNames{}).Add(protocol.SourceTokenListResultMessage{Code: protocol.ErrCodeSignerLocked, Error: "locked"}); err == nil ||
+		protocol.CodeForError(err) != protocol.ErrCodeSignerLocked {
 		t.Fatalf("a failed reply: %v", err)
 	}
 	if _, _, err := (&SourceTokenNames{}).Add(listingPage(3)); err == nil {

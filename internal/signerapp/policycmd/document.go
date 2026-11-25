@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policyexport"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyreview"
 	"github.com/aplane-algo/aplane/internal/signerapp/policytext"
 )
@@ -276,7 +277,7 @@ func getReviewState(ctx context.Context, backend Backend) (adminproto.PolicyView
 		return view, pctx, resultError(pctx.Code, pctx.Error)
 	}
 	if pctx.PolicySetSHA256 != view.PolicySetSHA256 || pctx.SnapshotSHA256 == "" {
-		return view, pctx, resultError("policy_snapshot_changed", "the node's policy changed while it was being read; run the command again")
+		return view, pctx, resultError(protocol.ResultCodePolicySnapshotChanged, "the node's policy changed while it was being read; run the command again")
 	}
 	return view, pctx, nil
 }
@@ -354,7 +355,7 @@ func compareExport(selected *policyexport.Selected, pctx adminproto.PolicyContex
 		return nil
 	}
 	if err := selected.Compare(pctx.ContextSHA256, pctx.PolicySetSHA256, pctx.SnapshotSHA256); err != nil {
-		return resultError("policy_export_stale", err.Error())
+		return resultError(protocol.ResultCodePolicyExportStale, err.Error())
 	}
 	return nil
 }

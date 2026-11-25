@@ -18,8 +18,8 @@ const (
 // AdminProtocolVersion is the admin IPC protocol version. A client sends it
 // in auth.protocol_version and the server accepts only this exact value:
 // apadmin, apapprover and apsigner ship together, so there is no skew to
-// tolerate.
-const AdminProtocolVersion = 8
+// tolerate. docs/ARCH_ADMIN.md ("Transport notes") says which changes bump it.
+const AdminProtocolVersion = 9
 
 // Admin protocol message type constants
 const (

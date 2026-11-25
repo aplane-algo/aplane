@@ -49,7 +49,7 @@ type Signer struct {
 	sshRuntimeMu      sync.RWMutex                       // Protects sshRuntime swaps
 	apiListener       *sshtunnel.APIListener             // Receives tunneled API channels for the HTTP server
 	config            *serverconfig.ServerConfig         // Server configuration, fixed after startup
-	storeHealth       signerrest.StoreHealthCache        // Bounds the unauthenticated /health store inspection
+	storeHealth       signerrest.StoreHealthCache        // Bounds the /health and /status store inspection
 	storeMutationLock sync.Mutex                         // Product key/template/config/policy mutation serialization
 	restoreAttemptMu  sync.Mutex                         // Protects restoreAttempts lazy initialization
 	restoreAttempts   *backupadmin.RestoreAttemptLimiter // Per-archive restore backoff state

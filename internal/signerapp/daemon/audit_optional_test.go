@@ -101,3 +101,13 @@ func TestOptionalAuditLogPassesAPresentLogger(t *testing.T) {
 		t.Error("ServerAuditLogger is nil")
 	}
 }
+
+// /health and /status share the one store inspection cache the server holds.
+func TestRESTServiceSharesTheServersStoreHealthCache(t *testing.T) {
+	fs := &Signer{}
+	for range 2 {
+		if got := fs.restService().Deps.StoreHealth; got != &fs.storeHealth {
+			t.Fatalf("StoreHealth = %p, want the server's %p", got, &fs.storeHealth)
+		}
+	}
+}

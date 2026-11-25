@@ -127,6 +127,7 @@ const (
 
 	ResultCodeStoreBusy            = "store_busy"
 	ResultCodeListFailed           = "list_failed"
+	ResultCodeNotFound             = "not_found"
 	ResultCodeInvalidTemplateType  = "invalid_template_type"
 	ResultCodeInstallFailed        = "install_failed"
 	ResultCodeReloadFailed         = "reload_failed"
@@ -141,4 +142,34 @@ const (
 	ResultCodeRemoveFailed         = "remove_failed"
 	ResultCodeKeyTypeInUse         = "key_type_in_use"
 	ResultCodeDeactivationFailed   = "deactivation_failed"
+
+	// Policy results.
+	ResultCodeExpectedPolicySetSHA256Required = "expected_policy_set_sha256_required"
+	ResultCodeExpectedSnapshotSHA256Required  = "expected_snapshot_sha256_required"
+	ResultCodePolicyUnavailable               = "policy_unavailable"
+	ResultCodeInvalidPolicyRequest            = "invalid_policy_request"
+	ResultCodePolicySetTooLarge               = "policy_set_too_large"
+	ResultCodePolicyContextUnavailable        = "policy_context_unavailable"
+	ResultCodePolicyCheckFailed               = "policy_check_failed"
+	ResultCodePolicyVerifyFailed              = "policy_verify_failed"
+	ResultCodePolicySnapshotChanged           = "policy_snapshot_changed"
+	ResultCodePolicyValidationFailed          = "policy_validation_failed"
+	ResultCodePolicyCommitUncertain           = "policy_commit_uncertain"
+	ResultCodePolicySaveFailed                = "policy_save_failed"
+	ResultCodePolicyApplyFailed               = "policy_apply_failed"
+	ResultCodePolicyReloadFailed              = "policy_reload_failed"
+	ResultCodePolicyDocumentNotFound          = "policy_document_not_found"
+	ResultCodePolicyExportStale               = "policy_export_stale"
+
+	// ASA set results.
+	ResultCodeASAUnknownNetwork    = "unknown_network"
+	ResultCodeASALookupFailed      = "lookup_failed"
+	ResultCodeASAConfirmationStale = "confirmation_stale"
+	ResultCodeASABuiltin           = "asa_builtin"
+	ResultCodeASAAlreadyConfirmed  = "asa_already_confirmed"
+	ResultCodeASAReferenced        = "asa_referenced"
+	ResultCodeASAAddFailed         = "asa_add_failed"
+	ResultCodeASARemoveFailed      = "asa_remove_failed"
+	ResultCodeASACommitUncertain   = "asa_commit_uncertain"
+	ResultCodeASAReloadFailed      = "asa_reload_failed"
 )

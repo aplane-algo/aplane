@@ -576,7 +576,7 @@ state.
 
 An online apply, and a change to the node's ASA set, needs the signer
 unlocked when it runs. While it is locked, an unlock still in progress on
-another connection included, the change is refused with `identity_locked`
+another connection included, the change is refused with `signer_locked`
 and nothing is written; once the unlock completes, apply again. A stopped
 signer takes `apadmin policy rescue` instead.
 
