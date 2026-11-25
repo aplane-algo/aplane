@@ -619,6 +619,12 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	}
 	defer func() { _ = sshClient.Close() }()
 
+	// A server can let a client in without asking for a key. Its answer then
+	// names no key this client used.
+	if clientFingerprint == "" {
+		return none, errors.New("the server did not authenticate this client's SSH key")
+	}
+
 	// Open a session channel
 	session, err := sshClient.NewSession()
 	if err != nil {
@@ -662,8 +668,8 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		return none, ctx.Err()
 	}
 	if len(output) > maxEnrollmentReplyBytes {
-		// Close without Wait: a server streaming unbounded output may never exit.
-		_ = session.Close()
+		// No Wait: a server that streams without end may never exit. The
+		// deferred closes end the session.
 		return none, fmt.Errorf("enrollment response exceeded %d bytes", maxEnrollmentReplyBytes)
 	}
 
@@ -675,7 +681,8 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 		if errMsg := strings.TrimSpace(string(output)); errMsg != "" {
 			return none, fmt.Errorf("%s", safeEnrollmentText(errMsg))
 		}
-		return none, fmt.Errorf("enrollment failed: %w", err)
+		// An exit signal's name and message are the server's text too.
+		return none, fmt.Errorf("enrollment failed: %s", safeEnrollmentText(err.Error()))
 	}
 
 	reply := strings.TrimSpace(string(output))
@@ -689,7 +696,7 @@ func (c *Client) RequestEnrollment(ctx context.Context, label string) (Enrollmen
 	if result.Fingerprint == "" {
 		return none, fmt.Errorf("unexpected enrollment response: %s", quoteClientText(reply))
 	}
-	if clientFingerprint != "" && result.Fingerprint != clientFingerprint {
+	if result.Fingerprint != clientFingerprint {
 		return none, fmt.Errorf("server answered for %s, but this client authenticated with %s", safeEnrollmentText(result.Fingerprint), clientFingerprint)
 	}
 	return result, nil
