@@ -442,8 +442,14 @@ func (m Model) abortBackupImport(err error) (Model, tea.Cmd) {
 	return m.failBackupImport(err), cmd
 }
 
+// failBackupImport ends the import and reports err on the form, which keeps the
+// passphrase for another try. Off the form, where a recovery takes the operator,
+// nothing would clear it: opening the form starts over.
 func (m Model) failBackupImport(err error) Model {
 	m = m.resetBackupImportTransfer()
+	if m.viewState != ViewBackupImport {
+		m = m.closeBackupImportForm()
+	}
 	m.backups.imp.err = "Import failed: " + err.Error()
 	return m
 }
@@ -524,8 +530,6 @@ func (m *Model) interruptBackupTransfers(connectionLive bool) tea.Cmd {
 	if imp.phase != importIdle {
 		*m = m.resetBackupImportTransfer()
 	}
-	// The form's passphrase never outlives the session, entered or not.
-	*m = m.closeBackupImportForm()
 	return cmd
 }
 
@@ -575,13 +579,6 @@ func (m Model) unresolvedImportBanner() string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// shutdownBackupImport releases what an import holds when the program exits:
-// the open archive file and the passphrase.
-func (m *Model) shutdownBackupImport() {
-	*m = m.closeBackupImportFile()
-	*m = m.closeBackupImportForm()
 }
 
 func (m Model) renderBackupImport() string {

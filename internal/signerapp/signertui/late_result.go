@@ -46,20 +46,3 @@ func (m Model) showHeldResult() (Model, tea.Cmd) {
 	}
 	return next.(Model), cmd
 }
-
-// discardHeldResult drops a held result when the admin session ends, however
-// it ends: a result is held only across a lock within one session, never
-// into the next (an idle disconnect exists for a terminal walked away from).
-// The result holds no secret, but its operation's form is cleared with it:
-// the recovery phrase a held import leaves in the import form, and the
-// passphrases of a held backup's form.
-func (m *Model) discardHeldResult() {
-	switch m.heldResult.(type) {
-	case ImportResultMsg:
-		m.forms.importMnemonicInput.SetValue("")
-		m.forms.importMnemonicInput.Blur()
-	case BackupResultMsg:
-		m.clearBackupPassphrases()
-	}
-	m.heldResult = nil
-}

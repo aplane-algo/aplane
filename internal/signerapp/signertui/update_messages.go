@@ -65,7 +65,6 @@ func (m Model) handleAuthResultMsg(msg AuthResultMsg) (tea.Model, tea.Cmd) {
 		// stay disconnected rather than retake its single login slot.
 		m.endAdminSession()
 		m.connectionState = ConnectionDisconnected
-		m.clearAuthPassphrase()
 		m.auth.passphraseError = ""
 		m.auth.endedReason = loginTimeoutReason
 		return m, nil
@@ -91,7 +90,6 @@ func (m Model) handleLocalIdleDisconnectedMsg(msg localIdleDisconnectedMsg) (tea
 	m.connectionState = ConnectionDisconnected
 	m.signerStatusKnown = false
 	m.viewState = ViewAuth
-	m.clearAuthPassphrase()
 	m.auth.passphraseError = ""
 	m.auth.loggingIn = false
 	m.auth.endedReason = msg.Reason
@@ -469,8 +467,7 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	if m.isRecoveryBlockedReply(msg.ID, msg.Code) {
 		// The key was imported: its recovery phrase leaves the form, as
 		// it does on success.
-		m.forms.importMnemonicInput.SetValue("")
-		m.forms.importMnemonicInput.Blur()
+		m.clearImportMnemonic()
 		return m.showRecoveryBlockedReply(keyChangeCause("Key import", msg.Address, msg.Error))
 	}
 	if !m.takeOperationReply(msg.ID) {
@@ -483,8 +480,7 @@ func (m Model) handleImportResultMsg(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 func (m Model) applyImportResult(msg ImportResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Success {
 		m.lastError = ""
-		m.forms.importMnemonicInput.SetValue("")
-		m.forms.importMnemonicInput.Blur()
+		m.clearImportMnemonic()
 		m.forms.importError = ""
 		// Store imported key info for display
 		m.forms.importedAddress = msg.Address

@@ -1346,7 +1346,8 @@ Exit status is 0 on success, 2 for a usage error, and 1 or higher when the
 signer refuses or the command fails.
 
 In the apadmin TUI, Key Details for a cosigner key shows its sources with
-their token state, and `o` sets or removes a token.
+their token state, and any stored token that belongs to none of them; `o` sets
+or removes a token.
 
 ---
 

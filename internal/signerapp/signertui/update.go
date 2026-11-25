@@ -125,7 +125,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthRequiredMsg:
 		// Server requires authentication - show auth screen
 		m.endAdminSession()
-		m.clearAuthPassphrase()
 		m.auth.passphraseError = ""
 		if m.viewState == ViewError {
 			// A login the signer ended with a serious error closes the
