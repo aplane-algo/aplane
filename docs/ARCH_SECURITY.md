@@ -360,7 +360,8 @@ secret of any kind.
 
 ### SSH Audit Logging
 
-All SSH connections are logged for audit purposes:
+SSH connections are logged for audit purposes: every one an enrolled key opens,
+and `enroll` connections up to a rate limit:
 
 ```json
 {"timestamp":"2026-01-18T10:30:00Z","event":"SESSION_CONNECTED","principal":"client:SHA256:Vb3x...","requester_principal":"client:SHA256:Vb3x...","transport":"ssh","outcome":"connected","remote_addr":"192.168.1.5:54321","reason":"ssh","ssh_fingerprint":"SHA256:Vb3x..."}
@@ -369,7 +370,8 @@ All SSH connections are logged for audit purposes:
 
 Logged information:
 - Remote IP address and port, with `transport: "ssh"`
-- Connect/disconnect events, including `enroll` connections
+- Connect/disconnect events, in pairs. An `enroll` connection beyond the rate
+  limit writes neither (see [Audit Logger](#audit-logger), "Denial behavior")
 - `reason`: `ssh` for a connection an enrolled key opened, `ssh-enroll` for
   an `enroll` connection. Anyone who can reach the SSH port can open an
   `enroll` connection, so an `ssh-enroll` entry identifies no authenticated
@@ -1313,7 +1315,8 @@ Denial behavior:
   seconds, and the rest are counted in an `AUTH_FAILURES_SUPPRESSED` entry
   (`suppressed_count`) written within a minute of the first suppressed
   failure, and on shutdown. A flood stays visible without rotating earlier
-  entries out of the log. Authorization denials of an authenticated
+  entries out of the log in minutes; the limit is on the rate, so one kept up
+  for days still does. Authorization denials of an authenticated
   principal are not rate limited.
 - An admin login the passphrase check refuses writes `ADMIN_LOGIN_FAILED`,
   for a wrong passphrase or a store root that could not be opened, with the
@@ -1321,6 +1324,15 @@ Denial behavior:
   separate budget and an `ADMIN_LOGIN_FAILURES_SUPPRESSED` summary, so a flood
   of client authentication failures cannot hide it. No entry carries the
   passphrase or its length.
+- Two more kinds of entry that need no authentication are rate limited the
+  same way, each with a budget and a summary of its own: `enroll` connections,
+  which any key that reaches the SSH port can open
+  (`ENROLL_SESSIONS_SUPPRESSED`), and `STORE_INITIALIZE_FAILED`, which a request
+  on the admin socket can cause before login
+  (`STORE_INITIALIZE_FAILURES_SUPPRESSED`). A connection's `SESSION_CONNECTED`
+  takes the budget, and its `SESSION_DISCONNECTED` is written exactly when that
+  was. An enrolled key's connections are not limited. The enrollment queue, of
+  16, bounds `CLIENT_ENROLLMENT_REQUESTED`.
 - Cosigner rejections (`SIGN_REJECTED` for a cosigner component: a policy
   rejection, `cosigner_policy_rejected:`, or a signer-invariant refusal,
   `signer_invariant:`) are rate limited the same way, with a separate budget
@@ -1348,6 +1360,7 @@ Events:
 - `AUTH_FAILURES_SUPPRESSED`
 - `ADMIN_LOGIN_FAILED`
 - `ADMIN_LOGIN_FAILURES_SUPPRESSED`
+- `ENROLL_SESSIONS_SUPPRESSED`
 - `COSIGNER_REJECTIONS_SUPPRESSED`
 - `AUTHORIZATION_DENIED`
 - `KEY_RELOAD`
@@ -1370,6 +1383,7 @@ Events:
 - `STORE_RECONCILED`
 - `STORE_INITIALIZED`
 - `STORE_INITIALIZE_FAILED`
+- `STORE_INITIALIZE_FAILURES_SUPPRESSED`
 - `PASSPHRASE_CHANGED`
 - `PASSPHRASE_CHANGE_FAILED`
 - `COSIGNER_REFERENCE_CHANGED`
@@ -1566,8 +1580,8 @@ Backup-audit semantics:
 
 Store-management audit semantics:
 
-- `STORE_INITIALIZED` is emitted when authenticated local IPC store initialization succeeds
-- `STORE_INITIALIZE_FAILED` is emitted when authenticated local IPC store initialization fails
+- `STORE_INITIALIZED` is emitted when a local IPC store initialization, which needs no login, succeeds
+- `STORE_INITIALIZE_FAILED` is emitted when one fails
 - `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key, template, policy-sidecar, and source-token-file counts are recorded in `reason`
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
 - `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports,
@@ -1683,7 +1697,8 @@ Store-management audit semantics:
   result it describes are untouched, and the service acts on the whole
   selection. With JSON escaping, no entry exceeds 128 KiB. This bounds what
   one request can write, not the number of requests, so retention (three
-  10 MB files) can still be exhausted by volume. The release-history reader
+  10 MB files) can still be exhausted by volume: quickly by a caller who has
+  authenticated, and over days within the rate limits above. The release-history reader
   skips lines over 1 MiB, so logs from earlier releases still load.
 - the older durable intents (restore, quarantine prune, abandoned-generation
   discard, deleted-archive prune) keep their result codes but share the

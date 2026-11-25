@@ -28,13 +28,16 @@ const maxAuditLogSize = 10 * 1024 * 1024 // 10 MB
 
 // Entries a caller can generate without bound are rate limited: retention is a
 // few rotated files, so an unbounded stream of them would rotate every earlier
-// entry out of the log. Two streams are limited, each separately:
-// unauthenticated AUTH_FAILED entries, and cosigner component rejections
-// (which an authenticated but compromised signer side can provoke at will;
-// cosigner signatures themselves are never limited). A burst is logged
+// entry out of the log within minutes. Each stream is limited separately:
+// those that need no authentication (unauthenticated AUTH_FAILED entries, admin
+// login failures, enroll connections and store initialization failures; the
+// enrollment queue bounds enrollment requests itself), and cosigner component
+// rejections (which an authenticated but compromised signer side can provoke at
+// will; cosigner signatures themselves are never limited). A burst is logged
 // individually; beyond it, one entry is logged per refill interval and the
 // rest are counted in a *_SUPPRESSED summary written within one summary
-// interval.
+// interval. This limits the rate, not the total: a flood kept up for days still
+// rotates the log.
 const (
 	authFailureBurst           = 20
 	authFailureRefillInterval  = 6 * time.Second
@@ -63,6 +66,7 @@ const (
 	AuditIdentityUnlocked                 AuditEventType = "IDENTITY_UNLOCKED"
 	AuditAdminLoginFailed                 AuditEventType = "ADMIN_LOGIN_FAILED"
 	AuditAdminLoginFailuresSuppressed     AuditEventType = "ADMIN_LOGIN_FAILURES_SUPPRESSED"
+	AuditEnrollSessionsSuppressed         AuditEventType = "ENROLL_SESSIONS_SUPPRESSED"
 	AuditSettingChangeIntent              AuditEventType = "SETTING_CHANGE_INTENT"
 	AuditSettingChanged                   AuditEventType = "SETTING_CHANGED"
 	AuditSettingSaveError                 AuditEventType = "SETTING_SAVE_ERROR"
@@ -88,6 +92,7 @@ const (
 	AuditStoreReconciled                  AuditEventType = "STORE_RECONCILED"
 	AuditStoreInitialized                 AuditEventType = "STORE_INITIALIZED"
 	AuditStoreInitializeFailed            AuditEventType = "STORE_INITIALIZE_FAILED"
+	AuditStoreInitFailuresSuppressed      AuditEventType = "STORE_INITIALIZE_FAILURES_SUPPRESSED"
 	AuditPassphraseChanged                AuditEventType = "PASSPHRASE_CHANGED"
 	AuditPassphraseChangeFailed           AuditEventType = "PASSPHRASE_CHANGE_FAILED"
 	AuditCosignerReferenceChanged         AuditEventType = "COSIGNER_REFERENCE_CHANGED"
@@ -254,14 +259,24 @@ type AuditLogger struct {
 	// closed is set by Close; nothing is written, or reopened, after it.
 	closed bool
 
-	authFailures       entryLimiter
-	adminLoginFailures entryLimiter
-	cosignerRejections entryLimiter
+	authFailures            entryLimiter
+	adminLoginFailures      entryLimiter
+	cosignerRejections      entryLimiter
+	enrollSessions          entryLimiter
+	storeInitializeFailures entryLimiter
+
+	// enrollSessionsLogged holds the remote address of each open enroll
+	// connection whose connect was logged, so that its disconnect is too, and
+	// no other's.
+	enrollSessionsLogged sync.Map
 }
 
 // limiters is every stream of entries that is rate limited.
 func (a *AuditLogger) limiters() []*entryLimiter {
-	return []*entryLimiter{&a.authFailures, &a.adminLoginFailures, &a.cosignerRejections}
+	return []*entryLimiter{
+		&a.authFailures, &a.adminLoginFailures, &a.cosignerRejections,
+		&a.enrollSessions, &a.storeInitializeFailures,
+	}
 }
 
 // entryLimiter is a token bucket over one stream of audit entries, with a
@@ -299,6 +314,8 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 	logger := &AuditLogger{file: file, path: path, written: written, partial: endsMidLine(path, written)}
 	logger.authFailures.init(AuditAuthFailuresSuppressed, "authentication failures")
 	logger.adminLoginFailures.init(AuditAdminLoginFailuresSuppressed, "admin login failures")
+	logger.enrollSessions.init(AuditEnrollSessionsSuppressed, "enroll connections")
+	logger.storeInitializeFailures.init(AuditStoreInitFailuresSuppressed, "store initialization failures")
 	logger.cosignerRejections.init(AuditCosignerRejectionsSuppressed, "cosigner component rejections")
 	return logger, nil
 }
@@ -1046,8 +1063,18 @@ func sshSessionAuditFields(remoteAddr, sshFingerprint string, enrolled bool) Aud
 }
 
 // LogSSHSessionConnected logs an SSH client connection opening. enrolled
-// says whether the key that opened it is enrolled.
+// says whether the key that opened it is enrolled. Anyone who reaches the SSH
+// port can open a connection of the other kind, so those are rate limited.
 func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string, enrolled bool) {
+	if a == nil {
+		return
+	}
+	if !enrolled {
+		if !a.enrollSessions.admit(a) {
+			return
+		}
+		a.enrollSessionsLogged.Store(remoteAddr, true)
+	}
 	entry := sshSessionAuditFields(remoteAddr, sshFingerprint, enrolled)
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
@@ -1064,6 +1091,14 @@ func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext)
 
 // LogSSHSessionDisconnected logs an SSH client connection closing.
 func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint string, enrolled bool) {
+	if a == nil {
+		return
+	}
+	if !enrolled {
+		if _, logged := a.enrollSessionsLogged.LoadAndDelete(remoteAddr); !logged {
+			return
+		}
+	}
 	entry := sshSessionAuditFields(remoteAddr, sshFingerprint, enrolled)
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
@@ -1537,6 +1572,9 @@ func (a *AuditLogger) LogStoreInitialized(metadataDir string) {
 }
 
 func (a *AuditLogger) LogStoreInitializeFailed(reason string) {
+	if a == nil || !a.storeInitializeFailures.admit(a) {
+		return
+	}
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditStoreInitializeFailed
 	entry.Outcome = "failed"

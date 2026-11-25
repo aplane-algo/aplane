@@ -447,24 +447,27 @@ func TestSSHSessionAuditUsesClientPrincipalAndSSHTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.LogSSHSessionConnected("10.0.0.1:5000", "SHA256:fp1", true)
-	a.LogSSHSessionDisconnected("10.0.0.1:5000", "SHA256:fp1", false)
-	a.LogSSHSessionConnected("10.0.0.2:5001", "", false)
+	a.LogSSHSessionConnected("10.0.0.2:5001", "SHA256:fp2", false)
+	a.LogSSHSessionDisconnected("10.0.0.2:5001", "SHA256:fp2", false)
+	a.LogSSHSessionConnected("10.0.0.3:5002", "", false)
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}
 	entries := readAuditEntries(t, path)
-	if len(entries) != 3 {
-		t.Fatalf("got %d entries, want 3", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("got %d entries, want 4", len(entries))
 	}
 	if e := entries[0]; e.Principal != "client:SHA256:fp1" || e.RequesterPrincipal != "client:SHA256:fp1" ||
 		e.Transport != "ssh" || e.Reason != "ssh" || e.SSHFingerprint != "SHA256:fp1" {
 		t.Fatalf("enrolled ssh connect = %+v", e)
 	}
-	if e := entries[1]; e.Principal != "" || e.RequesterPrincipal != "" ||
-		e.Transport != "ssh" || e.Reason != "ssh-enroll" || e.SSHFingerprint != "SHA256:fp1" {
-		t.Fatalf("enroll ssh disconnect = %+v, want empty principal and ssh-enroll", e)
+	for i, event := range map[int]AuditEventType{1: AuditSessionConnected, 2: AuditSessionDisconnected} {
+		if e := entries[i]; e.Event != event || e.Principal != "" || e.RequesterPrincipal != "" ||
+			e.Transport != "ssh" || e.Reason != "ssh-enroll" || e.SSHFingerprint != "SHA256:fp2" {
+			t.Fatalf("enroll ssh entry %d = %+v, want %s with an empty principal and ssh-enroll", i, e, event)
+		}
 	}
-	if e := entries[2]; e.Principal != "" || e.RequesterPrincipal != "" || e.Transport != "ssh" {
+	if e := entries[3]; e.Principal != "" || e.RequesterPrincipal != "" || e.Transport != "ssh" {
 		t.Fatalf("empty-fingerprint ssh connect = %+v, want empty principal and ssh transport", e)
 	}
 }
