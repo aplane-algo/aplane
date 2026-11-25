@@ -596,16 +596,16 @@ transactions:
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
 `clawback` are the supported cosigner transfer-movement surface. A target with
 non-zero `RekeyTo` is decided by the separate `reject_rekey`/`rekey_policy`
-path instead of routing; every other target transaction must extract at least
-one of these movements to be eligible for cosigner-role component signing.
+path instead of routing.
 
-For client signing, other transaction types produce no routing movement and
+Other transaction types produce no routing movement. For client signing they
 continue through the remaining policy phases once `transaction_types` allows
-them. On a cosigner node they never reach routing: decode refuses to `allow`
-any type but `pay` and `axfer`, so the transaction-type rule rejects them
-first. Passthrough, foreign, and non-target group slots are not governed by
-this signer's route table because this signer is not producing signatures for
-those slots.
+them. On a cosigner node, a type the document doesn't allow is rejected by the
+transaction-type rule, and one it does allow is authorized by its type verdict
+alone, subject to the document's other transaction rules; the advisories report
+each such type ([Advisories](#advisories)). Passthrough, foreign, and non-target
+group slots are not governed by this signer's route table because this signer is
+not producing signatures for those slots.
 
 For each extracted movement, routing checks `blocked_destinations` before
 network-dependent route matching. The block applies to normal ALGO payment

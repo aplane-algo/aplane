@@ -1091,12 +1091,12 @@ Common validation failures:
 - a missing or wrong `format`, a `role` that does not match the node, or a
   `key` that does not match the file,
 - a missing required field: every guard, `max_fee_microalgos`,
-  `transaction_types` (with its `*` entry), `transfer_policy`, and `routes`,
-  plus `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` in a
-  signer document,
+  `transaction_types`, `transfer_policy`, and `routes`, plus the `*` entry of
+  `transaction_types` and `on_no_route`, `close_on_no_route`, and
+  `clawback_on_no_route` in a signer document,
 - invalid `on_no_route`, `close_on_no_route`, or `clawback_on_no_route`,
-- in a cosigner document, any `*_on_no_route` field, `review_above`, a
-  `review` type verdict, or `allow` for a type other than `pay` and `axfer`,
+- in a cosigner document, any `*_on_no_route` field, `review_above`, or a
+  `review` type verdict,
 - duplicate route IDs,
 - route IDs that do not match `^[a-z0-9][a-z0-9_-]*$`,
 - invalid Algorand addresses or checksums,
