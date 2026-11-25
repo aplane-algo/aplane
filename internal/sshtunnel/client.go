@@ -893,66 +893,48 @@ func (c *Client) handleDisconnect() {
 	}
 }
 
-// dialAndIntercept connects to the SSH server and intercepts global requests
-// from the server (revocation and connection-limit notices) before forwarding
-// them to ssh.NewClient. The returned channel closes once the interceptor has
-// drained the request stream, which the SSH mux closes when the connection
-// ends.
+// dialAndIntercept connects to the SSH server and answers its global requests
+// (interceptGlobalRequests). The returned channel closes once the request
+// stream is drained, which the SSH mux closes when the connection ends.
 func (c *Client) dialAndIntercept(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, chan struct{}, error) {
 	sshConn, chans, reqs, err := dialSSHHandshake(ctx, network, addr, config)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	filteredReqs, done := c.interceptGlobalRequests(reqs)
-	client := ssh.NewClient(sshConn, chans, filteredReqs)
-	return client, done, nil
+	// ssh.NewClient only refuses the requests it is given, so the interceptor
+	// answers them all and NewClient gets none.
+	noReqs := make(chan *ssh.Request)
+	close(noReqs)
+	done := c.interceptGlobalRequests(reqs)
+	return ssh.NewClient(sshConn, chans, noReqs), done, nil
 }
 
-// interceptGlobalRequests captures server signals (revocation and connection
-// limit notices) and forwards the rest non-blockingly until reqs closes when
-// the SSH connection ends. Always draining reqs prevents the SSH mux from
-// stalling on its 16-slot global-request channel, and closing filteredReqs on
-// exit terminates ssh.NewClient's internal request consumer.
-func (c *Client) interceptGlobalRequests(reqs <-chan *ssh.Request) (<-chan *ssh.Request, chan struct{}) {
-	filteredReqs := make(chan *ssh.Request, 16)
+// interceptGlobalRequests answers the server's global requests, recording
+// revocation and connection-limit notices and refusing the rest. It drains
+// reqs until the SSH connection ends, since the mux stalls once its 16-slot
+// channel fills; the returned channel closes when that is done.
+func (c *Client) interceptGlobalRequests(reqs <-chan *ssh.Request) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer close(filteredReqs)
 		for req := range reqs {
+			reason := ""
 			switch req.Type {
 			case RevokedRequestType:
-				c.mu.Lock()
-				c.disconnectReason = DisconnectReasonKeyRevoked
-				c.mu.Unlock()
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-				continue
+				reason = DisconnectReasonKeyRevoked
 			case ConnectionLimitRequestType:
-				c.mu.Lock()
-				c.disconnectReason = DisconnectReasonConnectionLimit
-				c.mu.Unlock()
-				if req.WantReply {
-					_ = req.Reply(true, nil)
-				}
-				continue
+				reason = DisconnectReasonConnectionLimit
 			}
-			forwardInterceptedGlobalRequest(filteredReqs, req)
+			if reason != "" {
+				c.mu.Lock()
+				c.disconnectReason = reason
+				c.mu.Unlock()
+			}
+			_ = req.Reply(reason != "", nil)
 		}
 	}()
-	return filteredReqs, done
-}
-
-func forwardInterceptedGlobalRequest(filteredReqs chan<- *ssh.Request, req *ssh.Request) {
-	select {
-	case filteredReqs <- req:
-	default:
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-	}
+	return done
 }
 
 // dialWithContext connects to SSH server with context support

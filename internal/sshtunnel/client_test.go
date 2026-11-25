@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -268,64 +269,6 @@ func TestHostKeyCallbackReturnsTypedTrustErrors(t *testing.T) {
 	})
 }
 
-func TestForwardInterceptedGlobalRequestDoesNotBlockWhenFull(t *testing.T) {
-	filtered := make(chan *ssh.Request, 1)
-	filtered <- &ssh.Request{Type: "queued"}
-	done := make(chan struct{}, 1)
-
-	go func() {
-		forwardInterceptedGlobalRequest(filtered, &ssh.Request{Type: "overflow"})
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("forwardInterceptedGlobalRequest blocked on full channel")
-	}
-}
-
-func TestInterceptGlobalRequestsDrainsOverflowAndClosesOnDisconnect(t *testing.T) {
-	client := NewClient("127.0.0.1", 22, "", "")
-	reqs := make(chan *ssh.Request)
-	filtered, done := client.interceptGlobalRequests(reqs)
-
-	// Send more than the 16-slot buffer without reading filtered; the
-	// interceptor must keep draining reqs instead of stalling the SSH mux.
-	sentAll := make(chan struct{})
-	go func() {
-		defer close(sentAll)
-		for i := 0; i < 40; i++ {
-			reqs <- &ssh.Request{Type: "custom@example.com"}
-		}
-		close(reqs)
-	}()
-
-	select {
-	case <-sentAll:
-	case <-time.After(2 * time.Second):
-		t.Fatal("interceptor stalled while draining overflow global requests")
-	}
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("interceptor done channel did not close after reqs closed")
-	}
-
-	// Drain buffered items and confirm filtered is closed (not left open).
-	for {
-		select {
-		case _, ok := <-filtered:
-			if !ok {
-				return
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("filteredReqs was not closed on disconnect")
-		}
-	}
-}
-
 func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) {
 	tmpDir := t.TempDir()
 	_, clientPub, identityPath := generateClientIdentityFile(t, tmpDir)
@@ -353,6 +296,7 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 	}
 	defer func() { _ = ln.Close() }()
 
+	setupEnded := make(chan struct{})
 	serverSent := make(chan error, 1)
 	go func() {
 		conn, acceptErr := ln.Accept()
@@ -372,10 +316,28 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 				_ = ch.Reject(ssh.Prohibited, "no channels")
 			}
 		}()
-		// Send >16 global requests (exceeding SSH mux's 16-slot reqs buffer)
-		// to verify the client drains without stalling, then close.
-		for i := 0; i < 24; i++ {
-			if _, _, err := sshConn.SendRequest("noise@example.com", true, nil); err != nil {
+		<-setupEnded
+		// None of these waits for a reply, so together they overfill the
+		// client mux's 16-slot buffer unless the client drains it.
+		for i := 0; i < 64; i++ {
+			if _, _, err := sshConn.SendRequest("noise@example.com", false, nil); err != nil {
+				serverSent <- err
+				return
+			}
+		}
+		for _, request := range []struct {
+			name string
+			want bool
+		}{
+			{"noise@example.com", false},
+			{ConnectionLimitRequestType, true},
+			{"noise@example.com", false},
+		} {
+			ok, _, err := sshConn.SendRequest(request.name, true, nil)
+			if err == nil && ok != request.want {
+				err = fmt.Errorf("client answered %s with %v, want %v", request.name, ok, request.want)
+			}
+			if err != nil {
 				serverSent <- err
 				return
 			}
@@ -403,6 +365,7 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	consumersBefore := sshRequestConsumers()
 	dialCtx, cancel := context.WithCancel(t.Context())
 	sshClient, done, err := client.dialAndIntercept(dialCtx, "tcp", ln.Addr().String(), &ssh.ClientConfig{
 		User:            productSSHUsername,
@@ -416,6 +379,7 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 	}
 	// Canceling setup ctx must not abort the interceptor or stall draining.
 	cancel()
+	close(setupEnded)
 
 	select {
 	case err := <-serverSent:
@@ -423,7 +387,7 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 			t.Fatalf("server global-request burst failed: %v", err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("server stalled sending >16 global requests (mux blocked)")
+		t.Fatal("the client stopped answering global requests")
 	}
 	select {
 	case <-done:
@@ -440,6 +404,24 @@ func TestDialAndInterceptDrainsManyGlobalRequestsAndClosesCleanly(t *testing.T) 
 	case <-time.After(3 * time.Second):
 		t.Fatal("sshClient.Wait() did not return after connection closed")
 	}
+	if reason := client.DisconnectReason(); reason != DisconnectReasonConnectionLimit {
+		t.Fatalf("DisconnectReason() = %q, want the notice the server sent", reason)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for sshRequestConsumers() > consumersBefore {
+		if time.Now().After(deadline) {
+			t.Fatal("ssh.Client's global-request goroutine outlived the connection")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// sshRequestConsumers counts the goroutines ssh.Client runs to answer global
+// requests.
+func sshRequestConsumers() int {
+	stacks := make([]byte, 1<<20)
+	stacks = stacks[:runtime.Stack(stacks, true)]
+	return bytes.Count(stacks, []byte("ssh.(*Client).handleGlobalRequests("))
 }
 
 // acceptAnyKey is a server config that authenticates every client key.

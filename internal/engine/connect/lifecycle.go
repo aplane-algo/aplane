@@ -74,10 +74,8 @@ func (s *ConnectionState) ConnectWithTunnel(
 	client.SetHostKeyApprovalHandler(hostKeyApproval)
 	client.SetIdentityCreatedCallback(s.IdentityCreatedHandler())
 
-	disconnected := false
 	client.SetDisconnectCallback(func() {
 		s.Mu.Lock()
-		disconnected = true
 		published := s.SSHTunnelClient == client
 		if published {
 			_ = s.SSHTunnelClient.Close()
@@ -119,8 +117,10 @@ func (s *ConnectionState) ConnectWithTunnel(
 		}
 	}
 
+	// A drop before this point found nothing of its own to clear. It is seen
+	// here, because the client clears IsConnected before it runs the callback.
 	s.Mu.Lock()
-	if disconnected || !client.IsConnected() {
+	if !client.IsConnected() {
 		s.Mu.Unlock()
 		failed()
 		return nil, connectVerifyError(client, errors.New("connection closed before setup completed"))

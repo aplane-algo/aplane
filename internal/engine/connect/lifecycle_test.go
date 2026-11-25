@@ -6,7 +6,6 @@ package connect
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -205,4 +204,38 @@ func TestConnectWithTunnelRefusesDeadTunnelDroppedBeforePublish(t *testing.T) {
 	}
 }
 
-var _ = errors.New
+// A drop after the connection is published clears the state and tells the
+// caller, once.
+func TestConnectWithTunnelDropAfterPublishClearsStateAndNotifiesOnce(t *testing.T) {
+	node := sshtest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{Keys: []signerapi.KeyInfo{{Address: "A"}}})
+	}))
+	state := NewState()
+	dropped := make(chan struct{}, 2)
+	if _, err := state.ConnectWithTunnel(
+		context.Background(), "node", node.Host, node.Port, node.IdentityFile, node.KnownHostsPath,
+		nil, nil, func() { dropped <- struct{}{} },
+	); err != nil {
+		t.Fatalf("ConnectWithTunnel() error = %v", err)
+	}
+	if !state.IsConnected() {
+		t.Fatal("not connected after ConnectWithTunnel")
+	}
+
+	node.Server.CloseConnectionsForFingerprint(node.Fingerprint, sshtunnel.DisconnectReasonKeyRevoked)
+	select {
+	case <-dropped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("onDisconnect was not called for a dropped connection")
+	}
+	state.Mu.Lock()
+	if state.SSHTunnelClient != nil || state.SignerClient != nil || state.ConnectionTarget != "" || state.TunnelCancel != nil {
+		t.Errorf("a dropped connection was left installed: %+v", state)
+	}
+	state.Mu.Unlock()
+	select {
+	case <-dropped:
+		t.Fatal("onDisconnect was called twice for one drop")
+	case <-time.After(100 * time.Millisecond):
+	}
+}

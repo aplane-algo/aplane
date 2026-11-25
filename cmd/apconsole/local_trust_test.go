@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -521,24 +523,233 @@ func TestTrustLocalSignerHostKeyAppendsNewlineWhenExistingLacksTrailingNewline(t
 	}
 }
 
-func TestTrustLocalSignerHostKeyRefusesSymlinkKnownHosts(t *testing.T) {
+// apshell follows a symlinked known_hosts or .ssh, so the console updates the
+// file it leads to and leaves the link in place.
+func TestTrustLocalSignerHostKeyFollowsSymlinks(t *testing.T) {
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	const addr = "[127.0.0.1]:56870"
+	line := knownhosts.Line([]string{addr}, loadTestSSHPublicKey(t, hostKeyPath)) + "\n"
+	otherLine := knownhosts.Line([]string{"other.example.com"}, loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))) + "\n"
+	staleLine := knownhosts.Line([]string{addr}, loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))) + "\n"
+
+	tests := []struct {
+		name string
+		// linkDir links the .ssh directory; otherwise known_hosts is linked.
+		linkDir bool
+		// existing is the target's content, with no target when missing.
+		existing   string
+		missing    bool
+		want       string
+		wantNotice bool
+	}{
+		{name: "file, already pinned", existing: otherLine + line, want: otherLine + line},
+		{name: "file, not pinned", existing: otherLine, want: otherLine + line, wantNotice: true},
+		{name: "file, rotated", existing: staleLine + otherLine, want: otherLine + line, wantNotice: true},
+		{name: "file, target missing", missing: true, want: line, wantNotice: true},
+		{name: "directory, not pinned", linkDir: true, existing: otherLine, want: otherLine + line, wantNotice: true},
+		{name: "directory, file missing", linkDir: true, missing: true, want: line, wantNotice: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clientDir := writeLoopbackClientConfig(t)
+			stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+			realDir := t.TempDir()
+			target := filepath.Join(realDir, "known_hosts")
+			if !tt.missing {
+				if err := os.WriteFile(target, []byte(tt.existing), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			link, linkTo := filepath.Join(clientDir, ".ssh"), realDir
+			if !tt.linkDir {
+				if err := os.Mkdir(link, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				link, linkTo = filepath.Join(link, "known_hosts"), target
+			}
+			if err := os.Symlink(linkTo, link); err != nil {
+				t.Fatal(err)
+			}
+
+			notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0)
+			if err != nil {
+				t.Fatalf("trustLocalSignerHostKey() error = %v", err)
+			}
+			if (notice != "") != tt.wantNotice {
+				t.Fatalf("notice = %q, want one: %v", notice, tt.wantNotice)
+			}
+			data, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tt.want {
+				t.Fatalf("target = %q, want %q", data, tt.want)
+			}
+			if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("%s is no longer a symlink (%v, %v)", link, info, err)
+			}
+		})
+	}
+}
+
+// A key apshell appends while the console writes lands in the file being
+// replaced, and is carried over to the new one.
+func TestTrustLocalSignerHostKeyKeepsAKeySavedDuringTheWrite(t *testing.T) {
+	savedLine := knownhosts.Line([]string{"saved.example.com"}, loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))) + "\n"
+	otherLine := knownhosts.Line([]string{"other.example.com"}, loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir())))
+	for name, existing := range map[string]string{
+		"first run":           "",
+		"existing entries":    otherLine + "\n",
+		"no trailing newline": otherLine,
+	} {
+		t.Run(name, func(t *testing.T) {
+			clientDir := writeLoopbackClientConfig(t)
+			hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+			stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+			knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+			if existing != "" {
+				if err := os.Mkdir(filepath.Dir(knownHostsPath), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(knownHostsPath, []byte(existing), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fsutil.TestHook = func(op fsutil.HookOp, path string) error {
+				if op == fsutil.OpRename {
+					return appendKnownHosts(path, []byte(savedLine))
+				}
+				return nil
+			}
+			t.Cleanup(func() { fsutil.TestHook = nil })
+
+			if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0); err != nil {
+				t.Fatalf("trustLocalSignerHostKey() error = %v", err)
+			}
+			data, err := os.ReadFile(knownHostsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := knownhosts.Line([]string{"[127.0.0.1]:56870"}, loadTestSSHPublicKey(t, hostKeyPath)) + "\n" + savedLine
+			if existing != "" {
+				want = otherLine + "\n" + want
+			}
+			if string(data) != want {
+				t.Fatalf("known_hosts = %q, want %q", data, want)
+			}
+		})
+	}
+}
+
+// A known_hosts that can't be read is reported and left as it was.
+func TestTrustLocalSignerHostKeyReportsUnreadableKnownHosts(t *testing.T) {
 	clientDir := writeLoopbackClientConfig(t)
-	newKeyPath := writeTestSSHHostKey(t, t.TempDir())
 	stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
-
-	sshDir := filepath.Join(clientDir, ".ssh")
-	if err := os.MkdirAll(sshDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(t.TempDir(), "real_known_hosts")
-	if err := os.WriteFile(target, []byte("other.example.com ssh-ed25519 AAAA\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, filepath.Join(sshDir, "known_hosts")); err != nil {
+	knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+	if err := os.MkdirAll(knownHostsPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(newKeyPath), 0); err == nil {
-		t.Fatal("trustLocalSignerHostKey() succeeded on symlink known_hosts, want refusal")
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(writeTestSSHHostKey(t, t.TempDir())), 0)
+	if err == nil || notice != "" {
+		t.Fatalf("trustLocalSignerHostKey() = (%q, %v), want an error", notice, err)
+	}
+	if info, err := os.Stat(knownHostsPath); err != nil || !info.IsDir() {
+		t.Fatalf("known_hosts was replaced: %v, %v", info, err)
+	}
+}
+
+func TestUpdateKnownHostsForLoopback(t *testing.T) {
+	const (
+		addr  = "[localhost]:56870"
+		line  = addr + " ssh-ed25519 NEW"
+		stale = addr + " ssh-ed25519 OLD"
+	)
+	tests := []struct {
+		name     string
+		existing string
+		want     string
+		changed  bool
+	}{
+		{"empty", "", line + "\n", true},
+		{"current line", line + "\n", "", false},
+		{"current line with CRLF", line + "\r\n", "", false},
+		{"current line without newline", line, "", false},
+		{"duplicate current lines", line + "\n" + line + "\n", line + "\n", true},
+		{"stale line with CRLF", stale + "\r\n# kept\r\n", "# kept\r\n" + line + "\n", true},
+		{"stale line in another case", "[LOCALHOST]:56870 ssh-ed25519 OLD\n", line + "\n", true},
+		{"stale line with a comment", stale + " old signer\n", line + "\n", true},
+		{"line with no key", addr + " ssh-ed25519\n", addr + " ssh-ed25519\n" + line + "\n", true},
+		{"commented-out line", "# " + stale + "\n", "# " + stale + "\n" + line + "\n", true},
+		{"other port", "[localhost]:56871 ssh-ed25519 OLD\n", "[localhost]:56871 ssh-ed25519 OLD\n" + line + "\n", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, changed := updateKnownHostsForLoopback([]byte(tt.existing), addr, line)
+			if changed != tt.changed || string(got) != tt.want {
+				t.Fatalf("updateKnownHostsForLoopback() = (%q, %v), want (%q, %v)", got, changed, tt.want, tt.changed)
+			}
+		})
+	}
+}
+
+// Lines the update doesn't replace can still accept a rotated-out key, so each
+// is reported, whether or not the file had to change.
+func TestTrustLocalSignerHostKeyWarnsOfOtherTrustedKeys(t *testing.T) {
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	hostKey := loadTestSSHPublicKey(t, hostKeyPath)
+	oldKey := loadTestSSHPublicKey(t, writeTestSSHHostKey(t, t.TempDir()))
+	keyText := func(key ssh.PublicKey) string { return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))) }
+	const addr = "[127.0.0.1]:56870"
+
+	tests := []struct {
+		name string
+		line string
+		warn bool
+	}{
+		{"no brackets", "127.0.0.1:56870 " + keyText(oldKey), true},
+		{"trailing comma", addr + ", " + keyText(oldKey), true},
+		{"several hosts", "[localhost]:56870," + addr + " " + keyText(oldKey), true},
+		{"hashed host", knownhosts.HashHostname(addr) + " " + keyText(oldKey), true},
+		{"wildcard", "[127.0.0.*]:56870 " + keyText(oldKey), true},
+		{"several hosts with the current key", "[localhost]:56870," + addr + " " + keyText(hostKey), false},
+		{"another port", "[127.0.0.1]:56871 " + keyText(oldKey), false},
+		{"another host", "other.example.com " + keyText(oldKey), false},
+		{"plain line, which is replaced", addr + " " + keyText(oldKey), false},
+		{"unparsable file", "other.example.com ssh-ed25519 AAAA", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clientDir := writeLoopbackClientConfig(t)
+			stubLocalSignerHostKeyProbe(t, func(string, int, ssh.PublicKey) error { return nil })
+			knownHostsPath := filepath.Join(clientDir, ".ssh", "known_hosts")
+			if err := os.Mkdir(filepath.Dir(knownHostsPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(knownHostsPath, []byte("# first line\n"+tt.line+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(prev) })
+
+			for _, run := range []string{"pinning run", "run with nothing to change"} {
+				logs.Reset()
+				if _, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath), 0); err != nil {
+					t.Fatalf("%s: trustLocalSignerHostKey() error = %v", run, err)
+				}
+				want := 0
+				if tt.warn {
+					want = 1
+				}
+				if got := strings.Count(logs.String(), knownHostsPath+" line 2 also trusts another SSH host key"); got != want {
+					t.Fatalf("%s: %d warnings for line 2, want %d:\n%s", run, got, want, logs.String())
+				}
+				if got := strings.Count(logs.String(), "also trusts"); got != want {
+					t.Fatalf("%s: %d warnings in all, want %d:\n%s", run, got, want, logs.String())
+				}
+			}
+		})
 	}
 }

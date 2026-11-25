@@ -38,8 +38,7 @@ func (e *Core) ConnectWithTunnel(ctx context.Context, target string, host string
 	)
 	if err != nil {
 		if populated {
-			e.resetSignerStatusRevision()
-			e.ResetSignerCache(false)
+			e.handleConnectionClosed(nil)()
 		}
 		if errors.Is(err, connect.ErrAlreadyConnected) {
 			return nil, fmt.Errorf("%w: %s", ErrAlreadyConnected, e.GetConnectionTarget())
