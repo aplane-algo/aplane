@@ -42,9 +42,13 @@ type CreateKeysArchiveRequest struct {
 }
 
 // CreateKeysArchive exports selected active keys into one tar.gz/tgz archive.
-// When Addresses is empty, all active keys are exported. A selection that
-// names an address twice is refused before anything is written.
+// When Addresses is empty, all active keys are exported. An empty export
+// passphrase, and a selection that names an address twice, are refused before
+// anything is read or written.
 func CreateKeysArchive(req CreateKeysArchiveRequest) (*ArchiveResult, error) {
+	if len(req.ExportPassphrase) == 0 {
+		return nil, fmt.Errorf("creating a backup requires the export passphrase")
+	}
 	var selected []string
 	if len(req.Addresses) > 0 {
 		var err error

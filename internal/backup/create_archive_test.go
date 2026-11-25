@@ -115,6 +115,29 @@ func assertArchiveMembers(t *testing.T, archive string, want map[string][]byte) 
 	}
 }
 
+// A backup with no export passphrase is refused before anything else is checked,
+// read or written, all of which fails here: there is no keyring to open a
+// credential with and nowhere to stage one.
+func TestCreateKeysArchiveRefusesAnEmptyPassphraseFirst(t *testing.T) {
+	paths, addresses, _ := signerStoreForArchiveTest(t, 1)
+	for name, selected := range map[string][]string{"all": nil, "selected": addresses, "a selection refused too": {addresses[0], addresses[0]}} {
+		for kind, passphrase := range map[string][]byte{"nil": nil, "empty": {}} {
+			t.Run(name+", "+kind, func(t *testing.T) {
+				t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
+				archive := BuildManagedArchivePath(paths, "20261120-000009")
+				req := testCreateKeysArchiveRequest(paths, archive, selected, noderole.RoleSigner, nil)
+				req.ExportPassphrase = passphrase
+				if _, err := CreateKeysArchive(req); err == nil || err.Error() != "creating a backup requires the export passphrase" {
+					t.Fatalf("CreateKeysArchive() error = %v, want the passphrase refusal", err)
+				}
+				if _, err := os.Stat(filepath.Dir(archive)); !os.IsNotExist(err) {
+					t.Fatalf("the archive directory was created: %v", err)
+				}
+			})
+		}
+	}
+}
+
 // A complete backup exports every managed credential, listed in address
 // order; a selected backup exports only the selection, listed in request
 // order. Each carries the policies of exactly what it exported, and each

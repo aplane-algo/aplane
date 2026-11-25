@@ -346,6 +346,106 @@ func TestActivateInstalledTemplateFailureRestoresDisabledState(t *testing.T) {
 	}
 }
 
+// A failed install or enable undoes what it wrote where it wrote it, though the
+// reload that failed left the key paths bound to another generation, or a lock
+// left them bound to none.
+func TestARollbackUndoesTheGenerationTheWriteWentTo(t *testing.T) {
+	const family = "templateadmin-rollback-paths"
+	const keyType = "test." + family + ".v1"
+	yaml := []byte(`schema_version: 1
+derivation_version: 3
+template_type: generic
+template_mode: generated
+publisher: test
+family: ` + family + `
+version: 1
+display_name: "Rollback Paths"
+valid_rekey_target: false
+max_opcode_cost: 20000
+teal: |
+  #pragma version 8
+  int 0
+`)
+	operations := map[string]struct {
+		prepare func(t *testing.T, ir *productruntime.Runtime)
+		run     func(svc Service) (success bool, code, message string)
+		left    bool // the disabled template an enable starts from stays
+	}{
+		"install": {
+			prepare: func(t *testing.T, ir *productruntime.Runtime) {
+				if err := fsutil.MkdirAllPrivate(ir.KeyPaths().TemplateLibraryDir()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(ir.KeyPaths().TemplateLibraryDir(), "rollback.yaml"), yaml, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			run: func(svc Service) (bool, string, string) {
+				result := svc.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric)})
+				return result.Success, result.Code, result.Error
+			},
+		},
+		"import": {
+			run: func(svc Service) (bool, string, string) {
+				result := svc.ImportInstalledTemplate(adminproto.ImportInstalledTemplateRequest{TemplateYAML: yaml})
+				return result.Success, result.Code, result.Error
+			},
+		},
+		"enable": {
+			prepare: func(t *testing.T, ir *productruntime.Runtime) {
+				putInstalledTemplateForServiceTest(t, ir, keyType, keytypestate.StateDisabled)
+			},
+			run: func(svc Service) (bool, string, string) {
+				result := svc.ActivateKeyType(adminproto.ActivateKeyTypeRequest{KeyType: keyType})
+				return result.Success, result.Code, result.Error
+			},
+			left: true,
+		},
+	}
+	failures := map[string]error{
+		protocol.ResultCodeReloadFailed:     errors.New("reload failed"),
+		protocol.ResultCodeActivationFailed: nil, // the reload succeeds without the template
+	}
+	for name, op := range operations {
+		for code, reloadErr := range failures {
+			for _, moved := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s, %s, moved %v", name, code, moved), func(t *testing.T) {
+					var deps *stubDeps
+					var rebound storepaths.Paths
+					svc, ir, reloadCount, stub := setupServiceWithReload(t, func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+						deps.keyPaths = rebound
+						return nil, reloadErr
+					})
+					deps = stub
+					written := genstoretest.Active(t, ir.KeyPaths())
+					rebound = storepaths.NewPaths(svc.Deps.KeyPaths().Root())
+					if moved {
+						rebound = genstoretest.BindActive(t, rebound, rebound.GenerationPaths("gen-1800000000-0a0b0c0d"))
+					}
+					if op.prepare != nil {
+						op.prepare(t, ir)
+					}
+
+					success, gotCode, message := op.run(svc)
+					if success || gotCode != code || strings.Contains(message, "rollback failed") {
+						t.Fatalf("success %v, code %q, error %q; want %s with the rollback done", success, gotCode, message, code)
+					}
+					if reloadCount.Load() != 1 {
+						t.Fatalf("reloads = %d, want 1", reloadCount.Load())
+					}
+					if templatestore.TemplateExistsActive(written, keyType, templatestore.TemplateTypeGeneric) != op.left {
+						t.Fatalf("template in the generation written = %v, want %v", !op.left, op.left)
+					}
+					rec, ok, err := keytypestate.GetActive(written, keyType)
+					if err != nil || ok != op.left || (ok && rec.State != keytypestate.StateDisabled) {
+						t.Fatalf("state in the generation written = %+v, %v, %v", rec, ok, err)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestDeactivateInstalledTemplateReloadFailureLeavesDisabledState(t *testing.T) {
 	svc, ir, reloadCount, deps := setupServiceWithReload(t, func([]byte, *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, errors.New("reload failed")

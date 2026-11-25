@@ -73,6 +73,9 @@ func WriteSealedManifest(
 	if _, err := noderole.ParseRole(string(role)); err != nil {
 		return err
 	}
+	// CreateKeysArchive refuses this before it exports anything. The check
+	// stays here too, so that no manifest is sealed that OpenSealedManifest
+	// refuses to open.
 	if len(exportPassphrase) == 0 {
 		return fmt.Errorf("sealing the backup manifest requires the export passphrase")
 	}

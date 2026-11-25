@@ -14,10 +14,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestPutGetListAndListEnabled(t *testing.T) {
@@ -174,6 +177,45 @@ func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "key(s) still use it") {
 		t.Fatalf("RequireUnused() error = %v, want key count context", err)
+	}
+}
+
+// A key file that can't be read may use the key type, and one that does not
+// name a credential is a defect too: neither lets a key type pass as unused. A
+// key that is known to use it is named first.
+func TestRequireUnusedRefusesAnUnreadableKeyFile(t *testing.T) {
+	kr := cryptotest.Keyring(t, []byte("01234567890123456789012345678901"))
+	for name, file := range map[string]string{
+		"a damaged key file":      types.Address{7}.String() + ".key",
+		"a damaged cosigner file": witness.DeriveID(witness.Falcon1024V1, []byte("unreadable")) + ".cos",
+		"a stray entry":           "notes.txt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			paths := genstoretest.MintFirst(t, storepaths.NewPaths(t.TempDir()))
+			if err := RequireUnused(paths, "custom-v1", kr); err != nil {
+				t.Fatalf("RequireUnused() of an empty store = %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(mustActive(t, paths).KeysDir(), file), []byte("damaged"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := RequireUnused(paths, "custom-v1", kr)
+			if err == nil || errors.Is(err, ErrKeyTypeInUse) || !strings.Contains(err.Error(), "cannot verify that key type custom-v1 is unused") || !strings.Contains(err.Error(), file) {
+				t.Fatalf("RequireUnused() = %v, want a refusal that names %s", err, file)
+			}
+
+			bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
+			payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, "", nil, "")
+			if err := payload.SetLogicSigOpcodeProfile(lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling), false); err != nil {
+				t.Fatal(err)
+			}
+			defer payload.ZeroSecrets()
+			if _, err := apkeys.SaveNewPayload(paths, payload, false, kr); err != nil {
+				t.Fatal(err)
+			}
+			if err := RequireUnused(paths, "custom-v1", kr); !errors.Is(err, ErrKeyTypeInUse) {
+				t.Fatalf("RequireUnused() with a key in use = %v, want ErrKeyTypeInUse", err)
+			}
+		})
 	}
 }
 
