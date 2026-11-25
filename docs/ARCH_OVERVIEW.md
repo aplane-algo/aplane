@@ -1460,7 +1460,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `productruntime.Runtime.passphraseLock` | `keySession`, `buildFn` and `reloadEffects`, unlock-sensitive ops; held for reading by a reload on the keyring in service from its build to the end of its install |
 | `productruntime.Runtime.watcherMu` | Watcher lifecycle, dirty state |
 | `productruntime.Runtime.policyMu` | Effective node policy (`nodePolicy`) |
-| `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, mnemonic export), drained on lock |
+| `productruntime.Runtime.keyUseMu` | Key-user context and WaitGroup for key holders outside an admin session (stage-table worker, rotating prepare and sign, ordinary `/sign`, bounded-base and cosigner `/sign/component`, `/sign/assemble`, external checks, mnemonic export), drained on lock |
 | `productruntime.Runtime.rotatingStatusMu` | Rotating alerts and notes published to `/status` and apadmin |
 | `productruntime.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |

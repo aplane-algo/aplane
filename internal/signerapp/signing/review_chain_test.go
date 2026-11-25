@@ -76,7 +76,7 @@ func (c chainReviewCase) prompt(t *testing.T) *signerapproval.Prompt {
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor:                     fixedPolicy(cfg),
 		// An approved request stops here, short of signing.
-		BeforeExecute: func() (func(), *ServiceError) { return nil, unavailable("stopped before signing") },
+		KeyUse: refusedKeyUse(nil),
 	}
 	_, _ = service.signGroupWithPlanContext(context.Background(), c.req, nil, c.plan)
 	return got

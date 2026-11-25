@@ -5,12 +5,14 @@ EXTENDS Naturals, TLC
 Key-use window model: how a lock ends every use of loaded key material, and
 what may still leave the signer while it does.
 
-Two holders use the same mechanism. A rotating sign holds a seed, signs,
-closes the seed, writes its audit entry, and only then returns the signature.
-A mnemonic export holds the key while it reads the credential and delivers
-the phrase, and releases afterwards. Both register a key use
-(Runtime.KeyUseContext) whose context the lock cancels and whose release the
-lock waits for before it clears the session.
+Two holders use the same mechanism. A signing request (rotating sign, ordinary
+/sign, bounded-base or cosigner /sign/component, or /sign/assemble) holds key
+material after approval and gates, produces its signature, zeroes the key,
+ends its key use before any blocking audit write, and rechecks the session
+before returning the signature. A mnemonic export holds the key while it reads
+the credential and delivers the phrase, and releases afterwards. Both register
+a key use (Runtime.KeyUseContext) whose context the lock cancels and whose
+release the lock waits for before it clears the session.
 
 A lock has three steps, transcribed separately because registration is
 atomic with only some of them:
@@ -80,11 +82,14 @@ Thirteen guards are switchable:
                       uncancelled context the drain does not wait for.
   DrainWaits          Wipe waits for every key use registered before
                       DrainBegin.
-  FinalRecheck        a rotating sign rechecks after its audit write and
-                      returns nothing when the signer locked (releaseRefused).
-  GenerationCheck     that recheck compares the lock generation captured at
-                      the start, not just the current state, so a lock and an
-                      unlock in between still refuse.
+  FinalRecheck        a sign rechecks after its release (and after any audit
+                      write) and returns nothing when the signer locked
+                      (releaseRefused for rotating, keyUseRefused for the
+                      others).
+  GenerationCheck     that recheck compares the session generation captured at
+                      the start (LockGeneration / inSession), not just the
+                      current state, so a lock and an unlock in between still
+                      refuse.
   RecoveryEndsSession entering recovery from the unlocked state moves the
                       session generation (runtime.Runtime.SetRecovery and
                       EnterRecovery) and cancels the registered key uses, so
@@ -140,8 +145,9 @@ Thirteen guards are switchable:
 
 Properties:
 
-  KU1  a rotating signature is never returned once a lock or a recovery has
-       begun after its sign started and before its final check;
+  KU1  a signature (rotating, ordinary /sign, bounded-base or cosigner
+       /sign/component, or /sign/assemble) is never returned once a lock or a
+       recovery has begun after its request started and before its final check;
   KU2  the session is never cleared while a key use is registered;
   KU3  an export never delivers after the session was cleared;
   KU4  the session is never cleared while the signer is unlocked;
@@ -162,9 +168,10 @@ the model makes them one step. The same holds for an export's last context
 check and its delivery: a lock that begins during delivery waits for it,
 which KU2 covers.
 
-Scope: one rotating sign and one export, repeating. The stage table worker is
-a third holder of the same kind; KU2 covers any holder. The sign's leaf choice
-and release memory are rotating_leaf_release.tla's. Shutdown
+Scope: one signing request and one export, repeating. The stage table worker,
+rotating prepare and a cosigner's external check step are holders of the same
+kind; KU2 covers any holder. The rotating sign's leaf choice and release memory
+are rotating_leaf_release.tla's. Shutdown
 (Runtime.EndKeyUses, then Runtime.Destroy) is not modeled: the process exits
 right after it. It refuses new key uses as a lock does, drains like a lock
 but only until its deadline, then clears the session whether or not the
@@ -173,11 +180,23 @@ keeps its own decrypted copy until it releases or the process exits, and
 shutdown records the stop as incomplete.
 
 Code anchors:
-  - SStart/SRegister/SMake/SRelease/SReturn transcribe
-    internal/signerapp/signing/rotating_flow.go SignRotatingWithContext: the
-    lockGeneration capture, deps.keyUse, releaseRefused before the seed is
-    used, rs.close and endKeyUse before the audit write, and releaseRefused
-    on the request context before the response.
+  - SStart/SRegister/SMake/SRelease/SReturn transcribe:
+    * internal/signerapp/signing/rotating_flow.go SignRotatingWithContext: the
+      lockGeneration capture, deps.keyUse, releaseRefused before the seed is
+      used, rs.close and endKeyUse before the audit write, and releaseRefused
+      on the request context before the response.
+    * internal/signerapp/daemon/signing_service.go newSigningServiceWithAudit
+      (inSession capturing UnlockedGeneration) together with the post-approval
+      / post-gate key-use windows in internal/signerapp/signing/service.go
+      (openKeyUse, keyUseRefused, signGroupWithPlanContext,
+      signComponentWithContext, AssembleWithContext), execution.go
+      (executeGroupSigning), bounded_cosigner.go
+      (PrepareBoundedComponentWithContext, assembleBoundedTarget),
+      component_sign.go (signPreparedCosignerComponents), and
+      component_assemble.go (assembleDecoded, rejectLocalCosignedPassthrough).
+      Every route releases its key use before SReturn's final keyUseRefused
+      check (after SIGN_APPROVED on the audited routes, directly on
+      /sign/assemble).
   - EStart/ERegister/ERead/EDeliver/ERelease transcribe
     internal/signerapp/keyadmin/export.go ExportKey.
   - LockState transcribes internal/signerapp/runtime/runtime.go Lock and
@@ -332,10 +351,11 @@ Release(h, next) ==
     /\ cancelled' = [cancelled EXCEPT ![h] = FALSE]
 
 ----------------------------------------------------------------------------
-(* Rotating sign *)
+(* Signing request (rotating and non-rotating) *)
 
-\* releaseRefused: the signer is unlocked, the lock generation is the one
-\* captured at the start, and the request has not been cancelled.
+\* releaseRefused / keyUseRefused: the signer is unlocked, the session
+\* generation is the one captured at the start, and the key use has not been
+\* cancelled.
 SignMayGoOn ==
     /\ life = "unlocked"
     /\ ~stale["sign"]
@@ -768,8 +788,8 @@ TypeOK ==
     /\ \A u \in Unlockers : ulLocked[u] \in BOOLEAN /\ ulSawPublish[u] \in BOOLEAN
     /\ lockUndone \in BOOLEAN /\ endedPublished \in BOOLEAN
 
-\* KU1: no rotating signature is returned after a lock or a recovery began
-\* during its sign.
+\* KU1: no signature (rotating or non-rotating) is returned after a lock or a
+\* recovery began during its request.
 KU1_NoSignatureAfterLock == ~leaked
 
 \* KU2: the session is never cleared while a key use is registered.

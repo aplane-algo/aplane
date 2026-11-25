@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -36,7 +37,6 @@ type AuditApproveLogger interface {
 }
 
 type IsUnlockedFunc func() bool
-type BeforeExecuteFunc func() (release func(), err *ServiceError)
 
 type Service struct {
 	Planner                       *Planner
@@ -46,7 +46,6 @@ type Service struct {
 	Console                       Console
 	GenerateTxnDescriptionFromTxn DescribeTxnFunc
 	IsUnlocked                    IsUnlockedFunc
-	BeforeExecute                 BeforeExecuteFunc
 	// PolicyFor resolves the policy that governs a key selector: the key's
 	// own document, or the node default. It is bound to one policy snapshot
 	// for the life of this service, so every slot of a request is judged
@@ -63,9 +62,12 @@ type Service struct {
 	ExternalChecks ExternalCheckRunner
 	// KeyUse registers a holder of key material for as long as the returned
 	// release is not called: the context it returns ends when the node
-	// locks, and the lock waits for the release. The external check step
-	// holds one while it reads tokens and makes lookups. Nil uses the
-	// request's own context.
+	// locks or enters recovery, and a lock waits for the release before
+	// clearing the session. Every post-approval signing and assembly path
+	// (/sign, bounded-base and cosigner /sign/component, /sign/assemble)
+	// and the external check step hold a key use while they load or use
+	// secret material, releasing it before blocking audit or console writes.
+	// Signing and assembly refuse when KeyUse is nil.
 	KeyUse func(ctx context.Context) (context.Context, func())
 }
 
@@ -146,16 +148,26 @@ func (s *Service) signComponentWithContext(ctx context.Context, req componentPla
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	release, leaseErr := s.beforeExecute()
-	if leaseErr != nil {
-		return nil, leaseErr
+	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
+	if useErr != nil {
+		return nil, useErr
 	}
-	defer release()
-	result, signErr := signPreparedCosignerComponents(ctx, plan, session)
+	defer endKeyUse()
+	result, signErr := signPreparedCosignerComponents(useCtx, plan, session)
 	if signErr != nil {
-		return nil, signErr
+		return nil, s.classifyKeyUseError(ctx, useCtx, signErr)
 	}
-	s.logCosignerComponentApproved(plan, result)
+	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+		return nil, refused
+	}
+	// Release the key use before the blocking audit write so a stalled disk
+	// cannot hold a lock's drain, then recheck the session before returning.
+	endKeyUse()
+	records := s.logCosignerComponentApproved(plan, result)
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
+		s.logWithheldRecords(records, refused)
+		return nil, refused
+	}
 	return result, nil
 }
 
@@ -182,36 +194,72 @@ func (s *Service) AssembleWithContext(ctx context.Context, req signerapi.Assembl
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	release, leaseErr := s.beforeExecute()
-	if leaseErr != nil {
-		return nil, leaseErr
+	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
+	if useErr != nil {
+		return nil, useErr
 	}
-	defer release()
-	return assembleDecoded(ctx, req, group, session)
+	defer endKeyUse()
+	result, err := assembleDecoded(useCtx, req, group, session)
+	if err != nil {
+		return nil, s.classifyKeyUseError(ctx, useCtx, err)
+	}
+	endKeyUse()
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
+		return nil, refused
+	}
+	return result, nil
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult) (*SignGroupResult, *ServiceError) {
 	if err := rejectOrdinarySignKeyTypes(plan); err != nil {
 		return nil, err
 	}
-	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
+	outcome, gateErr := s.approveGroupWithPlanContext(ctx, req, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
-	defer release()
 	if bindErr := checkApprovalBinding(req, plan); bindErr != nil {
 		return nil, bindErr
 	}
 
-	execResult, err := s.Executor.ExecuteGroupSigning(ctx, plan, req, session)
-	if err != nil {
-		return nil, err
+	useCtx, endKeyUse, useErr := s.openKeyUse(ctx)
+	if useErr != nil {
+		s.logSessionEndedAfterApproval(req, plan, useErr)
+		return nil, useErr
 	}
+	defer endKeyUse()
 
-	console := consoleOf(s.Console)
-	s.logSummary(req, plan, execResult.SignedTxns, console)
+	execResult, deferred, err := s.Executor.executeGroupSigning(useCtx, plan, req, session)
+	if err != nil {
+		classified := s.classifyKeyUseError(ctx, useCtx, err)
+		endKeyUse()
+		if classified.Kind == ErrorLocked {
+			s.logSessionEndedAfterApproval(req, plan, classified)
+		} else {
+			deferred.flushFailure(s.Executor.AuditLog)
+		}
+		return nil, classified
+	}
+	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
+		endKeyUse()
+		s.logSessionEndedAfterApproval(req, plan, refused)
+		return nil, refused
+	}
+	// All loaded key material was zeroed before executeGroupSigning returned.
+	// End the key use before writing console output or audit logs so a stalled
+	// terminal or disk cannot hold a lock's drain, then recheck the session
+	// before releasing signatures.
+	endKeyUse()
+	deferred.flushConsole(s.Executor.Console)
+	s.logSummary(req, plan, execResult.SignedTxns, consoleOf(s.Console))
+
+	var records []SignedRecord
 	if s.AuditLog != nil {
-		s.logSuccessfulSignatures(req, plan, auditedGroup(plan), outcome)
+		records = s.logSuccessfulSignatures(req, plan, auditedGroup(plan), outcome)
+	}
+	if refused := s.keyUseRefused(ctx, nil); refused != nil {
+		s.logWithheldRecords(records, refused)
+		return nil, refused
 	}
 
 	return &SignGroupResult{
@@ -232,14 +280,14 @@ func rejectOrdinarySignKeyTypes(plan *PlanResult) *ServiceError {
 	return nil
 }
 
-func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult) (approvalOutcome, func(), *ServiceError) {
+func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult) (approvalOutcome, *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
 	// What the gates below judge and the operator is shown.
 	approvedDigest := approvalDigest(req, plan)
 
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return approvalOutcome{}, nil, lockedError()
+		return approvalOutcome{}, lockedError()
 	}
 
 	review := s.Approval.review(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
@@ -290,21 +338,21 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		},
 	}, console)
 	if gateErr != nil {
-		return approvalOutcome{}, nil, gateErr
+		return approvalOutcome{}, gateErr
 	}
 
 	if err := ctx.Err(); err != nil {
-		return approvalOutcome{}, nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
+		return approvalOutcome{}, unavailable(fmt.Sprintf("sign request canceled: %v", err))
 	}
-	release, err := s.beforeExecute()
-	if err != nil {
+	if s.IsUnlocked != nil && !s.IsUnlocked() {
+		err := lockedError()
 		// The request passed its gates, an operator approval among them,
 		// but the signer locked or its session ended before it could sign.
 		s.logSignRejections(req, plan, txns, "session_ended_after_approval", err)
-		return approvalOutcome{}, nil, err
+		return approvalOutcome{}, err
 	}
 	plan.bindApproval(approvedDigest)
-	return outcome, release, nil
+	return outcome, nil
 }
 
 // policyFor resolves a selector's policy through the request's snapshot. It
@@ -339,25 +387,75 @@ func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult)
 	return out
 }
 
-func (s *Service) beforeExecute() (func(), *ServiceError) {
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, lockedError()
+// openKeyUse registers a key-use window covering a signing or assembly
+// operation's key load and use, and checks that the request's session is
+// still active. It refuses when KeyUse is nil so no signing or assembly path
+// can load key material unregistered. The returned release is safe to call
+// more than once and must be called once loaded key material has been zeroed
+// and before any blocking audit or console write.
+func (s *Service) openKeyUse(ctx context.Context) (context.Context, func(), *ServiceError) {
+	if s.KeyUse == nil {
+		return nil, nil, internal("signing service key use is not configured")
 	}
-	if s.BeforeExecute == nil {
-		return func() {}, nil
-	}
-	release, err := s.BeforeExecute()
-	if err != nil {
-		return nil, err
-	}
-	if release == nil {
-		release = func() {}
-	}
-	if s.IsUnlocked != nil && !s.IsUnlocked() {
+	useCtx, release := s.KeyUse(ctx)
+	release = sync.OnceFunc(release)
+	// Recheck after registration: KeyUse checks current unlocked state, not
+	// the request's session generation, so a lock+unlock or recovery+reconcile
+	// round-trip before registration passes KeyUse and is caught here by
+	// IsUnlocked; a racing lock/recovery or shutdown is caught by useCtx.Err().
+	if refused := s.keyUseRefused(ctx, useCtx); refused != nil {
 		release()
-		return nil, lockedError()
+		return nil, nil, refused
 	}
-	return release, nil
+	return useCtx, release, nil
+}
+
+// keyUseRefused reports why a signing or assembly request must stop and
+// withhold output: the request's session ended (lock, recovery, or round-trip),
+// the caller canceled requestCtx, or (while a key-use window is open) useCtx
+// was canceled. Pass nil for useCtx after the key-use window has been released.
+func (s *Service) keyUseRefused(requestCtx, useCtx context.Context) *ServiceError {
+	if s.IsUnlocked != nil && !s.IsUnlocked() {
+		return lockedError()
+	}
+	if err := requestCtx.Err(); err != nil {
+		return canceledSignRequest(err)
+	}
+	if useCtx != nil && useCtx.Err() != nil {
+		return lockedError()
+	}
+	return nil
+}
+
+// classifyKeyUseError prefers a session-end or caller-cancellation refusal
+// over a downstream error caused by a canceled key-use context (such as a
+// context-canceled key read).
+func (s *Service) classifyKeyUseError(requestCtx, useCtx context.Context, err *ServiceError) *ServiceError {
+	if err == nil {
+		return nil
+	}
+	if refused := s.keyUseRefused(requestCtx, useCtx); refused != nil {
+		return refused
+	}
+	return err
+}
+
+func (s *Service) logSessionEndedAfterApproval(req signerapi.GroupSignRequest, plan *PlanResult, err *ServiceError) {
+	if err != nil && err.Kind == ErrorLocked {
+		s.logSignRejections(req, plan, plan.AllTxns[:len(req.Requests)], "session_ended_after_approval", err)
+	}
+}
+
+// logWithheldRecords writes SIGN_FAILED entries countermanding signatures that
+// were already audited as SIGN_APPROVED before the final check stopped return.
+func (s *Service) logWithheldRecords(records []SignedRecord, refused *ServiceError) {
+	if s.AuditLog == nil || refused == nil || len(records) == 0 {
+		return
+	}
+	reason := "signature withheld after it was recorded as signed: " + refused.Message
+	for _, record := range records {
+		s.AuditLog.LogSignWithheld(record, reason)
+	}
 }
 
 func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, signedTxns []string, console Console) {
@@ -380,19 +478,24 @@ func (s *Service) logSummary(req signerapi.GroupSignRequest, plan *PlanResult, s
 
 // logSuccessfulSignatures records each position this signer signed with its
 // key, as signed: group is the final group, as the executor signed it, with
-// the trailing dummies it signed.
-func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, outcome approvalOutcome) {
+// the trailing dummies it signed. It returns the logged records so a post-audit
+// refusal can countermand each one with LogSignWithheld.
+func (s *Service) logSuccessfulSignatures(req signerapi.GroupSignRequest, plan *PlanResult, group signedGroup, outcome approvalOutcome) []SignedRecord {
 	if s.AuditLog == nil {
-		return
+		return nil
 	}
 
+	records := make([]SignedRecord, 0, len(req.Requests))
 	for i, txReq := range req.Requests {
 		if plan.PassthroughIndices[i] || plan.ForeignIndices[i] {
 			continue
 		}
 		details := fmt.Sprintf("txn %d/%d signed", i+1, len(req.Requests))
-		s.AuditLog.LogSignApproved(group.record(i, txReq.AuthAddress, details, outcome))
+		record := group.record(i, txReq.AuthAddress, details, outcome)
+		s.AuditLog.LogSignApproved(record)
+		records = append(records, record)
 	}
+	return records
 }
 
 // logSignRejections audits a refused sign. reason carries its own audit

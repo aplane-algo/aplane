@@ -574,6 +574,7 @@ func TestSignComponentCosignerPolicyAllowsSigning(t *testing.T) {
 		Planner:          cosignerTestPlanner,
 		HoldsCosignerKey: holdsAllCosignerKeys,
 		AuditLog:         audit,
+		KeyUse:           passthroughKeyUse,
 	}).signComponentWithContext(context.Background(), componentPlanRequest{
 		RequestID:     "cmp-cosigner-policy-pass",
 		ComponentKey:  componentKey,
@@ -1198,7 +1199,7 @@ func cosignerTestService(t *testing.T, cfg *policy.Config) *Service {
 }
 
 func cosignerTestServiceFor(componentKey string, cfg *policy.Config) *Service {
-	return &Service{Planner: cosignerTestPlanner, PolicyFor: keyedPolicy(map[string]*policy.Config{componentKey: cfg}, nil), HoldsCosignerKey: holdsAllCosignerKeys}
+	return &Service{Planner: cosignerTestPlanner, PolicyFor: keyedPolicy(map[string]*policy.Config{componentKey: cfg}, nil), HoldsCosignerKey: holdsAllCosignerKeys, KeyUse: passthroughKeyUse}
 }
 
 func wildcardCosignerPolicy(t *testing.T) *policy.Config {

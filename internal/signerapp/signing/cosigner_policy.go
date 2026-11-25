@@ -142,9 +142,9 @@ func (s *Service) logCosignerRejections(plan *ComponentSignPlan, reason, policyR
 	}
 }
 
-func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *ComponentSignResult) {
+func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *ComponentSignResult) []SignedRecord {
 	if s.AuditLog == nil || plan == nil || result == nil {
-		return
+		return nil
 	}
 	componentKey := result.ComponentKey
 	if componentKey == "" {
@@ -155,15 +155,19 @@ func (s *Service) logCosignerComponentApproved(plan *ComponentSignPlan, result *
 	// target, the ID the component message was built from, and takes only
 	// the group's ID and transaction IDs from the group.
 	group := decodedSignedGroup(plan.Group, 0)
+	records := make([]SignedRecord, 0, len(plan.Targets))
 	for _, target := range plan.Targets {
-		s.AuditLog.LogSignApproved(group.inGroup(SignedRecord{
+		record := group.inGroup(SignedRecord{
 			AuthAddress: componentKey,
 			TxnSender:   target.Sender,
 			Details:     fmt.Sprintf("cosigner component signature target %d signed", target.TargetIndex) + externalChecksNote(plan.ExternalChecks),
 			TxID:        txIDString(target.TxID),
 			Fee:         target.Fee,
-		}))
+		})
+		s.AuditLog.LogSignApproved(record)
+		records = append(records, record)
 	}
+	return records
 }
 
 // genesisHashResolver is the node's network map, shared with /sign planning.

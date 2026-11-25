@@ -106,7 +106,7 @@ func TestExecutorExecuteGroupSigningHonorsCanceledContext(t *testing.T) {
 	cancel()
 
 	exec := &Executor{}
-	_, err := exec.ExecuteGroupSigning(ctx, &PlanResult{
+	_, _, err := exec.executeGroupSigning(ctx, &PlanResult{
 		AllTxns:            []types.Transaction{{}},
 		PassthroughIndices: map[int]bool{},
 		ForeignIndices:     map[int]bool{},
@@ -114,7 +114,7 @@ func TestExecutorExecuteGroupSigningHonorsCanceledContext(t *testing.T) {
 		Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR"}},
 	}, nil)
 	if err == nil {
-		t.Fatal("ExecuteGroupSigning() error = nil, want cancellation")
+		t.Fatal("executeGroupSigning() error = nil, want cancellation")
 		return
 	}
 	if err.Kind != ErrorUnavailable {
@@ -211,9 +211,9 @@ func TestExecutorRejectsCosignerKeyTypesBeforeSessionLoad(t *testing.T) {
 				}},
 			}
 
-			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, nil)
+			_, _, err := exec.executeGroupSigning(context.Background(), plan, req, nil)
 			if err == nil {
-				t.Fatal("ExecuteGroupSigning() error = nil, want cosigner key type rejection")
+				t.Fatal("executeGroupSigning() error = nil, want cosigner key type rejection")
 				return
 			}
 			if err.Kind != ErrorBadRequest {

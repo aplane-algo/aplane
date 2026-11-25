@@ -224,7 +224,7 @@ func TestValidTargetInvariantJudgesThePlansKeySet(t *testing.T) {
 		InvalidRekeyTargets: invalidRekeyTargetsFromSnapshot(planned),
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: a["plain"].String(), TxnBytesHex: "00"}}}
-	_, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+	_, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
 	want := "transaction 1: " + rekeyTargetNotValid(a["htlc"].String(), "aplane.htlc.v1").Message
 	if err == nil || err.Code() != signerapi.ErrCodeRekeyTargetNotValid || err.Message != want {
 		t.Fatalf("err = %v, want %q from the plan's key set", err, want)
@@ -310,19 +310,16 @@ func shippedSignerPolicyWithRekeys(t *testing.T, rekeys policy.SignerRekeys) *po
 
 // rekeyGateHarness records every trace of approval a request leaves: the
 // operator prompts, and what the approval adapter prints, which with User
-// Auto-Approve on is its only trace. A request the gates pass stops at
-// BeforeExecute, so nothing is signed.
+// Auto-Approve on is its only trace. A request the gates pass stops at KeyUse,
+// so nothing is signed.
 type rekeyGateHarness struct {
 	prompts  int
 	executes int
 	approval strings.Builder
 }
 
-// stoppedAfterApproval is what a request the gates passed returns.
-const stoppedAfterApproval = "test: stopped after approval"
-
 // configure gives svc an approval adapter, the shipped default policy with
-// rekeys replaced, and a BeforeExecute that stops the request.
+// rekeys replaced, and a refused KeyUse that stops the request after approval.
 func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.SignerRekeys, auto bool) {
 	t.Helper()
 	svc.Approval = &ApprovalService{
@@ -338,9 +335,11 @@ func (h *rekeyGateHarness) configure(t *testing.T, svc *Service, rekeys policy.S
 	svc.GenerateTxnDescriptionFromTxn = describeAs("txn")
 	svc.IsUnlocked = func() bool { return true }
 	svc.PolicyFor = fixedPolicy(shippedSignerPolicyWithRekeys(t, rekeys))
-	svc.BeforeExecute = func() (func(), *ServiceError) {
+	svc.KeyUse = func(ctx context.Context) (context.Context, func()) {
 		h.executes++
-		return nil, unavailable(stoppedAfterApproval)
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		return canceled, func() {}
 	}
 }
 
@@ -357,7 +356,7 @@ func (h *rekeyGateHarness) check(t *testing.T, err *ServiceError, wantRefused st
 		}
 		return
 	}
-	if err == nil || err.Message != stoppedAfterApproval || h.executes != 1 {
+	if err == nil || err.Kind != ErrorLocked || h.executes != 1 {
 		t.Fatalf("err = %v, executes = %d; want the request to pass the gates and approval", err, h.executes)
 	}
 	if auto && (h.prompts != 0 || !strings.Contains(h.approval.String(), "[USER AUTO-APPROVE]")) {

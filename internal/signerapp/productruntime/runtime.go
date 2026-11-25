@@ -114,10 +114,12 @@ type Runtime struct {
 	stageTables *stagetable.Store
 	stageWork   chan struct{}
 
-	// Key users are holders of loaded key material outside the session (the
-	// stage table worker and the rotating sign path). Lock cancels their context and waits for them to
-	// release before it clears the session, so no copy of a seed outlives
-	// the unlocked state.
+	// Key users are holders of loaded key material or source tokens outside an
+	// admin session (the stage table worker, rotating prepare and sign,
+	// ordinary /sign, bounded-base and cosigner /sign/component,
+	// /sign/assemble, cosigner external checks, and mnemonic export). Lock
+	// cancels their context and waits for them to release before it clears the
+	// session, so no copy of key material outlives the unlocked state.
 	keyUseMu     sync.Mutex
 	keyUseCtx    context.Context
 	keyUseCancel context.CancelFunc
@@ -509,12 +511,13 @@ func (ir *Runtime) SetRecovery() {
 
 // endSignRequests ends every approval wait in flight when the session ends,
 // so no request from it is left waiting for, or showing, an approval; those
-// answer that the session ended. Requests that are planning or signing are
-// not interrupted here: the session check refuses one that has not passed it,
-// and the cut of its key use refuses a rotating sign. Ordinary and component
-// signing register no key use, so one already past the check is stopped only
-// by a key load after the lock cleanup cleared the session, or after an
-// entry into recovery stopped it (ARCH_SIGNING.md, session end).
+// answer that the session ended. Requests that are planning or waiting at
+// their gates meet the session check and answer locked; every signing and
+// assembly path (rotating, ordinary /sign, bounded-base and cosigner
+// /sign/component, and /sign/assemble) holds a registered key use while
+// loading and using key material, so every session end cancels it and a lock
+// waits for it to release before clearing the session (ARCH_SIGNING.md,
+// session end).
 // The lock cleanup calls it first, before it waits for key users, so a lock,
 // the start of store maintenance and an unlock that lost to a lock withdraw
 // at once; entering recovery, which runs no cleanup, calls it directly.

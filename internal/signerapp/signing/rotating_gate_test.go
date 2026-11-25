@@ -57,7 +57,7 @@ func TestExecutorRefusesRotatingSlotBeforeSessionLoad(t *testing.T) {
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTHADDR", TxnBytesHex: "deadbeef"}}}
 	// A nil session would panic if the executor tried to load the key.
-	_, err := (&Executor{}).ExecuteGroupSigning(context.Background(), plan, req, nil)
+	_, _, err := (&Executor{}).executeGroupSigning(context.Background(), plan, req, nil)
 	requireRotatingRefusal(t, err, "transaction 1:")
 }
 

@@ -47,9 +47,15 @@ func signPreparedCosignerComponents(ctx context.Context, plan *ComponentSignPlan
 		return nil, err
 	}
 	defer zeroLoadedKeyMaterial(keyMaterial)
+	if err := ctx.Err(); err != nil {
+		return nil, canceledSignRequest(err)
+	}
 
 	signatures := make([]ComponentSignature, len(plan.Targets))
 	for i, target := range plan.Targets {
+		if err := ctx.Err(); err != nil {
+			return nil, canceledSignRequest(err)
+		}
 		signature, signErr := signCosignerComponentMessage(keyMaterial.Type, componentKey.PrivateKey, target.Message[:])
 		if signErr != nil {
 			return nil, signErr

@@ -291,7 +291,6 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 		Console:                       rec,
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute:                 func() (func(), *ServiceError) { return func() {}, nil },
 		PolicyFor:                     c.policyResolver(t, noderole.RoleSigner),
 	}
 	req := signerapi.GroupSignRequest{RequestID: c.Name}
@@ -329,7 +328,7 @@ func (c *verdictCase) runSign(t *testing.T, group []types.Transaction) verdictWa
 		plan.FeeInfo.NativePQFeeContribution = p.PQFee
 		plan.IsPreGrouped = p.Pregrouped
 	}
-	outcome, _, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+	outcome, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
 	if err == nil && outcome.ApprovalSource == ApprovalSourceAlwaysApprove && outcome.PolicyRuleID == "" {
 		t.Fatal("always_approve outcome missing PolicyRuleID")
 	}

@@ -43,6 +43,9 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 
 	signedGroup := make([]string, len(group.Entries))
 	for _, target := range req.Targets {
+		if err := ctx.Err(); err != nil {
+			return nil, canceledSignRequest(err)
+		}
 		signedTxnHex, err := assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		if err != nil {
 			return nil, err
@@ -50,6 +53,9 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		signedGroup[target.TargetIndex] = signedTxnHex
 	}
 	for _, passthrough := range req.Passthrough {
+		if err := ctx.Err(); err != nil {
+			return nil, canceledSignRequest(err)
+		}
 		signedTxnHex, err := validateCosignedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
 		if err != nil {
 			return nil, err
@@ -117,8 +123,14 @@ func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, t
 		if addr == zero {
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			return canceledSignRequest(err)
+		}
 		km, err := session.GetKeyWithContext(ctx, addr.String())
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return canceledSignRequest(ctxErr)
+			}
 			// Only a genuine not-found means this is a foreign passthrough. Any
 			// other error (locked session, decrypt/storage failure) must fail
 			// closed: treating it as "not held" would let a cosigned account slip
@@ -138,6 +150,9 @@ func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, t
 		}
 		cosigned := km.BoundedAuthorization != nil && km.BoundedAuthorization.Cosigner != nil
 		zeroLoadedKeyMaterial(km)
+		if err := ctx.Err(); err != nil {
+			return canceledSignRequest(err)
+		}
 		if cosigned {
 			return badRequest(fmt.Sprintf("passthrough index %d requires component assembly and cannot be supplied as passthrough", targetIndex))
 		}

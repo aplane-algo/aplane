@@ -172,9 +172,18 @@ func TestSigningServiceRefusesAfterTheSessionItBeganInEnds(t *testing.T) {
 			if svc.IsUnlocked() {
 				t.Fatal("a request begun before the round trip still reads as signable")
 			}
-			if release, err := svc.BeforeExecute(); err == nil {
-				release()
-				t.Fatal("a request begun before the round trip may still execute")
+			if svc.KeyUse == nil {
+				t.Fatal("signing service did not wire KeyUse")
+			}
+			req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{
+				AuthAddress: types.Address{1}.String(),
+				TxnBytesHex: txnutil.EncodeWithPrefixHex(types.Transaction{
+					Type:   types.PaymentTx,
+					Header: types.Header{Sender: types.Address{1}, FirstValid: 1, LastValid: 10},
+				}),
+			}}}
+			if _, err := svc.SignGroupWithContext(context.Background(), req, nil); err == nil || err.Kind != signersigning.ErrorLocked {
+				t.Fatalf("SignGroupWithContext() error = %v, want locked for stale session", err)
 			}
 			if !signer.newSigningServiceWithAudit(ir, nil).IsUnlocked() {
 				t.Fatal("a request begun after the round trip cannot sign")

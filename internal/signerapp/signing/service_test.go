@@ -610,20 +610,20 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                  string
-		draftTxn              types.Transaction
-		finalizedTxn          types.Transaction
-		wantKind              ErrorKind
-		wantMessage           string
-		wantBeforeExecuteCall bool
+		name           string
+		draftTxn       types.Transaction
+		finalizedTxn   types.Transaction
+		wantKind       ErrorKind
+		wantMessage    string
+		wantKeyUseCall bool
 	}{
 		{
-			name:                  "draft violates but finalized passes",
-			draftTxn:              selfNoOp(policy.SelfNoOpTransferMaxFeeMicroAlgos + 1),
-			finalizedTxn:          selfNoOp(policy.SelfNoOpTransferMaxFeeMicroAlgos),
-			wantKind:              ErrorUnavailable,
-			wantMessage:           "after finalized policy",
-			wantBeforeExecuteCall: true,
+			name:           "draft violates but finalized passes",
+			draftTxn:       selfNoOp(policy.SelfNoOpTransferMaxFeeMicroAlgos + 1),
+			finalizedTxn:   selfNoOp(policy.SelfNoOpTransferMaxFeeMicroAlgos),
+			wantKind:       ErrorLocked,
+			wantMessage:    "signer is locked",
+			wantKeyUseCall: true,
 		},
 		{
 			name:         "draft passes but finalized violates",
@@ -637,7 +637,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manualApprovalCalled := false
-			beforeExecuteCalled := false
+			keyUseCalled := false
 			service := &Service{
 				Approval: &ApprovalService{
 					HasClient: func() bool {
@@ -652,10 +652,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 				Executor:                      &Executor{},
 				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				IsUnlocked:                    func() bool { return true },
-				BeforeExecute: func() (func(), *ServiceError) {
-					beforeExecuteCalled = true
-					return nil, unavailable("after finalized policy")
-				},
+				KeyUse:                        refusedKeyUse(&keyUseCalled),
 				PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 					MaxFeeMicroAlgos:            policy.SelfNoOpTransferMaxFeeMicroAlgos,
 					AutoApproveSelfNoOpTransfer: true,
@@ -687,8 +684,8 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 			if err.Kind != tt.wantKind || !strings.Contains(err.Message, tt.wantMessage) {
 				t.Fatalf("error = %#v, want kind %q containing %q", err, tt.wantKind, tt.wantMessage)
 			}
-			if beforeExecuteCalled != tt.wantBeforeExecuteCall {
-				t.Fatalf("BeforeExecute called = %v, want %v", beforeExecuteCalled, tt.wantBeforeExecuteCall)
+			if keyUseCalled != tt.wantKeyUseCall {
+				t.Fatalf("KeyUse called = %v, want %v", keyUseCalled, tt.wantKeyUseCall)
 			}
 			if manualApprovalCalled {
 				t.Fatal("manual approval path was called")
@@ -699,7 +696,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 
 func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testing.T) {
 	approvalPathCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
@@ -715,11 +712,8 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("after auto approval")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -749,20 +743,20 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferSkipsManualReview(t *testin
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if err == nil || !strings.Contains(err.Message, "after auto approval") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after auto approval", err)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after auto approval", err)
 	}
 	if approvalPathCalled {
 		t.Fatal("manual approval path was called despite self no-op auto-approval")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after self no-op auto-approval")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after self no-op auto-approval")
 	}
 }
 
 func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *testing.T) {
 	approvalCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	var gotViolations []signerapproval.Violation
 	service := &Service{
 		Approval: &ApprovalService{
@@ -780,11 +774,8 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("after forced review")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AlwaysReviewWarnings: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AlwaysReviewWarnings: true}),
 	}
 
 	txn := types.Transaction{
@@ -811,14 +802,14 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if err == nil || !strings.Contains(err.Message, "after forced review") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after forced review", err)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after forced review", err)
 	}
 	if !approvalCalled {
 		t.Fatal("manual approval path was not called for always-review warning")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after approval")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after approval")
 	}
 	if len(gotViolations) != 1 || gotViolations[0].Field != "Fee" {
 		t.Fatalf("violations = %#v, want fee warning", gotViolations)
@@ -827,7 +818,7 @@ func TestSignGroupWithPlanAlwaysReviewWarningsPromptsWithoutUserAutoApprove(t *t
 
 func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	approvalCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	var service *Service
 	service = &Service{
 		Approval: &ApprovalService{
@@ -842,11 +833,8 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, unavailable("after approval")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysAllow, AlwaysReviewWarnings: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), Rekeys: policy.RekeysAllow, AlwaysReviewWarnings: true}),
 	}
 
 	txn := types.Transaction{
@@ -874,20 +862,20 @@ func TestSignGroupWithPlanDoesNotReevaluatePolicyAfterApproval(t *testing.T) {
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if err == nil || !strings.Contains(err.Message, "after approval") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after approval", err)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after approval", err)
 	}
 	if !approvalCalled {
 		t.Fatal("manual approval path was not called")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after approval")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after approval")
 	}
 }
 
 func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *testing.T) {
 	approvalCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	var gotViolations []signerapproval.Violation
 	source := types.Address{1}
 	dest := types.Address{2}
@@ -920,11 +908,8 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("after routing review")
-		},
-		PolicyFor: fixedPolicy(cfg),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(cfg),
 	}
 
 	txn := types.Transaction{
@@ -955,14 +940,14 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if err == nil || !strings.Contains(err.Message, "after routing review") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after routing review", err)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after routing review", err)
 	}
 	if !approvalCalled {
 		t.Fatal("manual approval path was not called for transfer routing review")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after transfer routing approval")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after transfer routing approval")
 	}
 	if len(gotViolations) != 0 {
 		t.Fatalf("violations = %#v, want no warning violations for routing-only review", gotViolations)
@@ -971,7 +956,7 @@ func TestSignGroupWithPlanTransferRoutingReviewPromptsWithoutUserAutoApprove(t *
 
 func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *testing.T) {
 	approvalPathCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	addr := types.Address{1}
 	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
@@ -992,11 +977,8 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("after auto approval")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	group := types.Digest{9}
@@ -1039,14 +1021,14 @@ func TestSignGroupWithPlanAutoApproveSelfNoOpTransferAllowsSignerDummies(t *test
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if signErr == nil || !strings.Contains(signErr.Message, "after auto approval") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after auto approval", signErr)
+	if signErr == nil || signErr.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after auto approval", signErr)
 	}
 	if approvalPathCalled {
 		t.Fatal("manual approval path was called despite self no-op auto-approval with signer dummies")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after self no-op auto-approval with signer dummies")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after self no-op auto-approval with signer dummies")
 	}
 }
 
@@ -1089,7 +1071,7 @@ func TestSelfNoOpTransferPlanAutoApprovalUsesActualDummyFees(t *testing.T) {
 
 func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *testing.T) {
 	approvalPathCalled := false
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
@@ -1105,11 +1087,8 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("after auto approval")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1140,19 +1119,19 @@ func TestSignGroupWithPlanAutoApproveASAZeroSelfTransferSkipsManualReview(t *tes
 	if result != nil {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
-	if err == nil || !strings.Contains(err.Message, "after auto approval") {
-		t.Fatalf("signGroupWithPlan() error = %#v, want before-execute failure after auto approval", err)
+	if err == nil || err.Kind != ErrorLocked {
+		t.Fatalf("signGroupWithPlan() error = %#v, want key-use refusal after auto approval", err)
 	}
 	if approvalPathCalled {
 		t.Fatal("manual approval path was called despite ASA self no-op auto-approval")
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called after ASA self no-op auto-approval")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called after ASA self no-op auto-approval")
 	}
 }
 
 func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *testing.T) {
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	addr := types.Address{1}
 	dummyAddr, err := signingutil.DummyAddress()
 	if err != nil {
@@ -1165,11 +1144,8 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("should not execute")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	group := types.Digest{9}
@@ -1216,13 +1192,13 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackForUnexpectedDummy(t *test
 	if signErr == nil || signErr.Kind != ErrorUnavailable || !strings.Contains(signErr.Message, "no apadmin connected") {
 		t.Fatalf("signGroupWithPlan() error = %#v, want operator fallback", signErr)
 	}
-	if beforeExecuteCalled {
-		t.Fatal("BeforeExecute was called even though signer dummy predicate failed")
+	if keyUseCalled {
+		t.Fatal("KeyUse was called even though signer dummy predicate failed")
 	}
 }
 
 func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *testing.T) {
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	addr := types.Address{1}
 	service := &Service{
 		Approval: &ApprovalService{
@@ -1231,11 +1207,8 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("should not execute")
-		},
-		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
+		PolicyFor:                     fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(), AutoApproveSelfNoOpTransfer: true}),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1268,8 +1241,8 @@ func TestSignGroupWithPlanSelfNoOpAutoApproveFallsBackWhenPredicateFails(t *test
 	if err == nil || err.Kind != ErrorUnavailable || !strings.Contains(err.Message, "no apadmin connected") {
 		t.Fatalf("signGroupWithPlan() error = %#v, want operator fallback", err)
 	}
-	if beforeExecuteCalled {
-		t.Fatal("BeforeExecute was called even though self no-op predicate failed")
+	if keyUseCalled {
+		t.Fatal("KeyUse was called even though self no-op predicate failed")
 	}
 }
 
@@ -1358,8 +1331,26 @@ func TestSignGroupWithPlanRejectsNetworkScopedAlgoLimit(t *testing.T) {
 	}
 }
 
+func passthroughKeyUse(ctx context.Context) (context.Context, func()) {
+	return ctx, func() {}
+}
+
+// refusedKeyUse records that a request passed every pre-execution gate and
+// reached key-use registration, then returns an already-canceled context so
+// openKeyUse stops with ErrorLocked without touching a KeySession.
+func refusedKeyUse(called *bool) func(context.Context) (context.Context, func()) {
+	return func(ctx context.Context) (context.Context, func()) {
+		if called != nil {
+			*called = true
+		}
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		return canceled, func() {}
+	}
+}
+
 func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
-	beforeExecuteCalled := false
+	keyUseCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
 			UserAutoApprove: true,
@@ -1368,10 +1359,7 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
 		PolicyFor:                     fixedPolicy(policy.DefaultConfig()),
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return nil, forbidden("final execution refused")
-		},
+		KeyUse:                        refusedKeyUse(&keyUseCalled),
 	}
 
 	req := signerapi.GroupSignRequest{
@@ -1394,19 +1382,19 @@ func TestSignGroupWithPlanStopsBeforeExecute(t *testing.T) {
 		t.Fatalf("signGroupWithPlan() result = %#v, want nil", result)
 	}
 	if err == nil {
-		t.Fatal("signGroupWithPlan() error = nil, want before-execute failure")
+		t.Fatal("signGroupWithPlan() error = nil, want key-use refusal")
 		return
 	}
-	if err.Kind != ErrorForbidden || !strings.Contains(err.Message, "final execution refused") {
-		t.Fatalf("error = %#v, want before-execute refusal", err)
+	if err.Kind != ErrorLocked {
+		t.Fatalf("error = %#v, want locked refusal", err)
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called")
 	}
 }
 
-func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) {
-	beforeExecuteCalled := false
+func TestSignGroupWithPlanReleasesKeyUseAfterExecution(t *testing.T) {
+	keyUseCalled := false
 	releaseCalled := false
 	service := &Service{
 		Approval: &ApprovalService{
@@ -1415,11 +1403,11 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 		Executor:                      &Executor{},
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute: func() (func(), *ServiceError) {
-			beforeExecuteCalled = true
-			return func() {
+		KeyUse: func(ctx context.Context) (context.Context, func()) {
+			keyUseCalled = true
+			return ctx, func() {
 				releaseCalled = true
-			}, nil
+			}
 		},
 	}
 
@@ -1445,11 +1433,11 @@ func TestSignGroupWithPlanReleasesBeforeExecuteGateAfterExecution(t *testing.T) 
 	if result == nil || len(result.Signed) != 1 || result.Signed[0] != "cafe" {
 		t.Fatalf("signGroupWithPlan() result = %#v, want passthrough signed txn", result)
 	}
-	if !beforeExecuteCalled {
-		t.Fatal("BeforeExecute was not called")
+	if !keyUseCalled {
+		t.Fatal("KeyUse was not called")
 	}
 	if !releaseCalled {
-		t.Fatal("BeforeExecute release was not called after execution")
+		t.Fatal("KeyUse release was not called after execution")
 	}
 }
 
@@ -1783,10 +1771,7 @@ func TestSignGroupWithPlanRoutesSelfNoOpTransfers(t *testing.T) {
 				Executor:                      &Executor{},
 				GenerateTxnDescriptionFromTxn: describeAs("txn"),
 				IsUnlocked:                    func() bool { return true },
-				BeforeExecute: func() (func(), *ServiceError) {
-					executed = true
-					return nil, forbidden("stop after approval")
-				},
+				KeyUse:                        refusedKeyUse(&executed),
 			}
 			if tc.policy == "" {
 				service.PolicyFor = fixedPolicy(shippedDefaultWithSelfNoOpAutoApproval(t))
@@ -1860,7 +1845,7 @@ func TestRequestRefusedAfterApprovalIsAudited(t *testing.T) {
 		AuditLog:                      audit,
 		GenerateTxnDescriptionFromTxn: describeAs("txn"),
 		IsUnlocked:                    func() bool { return true },
-		BeforeExecute:                 func() (func(), *ServiceError) { return nil, lockedError() },
+		KeyUse:                        refusedKeyUse(nil),
 		PolicyFor: fixedPolicy(&policy.Config{TransactionTypes: policytest.AllowAllTypes(),
 			MaxFeeMicroAlgos:            policy.SelfNoOpTransferMaxFeeMicroAlgos,
 			AutoApproveSelfNoOpTransfer: true,

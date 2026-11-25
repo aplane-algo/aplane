@@ -253,11 +253,10 @@ func TestApprovalGatesDistinguishHumanUserAutoApproveAndAlwaysApprove(t *testing
 				PassthroughSignedTxns: map[int][]byte{},
 				ForeignIndices:        map[int]bool{},
 			}
-			outcome, release, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
+			outcome, err := svc.approveGroupWithPlanContext(context.Background(), req, plan)
 			if err != nil {
 				t.Fatalf("approveGroupWithPlanContext() error = %v", err)
 			}
-			release()
 			if outcome.ApprovalSource != tc.wantSource || outcome.PolicyRuleID != tc.wantRuleID || prompted != tc.wantPrompted {
 				t.Fatalf("outcome = %+v prompted=%v, want source=%q rule=%q prompted=%v",
 					outcome, prompted, tc.wantSource, tc.wantRuleID, tc.wantPrompted)

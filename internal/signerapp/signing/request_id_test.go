@@ -123,6 +123,7 @@ func TestADirectComponentCallWithNoRequestIDReturnsAMintedOne(t *testing.T) {
 		Planner:          &Planner{Snapshot: func() PlannerRuntimeSnapshot { return PlannerRuntimeSnapshot{} }},
 		PolicyFor:        fixedPolicy(cosignerRoutePolicy(t, source, dest)),
 		HoldsCosignerKey: holdsAllCosignerKeys,
+		KeyUse:           passthroughKeyUse,
 	}
 
 	resp, signErr := svc.SignComponentsWithContext(context.Background(), signerapi.ComponentRequest{
@@ -150,7 +151,7 @@ func TestADirectAssemblyWithNoRequestIDReturnsAMintedOne(t *testing.T) {
 	}
 	passthrough := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}})
 
-	result, signErr := (&Service{}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
+	result, signErr := (&Service{KeyUse: passthroughKeyUse}).AssembleWithContext(context.Background(), signerapi.AssemblyRequest{
 		GroupBytesHex: groupBytesHex,
 		Passthrough:   []signerapi.AssemblyPassthroughItem{{TargetIndex: 0, SignedTxnHex: hex.EncodeToString(passthrough)}},
 	}, newComponentKeySession(&componentKeyStore{}))

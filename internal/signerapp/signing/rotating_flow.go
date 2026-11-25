@@ -462,11 +462,10 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		Requests:  []signerapi.SignRequest{{AuthAddress: req.Account, TxnBytesHex: hex.EncodeToString(raws[0]), AppCallInfo: req.AppCallInfo}},
 		Batch:     req.Batch,
 	}
-	outcome, release, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
+	outcome, gateErr := s.approveGroupWithPlanContext(ctx, signReq, plan)
 	if gateErr != nil {
 		return nil, gateErr
 	}
-	defer release()
 
 	// A leaf family picks its one-time leaf from the stage's history, so a
 	// spend arriving before that history has been restored from the audit
@@ -621,10 +620,9 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 	consoleOf(s.Console).Printf("[ROTATING] Rotation pending %d -> %d for %s\n", stage, targetStage, req.Account)
 	// The IDs recorded are the ones decoded from the presented bytes, which
 	// the spend's signature and the dummies' signed.
-	var recorded signedGroup
+	var records []SignedRecord
 	if s.AuditLog != nil {
-		recorded = auditedGroup(plan)
-		s.logSuccessfulSignatures(signReq, plan, recorded, outcome)
+		records = s.logSuccessfulSignatures(signReq, plan, auditedGroup(plan), outcome)
 	}
 	// Audit writes block, so this has to come after the last of them. A refusal
 	// here leaves a release on record that never left, which only makes the leaf
@@ -633,7 +631,7 @@ func (s *Service) SignRotatingWithContext(ctx context.Context, req signerapi.Rot
 		// The entries above record the transaction as signed; this one says
 		// the signature never left. Nothing leaves on this path, so writing
 		// after the check holds nothing back from a lock.
-		s.logWithheldSignature(recorded, req.Account, refused)
+		s.logWithheldRecords(records, refused)
 		return nil, refused
 	}
 	return &signerapi.RotatingSignResponse{
@@ -690,17 +688,6 @@ func recheckChainAfterSigning(ctx, requestCtx context.Context, deps *RotatingDep
 		return rotatingWindowNotCurrent("validity window aged during signing; prepare the spend again")
 	}
 	return nil
-}
-
-// logWithheldSignature records a rotating signature that was recorded as
-// signed and then refused at the final check: the spend, position 0 of
-// group, signed by account, as its SIGN_APPROVED recorded it. Every audit
-// log the service takes can write it.
-func (s *Service) logWithheldSignature(group signedGroup, account string, refused *ServiceError) {
-	if s.AuditLog == nil {
-		return
-	}
-	s.AuditLog.LogSignWithheld(group.record(0, account, "", approvalOutcome{}), "signature withheld after it was recorded as signed: "+refused.Message)
 }
 
 // releaseRefused reports why a signature must not leave: the signer locked, or
