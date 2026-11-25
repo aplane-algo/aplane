@@ -77,7 +77,7 @@ func TestCmdPermissionsPreflightWorksBeforeManagedMetadata(t *testing.T) {
 	if err := cmdPermissions([]string{"preflight"}); err != nil {
 		t.Fatalf("cmdPermissions(preflight) error = %v", err)
 	}
-	for _, absent := range []string{".prod", ".apstore.lock", filepath.Join("install", "service-principal.json")} {
+	for _, absent := range []string{".prod", ".apstore.lock", ".apsigner.lock", filepath.Join("install", "service-principal.json")} {
 		if _, err := os.Lstat(filepath.Join(dataDirectory, absent)); !os.IsNotExist(err) {
 			t.Fatalf("preflight created %s: %v", absent, err)
 		}

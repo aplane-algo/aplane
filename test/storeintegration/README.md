@@ -15,7 +15,8 @@ make store-capacity-test
 
 The lifecycle matrix covers generate/import, cryptographic signing, managed
 backup export/verification, fresh atomic restore, passphrase rotation,
-historical-generation authority, and restart. The crash matrix covers these
+historical-generation authority, restart, and the refusal of a second signer on
+a running one's data directory. The crash matrix covers these
 durability boundaries:
 
 - `changepass.successor_published`: the complete successor exists but the old
