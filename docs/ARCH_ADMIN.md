@@ -1389,9 +1389,9 @@ nothing further. A generate, import, or backup that succeeded all the same is
 not lost across a lock: its result is held and shown once the TUI is back on
 the key list of the unlocked signer, so a bounded account's receipt can still
 be saved. It is held only within its admin session: any session end (an idle
-or other disconnect, a login timeout, a reconnect, a displacement) and
-quitting discard it, together with what its form still holds (the import's
-recovery phrase, the backup's passphrases). A late failure is dropped. The restore flow
+or other disconnect, a login timeout, a reconnect, a displacement) discards it.
+It holds no secret: what its form held (the import's recovery phrase, the
+backup's passphrases) was cleared at the lock. A late failure is dropped. The restore flow
 records the ID of its latest preview, restore, rollback, or reconcile request
 the same way: only a failure naming that request clears the restore passphrase
 or leaves the restore progress screen, and a preview reply is shown only while
@@ -1480,13 +1480,16 @@ identifies the current screen. The enum has families for:
   On a cosigner node, Key Details for a cosigner key asks `source_token_list`
   for the key and shows one `Sources:` line: each source of the document that
   governs the key (its own, or the node default it follows) with `token
-  set`, `token needed` or `no token`. `o` opens `ViewSourceTokens`, which
-  sets the selected source's token (typed masked, Enter) or removes it
-  (`ctrl+r`) on that document's selector. Every printable key is part of the
-  token, so the form's commands are Enter, `ctrl+r`, the arrows, Tab and
-  `Esc`; the typed token is zeroed on every way out of the form, on lock and
-  on disconnect, and after a remove the form says that earlier generations
-  and backups keep a copy.
+  set`, `token needed` or `no token`. After them come the stored tokens that
+  belong to none of those sources: `unused`, under that document's selector,
+  and `unused (key)`, under the selector of a key that follows the node
+  default. `o` opens `ViewSourceTokens`, which sets the selected source's
+  token (typed masked, Enter) or removes it (`ctrl+r`); an unused one can only
+  be removed, and then nothing is selected until the operator moves to a row.
+  Every printable key is part of the token, so the form's commands
+  are Enter, `ctrl+r`, the arrows, Tab and `Esc`; the typed token is zeroed on
+  every way out of the form, on lock, on recovery and on disconnect, and after
+  a remove the form says that earlier generations and backups keep a copy.
 - Approval popups (`ViewSigningPopup`, `ViewClientEnrollmentPopup`)
 - Enrolled clients (`ViewEnrolledClients`, opened with `c` from the key
   list): the enrollment requests waiting for approval (`a` approve, `x`

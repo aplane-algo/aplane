@@ -2103,8 +2103,10 @@ format are in
 
 See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for restore conflicts and
 rollback. In the apadmin TUI, Key Details for a cosigner key shows each
-source of the document that governs it with its token state, and `o` sets
-or removes a token.
+source of the document that governs it with its token state, then any stored
+token that belongs to none of them, and `o` sets or removes a token. `unused`
+is a token for a source the document does not have, and `unused (key)` one of
+the key's own when it follows the node default; either can only be removed.
 
 ## Validation Checklist
 

@@ -121,8 +121,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Import key
 		m.forms.importFocus = 0 // Start on key type selection
 		m.forms.importKeyType = 0
-		m.forms.importMnemonicInput.SetValue("")
-		m.forms.importMnemonicInput.Blur()
+		m.clearImportMnemonic()
 		m.forms.importError = ""
 		m.viewState = ViewImportForm
 

@@ -524,27 +524,20 @@ func buttonPair(focus int, left, right string, accent lipgloss.TerminalColor) st
 	return lipgloss.JoinHorizontal(lipgloss.Center, leftBtn, "  ", rightBtn)
 }
 
-// Shutdown releases what the model holds when the program exits: a revealed
-// recovery phrase or typed export passphrase, a typed login, unlock, backup
-// or restore passphrase, recovery-phrase replies still queued on the admin
-// client, an export's staging file, an import's open archive and passphrase,
-// a held late result (and the import form a held import leaves filled). An
+// Shutdown releases what the model holds when the program exits: every secret
+// buffer, zeroed (clearSessionSecrets), recovery-phrase replies still queued on
+// the admin client, an export's staging file and an import's open archive. An
 // export already being verified and saved is left to finish; an upload in
 // progress is left to the signer's cleanup of abandoned uploads. The apadmin
 // and apconsole binaries call it on the final model, whatever ended the
 // program (keyboard quit, signal, or the console).
 func (m Model) Shutdown() {
-	m.clearMnemonicExport()
-	m.clearSourceTokens()
-	m.clearAuthPassphrase()
-	m.clearBackupPassphrases()
-	m.clearRestorePassphrase()
-	m.discardHeldResult()
+	m.clearSessionSecrets(false)
 	if m.adminClient != nil {
 		m.adminClient.Disconnect()
 	}
 	m = m.stopBackupExport()
-	m.shutdownBackupImport()
+	_ = m.closeBackupImportFile()
 }
 
 // restoreFlowWaiting reports whether the operator is on a screen that waits

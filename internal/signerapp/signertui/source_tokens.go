@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -18,7 +19,9 @@ import (
 // A cosigner key's Key Details shows the sources of the policy document that
 // governs it, each with its token state, and opens a form that sets or
 // removes a source's token. The tokens belong to the governing document's
-// selector: the key's own document, or the node default the key follows.
+// selector: the key's own document, or the node default the key follows. Stored
+// tokens that belong to none of the sources are shown after them and can be
+// removed.
 // The typed token is held only in the form's buffer, which is zeroed on
 // every way out of the form, and sent through secretCmd; no reply carries a
 // token back.
@@ -28,15 +31,29 @@ const (
 	sourceTokenSetLabel    = "token set"
 	sourceTokenNeededLabel = "token needed"
 	sourceNoTokenLabel     = "no token"
+	// sourceTokenUnusedLabel is a stored token the governing document has no
+	// source for, and sourceTokenUnusedKeyLabel one stored under a key that
+	// follows the node default.
+	sourceTokenUnusedLabel    = "unused"
+	sourceTokenUnusedKeyLabel = "unused (key)"
 )
 
 // sourceTokenRemovedNote follows a successful remove.
 const sourceTokenRemovedNote = "Token removed. Earlier generations and backups keep a copy; revoke the token at the service."
 
-// sourceTokenRow is one source of the governing document.
+// sourceTokenNoneSelected answers Enter and Ctrl+R while no row is selected.
+const sourceTokenNoneSelected = "No source is selected."
+
+// sourceTokenRow is one source of the governing document, or a stored token no
+// source of it names.
 type sourceTokenRow struct {
 	name  string
 	label string
+	// selector is whose token the row is, the one a set or remove names.
+	selector string
+	// declared is set for a source of the governing document. A token is set
+	// only for one of those; any other can only be removed.
+	declared bool
 	// hasToken is set when a token is stored for the source, whether or
 	// not the document's source takes one.
 	hasToken bool
@@ -49,12 +66,14 @@ type sourceTokensState struct {
 	key    string
 	listID string
 	loaded bool
-	// selector is the governing listing's selector: key, or "default".
-	selector  string
-	sources   []string
+	// governing is the listing whose tokens serve the key's checks, and
+	// leftover the key's own when that isn't it (see sourceTokenListings).
+	governing protocol.SourceTokenSelector
+	leftover  protocol.SourceTokenSelector
 	rows      []sourceTokenRow
 	listError string
 
+	// selected is the selected row, or -1 for none (see refreshRows).
 	selected      int
 	token         protocol.SensitiveBytes
 	requestID     string
@@ -123,35 +142,34 @@ func (m Model) sendSourceTokenRemoveCmd(selector, source, id string) tea.Cmd {
 	})
 }
 
-// governingSourceTokens picks the listing whose tokens serve key's checks:
-// key's own when it has a document of its own, the node default's when it
-// follows that.
-func governingSourceTokens(key string, listings []protocol.SourceTokenSelector) (protocol.SourceTokenSelector, bool) {
-	var own, fallback *protocol.SourceTokenSelector
-	for i := range listings {
-		switch listings[i].Selector {
+// sourceTokenListings picks the listing whose tokens serve key's checks: key's
+// own when it has a document of its own, the node default's when it follows
+// that. Then leftover is key's own listing, whose tokens serve nothing.
+func sourceTokenListings(key string, listings []protocol.SourceTokenSelector) (governing, leftover protocol.SourceTokenSelector) {
+	for _, listing := range listings {
+		switch listing.Selector {
 		case key:
-			own = &listings[i]
+			leftover = listing
 		case "default":
-			fallback = &listings[i]
+			governing = listing
 		}
 	}
-	if own != nil && own.Policy == protocol.SourceTokenPolicyOwn {
-		return *own, true
+	if leftover.Policy == protocol.SourceTokenPolicyOwn {
+		return leftover, protocol.SourceTokenSelector{}
 	}
-	if fallback != nil {
-		return *fallback, true
-	}
-	return protocol.SourceTokenSelector{}, false
+	return governing, leftover
 }
 
-// sourceTokenRows labels each source of the governing document from its
-// token rows.
-func sourceTokenRows(sources []string, tokens []protocol.SourceTokenInfo) []sourceTokenRow {
-	rows := make([]sourceTokenRow, 0, len(sources))
-	for _, name := range sources {
-		row := sourceTokenRow{name: name, label: sourceNoTokenLabel}
-		for _, token := range tokens {
+// sourceTokenRows is each source of the governing document, labelled from its
+// token rows, then the stored tokens that belong to none of them: those the
+// document has no source for, and the leftover listing's. A change's reply is
+// newer than the listing's sources, so only a token the signer calls unused is
+// one.
+func sourceTokenRows(governing, leftover protocol.SourceTokenSelector) []sourceTokenRow {
+	rows := make([]sourceTokenRow, 0, len(governing.Sources))
+	for _, name := range governing.Sources {
+		row := sourceTokenRow{name: name, label: sourceNoTokenLabel, selector: governing.Selector, declared: true}
+		for _, token := range governing.Tokens {
 			if token.Source != name {
 				continue
 			}
@@ -166,7 +184,35 @@ func sourceTokenRows(sources []string, tokens []protocol.SourceTokenInfo) []sour
 		}
 		rows = append(rows, row)
 	}
+	for _, token := range governing.Tokens {
+		if token.State == protocol.SourceTokenUnused && !slices.Contains(governing.Sources, token.Source) {
+			rows = append(rows, sourceTokenRow{name: token.Source, label: sourceTokenUnusedLabel, selector: governing.Selector, hasToken: true})
+		}
+	}
+	for _, token := range leftover.Tokens {
+		if token.State == protocol.SourceTokenUnused {
+			rows = append(rows, sourceTokenRow{name: token.Source, label: sourceTokenUnusedKeyLabel, selector: leftover.Selector, hasToken: true})
+		}
+	}
 	return rows
+}
+
+// refreshRows rebuilds the rows after a change. The selection stays on the
+// token it was on, and is on none once that token is gone: were it on the row
+// that took its place, a second Ctrl+R would remove a token nobody chose.
+func (st *sourceTokensState) refreshRows() {
+	was, _ := st.selectedRow()
+	st.rows = sourceTokenRows(st.governing, st.leftover)
+	st.selected = slices.IndexFunc(st.rows, func(row sourceTokenRow) bool {
+		return row.selector == was.selector && row.name == was.name
+	})
+}
+
+func (st *sourceTokensState) selectedRow() (sourceTokenRow, bool) {
+	if st.selected < 0 || st.selected >= len(st.rows) {
+		return sourceTokenRow{}, false
+	}
+	return st.rows[st.selected], true
 }
 
 // routeSourceTokenList hands a token listing to the policy export waiting on
@@ -188,18 +234,9 @@ func (m Model) handleSourceTokenList(msg sourceTokenListMsg) (tea.Model, tea.Cmd
 		st.listError = terminalSafe(msg.Error)
 		return m, nil
 	}
-	listing, ok := governingSourceTokens(st.key, msg.Selectors)
-	if !ok {
-		st.listError = ""
-		st.selector, st.sources, st.rows = "", nil, nil
-		return m, nil
-	}
 	st.listError = ""
-	st.selector, st.sources = listing.Selector, listing.Sources
-	st.rows = sourceTokenRows(listing.Sources, listing.Tokens)
-	if st.selected >= len(st.rows) {
-		st.selected = max(0, len(st.rows)-1)
-	}
+	st.governing, st.leftover = sourceTokenListings(st.key, msg.Selectors)
+	st.rows = sourceTokenRows(st.governing, st.leftover)
 	return m, nil
 }
 
@@ -215,9 +252,13 @@ func (m Model) handleSourceTokenChange(msg sourceTokenChangeMsg) (tea.Model, tea
 		return m, nil
 	}
 	st.error = ""
-	if msg.Selector == st.selector {
-		st.rows = sourceTokenRows(st.sources, msg.Tokens)
+	switch msg.Selector {
+	case st.governing.Selector:
+		st.governing.Tokens = msg.Tokens
+	case st.leftover.Selector:
+		st.leftover.Tokens = msg.Tokens
 	}
+	st.refreshRows()
 	if action == "remove" {
 		st.status = sourceTokenRemovedNote
 	} else {
@@ -293,7 +334,11 @@ func (m *Model) moveSourceTokenSelection(delta int) {
 	if len(st.rows) == 0 {
 		return
 	}
-	next := (st.selected + delta + len(st.rows)) % len(st.rows)
+	from := st.selected
+	if from < 0 && delta < 0 {
+		from = 0 // up from no selection is the last row, as down is the first
+	}
+	next := (from + delta + len(st.rows)) % len(st.rows)
 	if next != st.selected {
 		m.clearSourceTokenInput()
 		st.selected = next
@@ -301,18 +346,17 @@ func (m *Model) moveSourceTokenSelection(delta int) {
 	st.status, st.error = "", ""
 }
 
-func (m Model) selectedSourceToken() (sourceTokenRow, bool) {
-	st := m.sourceTokens
-	if st.selected < 0 || st.selected >= len(st.rows) {
-		return sourceTokenRow{}, false
-	}
-	return st.rows[st.selected], true
-}
-
 func (m Model) submitSourceToken() (tea.Model, tea.Cmd) {
 	st := &m.sourceTokens
-	row, ok := m.selectedSourceToken()
+	row, ok := st.selectedRow()
 	if !ok {
+		m.clearSourceTokenInput()
+		st.status, st.error = "", sourceTokenNoneSelected
+		return m, nil
+	}
+	if !row.declared {
+		m.clearSourceTokenInput()
+		st.status, st.error = "", "No check uses this token. Press Ctrl+R to remove it."
 		return m, nil
 	}
 	if len(st.token) == 0 {
@@ -321,29 +365,30 @@ func (m Model) submitSourceToken() (tea.Model, tea.Cmd) {
 	}
 	st.requestID = clockRequestID("source-token-set")
 	st.pendingAction, st.status, st.error = "set", "", ""
-	send := m.sendSourceTokenSetCmd(st.selector, row.name, st.token, st.requestID)
+	send := m.sendSourceTokenSetCmd(row.selector, row.name, st.token, st.requestID)
 	m.clearSourceTokenInput()
 	return m, send
 }
 
 func (m Model) removeSourceToken() (tea.Model, tea.Cmd) {
 	st := &m.sourceTokens
-	row, ok := m.selectedSourceToken()
+	m.clearSourceTokenInput()
+	row, ok := st.selectedRow()
 	if !ok {
+		st.status, st.error = "", sourceTokenNoneSelected
 		return m, nil
 	}
-	m.clearSourceTokenInput()
 	if !row.hasToken {
 		st.status, st.error = "", "No token is set for "+terminalSafe(row.name)
 		return m, nil
 	}
 	st.requestID = clockRequestID("source-token-remove")
 	st.pendingAction, st.status, st.error = "remove", "", ""
-	return m, m.sendSourceTokenRemoveCmd(st.selector, row.name, st.requestID)
+	return m, m.sendSourceTokenRemoveCmd(row.selector, row.name, st.requestID)
 }
 
 // sourceTokensLine is Key Details' one line of sources, empty when the
-// governing document has none.
+// governing document has none and no unused token is stored.
 func (m Model) sourceTokensLine() string {
 	st := m.sourceTokens
 	if !st.loaded {
@@ -364,10 +409,10 @@ func (m Model) sourceTokensLine() string {
 
 // sourceTokensPolicyLabel names the document whose tokens the form changes.
 func (m Model) sourceTokensPolicyLabel() string {
-	if m.sourceTokens.selector == "default" {
-		return "node default"
+	if m.sourceTokens.governing.Selector == m.sourceTokens.key {
+		return "this key's own"
 	}
-	return "this key's own"
+	return "node default"
 }
 
 // sourceTokensPopupWidth is the token form's popup width.
@@ -376,39 +421,40 @@ const sourceTokensPopupWidth = keyDetailsPopupWidth
 func (m Model) renderSourceTokens() string {
 	st := m.sourceTokens
 	width := m.popupBodyWidth(sourceTokensPopupWidth)
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Source Tokens") + "\n")
+	var header, footer strings.Builder
+	header.WriteString(titleStyle.Render("Source Tokens") + "\n")
 	if st.key != "" {
-		b.WriteString(ellipsizeMiddle(m.keyIdentifierLabel(m.details.keyType)+": "+st.key, width) + "\n")
-		b.WriteString("Policy: " + m.sourceTokensPolicyLabel() + "\n")
+		header.WriteString(ellipsizeMiddle(m.keyIdentifierLabel(m.details.keyType)+": "+st.key, width) + "\n")
+		header.WriteString("Policy: " + m.sourceTokensPolicyLabel() + "\n")
 	}
-	b.WriteString("\n")
+	header.WriteString("\n")
 	nameWidth := 0
 	for _, row := range st.rows {
 		nameWidth = max(nameWidth, utf8.RuneCountInString(terminalSafe(row.name)))
 	}
 	nameWidth = min(nameWidth, max(1, width-4-len(sourceTokenNeededLabel)))
+	lines := make([]string, len(st.rows))
 	for i, row := range st.rows {
 		name := ellipsize(terminalSafe(row.name), nameWidth)
-		line := fmt.Sprintf("  %-*s  %s", nameWidth, name, row.label)
+		lines[i] = fmt.Sprintf("  %-*s  %s", nameWidth, name, row.label)
 		if i == st.selected {
-			line = selectedStyle.Render(fmt.Sprintf("> %-*s  %s", nameWidth, name, row.label))
+			lines[i] = selectedStyle.Render(fmt.Sprintf("> %-*s  %s", nameWidth, name, row.label))
 		}
-		b.WriteString(line + "\n")
 	}
 	if len(st.rows) > 0 {
-		b.WriteString("\n")
+		footer.WriteString("\n")
 	}
 	if st.pendingAction != "" {
-		b.WriteString("Saving…\n")
+		footer.WriteString("Saving…\n")
 	} else {
-		b.WriteString("Token: " + strings.Repeat("*", utf8.RuneCount(st.token)) + "\n")
+		footer.WriteString("Token: " + strings.Repeat("*", utf8.RuneCount(st.token)) + "\n")
 	}
 	switch {
 	case st.error != "":
-		b.WriteString("\n" + errorStyle.Render(wrapText(st.error, width)) + "\n")
+		footer.WriteString("\n" + errorStyle.Render(wrapText(st.error, width)) + "\n")
 	case st.status != "":
-		b.WriteString("\n" + wrapText(st.status, width) + "\n")
+		footer.WriteString("\n" + wrapText(st.status, width) + "\n")
 	}
-	return m.renderPopup(sourceTokensPopupWidth, b.String())
+	body := m.fitSelectionList(header.String(), lines, st.selected, footer.String(), sourceTokensPopupWidth)
+	return m.renderPopup(sourceTokensPopupWidth, body)
 }

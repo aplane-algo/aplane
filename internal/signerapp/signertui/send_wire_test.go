@@ -97,34 +97,45 @@ func TestSendCommandsWriteTheirMessages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clientConn, serverConn := net.Pipe()
-			defer func() { _ = serverConn.Close() }()
-			client := NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
-			if err := client.Connect(); err != nil {
-				t.Fatalf("Connect() error = %v", err)
-			}
-			defer client.Disconnect()
-			lines := make(chan string, 1)
-			go func() {
-				line, err := bufio.NewReader(serverConn).ReadString('\n')
-				if err != nil {
-					lines <- "read error: " + err.Error()
-					return
-				}
-				lines <- line
-			}()
-			if msg := tt.cmd(Model{adminClient: client})(); msg != nil {
-				t.Fatalf("command returned %#v", msg)
-			}
-			select {
-			case line := <-lines:
-				got := clockID.ReplaceAllString(line, `$1-T"`)
-				if got != tt.want+"\n" {
-					t.Fatalf("wrote %s\nwant  %s", got, tt.want)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("nothing written")
+			client, written := wireClient(t)
+			got := clockID.ReplaceAllString(written(tt.cmd(Model{adminClient: client})), `$1-T"`)
+			if got != tt.want+"\n" {
+				t.Fatalf("wrote %s\nwant  %s", got, tt.want)
 			}
 		})
+	}
+}
+
+// wireClient is a connected client, and written runs a command of its and
+// returns the line it wrote.
+func wireClient(t *testing.T) (client *IPCClient, written func(tea.Cmd) string) {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close() })
+	client = NewAdminClient(&queueConnector{conns: []io.ReadWriteCloser{clientConn}})
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(client.Disconnect)
+	lines := make(chan string, 1)
+	go func() {
+		line, err := bufio.NewReader(serverConn).ReadString('\n')
+		if err != nil {
+			line = "read error: " + err.Error()
+		}
+		lines <- line
+	}()
+	return client, func(cmd tea.Cmd) string {
+		t.Helper()
+		if msg := cmd(); msg != nil {
+			t.Fatalf("command returned %#v", msg)
+		}
+		select {
+		case line := <-lines:
+			return line
+		case <-time.After(2 * time.Second):
+			t.Fatal("nothing written")
+			return ""
+		}
 	}
 }

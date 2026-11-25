@@ -32,6 +32,13 @@ func (m *Model) clearBackupPassphrases() {
 	m.backup.confirmPassphrase = nil
 }
 
+// clearImportMnemonic drops the import form's recovery phrase, and the text area
+// that held it. Its copies can't be zeroed (docs/ARCH_SECURITY.md, "Residual
+// Copies").
+func (m *Model) clearImportMnemonic() {
+	m.forms.importMnemonicInput = newImportMnemonicInput()
+}
+
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -142,8 +149,7 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.forms.importFocus == 1 {
 		switch msg.String() {
 		case "esc":
-			m.forms.importMnemonicInput.SetValue("")
-			m.forms.importMnemonicInput.Blur()
+			m.clearImportMnemonic()
 			m.forms.importError = ""
 			m.viewState = ViewKeyList
 			return m, nil
@@ -167,8 +173,7 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		// Cancel and return to key list
-		m.forms.importMnemonicInput.SetValue("")
-		m.forms.importMnemonicInput.Blur()
+		m.clearImportMnemonic()
 		m.forms.importError = ""
 		m.viewState = ViewKeyList
 		return m, nil

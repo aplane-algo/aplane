@@ -106,6 +106,11 @@ func TestEveryViewFitsAtMinSize(t *testing.T) {
 	skipped := map[ViewState]string{
 		ViewPolicyEdit: "renders an open editor, which only exists with a loaded document",
 	}
+	// The signer's inventory takes precedence over the process-wide registries,
+	// which hold whatever providers an earlier test registered. This type has no
+	// parameters, so the parameter form has no fields to scroll.
+	setServerKeyTypes([]protocol.KeyTypeInfo{{KeyType: "ed25519", DisplayName: "Ed25519", MnemonicImport: true, MnemonicWordCount: 25}})
+	t.Cleanup(func() { setServerKeyTypes(nil) })
 	for _, standalone := range []bool{false, true} {
 		for v := ViewAuth; v <= ViewStoreRecovery; v++ {
 			if _, skip := skipped[v]; skip {

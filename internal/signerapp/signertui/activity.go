@@ -52,17 +52,29 @@ func (m *Model) resetActivityState() {
 	m.activity.idleDueAt = time.Time{}
 }
 
-func (m *Model) applySignerLockedState() {
+// clearSessionSecrets zeroes and drops every secret the model holds. With
+// keepActiveImport, the passphrase of a backup import under way stays: an import
+// goes on through a recovery, and its commit sends the passphrase.
+func (m *Model) clearSessionSecrets(keepActiveImport bool) {
+	m.clearAuthPassphrase()
+	m.clearBackupPassphrases()
+	m.clearRestorePassphrase()
 	m.clearMnemonicExport()
 	m.clearSourceTokens()
-	m.clearRestorePassphrase()
+	m.clearImportMnemonic()
+	if !keepActiveImport || m.backups.imp.phase == importIdle {
+		*m = m.closeBackupImportForm()
+	}
+}
+
+func (m *Model) applySignerLockedState() {
+	m.clearSessionSecrets(false)
 	m.clearPendingApprovals()
 	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.clearCosignerWorkflowState()
 	m.signerState = signerRuntimeLocked
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock
-	m.clearAuthPassphrase()
 	m.auth.passphraseError = ""
 	m.resetActivityState()
 }
@@ -79,19 +91,17 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 
 // endAdminSession clears everything tied to an admin session that has ended.
 // apsigner has already failed the session's pending approvals and requests, and
-// the restore passphrase must not outlive the session.
+// no secret may outlive the session.
 func (m *Model) endAdminSession() {
-	m.clearMnemonicExport()
-	m.clearSourceTokens()
-	m.clearAuthPassphrase()
-	m.clearBackupPassphrases()
 	// The connection is gone: nothing more can be sent on it, and no reply
 	// to a request made on it will arrive.
 	_ = m.interruptBackupTransfers(false)
-	m.clearRestorePassphrase()
+	m.clearSessionSecrets(false)
 	m.clearPendingApprovals()
 	m.clearCosignerWorkflowState()
-	m.discardHeldResult()
+	// A result is held only across a lock within one session, never into the
+	// next: an idle disconnect exists for a terminal walked away from.
+	m.heldResult = nil
 	m.resetActivityState()
 	m.manualLock.pending = false
 }
@@ -120,9 +130,7 @@ func (m *Model) enterRecovery() tea.Cmd {
 // store validation blocks signing server-side, so ordinary navigation is disabled
 // until every marker is resolved.
 func (m *Model) applySignerRecoveryState() {
-	m.clearMnemonicExport()
-	m.clearSourceTokens()
-	m.clearRestorePassphrase()
+	m.clearSessionSecrets(true)
 	m.manualLock = manualLockState{returnView: ViewKeyList}
 	m.signerState = signerRuntimeRecovery
 	m.signerStatusKnown = true
