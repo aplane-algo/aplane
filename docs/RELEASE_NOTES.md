@@ -7,6 +7,25 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Loose ends: displaced and shutdown session entries, a source token code, a quiet hex error
+
+- **A displaced owner's end is recorded:** `SESSION_DISCONNECTED` with reason
+  `displaced`. Another session taking the signer over closed it with no entry.
+- **Shutdown ends every admin session and waits for it.** The IPC server closed
+  only the owner's session and went on, so its end could miss the audit log, and
+  an `auth_only` session's was never written. Now owner, observers and a
+  session still logging in are ended within the shutdown deadline, their
+  entries written first; one that doesn't end is reported and the log kept open.
+  The owner's end at shutdown no longer locks the signer under
+  `lock_on_disconnect`: that ran the lock cleanup, whose drain has no
+  deadline, beside the shutdown's own teardown, which ends key uses and clears
+  the keys with deadlines.
+- **A source with no token to remove answers `source_token_not_set`,** not
+  `key_not_found`: no key was missing. A new admin error code.
+- **The signer's error for a LogicSig argument that isn't hex names the
+  argument only.** The decoder's detail quoted the byte it stopped at, and an
+  argument is a secret until it is spent.
+
 ## auth_only sessions and the disconnect lock are audited, and unenrolled SSH lines are limited
 
 - **An `auth_only` session writes `SESSION_CONNECTED` and
