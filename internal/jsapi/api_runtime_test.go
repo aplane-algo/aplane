@@ -1129,8 +1129,8 @@ func TestAdditionalErrorPaths(t *testing.T) {
 		}})
 	})
 
-	t.Run("parseCloseOptions parses lsig args", func(t *testing.T) {
-		opts := api.parseCloseOptions(goja.FunctionCall{Arguments: []goja.Value{
+	t.Run("parseTxnOptions parses lsig args", func(t *testing.T) {
+		opts := api.parseTxnOptions(goja.FunctionCall{Arguments: []goja.Value{
 			api.runtime.ToValue(addr1),
 			api.runtime.ToValue(addr2),
 			api.runtime.ToValue(map[string]interface{}{
@@ -1141,10 +1141,10 @@ func TestAdditionalErrorPaths(t *testing.T) {
 					"bytes":    []interface{}{float64(1), float64(2), float64(3)},
 				},
 			}),
-		}})
+		}}, 2, "close()")
 
 		if opts.Fee != 1000 || opts.Wait != false {
-			t.Fatalf("parseCloseOptions() = %#v, want fee/wait parsed", opts)
+			t.Fatalf("parseTxnOptions() = %#v, want fee/wait parsed", opts)
 		}
 		if string(opts.LsigArgs["preimage"]) != "open-sesame" {
 			t.Fatalf("preimage = %q, want open-sesame", string(opts.LsigArgs["preimage"]))

@@ -324,17 +324,17 @@ func TestJSOptionObjectsRefuseUnknownKeys(t *testing.T) {
 			api.parseNotedTxnOptions(goja.FunctionCall{Arguments: []goja.Value{v}}, 0, "send()", extra...)
 		})
 	}
-	for _, options := range []string{`{}`, `{fee: 2000, wait: false, note: "x"}`, `{note: undefined}`} {
+	for _, options := range []string{`{}`, `{fee: 2000, wait: false, note: "x"}`, `{note: undefined}`, `{lsigArgs: {}}`} {
 		if err := parse(options); err != nil {
 			t.Errorf("%s refused: %v", options, err)
 		}
 	}
-	if err := parse(`{lsigArgs: {}}`, "lsigArgs"); err != nil {
+	if err := parse(`{route: "x"}`, "route"); err != nil {
 		t.Errorf("a key the caller reads is refused: %v", err)
 	}
 	// Each was ignored: the default fee was used, the call waited, the
 	// arguments were dropped.
-	for _, options := range []string{`{Fee: 0}`, `{nowait: true}`, `{fees: 2000}`, `{lsigArgs: {}}`} {
+	for _, options := range []string{`{Fee: 0}`, `{nowait: true}`, `{fees: 2000}`, `{lsigargs: {}}`} {
 		if err := parse(options); err == nil || !strings.Contains(err.Error(), "is not known") {
 			t.Errorf("%s: %v, want an unknown-option error", options, err)
 		}

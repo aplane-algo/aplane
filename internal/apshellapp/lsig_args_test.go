@@ -17,7 +17,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +33,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -95,6 +99,8 @@ type argsFixture struct {
 	unfunded string
 	// holdings are the assets the node reports an account opted into.
 	holdings map[string][]models.AssetHolding
+	// assets are the assets the node describes; it fails to look up others.
+	assets map[uint64]models.AssetParams
 	// unreachable is an account the node fails to look up.
 	unreachable string
 	// signs makes the signer answer /sign for these senders with each
@@ -194,6 +200,16 @@ func newArgsFixture(t *testing.T) *argsFixture {
 			}
 			f.submitted.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]string{"txId": "TESTTXID"})
+		case strings.HasPrefix(r.URL.Path, "/v2/assets/"):
+			id, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, "/v2/assets/"), 10, 64)
+			f.mu.Lock()
+			params, ok := f.assets[id]
+			f.mu.Unlock()
+			if err != nil || !ok {
+				http.Error(w, "test node", http.StatusServiceUnavailable)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(models.Asset{Index: id, Params: params})
 		case r.URL.Path == "/v2/status" && f.confirmsPending():
 			_ = json.NewEncoder(w).Encode(models.NodeStatus{LastRound: 1000})
 		case strings.HasPrefix(r.URL.Path, "/v2/transactions/pending/") && f.confirmsPending():
@@ -637,6 +653,154 @@ func TestScriptLsigArgsAreUntargeted(t *testing.T) {
 			if got := f.signerPosts.Load(); got != 0 {
 				t.Fatalf("signer requests = %d, want none", got)
 			}
+		})
+	}
+}
+
+// withAsset7 makes asset 7 one the node describes and the senders and dest
+// hold, and gives the engine an ASA cache to keep it in.
+func withAsset7(t *testing.T, f *argsFixture) {
+	t.Helper()
+	f.holdings = map[string][]models.AssetHolding{argsHTLC: {{AssetId: 7}}, argsNative: {{AssetId: 7}}, argsDest: {{AssetId: 7}}}
+	f.assets = map[uint64]models.AssetParams{7: {Creator: argsNative, Total: 1_000, UnitName: "T"}}
+	f.eng.AsaCache = cache.LoadASACacheFromStore(cache.NewStore(t.TempDir()), "testnet")
+}
+
+// Every script function that sends from one account takes lsigArgs, for every
+// transaction it builds: the payment an app call's pay adds too, which is from
+// the same account.
+func TestScriptLsigArgsReachEachFunction(t *testing.T) {
+	dir := t.TempDir()
+	abi := filepath.Join(dir, "app.json")
+	program := filepath.Join(dir, "program.bin")
+	if err := os.WriteFile(abi, []byte(`{"name":"t","methods":[{"name":"noop","args":[],"returns":{"type":"void"}}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(program, []byte{0x0a, 0x81, 0x01}, 0o600); err != nil { // #pragma version 10; int 1
+		t.Fatal(err)
+	}
+	const args = `lsigArgs: {preimage: "text:open"}`
+	online := `votekey: "` + strings.Repeat("A", 43) + `=", selkey: "` + strings.Repeat("A", 43) + `=", sproofkey: "` +
+		strings.Repeat("A", 86) + `==", votefirst: 1000, votelast: 2000, keydilution: 100`
+	one := []map[string]string{sentArgs("preimage", "open")}
+	two := []map[string]string{sentArgs("preimage", "open"), sentArgs("preimage", "open")}
+	for _, tc := range []struct {
+		name, code string
+		want       []map[string]string
+	}{
+		{"validate", `validate("hl", {` + args + `})`, one},
+		{"send", `send("hl", "dest", 1, {` + args + `})`, one},
+		{"sendAsset", `sendAsset("hl", "dest", 7, 1, {` + args + `})`, one},
+		{"optIn", `optIn("hl", 7, {` + args + `})`, one},
+		{"optOut", `optOut("hl", 7, {` + args + `})`, one},
+		{"optOut to an account", `optOut("hl", 7, "dest", {` + args + `})`, one},
+		{"rekey", `rekey("hl", "nat", {` + args + `})`, one},
+		{"unrekey", `unrekey("hl", {` + args + `})`, one},
+		{"keyreg offline", `keyreg("hl", "offline", {` + args + `})`, one},
+		{"keyreg online", `keyreg("hl", "online", {` + online + `, ` + args + `})`, one},
+		{"appDeploy", `appDeploy("hl", "` + program + `", "` + program + `", {approvalCompiled: true, clearCompiled: true, ` + args + `})`, one},
+		{"appCallRaw", `appCallRaw(5, "hl", [], {` + args + `})`, one},
+		{"appCallRaw with pay", `appCallRaw(5, "hl", [], {pay: 1000, ` + args + `})`, two},
+		{"appCall", `appCall(5, "noop", "` + abi + `", "hl", [], {` + args + `})`, one},
+		{"appCall with pay", `appCall(5, "noop", "` + abi + `", "hl", [], {pay: 1000, ` + args + `})`, two},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newArgsFixture(t)
+			withAsset7(t, f)
+			if _, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).RunWithContext(context.Background(), tc.code); err == nil ||
+				!strings.Contains(err.Error(), "test signer") {
+				t.Fatalf("error = %v, want the test signer's refusal", err)
+			}
+			f.wantSent(t, false, tc.want)
+		})
+	}
+	// validate, and keyreg offline, take nothing else, and optOut one options
+	// object.
+	for code, want := range map[string]string{
+		`validate("hl", {wait: false})`:                      "is not known",
+		`keyreg("hl", "offline", {votekey: "x"})`:            "is not known",
+		`optOut("hl", 7, {fee: 2000}, {` + args + `})`:       "takes one options object",
+		`optOut("hl", 7, "dest", {fee: 2000, nowait: true})`: "is not known",
+	} {
+		f := newArgsFixture(t)
+		_, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).RunWithContext(context.Background(), code)
+		wantRefusedBeforeSending(t, f, err, want)
+	}
+}
+
+// An atomic payment's lsigArgs is for its sender. A sender's transactions all
+// get the same arguments, so two payments from one sender whose arguments
+// differ are refused, one without any among them, before anything is signed;
+// for the whole call, lsigArgs would reach every sender, and is refused.
+func TestScriptAtomicLsigArgsAreForEachSender(t *testing.T) {
+	run := func(t *testing.T, f *argsFixture, code string) error {
+		t.Helper()
+		_, err := f.app.Scripts.EnsureRunner(func(string) {}, nil).RunWithContext(context.Background(), code)
+		return err
+	}
+	pay := func(from, args string) string {
+		if args != "" {
+			args = `, lsigArgs: ` + args
+		}
+		return `{from: "` + from + `", to: "dest", amount: 0` + args + `}`
+	}
+	for _, tc := range []struct {
+		name     string
+		payments []string
+		want     []map[string]string
+	}{
+		{"two senders", []string{pay("hl", `{preimage: "text:a"}`), pay("sec", `{secret: "text:b"}`)},
+			[]map[string]string{sentArgs("preimage", "a"), sentArgs("secret", "b")}},
+		{"beside a native sender", []string{pay("hl", `{preimage: "text:a"}`), pay("nat", "")},
+			[]map[string]string{sentArgs("preimage", "a"), nil}},
+		{"one sender twice, alike", []string{pay("hl", `{preimage: "text:a"}`), pay("hl", `{preimage: "text:a"}`)},
+			[]map[string]string{sentArgs("preimage", "a"), sentArgs("preimage", "a")}},
+		{"one sender twice, neither with any", []string{pay("hl", ""), pay("hl", `{}`)}, []map[string]string{nil, nil}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newArgsFixture(t)
+			if err := run(t, f, `atomicSend([`+strings.Join(tc.payments, ", ")+`])`); err == nil || !strings.Contains(err.Error(), "test signer") {
+				t.Fatalf("error = %v, want the test signer's refusal", err)
+			}
+			f.wantSent(t, false, tc.want)
+		})
+	}
+	t.Run("transfers", func(t *testing.T) {
+		f := newArgsFixture(t)
+		withAsset7(t, f)
+		err := run(t, f, `atomicSendAsset([{from: "hl", to: "dest", assetId: 7, amount: 0, lsigArgs: {preimage: "text:a"}}, {from: "nat", to: "dest", assetId: 7, amount: 0}])`)
+		if err == nil || !strings.Contains(err.Error(), "test signer") {
+			t.Fatalf("error = %v, want the test signer's refusal", err)
+		}
+		f.wantSent(t, false, []map[string]string{sentArgs("preimage", "a"), nil})
+	})
+	for name, code := range map[string]string{
+		"different":                   `atomicSend([` + pay("hl", `{preimage: "text:a"}`) + `, ` + pay("hl", `{preimage: "text:b"}`) + `])`,
+		"omitted":                     `atomicSend([` + pay("hl", `{preimage: "text:a"}`) + `, ` + pay("hl", "") + `])`,
+		"empty":                       `atomicSend([` + pay("hl", "") + `, ` + pay("hl", `{preimage: "text:a"}`) + `])`,
+		"transfers":                   `atomicSendAsset([{from: "hl", to: "dest", assetId: 7, amount: 0, lsigArgs: {preimage: "text:a"}}, {from: "hl", to: "dest", assetId: 7, amount: 0, lsigArgs: {}}])`,
+		"two spellings":               `atomicSend([` + pay("hl", `{preimage: "text:a"}`) + `, ` + pay("hashlock", `{preimage: "text:b"}`) + `])`,
+		"alias and address":           `atomicSend([` + pay("hl", `{preimage: "text:a"}`) + `, ` + pay(argsHTLC, "") + `])`,
+		"for the whole":               `atomicSend([` + pay("hl", "") + `], {lsigArgs: {preimage: "text:a"}})`,
+		"not an object for the whole": `atomicSend([` + pay("hl", "") + `], {lsigArgs: "x"})`,
+		"undefined for the whole":     `atomicSend([` + pay("hl", "") + `], {lsigArgs: undefined})`,
+		"unknown for the whole":       `atomicSend([` + pay("hl", "") + `], {foo: 1})`,
+		"empty for the whole":         `atomicSend([` + pay("hl", "") + `], {lsigArgs: {}})`,
+		"for the whole transfer":      `atomicSendAsset([{from: "hl", to: "dest", assetId: 7, amount: 0}], {lsigArgs: {}})`,
+	} {
+		t.Run("refused "+name, func(t *testing.T) {
+			f := newArgsFixture(t)
+			want := "give different lsigArgs"
+			switch name {
+			case "for the whole", "empty for the whole", "not an object for the whole", "undefined for the whole":
+				want = "atomicSend() option lsigArgs goes on each payment"
+			case "for the whole transfer":
+				want = "atomicSendAsset() option lsigArgs goes on each transfer"
+			case "unknown for the whole":
+				// The group's options are fee and wait; lsigArgs isn't one.
+				want = "(known: fee, wait)"
+			}
+			wantRefusedBeforeSending(t, f, run(t, f, code), want)
 		})
 	}
 }

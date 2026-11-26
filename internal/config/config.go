@@ -5,8 +5,11 @@ package config
 
 import (
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -197,31 +200,32 @@ func (c *Config) GetAlgodConfig(network string) (*AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(network)
 }
 
-// DisplayConfig prints the current configuration
-func DisplayConfig(dataDir string) {
+// DisplayConfig writes the current configuration to w, the algod networks in
+// order.
+func DisplayConfig(w io.Writer, dataDir string) {
 	config, err := LoadConfig(dataDir)
 	configPath := GetConfigPath(dataDir)
 
-	fmt.Println("Current Configuration:")
-	fmt.Println("=====================")
-	fmt.Printf("Data dir:    %s\n", dataDir)
-	fmt.Printf("Config file: %s\n", configPath)
+	_, _ = fmt.Fprintln(w, "Current Configuration:")
+	_, _ = fmt.Fprintln(w, "=====================")
+	_, _ = fmt.Fprintf(w, "Data dir:    %s\n", dataDir)
+	_, _ = fmt.Fprintf(w, "Config file: %s\n", configPath)
 	if err != nil {
-		fmt.Printf("Error:       %v\n", err)
-		fmt.Println()
+		_, _ = fmt.Fprintf(w, "Error:       %v\n", err)
+		_, _ = fmt.Fprintln(w)
 		return
 	}
-	fmt.Printf("Network:     %s\n", config.Network)
+	_, _ = fmt.Fprintf(w, "Network:     %s\n", config.Network)
 	if len(config.NetworksAllowed) > 0 {
-		fmt.Printf("Allowed:     %v\n", config.NetworksAllowed)
+		_, _ = fmt.Fprintf(w, "Allowed:     %v\n", config.NetworksAllowed)
 	} else {
-		fmt.Printf("Allowed:     all networks\n")
+		_, _ = fmt.Fprintf(w, "Allowed:     all networks\n")
 	}
-	fmt.Printf("Endpoints:   %s\n", GetClientEndpointsPath(dataDir))
-	for network, cfg := range config.Algod {
-		if cfg != nil && cfg.Server != "" {
-			fmt.Printf("algod.%s:  %s\n", network, cfg.Server)
+	_, _ = fmt.Fprintf(w, "Endpoints:   %s\n", GetClientEndpointsPath(dataDir))
+	for _, network := range slices.Sorted(maps.Keys(config.Algod)) {
+		if cfg := config.Algod[network]; cfg != nil && cfg.Server != "" {
+			_, _ = fmt.Fprintf(w, "algod.%s:  %s\n", network, cfg.Server)
 		}
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(w)
 }

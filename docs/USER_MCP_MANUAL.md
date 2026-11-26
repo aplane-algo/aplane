@@ -236,7 +236,8 @@ a supported provider. Compiler-auto-salted records carry
   preimage). Shell syntax: `arg:preimage=0x...`, for every transaction the
   command builds, or `arg:<account>:preimage=0x...`, for the transactions
   that account sends, when a group or set mixes accounts that take different
-  arguments. JS: the `lsigArgs` option, which goes to every transaction.
+  arguments. JS: the `lsigArgs` option, which goes to every transaction the
+  call builds, or on an atomic payment to that payment's sender.
 
 ### Restricted variants (the safety is in the program)
 

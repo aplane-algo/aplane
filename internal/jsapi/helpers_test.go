@@ -442,7 +442,7 @@ func TestToUint64Interface(t *testing.T) {
 }
 
 // TestParseTxnOptions tests the parseNotedTxnOptions helper, which reads
-// parseTxnOptions' {fee, wait} and a note, via JS runtime.
+// parseTxnOptions' {fee, wait, lsigArgs} and a note, via JS runtime.
 func TestParseTxnOptions(t *testing.T) {
 	vm := goja.New()
 	eng := engine.NewEngine("testnet")

@@ -2,10 +2,31 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v9; they are not current setup
+enrolled-key model and current admin protocol v10; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
+
+## Scripts take LogicSig arguments everywhere, and the console shows config
+
+- **Every script function that sends from one account takes `lsigArgs`:**
+  `send()`, `sendAsset()`, `validate()`, `optIn()`, `optOut()`, `keyreg()`
+  (online and offline), `rekey()`, `unrekey()`, `appDeploy()`, `appCallRaw()`
+  and `appCall()`, as `close()` and `sweep()` did. It goes to every
+  transaction the call builds, the payment an app call's `pay` adds included.
+  A script can now send from a hashlock account.
+- **`atomicSend()` and `atomicSendAsset()` take `lsigArgs` on each payment or
+  transfer, for its sender,** so a group can mix a LogicSig account with a
+  native one. Two payments from one sender whose arguments differ are
+  refused, one that gives none beside one that gives some included, and so is
+  `lsigArgs` in the group options, before anything is signed.
+- **Stricter options:** `validate()` and an offline `keyreg()` took no options
+  and ignored any; they now take `lsigArgs` and refuse anything else. An
+  `optOut()` with its options in place of a close-to address refuses a
+  further argument, which it dropped.
+- **apconsole's `config` shows the configuration.** It printed to the
+  process's stdout, which the console discards, so only the read-only note
+  appeared. The algod networks are listed in order.
 
 ## Unlock, startup and a passphrase change build first and publish last
 

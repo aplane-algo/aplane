@@ -1937,9 +1937,10 @@ The rules:
 - Two transactions from the same sender in one command get the same
   arguments.
 
-In scripts, `lsigArgs: { name: value }` on `close()` and `sweep()` is the
-form with no account: every transaction the call builds. See
-[USER_JSAPI.md](USER_JSAPI.md).
+In scripts, `lsigArgs: { name: value }` in a function's options is the form
+with no account: every transaction the call builds. On an `atomicSend()` or
+`atomicSendAsset()` payment it is for that payment's sender. See
+[USER_JSAPI.md](USER_JSAPI.md#logicsig-arguments).
 
 ### Byte Encodings
 

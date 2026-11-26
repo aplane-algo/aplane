@@ -10,7 +10,6 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -130,14 +129,6 @@ func TestRegisteredShellHandlersDoNotReachProcessGlobalStdout(t *testing.T) {
 	functions := indexInternalSourceFunctions(t, root)
 	handlers := registeredShellHandlers(t, root, functions)
 
-	registryData, err := os.ReadFile(filepath.Join(root, "internal", "apshellcli", "registry.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !regexp.MustCompile(`"config":\s+command\.BlockedAutomation\(`).Match(registryData) {
-		t.Fatal("config.DisplayConfig stdout exception requires config to remain explicitly automation-blocked")
-	}
-
 	for _, handler := range handlers {
 		seen := make(map[string]bool)
 		walkShellCalls(t, functions, handler, handler, nil, seen)
@@ -251,12 +242,8 @@ func walkShellCalls(t *testing.T, functions map[string]*shellSourceFunction, roo
 			return true
 		}
 		if isProcessGlobalStdoutCall(call, fn.imports) {
-			allowed := root == sourceFunctionID(modulePrefix+"/internal/apshellcli", "REPLState", "cmdConfig") &&
-				current == sourceFunctionID(modulePrefix+"/internal/config", "", "DisplayConfig")
-			if !allowed {
-				t.Errorf("registered command reaches process-global stdout at %s via %s",
-					fn.position, strings.Join(chain, " -> "))
-			}
+			t.Errorf("registered command reaches process-global stdout at %s via %s",
+				fn.position, strings.Join(chain, " -> "))
 		}
 		if target := resolveStaticShellCall(call, fn); target != "" && functions[target] != nil {
 			walkShellCalls(t, functions, root, target, chain, seen)

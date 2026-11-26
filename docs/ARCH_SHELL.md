@@ -555,8 +555,10 @@ methods take them.
   them), and the group keeps the result.
 - `engine.LsigArgs` (`internal/engine/lsig_args.go`) is the only way to hand
   the engine arguments: its fields are unexported, and it is made by
-  `NewLsigArgs(untargeted, bySender)` or `UntargetedLsigArgs(m)` (the JS API's
-  `lsigArgs` option). The engine places it by sender on every route:
+  `NewLsigArgs(untargeted, bySender)` or `UntargetedLsigArgs(m)`. The JS API's
+  `lsigArgs` option is `UntargetedLsigArgs(m)`, and on an atomic payment
+  `NewLsigArgs(nil, bySender)`, by the payment's sender. The engine places it
+  by sender on every route:
   `signAndSubmitGroup` (single, atomic, prepared group, default plugin draft,
   and through it the rotating and cosigned routes) and
   `SignAndSubmitWithPluginSigners` set each position's map from

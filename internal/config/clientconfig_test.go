@@ -4,8 +4,8 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -116,9 +116,9 @@ networks:
 		t.Fatalf("write config: %v", err)
 	}
 
-	out := captureStdout(t, func() {
-		DisplayConfig(dataDir)
-	})
+	var buf bytes.Buffer
+	DisplayConfig(&buf, dataDir)
+	out := buf.String()
 	if strings.Contains(out, "add ssh block to config.yaml") {
 		t.Fatalf("DisplayConfig output points at legacy ssh config:\n%s", out)
 	}
@@ -237,35 +237,6 @@ func TestLoadClientEndpointRegistryRejectsSelfForEveryRole(t *testing.T) {
 			}
 		})
 	}
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	t.Cleanup(func() {
-		os.Stdout = oldStdout
-	})
-
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close writer: %v", err)
-	}
-	os.Stdout = oldStdout
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("close reader: %v", err)
-	}
-	return string(out)
 }
 
 func TestClientConfigExamplesUseKnownFields(t *testing.T) {

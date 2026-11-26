@@ -21,8 +21,9 @@ import (
 // value from a command's arg: words, having resolved each target to an
 // address and refused a target the command does not send from, a name given
 // twice to one transaction, and, for a plugin group, an argument that reaches
-// a presign-plan slot the plugin signs (apshellapp.CheckPluginGroup); the JS
-// API's lsigArgs option is UntargetedLsigArgs. The engine judges nothing in
+// a presign-plan slot the plugin signs (apshellapp.CheckPluginGroup). The JS
+// API's lsigArgs option is UntargetedLsigArgs, and on an atomic payment it is
+// for the payment's sender. The engine judges nothing in
 // it: it places it, and a presign-plan slot the plugin signs gets none.
 //
 // A value is never changed once made: its constructors copy what they are
