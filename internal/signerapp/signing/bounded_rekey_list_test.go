@@ -18,7 +18,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -123,11 +122,11 @@ func TestListedRekeyDerivesTheListProof(t *testing.T) {
 // the target leaves this signer's custody.
 func TestListedRekeyWarningNamesTheHandover(t *testing.T) {
 	listed := map[string]bool{listTestTarget.String(): true}
-	unheld := approvalpolicy.CheckDecodedTxnWarningsIn(listTestRekey(listTestTarget), approvalpolicy.Context{ListedRekeyTargets: listed})
+	unheld := txnreview.Findings(listTestRekey(listTestTarget), txnreview.FindingContext{ListedRekeyTargets: listed})
 	if len(unheld) != 1 || !strings.Contains(unheld[0].Message, "rekey-to list") || !strings.Contains(unheld[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
 		t.Fatalf("unheld listed target warning = %+v", unheld)
 	}
-	held := approvalpolicy.CheckDecodedTxnWarningsIn(listTestRekey(listTestTarget), approvalpolicy.Context{
+	held := txnreview.Findings(listTestRekey(listTestTarget), txnreview.FindingContext{
 		ListedRekeyTargets: listed, KnownAddresses: listed,
 	})
 	if len(held) != 1 || !strings.Contains(held[0].Message, txnreview.RekeyHeldText) {

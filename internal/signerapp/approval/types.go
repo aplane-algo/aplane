@@ -52,6 +52,11 @@ type Violation struct {
 	Message  string
 }
 
+// ViolationFor is a review finding as a prompt's warning.
+func ViolationFor(finding txnreview.Finding) Violation {
+	return Violation{Field: finding.Field, Value: finding.Value, Severity: ViolationSeverity(finding.Level()), Message: finding.Message}
+}
+
 // SignRequest is the domain-level approval request for transaction signing.
 type SignRequest struct {
 	ID          string

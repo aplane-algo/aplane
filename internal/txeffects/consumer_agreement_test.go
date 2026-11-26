@@ -10,8 +10,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 func TestWarningAndLintConsumersObserveManifestDangerFields(t *testing.T) {
@@ -50,7 +50,7 @@ func TestWarningAndLintConsumersObserveManifestDangerFields(t *testing.T) {
 			if !txeffects.Inspect(tt.txn).Has(tt.effect) {
 				t.Fatalf("txeffects did not observe %q", tt.effect)
 			}
-			warnings := approvalpolicy.CheckDecodedTxnWarningsIn(tt.txn, approvalpolicy.Context{})
+			warnings := txnreview.Findings(tt.txn, txnreview.FindingContext{})
 			if len(warnings) != 1 || warnings[0].Field != tt.warningField {
 				t.Fatalf("warnings = %#v, want one %s warning", warnings, tt.warningField)
 			}
@@ -74,7 +74,7 @@ func TestPolicyClawbackExceptionCannotWeakenBoundedClassification(t *testing.T) 
 	if !classification.Facts.Has(txeffects.EffectClawback) || classification.Shape != txeffects.ShapeDeniedEffect {
 		t.Fatalf("classification = %+v, want conservative clawback denial", classification)
 	}
-	if warnings := approvalpolicy.CheckDecodedTxnWarningsIn(txn, approvalpolicy.Context{}); len(warnings) != 0 {
+	if warnings := txnreview.Findings(txn, txnreview.FindingContext{}); len(warnings) != 0 {
 		t.Fatalf("warnings = %#v, want policy-specific same-sender exception", warnings)
 	}
 	if lints := policy.CheckTxnPolicyLints(txn, &policy.Config{TransactionTypes: policytest.AllowAllTypes(), RejectClawback: true}, nil); len(lints) != 0 {

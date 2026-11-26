@@ -21,8 +21,8 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 // Role selects the verdict surface.
@@ -229,7 +229,7 @@ func ReviewRule(in Input) (ruleID string, review bool) {
 }
 
 func reviewRule(in Input) (string, bool) {
-	warnCtx := approvalpolicy.Context{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets}
+	warnCtx := txnreview.FindingContext{KnownAddresses: in.KnownAddresses, ProtocolRekeyTargets: in.ProtocolRekeyTargets}
 	for _, slot := range in.Slots {
 		txn := in.Group[slot.Index]
 		if slot.Class != SlotSigner {
@@ -237,7 +237,7 @@ func reviewRule(in Input) (string, bool) {
 			// co-signs that rekeys, closes, clawbacks, or otherwise carries a
 			// dangerous field via another leg requires review even when
 			// always_review_warnings is off (it governs the signer's own legs).
-			if len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, warnCtx)) > 0 {
+			if len(txnreview.Findings(txn, warnCtx)) > 0 {
 				return policy.AlwaysReviewWarningsRuleID, true
 			}
 			continue
@@ -254,7 +254,7 @@ func reviewRule(in Input) (string, bool) {
 		}
 		slotCtx := warnCtx
 		slotCtx.ListedRekeyTargets = slot.ListedRekeyTargets
-		if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarningsIn(txn, slotCtx)) > 0 {
+		if cfg.AlwaysReviewWarnings && len(txnreview.Findings(txn, slotCtx)) > 0 {
 			return policy.AlwaysReviewWarningsRuleID, true
 		}
 	}
