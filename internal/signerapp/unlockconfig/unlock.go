@@ -104,6 +104,19 @@ func ClearUnlockConfig(dataRoot string) error {
 	return nil
 }
 
+// LoadPassphraseHelper returns the product store's passphrase helper from
+// unlock.yaml, or nil when none is configured.
+func LoadPassphraseHelper(dataRoot string) (*UnlockConfig, error) {
+	cfg, err := LoadUnlockConfig(dataRoot)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil && cfg.HasPassphraseCommand() {
+		return cfg, nil
+	}
+	return nil, nil
+}
+
 // HasPassphraseCommand returns true if this unlock config has a passphrase command configured.
 func (c *UnlockConfig) HasPassphraseCommand() bool {
 	return len(c.PassphraseCommandArgv) > 0

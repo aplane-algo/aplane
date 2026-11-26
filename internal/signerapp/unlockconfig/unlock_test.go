@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -44,5 +45,36 @@ func TestLoadUnlockConfigMarksAParseFailureMalformed(t *testing.T) {
 	}
 	if _, err := LoadUnlockConfig(root); !errors.Is(err, ErrMalformed) {
 		t.Fatalf("LoadUnlockConfig() error = %v, want ErrMalformed", err)
+	}
+}
+
+func TestLoadPassphraseHelperReadsProductStore(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+
+	want := &UnlockConfig{
+		PassphraseCommandArgv: []string{"identity-pass", "/tmp/identity"},
+		PassphraseCommandEnv:  map[string]string{"IDENTITY": "1"},
+	}
+	if err := SaveUnlockConfig(root, want); err != nil {
+		t.Fatalf("SaveUnlockConfig() error = %v", err)
+	}
+
+	got, err := LoadPassphraseHelper(root)
+	if err != nil {
+		t.Fatalf("LoadPassphraseHelper() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("LoadPassphraseHelper() = %+v, want %+v", got, want)
+	}
+}
+
+func TestLoadPassphraseHelperWithoutHelperIsNil(t *testing.T) {
+	t.Parallel()
+
+	got, err := LoadPassphraseHelper(t.TempDir())
+	if err != nil || got != nil {
+		t.Fatalf("LoadPassphraseHelper() = %+v, %v; want nil, nil", got, err)
 	}
 }
