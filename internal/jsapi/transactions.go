@@ -22,9 +22,15 @@ import (
 )
 
 // jsValidate validates signing capability by sending 0 ALGO to self.
+// validate(account, { lsigArgs })
 func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "validate() requires an address or alias argument")
 	addressOrAlias := a.stringArg(call, 0)
+	var lsigArgs map[string][]byte
+	if m := a.objectArg(call, 1, "validate()"); m != nil {
+		a.refuseUnknownKeys(m, "validate() option", "lsigArgs")
+		lsigArgs = a.lsigArgsOption(m, "validate()")
+	}
 
 	addr, _, err := a.engine.ResolveAddress(addressOrAlias)
 	if err != nil {
@@ -41,7 +47,7 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(lsigArgs), true)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("validate() error: %w", err))
 	}
@@ -83,7 +89,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("send() error submitting transaction: %w", err))
 	}
@@ -200,7 +206,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("sendAsset() error submitting transaction: %w", err))
 	}
@@ -234,7 +240,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("optIn() error submitting transaction: %w", err))
 	}
@@ -277,7 +283,7 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("optOut() error submitting transaction: %w", err))
 	}
@@ -289,8 +295,8 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 }
 
 // jsKeyreg marks an account online or offline for consensus participation.
-// keyreg(account, "offline") - Mark account offline
-// keyreg(account, "online", { votekey, selkey, sproofkey, votefirst, votelast, keydilution }) - Mark online
+// keyreg(account, "offline", { lsigArgs }) - Mark account offline
+// keyreg(account, "online", { votekey, selkey, sproofkey, votefirst, votelast, keydilution, eligible, lsigArgs }) - Mark online
 func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 2, "keyreg() requires account and mode arguments")
 	account := a.stringArg(call, 0)
@@ -310,8 +316,12 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		Mode:    mode,
 	}
 
+	var lsigArgs map[string][]byte
 	if mode == "online" {
-		a.keyRegOnlineOptions(call, &params)
+		lsigArgs = a.keyRegOnlineOptions(call, &params)
+	} else if m := a.objectArg(call, 2, "keyreg()"); m != nil {
+		a.refuseUnknownKeys(m, "keyreg() offline option", "lsigArgs")
+		lsigArgs = a.lsigArgsOption(m, "keyreg()")
 	}
 
 	prep, err := a.engine.PrepareKeyReg(a.Context(), params)
@@ -319,7 +329,7 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(lsigArgs), true)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("keyreg() error submitting transaction: %w", err))
 	}
@@ -331,13 +341,13 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 }
 
 // keyRegOnlineOptions reads the participation keys of an online keyreg()
-// from its options into params.
-func (a *API) keyRegOnlineOptions(call goja.FunctionCall, params *engine.KeyRegParams) {
+// from its options into params, and returns its lsigArgs.
+func (a *API) keyRegOnlineOptions(call goja.FunctionCall, params *engine.KeyRegParams) map[string][]byte {
 	opts := a.objectArg(call, 2, "keyreg()")
 	if opts == nil {
 		panic(a.runtime.ToValue("keyreg() online mode requires options with participation keys"))
 	}
-	a.refuseUnknownKeys(opts, "keyreg() option", "votekey", "selkey", "sproofkey", "votefirst", "votelast", "keydilution", "eligible")
+	a.refuseUnknownKeys(opts, "keyreg() option", "votekey", "selkey", "sproofkey", "votefirst", "votelast", "keydilution", "eligible", "lsigArgs")
 
 	if v, ok := a.optionString(opts, "votekey", "keyreg()"); ok {
 		params.VoteKey = v
@@ -372,6 +382,7 @@ func (a *API) keyRegOnlineOptions(call goja.FunctionCall, params *engine.KeyRegP
 	if v, ok := a.optionBool(opts, "eligible", "keyreg()"); ok {
 		params.IncentiveEligible = v
 	}
+	return a.lsigArgsOption(opts, "keyreg()")
 }
 
 // jsParticipation returns participation status for an account.
@@ -450,7 +461,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("rekey() error submitting transaction: %w", err))
 	}
@@ -488,7 +499,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("unrekey() error submitting transaction: %w", err))
 	}
@@ -528,7 +539,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 	from := a.stringArg(call, 0)
 	to := a.stringArg(call, 1)
 
-	opts := a.parseCloseOptions(call)
+	opts := a.parseTxnOptions(call, 2, "close()")
 
 	fromAddr, _, err := a.engine.ResolveAddress(from)
 	if err != nil {
@@ -549,8 +560,6 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error preparing transaction: %v", err)))
 	}
 
-	// lsigArgs is untargeted, for every transaction close() builds: the JS
-	// API names no accounts for arguments.
 	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("close() error submitting transaction: %w", err))

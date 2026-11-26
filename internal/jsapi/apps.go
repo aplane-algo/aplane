@@ -85,7 +85,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("appDeploy() error submitting transaction: %w", err))
 	}
@@ -230,7 +230,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 		if err != nil {
 			a.throwSubmitError(fmt.Errorf("appCallRaw() error submitting grouped call: %w", err))
 		}
@@ -242,7 +242,7 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("appCallRaw() error submitting transaction: %w", err))
 	}
@@ -324,7 +324,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.LsigArgs{}, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 		if err != nil {
 			a.throwSubmitError(fmt.Errorf("appCall() error submitting grouped call: %w", err))
 		}
@@ -336,7 +336,7 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, engine.LsigArgs{}, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, engine.UntargetedLsigArgs(opts.LsigArgs), opts.Wait)
 	if err != nil {
 		a.throwSubmitError(fmt.Errorf("appCall() error submitting transaction: %w", err))
 	}

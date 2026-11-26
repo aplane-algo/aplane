@@ -416,24 +416,31 @@ type txnOptions struct {
 	UseFlatFee bool
 	Wait       bool
 	Note       string
-}
-
-type closeTxnOptions struct {
-	txnOptions
+	// LsigArgs is for every transaction the call builds, which all have its
+	// one sender (engine.UntargetedLsigArgs): the JS API names no account for
+	// an argument. nil when the option is absent.
 	LsigArgs map[string][]byte
 }
 
-// parseTxnOptions extracts {fee, wait} from an optional options argument.
-// argIndex is the position of the options argument in the call.
+// parseTxnOptions extracts {fee, wait, lsigArgs} from an optional options
+// argument. argIndex is the position of the options argument in the call.
 // funcName is used for error messages.
 //
 // extraKeys names the other options the calling function reads from the same
-// object. Any key outside {fee, wait} and those is refused: an option that is
-// not read is an option that was ignored, such as {Fee: 0}, {nowait: true},
-// or a note on a transaction the function builds without one.
+// object. Any key outside {fee, wait, lsigArgs} and those is refused: an
+// option that is not read is an option that was ignored, such as {Fee: 0},
+// {nowait: true}, or a note on a transaction the function builds without one.
 func (a *API) parseTxnOptions(call goja.FunctionCall, argIndex int, funcName string, extraKeys ...string) txnOptions {
-	opts := txnOptions{Wait: true}
 	m := a.objectArg(call, argIndex, funcName)
+	opts := a.feeWaitOptions(m, funcName, append([]string{"lsigArgs"}, extraKeys...))
+	opts.LsigArgs = a.lsigArgsOption(m, funcName)
+	return opts
+}
+
+// feeWaitOptions reads {fee, wait} from an options object m, nil when there is
+// none, refusing any key outside those and extraKeys.
+func (a *API) feeWaitOptions(m map[string]interface{}, funcName string, extraKeys []string) txnOptions {
+	opts := txnOptions{Wait: true}
 	if m == nil {
 		return opts
 	}
@@ -465,6 +472,11 @@ func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
 			return s, a.parseTxnOptions(call, 3, "optOut()")
 		}
 		if _, ok := arg2.(map[string]interface{}); ok {
+			// Options in place of a close-to address are the last argument:
+			// a further object would be dropped, lsigArgs and all.
+			if len(call.Arguments) > 3 && !goja.IsUndefined(call.Arguments[3]) {
+				panic(a.runtime.ToValue("optOut() takes one options object, after the close-to address or in its place"))
+			}
 			return "", a.parseTxnOptions(call, 2, "optOut()")
 		}
 		panic(a.runtime.ToValue(fmt.Sprintf(
@@ -472,17 +484,6 @@ func (a *API) parseOptOutArgs(call goja.FunctionCall) (string, txnOptions) {
 	}
 	// arg2 absent, null, or undefined — check arg3 for options
 	return "", a.parseTxnOptions(call, 3, "optOut()")
-}
-
-func (a *API) parseCloseOptions(call goja.FunctionCall) closeTxnOptions {
-	opts := closeTxnOptions{txnOptions: a.parseTxnOptions(call, 2, "close()", "lsigArgs")}
-	m := a.objectArg(call, 2, "close()")
-	if m == nil {
-		return opts
-	}
-
-	opts.LsigArgs = a.lsigArgsOption(m, "close()")
-	return opts
 }
 
 // stringArray reads a JavaScript array of strings. An entry that is not a

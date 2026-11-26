@@ -79,7 +79,8 @@ Most transaction functions accept a final options object:
 {
   wait: true,          // default true
   fee: 1000,           // optional client base fee in microAlgos
-  note: "memo text"    // optional transaction note, where the function takes one
+  note: "memo text",   // optional transaction note, where the function takes one
+  lsigArgs: { preimage: "text:secret" }  // optional LogicSig arguments
 }
 ```
 
@@ -88,6 +89,14 @@ Most transaction functions accept a final options object:
 build their transaction without a note and refuse the option. `atomicSend()`
 and `atomicSendAsset()` take a note on each payment or transfer object, not in
 the group options.
+
+`lsigArgs` is read by every function that sends from one account: `send()`,
+`sendAsset()`, `validate()`, `sweep()`, `close()`, `optIn()`, `optOut()`,
+`keyreg()`, `rekey()`, `unrekey()`, `appDeploy()`, `appCallRaw()` and
+`appCall()`. It goes to every transaction the call builds, the payment that
+`pay` adds to an app call included (see
+[LogicSig arguments](#logicsig-arguments)). `atomicSend()` and
+`atomicSendAsset()` take it on each payment or transfer object instead.
 
 When `fee` is supplied, the client uses it as a flat base fee. If omitted,
 normal client fee calculation is used. The signer adds its authorization
@@ -384,9 +393,9 @@ Group functions return:
 | Function | Description |
 |---|---|
 | `send(from, to, amount, options = {})` | Send ALGO |
-| `validate(addressOrAlias)` | Send 0 ALGO to self to validate signing |
+| `validate(addressOrAlias, options = {})` | Send 0 ALGO to self to validate signing. Its only option is `lsigArgs` |
 | `sweep(from, to, options = {})` | Send each account's balance, less `leaving`, to `to`. The accounts stay open. `from` is one account or an array |
-| `close(from, to, options = {})` | Close account; supports LogicSig runtime args |
+| `close(from, to, options = {})` | Close account |
 
 Examples:
 
@@ -403,23 +412,26 @@ close("htlc-lsig", "treasury", {
 })
 ```
 
-`lsigArgs: { name: value }`, on `close()` and `sweep()`, is the shell's
+#### LogicSig arguments
+
+`lsigArgs: { name: value }` in a function's options is the shell's
 `arg:<name>=<value>` with no account: each name goes to every transaction the
 call builds. The JS API has no form that names an account, as
-`arg:<account>:<name>=<value>` does in the shell; a `sweep()` over accounts
-that take different arguments is written as one `sweep()` per account, or
-run as the shell's `sweep` command. A name a key does not take is refused,
-and a native account (ed25519, native Falcon) takes none, so `lsigArgs` on a
-`sweep()` that includes one fails that account's transaction. A name is
-passed on as given, in `close()` and `sweep()` alike: the shell's rule that a
-name may not contain `:` keeps its two `arg:` forms apart and does not apply
-to an object key, and a name the signing key does not declare is refused. See
+`arg:<account>:<name>=<value>` does in the shell, except on an atomic payment
+(see [Atomic Groups](#atomic-groups)); a `sweep()` over accounts that take
+different arguments is written as one `sweep()` per account, or run as the
+shell's `sweep` command. A name a key does not take is refused, and a native
+account (ed25519, native Falcon) takes none, so `lsigArgs` on a `sweep()` that
+includes one fails that account's transaction. A name is passed on as given:
+the shell's rule that a name may not contain `:` keeps its two `arg:` forms
+apart and does not apply to an object key, and a name the signing key does not
+declare is refused. See
 [USER_COMMANDS.md](USER_COMMANDS.md#logicsig-arguments).
 
 `sweep()` is the shell's `sweep` command. It does not close the account; that
 is `close()`. Its options are `asset` (an asset ID; absent or 0 is ALGO),
 `leaving` (what to keep in each account, in microAlgos or the asset's base
-units), `fee`, `wait` and `lsigArgs` (as for `close()`). It takes
+units), `fee`, `wait` and `lsigArgs` (see [LogicSig arguments](#logicsig-arguments)). It takes
 no `note`. An option that is present must have a value: `{leaving: undefined}`
 is an error, not "leave nothing".
 
@@ -481,14 +493,22 @@ optOut("alice", usdc, "treasury")
 Payment object:
 
 ```javascript
-{ from, to, amount, note }
+{ from, to, amount, note, lsigArgs }
 ```
 
 ASA transfer object:
 
 ```javascript
-{ from, to, assetId, amount, note }
+{ from, to, assetId, amount, note, lsigArgs }
 ```
+
+`lsigArgs` on a payment or transfer is for its sender, as the shell's
+`arg:<account>:<name>=<value>` is, so one group can mix a hashlock account with
+a native one, which takes no arguments. A sender's transactions all get the
+same arguments, so two payments from one sender that give different
+`lsigArgs` are refused, and one that gives none beside one that gives some
+differs. In the group options, where it would reach every sender, `lsigArgs`
+is refused.
 
 Examples:
 
@@ -529,7 +549,7 @@ unrekey("hot")
 
 | Function | Returns |
 |---|---|
-| `keyreg(account, "offline")` | `{ txid, confirmed }` |
+| `keyreg(account, "offline", options = {})` | `{ txid, confirmed }` |
 | `keyreg(account, "online", options)` | `{ txid, confirmed }` |
 | `participation(addressOrAlias)` | Participation key/status object |
 | `incentiveEligible(addressOrAlias)` | Boolean |
@@ -544,9 +564,12 @@ Online `keyreg` options:
   votefirst,
   votelast,
   keydilution,
-  eligible
+  eligible,
+  lsigArgs
 }
 ```
+
+Offline, the only option is `lsigArgs`.
 
 `votekey`, `selkey`, `sproofkey`, `votefirst`, `votelast` and `keydilution`
 are all required to go online. They belong to the participation key, so there
@@ -590,7 +613,8 @@ A confirmed file that rekeys an account updates the auth cache as `rekey()`
 does, with the same `authCacheWarning` when that fails.
 
 `sign()` reads an external transaction file by the rules of the shell's
-[`sign`](USER_COMMANDS.md#sign), verifies the live algod is
+[`sign`](USER_COMMANDS.md#sign), which takes no LogicSig arguments: the
+file's transactions are already built. It verifies the live algod is
 running supported consensus v42 or v43, signs, submits, and optionally waits.
 Each transaction must be for the active algod's network: a genesis hash, or a
 set genesis ID, that differs from the algod's is refused before signing, as
@@ -698,7 +722,8 @@ Options:
   extraPages,
   wait,
   fee,
-  note
+  note,
+  lsigArgs
 }
 ```
 
@@ -740,7 +765,8 @@ appCallRaw(appId, from, appArgs, options = {})
   onCompletion: "noop",
   wait,
   fee,
-  note
+  note,
+  lsigArgs
 }
 ```
 
