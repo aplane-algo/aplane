@@ -81,8 +81,13 @@ func decodeHexRuntimeArgs(lsigArgs map[string]string) (map[string][]byte, error)
 	decoded := make(map[string][]byte, len(lsigArgs))
 	for name, hexValue := range lsigArgs {
 		bytes, err := hex.DecodeString(hexValue)
-		if err != nil {
+		if errors.Is(err, hex.ErrLength) {
 			return nil, fmt.Errorf("invalid hex for arg %s: %w", name, err)
+		}
+		if err != nil {
+			// The decoder's other error quotes the byte it stopped at, and an
+			// argument is a secret until it is spent.
+			return nil, fmt.Errorf("invalid hex for arg %s", name)
 		}
 		decoded[name] = bytes
 	}
