@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -234,7 +235,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 	cases := []struct {
 		name         string
 		keyType      string
-		templateType templatestore.TemplateType
+		templateType templatespec.TemplateType
 		yaml         string
 		wantInstall  string
 		// The refusal is the bounded template-level contract's.
@@ -242,52 +243,52 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 	}{
 		{
 			name: "generic runtime argument over the size limit", keyType: "test.admission-generic-oversized.v1",
-			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericOversizedYAML,
+			templateType: templatespec.TemplateTypeGeneric, yaml: admissionGenericOversizedYAML,
 			wantInstall: "invalid generic template: runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096",
 		},
 		{
 			name: "generic with too many runtime arguments", keyType: "test.admission-generic-too-many.v1",
-			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericTooManyYAML(),
+			templateType: templatespec.TemplateTypeGeneric, yaml: admissionGenericTooManyYAML(),
 			wantInstall: "invalid generic template: 256 runtime_args: a LogicSig carries at most 255 arguments",
 		},
 		{
 			name: "schema 1 composed runtime argument over the size limit", keyType: "test.admission-composed-oversized.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionComposedOversizedYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionComposedOversizedYAML,
 			wantInstall: "invalid composed template: runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096",
 		},
 		{
 			name: "bounded runtime argument over the size limit", keyType: "test.admission-bounded-oversized.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedOversizedYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionBoundedOversizedYAML,
 			wantInstall: "invalid composed template: runtime_arg blob is 5000 bytes: a LogicSig argument is at most 4096",
 		},
 		{
 			name: "generic display name with an escape sequence", keyType: "test.admission-generic-control-text.v1",
-			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericControlTextYAML,
+			templateType: templatespec.TemplateTypeGeneric, yaml: admissionGenericControlTextYAML,
 			wantInstall: `invalid generic template: display_name holds a character that does not print, shown escaped: Admission \x1b[2J Text`,
 		},
 		{
 			name: "bounded argument label with a right-to-left override", keyType: "test.admission-bounded-control-text.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedControlTextYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionBoundedControlTextYAML,
 			wantInstall: `invalid composed template: runtime_arg blob label holds a character that does not print, shown escaped: Blob \u202e`,
 		},
 		{
 			name: "generic without a schema_version", keyType: "test.admission-generic-no-schema-version.v1",
-			templateType: templatestore.TemplateTypeGeneric, yaml: admissionGenericNoSchemaVersionYAML,
+			templateType: templatespec.TemplateTypeGeneric, yaml: admissionGenericNoSchemaVersionYAML,
 			wantInstall: "schema_version is required and must be an integer >= 1",
 		},
 		{
 			name: "composed without a schema_version", keyType: "test.admission-composed-no-schema-version.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionComposedNoSchemaVersionYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionComposedNoSchemaVersionYAML,
 			wantInstall: "schema_version is required and must be an integer >= 1",
 		},
 		{
 			name: "bounded parameter with the reserved prefix", keyType: "test.admission-bounded-reserved.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedReservedYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionBoundedReservedYAML,
 			wantInstall: "reserved bounded_ prefix", contract: true,
 		},
 		{
 			name: "bounded rekey_to that is not the framework's", keyType: "test.admission-bounded-rekey-to.v1",
-			templateType: templatestore.TemplateTypeComposed, yaml: admissionBoundedRekeyToYAML,
+			templateType: templatespec.TemplateTypeComposed, yaml: admissionBoundedRekeyToYAML,
 			wantInstall: "framework-injected contract", contract: true,
 		},
 	}
@@ -355,7 +356,7 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 	// file and an enabled state record carrying its fingerprint.
 	for _, tc := range cases {
 		source, fingerprintOf := keytypestate.SourceYAMLGeneric, generictemplate.SemanticFingerprint
-		if tc.templateType == templatestore.TemplateTypeComposed {
+		if tc.templateType == templatespec.TemplateTypeComposed {
 			source, fingerprintOf = keytypestate.SourceYAMLComposed, composeddsa.SemanticFingerprint
 		}
 		// The fingerprint an install records, and compares on a reinstall, is
@@ -378,8 +379,8 @@ func TestInstalledTemplateRefusedAtAdmissionStillLoads(t *testing.T) {
 
 	manager := signertemplates.NewManager(paths, lsigprovider.ProcessRegistry{})
 	manager.ActivePaths = active
-	activated := func(report signertemplates.RegistrationReport, templateType templatestore.TemplateType) []string {
-		if templateType == templatestore.TemplateTypeComposed {
+	activated := func(report signertemplates.RegistrationReport, templateType templatespec.TemplateType) []string {
+		if templateType == templatespec.TemplateTypeComposed {
 			return report.ComposedActivatedKeyTypes
 		}
 		return report.GenericActivatedKeyTypes

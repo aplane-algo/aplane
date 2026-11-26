@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -33,7 +34,7 @@ import (
 
 type TemplateRef struct {
 	KeyType      string
-	TemplateType templatestore.TemplateType
+	TemplateType templatespec.TemplateType
 }
 
 const TemplateTypeCompiledProvider = "compiled_provider"
@@ -65,7 +66,7 @@ type ParsedTemplate struct {
 
 type InstallResult struct {
 	KeyType       string
-	TemplateType  templatestore.TemplateType
+	TemplateType  templatespec.TemplateType
 	OutputPath    string
 	AlreadyExists bool
 	StateChanged  bool
@@ -76,7 +77,7 @@ type InstallResult struct {
 
 type RemoveResult struct {
 	KeyType      string
-	TemplateType templatestore.TemplateType
+	TemplateType templatespec.TemplateType
 	OutputPath   string
 	Removed      bool
 }
@@ -150,7 +151,7 @@ func List(paths storepaths.Paths) ([]LibraryTemplate, error) {
 
 func installedOnlyTemplateItems(paths storepaths.Paths, seen map[TemplateRef][]int) ([]LibraryTemplate, error) {
 	var items []LibraryTemplate
-	for _, templateType := range templatestore.ActiveTemplateTypes() {
+	for _, templateType := range templatespec.ActiveTemplateTypes() {
 		files, err := templatestore.ScanTemplateDirectoryForPaths(paths, templateType)
 		if err != nil {
 			return nil, err
@@ -184,8 +185,8 @@ func ParseFile(path string) (ParsedTemplate, error) {
 
 func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 	var header struct {
-		templatestore.BaseTemplateSpec `yaml:",inline"`
-		TemplateMode                   string `yaml:"template_mode"`
+		templatespec.BaseTemplateSpec `yaml:",inline"`
+		TemplateMode                  string `yaml:"template_mode"`
 	}
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("YAML parse error: %w", err)
@@ -194,10 +195,10 @@ func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 		return ParsedTemplate{SourcePath: path}, err
 	}
 
-	switch templatestore.TemplateType(header.TemplateType) {
-	case "", templatestore.TemplateTypeGeneric:
+	switch templatespec.TemplateType(header.TemplateType) {
+	case "", templatespec.TemplateTypeGeneric:
 		return parseGeneric(path, data)
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		return parseComposed(path, data)
 	default:
 		return ParsedTemplate{SourcePath: path}, fmt.Errorf("unsupported template_type %q", header.TemplateType)
@@ -208,7 +209,7 @@ func ParseYAML(path string, data []byte) (ParsedTemplate, error) {
 // installed. Requiring schema_version is an admission check: a store's own
 // templates load through the providers' parsers, which read a missing one as
 // schema version 1, so a template an earlier build installed keeps loading.
-func validateImportHeader(base templatestore.BaseTemplateSpec, templateMode string) error {
+func validateImportHeader(base templatespec.BaseTemplateSpec, templateMode string) error {
 	if base.SchemaVersion < 1 {
 		return fmt.Errorf("schema_version is required and must be an integer >= 1")
 	}
@@ -445,7 +446,7 @@ func DeactivateCompiledProvider(paths storepaths.Paths, keyType string, kr *cryp
 // EnableInstalledTemplate enables a disabled installed template once it
 // passes the checks the reload after it runs (checkEnableAsReloadWould); one
 // that does not is refused with nothing changed.
-func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (InstallResult, error) {
+func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, kr *crypto.Keyring) (InstallResult, error) {
 	result := InstallResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -491,7 +492,7 @@ func EnableInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 	return result, nil
 }
 
-func DisableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
+func DisableInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
 	result := RemoveResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -534,7 +535,7 @@ func DisableInstalledTemplate(paths storepaths.Paths, keyType string, templateTy
 	return result, nil
 }
 
-func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
+func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, kr *crypto.Keyring) (RemoveResult, error) {
 	result := RemoveResult{
 		KeyType:      strings.ToLower(strings.TrimSpace(keyType)),
 		TemplateType: templateType,
@@ -543,7 +544,7 @@ func RemoveInstalledTemplate(paths storepaths.Paths, keyType string, templateTyp
 		return result, fmt.Errorf("key type is required")
 	}
 	switch templateType {
-	case templatestore.TemplateTypeGeneric, templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeGeneric, templatespec.TemplateTypeComposed:
 	default:
 		return result, fmt.Errorf("unsupported template type: %s", templateType)
 	}
@@ -603,7 +604,7 @@ func removeInstalledActive(active storepaths.GenPaths, keyType string, rec keyty
 // definition: any template sealed for keyType in the current term opens, an
 // earlier definition's from a prior generation or the deleted archive
 // included.
-func StoredTemplateFingerprintActive(active storepaths.GenPaths, keyType string, templateType templatestore.TemplateType, kr *crypto.Keyring) (string, error) {
+func StoredTemplateFingerprintActive(active storepaths.GenPaths, keyType string, templateType templatespec.TemplateType, kr *crypto.Keyring) (string, error) {
 	data, err := templatestore.LoadTemplateFromPath(templatestore.GetTemplateFilePathActive(active, keyType), kr)
 	if err != nil {
 		return "", err
@@ -727,7 +728,7 @@ func parseGeneric(path string, data []byte) (ParsedTemplate, error) {
 	parsed := ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
-			TemplateType: templatestore.TemplateTypeGeneric,
+			TemplateType: templatespec.TemplateTypeGeneric,
 		},
 		DisplayName: spec.DisplayName,
 		Description: spec.Description,
@@ -756,7 +757,7 @@ func parseComposed(path string, data []byte) (ParsedTemplate, error) {
 	parsed := ParsedTemplate{
 		TemplateRef: TemplateRef{
 			KeyType:      spec.KeyType(),
-			TemplateType: templatestore.TemplateTypeComposed,
+			TemplateType: templatespec.TemplateTypeComposed,
 		},
 		DisplayName: spec.DisplayName,
 		Description: spec.Description,
@@ -877,17 +878,17 @@ func validateRegisteredProviderConflict(tmpl ParsedTemplate) error {
 // admission (ParseYAML) covers all of it but one check: that the template is
 // stored under its own key type, which only a ParsedTemplate built by hand
 // can miss.
-func prepareAsReloadWould(keyType string, templateType templatestore.TemplateType, data []byte) (string, error) {
+func prepareAsReloadWould(keyType string, templateType templatespec.TemplateType, data []byte) (string, error) {
 	keyType, err := keytypestate.NormalizeKeyType(keyType)
 	if err != nil {
 		return "", err
 	}
 	var fingerprint string
 	switch templateType {
-	case templatestore.TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		prepared, prepareErr := generictemplate.PrepareKeystoreTemplateRegistration(keyType, data)
 		fingerprint, err = prepared.Fingerprint, prepareErr
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		prepared, prepareErr := composeddsa.PrepareKeystoreTemplateRegistration(keyType, data)
 		fingerprint, err = prepared.Fingerprint, prepareErr
 	default:
@@ -906,7 +907,7 @@ func prepareAsReloadWould(keyType string, templateType templatestore.TemplateTyp
 // then find an external edit, enter recovery, and the enable's rollback would
 // remove the cause. The offline template repair, which classifies as a reload
 // does, does not see it either, so the refusal names the import that does.
-func checkEnableAsReloadWould(rec keytypestate.Record, templateType templatestore.TemplateType, templatePath string, kr *crypto.Keyring) error {
+func checkEnableAsReloadWould(rec keytypestate.Record, templateType templatespec.TemplateType, templatePath string, kr *crypto.Keyring) error {
 	data, err := templatestore.LoadTemplateFromPath(templatePath, kr)
 	if err != nil {
 		return fmt.Errorf("template %s would not load: %w", rec.KeyType, err)
@@ -923,11 +924,11 @@ func checkEnableAsReloadWould(rec keytypestate.Record, templateType templatestor
 	return nil
 }
 
-func semanticFingerprint(templateType templatestore.TemplateType, data []byte) (string, error) {
+func semanticFingerprint(templateType templatespec.TemplateType, data []byte) (string, error) {
 	switch templateType {
-	case templatestore.TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		return generictemplate.SemanticFingerprint(data)
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		return composeddsa.SemanticFingerprint(data)
 	default:
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
@@ -1091,12 +1092,12 @@ func sortName(item LibraryTemplate) string {
 	return strings.ToLower(item.FileName)
 }
 
-func oppositeTemplateType(templateType templatestore.TemplateType) templatestore.TemplateType {
-	if templateType == templatestore.TemplateTypeGeneric {
-		return templatestore.TemplateTypeComposed
+func oppositeTemplateType(templateType templatespec.TemplateType) templatespec.TemplateType {
+	if templateType == templatespec.TemplateTypeGeneric {
+		return templatespec.TemplateTypeComposed
 	}
-	if templateType == templatestore.TemplateTypeComposed {
-		return templatestore.TemplateTypeGeneric
+	if templateType == templatespec.TemplateTypeComposed {
+		return templatespec.TemplateTypeGeneric
 	}
-	return templatestore.TemplateTypeGeneric
+	return templatespec.TemplateTypeGeneric
 }

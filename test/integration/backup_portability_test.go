@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -664,7 +665,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if templatestore.TemplateExistsActive(
 		mustActiveStorePaths(t, destClone.SignerDataDir),
 		"aplane.htlc.v1",
-		templatestore.TemplateTypeGeneric,
+		templatespec.TemplateTypeGeneric,
 	) {
 		t.Fatal("expected standalone restore not to materialize missing aplane.htlc.v1 template")
 	}

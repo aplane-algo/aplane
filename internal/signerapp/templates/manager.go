@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -27,7 +28,7 @@ type PrepareFunc func(keyType string, data []byte) (templatepolicy.PreparedTempl
 type TemplateRegistrar struct {
 	Name         string
 	Source       keytypestate.Source
-	TemplateType templatestore.TemplateType
+	TemplateType templatespec.TemplateType
 	Prepare      PrepareFunc
 }
 
@@ -110,7 +111,7 @@ const (
 type RecordDefect struct {
 	KeyType      string
 	Kind         RecordDefectKind
-	TemplateType templatestore.TemplateType
+	TemplateType templatespec.TemplateType
 }
 
 // RecordDefects lists the template record defects among the content defects,
@@ -120,12 +121,12 @@ func (r RegistrationReport) RecordDefects() []RecordDefect {
 	for _, bucket := range []struct {
 		keyTypes     []string
 		kind         RecordDefectKind
-		templateType templatestore.TemplateType
+		templateType templatespec.TemplateType
 	}{
-		{r.GenericOrphanedKeyTypes, RecordOrphaned, templatestore.TemplateTypeGeneric},
-		{r.ComposedOrphanedKeyTypes, RecordOrphaned, templatestore.TemplateTypeComposed},
-		{r.GenericExternalEditKeyTypes, RecordExternalEdit, templatestore.TemplateTypeGeneric},
-		{r.ComposedExternalEditKeyTypes, RecordExternalEdit, templatestore.TemplateTypeComposed},
+		{r.GenericOrphanedKeyTypes, RecordOrphaned, templatespec.TemplateTypeGeneric},
+		{r.ComposedOrphanedKeyTypes, RecordOrphaned, templatespec.TemplateTypeComposed},
+		{r.GenericExternalEditKeyTypes, RecordExternalEdit, templatespec.TemplateTypeGeneric},
+		{r.ComposedExternalEditKeyTypes, RecordExternalEdit, templatespec.TemplateTypeComposed},
 		{r.DisabledOrphanedKeyTypes, RecordDisabledOrphaned, ""},
 	} {
 		for _, keyType := range bucket.keyTypes {
@@ -268,13 +269,13 @@ func DefaultTemplateRegistrars() []TemplateRegistrar {
 		{
 			Name:         "generic",
 			Source:       keytypestate.SourceYAMLGeneric,
-			TemplateType: templatestore.TemplateTypeGeneric,
+			TemplateType: templatespec.TemplateTypeGeneric,
 			Prepare:      generictemplate.PrepareKeystoreTemplateRegistration,
 		},
 		{
 			Name:         "composed",
 			Source:       keytypestate.SourceYAMLComposed,
-			TemplateType: templatestore.TemplateTypeComposed,
+			TemplateType: templatespec.TemplateTypeComposed,
 			Prepare:      composeddsa.PrepareKeystoreTemplateRegistration,
 		},
 	}

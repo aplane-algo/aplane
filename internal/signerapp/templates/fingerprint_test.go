@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -112,7 +112,7 @@ func TestReloadRequiresTheRecordedTemplateFingerprintExactly(t *testing.T) {
 				t.Cleanup(func() { lsigprovider.Unregister(keyType) })
 				paths := mintedPathsForReloadTest(t)
 				masterKey := testTemplateMasterKey()
-				saveTemplateYAML(t, paths, keyType, templatestore.TemplateTypeGeneric, data, masterKey)
+				saveTemplateYAML(t, paths, keyType, templatespec.TemplateTypeGeneric, data, masterKey)
 				if registered {
 					putRecordedFingerprint(t, paths, keyType, keytypestate.SourceYAMLGeneric, live)
 					if _, defects := reloadTemplatesForTest(t, paths); len(defects) != 0 {
@@ -293,10 +293,10 @@ func TestRegistrationReportRecordDefects(t *testing.T) {
 		GenericDisabledKeyTypes:    []string{"test.disabled.v1"},
 	}
 	wantDefects := []RecordDefect{
-		{KeyType: "test.orphan-generic.v1", Kind: RecordOrphaned, TemplateType: templatestore.TemplateTypeGeneric},
-		{KeyType: "test.orphan-composed.v1", Kind: RecordOrphaned, TemplateType: templatestore.TemplateTypeComposed},
-		{KeyType: "test.edited-generic.v1", Kind: RecordExternalEdit, TemplateType: templatestore.TemplateTypeGeneric},
-		{KeyType: "test.edited-composed.v1", Kind: RecordExternalEdit, TemplateType: templatestore.TemplateTypeComposed},
+		{KeyType: "test.orphan-generic.v1", Kind: RecordOrphaned, TemplateType: templatespec.TemplateTypeGeneric},
+		{KeyType: "test.orphan-composed.v1", Kind: RecordOrphaned, TemplateType: templatespec.TemplateTypeComposed},
+		{KeyType: "test.edited-generic.v1", Kind: RecordExternalEdit, TemplateType: templatespec.TemplateTypeGeneric},
+		{KeyType: "test.edited-composed.v1", Kind: RecordExternalEdit, TemplateType: templatespec.TemplateTypeComposed},
 		{KeyType: "test.orphan-disabled.v1", Kind: RecordDisabledOrphaned},
 	}
 	if got := report.RecordDefects(); !reflect.DeepEqual(got, wantDefects) {

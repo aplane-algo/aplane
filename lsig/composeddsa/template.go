@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -69,10 +69,10 @@ func validateTemplateSpec(spec *TemplateSpec, rules templateBaseRules) error {
 	if err := spec.ValidateBase(CurrentTemplateSchemaVersion); err != nil {
 		return err
 	}
-	if templatestore.TemplateType(spec.TemplateType) != templatestore.TemplateTypeComposed {
-		return fmt.Errorf("template_type must be %q for composed templates", templatestore.TemplateTypeComposed)
+	if templatespec.TemplateType(spec.TemplateType) != templatespec.TemplateTypeComposed {
+		return fmt.Errorf("template_type must be %q for composed templates", templatespec.TemplateTypeComposed)
 	}
-	if err := templatestore.ValidateBaseKeyType(templatestore.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
+	if err := templatespec.ValidateBaseKeyType(templatespec.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
 		return err
 	}
 	if !rules.registered(spec.BaseKeyType) {

@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -89,7 +89,7 @@ func TestTemplateInstallAndImportWithARecordedFingerprint(t *testing.T) {
 					writeLibraryTemplateForTest(t, server, "other.yaml", otherYAML)
 					result := templates.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 						KeyType:      otherKeyType,
-						TemplateType: string(templatestore.TemplateTypeGeneric),
+						TemplateType: string(templatespec.TemplateTypeGeneric),
 					})
 					success, alreadyExists, code, message, installed = result.Success, result.AlreadyExists, result.Code, result.Error, otherKeyType
 				}

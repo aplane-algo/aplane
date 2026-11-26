@@ -34,7 +34,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
@@ -207,14 +207,14 @@ func TestInspectClassifiesEveryRecordDefect(t *testing.T) {
 		t.Fatalf("Inspect() = generation %s, other damage %v; want %s and none", preview.GenerationID, preview.OtherDamage, f.opts.Current.GenerationID())
 	}
 	want := []templaterepair.Defect{
-		{KeyType: orphanGeneric, Kind: signertemplates.RecordOrphaned, TemplateType: templatestore.TemplateTypeGeneric,
+		{KeyType: orphanGeneric, Kind: signertemplates.RecordOrphaned, TemplateType: templatespec.TemplateTypeGeneric,
 			RecordedFingerprint: f.installed[orphanGeneric]},
-		{KeyType: orphanComposed, Kind: signertemplates.RecordOrphaned, TemplateType: templatestore.TemplateTypeComposed,
+		{KeyType: orphanComposed, Kind: signertemplates.RecordOrphaned, TemplateType: templatespec.TemplateTypeComposed,
 			RecordedFingerprint: f.installed[orphanComposed]},
-		{KeyType: editedGeneric, Kind: signertemplates.RecordExternalEdit, TemplateType: templatestore.TemplateTypeGeneric,
+		{KeyType: editedGeneric, Kind: signertemplates.RecordExternalEdit, TemplateType: templatespec.TemplateTypeGeneric,
 			Keys: 3, KeysFromStoredTemplate: 1, ConflictAfterRepin: 1,
 			RecordedFingerprint: editedFingerprint, TemplateFingerprint: f.installed[editedGeneric]},
-		{KeyType: editedComposed, Kind: signertemplates.RecordExternalEdit, TemplateType: templatestore.TemplateTypeComposed,
+		{KeyType: editedComposed, Kind: signertemplates.RecordExternalEdit, TemplateType: templatespec.TemplateTypeComposed,
 			RecordedFingerprint: editedFingerprint, TemplateFingerprint: f.installed[editedComposed]},
 		{KeyType: orphanDisabled, Kind: signertemplates.RecordDisabledOrphaned,
 			RecordedFingerprint: f.installed[orphanDisabled]},
@@ -242,7 +242,7 @@ func TestInspectShowsTheKeysOfASwappedTemplate(t *testing.T) {
 	f.install(earlier)
 	earlierFingerprint := f.installed[keyType]
 	bound := genstoretest.BindActive(t, f.paths, f.opts.Current)
-	if _, err := templatelibrary.RemoveInstalledTemplate(bound, keyType, templatestore.TemplateTypeGeneric, f.opts.Keyring); err != nil {
+	if _, err := templatelibrary.RemoveInstalledTemplate(bound, keyType, templatespec.TemplateTypeGeneric, f.opts.Keyring); err != nil {
 		t.Fatal(err)
 	}
 	f.install(genericYAML("repair-swap"))
@@ -451,7 +451,7 @@ func TestRepairRefusalsChangeNothing(t *testing.T) {
 			damage: func(t *testing.T, f *fixture) {
 				f.install(genericYAML("repair-archived"))
 				bound := genstoretest.BindActive(t, f.paths, f.opts.Current)
-				if _, err := templatelibrary.RemoveInstalledTemplate(bound, "test.repair-archived.v1", templatestore.TemplateTypeGeneric, f.opts.Keyring); err != nil {
+				if _, err := templatelibrary.RemoveInstalledTemplate(bound, "test.repair-archived.v1", templatespec.TemplateTypeGeneric, f.opts.Keyring); err != nil {
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(f.opts.Current.DeletedKeyTypeTemplate("test.repair-archived.v1"), []byte("damaged"), 0o600); err != nil {

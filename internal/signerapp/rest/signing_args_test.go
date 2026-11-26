@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signingargs"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -30,7 +30,7 @@ func TestKeysListSigningArgsOnlyForKeysThatRecordThem(t *testing.T) {
 	generic := generictemplate.NewYAMLTemplate(spec)
 	lsigprovider.RegisterIfAbsent(generic)
 	t.Cleanup(func() { lsigprovider.Unregister(generic.KeyType()) })
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatespec.TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	genericKey := func(bytecode []byte, args []keys.StoredSigningArg) *keys.Payload {
 		payload := keys.NewGenericLSigPayload(generic.KeyType(), map[string]string{"limit": "1"}, bytecode, "", args, "")

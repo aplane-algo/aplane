@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerruntime "github.com/aplane-algo/aplane/internal/signerapp/runtime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 )
 
 // A reload without a passphrase, the watcher's or an in-place write's, that
@@ -262,6 +262,6 @@ func TestATemplateInstallWhoseReloadFindsADefectEntersRecovery(t *testing.T) {
 	}
 	requireRecoveryPushed(t, session)
 	requireRecoveryWithKeyring(t, server, address)
-	assertInstalledTemplateRemoved(t, server, testTemplateKeyType(family), templatestore.TemplateTypeGeneric)
+	assertInstalledTemplateRemoved(t, server, testTemplateKeyType(family), templatespec.TemplateTypeGeneric)
 	requireRepairLiftsRecovery(t, server, stray, address, 1)
 }

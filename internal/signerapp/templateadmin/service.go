@@ -24,6 +24,7 @@ import (
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
@@ -85,8 +86,8 @@ func (s Service) ListLibraryTemplates() adminproto.ListLibraryTemplatesResult {
 func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
 	ir := s.Runtime
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
-	templateType := templatestore.TemplateType(req.TemplateType)
-	if templateType != templatestore.TemplateTypeGeneric && templateType != templatestore.TemplateTypeComposed {
+	templateType := templatespec.TemplateType(req.TemplateType)
+	if templateType != templatespec.TemplateTypeGeneric && templateType != templatespec.TemplateTypeComposed {
 		return adminproto.InstallLibraryTemplateResult{
 			Success:      false,
 			KeyType:      keyType,
@@ -170,7 +171,7 @@ func (s Service) InstallLibraryTemplate(req adminproto.InstallLibraryTemplateReq
 
 func (s Service) ListInstalledTemplates() adminproto.ListInstalledTemplatesResult {
 	var out []adminproto.InstalledTemplateInfo
-	for _, templateType := range templatestore.ActiveTemplateTypes() {
+	for _, templateType := range templatespec.ActiveTemplateTypes() {
 		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), templateType)
 		if err != nil {
 			return adminproto.ListInstalledTemplatesResult{
@@ -202,7 +203,7 @@ func (s Service) ListInstalledTemplates() adminproto.ListInstalledTemplatesResul
 
 func (s Service) ShowLibraryTemplate(req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
 	keyType := keytypecatalog.Canonicalize(req.KeyType)
-	templateType := templatestore.TemplateType(strings.ToLower(strings.TrimSpace(req.TemplateType)))
+	templateType := templatespec.TemplateType(strings.ToLower(strings.TrimSpace(req.TemplateType)))
 	if keyType == "" {
 		return adminproto.ShowLibraryTemplateResult{
 			Success: false,
@@ -210,7 +211,7 @@ func (s Service) ShowLibraryTemplate(req adminproto.ShowLibraryTemplateRequest) 
 			Error:   "key_type is required",
 		}
 	}
-	if templateType != templatestore.TemplateTypeGeneric && templateType != templatestore.TemplateTypeComposed {
+	if templateType != templatespec.TemplateTypeGeneric && templateType != templatespec.TemplateTypeComposed {
 		return adminproto.ShowLibraryTemplateResult{
 			Success:      false,
 			KeyType:      keyType,
@@ -488,7 +489,7 @@ func (s Service) ActivateKeyType(req adminproto.ActivateKeyTypeRequest) adminpro
 	return out
 }
 
-func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType) adminproto.ActivateKeyTypeResult {
+func (s Service) enableInstalledTemplateKeyTypeLocked(ir *productruntime.Runtime, paths storepaths.Paths, keyType string, templateType templatespec.TemplateType) adminproto.ActivateKeyTypeResult {
 	var installResult templatelibrary.InstallResult
 	err := ir.WithKeyring(func(kr *crypto.Keyring) error {
 		var enableErr error
@@ -623,19 +624,19 @@ func (s Service) DeactivateKeyType(req adminproto.DeactivateKeyTypeRequest) admi
 	}
 }
 
-func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyType string, templateType templatestore.TemplateType) bool {
+func templateAcceptedByReloadReport(report *signertemplates.ReloadReport, keyType string, templateType templatespec.TemplateType) bool {
 	if report == nil {
 		return false
 	}
 	var accepted, rejected []string
 	rejected = append(rejected, report.InvalidStateRecordKeyTypes...)
 	switch templateType {
-	case templatestore.TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		accepted = append(accepted, report.GenericActivatedKeyTypes...)
 		accepted = append(accepted, report.GenericIdempotentKeyTypes...)
 		rejected = append(rejected, report.GenericConflictingKeyTypes...)
 		rejected = append(rejected, report.GenericInvalidKeyTypes...)
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		accepted = append(accepted, report.ComposedActivatedKeyTypes...)
 		accepted = append(accepted, report.ComposedIdempotentKeyTypes...)
 		rejected = append(rejected, report.ComposedConflictingKeyTypes...)
@@ -692,7 +693,7 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, result templatelibrar
 	return cause
 }
 
-func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templatestore.TemplateType, keytypestate.Record, bool, error) {
+func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templatespec.TemplateType, keytypestate.Record, bool, error) {
 	rec, ok, err := keytypestate.Get(paths, keyType)
 	if err != nil {
 		return "", keytypestate.Record{}, false, err
@@ -710,9 +711,9 @@ func installedTemplateFromRecord(paths storepaths.Paths, keyType string) (templa
 	return templateType, rec, true, nil
 }
 
-func installedWireTemplateType(templateType templatestore.TemplateType) string {
+func installedWireTemplateType(templateType templatespec.TemplateType) string {
 	switch templateType {
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		wire, _ := adminproto.WireTemplateTypeFromSource(keytypestate.SourceYAMLComposed)
 		return wire
 	default:

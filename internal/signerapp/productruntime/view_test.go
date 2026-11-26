@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
@@ -219,7 +220,7 @@ func preparedTemplate(t *testing.T, ir *Runtime, bound storepaths.GenPaths, keyT
 	t.Helper()
 	var prepared signertemplates.PreparedTemplates
 	if err := ir.WithKeyring(func(kr *crypto.Keyring) error {
-		if _, err := templatestore.SaveTemplateActive(bound, []byte("ignored"), keyType, templatestore.TemplateTypeGeneric, kr); err != nil {
+		if _, err := templatestore.SaveTemplateActive(bound, []byte("ignored"), keyType, templatespec.TemplateTypeGeneric, kr); err != nil {
 			return err
 		}
 		if err := keytypestate.PutActive(bound, keytypestate.Record{KeyType: keyType, Source: keytypestate.SourceYAMLGeneric, State: keytypestate.StateEnabled}); err != nil {
@@ -228,7 +229,7 @@ func preparedTemplate(t *testing.T, ir *Runtime, bound storepaths.GenPaths, keyT
 		manager := &signertemplates.Manager{
 			Paths: ir.KeyPaths(), ActivePaths: bound, Registry: ir.ProviderRegistry(),
 			Registrars: []signertemplates.TemplateRegistrar{{
-				Name: "generic", Source: keytypestate.SourceYAMLGeneric, TemplateType: templatestore.TemplateTypeGeneric,
+				Name: "generic", Source: keytypestate.SourceYAMLGeneric, TemplateType: templatespec.TemplateTypeGeneric,
 				Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
 					return templatepolicy.PreparedTemplateRegistration{Fingerprint: "fp-" + keyType, Provider: viewProvider{keyType: keyType}}, nil
 				},
