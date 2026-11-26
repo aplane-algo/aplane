@@ -38,11 +38,12 @@ var appolicyForbiddenDirect = []string{
 }
 
 // appolicyForbiddenTransitive are packages appolicy must not reach by any
-// chain of imports: the generation store and the admin protocol and
-// transport. (A blanket ban on internal/crypto cannot hold: internal/policy
+// chain of imports: the generation store, and the admin protocol, its
+// messages and its transport. (A blanket ban on internal/crypto cannot hold: internal/policy
 // imports it for its store sidecars.)
 var appolicyForbiddenTransitive = []string{
 	modulePrefix + "/internal/genstore",
+	modulePrefix + "/internal/protocol",
 	modulePrefix + "/internal/adminproto",
 	modulePrefix + "/internal/adminipc",
 	modulePrefix + "/internal/transport",
