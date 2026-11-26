@@ -752,9 +752,10 @@ func TestWorkerPublishesRotatingStatus(t *testing.T) {
 // the audit log through the restore to the status pass and the leaf choice.
 // B signed on leaf L1, and A, whose pick was also L1, on L2. A loss emptied
 // the memory and A's retry picked L1 again, a second message on B's leaf.
-// A clean restore of that log must raise the reuse warning. Once B's entry
-// has rotated out as well, the log still shows A on L1, so a transaction D
-// whose pick is L1 must not sign on it a third time.
+// A clean restore of that log must raise the reuse warning. Once B's entry is
+// lost as well, the log still shows A on L1, so a transaction D whose pick is
+// L1 must not sign on it a third time. Rotations of the log lose neither: D
+// does not take L1 from B either.
 func TestRestoreAfterLossesKeepsEveryLoggedLeaf(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
@@ -803,21 +804,40 @@ func TestRestoreAfterLossesKeepsEveryLoggedLeaf(t *testing.T) {
 		txid  string
 		index uint32
 	}
-	// restoreLog makes a log holding releases the signer's audit log and
-	// restores the memory from it after an unlock.
-	restoreLog := func(t *testing.T, releases ...release) {
+	// restoreLog makes a log holding releases, then rotated as often as
+	// rotations says, the signer's audit log, and restores the memory from it
+	// after an unlock.
+	restoreLog := func(t *testing.T, rotations int, releases ...release) {
 		t.Helper()
-		auditLog, err := NewAuditLogger(filepath.Join(t.TempDir(), "audit.log"))
+		path := filepath.Join(t.TempDir(), "audit.log")
+		auditLog, err := NewAuditLogger(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = auditLog.Close() })
-		server.auditLog = auditLog
 		for _, r := range releases {
 			if err := (&signingAuditLogger{log: auditLog}).LogRotatingRelease(account.String(), r.txid, 0, 1000, tree, r.index); err != nil {
 				t.Fatal(err)
 			}
 		}
+		// A log opened at its size limit rotates on its next entry.
+		filler := []byte(strings.Repeat(`{"event":"SIGN_REQUEST","reason":"filler"}`+"\n", 250_000))
+		for range rotations {
+			_ = auditLog.Close()
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write(filler); err != nil {
+				t.Fatal(err)
+			}
+			_ = f.Close()
+			if auditLog, err = NewAuditLogger(path); err != nil {
+				t.Fatal(err)
+			}
+			auditLog.LogServerStart(0)
+		}
+		t.Cleanup(func() { _ = auditLog.Close() })
+		server.auditLog = auditLog
 		server.rotatingReleases.Reset()
 		if !server.rebuildReleaseMemory(context.Background(), ir, ir.LockGeneration()) {
 			t.Fatal("the restore did not finish")
@@ -825,7 +845,7 @@ func TestRestoreAfterLossesKeepsEveryLoggedLeaf(t *testing.T) {
 	}
 
 	// One loss: the retained log proves the reuse.
-	restoreLog(t, release{"B", l1}, release{"A", l2}, release{"A", l1})
+	restoreLog(t, 0, release{"B", l1}, release{"A", l2}, release{"A", l1})
 	if rec, _ := server.rotatingReleases.Get(account.String()); !rec.Reused || len(rec.Leaves) != 3 {
 		t.Fatalf("restored memory = %+v, want three releases and reused", rec)
 	}
@@ -835,24 +855,36 @@ func TestRestoreAfterLossesKeepsEveryLoggedLeaf(t *testing.T) {
 		t.Fatalf("warnings after restoring a log that shows reuse = %v (notes %v)", w, ir.RotatingNotes())
 	}
 
-	// A second loss: B's entry rotated out, A's two remain.
-	restoreLog(t, release{"A", l2}, release{"A", l1})
-	resp, svcErr := server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog}).SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
-		Account: account.String(), Transactions: prep.Transactions,
-	}, ir.SnapshotKeySession())
-	if svcErr != nil {
-		t.Fatalf("sign: %v", svcErr)
+	// signD signs D and returns its leaf.
+	signD := func(t *testing.T) uint32 {
+		t.Helper()
+		resp, svcErr := server.newSigningServiceWithAudit(ir, &signingAuditLogger{log: server.auditLog}).SignRotatingWithContext(context.Background(), signerapi.RotatingSignRequest{
+			Account: account.String(), Transactions: prep.Transactions,
+		}, ir.SnapshotKeySession())
+		if svcErr != nil {
+			t.Fatalf("sign: %v", svcErr)
+		}
+		rec, _ := server.rotatingReleases.Get(account.String())
+		signed, ok := rec.LeafFor(resp.TxID)
+		if !ok {
+			t.Fatalf("D's release not remembered: %+v", rec)
+		}
+		if rec.Reused {
+			t.Fatalf("D's release on a free leaf marked as reuse: %+v", rec)
+		}
+		return signed.Index
 	}
-	rec, _ := server.rotatingReleases.Get(account.String())
-	signed, ok := rec.LeafFor(resp.TxID)
-	if !ok {
-		t.Fatalf("D's release not remembered: %+v", rec)
+
+	// A second loss: B's entry is gone, A's two remain.
+	restoreLog(t, 0, release{"A", l2}, release{"A", l1})
+	if leaf := signD(t); leaf == l1 || leaf == l2 {
+		t.Fatalf("D signed on leaf %d; the log shows A on %d and %d", leaf, l2, l1)
 	}
-	if signed.Index == l1 || signed.Index == l2 {
-		t.Fatalf("D signed on leaf %d; the log shows A on %d and %d", signed.Index, l2, l1)
-	}
-	if rec.Reused {
-		t.Fatalf("D's release on a free leaf marked as reuse: %+v", rec)
+
+	// Four rotations, which drop the file B's entry was written to.
+	restoreLog(t, 4, release{"B", l1})
+	if leaf := signD(t); leaf == l1 {
+		t.Fatalf("D signed on leaf %d, which B signed before the log rotated", leaf)
 	}
 }
 

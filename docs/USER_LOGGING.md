@@ -60,8 +60,8 @@ Each line is a JSON object with the following fields:
 | `expected_policy_set_sha256`, `expected_snapshot_sha256` | string | The digests an apply request expects: the request's claim, not verified state |
 | `base_policy_set_sha256`, `policy_set_sha256` | string | The verified policy set an apply changed, and the set it left |
 | `asa_action` | string | `add` or `remove` |
-| `suppressed_count` | int | On a `*_SUPPRESSED` event: how many were not logged individually |
 | `network`, `genesis_hash`, `asset_id` | | The asset an ASA set change names; on an outcome, the chain it was resolved to |
+| `suppressed_count` | int | On a `*_SUPPRESSED` event: how many were not logged individually |
 
 Fields are omitted when empty.
 
@@ -182,7 +182,7 @@ generation records say what committed. Offline `apadmin policy rescue` and
 | `SIGN_APPROVED` | Transaction signed by the signer, one entry per transaction signed with a key (not emitted for passthrough or foreign entries). It records the transaction as signed: planning may have raised its fee, set its group ID and added dummies, so `txid`, `fee`, `group_id` and `group_txids` are those of the transactions returned to the client, not of the request |
 | `SIGN_REJECTED` | Transaction rejected. A refusal before the operator names its source in the reason: `signer_invariant:` (a refusal no policy can allow, such as a nonparticipating `keyreg`, on either node role, or a rekey to a held aplane key that is not a valid rekey target), `policy_engine_rejected:` (the signer's policy) or `cosigner_policy_rejected:` (a cosigner's policy). Other reasons record the operator's decision. A signer-invariant refusal on the signer names one position: it writes an entry for each position the signer signs and one for the named position, even a passthrough or foreign one, and every one of them identifies its transaction as planned with the `txid`, `fee`, `group_id`, `group_txids` and `dummy_count` a `SIGN_APPROVED` for it would have had. A policy refusal writes an entry per position the signer signs, with no `txid`. A request refused before the signer's gates, for example `bounded_cosigner_required`, writes none |
 | `SIGN_FAILED` | Signing failed due to a technical error (key not found, assembly error, etc.). A signature refused at the last check after it was recorded as signed (on `/sign`, bounded-base or cosigner `/sign/component`, or rotating sign) is a `SIGN_FAILED` whose `reason` begins `signature withheld after it was recorded as signed`. It has the `txid` and `group_id` of that `SIGN_APPROVED`, so a search on either finds both: the signature never left the signer |
-| `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock |
+| `ROTATING_RELEASE` | A rotating-account signature was released; retained records rebuild release and leaf-use history after unlock. A log rotation copies each account's current stage forward, with `outcome` `carried`, and `carried_latest` for its newest release; a copy is not a new signature |
 | `ROTATING_RECOVERY` | A rotating-account recovery action or outcome was recorded |
 
 Every entry a signing or planning request writes carries the request's ID

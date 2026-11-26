@@ -283,8 +283,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		}
 	}()
 
-	// Authenticate the client before allowing normal operations. A fresh store
-	// can also handle one local initialize request before passphrase auth exists.
+	// Authenticate the client before allowing normal operations.
 	switch session.AuthenticateOutcome() {
 	case adminserver.AuthOutcomeAuthenticated:
 		cleanupRuntime = !session.AuthenticatedOnly()

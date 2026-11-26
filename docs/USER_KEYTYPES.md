@@ -853,9 +853,11 @@ transaction takes an unused leaf while one remains. Exhaustion itself does not
 cause refusal: the 65th different transaction reuses a leaf and is reported until
 the account moves past the stage. A failed transaction doesn't cause reuse by
 itself, but missing history or two signers sharing a seed can cause earlier reuse.
-History can be lost through backup restore, audit rotation, an audit write failure
-followed by restart, or an ordinary audit-restore failure. The signer can't report
-reuse it can't see, so don't run two signers for one account.
+History can be lost through backup restore, an audit write failure followed by
+restart, a damaged or deleted audit log, or an ordinary audit-restore failure. Log
+rotation keeps it, since each rotation copies the live stage's releases forward,
+unless two rotations running fail to copy them. The signer can't report reuse it
+can't see, so don't run two signers for one account.
 
 If a leaf has signed two different transactions, send a rotate-only spend promptly. See
 [the specification](KEYTYPE_ROTATING_TRIPLE_HYBRID.md#91-failed-transactions-and-leaf-reuse).

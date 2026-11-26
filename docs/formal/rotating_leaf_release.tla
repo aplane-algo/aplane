@@ -58,7 +58,7 @@ explicitly:
                    a new restore its history stays missing with the wait open.
 
   Loss (not a guard): the audit write is best effort (a failure is reported,
-  not fatal), the log may rotate past old entries, and a restore may fail.
+  not fatal), the log may lose old entries, and a restore may fail.
   Each sets the ghost flag lossy. LF1 and LF2 are claimed only while lossy
   is FALSE: the leaf scheme is an interlock over the history the signer can
   see, not a guarantee against a history the signer lost.
@@ -397,7 +397,10 @@ RestoreFail ==
     /\ UNCHANGED <<chain, truth, audit, snap, memStage, memRecs, memSeq, seq,
                    obsStage, obsSeq, admitted, resetDue, cut, absent, bad, drift>>
 
-\* AuditLose: the log rotated past an old entry, or the file lost it.
+\* AuditLose: the audit log lost an entry: a file damaged, deleted or replaced;
+\* two rotations running whose copy of the live stage failed (carryReleases);
+\* or a release left out of the copies of a stage past 64 releases, which keep
+\* every used leaf but not every transaction.
 AuditLose ==
     /\ AuditMayLose
     /\ \E r \in audit :

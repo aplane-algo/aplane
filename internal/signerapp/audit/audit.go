@@ -254,6 +254,9 @@ type AuditLogger struct {
 	partial bool
 	// closed is set by Close; nothing is written, or reopened, after it.
 	closed bool
+	// releasesCarried records that the current file holds every account's
+	// carried release history (carryReleases), until a rotation replaces it.
+	releasesCarried bool
 
 	authFailures       entryLimiter
 	adminLoginFailures entryLimiter
@@ -523,6 +526,12 @@ func (a *AuditLogger) logDurable(entry AuditEntry) error {
 // use and keeps growing, and the next entry tries again.
 // Must be called with a.mu held.
 func (a *AuditLogger) rotate() error {
+	if err := a.carryReleases(); err != nil {
+		// The rotation goes on: the releases the rotation before copied are
+		// still in the file that becomes .2, and refusing to rotate would let
+		// the log grow without limit.
+		fmt.Fprintf(os.Stderr, "Warning: rotating accounts' release history was not carried over the log rotation: %v\n", err)
+	}
 	var err error
 	if a.file != nil {
 		err = a.file.Close()
@@ -560,6 +569,7 @@ func (a *AuditLogger) rotate() error {
 	a.file = file
 	a.written = 0
 	a.partial = false
+	a.releasesCarried = false
 	return nil
 }
 

@@ -505,10 +505,25 @@ func TestDispatcherRequestTimeoutClearsPending(t *testing.T) {
 				ID:   "keys-timeout",
 			},
 		}
-		releaseRead := make(chan struct{})
+		done := make(chan struct{})
+		t.Cleanup(func() { close(done) })
+		replied := false
 		conn := &stubAdminProtocolConn{
+			// One reply, once the second request has been written, which its
+			// registration comes before.
 			readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
-				<-releaseRead
+				if replied {
+					<-done
+					return nil, errors.New("the test is over")
+				}
+				replied = true
+				for s.writeCount() < 2 {
+					select {
+					case <-done:
+						return nil, errors.New("the test is over")
+					case <-time.After(time.Millisecond):
+					}
+				}
 				return mustMarshalProtocolMessage(t, protocol.KeysListMessage{
 					BaseMessage: protocol.BaseMessage{
 						Type: protocol.MsgTypeKeysList,
@@ -524,9 +539,7 @@ func TestDispatcherRequestTimeoutClearsPending(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "timed out waiting for response") {
 			t.Fatalf("strict %v: first request error = %v, want timeout", strict, err)
 		}
-
-		close(releaseRead)
-		if _, err := dispatcher.request(request, time.Second); err != nil {
+		if _, err := dispatcher.request(request, 10*time.Second); err != nil {
 			t.Fatalf("strict %v: second request after timeout error = %v, want nil", strict, err)
 		}
 	}

@@ -466,6 +466,23 @@ entries. It records the stage, TxID, `last_valid` and one-time leaf history
 (tree and index; a WOTS+C tree is always 0). Signing waits for audit
 restoration, bounded by the request context.
 
+Each rotation of the audit log first copies every account's releases of its
+newest stage into the file it is about to rotate out: `outcome` `carried`, and
+`carried_latest`, written last, for the account's newest release. A `carried`
+copy becomes the newest only when nothing else of its stage was read, and a
+batch that reaches its `carried_latest` also sets the order of the releases it
+lists, so a batch cut short by a crash or a full disk only repeats what is
+listed. Up to 64 releases of a stage are copied as they are. Past that, the
+first release on each leaf, the first that reused a leaf and the newest are,
+which keeps every used leaf and the reuse. A transaction left out was signed on
+a used leaf; once the stage had no unused leaf, that is its own pick, which its
+retry signs on again. An account the file already holds whole and in order is
+not copied again, and a rotation that keeps failing reads the log for its
+copies once. A file that can't be read is left out and reported, and the rest
+is copied. A copy that fails is reported and the log rotates anyway:
+the previous rotation's copies are still there. So rotation loses releases only
+when two rotations running fail to copy them.
+
 A stage's history is dropped only when the node reports the next stage as the
 account's authorizer. Any other reading leaves it: a node that is behind can
 report an earlier stage after the release was made, and that does not show the
@@ -609,7 +626,8 @@ Reuse needs one of these:
 - History missing when the retry signs, because:
   - a backup was restored;
   - two signers share a seed;
-  - the audit log rotated past the stage's releases;
+  - the audit log was damaged or deleted, or two rotations running failed to
+    copy the releases (see 8.2);
   - an audit write failed and the signer then restarted; or
   - the audit restore failed for an ordinary reason, since the signer then goes
     ahead rather than refusing. A restore interrupted by a lock, cancellation,

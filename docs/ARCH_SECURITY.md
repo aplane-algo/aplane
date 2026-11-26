@@ -1316,7 +1316,8 @@ Denial behavior:
   (`suppressed_count`) written within a minute of the first suppressed
   failure, and on shutdown. A flood stays visible without rotating earlier
   entries out of the log in minutes; the limit is on the rate, so one kept up
-  for days still does. Authorization denials of an authenticated
+  for days still does, though not the rotating releases, which every rotation
+  carries forward (below). Authorization denials of an authenticated
   principal are not rate limited.
 - An admin login the passphrase check refuses writes `ADMIN_LOGIN_FAILED`,
   for a wrong passphrase or a store root that could not be opened, with the
@@ -1520,7 +1521,12 @@ Signing-audit semantics:
   signature leaves the signer; it records the account, `txid`,
   `rotating_stage`, and `rotating_last_valid`, and the signer rebuilds its
   release memory from these entries at unlock (see
-  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)).
+  [ARCH_SIGNING.md](ARCH_SIGNING.md#rotating-accounts-rotating1)). Each
+  rotation of the log first copies every account's releases of its newest
+  stage into the file it rotates out, with `outcome` `carried`, and
+  `carried_latest` for the newest, so only two rotations running that fail to
+  copy them lose them (see
+  [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md) 8.2).
   Audited signing paths (`/sign`, bounded-base and cosigner `/sign/component`,
   and rotating sign) release their key use before writing `SIGN_APPROVED` and
   then make a final check of the request's session and context. If that check

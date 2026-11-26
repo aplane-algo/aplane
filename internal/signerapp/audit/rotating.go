@@ -21,16 +21,17 @@ type RotatingRelease struct {
 	LastValid uint64
 	Tree      uint64
 	Index     uint32
-	// Leaves lists the stage's releases found in the retained log, in
-	// first-seen order: each pair of leaf and transaction once. An identical
+	// Leaves lists the stage's releases found in the retained log, oldest
+	// first, each pair of leaf and transaction once. A rotation's copies keep
+	// that order (see releaseAccumulator.add). An identical
 	// retry (the same transaction on the same leaf) does not append another
 	// entry. The same transaction on another leaf, which a retry signs once
 	// the history was lost, does: that leaf is spent too.
 	Leaves []RotatingLeaf
 	// Reused reports that two distinct transactions of the same stage signed
 	// with the same leaf. One transaction on two leaves is not reuse: neither
-	// leaf signed a second message. Entries the log has rotated past cannot be
-	// seen, so false means none was seen, not none was made.
+	// leaf signed a second message. Entries the log lost (see carryReleases)
+	// cannot be seen, so false means none was seen, not none was made.
 	Reused bool
 }
 
@@ -46,8 +47,9 @@ type RotatingLeaf struct {
 // from the audit log at path and its rotated predecessors (path+".2", then
 // path+".1", then path), oldest first so later entries win, except that an
 // entry from an earlier stage never replaces a later stage's. The collected
-// history feeds both one-time leaf selection and release alerts. Entries
-// the log rotated past are absent, and malformed lines are skipped; missing
+// history feeds both one-time leaf selection and release alerts. A rotation
+// carries each account's newest stage forward (carryReleases), so earlier
+// stages' entries are the ones it drops. Malformed lines are skipped; missing
 // history can cause undetected leaf reuse after release memory is rebuilt.
 //
 // It is for a log no AuditLogger is writing: a rotation between two of its
@@ -113,7 +115,7 @@ func readReleaseLogs(files []*os.File) (map[string]RotatingRelease, error) {
 			_ = f.Close()
 		}
 	}()
-	acc := make(map[string]*releaseAccumulator)
+	acc := make(releaseHistory)
 	for _, f := range files {
 		if err := readRotatingReleasesFrom(f, acc); err != nil {
 			return nil, err
@@ -126,6 +128,9 @@ func readReleaseLogs(files []*os.File) (map[string]RotatingRelease, error) {
 	return out, nil
 }
 
+// releaseHistory is each account's newest stage, as read so far.
+type releaseHistory map[string]*releaseAccumulator
+
 // releaseAccumulator gathers one account's releases of its newest stage as
 // the log is read: the release itself, the releases already listed and the
 // leaves already used, so each entry costs one map lookup and an amortized
@@ -134,6 +139,9 @@ type releaseAccumulator struct {
 	r      RotatingRelease
 	listed map[leafRelease]bool
 	used   map[[2]uint64]bool
+	// batch is the copies read since the account's last release that was not
+	// one: a rotation's batch, until its outcomeCarriedLatest.
+	batch []RotatingLeaf
 }
 
 // leafRelease is one release as the reader dedupes it: the leaf (tree and
@@ -143,9 +151,50 @@ type leafRelease struct {
 	txID string
 }
 
-func (a *releaseAccumulator) add(leaf RotatingLeaf) {
-	a.r.TxID, a.r.LastValid, a.r.Tree, a.r.Index = leaf.TxID, leaf.LastValid, leaf.Tree, leaf.Index
-	k := [2]uint64{leaf.Tree, uint64(leaf.Index)}
+// add lists leaf. It is the newest release read, unless it is a copy that a
+// rotation made: of those only the one marked so is, or the first when nothing
+// else was read. A copy that was cut short by a crash, a full disk or a reader
+// that came partway then only repeats what is listed.
+func (a *releaseAccumulator) add(leaf RotatingLeaf, outcome string) {
+	if outcome != outcomeCarried || len(a.r.Leaves) == 0 {
+		a.r.TxID, a.r.LastValid, a.r.Tree, a.r.Index = leaf.TxID, leaf.LastValid, leaf.Tree, leaf.Index
+	}
+	switch outcome {
+	case outcomeCarried:
+		a.batch = append(a.batch, leaf)
+		a.list(leaf)
+	case outcomeCarriedLatest:
+		a.list(leaf)
+		a.orderBy(append(a.batch, leaf))
+		a.batch = nil
+	default:
+		a.batch = nil
+		a.list(leaf)
+	}
+}
+
+// orderBy puts the releases of a complete batch first, in its order, and the
+// rest after them as they were. A file holding live releases ahead of its
+// batch is read before the files the batch copied, so without this the order
+// would change at each rotation, and with it which release carried keeps as
+// the first on a leaf.
+func (a *releaseAccumulator) orderBy(batch []RotatingLeaf) {
+	placed := make(map[leafRelease]bool, len(a.r.Leaves))
+	ordered := make([]RotatingLeaf, 0, len(a.r.Leaves))
+	for _, list := range [][]RotatingLeaf{batch, a.r.Leaves} {
+		for _, l := range list {
+			if rel := (leafRelease{leaf: l.leaf(), txID: l.TxID}); !placed[rel] {
+				placed[rel] = true
+				ordered = append(ordered, l)
+			}
+		}
+	}
+	a.r.Leaves = ordered
+}
+
+// list adds leaf to the stage's releases unless it is listed already.
+func (a *releaseAccumulator) list(leaf RotatingLeaf) {
+	k := leaf.leaf()
 	rel := leafRelease{leaf: k, txID: leaf.TxID}
 	if a.listed[rel] {
 		// A retry of one transaction on its leaf is one release.
@@ -162,7 +211,12 @@ func (a *releaseAccumulator) add(leaf RotatingLeaf) {
 	a.r.Leaves = append(a.r.Leaves, leaf)
 }
 
-func readRotatingReleasesFrom(f io.Reader, acc map[string]*releaseAccumulator) error {
+// leaf is l's tree and index, without its transaction.
+func (l RotatingLeaf) leaf() [2]uint64 {
+	return [2]uint64{l.Tree, uint64(l.Index)}
+}
+
+func readRotatingReleasesFrom(f io.Reader, into ...releaseHistory) error {
 	reader := bufio.NewReaderSize(f, 64*1024)
 	for {
 		line, tooLong, err := readAuditLine(reader, maxReleaseLine)
@@ -177,6 +231,10 @@ func readRotatingReleasesFrom(f io.Reader, acc map[string]*releaseAccumulator) e
 			// none; failing would lose the whole history at unlock.
 			continue
 		}
+		// Parsing every line would dominate the read: almost none is a release.
+		if !bytes.Contains(line, []byte(AuditRotatingRelease)) {
+			continue
+		}
 		var entry AuditEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
@@ -184,25 +242,31 @@ func readRotatingReleasesFrom(f io.Reader, acc map[string]*releaseAccumulator) e
 		if entry.Event != AuditRotatingRelease || entry.TxnAuth == "" || entry.RotatingStage == nil {
 			continue
 		}
-		leaf := RotatingLeaf{Tree: entry.RotatingTree, Index: entry.RotatingIndex, TxID: entry.TxID, LastValid: entry.RotatingLastValid}
-		a, ok := acc[entry.TxnAuth]
-		if ok && *entry.RotatingStage < a.r.Stage {
-			// An account only moves forward, so a release from an earlier
-			// stage than one already read was signed on a chain read that
-			// was behind. The later stage may still be live: its list stays.
-			continue
+		for _, history := range into {
+			history.add(entry)
 		}
-		if !ok || a.r.Stage != *entry.RotatingStage {
-			// A later stage starts a fresh list; reuse is per stage.
-			a = &releaseAccumulator{
-				r:      RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
-				listed: make(map[leafRelease]bool),
-				used:   make(map[[2]uint64]bool),
-			}
-			acc[entry.TxnAuth] = a
-		}
-		a.add(leaf)
 	}
+}
+
+// add adds a ROTATING_RELEASE entry to its account's history.
+func (h releaseHistory) add(entry AuditEntry) {
+	a, ok := h[entry.TxnAuth]
+	if ok && *entry.RotatingStage < a.r.Stage {
+		// An account only moves forward, so a release from an earlier
+		// stage than one already read was signed on a chain read that
+		// was behind. The later stage may still be live: its list stays.
+		return
+	}
+	if !ok || a.r.Stage != *entry.RotatingStage {
+		// A later stage starts a fresh list; reuse is per stage.
+		a = &releaseAccumulator{
+			r:      RotatingRelease{Account: entry.TxnAuth, Stage: *entry.RotatingStage},
+			listed: make(map[leafRelease]bool),
+			used:   make(map[[2]uint64]bool),
+		}
+		h[entry.TxnAuth] = a
+	}
+	a.add(RotatingLeaf{Tree: entry.RotatingTree, Index: entry.RotatingIndex, TxID: entry.TxID, LastValid: entry.RotatingLastValid}, entry.Outcome)
 }
 
 // maxReleaseLine bounds the audit lines the release reader parses; a

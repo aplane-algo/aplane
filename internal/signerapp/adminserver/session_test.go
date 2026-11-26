@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1021,6 +1022,12 @@ func TestSessionAuthenticateRefusesAndZeroesAnyOtherFrame(t *testing.T) {
 		}
 		if !isZeroedFrame(frame) {
 			t.Errorf("%s before login left its frame as %q", msgType, frame)
+		}
+		stub := reflect.ValueOf(svc).Elem()
+		for i := range stub.NumField() {
+			if name := stub.Type().Field(i).Name; strings.HasSuffix(name, "Calls") && !stub.Field(i).IsZero() {
+				t.Errorf("%s before login reached the services: %s = %v", msgType, name, stub.Field(i))
+			}
 		}
 	}
 }

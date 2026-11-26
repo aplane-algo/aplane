@@ -1418,7 +1418,8 @@ refuse a release (see `ARCH_SIGNING.md`, rotating accounts).
   from the chain at every request, and the stage address table under
   `stages/` (below) is a cache rebuilt from the seed. XMSS and WOTS+C also
   retain release history in the audit log to rebuild leaf-use memory at
-  unlock. The seed cannot reconstruct that history; losing it can cause
+  unlock; each rotation of the log copies it forward. The seed cannot
+  reconstruct that history; losing it can cause
   undetected leaf reuse. The XMSS triple additionally keeps the public
   nodes of its trees in memory, rebuilt from the seed when missing: at most
   three per account (the live tree, the next one built ahead of it, and one
