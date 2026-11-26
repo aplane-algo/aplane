@@ -331,8 +331,7 @@ func (r *REPLState) cmdScript(args []string, _ *command.Context) (command.Result
 }
 
 func (r *REPLState) cmdConfig(_ []string, _ *command.Context) (command.Result, error) {
-	// Display current config
-	config.DisplayConfig(r.DataDir)
+	config.DisplayConfig(r.Out, r.DataDir)
 	r.println("Note: Config is read-only. Edit config.yaml in the data directory manually.")
 	return newTerminalCommandResult(nil), nil
 }

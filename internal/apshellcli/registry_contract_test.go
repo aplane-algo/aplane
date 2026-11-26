@@ -4,12 +4,8 @@
 package apshellcli
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/command"
@@ -82,45 +78,5 @@ func TestBuiltInAutomationDispositionInventory(t *testing.T) {
 	}
 	if len(registry.All()) != len(builtInAutomationPolicies) {
 		t.Fatalf("registered commands = %d, policy inventory = %d", len(registry.All()), len(builtInAutomationPolicies))
-	}
-}
-
-func TestConfigCommandCurrentlySplitsGlobalAndInjectedOutput(t *testing.T) {
-	readPipe, writePipe, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	oldStdout := os.Stdout
-	os.Stdout = writePipe
-	t.Cleanup(func() {
-		os.Stdout = oldStdout
-		_ = readPipe.Close()
-		_ = writePipe.Close()
-	})
-
-	var injected bytes.Buffer
-	state := &REPLState{DataDir: t.TempDir()}
-	state.SetOutput(&injected)
-	if _, err := state.cmdConfig(nil, nil); err != nil {
-		t.Fatalf("cmdConfig() error = %v", err)
-	}
-
-	os.Stdout = oldStdout
-	if err := writePipe.Close(); err != nil {
-		t.Fatalf("stdout pipe close error = %v", err)
-	}
-	direct, err := io.ReadAll(readPipe)
-	if err != nil {
-		t.Fatalf("stdout pipe read error = %v", err)
-	}
-
-	if !strings.Contains(string(direct), "Current Configuration:") {
-		t.Fatalf("direct stdout = %q, want configuration display", direct)
-	}
-	if strings.Contains(injected.String(), "Current Configuration:") {
-		t.Fatalf("injected output unexpectedly contains direct configuration display: %q", injected.String())
-	}
-	if got := injected.String(); got != "Note: Config is read-only. Edit config.yaml in the data directory manually.\n" {
-		t.Fatalf("injected output = %q, want only read-only note", got)
 	}
 }
