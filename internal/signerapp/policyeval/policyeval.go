@@ -9,7 +9,9 @@
 // What happens after the verdict (User Auto-Approve, the operator prompt,
 // reviewability, audit and console output) and refusals made before policy
 // (an unknown network, a rekey to a rotating account, a nonparticipating
-// keyreg) stay with the caller.
+// keyreg) stay with the caller. A cosigner is the exception for an unknown
+// network: its verdict counts one as a policy violation (cosignerVerdict), so
+// the refusal is audited with the other rejections of the target.
 package policyeval
 
 import (
