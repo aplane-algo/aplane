@@ -86,6 +86,12 @@ The restored spec passes.
   the model has a single `Exit` action evaluating the defer's condition at
   exit time. Auth failure is `Exit` from `PreAuth` with
   `authenticated = FALSE`.
+- **Shutdown is outside the model.** `IPCServer.Stop` closes every session,
+  and each leaves through the same defer, but during shutdown the owner's
+  cleanup (`endOwnerSession`) does not lock: the lifecycle then ends the key
+  uses and destroys the runtime with deadlines of its own (ARCH_SECURITY.md,
+  Shutdown Path), so no unlocked runtime outlives the process. SO2 is claimed
+  for the running daemon, not across its shutdown.
 - **Displacement confirmation has no state effect.** Post-fix, confirmation
   only authorizes the atomic swap, so it is not a separate action;
   `PromoteReplace` is the swap.

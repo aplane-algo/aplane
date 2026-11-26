@@ -1595,7 +1595,7 @@ audit logger and runtime key state intact for process exit. A non-deadline stop
 error occurs only after handlers have drained; lifecycle closes the audit log
 and destroys runtime state normally. SSH stop uses the same lifecycle deadline
 and reports a deadline error until its accept loop and all connection handlers
-have exited. Every service's start context ends when shutdown begins, so the
+have exited, and so does the IPC stop until every admin session's handler has. Every service's start context ends when shutdown begins, so the
 rotating stage table worker stops its passes then rather than at its turn,
 last, in the stop order. A worker still running at the deadline is in a stage
 table write that no cancellation reaches; it writes no audit entries and holds

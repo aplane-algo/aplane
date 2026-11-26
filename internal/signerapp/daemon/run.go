@@ -264,7 +264,9 @@ func Run(dataDir string) int {
 	if err != nil {
 		logErrorf("failed to start SSH server: %v", err)
 		if server.ipcServer != nil {
-			server.ipcServer.Stop()
+			stopCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			_ = server.ipcServer.Stop(stopCtx)
+			cancel()
 		}
 		return 1
 	}
@@ -281,12 +283,15 @@ func Run(dataDir string) int {
 	return 0
 }
 
+// shutdownTimeout is the deadline every service stop shares.
+const shutdownTimeout = 5 * time.Second
+
 // lifecyclePlan is the signer process's lifecycle: the services RunLifecycle
 // starts and stops, in order, and the audit log it records the stop in.
 func (fs *Signer) lifecyclePlan(ir *productruntime.Runtime, httpServer *http.Server, apiListener *sshtunnel.APIListener, cancelHTTPRequests context.CancelFunc) signerstartup.LifecyclePlan {
 	return signerstartup.LifecyclePlan{
 		ProductRuntime:  ir,
-		ShutdownTimeout: 5 * time.Second,
+		ShutdownTimeout: shutdownTimeout,
 		AuditLog:        optionalAuditLog[signerstartup.ServerAuditLogger](fs.auditLog),
 		StartWatcher: func(product *productruntime.Runtime) {
 			product.EnsureKeyWatcher(startKeyWatcherForDir)
@@ -299,10 +304,10 @@ func (fs *Signer) lifecyclePlan(ir *productruntime.Runtime, httpServer *http.Ser
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					if fs.ipcServer != nil {
-						fs.ipcServer.Stop()
+					if fs.ipcServer == nil {
+						return nil
 					}
-					return nil
+					return fs.ipcServer.Stop(ctx)
 				},
 			},
 			{
