@@ -444,11 +444,23 @@ func TestRejectedDirectTCPIPChannelReleasesSlot(t *testing.T) {
 		}
 	}
 
+	// A rejected channel frees its slot when its handler returns, just after
+	// the client is told, so a dial may be refused for a moment; what matters
+	// is that every slot comes back.
+	deadline := time.Now().Add(5 * time.Second)
 	for i := 0; i < maxDirectTCPIPChannelsPerConn; i++ {
-		c, err := client.DialSignerAPI(context.Background())
-		if err != nil {
-			t.Fatalf("valid DialSignerAPI(%d) after rejected dials failed: %v", i+1, err)
+		for {
+			c, err := client.DialSignerAPI(context.Background())
+			var refused *ssh.OpenChannelError
+			if errors.As(err, &refused) && refused.Reason == ssh.ResourceShortage && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if err != nil {
+				t.Fatalf("valid DialSignerAPI(%d) after rejected dials failed: %v", i+1, err)
+			}
+			t.Cleanup(func() { _ = c.Close() })
+			break
 		}
-		t.Cleanup(func() { _ = c.Close() })
 	}
 }
