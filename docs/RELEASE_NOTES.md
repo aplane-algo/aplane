@@ -100,6 +100,252 @@ A search on the old `reason` text needs the new fields.
   process's stdout, which the console discards, so only the read-only note
   appeared. The algod networks are listed in order.
 
+## Rotating release history survives audit log rotation
+
+XMSS and WOTS+C rotating accounts choose each stage's one-time leaf from the
+`ROTATING_RELEASE` entries the signer reads back from `audit.log`, `.1` and
+`.2` at unlock. A rotation that dropped the file holding them lost them, after
+about 27,800 ordinary signatures, and a leaf reused after that went unseen.
+
+- **Each rotation first copies the releases forward.** Every account's
+  releases of its newest stage are appended to the file being rotated out,
+  with `outcome` `carried`, and `carried_latest` for the newest, written last.
+  A copy cut short by a crash or a full disk only repeats what it lists.
+- **Up to 64 releases of a stage are copied as they are.** Past that, the
+  first release on each leaf, the first reuse and the newest are copied.
+- **A copy that fails warns, and the log rotates anyway,** so releases are
+  lost only after two failed copies in a row.
+- **Unlock reads the release history faster:** 30 MB in 7 to 16 ms, down
+  from 140 to 300 ms.
+
+## The admin protocol's `initialize_store` is gone; admin protocol 10
+
+It could never succeed: a daemon with no `node.yaml` exits at startup, and
+one that runs has a `node.yaml`, which initialization refuses to overwrite.
+It was one of the few requests handled before login, and each attempt wrote
+an audit entry.
+
+- **Before login, everything but `auth` and `auth_only` is refused** with
+  `expected_auth_message`.
+- **The `STORE_INITIALIZE*` audit events are gone** with it.
+- **`AdminProtocolVersion` is 10.** Upgrade apadmin, apapprover and apsigner
+  together.
+- **`apstore initialize` is unchanged,** and remains the way to create a
+  store.
+
+## Audit entries that need no authentication are rate limited
+
+An SSH connection as user `enroll` with an unknown key wrote two entries,
+without limit, and needed only to reach the SSH port: 2,000 connections
+wrote 961 KB in 14 seconds, enough to turn the three 10 MB files over in
+minutes.
+
+- **`enroll` connections now get the limit unauthenticated authentication
+  failures have:** a burst of 20, then one every 6 seconds. The rest are
+  counted in `ENROLL_SESSIONS_SUPPRESSED`.
+- **A connection writes both of its session entries or neither.** An
+  enrolled key's connections are not limited.
+- **The limit is on the rate, not the total:** a flood kept up for days
+  still rotates the log. The rotating release history is copied across
+  rotation (above).
+
+## Every admin command is recorded
+
+Five kinds of admin command wrote no audit entry. Each now does, best
+effort; none is refused for it:
+
+- **`IDENTITY_UNLOCKED`:** how an unlock ended (`unlocked`, `recovery` or
+  `failed`), from a login, an `unlock` command or startup. An unlock of an
+  unlocked signer changes nothing, so only a refused passphrase is recorded.
+- **`ADMIN_LOGIN_FAILED`:** a refused admin login, with a rate limit of its
+  own.
+- **`BACKUP_DELETED`, `STORE_RECONCILED` and `KEY_TYPE_CHANGED`:** a backup
+  deleted, an explicit reconcile, and a template installed, imported or
+  removed or a key type activated or deactivated, each also when it fails.
+
+The audit log now opens before the startup passphrase is checked, so a
+passphrase the store refuses is recorded before the daemon exits.
+
+## A second signer on a data directory is refused
+
+`apsigner` takes an exclusive lock, `.apsigner.lock`, before it touches the
+store, and holds it until it exits. A second one started on the same data
+directory exits 1 with `another apsigner is already using <directory>; stop
+it first`. It used to find out only at the admin socket, after it had
+deleted the first's unfinished backup import and generation staging and
+unlocked the store.
+
+- **Nothing is left behind:** the kernel drops the lock with the process.
+- **Limits:** the lock relies on `flock` working across machines that share
+  storage, and is per data directory. Starting a new signer before the old
+  one has exited is now refused.
+
+## `signer_locked` everywhere, and admin protocol 9
+
+- **A policy or ASA set change on a locked signer answers `signer_locked`,**
+  as every other admin command does. `identity_locked` is gone, so
+  `AdminProtocolVersion` went from 8 to 9 (it is 10 since; see above).
+  `apadmin asa add` and `asa remove` on a locked signer exit 3, not 1.
+- **`/keys` reads one snapshot.** A reload between its two reads could pair a
+  key with another revision's metadata.
+- **`/status` shares `/health`'s check of the deleted archive,** reused for
+  5 seconds, so its warning can repeat for up to 5 seconds after a prune.
+- **An external-check origin has one in-flight limit** however a source
+  spells its host, address or default port.
+
+## Store and runtime fixes
+
+- **The key watcher follows the generation in service.** After a policy
+  apply, an ASA set change or a passphrase change it kept watching the
+  superseded generation. It now moves at the end of every reload, and the
+  signer logs `file watcher enabled` each time. A policy apply no longer
+  triggers a second reload.
+- **Disabling or removing a key type is refused** while any entry in `keys/`
+  cannot be read as a credential.
+- **An empty backup export passphrase is refused** before anything is read.
+- **A failed template install, import or enable undoes its write** through
+  the paths it wrote.
+- **A rollback that leaves the signer in recovery answers `success: false`
+  with `recovery_blocked`,** as a restore already did. A restore that waited
+  on the store lock while recovery was entered now applies recovery's rules.
+- **An unlock that lost to a lock during a failed reconcile** zeroes the
+  keyring it opened, and a reconcile a lock overtook answers
+  `signer_locked`.
+
+## apadmin clears every secret on each transition, and shows unused source tokens
+
+- **A lock, a recovery, every end of the admin session and shutdown** clear
+  every secret apadmin holds. Each used to clear its own subset: a recovery,
+  for one, left the login passphrase and the backup passphrases. A backup
+  import under way keeps its passphrase until it commits.
+- **Stored source tokens no source uses** are shown as `unused`, and a token
+  a key that follows the node default left under its own selector as
+  `unused (key)`. They can be removed, not set.
+
+## Plugins are stopped, started and answered within bounds
+
+- **Stopping:** a plugin's stdin is closed and its output read to the end,
+  so its last words are kept. It is killed if it hasn't exited within 5
+  seconds (1 second after a cancel). A plugin that keeps printing after
+  end of input now uses the whole grace.
+- **Starting:** a cancel reaches a plugin that hangs in `initialize`.
+- **Replies** go through one writer and a queue of 16; the excess is
+  dropped.
+- **A run follows at most 64 continuations,** and at most 8 in a row with no
+  transactions.
+
+## A reserved network name over another chain's algod is refused
+
+`mainnet`, `testnet` and `betanet` name Algorand's networks, but a client
+could point them at any algod: a `testnet` pointed at mainnet spends real
+funds. apshell now refuses to sign, or to switch to the network, when a
+reserved name's algod reports another genesis hash:
+`network name "testnet" is reserved for Algorand's testnet, but its algod's
+genesis hash is wGHE… (mainnet)`.
+
+- **A config that gives a reserved name to a private chain must rename it.**
+  `localnet` and custom names may still stand for any chain.
+- **A reserved name whose algod reports no genesis hash** is refused at the
+  switch.
+
+## The SSH client side is hardened
+
+- **Enrollment replies** are read up to 4 KiB, and all server text the
+  client shows is escaped and capped. A server that lets the client in
+  without authenticating its key is refused.
+- **A rotated host key replaces its pin:** apconsole rewrites
+  `known_hosts` by rename instead of adding a second line, so its directory
+  must be writable. Markers, hashed, multi-host and wildcard lines are kept,
+  with a warning for each that still accepts another key.
+- **A tunnel that drops before it is published is refused,** not installed.
+
+## A lock waits for every signature in progress
+
+A lock now cancels and waits for an in-progress non-rotating signature or
+assembly before it clears the session and the keyring, as it did for
+rotating accounts. The key use begins after approval, so a lock never waits
+on an approval prompt.
+
+- **A lock that lands after the signature is made, before it is returned,**
+  withholds it, and a countermanding `SIGN_FAILED` names the transaction.
+- **An approved request a lock or recovery cuts** records `SIGN_REJECTED`
+  with `session_ended_after_approval`.
+
+## Envelopes accept bounded Argon2id parameters
+
+`store-root.enc` and standalone envelopes open with any `kdf_time` from 2 to 4 and
+`kdf_memory` from 64 to 256 MiB, at 4 threads, checked before Argon2id runs.
+New envelopes still write 2, 64 MiB and 4, so a later rise in the defaults
+needs no new envelope version. An in-range edit of these values in
+`store-root.enc` now reports a wrong passphrase, as an edited salt does.
+
+## Rotating SLH-DSA is pinned to height 22
+
+An ordinary build fails to compile at any other height of
+`aplane.rotating-triple-slhdsa.v1`. The height-63 evaluation build needs
+`-tags testmode`.
+
+## Authenticated SSH connections and channels are capped
+
+An enrolled or compromised client key could open connections and channels
+without limit.
+
+- **8 connections per key and 64 in all.** Enrollment connections keep their
+  own cap of 8.
+- **16 open `direct-tcpip` channels per connection.** apshell and the SDKs
+  pool at most 2.
+- **A client refused at the cap** is told so, and logs `disconnected: signer
+  connection limit reached`.
+- **The SSH server no longer prints `SSH key enrolled`** for a key that has
+  only asked to be.
+
+## Admin requests are decoded strictly
+
+Every admin request but the displacement reply, `auth` included, is refused
+if it carries an unknown field (`invalid_request`, or `invalid_auth_message`
+at login) or trailing data (`invalid_message_format`).
+
+## A locked signer answers `locked` on `/sign/assemble`
+
+A passthrough key lookup on a locked signer answered 500 `internal`. It
+answers 403 `locked`, as the other signing routes do.
+
+## Admin settings, approvals and SSH sessions are audited
+
+- **A setting change that does not tighten a guard** (turning
+  `user_auto_approve` on or a requirement off, changing `passphrase_timeout`
+  or `theme`, or saving the value it has) writes a durable
+  `SETTING_CHANGE_INTENT` before it is saved. Without an audit log it is
+  refused with `audit_unavailable`, or `audit_write_failed` if the write
+  fails. A restrictive change never waits on the audit log. Every saved
+  change writes `SETTING_CHANGED`.
+- **`SIGN_APPROVED` names its `approval_source`:** `human`,
+  `user_auto_approve` or `always_approve`. A policy rejection names the
+  first rule it violated in `policy_rule_id`.
+- **An enrolled key's SSH sessions are attributed to it,** as
+  `client:<fingerprint>`. An enroll connection has no principal.
+- **`PASSPHRASE_CHANGED` counts policy sidecars and source token files** as
+  well as keys and templates.
+
+## Cosigner groups must agree on their network
+
+A cosigner refuses a group whose transactions name different networks or
+validity windows that don't overlap (`bad_request`), before any policy or
+external check runs. A mixed group could pass a network-scoped external
+check that looked only at its first transaction. An external check's
+response headers are capped at 16 KiB.
+
+## Plugins get an environment allowlist and read only regular files
+
+- **A plugin gets a base set of runtime variables** plus the ones its
+  manifest declares in `env`. Credential, secret and proxy names are kept
+  out even when declared. It used to get everything but a denylist.
+- **Plugin manifests, checksums, files and `mcp.md`** are read only as
+  regular files under a size cap. A symlink, a FIFO or a device is refused.
+- **On macOS,** the sandbox no longer allows `mach-register`, and allows
+  `mach-lookup` only for the services Go and Node runtimes, DNS and TLS
+  need.
+
 ## Unlock, startup and a passphrase change build first and publish last
 
 - **An unlock builds the whole view with a keyring opened from the
@@ -273,6 +519,24 @@ A search on the old `reason` text needs the new fields.
   before it failed.
 - Unlock outcomes are decided by error values instead of message text. The
   messages the admin client shows are unchanged.
+
+## A reload that finds a content defect enters recovery
+
+- **A reload that found a generation that fails validation, or an address
+  collision,** published no keys and left the signer unlocked. It now
+  enters recovery, with signing blocked and the keyring kept for a
+  reconcile. That covers the watcher, key and template changes, reconcile
+  and the rescan after a restore. A defect no longer heals when the file is
+  removed: reconcile or unlock.
+- **The operator sees it:** the signer logs `identity is recovery-blocked:
+  <cause>` and apadmin opens its recovery screen. Key and template commands
+  answer `recovery_blocked` with the defect.
+- **An unlock from recovery whose load fails keeps recovery's keyring,** so
+  reconcile, restore and rollback still work.
+- **Key generation, import and deletion are audited** right after the write,
+  also when the reload after it fails.
+- **A template whose record drifted is refused when enabled,** with both
+  fingerprints and the re-import remedy.
 
 ## An unlock of an unlocked signer no longer reloads
 
