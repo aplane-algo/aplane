@@ -93,7 +93,8 @@ func (s Service) Request(key ssh.PublicKey, label, remoteAddr string) (pending b
 			s.Changed(fingerprint)
 		}
 	default:
-		s.logf("enrollment request refreshed from %s (key: %s); it is still waiting for the operator", remoteAddr, fingerprint)
+		// A key already waiting asks again. The SSH server prints that,
+		// limited: anyone can repeat it, and the queue doesn't bound it.
 		if s.Changed != nil {
 			s.Changed(fingerprint)
 		}
