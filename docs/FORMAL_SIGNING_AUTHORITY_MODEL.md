@@ -188,11 +188,11 @@ through `auth_address` for that reason.
 Every signable LogicSig key must be a v1 signing-metadata key:
 
 ```text
-signing_metadata_version >= 1
+signing_metadata_version = 1
 ```
 
-The key parser refuses a LogicSig key file without the version its shape
-requires (1, or 2 with `bounded_authorization`). Key scan, every key load and
+The key parser refuses a LogicSig key file without that version, with or
+without the `host` object. Key scan, every key load and
 restore run the parser, so such a file never loads to sign; the signer makes
 no separate check at signing time (S2).
 
@@ -216,7 +216,7 @@ Rules:
 1. The derivation record must be known and internally consistent: an unsalted
    key has no `lsig_derivation`, and an `algod_v13_auto_salt` key stores final
    TEAL v13+ bytecode and an `lsig_opcode_profile` valid for its kind (the
-   default path alone without `bounded_authorization`, the three bounded paths
+   default path alone without `host`, the three host paths
    with it).
 2. The stored bytecode, not derivation metadata alone, determines the LogicSig
    address.
@@ -294,7 +294,7 @@ No LogicSig key without v1 signing metadata can sign or restore as a signable
 key.
 
 ```text
-LogicSig(key) and key.signing_metadata_version < 1 => RejectForSigning(key)
+LogicSig(key) and key.signing_metadata_version != 1 => RejectForSigning(key)
 ```
 
 ### S3: Stored Bytecode Authority

@@ -104,16 +104,15 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 					KeyType: "test.admission-cross-check.v1", BaseKeyType: base.keyType, FamilyName: base.family,
 					Version: 1, Ops: base.ops, SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", TEALSuffix: "int 1\nassert",
 					Bounded: &composeddsa.BoundedAuthorizationProfile{
-						Contract:     profile.contract,
-						SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay},
-						MaxFee:       new(uint64(10_000)),
-						Rekey:        profile.rekey,
-						Cosigner:     profileCosigner,
+						Contract: profile.contract,
+						Bounds:   &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(10_000))},
+						Rekey:    profile.rekey,
+						Cosigner: profileCosigner,
 					},
 				}
 				if profile.contract == boundedmeta.PlainContract {
 					config.TEALSuffix = ""
-					config.Bounded.SpendEffects, config.Bounded.MaxFee = nil, nil
+					config.Bounded.Bounds = nil
 					config.Layer3 = &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone}
 				}
 				composer := composeddsa.NewComposedDSA(config)

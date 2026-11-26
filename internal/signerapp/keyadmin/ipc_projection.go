@@ -57,12 +57,15 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 	if metadata := prepared.Bounded; metadata != nil {
 		profile := &adminproto.PreparedBoundedProfile{
 			Contract:         metadata.Contract,
-			SpendEffects:     metadata.SpendEffects,
-			MaxFee:           boundedmeta.CloneMaxFee(metadata.MaxFee),
+			SpendEffects:     []string{}, // [] on a plain host, never null
+			MaxFee:           boundedmeta.CloneMaxFee(metadata.FeeCeiling()),
 			Rekey:            string(metadata.Rekey),
 			RekeyList:        metadata.RekeyList != nil,
-			Layer3Policy:     metadata.Layer3Policy,
+			Layer3Policy:     metadata.Layer3Policy(),
 			CosignerRequired: metadata.Cosigner != nil,
+		}
+		if metadata.Bounds != nil {
+			profile.SpendEffects = append(profile.SpendEffects, metadata.Bounds.SpendEffects...)
 		}
 		if metadata.Cosigner != nil {
 			profile.CosignerKeyType = metadata.Cosigner.ComponentKeyType

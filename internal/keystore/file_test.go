@@ -397,3 +397,47 @@ func TestFileKeyStoreScanSkipsPreChangeNativeFalconKeyFiles(t *testing.T) {
 		})
 	}
 }
+
+// A host account's key file from before host metadata was nested, under
+// bounded_authorization with signing-metadata version 2, is skipped by the
+// scan as an incompatible key file. It never loads as a key without its
+// host metadata.
+func TestFileKeyStoreScanSkipsPreReshapeHostKeyFiles(t *testing.T) {
+	_, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+	kr := cryptotest.Keyring(t, testMasterKey)
+	current := keystest.DSALSigKeyJSON(t, "example.bounded.v1", "example.base.v1", []byte{0x01}, []byte{0x02}, []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01})
+	defer crypto.ZeroBytes(current)
+	parsed, err := keys.ParsePayload(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := parsed.Selector()
+	parsed.ZeroSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preReshape := keystest.PreReshapeHostKeyJSON(t, current)
+	defer crypto.ZeroBytes(preReshape)
+	objectContext, err := keys.CredentialContext(address, keys.CategoryDSALsig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := kr.Seal(preReshape, objectContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyFile := keystest.AccountKeyFilePath(genstoretest.Active(t, paths), address)
+	if err := os.WriteFile(keyFile, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := keys.ScanKeysDirectory(genstoretest.Active(t, paths), kr, nil)
+	if err != nil {
+		t.Fatalf("ScanKeysDirectory() error = %v", err)
+	}
+	want := "Skipped incompatible key file " + keyFile + `: incompatible key file format: failed to decode canonical payload: json: unknown field "bounded_authorization"; restore or regenerate the key file using the current key schema`
+	if len(report.Keys) != 0 || len(report.Warnings) != 1 ||
+		report.Warnings[0].Code != keys.KeyScanWarningIncompatibleFormat || report.Warnings[0].Message() != want {
+		t.Fatalf("scan kept %d keys and warned %v, want only %q", len(report.Keys), report.Warnings, want)
+	}
+}

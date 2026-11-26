@@ -25,11 +25,9 @@ const (
 	CurrentKeyFormatVersion = 1
 )
 
+// CurrentSigningMetadataVersion is the signing-metadata version of every
+// LogicSig key. A host account's key adds the host object beside it.
 const CurrentSigningMetadataVersion = 1
-
-// BoundedSigningMetadataVersion adds the complete durable bounded signing
-// contract. Version 1 remains valid only for non-bounded LogicSig keys.
-const BoundedSigningMetadataVersion = 2
 
 // StoredSigningArg records the signing-time LogicSig arg contract captured
 // into a key file. Keys use this at signing time so installed template metadata

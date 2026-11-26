@@ -51,7 +51,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 
 	var b strings.Builder
 	manifest := txeffects.BoundedManifest()
-	if profile.Contract == PlainContract {
+	if profile.Bounds == nil {
 		// A plain host has no envelope: no fee ceiling and no transaction-type
 		// list. A transaction that doesn't rekey goes straight to the spend path,
 		// where the cosigner signs it.
@@ -62,7 +62,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 	} else {
 		b.WriteString("// === bounded transaction envelope ===\n")
 		b.WriteString("txn Fee\n")
-		b.WriteString(fmt.Sprintf("pushint %d\n", *profile.MaxFee))
+		b.WriteString(fmt.Sprintf("pushint %d\n", *profile.Bounds.MaxFee))
 		b.WriteString("<=\nassert\n\n")
 
 		b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")

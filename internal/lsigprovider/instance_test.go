@@ -72,8 +72,8 @@ func registerForTest(t *testing.T, provider lsigprovider.LSigProvider) {
 
 func TestFixedProviderInstanceMatchesItsDefinition(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
-		Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist,
-		Cosigner:     &boundedmeta.CosignerAuthorization{ComponentKeyType: "test.component.v1"},
+		Bounds:   &boundedmeta.Bounds{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist},
+		Cosigner: &boundedmeta.CosignerAuthorization{ComponentKeyType: "test.component.v1"},
 	}
 	definitions := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]"}}
 	provider := fixedBoundedProvider{

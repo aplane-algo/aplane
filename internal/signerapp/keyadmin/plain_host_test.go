@@ -103,7 +103,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if prepareErr != nil {
 				t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
 			}
-			if prepared.Bounded == nil || prepared.Bounded.Contract != boundedmeta.Contract || prepared.Bounded.MaxFee == nil || *prepared.Bounded.MaxFee != test.want {
+			if prepared.Bounded == nil || prepared.Bounded.Contract != boundedmeta.Contract || prepared.Bounded.FeeCeiling() == nil || *prepared.Bounded.FeeCeiling() != test.want {
 				t.Fatalf("prepared contract = %+v", prepared.Bounded)
 			}
 			// Only a limit other than the default is a parameter of the account, and
@@ -153,7 +153,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 				t.Fatalf("GenerateReviewedKey() error = %#v", err)
 			}
 			metadata := ir.KeyStore().GetSigningSummary()[generated.Address].BoundedAuthorization
-			if metadata == nil || metadata.MaxFee == nil || *metadata.MaxFee != test.want {
+			if metadata == nil || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != test.want {
 				t.Fatalf("stored contract = %+v", metadata)
 			}
 			if generated.Parameters[plainhost.ParameterMaxFee] != test.maxFee {
@@ -210,7 +210,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		}
 	}
 	largest, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request("9007199254740991"))
-	if prepareErr != nil || largest.Bounded == nil || largest.Bounded.MaxFee == nil || *largest.Bounded.MaxFee != boundedmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
+	if prepareErr != nil || largest.Bounded == nil || largest.Bounded.FeeCeiling() == nil || *largest.Bounded.FeeCeiling() != boundedmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
 		t.Fatalf("PrepareGenerateKey(largest max_fee) = %+v, %#v", largest, prepareErr)
 	}
 	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991")); err != nil ||
@@ -244,7 +244,7 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
 	bounded := prepared.Bounded
-	if bounded == nil || bounded.Contract != boundedmeta.PlainContract || bounded.MaxFee != nil || bounded.Cosigner == nil ||
+	if bounded == nil || bounded.Contract != boundedmeta.PlainContract || bounded.Bounds != nil || bounded.Cosigner == nil ||
 		bounded.RekeyList == nil || bounded.Rekey != boundedmeta.RekeySpendingKey {
 		t.Fatalf("prepared contract = %+v", bounded)
 	}

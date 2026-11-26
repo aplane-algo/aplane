@@ -241,8 +241,10 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 	}{
 		{"rekey setting", boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Rekey: "admin_key"}, "unsupported rekey setting"},
 		{"contract", boundedmeta.PathDeclaration{Contract: "bounded1", Rekey: boundedmeta.RekeyRefused}, "unsupported bounded authorization contract"},
-		{"plain fee ceiling", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, MaxFee: &ceiling, Rekey: boundedmeta.RekeyRefused}, "no fee ceiling"},
-		{"plain spend effects", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, SpendEffects: []string{"pay"}, Rekey: boundedmeta.RekeyRefused}, "no fee ceiling or spend effects"},
+		{"plain host with bounds", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: boundedmeta.RekeyRefused}, "plain1 has no host rules: bounds must be absent"},
+		// Without its bounds a bounded host would be classified as an open
+		// spend, with no fee ceiling and no spend-effect list.
+		{"bounded host without bounds", boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Rekey: boundedmeta.RekeyRefused}, "bounded2 requires bounds"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := txeffects.ClassifyFor(types.Transaction{Type: types.PaymentTx}, tc.declaration)
@@ -294,7 +296,7 @@ func TestClassifyForPlainHost(t *testing.T) {
 
 func TestClassifyForChecksTheFeeCeilingFirst(t *testing.T) {
 	ceiling := uint64(2_000)
-	declaration := boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: &ceiling, Rekey: boundedmeta.RekeySpendingKey}
+	declaration := boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: boundedmeta.RekeySpendingKey}
 	var sender types.Address
 	sender[0] = 1
 	txn := types.Transaction{Type: types.PaymentTx}
@@ -303,9 +305,11 @@ func TestClassifyForChecksTheFeeCeilingFirst(t *testing.T) {
 	if err != nil || decision.Rule != txeffects.RuleFeeCeiling || !strings.Contains(decision.Reason, "exceeds account maximum 2000") {
 		t.Fatalf("decision = %+v, %v", decision, err)
 	}
-	declaration.MaxFee = nil
-	if decision, err := txeffects.ClassifyFor(txn, declaration); err != nil || decision.Path != txeffects.PathSpend {
-		t.Fatalf("no ceiling: decision = %+v, %v", decision, err)
+	// Bounds without a ceiling are a corrupt declaration, never a host that
+	// may pay any fee.
+	declaration.Bounds.MaxFee = nil
+	if decision, err := txeffects.ClassifyFor(txn, declaration); err == nil || !strings.Contains(err.Error(), "bounded2 requires max_fee") {
+		t.Fatalf("no ceiling: decision = %+v, %v, want the declaration refused", decision, err)
 	}
 }
 

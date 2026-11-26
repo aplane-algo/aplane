@@ -110,9 +110,9 @@ valid `lsig_opcode_profile` must be regenerated: an auto-salted one fails to
 parse, and an unsalted one parses but key scan skips it with an
 `incompatible_key_format` warning, so it never signs. `lsig_opcode_profile` stores only reviewed per-path opcode
 ceilings; program length and argument maxima are derived from the final
-bytecode and the frozen argument layout. Non-bounded LogicSig keys
-use signing-metadata version 1. Bounded keys use version 2 and persist the full
-typed `bounded_authorization` contract, including the static base, derived,
+bytecode and the frozen argument layout. Every LogicSig key
+uses signing-metadata version 1. Host accounts' keys persist the full
+typed `host` contract, including the static base, derived,
 runtime, and optional cosigner argument layout; path masks; profile; and maximum
 signed size. Key files whose stored bytecode
 derives an on-curve LogicSig address, or whose derivation marker does not match

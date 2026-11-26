@@ -31,13 +31,11 @@ type CosignerOverlay struct {
 // works from the composer's profile, so the two are held together by test
 // (internal/signerapp/signing/bounded_agreement_test.go), not by sharing this.
 type PathDeclaration struct {
-	Contract     string
-	SpendEffects []string
-	// MaxFee is nil when the account has no fee ceiling: a bounded host has
-	// one, a plain host doesn't.
-	MaxFee       *uint64
-	Layer3Policy string
-	Rekey        RekeySetting
+	Contract string
+	// Bounds is the bounded host's spend effects, fee ceiling and Layer 3
+	// policy; nil on a plain host, which has none of them.
+	Bounds *Bounds
+	Rekey  RekeySetting
 	// RekeyList is set when the account has a rekey-to list. Under rekey:
 	// refused that is "only these": a pure rekey may go to a listed address and
 	// nowhere else. Under a spending-key rekey it is "plus cosigned": a listed
@@ -52,13 +50,11 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 		return PathDeclaration{}, fmt.Errorf("bounded authorization metadata is nil")
 	}
 	declaration := PathDeclaration{
-		Contract:     metadata.Contract,
-		SpendEffects: slices.Clone(metadata.SpendEffects),
-		Layer3Policy: metadata.Layer3Policy,
-		Rekey:        metadata.Rekey,
-		RekeyList:    metadata.RekeyList != nil,
+		Contract:  metadata.Contract,
+		Bounds:    cloneBounds(metadata.Bounds),
+		Rekey:     metadata.Rekey,
+		RekeyList: metadata.RekeyList != nil,
 	}
-	declaration.MaxFee = CloneMaxFee(metadata.MaxFee)
 	if metadata.Cosigner != nil {
 		declaration.Cosigner = &CosignerOverlay{
 			ComponentKeyType: metadata.Cosigner.ComponentKeyType,
@@ -70,5 +66,5 @@ func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 
 // AllowsSpendEffect reports whether the declaration lets the account spend this way.
 func (declaration PathDeclaration) AllowsSpendEffect(effect string) bool {
-	return slices.Contains(declaration.SpendEffects, effect)
+	return declaration.Bounds != nil && slices.Contains(declaration.Bounds.SpendEffects, effect)
 }

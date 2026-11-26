@@ -1384,7 +1384,7 @@ func agCheckRekeyFirst(a *agAccount) error {
 	}
 	// A plain host has no fee ceiling, so its dispatch follows the spending check.
 	if !a.plain {
-		if err := expect("the fee gate follows", "txn Fee", fmt.Sprintf("pushint %d", *a.metadata.MaxFee), "<=", "assert"); err != nil {
+		if err := expect("the fee gate follows", "txn Fee", fmt.Sprintf("pushint %d", *a.metadata.FeeCeiling()), "<=", "assert"); err != nil {
 			return err
 		}
 	}
@@ -1897,7 +1897,7 @@ var agMutants = []agMutant{
 		name:    "the fee assert is removed",
 		applies: func(a *agAccount) bool { return !a.plain },
 		mutate: func(t *testing.T, a *agAccount) string {
-			return agReplace(t, a.teal, "", fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", *a.metadata.MaxFee), "")
+			return agReplace(t, a.teal, "", fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", *a.metadata.FeeCeiling()), "")
 		},
 	},
 	agRekeyNormalFormMutant("amount", "txn Amount\npushint 0\n==\nassert\n"),

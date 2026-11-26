@@ -587,8 +587,8 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 	fullRekeyTo := addresses(rekeylist.MaxEntries)
 	for _, shape := range plainhost.Shapes() {
 		account := newBoundsAccount(t, provider, shape, longest[shape.Encoding], fullRekeyTo)
-		if account.metadata.MaxFee == nil || *account.metadata.MaxFee != plainhost.DefaultMaxFee {
-			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.MaxFee)
+		if account.metadata.FeeCeiling() == nil || *account.metadata.FeeCeiling() != plainhost.DefaultMaxFee {
+			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.FeeCeiling())
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
 	}

@@ -629,10 +629,11 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 		if err != nil {
 			return "", err
 		}
-		if metadata.MaxFee == nil {
+		fee := metadata.FeeCeiling()
+		if fee == nil {
 			return "", fmt.Errorf("stored account has no fee ceiling")
 		}
-		selected, err := p.shapeProgram(shape, *metadata.MaxFee)
+		selected, err := p.shapeProgram(shape, *fee)
 		if err != nil {
 			return "", err
 		}
@@ -659,7 +660,11 @@ func storedRekey(metadata *boundedmeta.Metadata) string {
 
 // shapeFromMetadata reads a stored bounded account's shape.
 func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
-	spend, err := canonicalSpend(strings.Join(metadata.SpendEffects, ","))
+	bounds := metadata.Bounds
+	if bounds == nil {
+		return Shape{}, fmt.Errorf("stored account has no bounds")
+	}
+	spend, err := canonicalSpend(strings.Join(bounds.SpendEffects, ","))
 	if err != nil {
 		return Shape{}, err
 	}
@@ -667,7 +672,7 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
 	shape := Shape{Arrangement: Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}, Spend: spend}
-	switch metadata.Layer3Policy {
+	switch bounds.Layer3Policy {
 	case composeddsa.Layer3PolicyFixedAllowlist:
 		shape.Encoding = EncodingInline
 	case composeddsa.Layer3PolicyMerkleAllowlist:
@@ -675,7 +680,7 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	case composeddsa.Layer3PolicyNone:
 		shape.AnyRecipient = true
 	default:
-		return Shape{}, fmt.Errorf("stored account has policy %q", metadata.Layer3Policy)
+		return Shape{}, fmt.Errorf("stored account has policy %q", bounds.Layer3Policy)
 	}
 	return shape, nil
 }
@@ -889,7 +894,8 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 		return nil, err
 	}
 	metadata := selected.composer.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.MaxFee == nil {
+	maxFee := metadata.FeeCeiling()
+	if maxFee == nil {
 		return nil, nil
 	}
 	programBytes := p.base.Ops.PublicKeySize()
@@ -909,7 +915,7 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 	}
 	var short []string
 	for _, path := range fees {
-		if path.fee > *metadata.MaxFee {
+		if path.fee > *maxFee {
 			short = append(short, fmt.Sprintf("%s (at least %d)", path.name, path.fee))
 		}
 	}
@@ -919,7 +925,7 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 	// The first sentence stands alone: a review with no room shows only it.
 	return []string{fmt.Sprintf("Fee limit %d is too low to pay alone. "+
 		"A transaction on its own costs more: %s. Batch it with others that share the cost, or have another account in the group pay its fees.",
-		*metadata.MaxFee, strings.Join(short, ", "))}, nil
+		*maxFee, strings.Join(short, ", "))}, nil
 }
 
 // addressBytes is what one inline recipient adds to a program.

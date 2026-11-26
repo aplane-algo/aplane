@@ -178,11 +178,9 @@ func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ ma
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}),
-		SpendEffects:           []string{"pay"},
-		MaxFee:                 new(uint64(1_000)),
+		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
 		Rekey:                  boundedmeta.RekeyRefused,
 		RuntimeArgs:            []boundedmeta.RuntimeArg{},
-		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}, nil
 }
 
@@ -314,7 +312,7 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
 	defer payload.ZeroSecrets()
-	if payload.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || payload.BoundedAuthorization == nil {
+	if payload.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion || payload.BoundedAuthorization == nil {
 		t.Fatalf("bounded authorization metadata = %#v", payload.BoundedAuthorization)
 	}
 	if got, want := payload.BoundedAuthorization.ArgumentBytesForPath(boundedmeta.PathSpend), family.MaxSignatureSize; got != want {

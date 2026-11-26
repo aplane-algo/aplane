@@ -133,7 +133,7 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 				t.Errorf("%s: preset %s resolved no contract", provider.KeyType(), preset.Name)
 				continue
 			}
-			if got := strings.Join(metadata.SpendEffects, ","); got != preset.Fixed[boundary.ParameterSpendEffects] {
+			if got := strings.Join(metadata.Bounds.SpendEffects, ","); got != preset.Fixed[boundary.ParameterSpendEffects] {
 				t.Errorf("%s: preset %s spends %q", provider.KeyType(), preset.Name, got)
 			}
 			// "Only these" is stored as rekey refused plus the rekey-to list.

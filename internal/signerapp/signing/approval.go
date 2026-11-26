@@ -447,8 +447,8 @@ func boundedRekeyFields(item *boundedPlanItem) []txnreview.Field {
 		{Label: "Bounded authorization operation", Value: "REKEY"},
 		{Label: "Authorization", Value: boundedAuthorizationLabel(item)},
 	}
-	if item.Metadata != nil && item.Metadata.MaxFee != nil {
-		fields = append(fields, txnreview.Field{Label: "Profile maximum fee", Value: fmt.Sprintf("%d microAlgos", *item.Metadata.MaxFee)})
+	if fee := item.Metadata.FeeCeiling(); fee != nil {
+		fields = append(fields, txnreview.Field{Label: "Profile maximum fee", Value: fmt.Sprintf("%d microAlgos", *fee)})
 	}
 	return fields
 }

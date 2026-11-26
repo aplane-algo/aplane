@@ -1044,8 +1044,8 @@ Generation resolves two distinct Falcon keypairs:
    `cosigner_public_key`.
 
 A cosigner key equal to the spending key rejects. The generated `.key` stores the
-resolved public parameters, bytecode, and complete signing-metadata version 2
-`bounded_authorization` object. Signing uses that stored authority rather than
+resolved public parameters, bytecode, and complete
+`host` object. Signing uses that stored authority rather than
 the shape definition.
 
 `aplane.falcon1024.v1` is default-enabled, so every signer node can create a

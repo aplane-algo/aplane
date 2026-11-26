@@ -76,7 +76,7 @@ type payloadWire struct {
 	SigningMetadataVersion int                             `json:"signing_metadata_version,omitempty"`
 	BaseKeyType            string                          `json:"base_key_type,omitempty"`
 	SigningArgs            []StoredSigningArg              `json:"signing_args,omitempty"`
-	BoundedAuthorization   *boundedmeta.Metadata           `json:"bounded_authorization,omitempty"`
+	BoundedAuthorization   *boundedmeta.Metadata           `json:"host,omitempty"`
 	TemplateFingerprint    string                          `json:"template_fingerprint,omitempty"`
 	GenesisHashHex         string                          `json:"genesis_hash,omitempty"`
 	ValidRekeyTarget       bool                            `json:"valid_rekey_target,omitempty"`
@@ -251,8 +251,9 @@ func (p *Payload) SetLogicSigOpcodeProfile(profile lsigresource.OpcodeProfile, b
 	return nil
 }
 
-// SetBoundedAuthorization attaches a validated bounded signing contract and
-// upgrades this LogicSig payload to the bounded metadata version.
+// SetBoundedAuthorization attaches a validated host signing contract to this
+// LogicSig payload, stored as its host object. The metadata then owns the
+// argument contract, so the payload's own signing args are dropped.
 func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error {
 	if p == nil {
 		return incompatibleKeyFormat("key payload is nil")
@@ -261,13 +262,12 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 		return incompatibleKeyFormat("bounded authorization metadata is nil")
 	}
 	if err := metadata.Validate(); err != nil {
-		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+		return incompatibleKeyFormat("invalid host: %v", err)
 	}
 	if err := p.LogicSigOpcodeProfile.Validate(true); err != nil {
 		return incompatibleKeyFormat("bounded authorization requires a reviewed bounded opcode profile: %v", err)
 	}
 	p.BoundedAuthorization = boundedmeta.Clone(metadata)
-	p.SigningMetadataVersion = BoundedSigningMetadataVersion
 	// Bounded metadata owns the complete argument contract. Generic
 	// signing_args must not survive it or provide a second caller-controlled
 	// layout.
@@ -747,12 +747,15 @@ func validateLogicSigFields(p *Payload) error {
 	default:
 		return incompatibleKeyFormat("unsupported lsig_derivation %q", p.LogicSigDerivation)
 	}
-	if p.BoundedAuthorization == nil {
-		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
-			return incompatibleKeyFormat("%s without bounded_authorization requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
+	// One version covers every LogicSig key, with or without host metadata:
+	// the presence of host says which it is.
+	if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
+		return incompatibleKeyFormat("%s requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
+	}
+	if p.BoundedAuthorization != nil {
+		if err := validateBoundedSigningMetadata(p); err != nil {
+			return err
 		}
-	} else if err := validateBoundedSigningMetadata(p); err != nil {
-		return err
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
 	if err != nil {
@@ -764,18 +767,15 @@ func validateLogicSigFields(p *Payload) error {
 	return nil
 }
 
-// validateBoundedSigningMetadata checks the signing metadata of a key with
-// bounded_authorization: its version and category, the metadata itself, and
-// that the cosigner and the rekey-to list it names agree with the parameters.
+// validateBoundedSigningMetadata checks the host metadata of a key that has
+// it: its category, the metadata itself, and that the cosigner and the
+// rekey-to list it names agree with the parameters.
 func validateBoundedSigningMetadata(p *Payload) error {
-	if p.SigningMetadataVersion != BoundedSigningMetadataVersion {
-		return incompatibleKeyFormat("%s with bounded_authorization requires signing_metadata_version %d", p.Category, BoundedSigningMetadataVersion)
-	}
 	if p.Category != CategoryDSALsig {
-		return incompatibleKeyFormat("bounded_authorization requires dsa_lsig category")
+		return incompatibleKeyFormat("host requires dsa_lsig category")
 	}
 	if err := p.BoundedAuthorization.Validate(); err != nil {
-		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+		return incompatibleKeyFormat("invalid host: %v", err)
 	}
 	if cosigner := p.BoundedAuthorization.Cosigner; cosigner != nil {
 		// The parameters name the cosigner's type only when it is not the
@@ -785,11 +785,11 @@ func validateBoundedSigningMetadata(p *Payload) error {
 			recorded = boundedmeta.DefaultCosignerComponentKeyType
 		}
 		if recorded != cosigner.ComponentKeyType {
-			return incompatibleKeyFormat("bounded_authorization cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
+			return incompatibleKeyFormat("host cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
 		}
 		publicKeySize, _, ok := boundedmeta.CosignerSizes(cosigner.ComponentKeyType)
 		if !ok {
-			return incompatibleKeyFormat("invalid bounded_authorization: unsupported cosigner key type %q", cosigner.ComponentKeyType)
+			return incompatibleKeyFormat("invalid host: unsupported cosigner key type %q", cosigner.ComponentKeyType)
 		}
 		parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
 		if err != nil {
@@ -802,10 +802,10 @@ func validateBoundedSigningMetadata(p *Payload) error {
 			publicKeySize,
 		)
 		if err != nil {
-			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+			return incompatibleKeyFormat("invalid host: %v", err)
 		}
 		if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
-			return incompatibleKeyFormat("bounded_authorization cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
+			return incompatibleKeyFormat("host cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
 		}
 	}
 	if p.BoundedAuthorization.Cosigner == nil {
@@ -818,7 +818,7 @@ func validateBoundedSigningMetadata(p *Payload) error {
 	// metadata now rather than fail after an operator approves a rekey.
 	if list := p.BoundedAuthorization.RekeyList; list != nil {
 		if p.Parameters[boundedmeta.RekeyListRootParameter] != list.RootHex {
-			return incompatibleKeyFormat("bounded_authorization rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
+			return incompatibleKeyFormat("host rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
 		}
 		if _, err := rekeylist.ParseEntries(p.Parameters[boundedmeta.RekeyListEntriesParameter]); err != nil {
 			return incompatibleKeyFormat("invalid parameters.%s: %v", boundedmeta.RekeyListEntriesParameter, err)

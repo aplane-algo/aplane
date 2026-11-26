@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"sync"
 	"testing"
 
@@ -72,6 +73,10 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 			map[string]string{"network": "testnet"}, bytecode, "#pragma version 8\nint 1",
 			[]StoredSigningArg{{Name: "proof", Type: "bytes", Required: true}}, "1:test",
 		), false), "ec76dc72225d6b93c027c42443dacf65a4c249060457b6abefdcbd55a786489a"},
+		// A host account's key: its contract under host, a bounded host's
+		// with bounds and a plain host's without.
+		{"dsa_lsig bounded host with a cosigner", cosignedTestPayload(t, boundedmeta.DefaultCosignerComponentKeyType, ""), "7683f342130bbe240b04044c814004ee2524402b0ca8ab7814a53b98bf699391"},
+		{"dsa_lsig plain host", goldenPlainHostPayload(t), "4babfadbe42c94fa94e4eff4c61940ef7b5afe1732d9fb3bede5836db5264f55"},
 		{"rotating_lsig", NewRotatingLSigPayload(
 			rotatingkey.RotatingTripleXmssV1,
 			bytes.Repeat([]byte{0x31}, rotatingkey.RotatingSeedSize),
@@ -106,4 +111,20 @@ func TestMarshalPayloadGoldenBytes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// goldenPlainHostPayload is a plain host account's key: host metadata with
+// no bounds.
+func goldenPlainHostPayload(t *testing.T) *Payload {
+	t.Helper()
+	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	payload := NewDSALSigPayload("test.plain.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, canonicalOffCurveBytecode(t), "", nil, "1:plain")
+	payloadWithOpcodeProfile(t, payload, true)
+	if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
+		Contract: boundedmeta.PlainContract, BaseSignatureArgLayout: layout,
+		ArgumentLayout: boundedmeta.BaseArgumentLayout(layout), Rekey: boundedmeta.RekeyRefused,
+	}); err != nil {
+		t.Fatalf("SetBoundedAuthorization(plain) error = %v", err)
+	}
+	return payload
 }

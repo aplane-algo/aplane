@@ -23,10 +23,8 @@ func testBoundedMetadata(t *testing.T, rekey boundedmeta.RekeySetting) *boundedm
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		SpendEffects:           []string{"pay", "axfer"},
-		MaxFee:                 new(uint64(5_000)),
+		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(5_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
 		Rekey:                  rekey,
-		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 	}
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("test metadata invalid: %v", err)
@@ -66,9 +64,9 @@ func TestClassifyBoundedPath(t *testing.T) {
 	// A refused account must keep pay, so the single-effect profiles have a
 	// spending-key rekey; the rekey setting plays no part in a spend decision.
 	assetOptIn := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	assetOptIn.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
+	assetOptIn.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
 	assetTransferOnly := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	assetTransferOnly.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
+	assetTransferOnly.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
 
 	tests := []struct {
 		name     string

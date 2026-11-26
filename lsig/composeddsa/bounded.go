@@ -55,15 +55,30 @@ const (
 // envelope: no spend effects and no fee ceiling, only the rekey dispatch and
 // the overlays.
 type BoundedAuthorizationProfile struct {
-	Contract     string
-	SpendEffects []txeffects.SpendEffect
-	// MaxFee is the bounded host's fee ceiling, nil on a plain host.
-	MaxFee *uint64
+	Contract string
+	// Bounds is the bounded host's envelope, nil on a plain host.
+	Bounds *ProfileBounds
 	Rekey  boundedmeta.RekeySetting
 	// RekeyList is the template-level rekey-to list record; the root is filled
 	// in at generation.
 	RekeyList *boundedmeta.RekeyList
 	Cosigner  *boundedmeta.CosignerAuthorization
+}
+
+// ProfileBounds is the envelope a bounded host compiles: the transaction kinds
+// it may spend and its fee ceiling. The Layer 3 policy that completes the
+// stored bounds is the composer's own setting.
+type ProfileBounds struct {
+	SpendEffects []txeffects.SpendEffect
+	MaxFee       *uint64
+}
+
+func (bounds *ProfileBounds) spendEffectNames() []string {
+	names := make([]string, len(bounds.SpendEffects))
+	for i, effect := range bounds.SpendEffects {
+		names[i] = string(effect)
+	}
+	return names
 }
 
 type boundedFingerprint struct {
@@ -75,8 +90,12 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 		return nil
 	}
 	cloned := *profile
-	cloned.MaxFee = boundedmeta.CloneMaxFee(profile.MaxFee)
-	cloned.SpendEffects = append([]txeffects.SpendEffect(nil), profile.SpendEffects...)
+	if profile.Bounds != nil {
+		cloned.Bounds = &ProfileBounds{
+			SpendEffects: append([]txeffects.SpendEffect(nil), profile.Bounds.SpendEffects...),
+			MaxFee:       boundedmeta.CloneMaxFee(profile.Bounds.MaxFee),
+		}
+	}
 	if profile.Cosigner != nil {
 		cosigner := *profile.Cosigner
 		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
@@ -89,37 +108,22 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	return &cloned
 }
 
-// validate delegates the bounded rule set to boundedmeta so generation and
-// storage validation cannot diverge; only the contract/fee comparisons stay
-// local, expressed against the aliased shared constants.
+// validate delegates the bounded rule set to boundedmeta, so generation and
+// storage validation cannot diverge.
 func (profile *BoundedAuthorizationProfile) validate() error {
 	if profile == nil {
 		return nil
 	}
-	spendEffects := make([]string, len(profile.SpendEffects))
-	for i, effect := range profile.SpendEffects {
-		spendEffects[i] = string(effect)
+	if err := boundedmeta.CheckBounds(profile.Contract, profile.Bounds != nil); err != nil {
+		return err
 	}
-	switch profile.Contract {
-	case BoundedContract:
-		if profile.MaxFee == nil {
-			return fmt.Errorf("%s requires max_fee", BoundedContract)
-		}
-		if *profile.MaxFee > boundedmeta.MaxFeeLimit {
-			return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *profile.MaxFee, boundedmeta.MaxFeeLimit)
-		}
-		if err := boundedmeta.ValidateSpendEffects(spendEffects); err != nil {
+	if bounds := profile.Bounds; bounds != nil {
+		if err := boundedmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
 			return err
 		}
-	case PlainContract:
-		if profile.MaxFee != nil {
-			return fmt.Errorf("%s has no fee ceiling: max_fee must be absent", PlainContract)
+		if err := boundedmeta.ValidateSpendEffects(bounds.spendEffectNames()); err != nil {
+			return err
 		}
-		if len(spendEffects) != 0 {
-			return fmt.Errorf("%s declares no spend effects: every transaction that doesn't rekey is a spend", PlainContract)
-		}
-	default:
-		return fmt.Errorf("unsupported bounded authorization contract %q", profile.Contract)
 	}
 	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
@@ -161,7 +165,9 @@ func canonicalBoundedProfile(profile *BoundedAuthorizationProfile) (*BoundedAuth
 		return nil, err
 	}
 	canonical := cloneBoundedProfile(profile)
-	canonical.SpendEffects = canonicalSpendEffects(canonical.SpendEffects)
+	if canonical.Bounds != nil {
+		canonical.Bounds.SpendEffects = canonicalSpendEffects(canonical.Bounds.SpendEffects)
+	}
 	return canonical, nil
 }
 
@@ -200,14 +206,20 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	var encoded []byte
 	encoded = boundedmeta.AppendField(encoded, []byte(boundedProfileDomain))
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Contract))
-	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(canonical.SpendEffects)))
-	for _, effect := range canonical.SpendEffects {
+	// A plain host has no bounds, and its encoding says so as it always has:
+	// no spend effects and no fee field. The contract name leads the encoding,
+	// so the missing field needs no placeholder.
+	var spendEffects []txeffects.SpendEffect
+	var maxFee *uint64
+	if canonical.Bounds != nil {
+		spendEffects, maxFee = canonical.Bounds.SpendEffects, canonical.Bounds.MaxFee
+	}
+	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(spendEffects)))
+	for _, effect := range spendEffects {
 		encoded = boundedmeta.AppendField(encoded, []byte(effect))
 	}
-	// The contract name leads the encoding, so a plain host's has no fee field
-	// rather than a placeholder, and a bounded host's encoding is unchanged.
-	if canonical.MaxFee != nil {
-		encoded = binary.BigEndian.AppendUint64(encoded, *canonical.MaxFee)
+	if maxFee != nil {
+		encoded = binary.BigEndian.AppendUint64(encoded, *maxFee)
 	}
 	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
 	// The list's contract and depth, never its root: the root is an instance
@@ -231,7 +243,7 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 			encoded = boundedmeta.AppendField(encoded, []byte(path))
 		}
 	}
-	encoded = boundedmeta.AppendField(encoded, []byte(metadata.Layer3Policy))
+	encoded = boundedmeta.AppendField(encoded, []byte(metadata.Layer3Policy()))
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(metadata.BaseSignatureArgLayout.Count))
 	for _, maxSize := range metadata.BaseSignatureArgLayout.MaxSizes {
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(maxSize))
@@ -272,16 +284,22 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 	if err := metadata.ValidateProfile(); err != nil {
 		return fmt.Errorf("invalid bounded profile metadata: %w", err)
 	}
-	spendEffects := make([]string, len(profile.SpendEffects))
-	for i, effect := range profile.SpendEffects {
-		spendEffects[i] = string(effect)
-	}
-	if metadata.Contract != profile.Contract || !boundedmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) ||
-		!slices.Equal(metadata.SpendEffects, spendEffects) || metadata.Rekey != profile.Rekey ||
+	if metadata.Contract != profile.Contract || !equalBoundsProfile(metadata.Bounds, profile.Bounds) ||
+		metadata.Rekey != profile.Rekey ||
 		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) || !equalRekeyListProfile(metadata.RekeyList, profile.RekeyList) {
 		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
 	}
 	return nil
+}
+
+// equalBoundsProfile compares the envelope; the Layer 3 policy is the
+// metadata's alone.
+func equalBoundsProfile(metadata *boundedmeta.Bounds, profile *ProfileBounds) bool {
+	if metadata == nil || profile == nil {
+		return metadata == nil && profile == nil
+	}
+	return boundedmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) &&
+		slices.Equal(metadata.SpendEffects, profile.spendEffectNames())
 }
 
 // equalRekeyListProfile compares the list's definition; the root is the
@@ -465,10 +483,15 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 			Count:    layout.Count,
 			MaxSizes: append([]int(nil), layout.MaxSizes...),
 		},
-		MaxFee:       boundedmeta.CloneMaxFee(profile.MaxFee),
-		Layer3Policy: c.Layer3PolicyName(),
-		RuntimeArgs:  append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
-		DerivedArgs:  append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
+		RuntimeArgs: append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
+		DerivedArgs: append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
+	}
+	if profile.Bounds != nil {
+		metadata.Bounds = &boundedmeta.Bounds{
+			SpendEffects: profile.Bounds.spendEffectNames(),
+			MaxFee:       boundedmeta.CloneMaxFee(profile.Bounds.MaxFee),
+			Layer3Policy: c.Layer3PolicyName(),
+		}
 	}
 	if profile.RekeyList != nil {
 		list := *profile.RekeyList
@@ -480,9 +503,6 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 		cosigner := *profile.Cosigner
 		cosigner.RequiredOn = slices.Clone(profile.Cosigner.RequiredOn)
 		metadata.Cosigner = &cosigner
-	}
-	for _, effect := range profile.SpendEffects {
-		metadata.SpendEffects = append(metadata.SpendEffects, string(effect))
 	}
 	metadata.Rekey = profile.Rekey
 	metadata.ArgumentLayout = boundedArgumentLayout(layout, profile, metadata.DerivedArgs, metadata.RuntimeArgs)
@@ -534,7 +554,7 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 		return nil, SignatureArgLayout{}, nil
 	}
 	switch {
-	case profile.Contract == PlainContract:
+	case profile.Bounds == nil:
 		// A plain host has no spending rule: Layer 3 is none, and no author TEAL.
 		if c.layer3 == nil || c.layer3.Policy != Layer3PolicyNone || c.hasAuthorTEAL() {
 			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", PlainContract, Layer3PolicyNone)
@@ -591,17 +611,16 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			}
 			continue
 		}
-		if !strings.HasPrefix(param.Name, boundedReservedNamePrefix) {
-			continue
+		if reason := reservedFrameworkName(param.Name); reason != "" {
+			return fmt.Errorf("parameter name %q uses %s", param.Name, reason)
 		}
-		return fmt.Errorf("parameter name %q uses reserved bounded_ prefix", param.Name)
 	}
 	for _, arg := range runtimeArgs {
 		if isBoundedCosignerReservedName(arg.Name) {
 			return fmt.Errorf("runtime arg name %q uses reserved cosigner namespace", arg.Name)
 		}
-		if strings.HasPrefix(arg.Name, boundedReservedNamePrefix) {
-			return fmt.Errorf("runtime arg name %q uses reserved bounded_ prefix", arg.Name)
+		if reason := reservedFrameworkName(arg.Name); reason != "" {
+			return fmt.Errorf("runtime arg name %q uses %s", arg.Name, reason)
 		}
 	}
 	// The rekey-to list is private: the program commits only to its root, so no
@@ -622,11 +641,11 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		if isBoundedCosignerReservedName(variable.Name) || isBoundedCosignerReservedName(variable.Parameter) {
 			return fmt.Errorf("template variable %q uses reserved cosigner namespace", variable.Name)
 		}
-		if strings.HasPrefix(variable.Name, boundedReservedNamePrefix) {
-			return fmt.Errorf("template variable name %q uses reserved bounded_ prefix", variable.Name)
+		if reason := reservedFrameworkName(variable.Name); reason != "" {
+			return fmt.Errorf("template variable name %q uses %s", variable.Name, reason)
 		}
-		if strings.HasPrefix(variable.Parameter, boundedReservedNamePrefix) {
-			return fmt.Errorf("template variable %q references reserved bounded parameter %q", variable.Name, variable.Parameter)
+		if reason := reservedFrameworkName(variable.Parameter); reason != "" {
+			return fmt.Errorf("template variable %q references parameter %q, which uses %s", variable.Name, variable.Parameter, reason)
 		}
 	}
 	for _, line := range strings.Split(teal, "\n") {
@@ -637,15 +656,31 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 			if strings.Contains(token, boundedReservedLabelPrefix) {
 				return fmt.Errorf("author TEAL uses reserved bounded label identifier %q", token)
 			}
-			if strings.HasPrefix(strings.TrimPrefix(token, "@"), boundedReservedNamePrefix) {
-				return fmt.Errorf("author TEAL uses reserved bounded identifier %q", token)
+			// The delimiters a reference can sit in, list syntax included.
+			name := strings.Trim(token, "{}.@")
+			if reason := reservedFrameworkName(name); reason != "" {
+				return fmt.Errorf("author TEAL identifier %q uses %s", token, reason)
 			}
-			if listPrivate(strings.Trim(token, "{}.@")) {
+			if listPrivate(name) {
 				return fmt.Errorf("author TEAL reads %q, which would compile the private rekey-to list into the program", token)
 			}
 		}
 	}
 	return nil
+}
+
+// reservedFrameworkName says why a template may not use name, or "" when it
+// may. The bounded_ prefix is the framework's. So is the rekey-to list root,
+// which key generation writes into an account's parameters and nothing else
+// may set.
+func reservedFrameworkName(name string) string {
+	switch {
+	case name == boundedmeta.RekeyListRootParameter:
+		return "the reserved rekey-to list root name"
+	case strings.HasPrefix(name, boundedReservedNamePrefix):
+		return "reserved bounded_ prefix"
+	}
+	return ""
 }
 
 func isBoundedCosignerReservedName(name string) bool {

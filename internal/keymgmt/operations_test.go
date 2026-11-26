@@ -280,8 +280,8 @@ func TestGenerateKeyPlainHostPersistsSigningMetadata(t *testing.T) {
 			if payload.LogicSigDerivation != keys.LogicSigDerivationAlgodV13AutoSalt {
 				t.Fatalf("derivation = %q, want compiler auto-salt", payload.LogicSigDerivation)
 			}
-			if payload.SigningMetadataVersion != keys.BoundedSigningMetadataVersion {
-				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.BoundedSigningMetadataVersion)
+			if payload.SigningMetadataVersion != keys.CurrentSigningMetadataVersion {
+				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.CurrentSigningMetadataVersion)
 			}
 			if payload.TemplateFingerprint == "" {
 				t.Fatal("TemplateFingerprint is empty")

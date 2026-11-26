@@ -7,6 +7,27 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Host account key files nest their bounds, and existing ones no longer load
+
+A plain or bounded host account's key file now stores its signing contract in
+a `host` object, where it was `bounded_authorization`. A bounded host's spend
+effects, fee ceiling and Layer 3 policy sit together in `host.bounds`, and a
+plain host has no `bounds` at all, where it used to store them empty. Every
+LogicSig key records `signing_metadata_version: 1`; version 2, which marked a
+key with the old object, is gone.
+
+**This needs a fresh install.** A host account's key file written before
+this change is refused when it is read, and a restore from an older backup
+skips those keys and restores the rest. Other key files still load. So move
+funds out of plain host, bounded and Corridor accounts with the previous
+release first, then create the accounts again. An account created again has a
+new key, and so a new address.
+
+An account with a rekey-to list now names its list root `rekey_to_root` in its
+parameters, in the key file and on `/keys`, where it was
+`bounded_rekey_to_root`. A template may not declare that name. The `/keys` and
+`/keytypes` responses are otherwise unchanged in this step.
+
 ## A cosigner refuses an unknown network before policy
 
 A cosigner component request for a network the node doesn't know is now

@@ -1297,7 +1297,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
-| Bounded account key valid | DSA LogicSig key with signing-metadata version 2 and a valid `bounded_authorization`. | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable bounded metadata. |
+| Host account key valid | DSA LogicSig key with a valid `host` object (a plain host's without `bounds`, a bounded host's with them). | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable host metadata. |
 | Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: bounded-base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an `algod_v13_auto_salt` key stores pre-v13 bytecode. | No; scan rejects it and verify fails. | Restore skips that key. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan rejects it and verify fails. | Restore skips that key. |
@@ -1362,8 +1362,8 @@ records `lsig_derivation: algod_v13_auto_salt`; an unsalted entry has no
 `lsig_derivation`.
 
 Bounded account key files retain category `dsa_lsig`, base key type, stored
-bytecode, creation parameters, and signing metadata version 2. A bounded
-account's rekey paths are the ones its `bounded_authorization` declares: a
+bytecode, creation parameters, and the `host` object. A bounded
+account's rekey paths are the ones its `host` object declares: a
 spending-key rekey (with the cosigner on a cosigned account), a listed rekey to
 an address on its rekey-to list, or none at all (`refused`).
 
@@ -1485,15 +1485,15 @@ Plain `aplane.falcon1024.v1` and `aplane.ed25519.v1` are
 default-enabled, `aplane.ed25519.v1` opt-in per node), with no mnemonic
 import. Their stored credentials, internal derivation, and encrypted
 backup/restore contracts are unchanged; a plain host account with overlays also
-stores its `plain1` bounded metadata, and one with bounds its `bounded2`
-metadata.
+stores its `plain1` host metadata, and one with bounds its `bounded2`
+metadata, with the `bounds` object.
 
 This section uses **versioned signing-metadata keys** for key files that carry
-`signing_metadata_version >= 1`. Non-bounded LogicSig keys use version 1;
-bounded keys require version 2. LogicSig key payloads include:
+`signing_metadata_version`. Every LogicSig key records version 1; a host
+account's key adds the `host` object beside it. LogicSig key payloads include:
 
-- `signing_metadata_version` — required; key files lacking it are rejected for
-  signing and restore
+- `signing_metadata_version` — required, and exactly 1; key files lacking it or
+  carrying another value are rejected for signing and restore
 - `lsig_derivation` — the derivation contract for final stored bytecode;
   current bundled keys use `algod_v13_auto_salt`, and it is absent for unsalted
   bytecode
@@ -1512,15 +1512,22 @@ bounded keys require version 2. LogicSig key payloads include:
   identifier (base key types are projected to a stable `base_primitive` token)
   and is provenance only, never signing authority
 
-Bounded signing-metadata version 2 additionally requires the canonical
-`bounded_authorization` object:
+A host account's key (a plain or bounded host) additionally carries the
+canonical `host` object:
 
 - `contract`: `bounded2`, or `plain1` for a plain host account without bounds
 - `base_signature_arg_layout`: exact base arg count and per-position maximums
-- `spend_effects` (empty on `plain1`), `max_fee` (required on `bounded2`, where
-  any value from 0 to 2^53 - 1 is valid; absent on `plain1`), and `rekey`: `refused` (no rekey path, except to a
+- `rekey`: `refused` (no rekey path, except to a
   listed address when `rekey_list` is set) or `spending_key` (the spending key
   authorizes a pure rekey: alone, or with the cosigner on a cosigned account)
+- `bounds`: present exactly when the contract is `bounded2`, and absent on
+  `plain1`, which has no host rules to record. It holds `spend_effects` (at
+  least one), `max_fee` (required; any value from 0 to 2^53 - 1 is valid, and
+  an object without it is refused rather than read as zero), and
+  `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
+  `fixed_allowlist_custom`, `merkle_allowlist_custom`, or `none`. A host
+  without `bounds` has no Layer 3 and is held to the rules of `none`: no
+  runtime arguments and no recipient proof
 - optional `rekey_list`: `contract` (`rekey_list1`), `depth` (4), and the
   account's `root`; beside `rekey: refused` (*only these*), or beside
   `rekey: spending_key` with a cosigner (*plus cosigned*). Its
@@ -1531,8 +1538,6 @@ Bounded signing-metadata version 2 additionally requires the canonical
   (160 bytes, exactly one with a `rekey_list`)
 - `argument_layout`: complete ordered slots with source, maximum, and the
   `spend`, `spending_rekey`, and `listed_rekey` path masks
-- `layer3_policy`: exactly `custom`, `fixed_allowlist`, `merkle_allowlist`,
-  `fixed_allowlist_custom`, `merkle_allowlist_custom`, or `none`
 - optional `cosigner`: contract, witness key type, resolved public key and Witness
   Key ID, maximum signature size, and `required_on`, exactly `[spend]`, or
   `[spend, spending_rekey]` beside `rekey: spending_key`; its argument slot source
@@ -1540,9 +1545,10 @@ Bounded signing-metadata version 2 additionally requires the canonical
 - the final stored bytecode plus `argument_layout` and the durable opcode
   profile are the independent sources for program, argument, and opcode budgets
 
-Bounded payloads with metadata version 1, non-bounded payloads with metadata
-version 2, unknown nested fields, duplicate object members, invalid or
-or colliding argument declarations are rejected. Backup and restore preserve the object unchanged.
+A LogicSig payload whose metadata version is not 1, a payload that names
+`bounded_authorization`, `bounds` on the wrong contract or without `max_fee`,
+unknown nested fields, duplicate object members, and invalid or colliding
+argument declarations are rejected. Backup and restore preserve the object unchanged.
 
 Stored LogicSig bytecode and stored signing metadata are authoritative for
 signing:

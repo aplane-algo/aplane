@@ -164,7 +164,10 @@ func validateRecipientsParameter(name string, params []lsigprovider.ParameterDef
 }
 
 func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...txeffects.SpendEffect) bool {
-	for _, effect := range profile.SpendEffects {
+	if profile.Bounds == nil {
+		return false
+	}
+	for _, effect := range profile.Bounds.SpendEffects {
 		for _, want := range wanted {
 			if effect == want {
 				return true
@@ -184,10 +187,10 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	}
 	if c.layer3.Policy == Layer3PolicyNone {
 		// A comment only: the spend falls through to the accept block.
-		if profile != nil && profile.Contract == PlainContract && profile.Cosigner != nil {
+		if profile != nil && profile.Bounds == nil && profile.Cosigner != nil {
 			return "// === plain host: no host rules; the cosigner signed this spend ===\n", nil
 		}
-		if profile != nil && profile.Contract == PlainContract {
+		if profile != nil && profile.Bounds == nil {
 			return "// === plain host: no host rules; the spending key alone signed this spend ===\n", nil
 		}
 		return "// === no framework Layer 3: the envelope bounds every spend ===\n", nil

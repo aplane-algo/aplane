@@ -121,7 +121,7 @@ func TestPrepareGenerateKeyDescribesTheAccountAndCreatesNothing(t *testing.T) {
 	if got := prepared.Parameters[boundedmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
 		t.Fatalf("resolved public key = %q", got)
 	}
-	if prepared.Bounded == nil || prepared.Bounded.Cosigner == nil || prepared.Bounded.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if prepared.Bounded == nil || prepared.Bounded.Cosigner == nil || prepared.Bounded.Layer3Policy() != boundedmeta.Layer3PolicyCustom {
 		t.Fatalf("Bounded = %+v", prepared.Bounded)
 	}
 	if want := lsigprovider.TemplateFingerprintForKeyType(keyType); prepared.Fingerprint == "" || prepared.Fingerprint != want {
@@ -265,16 +265,27 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 		CosignerKeyID: "COSIGNER",
 		Warnings:      []string{"first warning", "second warning"},
 		Bounded: &boundedmeta.Metadata{
-			Contract: boundedmeta.Contract, SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)),
-			Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
-			Cosigner:     &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
-			Rekey:        boundedmeta.RekeyRefused,
+			Contract: boundedmeta.Contract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist},
+			Cosigner: &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
+			Rekey:    boundedmeta.RekeyRefused,
 		},
 	}, nil)
 	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee == nil || *result.Bounded.MaxFee != 10_000 ||
 		result.Bounded.Contract != boundedmeta.Contract || result.Bounded.Rekey != string(boundedmeta.RekeyRefused) ||
-		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" {
+		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" ||
+		!slices.Equal(result.Bounded.SpendEffects, []string{"pay"}) {
 		t.Fatalf("result = %+v", result)
+	}
+	// A plain host has no bounds to project. The reviewer still gets the flat
+	// shape: an empty spend-effect list, never null, no fee ceiling, and
+	// Layer 3 none.
+	plain := ProjectPrepareGenerateIPC(&PreparedGeneration{
+		KeyType: "test.projected.v1",
+		Bounded: &boundedmeta.Metadata{Contract: boundedmeta.PlainContract, Rekey: boundedmeta.RekeySpendingKey},
+	}, nil)
+	if plain.Bounded == nil || plain.Bounded.Contract != boundedmeta.PlainContract || plain.Bounded.MaxFee != nil ||
+		plain.Bounded.SpendEffects == nil || len(plain.Bounded.SpendEffects) != 0 || plain.Bounded.Layer3Policy != boundedmeta.Layer3PolicyNone {
+		t.Fatalf("plain host result = %+v", plain.Bounded)
 	}
 	// The provider's warnings reach the reviewer in order; a result without any
 	// carries none, and neither does a failure.

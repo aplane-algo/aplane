@@ -150,8 +150,8 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 					t.Fatalf("%s: %v", rekey, err)
 				}
 				metadata := instance.Bounded
-				if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.MaxFee != nil ||
-					(metadata.Cosigner != nil) != (arrangement.Cosigner != "") || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
+				if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.Bounds != nil ||
+					(metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
 					t.Fatalf("%s: instance = %+v", rekey, instance)
 				}
 				wantList := arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned

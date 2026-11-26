@@ -57,11 +57,11 @@ func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 			t.Fatalf("%s: %v", b.name, err)
 		}
 		bounded := instance.Bounded
-		if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy != boundedmeta.Layer3PolicyNone {
-			t.Fatalf("%s: contract %s, policy %s", b.name, bounded.Contract, bounded.Layer3Policy)
+		if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy() != boundedmeta.Layer3PolicyNone {
+			t.Fatalf("%s: contract %s, policy %s", b.name, bounded.Contract, bounded.Layer3Policy())
 		}
-		if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.DefaultMaxFee || !slices.Equal(bounded.SpendEffects, []string{"pay"}) {
-			t.Fatalf("%s: limits = %v %v", b.name, bounded.MaxFee, bounded.SpendEffects)
+		if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != plainhost.DefaultMaxFee || !slices.Equal(bounded.Bounds.SpendEffects, []string{"pay"}) {
+			t.Fatalf("%s: limits = %v %v", b.name, bounded.FeeCeiling(), bounded.Bounds.SpendEffects)
 		}
 		if len(bounded.DerivedArgs) != 0 || len(bounded.RuntimeArgs) != 0 {
 			t.Fatalf("%s: limits-only shape declares Layer 3 arguments", b.name)

@@ -133,10 +133,8 @@ func newNonRotatingDaemonFixture(t *testing.T, role noderole.Role) *nonRotatingD
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.DefaultCosignerSignatureMaxSize}},
-		SpendEffects:           []string{boundedmeta.SpendEffectPay},
-		MaxFee:                 new(uint64(10_000)),
+		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
 		Rekey:                  boundedmeta.RekeyRefused,
-		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract:         boundedmeta.CosignerContractV1,
 			ComponentKeyType: witness.Falcon1024V1,

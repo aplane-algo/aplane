@@ -49,7 +49,7 @@ func TestBoundedConditionalGoldens(t *testing.T) {
 				t.Fatal(err)
 			}
 			metadata := provider.BoundedAuthorizationMetadata()
-			if spec.SchemaVersion != 2 || metadata == nil || metadata.Layer3Policy != boundedmeta.Layer3PolicyCustom || len(metadata.RuntimeArgs) != test.wantRuntimeArgs {
+			if spec.SchemaVersion != 2 || metadata == nil || metadata.Layer3Policy() != boundedmeta.Layer3PolicyCustom || len(metadata.RuntimeArgs) != test.wantRuntimeArgs {
 				t.Fatalf("bounded conditional metadata = %#v", metadata)
 			}
 			if metadata.Rekey != boundedmeta.RekeyRefused {

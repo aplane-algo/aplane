@@ -350,10 +350,10 @@ Durable signing metadata includes:
 - stored LogicSig bytecode where applicable,
 - `lsig_derivation` for compiler-auto-salted LogicSig keys; an unsalted key has
   none,
-- `signing_metadata_version` (version 1 non-bounded; version 2 bounded),
+- `signing_metadata_version` (1 on every LogicSig key),
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
-- optional `bounded_authorization` for bounded (`bounded2`) DSA keys (metadata version 2),
+- optional `host` for host accounts' DSA keys: a plain host's (`plain1`), or a bounded host's (`bounded2`) with its `bounds`,
 - optional `template_fingerprint`, which for a plain host account with overlays or
   bounds is the selected arrangement's or shape's fingerprint rather than the
   type-wide grammar fingerprint,
@@ -381,7 +381,7 @@ plain host (`plain1`) or a bounded host (`bounded2`). They are not accepted by
 `signing_flow: cosigned1` for those keys. Cosigner witness keys are selected by an uppercase,
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
-Bounded keys with durable `bounded_authorization.cosigner` use the distinct
+Host account keys with durable `host.cosigner` use the distinct
 `cosigned1` flow, for example a Corridor `aplane.falcon1024.v1` account. Their
 spends and rekeys use `/plan`, kind-tagged `/sign/component`, and
 `/sign/assemble`; a listed rekey skips the cosigner component.
@@ -425,7 +425,7 @@ through ordinary `/sign` and by the `cosigned1` signing choreography. Normative 
 rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model perspective:
 
 - Durable non-secret capability is stored on the account key as
-  `bounded_authorization` (signing metadata version 2), owned by
+  `host`, owned by
   `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
 - Inventory advertises no `signing_flow` without a cosigner (ordinary `/sign`)
   and `cosigned1` with a cosigner.
@@ -1337,7 +1337,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a `plain1` account of a plain host such as `aplane.falcon1024.v1`, or a `bounded2` one such as a Corridor `aplane.falcon1024.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
-| Bounded account key metadata | signing authority metadata | key payload `bounded_authorization` at `signing_metadata_version: 2` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; `max_fee` is present on `bounded2` and absent on `plain1`. |
+| Bounded account key metadata | signing authority metadata | key payload `host` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; the key payload's `bounds` object, and so `max_fee`, is present on `bounded2` and absent on `plain1`. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |

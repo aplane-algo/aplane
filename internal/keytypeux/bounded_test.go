@@ -39,12 +39,12 @@ func TestBoundedLabel(t *testing.T) {
 
 func TestBoundedLabelsAgreeAcrossSources(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
-		Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist,
-		Rekey:        boundedmeta.RekeyRefused,
-		Cosigner:     &boundedmeta.CosignerAuthorization{},
+		Bounds:   &boundedmeta.Bounds{Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist},
+		Rekey:    boundedmeta.RekeyRefused,
+		Cosigner: &boundedmeta.CosignerAuthorization{},
 	}
 	info := &signerapi.BoundedAuthorizationInfo{
-		Layer3Policy: metadata.Layer3Policy,
+		Layer3Policy: metadata.Layer3Policy(),
 		Rekey:        string(metadata.Rekey),
 		Cosigner:     &signerapi.BoundedCosignerAuthorizationInfo{},
 	}

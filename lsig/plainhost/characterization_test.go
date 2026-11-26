@@ -35,7 +35,7 @@ import (
 // the stored metadata and fingerprints, and the error text of each refusal. It
 // pins the hosts' output across refactors; a change that moves it changes what
 // an account is or what a user is told.
-const plainHostOutputDigest = "b0b0c90d64915f8dbba1af939ee05b21552f3e8987505f7930b694c9fd2cf20f"
+const plainHostOutputDigest = "1878bb85e4a5a5d1f03e0ed9f2cc7640add34809f59323223e1ec19c06c9b5f8"
 
 // characterizationDumpEnv names a file the characterization test writes its
 // records to, so two runs can be compared line by line.
