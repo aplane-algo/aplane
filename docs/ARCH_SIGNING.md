@@ -2169,7 +2169,7 @@ cancel answers while locked, as a success that cancelled nothing. An
 operator grant replaces a running automatic grant, whose charge stands,
 and is refused (`bad_request`, "cancel it first") while another operator
 grant runs. Both actions are audited as `ROTATING_RECOVERY` with the
-requesting principal. The handler writes the grant and returns; the worker
+requesting principal and the grant in `grant_id`. The handler writes the grant and returns; the worker
 is woken immediately and executes it in bounded passes, charging the grant per
 derivation so a budget of 100 derives at most 100 and a cancel lands
 between two derivations. Stage derivation is random access, so a hinted

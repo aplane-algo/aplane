@@ -29,7 +29,8 @@ func TestKeyExportAudit(t *testing.T) {
 	if err := json.Unmarshal(raw, &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.Event != AuditKeyExported || entry.Outcome != "released" || entry.TxnAuth != "ACCOUNT" || entry.Reason != "falcon1024" {
+	if entry.Event != AuditKeyExported || entry.Outcome != "released" || entry.TxnAuth != "ACCOUNT" ||
+		entry.KeyType != "falcon1024" || entry.Reason != "" {
 		t.Fatal("export audit fields missing")
 	}
 	var fields map[string]any

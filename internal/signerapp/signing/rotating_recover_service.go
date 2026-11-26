@@ -56,7 +56,7 @@ func (s *Service) RecoverRotatingWithContext(ctx context.Context, req signerapi.
 		resp.GrantID = deps.Recovery.Cancel(session, req.Account)
 		detail := "nothing to cancel"
 		if resp.GrantID != 0 {
-			detail = fmt.Sprintf("grant %d cancelled", resp.GrantID)
+			detail = "cancelled" // the entry names the grant
 		}
 		s.auditRotatingRecovery(ctx, req.Account, req.Action, resp.GrantID, detail)
 	}

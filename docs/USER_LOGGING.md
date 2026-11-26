@@ -40,11 +40,11 @@ Each line is a JSON object with the following fields:
 | `group_txids` | string[] | `SIGN_APPROVED`, and a `SIGN_REJECTED` for a signer-invariant refusal: every transaction ID of that group, in group order |
 | `dummy_count` | int | `SIGN_APPROVED`, and a `SIGN_REJECTED` for a signer-invariant refusal: how many of `group_txids`, at the end, are dummies the request added that the signer signs itself (on a `SIGN_REJECTED`, would have signed); none for a cosigned component, whose dummies the client signs |
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
-| `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
+| `reason` | string | Event-specific free text, such as why a request was refused or failed, or a recovery grant's budget. A key type, key file, client fingerprint, setting, backup, authorization resource or recovery grant is written in its own field |
 | `policy_rule_id` | string | Matching policy rule for a rejection, forced review, or explicit auto-approval |
 | `approval_source` | string | On client-signing `SIGN_APPROVED`: how the signature was authorized (`human`, `user_auto_approve`, or `always_approve`) |
 | `witness_key_id` | string | Public witness authority affected by a cosigner-reference mutation |
-| `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled) |
+| `ssh_fingerprint` | string | On an SSH client's `SESSION_CONNECTED` and `SESSION_DISCONNECTED`: the SHA256 fingerprint of the client key that opened the connection (for an `enroll` connection, the key asking to be enrolled). On the `CLIENT_*` events: the client key asked for, enrolled, rejected or revoked |
 | `key_count` | int | Number of keys: loaded, on start, reload, unlock and reconcile events; restored, on a restore outcome; that a restore would admit, on a restore preview |
 | `archive_sha256` | string | SHA-256 digest of a backup/restore archive |
 | `skipped_keys` | string[] | On a restore outcome, a restore preview or a backup import: the archived keys the node cannot admit, which the restore skipped (or would skip, or, on a refusal for them, would have skipped), selectors only, at most 64 |
@@ -53,7 +53,16 @@ Each line is a JSON object with the following fields:
 | `operation_id` | string | Durable restore operation identifier, or the request ID of a policy or ASA set change, or the ID of a signing or planning request (the client's `request_id` when it sent one, else a random ID the signer minted; see [Signing](#signing)) |
 | `result_code` | string | Result code of a failed or uncertain policy or ASA set change, and of a failed unlock, reconcile, backup deletion or key type change |
 | `changed` | bool | On a succeeded policy or ASA set change: whether it minted a generation (`false` is written, for a policy apply that changed nothing). On a `KEY_TYPE_CHANGED`: whether the store changed, left out of a failure that does not say |
-| `key_type_action`, `key_type` | string | On a `KEY_TYPE_CHANGED`: `install`, `import`, `remove`, `activate` or `deactivate`, and the key type |
+| `key_type_action`, `key_type` | string | On a `KEY_TYPE_CHANGED`: `install`, `import`, `remove`, `activate` or `deactivate`, and the key type. `key_type` is also the key's type on `KEY_GENERATED`, `KEY_IMPORTED` and `KEY_EXPORTED` |
+| `setting`, `old_value`, `new_value` | string | On `SETTING_CHANGE_INTENT` and `SETTING_CHANGED`: the setting, the value it had and the value it was given. On `SETTING_SAVE_ERROR`: the setting and, in `new_value`, the value that could not be saved |
+| `in_effect` | bool | On `SETTING_SAVE_ERROR`: `true` (`outcome` `applied`) for a restrictive value left in effect, which a restart reverts; `false` (`outcome` `failed`, and written) when nothing changed |
+| `archive` | string | The backup an entry is about: its path on `BACKUP_CREATED`, `BACKUP_DELETED` (as requested), `BACKUP_RESTORE_PREVIEWED` (resolved) and `CREDENTIAL_RESTORE_INTENT` (as requested); its file name on `BACKUP_IMPORTED` and `BACKUP_EXPORT_STARTED` |
+| `byte_count` | int | On `BACKUP_IMPORTED`: the archive's size. On the generation quarantine, quarantine prune, abandoned-generation discard and deleted-archive prune entries: the encoded bytes of what they name |
+| `key_file` | string | On `KEY_REJECTED` and `KEY_DELETED`: the name of the key file skipped or deleted |
+| `authorization_action`, `resource_type`, `resource_id` | string | On `AUTHORIZATION_DENIED`: the action refused, and the resource it was asked on (`resource_id` when the resource has one) |
+| `cosigner_action`, `cosigner_name` | string | On `COSIGNER_REFERENCE_CHANGED`: `import` or `remove`, also when `outcome` is `failed`, and the reference's name |
+| `grant_id` | int | On `ROTATING_RECOVERY`: the recovery grant started or cancelled; left out of a cancel that found none |
+| `migrated` | object | On `PASSPHRASE_CHANGED`: the counts of what the change rewrapped, `keys`, `templates`, `policy_sidecars` and `source_token_files`, each written also when `0`. The entry's only nested object |
 | `generation_id` | string | Generation a change minted, also when its commit is uncertain |
 | `policy_updates`, `policy_removals` | string[] | Selectors a policy apply submits or removes, at most 64 each |
 | `policy_updates_omitted`, `policy_removals_omitted` | int | Selectors left out of those lists |
@@ -100,7 +109,7 @@ Fields are omitted when empty.
 | `BACKUP_IMPORTED` | A deeply verified uploaded backup was published into managed storage; `skipped_keys` names the keys in it a restore would skip |
 | `BACKUP_EXPORT_STARTED` | An authenticated client began reading a managed backup archive; a non-zero initial offset is still audited |
 | `BACKUP_FAILED` | A key backup failed through the authenticated admin surface |
-| `BACKUP_DELETED` | A managed backup was deleted, or could not be (`outcome` `failed`); `reason` is the path requested |
+| `BACKUP_DELETED` | A managed backup was deleted, or could not be (`outcome` `failed`, and `reason` the error); `archive` is the path requested |
 | `BACKUP_RESTORE_PREVIEWED` | A managed backup restore preview succeeded through the authenticated admin surface; `key_count` counts the keys a restore would admit and `skipped_keys` names the ones it would skip |
 | `BACKUP_RESTORE_PREVIEW_FAILED` | A managed backup restore preview failed through the authenticated admin surface |
 | `CREDENTIAL_RESTORE_INTENT` | A direct restore was requested; written and fsynced before active-store mutation |
@@ -111,12 +120,13 @@ Fields are omitted when empty.
 | `STORE_RECONCILED` | An explicit store reconcile succeeded or failed (`outcome`) |
 | `PASSPHRASE_CHANGED` | Store passphrase rotation succeeded through authenticated local IPC |
 | `PASSPHRASE_CHANGE_FAILED` | Store passphrase rotation failed through authenticated local IPC |
-| `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported, promoted, or removed |
+| `COSIGNER_REFERENCE_CHANGED` | A product cosigner-reference catalog record was imported or removed (`cosigner_action`), or could not be (`outcome` `failed`) |
 | `KEY_TYPE_CHANGED` | A template was installed, imported or removed, or a key type activated or deactivated (`key_type_action`), or could not be (`outcome` `failed`) |
 
 Credential restore entries may include `archive_sha256`, `operation_id`,
 `replace_existing`, `key_count` (the keys restored), and `skipped_keys`, in
-addition to normal session/principal/transport attribution.
+addition to normal session/principal/transport attribution. The intent also
+names the archive as requested, in `archive`.
 
 ### Generation and Deleted-Archive Maintenance
 
@@ -225,9 +235,9 @@ LogicSig argument values.
 | `SESSION_DISCONNECTED` | Session or SSH client connection ended, with its `SESSION_CONNECTED`'s `reason`, or `displaced` for an owner another admin session took the signer over from; written for an `enroll` connection exactly when its `SESSION_CONNECTED` was |
 | `IDENTITY_LOCKED` | Signing authority locked by a request from an authenticated admin session, with that request's `reason`, or, when `lock_on_disconnect` is set, by the end of the session responsible for the signer with no owner left (the owner, or one whose login unlocked the signer and was never promoted), with `reason` `lock_on_disconnect` and that session's principal. The second is written only when the signer was unlocked or in recovery: a session that locked before it ended has its own entry |
 | `IDENTITY_UNLOCKED` | How an unlock ended (`outcome` `unlocked`, `recovery` or `failed`), whether an admin login, an `unlock` command or the startup asked for it |
-| `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |
-| `SETTING_CHANGED` | Admin setting change saved (`reason` `setting=<key> old=<old> new=<new>`) |
-| `SETTING_SAVE_ERROR` | An admin setting change could not be saved; `reason` names the setting, the value, `in_effect=true` (`outcome` `applied`: a restrictive value left in effect, which a restart reverts) or `in_effect=false` (`outcome` `failed`: nothing changed), and the cause |
+| `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`setting`, `old_value`, `new_value`); failure refuses the update |
+| `SETTING_CHANGED` | Admin setting change saved (`setting`, `old_value`, `new_value`) |
+| `SETTING_SAVE_ERROR` | An admin setting change could not be saved: `setting`, the value in `new_value`, `in_effect` (`true` with `outcome` `applied`: a restrictive value left in effect, which a restart reverts; `false` with `outcome` `failed`: nothing changed), and the cause in `reason` |
 | `CLIENT_ENROLLMENT_REQUESTED` | A client asked to be enrolled; the request waits for the operator (principal `client:<fingerprint>`, `client_label` carries the requested label) |
 | `CLIENT_ENROLLED` | Client SSH key enrolled by the operator, by approving its request or importing the key (`client_label` carries its display label; `remote_addr` is empty for an import) |
 | `CLIENT_ENROLLMENT_REJECTED` | The operator rejected a waiting enrollment request |
@@ -259,6 +269,8 @@ the retained history out of the log:
 - `reason` and `txn_details` are at most 8 KiB, which holds a signing
   rejection's violations for a full group; a longer one keeps its start and
   notes its original length.
+- A name or path (`archive`, `key_file`, `resource_id`, `cosigner_name`) is
+  at most 4096 bytes, so a real one is kept whole.
 - Every other text field (addresses, transaction IDs, principals, digests,
   network names and so on) is at most 128 bytes. Real values are far
   shorter and are logged exactly; this only cuts what a malformed request
