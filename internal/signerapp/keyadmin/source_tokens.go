@@ -375,7 +375,7 @@ func sourceTokenError(selector string, err error) *Error {
 	case isLockedStateError(err):
 		return &Error{Kind: ErrorLocked, Message: "signer is locked"}
 	case errors.As(err, &refusal) && errors.Is(err, sourcetokens.ErrTokenNotSet):
-		return &Error{Kind: ErrorNotFound, Message: err.Error()}
+		return &Error{Kind: ErrorSourceTokenNotSet, Message: err.Error()}
 	case errors.As(err, &refusal), errors.Is(err, sourcetokens.ErrFileTooLarge):
 		return &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	default:

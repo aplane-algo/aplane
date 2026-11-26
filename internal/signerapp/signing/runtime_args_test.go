@@ -49,16 +49,29 @@ func TestDecodeHexRuntimeArgsEmpty(t *testing.T) {
 	}
 }
 
+// An argument that isn't hex is named, and nothing of its value is quoted:
+// the decoder's error names the byte it stopped at, and an argument is a
+// secret until it is spent.
 func TestDecodeHexRuntimeArgsReportsArgumentName(t *testing.T) {
-	_, err := decodeHexRuntimeArgs(map[string]string{"recipient": "not-hex"})
+	_, err := decodeHexRuntimeArgs(map[string]string{"recipient": "s3cretzz"})
 	if err == nil {
 		t.Fatal("expected invalid hex error")
 	}
 	if !strings.Contains(err.Error(), "recipient") {
 		t.Fatalf("error %q does not include argument name", err)
 	}
-	if !strings.Contains(err.Error(), "invalid byte") {
-		t.Fatalf("error %q does not include hex decode context", err)
+	for _, part := range []string{"s3cret", "'s'", "'z'", "U+", "invalid byte"} {
+		if strings.Contains(err.Error(), part) {
+			t.Fatalf("error %q quotes the value (%q)", err, part)
+		}
+	}
+}
+
+// An odd number of digits says so: that error names no part of the value.
+func TestDecodeHexRuntimeArgsReportsAnOddLength(t *testing.T) {
+	_, err := decodeHexRuntimeArgs(map[string]string{"recipient": "abc"})
+	if err == nil || !strings.Contains(err.Error(), "recipient") || !strings.Contains(err.Error(), "odd length") {
+		t.Fatalf("error = %v, want the argument named and the odd length", err)
 	}
 }
 

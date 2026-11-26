@@ -965,8 +965,11 @@ socket connection.
 Auth-time unlock is authorization-gated before the runtime is unlocked.
 Explicit admin lock requests retain the stable `identity.lock` action name.
 Admin disconnect cleanup applies the product runtime's `lock_on_disconnect`
-setting. Local admin idle timeout is enforced by `apadmin` as a disconnect,
-not by a signer-side activity grant.
+setting. When the signer shuts down with an admin session open, the session's
+end records its disconnect and leaves the keys to the shutdown, which ends key
+uses and clears them with deadlines of its own (Shutdown Path). Local admin
+idle timeout is enforced by `apadmin` as a disconnect, not by a signer-side
+activity grant.
 
 #### No Remote Admin Transport
 
@@ -1618,7 +1621,13 @@ Store-management audit semantics:
   `lock_on_disconnect` is set and the signer was not locked already, with
   reason `lock_on_disconnect`
 - An `auth_only` session, which reads and never owns the signer, writes
-  `SESSION_CONNECTED` and `SESSION_DISCONNECTED` with reason `auth_only`
+  `SESSION_CONNECTED` and `SESSION_DISCONNECTED` with reason `auth_only`. An
+  owner another session displaces writes `SESSION_DISCONNECTED` with reason
+  `displaced`. On shutdown the IPC server ends every admin session, owner,
+  observer and one still logging in, and waits for each within the shutdown
+  deadline, so their entries are written before the audit log closes; a
+  session that has not ended by then is reported, and the audit log is kept
+  open until the process exits
 - `STORE_RECONCILED` is emitted for every explicit reconcile, with `outcome`
   `succeeded` or `failed`; what it quarantined has entries of its own
 - `IDENTITY_UNLOCKED`, `STORE_RECONCILED`, `BACKUP_DELETED`, `KEY_TYPE_CHANGED`
@@ -2047,7 +2056,12 @@ All service stops share one 5 s shutdown deadline.
    operator approval is rejected at once instead of holding shutdown until the
    deadline (and cannot be approved after the stop began).
 2. Cancel and stop the SSH server.
-3. `ipcServer.Stop()` — stop accepting new IPC connections and close active sessions.
+3. `ipcServer.Stop(ctx)`: stop accepting new IPC connections, close every
+   admin session (the owner, observers, one still logging in) and wait for
+   their handlers until the deadline, so each writes its session entries
+   first. The owner's end fails its pending approvals but does not lock: step
+   5 ends the key uses instead. A handler still running at the deadline is a
+   deadline error.
 4. Stop the rotating stage-table worker: wait for it to exit until the
    deadline. A worker still running then, in a stage table write that no
    cancellation reaches, writes no audit entries and holds no key material
@@ -2096,8 +2110,9 @@ that handler and leaves the logger open for its final records, its pending
 summaries flushed. The keyring is then not zeroed in process. A non-deadline
 error is reported only after handlers have drained, so the logger is closed and
 runtime key state is destroyed normally. The SSH server applies the lifecycle
-deadline to its accept loop and connection handlers and returns the deadline
-error rather than treating an incomplete drain as success. The clean shutdown
+deadline to its accept loop and connection handlers, and the IPC server to its
+admin sessions' handlers, and each returns the deadline error rather than
+treating an incomplete drain as success. The clean shutdown
 destroy path stops watcher dispatch before draining key operations and zeroing
 the keyring.
 

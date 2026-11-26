@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func TestIPCServerStartReplacesStaleOwnedSocket(t *testing.T) {
 	if err := server.Start(); err != nil {
 		t.Fatalf("Start() error = %v, want stale socket replacement", err)
 	}
-	defer server.Stop()
+	defer func() { _ = server.Stop(context.Background()) }()
 	if server.listener == nil {
 		t.Fatal("listener was not started")
 	}

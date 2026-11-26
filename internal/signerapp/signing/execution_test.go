@@ -395,7 +395,7 @@ func TestExecutorSignGenericLSigRejectsMalformedRuntimeArgs(t *testing.T) {
 	if err.Kind != ErrorBadRequest {
 		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
 	}
-	if err.Message != "invalid hex for arg secret: encoding/hex: invalid byte: U+0078 'x'" {
+	if err.Message != "invalid hex for arg secret" {
 		t.Fatalf("error message = %q, want runtime arg decode failure", err.Message)
 	}
 }

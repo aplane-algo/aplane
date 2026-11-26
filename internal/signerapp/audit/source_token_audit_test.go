@@ -27,7 +27,7 @@ func TestSourceTokenEntries(t *testing.T) {
 	logger.LogSourceTokenChangeResultContext(ctx, "set-1", "set", "default", "screening", adminproto.SourceTokenChangeResult{Success: true})
 	logger.LogSourceTokenChangeResultContext(ctx, "rm-1", "remove", "KEY1", "ops", adminproto.SourceTokenChangeResult{Success: true})
 	logger.LogSourceTokenChangeResultContext(ctx, "rm-2", "remove", "KEY1", "ops",
-		adminproto.SourceTokenChangeResult{Code: "key_not_found", Error: "no token is set for this source"})
+		adminproto.SourceTokenChangeResult{Code: "source_token_not_set", Error: "no token is set for this source"})
 
 	entries := mutationEntries(t, path)
 	if len(entries) != 4 {
@@ -45,7 +45,7 @@ func TestSourceTokenEntries(t *testing.T) {
 			t.Fatalf("entry %d = %#v, want %+v", i, e, want)
 		}
 	}
-	if failed := entries[3]; failed["result_code"] != "key_not_found" || failed["reason"] != "no token is set for this source" {
+	if failed := entries[3]; failed["result_code"] != "source_token_not_set" || failed["reason"] != "no token is set for this source" {
 		t.Fatalf("failure entry = %#v", failed)
 	}
 	if entries[1]["reason"] != nil || entries[1]["result_code"] != nil {

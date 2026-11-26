@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"net"
 	"os"
 	"sync"
@@ -124,7 +125,7 @@ func TestIPCAcceptLoopStopEndsABackoffAtOnce(t *testing.T) {
 	}
 
 	stopped := time.Now()
-	server.Stop()
+	_ = server.Stop(context.Background())
 	select {
 	case <-loopDone:
 	case <-time.After(ipcDisconnectTestTimeout):

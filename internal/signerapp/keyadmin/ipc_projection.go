@@ -137,6 +137,8 @@ func ipcCodeForErrorKind(err *Error) string {
 		return protocol.ResultCodeRecoveryBlocked
 	case ErrorNotFound:
 		return protocol.ErrCodeKeyNotFound
+	case ErrorSourceTokenNotSet:
+		return protocol.ErrCodeSourceTokenNotSet
 	default:
 		return protocol.ErrCodeInternal
 	}

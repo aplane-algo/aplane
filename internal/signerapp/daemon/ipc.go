@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -33,6 +34,15 @@ type IPCServer struct {
 	// A server built without NewIPCServer has none and waits it out.
 	stopped  chan struct{}
 	stopOnce sync.Once
+
+	// sessions are the sessions being served, whatever their state, so Stop
+	// can end every one and wait for its handler: a session's end writes
+	// its audit entries, which must come before the log closes. Once
+	// stopping is set, a new connection is closed instead.
+	sessionsMu sync.Mutex
+	sessions   map[*adminserver.Session]struct{}
+	stopping   bool
+	handlers   sync.WaitGroup
 }
 
 const existingIPCProbeTimeout = 300 * time.Millisecond
@@ -119,8 +129,12 @@ func removeStaleIPCSocket(path string) error {
 	return nil
 }
 
-// Stop closes the IPC server.
-func (s *IPCServer) Stop() {
+// Stop closes the IPC server: it stops accepting, closes every session it
+// serves, whatever its state, and waits for their handlers, which write their
+// audit entries, until ctx ends. A handler still running then is reported with
+// an error wrapping ctx.Err(), which the lifecycle reads as a handler that may
+// still use the audit log and runtime.
+func (s *IPCServer) Stop(ctx context.Context) error {
 	s.stopOnce.Do(func() {
 		if s.stopped != nil {
 			close(s.stopped)
@@ -129,11 +143,71 @@ func (s *IPCServer) Stop() {
 	if s.listener != nil {
 		_ = s.listener.Close() // Best-effort cleanup
 	}
-	if active := s.activeSession(); active != nil {
-		_ = active.Close()
+	s.sessionsMu.Lock()
+	s.stopping = true
+	open := make([]*adminserver.Session, 0, len(s.sessions))
+	for session := range s.sessions {
+		open = append(open, session)
+	}
+	s.sessionsMu.Unlock()
+	for _, session := range open {
+		_ = session.Close()
+	}
+	done := make(chan struct{})
+	go func() {
+		s.handlers.Wait()
+		close(done)
+	}()
+	var err error
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// A deadline already passed (an earlier stop used it up) finds the
+		// wait unfinished even with nothing to wait for.
+		if !s.sessionsEnded() {
+			err = fmt.Errorf("admin sessions still ending: %w", ctx.Err())
+		}
 	}
 	// Clean up socket file
 	_ = os.Remove(s.path) // Best-effort cleanup
+	return err
+}
+
+// track registers a session to serve, or reports false once Stop has begun.
+func (s *IPCServer) track(session *adminserver.Session) bool {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	if s.stopping {
+		return false
+	}
+	if s.sessions == nil {
+		s.sessions = make(map[*adminserver.Session]struct{})
+	}
+	s.sessions[session] = struct{}{}
+	s.handlers.Add(1)
+	return true
+}
+
+// sessionsEnded reports whether every tracked session's handler has ended.
+func (s *IPCServer) sessionsEnded() bool {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	return len(s.sessions) == 0
+}
+
+// isStopping reports whether Stop has begun.
+func (s *IPCServer) isStopping() bool {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	return s.stopping
+}
+
+// untrack ends a tracked session's handler.
+func (s *IPCServer) untrack(session *adminserver.Session) {
+	s.sessionsMu.Lock()
+	delete(s.sessions, session)
+	s.sessionsMu.Unlock()
+	s.handlers.Done()
 }
 
 // The wait before the next Accept after one fails doubles from the initial
@@ -225,6 +299,11 @@ func (s *IPCServer) offerDisplacementSession(newConn adminproto.AdminConn) bool 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	setPreAuthReadDeadline(adminConn, time.Now().Add(s.loginTimeout()))
 	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps(), adminserver.OriginLocal)
+	if !s.track(session) {
+		_ = session.Close()
+		return
+	}
+	defer s.untrack(session)
 
 	var active *adminserver.Session
 	var displacementConfirmedFor *adminserver.Session
@@ -251,11 +330,12 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 }
 
 // The audit reasons for a session that observes the signer without owning it
-// (auth_only), and for the lock a disconnect makes when lock_on_disconnect is
-// set.
+// (auth_only), for the lock a disconnect makes when lock_on_disconnect is set,
+// and for the end of an owner another session displaced.
 const (
-	authOnlyReason = "auth_only"
-	autoLockReason = "lock_on_disconnect"
+	authOnlyReason  = "auth_only"
+	autoLockReason  = "lock_on_disconnect"
+	displacedReason = "displaced"
 )
 
 func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displacementConfirmedFor *adminserver.Session) {
@@ -263,6 +343,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	// the active owner or cleanup must leave the identity locked (when
 	// lock_on_disconnect is set) with no pending approvals stranded.
 	cleanupRuntime := false
+	connectedLogged := false // this session's SESSION_CONNECTED as the owner
 	adminConn := session.Conn()
 
 	defer func() {
@@ -271,6 +352,13 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		wasActiveClient := s.sessionManager().ClearActive(session)
 		_ = session.Close() // Best-effort cleanup
 
+		// A session that owned the signer and is no longer the active one was
+		// displaced: its end is recorded too (endOwnerSession records only the
+		// active owner's), before any lock the cleanup below makes, as an
+		// owner's end always is.
+		if connectedLogged && !wasActiveClient && s.signer != nil {
+			s.signer.auditLog.LogSessionDisconnectedContext(session.SessionContext(), displacedReason)
+		}
 		// Run owner cleanup whenever this authenticated session exits and no
 		// active owner remains. Displaced clients skip cleanup because the
 		// replacement is already active before they are notified and closed.
@@ -323,15 +411,17 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		}
 	}
 	replaced := s.sessionManager().PromoteToActive(session)
+	// The new owner's start is recorded before the session it replaces is
+	// closed, whose end is recorded as displaced.
+	if s.signer != nil {
+		s.signer.auditLog.LogSessionConnectedContext(session.SessionContext(), "")
+	}
+	connectedLogged = true
 	if replaced != nil && replaced != session {
 		if replacedIR := replaced.BoundRuntime(); replacedIR != nil {
 			replacedIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisplaced)
 		}
 		adminserver.DisplaceSession(replaced)
-	}
-
-	if s.signer != nil {
-		s.signer.auditLog.LogSessionConnectedContext(session.SessionContext(), "")
 	}
 
 	// Send initial status after successful authentication
@@ -354,6 +444,12 @@ func (s *IPCServer) endOwnerSession(session *adminserver.Session, boundIR *produ
 	}
 	boundIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
 
+	// A shutdown ends key uses and clears the keys itself, with deadlines of
+	// its own; a lock here would run the lock cleanup, whose drain has none,
+	// under Stop's wait (ARCH_SECURITY.md, Shutdown Path).
+	if s.isStopping() {
+		return
+	}
 	// Lock behavior is driven by the live product runtime config, which
 	// should already reflect any stored overrides.
 	if !boundIR.Config().LockOnDisconnect() {
