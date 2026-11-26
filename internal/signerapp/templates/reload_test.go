@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
-	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
 
@@ -94,9 +94,9 @@ teal: |
 
 	paths := mintedPathsForReloadTest(t)
 	masterKey := testTemplateMasterKey()
-	saveTemplateYAML(t, paths, genericKeyType, templatestore.TemplateTypeGeneric, generic, masterKey)
-	saveTemplateYAML(t, paths, composedKeyType, templatestore.TemplateTypeComposed, composed, masterKey)
-	saveTemplateYAML(t, paths, boundedKeyType, templatestore.TemplateTypeComposed, bounded, masterKey)
+	saveTemplateYAML(t, paths, genericKeyType, templatespec.TemplateTypeGeneric, generic, masterKey)
+	saveTemplateYAML(t, paths, composedKeyType, templatespec.TemplateTypeComposed, composed, masterKey)
+	saveTemplateYAML(t, paths, boundedKeyType, templatespec.TemplateTypeComposed, bounded, masterKey)
 	t.Cleanup(func() {
 		lsigprovider.Unregister(genericKeyType)
 		lsigprovider.Unregister(composedKeyType)

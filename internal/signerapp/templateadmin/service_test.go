@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
@@ -139,7 +140,7 @@ teal: |
 			genstoretest.Active(t, ir.KeyPaths()),
 			[]byte(yaml),
 			keyType,
-			templatestore.TemplateTypeGeneric,
+			templatespec.TemplateTypeGeneric,
 			masterKey,
 		); err != nil {
 			return err
@@ -381,7 +382,7 @@ teal: |
 				}
 			},
 			run: func(svc Service) (bool, string, string) {
-				result := svc.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric)})
+				result := svc.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{KeyType: keyType, TemplateType: string(templatespec.TemplateTypeGeneric)})
 				return result.Success, result.Code, result.Error
 			},
 		},
@@ -433,7 +434,7 @@ teal: |
 					if reloadCount.Load() != 1 {
 						t.Fatalf("reloads = %d, want 1", reloadCount.Load())
 					}
-					if templatestore.TemplateExistsActive(written, keyType, templatestore.TemplateTypeGeneric) != op.left {
+					if templatestore.TemplateExistsActive(written, keyType, templatespec.TemplateTypeGeneric) != op.left {
 						t.Fatalf("template in the generation written = %v, want %v", !op.left, op.left)
 					}
 					rec, ok, err := keytypestate.GetActive(written, keyType)
@@ -532,7 +533,7 @@ teal: |
 		t.Fatal(err)
 	}
 	installed := svc.InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
-		KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric),
+		KeyType: keyType, TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if installed.Success || installed.Code != protocol.ResultCodeInstallFailed || !strings.Contains(installed.Error, "not found in library") {
 		t.Fatalf("InstallLibraryTemplate() = %+v, want the library entry refused", installed)
@@ -552,7 +553,7 @@ teal: |
 		t.Fatalf("ListLibraryTemplates() = %+v, want an entry for oversized.yaml", listed)
 	}
 
-	if templatestore.TemplateExistsActive(genstoretest.Active(t, ir.KeyPaths()), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsActive(genstoretest.Active(t, ir.KeyPaths()), keyType, templatespec.TemplateTypeGeneric) {
 		t.Fatal("a refused install left a template in the store")
 	}
 	if got := reloadCount.Load(); got != 0 {

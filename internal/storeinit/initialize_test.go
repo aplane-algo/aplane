@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 )
@@ -99,7 +100,7 @@ func assertNoKeyTypesEnabled(t *testing.T, active storepaths.GenPaths, role stri
 	if len(records) != 0 {
 		t.Fatalf("%s initialization enabled key types: %+v", role, records)
 	}
-	if templatestore.TemplateExistsActive(active, "aplane."+"falcon1024-allowlist.v1", templatestore.TemplateTypeComposed) {
+	if templatestore.TemplateExistsActive(active, "aplane."+"falcon1024-allowlist.v1", templatespec.TemplateTypeComposed) {
 		t.Fatalf("%s initialization installed the bundled allowlist template", role)
 	}
 }

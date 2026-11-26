@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/signingargs"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -103,7 +103,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 	generic := generictemplate.NewYAMLTemplate(genericSpec)
 	lsigprovider.RegisterIfAbsent(generic)
 	t.Cleanup(func() { lsigprovider.Unregister(generic.KeyType()) })
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), generic.KeyType(), templatespec.TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	composedSpec, err := composeddsa.ParseTemplateSpec([]byte(blockDescriptionComposedYAML))
 	if err != nil {
@@ -115,7 +115,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 	}
 	logicsigdsa.RegisterIfAbsent(composed)
 	t.Cleanup(func() { lsigprovider.Unregister(composed.KeyType()) })
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), composed.KeyType(), templatestore.TemplateTypeComposed, keytypestate.StateEnabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), composed.KeyType(), templatespec.TemplateTypeComposed, keytypestate.StateEnabled)
 
 	genericKey := keys.NewGenericLSigPayload(generic.KeyType(), map[string]string{"limit": "1"}, []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}, "",
 		signingargs.FromRuntimeDefs(generic.RuntimeArgs()), "")

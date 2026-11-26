@@ -16,7 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
@@ -35,7 +35,7 @@ func TestAFailedTemplateInstallRegistersNothingAndKeepsAnEarlierProvider(t *test
 		failBuildKeepingTheView(server, errors.New("forced build failure"))
 
 		result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
-			KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric),
+			KeyType: keyType, TemplateType: string(templatespec.TemplateTypeGeneric),
 		})
 		if result.Success || result.Code != protocol.ResultCodeReloadFailed {
 			t.Fatalf("InstallLibraryTemplate() = %+v, want reload_failed", result)
@@ -43,7 +43,7 @@ func TestAFailedTemplateInstallRegistersNothingAndKeepsAnEarlierProvider(t *test
 		if lsigprovider.Get(keyType) != nil {
 			t.Fatal("a template install whose reload failed registered its provider")
 		}
-		assertInstalledTemplateRemoved(t, server, keyType, templatestore.TemplateTypeGeneric)
+		assertInstalledTemplateRemoved(t, server, keyType, templatespec.TemplateTypeGeneric)
 	})
 	t.Run("an earlier provider stays", func(t *testing.T) {
 		server, cleanup := setupTestSigner(t)
@@ -64,7 +64,7 @@ func TestAFailedTemplateInstallRegistersNothingAndKeepsAnEarlierProvider(t *test
 		failBuildKeepingTheView(server, errors.New("forced build failure"))
 
 		result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
-			KeyType: keyType, TemplateType: string(templatestore.TemplateTypeGeneric),
+			KeyType: keyType, TemplateType: string(templatespec.TemplateTypeGeneric),
 		})
 		if result.Success || result.Code != protocol.ResultCodeReloadFailed || result.AlreadyExists {
 			t.Fatalf("InstallLibraryTemplate() = %+v, want reload_failed for a new install", result)

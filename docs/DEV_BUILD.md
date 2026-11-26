@@ -48,6 +48,7 @@ aplane/
 │   ├── keys/                 # Key file scanning and persistence helpers
 │   ├── keystore/             # Keystore metadata and encrypted key storage
 │   ├── templatestore/        # Encrypted product template store
+│   ├── templatespec/         # Template specification, store-free
 │   ├── templatelibrary/      # Plaintext KeyType Library parsing and install prep
 │   ├── transport/            # Admin transport clients
 │   ├── sshtunnel/            # SSH tunnel server/client

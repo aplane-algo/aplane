@@ -41,6 +41,7 @@ import (
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	nativefalconsignerreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -61,13 +62,13 @@ func restTestMasterKey() []byte {
 	return bytes.Repeat([]byte{9}, 32)
 }
 
-func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, state keytypestate.State) {
 	t.Helper()
 	var source keytypestate.Source
 	switch templateType {
-	case templatestore.TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		source = keytypestate.SourceYAMLGeneric
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		source = keytypestate.SourceYAMLComposed
 	default:
 		t.Fatalf("unsupported template type in test: %q", templateType)
@@ -890,12 +891,12 @@ teal: |
 	}
 	lsigprovider.RegisterIfAbsent(generictemplate.NewYAMLTemplate(spec))
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), yamlData, keyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), yamlData, keyType, templatespec.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), keyType, templatespec.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	resp, svcErr := Service{}.KeyTypes(ir)
 	if svcErr != nil {
@@ -949,10 +950,10 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-enabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-enabled", "Generic Rest Matrix Enabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatespec.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
-				writeTemplateStateForRestTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+				writeTemplateStateForRestTest(t, paths, keyType, templatespec.TemplateTypeGeneric, keytypestate.StateEnabled)
 				return restMatrixRuntime(t, paths)
 			},
 			wantVisible: true,
@@ -965,10 +966,10 @@ func TestServiceKeyTypesForRuntimeLifecycleMatrix(t *testing.T) {
 				keyType := "test.generic-rest-matrix-disabled.v1"
 				yamlData := restGenericMatrixTemplateYAML("generic-rest-matrix-disabled", "Generic Rest Matrix Disabled")
 				registerRestGenericTemplateYAML(t, yamlData)
-				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
+				if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), yamlData, keyType, templatespec.TemplateTypeGeneric, cryptotest.Keyring(t, restTestMasterKey())); err != nil {
 					t.Fatalf("SaveTemplateActive() error = %v", err)
 				}
-				writeTemplateStateForRestTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+				writeTemplateStateForRestTest(t, paths, keyType, templatespec.TemplateTypeGeneric, keytypestate.StateDisabled)
 				return restMatrixRuntime(t, paths)
 			},
 		},
@@ -1228,12 +1229,12 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 	registerRestGenericTemplate(t)
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), restGenericTemplateYAML(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), restGenericTemplateYAML(), restGenericErrorKeyType, templatespec.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(rest generic template) error = %v", err)
 	}
-	writeTemplateStateForRestTest(t, ir.KeyPaths(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForRestTest(t, ir.KeyPaths(), restGenericErrorKeyType, templatespec.TemplateTypeGeneric, keytypestate.StateEnabled)
 	_, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: restGenericErrorKeyType})
 	if genErr == nil || genErr.HTTPStatus() != 500 || genErr.Message != "key generation failed" {
 		t.Fatalf("AdminGenerate(internal) = %#v, want 500 key generation failed", genErr)
@@ -1274,7 +1275,7 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 func registerRestGenericTemplate(t *testing.T) {
 	t.Helper()
 	spec := &generictemplate.TemplateSpec{
-		BaseTemplateSpec: templatestore.BaseTemplateSpec{
+		BaseTemplateSpec: templatespec.BaseTemplateSpec{
 			Publisher:   "test",
 			Family:      "generic-rest-error",
 			Version:     1,

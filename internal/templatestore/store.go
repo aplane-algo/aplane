@@ -7,11 +7,9 @@
 // primitives are responsible for already holding the appropriate live
 // store-mutation lock or operating on an unpublished staged generation.
 //
-// This package is used by both:
-//   - lsig/generictemplate: Generic LogicSig templates (TEAL-only)
-//   - composeddsa-backed templates: DSA composition templates
-//
-// Templates are stored as encrypted YAML files with the .template extension.
+// A template's specification, which the LogicSig template packages read, is
+// internal/templatespec: they need no store. Templates are stored as encrypted
+// YAML files with the .template extension.
 package templatestore
 
 import (
@@ -24,166 +22,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
-	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 )
 
 // TemplateFileExtension is the suffix every key-type template file carries.
 // The name before it is the key type, which is the template's logical
 // identity.
 const TemplateFileExtension = ".template"
-
-// BaseTemplateSpec contains fields common to all template types.
-// Specific template systems embed this and add their own fields.
-type BaseTemplateSpec struct {
-	SchemaVersion     int  `yaml:"schema_version"`
-	DerivationVersion *int `yaml:"derivation_version"`
-
-	TemplateType string `yaml:"template_type"` // "generic" or "composed" (optional, aids detection)
-	BaseKeyType  string `yaml:"base_key_type"`
-	Publisher    string `yaml:"publisher"`
-	Family       string `yaml:"family"`
-	Version      int    `yaml:"version"`
-	DisplayName  string `yaml:"display_name"`
-	Description  string `yaml:"description"`
-	DisplayColor string `yaml:"display_color"`
-	// MaxOpcodeCost optionally declares an absolute reviewed worst-case cost of
-	// every reachable path in the final compiler-returned program. Omission uses
-	// SingleTransactionOpcodeCeiling, the one-member opcode unit shared by every
-	// consensus profile APlane currently supports. A pointer preserves the
-	// distinction between omission and an invalid explicit zero while parsing.
-	MaxOpcodeCost *uint64 `yaml:"max_opcode_cost,omitempty"`
-	// ValidRekeyTarget is the template's valid_rekey_target: the author's
-	// declaration that an aplane key of this type may be the signing authority
-	// an account is rekeyed to, its own account included, subject to its
-	// program. Install requires it (ValidateRekeyTargetDeclaration); a pointer
-	// is what lets that check see it is there. Each aplane key records it when
-	// the key is created.
-	ValidRekeyTarget *bool `yaml:"valid_rekey_target,omitempty"`
-}
-
-// ValidateRekeyTargetDeclaration is the install check for
-// valid_rekey_target: a template on its way into a store must declare it.
-func (s *BaseTemplateSpec) ValidateRekeyTargetDeclaration() error {
-	if s == nil || s.ValidRekeyTarget == nil {
-		return fmt.Errorf("valid_rekey_target is required: declare true only if an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to its program; else false")
-	}
-	return nil
-}
-
-// DerivationVersionAlgodAutoSalt uses TEAL v13 assembler auto-salting. The
-// compiler-returned bytecode is authoritative and is never patched by
-// APlane. It is the only supported derivation contract.
-const DerivationVersionAlgodAutoSalt = 3
-
-// KeyType returns the computed key type using publisher.family.vN.
-func (s *BaseTemplateSpec) KeyType() string {
-	publisher := strings.ToLower(strings.TrimSpace(s.Publisher))
-	family := strings.ToLower(strings.TrimSpace(s.Family))
-	return fmt.Sprintf("%s.%s.v%d", publisher, family, s.Version)
-}
-
-// ValidateBase validates the common fields.
-func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
-	if s.SchemaVersion > maxSchemaVersion {
-		return fmt.Errorf("schema_version %d is newer than supported version %d", s.SchemaVersion, maxSchemaVersion)
-	}
-	if s.DerivationVersion != nil {
-		switch *s.DerivationVersion {
-		case DerivationVersionAlgodAutoSalt:
-		default:
-			return fmt.Errorf("derivation_version %d is not supported", *s.DerivationVersion)
-		}
-	}
-	if s.Family == "" {
-		return fmt.Errorf("family is required")
-	}
-	if s.Publisher == "" {
-		return fmt.Errorf("publisher is required")
-	}
-	if !keytypefmt.ValidSegment(strings.ToLower(strings.TrimSpace(s.Publisher))) {
-		return fmt.Errorf("publisher contains unsafe characters")
-	}
-	if !keytypefmt.ValidSegment(strings.ToLower(strings.TrimSpace(s.Family))) {
-		return fmt.Errorf("family contains unsafe characters")
-	}
-	if s.Version < 1 {
-		return fmt.Errorf("version must be >= 1")
-	}
-	if s.DisplayName == "" {
-		return fmt.Errorf("display_name is required")
-	}
-	if s.MaxOpcodeCost != nil && *s.MaxOpcodeCost > lsigresource.MaximumDeclaredOpcodeCost {
-		return fmt.Errorf("max_opcode_cost %d exceeds maximum %d", *s.MaxOpcodeCost, lsigresource.MaximumDeclaredOpcodeCost)
-	}
-	return nil
-}
-
-// ValidateOpcodeCostDeclaration accepts omission as the supported one-member
-// default while rejecting an explicitly declared zero ceiling.
-func (s *BaseTemplateSpec) ValidateOpcodeCostDeclaration() error {
-	if s == nil {
-		return fmt.Errorf("template specification is required")
-	}
-	if s.MaxOpcodeCost != nil && *s.MaxOpcodeCost == 0 {
-		return fmt.Errorf("max_opcode_cost must be greater than zero when declared")
-	}
-	return nil
-}
-
-// LogicSigOpcodeProfile materializes the template's effective numeric ceiling.
-// Omission resolves to the compiled one-member default and is persisted
-// numerically with generated keys. Callers validate the template first.
-func (s *BaseTemplateSpec) LogicSigOpcodeProfile(bounded bool) lsigresource.OpcodeProfile {
-	if s == nil {
-		return lsigresource.OpcodeProfile{}
-	}
-	maxCost := uint64(lsigresource.SingleTransactionOpcodeCeiling)
-	if s.MaxOpcodeCost != nil {
-		maxCost = *s.MaxOpcodeCost
-	}
-	if bounded {
-		return lsigresource.BoundedOpcodeProfile(maxCost, maxCost, maxCost)
-	}
-	return lsigresource.DefaultOpcodeProfile(maxCost)
-}
-
-// TemplateType identifies the type of template.
-type TemplateType string
-
-const (
-	// TemplateTypeGeneric is for generic LogicSig templates.
-	TemplateTypeGeneric TemplateType = "generic"
-	// TemplateTypeComposed is for DSA composition templates.
-	TemplateTypeComposed TemplateType = "composed"
-)
-
-// ValidateBaseKeyType validates the relationship between template_type and
-// base_key_type.
-func ValidateBaseKeyType(templateType TemplateType, baseKeyType string) error {
-	baseKeyType = strings.TrimSpace(baseKeyType)
-	switch templateType {
-	case "", TemplateTypeGeneric:
-		if baseKeyType != "" {
-			return fmt.Errorf("base_key_type must not be set for generic templates")
-		}
-	case TemplateTypeComposed:
-		if baseKeyType == "" {
-			return fmt.Errorf("base_key_type is required for composed templates")
-		}
-	default:
-		return fmt.Errorf("unsupported template_type %q", templateType)
-	}
-	return nil
-}
-
-// ActiveTemplateTypes returns template types that are loaded from identity
-// storage in the current schema.
-func ActiveTemplateTypes() []TemplateType {
-	return []TemplateType{TemplateTypeGeneric, TemplateTypeComposed}
-}
 
 func GetTemplateFilePathForPaths(paths storepaths.Paths, keyType string) (string, error) {
 	active, err := genstore.Resolve(paths)
@@ -201,7 +48,7 @@ func GetTemplateFilePathActive(active storepaths.GenPaths, keyType string) strin
 
 // SaveTemplateActive writes an encrypted template against resolved active-store
 // paths.
-func SaveTemplateActive(active storepaths.GenPaths, yamlData []byte, keyType string, templateType TemplateType, kr *crypto.Keyring) (string, error) {
+func SaveTemplateActive(active storepaths.GenPaths, yamlData []byte, keyType string, templateType templatespec.TemplateType, kr *crypto.Keyring) (string, error) {
 	keyType = normalizeKeyType(keyType)
 	if _, ok := SourceForTemplateType(templateType); !ok {
 		return "", fmt.Errorf("unsupported template_type %q", templateType)
@@ -254,7 +101,7 @@ func TemplateContextForFile(path string) (crypto.ObjectContext, error) {
 	return crypto.KeyTypeTemplateContext(normalizeKeyType(keyType)), nil
 }
 
-func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType TemplateType) bool {
+func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType templatespec.TemplateType) bool {
 	active, err := genstore.Resolve(paths)
 	if err != nil {
 		return false
@@ -264,7 +111,7 @@ func TemplateExistsForPaths(paths storepaths.Paths, keyType string, templateType
 
 // TemplateExistsActive is TemplateExistsForPaths against resolved
 // active-store paths.
-func TemplateExistsActive(active storepaths.GenPaths, keyType string, templateType TemplateType) bool {
+func TemplateExistsActive(active storepaths.GenPaths, keyType string, templateType templatespec.TemplateType) bool {
 	source, sourceOK := SourceForTemplateType(templateType)
 	if !sourceOK {
 		return false
@@ -284,7 +131,7 @@ type TemplateFileInfo struct {
 	FilePath string // Full path to the file
 }
 
-func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType TemplateType) ([]TemplateFileInfo, error) {
+func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType templatespec.TemplateType) ([]TemplateFileInfo, error) {
 	source, ok := SourceForTemplateType(templateType)
 	if !ok {
 		return nil, fmt.Errorf("unsupported template_type %q", templateType)
@@ -320,11 +167,11 @@ func ScanTemplateDirectoryForPaths(paths storepaths.Paths, templateType Template
 
 // SourceForTemplateType is the key type state source a template of
 // templateType is recorded under.
-func SourceForTemplateType(templateType TemplateType) (keytypestate.Source, bool) {
+func SourceForTemplateType(templateType templatespec.TemplateType) (keytypestate.Source, bool) {
 	switch templateType {
-	case TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		return keytypestate.SourceYAMLGeneric, true
-	case TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		return keytypestate.SourceYAMLComposed, true
 	default:
 		return "", false
@@ -333,12 +180,12 @@ func SourceForTemplateType(templateType TemplateType) (keytypestate.Source, bool
 
 // TemplateTypeForSource is the template type a key type state source records,
 // the inverse of SourceForTemplateType.
-func TemplateTypeForSource(source keytypestate.Source) (TemplateType, bool) {
+func TemplateTypeForSource(source keytypestate.Source) (templatespec.TemplateType, bool) {
 	switch source {
 	case keytypestate.SourceYAMLGeneric:
-		return TemplateTypeGeneric, true
+		return templatespec.TemplateTypeGeneric, true
 	case keytypestate.SourceYAMLComposed:
-		return TemplateTypeComposed, true
+		return templatespec.TemplateTypeComposed, true
 	default:
 		return "", false
 	}

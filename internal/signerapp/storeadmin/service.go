@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepass"
@@ -70,7 +69,7 @@ func (s Service) ChangeStorePassphrase(ctx context.Context, req adminproto.Chang
 		}
 	}
 
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(s.Deps.DataDir())
+	unlockCfg, err := unlockconfig.LoadPassphraseHelper(s.Deps.DataDir())
 	if err != nil {
 		s.logPassphraseChangeFailed(ctx, err.Error())
 		return adminproto.ChangeStorePassphraseResult{

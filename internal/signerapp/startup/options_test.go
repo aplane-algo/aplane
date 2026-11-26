@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,37 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
-
-func TestResolveUnlockConfigReadsProductStore(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-
-	want := &unlockconfig.UnlockConfig{
-		PassphraseCommandArgv: []string{"identity-pass", "/tmp/identity"},
-		PassphraseCommandEnv:  map[string]string{"IDENTITY": "1"},
-	}
-	if err := unlockconfig.SaveUnlockConfig(root, want); err != nil {
-		t.Fatalf("SaveUnlockConfig() error = %v", err)
-	}
-
-	got, err := ResolveUnlockConfig(root)
-	if err != nil {
-		t.Fatalf("ResolveUnlockConfig() error = %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ResolveUnlockConfig() = %+v, want %+v", got, want)
-	}
-}
-
-func TestResolveUnlockConfigWithoutHelperIsNil(t *testing.T) {
-	t.Parallel()
-
-	got, err := ResolveUnlockConfig(t.TempDir())
-	if err != nil || got != nil {
-		t.Fatalf("ResolveUnlockConfig() = %+v, %v; want nil, nil", got, err)
-	}
-}
 
 func TestBuildUnlockPlanLockedWithoutKeystore(t *testing.T) {
 	t.Parallel()

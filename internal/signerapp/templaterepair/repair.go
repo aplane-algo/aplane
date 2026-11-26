@@ -36,7 +36,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 )
 
 // Operation is the manifest operation of a template repair generation.
@@ -101,7 +101,7 @@ type Defect struct {
 	Kind    signertemplates.RecordDefectKind
 	// TemplateType is the record's template type; it is empty for a
 	// disabled record without template file.
-	TemplateType templatestore.TemplateType
+	TemplateType templatespec.TemplateType
 	// Keys counts the aplane keys of this key type.
 	Keys int
 	// For an external edit, KeysFromStoredTemplate counts the keys whose

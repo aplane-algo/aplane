@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -58,7 +59,7 @@ func TestListProjectsLibraryTemplatesAndInstalledStatus(t *testing.T) {
 		t.Fatalf("generic status = %+v, want installed only", got)
 	}
 	composed := byKeyType["test.falcon1024-library.v1"]
-	if composed.TemplateType != string(templatestore.TemplateTypeComposed) {
+	if composed.TemplateType != string(templatespec.TemplateTypeComposed) {
 		t.Fatalf("composed TemplateType = %q, want composed", composed.TemplateType)
 	}
 	if len(composed.Parameters) != 1 || composed.Parameters[0].Name != "recipient" {
@@ -174,7 +175,7 @@ func TestInstallComposedSchemaV2BoundedTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseYAML() error = %v", err)
 	}
-	if parsed.KeyType != "test.bounded-library.v1" || parsed.TemplateType != templatestore.TemplateTypeComposed {
+	if parsed.KeyType != "test.bounded-library.v1" || parsed.TemplateType != templatespec.TemplateTypeComposed {
 		t.Fatalf("ParseYAML() = %#v", parsed)
 	}
 	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, testMasterKey()))
@@ -277,10 +278,10 @@ func TestListInvalidPrecedenceSkipsConflictDetection(t *testing.T) {
 func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	keyType := "falcon1024-installed-only-v2"
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatestore.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), testComposedTemplateYAML("falcon1024-installed-only", "Installed Only"), keyType, templatespec.TemplateTypeComposed, cryptotest.Keyring(t, testMasterKey())); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForTest(t, paths, keyType, templatestore.TemplateTypeComposed, keytypestate.StateDisabled)
+	writeTemplateStateForTest(t, paths, keyType, templatespec.TemplateTypeComposed, keytypestate.StateDisabled)
 
 	items, err := List(paths)
 	if err != nil {
@@ -292,7 +293,7 @@ func TestListIncludesInstalledTemplateWithoutLibrarySource(t *testing.T) {
 		t.Fatalf("installed-only template %q not listed", keyType)
 		return
 	}
-	if item.TemplateType != string(templatestore.TemplateTypeComposed) || !item.Installed || item.Enabled {
+	if item.TemplateType != string(templatespec.TemplateTypeComposed) || !item.Installed || item.Enabled {
 		t.Fatalf("installed-only item = %+v, want installed disabled composed", *item)
 	}
 	if item.FileName != keyType+".template" {
@@ -307,7 +308,7 @@ func TestInstallFromLibraryRejectsAmbiguousTemplateRef(t *testing.T) {
 
 	_, err := InstallFromLibrary(paths, TemplateRef{
 		KeyType:      "test.ambiguous-library.v1",
-		TemplateType: templatestore.TemplateTypeGeneric,
+		TemplateType: templatespec.TemplateTypeGeneric,
 	}, cryptotest.Keyring(t, testMasterKey()))
 	if err == nil || !strings.Contains(err.Error(), "multiple library files") {
 		t.Fatalf("InstallFromLibrary() error = %v, want ambiguity error", err)
@@ -1081,7 +1082,7 @@ func testKeyTypeEnabled(paths storepaths.Paths, keyType string) bool {
 	return err == nil && ok && rec.State == keytypestate.StateEnabled
 }
 
-func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, state keytypestate.State) {
 	t.Helper()
 	source, ok := templatestore.SourceForTemplateType(templateType)
 	if !ok {

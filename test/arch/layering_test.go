@@ -23,8 +23,8 @@ var signerappExceptions = map[string]string{}
 // TestSharedPackagesDoNotImportSignerapp pins the server boundary: packages
 // under internal/signerapp are signer-daemon internals, and shared code in
 // the internal/ root, lsig/, and pkg/ must not import them. Signer-owned
-// packages live under internal/signerapp/ instead (storemut, approvalpolicy,
-// policyeditor, and signertui moved there for exactly this reason).
+// packages live under internal/signerapp/ instead (storemut, policyeditor and
+// signertui moved there for exactly this reason).
 func TestSharedPackagesDoNotImportSignerapp(t *testing.T) {
 	imports := moduleImports(t)
 

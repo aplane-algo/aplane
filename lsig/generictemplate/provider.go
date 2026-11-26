@@ -41,7 +41,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 )
 
 // CurrentSchemaVersion is the current YAML schema version.
@@ -56,13 +56,13 @@ const (
 // TemplateSpec represents the YAML schema for a template definition.
 // It embeds the common BaseTemplateSpec for shared metadata fields.
 type TemplateSpec struct {
-	templatestore.BaseTemplateSpec `yaml:",inline"`
-	TemplateMode                   string                          `yaml:"template_mode"`
-	Bounded                        *BoundedAuthorizationSpec       `yaml:"bounded"`
-	Parameters                     []ParameterSpec                 `yaml:"parameters"`
-	TemplateVariables              []tealtemplate.TemplateVariable `yaml:"template_variables"`
-	RuntimeArgs                    []RuntimeArgSpec                `yaml:"runtime_args"` // Arguments required at signing time
-	TEAL                           string                          `yaml:"teal"`
+	templatespec.BaseTemplateSpec `yaml:",inline"`
+	TemplateMode                  string                          `yaml:"template_mode"`
+	Bounded                       *BoundedAuthorizationSpec       `yaml:"bounded"`
+	Parameters                    []ParameterSpec                 `yaml:"parameters"`
+	TemplateVariables             []tealtemplate.TemplateVariable `yaml:"template_variables"`
+	RuntimeArgs                   []RuntimeArgSpec                `yaml:"runtime_args"` // Arguments required at signing time
+	TEAL                          string                          `yaml:"teal"`
 }
 
 // BoundedAuthorizationSpec is the typed YAML form of the composed schema
@@ -125,12 +125,12 @@ type TransactionLayer3Spec struct {
 // templateSpecV1 deliberately has no bounded field. Keeping a separate typed
 // shape prevents schema-v1 documents from silently discarding v2 semantics.
 type templateSpecV1 struct {
-	templatestore.BaseTemplateSpec `yaml:",inline"`
-	TemplateMode                   string                          `yaml:"template_mode"`
-	Parameters                     []ParameterSpec                 `yaml:"parameters"`
-	TemplateVariables              []tealtemplate.TemplateVariable `yaml:"template_variables"`
-	RuntimeArgs                    []RuntimeArgSpec                `yaml:"runtime_args"`
-	TEAL                           string                          `yaml:"teal"`
+	templatespec.BaseTemplateSpec `yaml:",inline"`
+	TemplateMode                  string                          `yaml:"template_mode"`
+	Parameters                    []ParameterSpec                 `yaml:"parameters"`
+	TemplateVariables             []tealtemplate.TemplateVariable `yaml:"template_variables"`
+	RuntimeArgs                   []RuntimeArgSpec                `yaml:"runtime_args"`
+	TEAL                          string                          `yaml:"teal"`
 }
 
 // ParameterSpec represents a parameter definition in the YAML schema.
@@ -419,10 +419,10 @@ func (t *YAMLTemplate) saltStyle() (lsigsalt.Style, error) {
 // SaltStyleForDerivationVersion maps template derivation contracts to their
 // salt style. It is shared by generic and composed YAML templates;
 // Go-defined providers still choose their style directly in code. Only the
-// TEAL v13 auto-salt contract survives; templatestore.ValidateBase rejects the
+// TEAL v13 auto-salt contract survives; templatespec.ValidateBase rejects the
 // retired versions before a template reaches this point.
 func SaltStyleForDerivationVersion(version int) (lsigsalt.Style, error) {
-	if version == templatestore.DerivationVersionAlgodAutoSalt {
+	if version == templatespec.DerivationVersionAlgodAutoSalt {
 		return lsigsalt.StyleAlgodAutoSalt, nil
 	}
 	return "", fmt.Errorf("derivation_version %d is not supported", version)
@@ -626,7 +626,7 @@ func ValidateSpec(spec *TemplateSpec) error {
 	if err := spec.ValidateBase(CurrentSchemaVersion); err != nil {
 		return err
 	}
-	if err := templatestore.ValidateBaseKeyType(templatestore.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
+	if err := templatespec.ValidateBaseKeyType(templatespec.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
 		return err
 	}
 	if spec.Bounded != nil {

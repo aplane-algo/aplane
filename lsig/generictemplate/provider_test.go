@@ -21,16 +21,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/lsigsalt/lsigsalttest"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
-	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
 // testBase returns a BaseTemplateSpec with common test values and the only
 // supported derivation contract, TEAL v13 compiler auto-salting.
-func testBase() templatestore.BaseTemplateSpec {
-	derivationVersion := templatestore.DerivationVersionAlgodAutoSalt
-	return templatestore.BaseTemplateSpec{
+func testBase() templatespec.BaseTemplateSpec {
+	derivationVersion := templatespec.DerivationVersionAlgodAutoSalt
+	return templatespec.BaseTemplateSpec{
 		DerivationVersion: &derivationVersion,
 		Publisher:         "test",
 		Family:            "test",
@@ -40,13 +40,13 @@ func testBase() templatestore.BaseTemplateSpec {
 	}
 }
 
-func testBaseWithoutDerivationVersion() templatestore.BaseTemplateSpec {
+func testBaseWithoutDerivationVersion() templatespec.BaseTemplateSpec {
 	base := testBase()
 	base.DerivationVersion = nil
 	return base
 }
 
-func testBaseWithDerivationVersion(version int) templatestore.BaseTemplateSpec {
+func testBaseWithDerivationVersion(version int) templatespec.BaseTemplateSpec {
 	base := testBase()
 	base.DerivationVersion = &version
 	return base
@@ -455,7 +455,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "generic rejects base key type",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					TemplateType: "generic",
 					BaseKeyType:  "aplane.falcon1024.v1",
 					Publisher:    "test",
@@ -472,7 +472,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "missing family",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					Publisher:   "test",
 					Version:     1,
 					DisplayName: "Test",
@@ -486,7 +486,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "invalid version",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					Publisher:   "test",
 					Family:      "test",
 					DisplayName: "Test",
@@ -559,7 +559,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "future schema version rejected",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 999,
 					Publisher:     "test",
 					Family:        "test",
@@ -614,7 +614,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "valid schema v1 strict spec",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "test",
@@ -642,7 +642,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "omitted opcode ceiling uses default",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "missing-opcode-ceiling",
@@ -657,7 +657,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "explicit zero opcode ceiling",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "zero-opcode-ceiling",
@@ -674,7 +674,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "schema v1 strict rejects legacy scalar substitution",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "test",
@@ -702,7 +702,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "schema v1 strict validates variable parameter mapping",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "test",
@@ -730,7 +730,7 @@ func TestValidateSpec(t *testing.T) {
 		{
 			name: "schema v1 generated rejects unsupported template syntax",
 			spec: &TemplateSpec{
-				BaseTemplateSpec: templatestore.BaseTemplateSpec{
+				BaseTemplateSpec: templatespec.BaseTemplateSpec{
 					SchemaVersion: 1,
 					Publisher:     "test",
 					Family:        "test",
@@ -796,7 +796,7 @@ func TestValidateSpec(t *testing.T) {
 
 func TestYAMLTemplateInterface(t *testing.T) {
 	spec := &TemplateSpec{
-		BaseTemplateSpec: templatestore.BaseTemplateSpec{
+		BaseTemplateSpec: templatespec.BaseTemplateSpec{
 			Publisher:    "test",
 			Family:       "test",
 			Version:      1,
@@ -944,9 +944,9 @@ func TestYAMLTemplateRejectsRetiredDerivationVersions(t *testing.T) {
 }
 
 func TestYAMLTemplateGenerateTEALStrict(t *testing.T) {
-	derivationVersion := templatestore.DerivationVersionAlgodAutoSalt
+	derivationVersion := templatespec.DerivationVersionAlgodAutoSalt
 	spec := &TemplateSpec{
-		BaseTemplateSpec: templatestore.BaseTemplateSpec{
+		BaseTemplateSpec: templatespec.BaseTemplateSpec{
 			SchemaVersion:     1,
 			DerivationVersion: &derivationVersion,
 			Publisher:         "test",
@@ -1047,11 +1047,11 @@ return`,
 func TestYAMLTemplateCompileWithSaltRefusesOnCurveCompileReply(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		base    templatestore.BaseTemplateSpec
+		base    templatespec.BaseTemplateSpec
 		version byte
 	}{
 		{name: "unsalted", base: testBaseWithoutDerivationVersion(), version: 10},
-		{name: "auto-salt", base: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt), version: 13},
+		{name: "auto-salt", base: testBaseWithDerivationVersion(templatespec.DerivationVersionAlgodAutoSalt), version: 13},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			tmpl := NewYAMLTemplate(&TemplateSpec{
@@ -1073,7 +1073,7 @@ func TestYAMLTemplateCompileWithSaltRefusesOnCurveCompileReply(t *testing.T) {
 
 func TestYAMLTemplateCompileWithAlgodV13AutoSalt(t *testing.T) {
 	tmpl := NewYAMLTemplate(&TemplateSpec{
-		BaseTemplateSpec: testBaseWithDerivationVersion(templatestore.DerivationVersionAlgodAutoSalt),
+		BaseTemplateSpec: testBaseWithDerivationVersion(templatespec.DerivationVersionAlgodAutoSalt),
 		TemplateMode:     "generated",
 		TEAL: `#pragma version 13
 int 1
@@ -1341,14 +1341,14 @@ func assertCompileWithSaltOffCurve(t *testing.T, tmpl *YAMLTemplate, params map[
 		compiled = unsaltedOffCurveBytecodeForTest(t)
 	} else {
 		switch *tmpl.spec.DerivationVersion {
-		case templatestore.DerivationVersionAlgodAutoSalt:
+		case templatespec.DerivationVersionAlgodAutoSalt:
 			compiled = unsaltedOffCurveBytecodeForVersion(t, 13)
 		default:
 			t.Fatalf("unsupported derivation version %d", *tmpl.spec.DerivationVersion)
 		}
 	}
 	transport := compileMockTransport{bytecode: compiled}
-	if tmpl.spec.DerivationVersion != nil && *tmpl.spec.DerivationVersion == templatestore.DerivationVersionAlgodAutoSalt {
+	if tmpl.spec.DerivationVersion != nil && *tmpl.spec.DerivationVersion == templatespec.DerivationVersionAlgodAutoSalt {
 		result, err := lsigsalt.UseUnmodifiedOffCurve(compiled)
 		if err != nil {
 			t.Fatalf("UseUnmodifiedOffCurve() error = %v", err)

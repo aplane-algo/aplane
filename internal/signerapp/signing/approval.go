@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/internal/termsafe"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -297,7 +296,7 @@ func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []typ
 // are this signer's own.
 func (s *ApprovalService) completeReview(review *txnreview.Review, plan *PlanResult, txns []types.Transaction) {
 	known := s.planKnownAddresses(plan)
-	ctx := approvalpolicy.Context{
+	ctx := txnreview.FindingContext{
 		KnownAddresses: known, InvalidRekeyTargets: invalidRekeyTargetsForPlan(plan),
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 	}
@@ -331,7 +330,7 @@ func reviewViolations(review *txnreview.Review, positioned bool) []signerapprova
 	var violations []signerapproval.Violation
 	for i, item := range review.Items {
 		for _, finding := range item.Findings {
-			v := approvalpolicy.Violation(finding)
+			v := signerapproval.ViolationFor(finding)
 			if positioned {
 				v.Field = fmt.Sprintf("Tx %d/%d: %s", i+1, len(review.Items), v.Field)
 			}
@@ -339,7 +338,7 @@ func reviewViolations(review *txnreview.Review, positioned bool) []signerapprova
 		}
 	}
 	for _, finding := range review.Findings {
-		violations = append(violations, approvalpolicy.Violation(finding))
+		violations = append(violations, signerapproval.ViolationFor(finding))
 	}
 	return violations
 }

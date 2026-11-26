@@ -49,20 +49,6 @@ func ValidateAndBuildUnlockPlan(opts *bootstrap.Startup, runtime *RuntimeState, 
 	return info, plan, nil
 }
 
-// ResolveUnlockConfig returns the product store's passphrase helper from
-// unlock.yaml, or nil when none is configured.
-func ResolveUnlockConfig(dataDir string) (*unlockconfig.UnlockConfig, error) {
-	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir)
-	if err != nil {
-		return nil, err
-	}
-	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
-		return unlockCfg, nil
-	}
-
-	return nil, nil
-}
-
 // BuildUnlockPlan resolves whether startup begins locked or unlocked and, for
 // headless/test startup, loads and verifies the passphrase before runtime
 // construction begins.
@@ -87,7 +73,7 @@ func BuildUnlockPlan(opts *bootstrap.Startup, keystoreExists bool, testPassphras
 		}, nil
 	}
 
-	unlockCfg, err := ResolveUnlockConfig(opts.DataDir)
+	unlockCfg, err := unlockconfig.LoadPassphraseHelper(opts.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("load identity unlock config: %w", err)
 	}

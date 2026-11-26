@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
 
@@ -504,10 +505,10 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatespec.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForApstoreTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
+	writeTemplateStateForApstoreTest(t, paths, keyType, templatespec.TemplateTypeGeneric, keytypestate.StateEnabled)
 
 	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
@@ -587,7 +588,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatespec.TemplateTypeGeneric) {
 		t.Fatal("expected standalone key restore not to materialize shipped library generic template")
 	}
 }
@@ -674,7 +675,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatestore.TemplateTypeComposed) {
+	if templatestore.TemplateExistsForPaths(boundKeystorePaths(t), keyType, templatespec.TemplateTypeComposed) {
 		t.Fatal("expected standalone key restore not to materialize shipped library composed template")
 	}
 }
@@ -693,10 +694,10 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
-	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatestore.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
+	if _, err := templatestore.SaveTemplateActive(genstoretest.Active(t, paths), templateYAML, keyType, templatespec.TemplateTypeGeneric, cryptotest.Keyring(t, masterKey)); err != nil {
 		t.Fatalf("SaveTemplateActive() error = %v", err)
 	}
-	writeTemplateStateForApstoreTest(t, paths, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateDisabled)
+	writeTemplateStateForApstoreTest(t, paths, keyType, templatespec.TemplateTypeGeneric, keytypestate.StateDisabled)
 
 	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
@@ -727,14 +728,14 @@ func keyTypeDisabled(paths storepaths.Paths, keyType string) bool {
 	return err == nil && ok && rec.State == keytypestate.StateDisabled
 }
 
-func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+func writeTemplateStateForApstoreTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatespec.TemplateType, state keytypestate.State) {
 	t.Helper()
 	paths = genstoretest.BindActive(t, paths, genstoretest.Active(t, paths))
 	var source keytypestate.Source
 	switch templateType {
-	case templatestore.TemplateTypeGeneric:
+	case templatespec.TemplateTypeGeneric:
 		source = keytypestate.SourceYAMLGeneric
-	case templatestore.TemplateTypeComposed:
+	case templatespec.TemplateTypeComposed:
 		source = keytypestate.SourceYAMLComposed
 	default:
 		t.Fatalf("unsupported template type in test: %q", templateType)

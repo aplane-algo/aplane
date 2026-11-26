@@ -30,6 +30,7 @@ import (
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
@@ -56,7 +57,7 @@ func TestIPCInstallLibraryTemplateActivatesKeyTypeWithoutRestart(t *testing.T) {
 			ID:   "install-template",
 		},
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 
 	msgs := recorder.messages(t)
@@ -69,7 +70,7 @@ func TestIPCInstallLibraryTemplateActivatesKeyTypeWithoutRestart(t *testing.T) {
 		"id":            "install-template",
 		"success":       true,
 		"key_type":      keyType,
-		"template_type": string(templatestore.TemplateTypeGeneric),
+		"template_type": string(templatespec.TemplateTypeGeneric),
 	}) {
 		t.Fatalf("install response mismatch: %#v", msgs[0])
 	}
@@ -101,7 +102,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 			ID:   "install-template",
 		},
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if !reflectJSONSubset(installRecorder.messages(t)[0], map[string]any{
 		"type":    protocol.MsgTypeInstallLibraryTemplateResult,
@@ -131,7 +132,7 @@ func TestIPCDisableAndEnableInstalledTemplateKeepsTemplateFile(t *testing.T) {
 	if !keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
 		t.Fatalf("disabled state not written for %s", keyType)
 	}
-	if !templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatespec.TemplateTypeGeneric) {
 		t.Fatalf("installed template file was removed during disable")
 	}
 	if _, ok := findKeyTypeInfo(fetchKeyTypesForTest(t, server), keyType); ok {
@@ -174,7 +175,7 @@ func TestShowLibraryTemplateReturnsPlaintextYAML(t *testing.T) {
 
 	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if !result.Success {
 		t.Fatalf("ShowLibraryTemplate() = %+v, want success", result)
@@ -200,7 +201,7 @@ func TestShowLibraryTemplateMissingEntryReturnsNotFound(t *testing.T) {
 
 	result := server.adminServices().templateApp().ShowLibraryTemplate(adminproto.ShowLibraryTemplateRequest{
 		KeyType:      "no-such-key-type-v1",
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if result.Success {
 		t.Fatalf("ShowLibraryTemplate() unexpectedly succeeded: %+v", result)
@@ -308,7 +309,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 
 	install := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if !install.Success {
 		t.Fatalf("InstallLibraryTemplate() = %+v, want success", install)
@@ -326,7 +327,7 @@ func TestRemoveInstalledTemplateHandlesDisabledTemplate(t *testing.T) {
 	if !removed.Success || !removed.Removed {
 		t.Fatalf("RemoveInstalledTemplate() = %+v, want disabled template removal", removed)
 	}
-	if templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExistsForPaths(mustActiveKeyPaths(t, server), keyType, templatespec.TemplateTypeGeneric) {
 		t.Fatalf("template %s still exists after removal", keyType)
 	}
 	if keyTypeStateDisabled(server, productmode.IdentityID, keyType) {
@@ -487,12 +488,12 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if result.Success || result.Code != protocol.ResultCodeReloadFailed {
 		t.Fatalf("InstallLibraryTemplate result = %+v, want %s", result, protocol.ResultCodeReloadFailed)
 	}
-	assertInstalledTemplateRemoved(t, server, keyType, templatestore.TemplateTypeGeneric)
+	assertInstalledTemplateRemoved(t, server, keyType, templatespec.TemplateTypeGeneric)
 }
 
 func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *testing.T) {
@@ -505,7 +506,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 
 	initial := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if !initial.Success || initial.AlreadyExists {
 		t.Fatalf("initial InstallLibraryTemplate result = %+v, want fresh success", initial)
@@ -521,7 +522,7 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 	failBuildKeepingTheView(server, errors.New("forced reload failure"))
 	again := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if again.Success || again.Code != protocol.ResultCodeReloadFailed || !again.AlreadyExists {
 		t.Fatalf("second InstallLibraryTemplate result = %+v, want %s already_exists", again, protocol.ResultCodeReloadFailed)
@@ -543,12 +544,12 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if result.Success || result.Code != protocol.ResultCodeActivationFailed {
 		t.Fatalf("InstallLibraryTemplate result = %+v, want %s", result, protocol.ResultCodeActivationFailed)
 	}
-	assertInstalledTemplateRemoved(t, server, keyType, templatestore.TemplateTypeGeneric)
+	assertInstalledTemplateRemoved(t, server, keyType, templatespec.TemplateTypeGeneric)
 }
 
 func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing.T) {
@@ -587,7 +588,7 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 	buildWithoutTemplates(server)
 	result := server.adminServices().templateApp().InstallLibraryTemplate(adminproto.InstallLibraryTemplateRequest{
 		KeyType:      keyType,
-		TemplateType: string(templatestore.TemplateTypeGeneric),
+		TemplateType: string(templatespec.TemplateTypeGeneric),
 	})
 	if result.Success || result.Code != protocol.ResultCodeActivationFailed || !result.AlreadyExists {
 		t.Fatalf("InstallLibraryTemplate result = %+v, want %s already_exists", result, protocol.ResultCodeActivationFailed)
@@ -608,7 +609,7 @@ func writeLibraryTemplateForTest(t *testing.T, server *Signer, filename string, 
 	}
 }
 
-func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatestore.TemplateType) {
+func assertInstalledTemplateRemoved(t *testing.T, server *Signer, keyType string, templateType templatespec.TemplateType) {
 	t.Helper()
 	path, pathErr := templatestore.GetTemplateFilePathForPaths(mustActiveKeyPaths(t, server), keyType)
 	if pathErr != nil {
@@ -715,7 +716,7 @@ func TestATemplateTheReloadWouldNotLoadLeavesTheSignerAsItWas(t *testing.T) {
 	if !ir.IsUnlocked() || ir.KeyCount() != 1 {
 		t.Fatalf("after the refused install: state %v, %d key(s); want unlocked with 1", ir.GetState(), ir.KeyCount())
 	}
-	assertInstalledTemplateRemoved(t, server, parsed.KeyType, templatestore.TemplateTypeGeneric)
+	assertInstalledTemplateRemoved(t, server, parsed.KeyType, templatespec.TemplateTypeGeneric)
 	if _, ok, err := keytypestate.Get(paths, parsed.KeyType); err != nil || ok {
 		t.Fatalf("key type state exists=%v err=%v after the refused install, want none", ok, err)
 	}

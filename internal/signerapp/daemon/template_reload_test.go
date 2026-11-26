@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -200,7 +201,7 @@ func saveGenericTemplateForTest(t *testing.T, server *Signer, keyType string, ya
 		if err != nil {
 			return err
 		}
-		_, err = templatestore.SaveTemplateActive(active, yamlData, keyType, templatestore.TemplateTypeGeneric, masterKey)
+		_, err = templatestore.SaveTemplateActive(active, yamlData, keyType, templatespec.TemplateTypeGeneric, masterKey)
 		return err
 	})
 	if err != nil {

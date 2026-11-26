@@ -76,7 +76,10 @@ Route install, import, enable, disable, and remove transitions through
 runtime reload; store initialization installs no templates.
 `internal/templatestore` and `internal/keytypestate` expose persistence
 primitives, while `internal/signerapp/templates` is a read-only runtime reload
-owner.
+owner. A template's specification (`BaseTemplateSpec`, its checks and the
+template types) is `internal/templatespec`, which needs no store: the LogicSig
+template packages, which clients link, import it and not `templatestore`
+(`test/arch/binary_dependencies_test.go` holds them to that).
 
 Terminology:
 
@@ -1374,6 +1377,7 @@ Common paths:
 - `lsig/<template>/template.go`
 - `library/templates/*.yaml`
 - `internal/templatelibrary/library.go`
+- `internal/templatespec/spec.go`
 - `internal/templatestore/store.go`
 - `lsig/clientreg/register.go`
 

@@ -14,8 +14,8 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
-	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
 func TestEvaluateAlwaysReviewRulesResolvesPolicyPerKey(t *testing.T) {
@@ -314,11 +314,11 @@ func TestEvaluateAlwaysReviewRulesExemptsProtocolRekey(t *testing.T) {
 	known := map[string]bool{nextStage.String(): true}
 	none, one := map[int]bool{}, 1
 
-	withProtocol := approvalpolicy.Context{KnownAddresses: known, ProtocolRekeyTargets: known}
+	withProtocol := txnreview.FindingContext{KnownAddresses: known, ProtocolRekeyTargets: known}
 	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, withProtocol); review {
 		t.Fatalf("a protocol rekey was reviewed under %q", ruleID)
 	}
-	heldOnly := approvalpolicy.Context{KnownAddresses: known}
+	heldOnly := txnreview.FindingContext{KnownAddresses: known}
 	if ruleID, review := evaluateAlwaysReviewRules(txns, one, none, none, fixedPolicy(cfg), nil, heldOnly); !review || ruleID != policy.AlwaysReviewWarningsRuleID {
 		t.Fatalf("a held-address rekey without the protocol exemption = %q, %v; want always_review_warnings review", ruleID, review)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -82,7 +83,7 @@ func TestInstalledTemplateOutsideGenerationSupportKeepsTheStoreUsable(t *testing
 	}
 	defer kr.Zero()
 	if _, err := templatestore.SaveTemplateActive(active, []byte(unsupportedTemplateYAML), unsupportedTemplateKeyType,
-		templatestore.TemplateTypeComposed, kr); err != nil {
+		templatespec.TemplateTypeComposed, kr); err != nil {
 		t.Fatal(err)
 	}
 	if err := keytypestate.PutActive(active, keytypestate.Record{

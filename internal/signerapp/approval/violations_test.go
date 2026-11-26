@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package approvalpolicy
+package approval
 
 import (
 	"strings"
@@ -9,10 +9,10 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txnreview"
 )
 
-func TestCheckDecodedTxnWarnings(t *testing.T) {
+func TestReviewFindingsAsViolations(t *testing.T) {
 	zeroAddr := types.Address{}
 	nonZeroAddr := types.Address{1}
 
@@ -88,7 +88,7 @@ func TestCheckDecodedTxnWarnings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			violations := CheckDecodedTxnWarningsIn(tc.txn, Context{})
+			violations := checkWarnings(tc.txn, txnreview.FindingContext{})
 			if len(violations) != tc.wantCount {
 				t.Errorf("expected %d violations, got %d: %+v", tc.wantCount, len(violations), violations)
 			}
@@ -104,7 +104,7 @@ func TestRekeyToKnownAddress(t *testing.T) {
 	txn := types.Transaction{Header: types.Header{RekeyTo: rekeyTarget}}
 
 	t.Run("unknown target warns about losing control", func(t *testing.T) {
-		violations := CheckDecodedTxnWarningsIn(txn, Context{})
+		violations := checkWarnings(txn, txnreview.FindingContext{})
 		if len(violations) != 1 {
 			t.Fatalf("expected 1 violation, got %d", len(violations))
 		}
@@ -115,7 +115,7 @@ func TestRekeyToKnownAddress(t *testing.T) {
 
 	t.Run("known target omits lose control warning", func(t *testing.T) {
 		known := map[string]bool{rekeyTarget.String(): true}
-		violations := CheckDecodedTxnWarningsIn(txn, Context{KnownAddresses: known})
+		violations := checkWarnings(txn, txnreview.FindingContext{KnownAddresses: known})
 		if len(violations) != 1 {
 			t.Fatalf("expected 1 violation, got %d", len(violations))
 		}
@@ -132,8 +132,8 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 	txn := types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{
 		ConfigAsset: 42, AssetParams: types.AssetParams{Manager: manager},
 	}}
-	violations := CheckDecodedTxnWarningsIn(txn, Context{})
-	if len(violations) != 1 || violations[0].Severity != signerapproval.ViolationSeverityWarning {
+	violations := checkWarnings(txn, txnreview.FindingContext{})
+	if len(violations) != 1 || violations[0].Severity != ViolationSeverityWarning {
 		t.Fatalf("violations = %+v, want one warning", violations)
 	}
 	msg := violations[0].Message
@@ -142,11 +142,11 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 			t.Fatalf("message missing %q:\n%s", want, msg)
 		}
 	}
-	destroy := CheckDecodedTxnWarningsIn(types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 42}}, Context{})
-	if len(destroy) != 1 || destroy[0].Severity != signerapproval.ViolationSeverityCritical || !strings.Contains(destroy[0].Message, "DESTROY asset #42") {
+	destroy := checkWarnings(types.Transaction{Type: types.AssetConfigTx, AssetConfigTxnFields: types.AssetConfigTxnFields{ConfigAsset: 42}}, txnreview.FindingContext{})
+	if len(destroy) != 1 || destroy[0].Severity != ViolationSeverityCritical || !strings.Contains(destroy[0].Message, "DESTROY asset #42") {
 		t.Fatalf("destroy violations = %+v, want one critical destroy warning", destroy)
 	}
-	unfreeze := CheckDecodedTxnWarningsIn(types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: manager, FreezeAsset: 42}}, Context{})
+	unfreeze := checkWarnings(types.Transaction{Type: types.AssetFreezeTx, AssetFreezeTxnFields: types.AssetFreezeTxnFields{FreezeAccount: manager, FreezeAsset: 42}}, txnreview.FindingContext{})
 	if len(unfreeze) != 1 || !strings.Contains(unfreeze[0].Message, "UNFREEZE") || unfreeze[0].Value != manager.String() {
 		t.Fatalf("unfreeze violations = %+v", unfreeze)
 	}
@@ -159,14 +159,14 @@ func TestAssetReconfigureWarningNamesRoles(t *testing.T) {
 func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 	nextStage := types.Address{0xAB}
 	other := types.Address{0xAC}
-	ctx := Context{
+	ctx := txnreview.FindingContext{
 		KnownAddresses:       map[string]bool{nextStage.String(): true},
 		ProtocolRekeyTargets: map[string]bool{nextStage.String(): true},
 	}
 
 	t.Run("protocol rekey produces no finding", func(t *testing.T) {
 		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
-		if v := CheckDecodedTxnWarningsIn(txn, ctx); len(v) != 0 {
+		if v := checkWarnings(txn, ctx); len(v) != 0 {
 			t.Fatalf("expected no findings, got %+v", v)
 		}
 	})
@@ -179,7 +179,7 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 				AssetCloseTo: types.Address{0xAD},
 			},
 		}
-		v := CheckDecodedTxnWarningsIn(txn, ctx)
+		v := checkWarnings(txn, ctx)
 		if len(v) != 1 || v[0].Field != "AssetCloseTo" {
 			t.Fatalf("expected only the asset close finding, got %+v", v)
 		}
@@ -187,7 +187,7 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 
 	t.Run("a rekey to any other address still warns", func(t *testing.T) {
 		txn := types.Transaction{Header: types.Header{RekeyTo: other}}
-		v := CheckDecodedTxnWarningsIn(txn, ctx)
+		v := checkWarnings(txn, ctx)
 		if len(v) != 1 || v[0].Field != "RekeyTo" || !strings.Contains(v[0].Message, "LOSE CONTROL") {
 			t.Fatalf("expected the lose-control rekey finding, got %+v", v)
 		}
@@ -195,8 +195,21 @@ func TestProtocolRekeyTargetIsNotAFinding(t *testing.T) {
 
 	t.Run("known addresses alone never exempt a rekey", func(t *testing.T) {
 		txn := types.Transaction{Header: types.Header{RekeyTo: nextStage}}
-		if v := CheckDecodedTxnWarningsIn(txn, Context{KnownAddresses: ctx.KnownAddresses}); len(v) != 1 {
+		if v := checkWarnings(txn, txnreview.FindingContext{KnownAddresses: ctx.KnownAddresses}); len(v) != 1 {
 			t.Fatalf("expected the held-address rekey finding, got %+v", v)
 		}
 	})
+}
+
+// checkWarnings is a transaction's review findings as a prompt's warnings.
+func checkWarnings(txn types.Transaction, ctx txnreview.FindingContext) []Violation {
+	findings := txnreview.Findings(txn, ctx)
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]Violation, len(findings))
+	for i, finding := range findings {
+		out[i] = ViolationFor(finding)
+	}
+	return out
 }

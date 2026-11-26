@@ -389,7 +389,7 @@ direct transfer movements; passthrough and foreign request slots are not
 governed by this signer's route table. See
 [Transfer Routing](#transfer-routing).
 
-Warning analysis covers the fields below. The rules live in `internal/txnreview/findings.go`, a client-safe package, so apshell's review of a plugin-built group applies the same ones; `internal/signerapp/approvalpolicy/warnings.go` turns its findings into approval violations. Add a rule in `findings.go`, never in the adapter:
+Warning analysis covers the fields below. The rules live in `internal/txnreview/findings.go`, a client-safe package, so apshell's review of a plugin-built group applies the same ones; `approval.ViolationFor` (`internal/signerapp/approval/types.go`) turns its findings into approval violations. Add a rule in `findings.go`, never in the conversion:
 
 - rekey fields,
 - ALGO close-out fields,
@@ -2061,7 +2061,7 @@ Implementation source of truth:
   effective per-key diff.
 - `internal/signerapp/policytext`: comment stripping, templates, and cosigner
   presets.
-- `internal/txnreview/findings.go`: warning analysis, shared with apshell's plugin group review; `internal/signerapp/approvalpolicy/warnings.go` adapts its findings to approval violations.
+- `internal/txnreview/findings.go`: warning analysis, shared with apshell's plugin group review; `approval.ViolationFor` (`internal/signerapp/approval/types.go`) turns a finding into an approval violation.
 - `cmd/apadmin/policy.go`: policy command adapter and local IPC transport selection.
 - `internal/signerapp/policycmd`: online and offline-rescue policy workflows.
 - `internal/signerapp/policyeval`: the pure verdict evaluator for client

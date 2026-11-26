@@ -12,8 +12,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signerapp/storevalidate"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 )
 
@@ -111,7 +111,7 @@ func parseInitializeRole(args []string) (noderole.Role, error) {
 // metadata directory and why the helper could not store the passphrase, if
 // it could not.
 func initializeStoreLocal(passphrase []byte, role noderole.Role) (metadataDir, helperWarning string, err error) {
-	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory)
+	unlockCfg, err := unlockconfig.LoadPassphraseHelper(dataDirectory)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve passphrase helper config: %w", err)
 	}
@@ -130,7 +130,7 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (metadataDir, h
 		return "", "", resultError("keystore initialization failed", "initialize_store_failed", err.Error())
 	}
 
-	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
+	if unlockCfg != nil {
 		passphraseCmdCfg := &serverconfig.PassphraseCommandConfig{
 			Argv: unlockCfg.PassphraseCommandArgv,
 			Env:  unlockCfg.PassphraseCommandEnv,

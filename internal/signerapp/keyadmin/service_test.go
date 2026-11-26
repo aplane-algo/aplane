@@ -40,6 +40,7 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	nativefalconreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatespec"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -751,7 +752,7 @@ func registerServiceGenericTemplate(t *testing.T) {
 func installServiceGenericTemplate(t *testing.T, ir *productruntime.Runtime) {
 	t.Helper()
 	if err := ir.WithKeyring(func(mk *crypto.Keyring) error {
-		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatestore.TemplateTypeGeneric, mk)
+		_, saveErr := templatestore.SaveTemplateActive(genstoretest.Active(t, ir.KeyPaths()), serviceGenericTemplateYAML(), serviceGenericKeyType, templatespec.TemplateTypeGeneric, mk)
 		return saveErr
 	}); err != nil {
 		t.Fatalf("SaveTemplateActive(service generic template) error = %v", err)
