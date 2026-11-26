@@ -7,6 +7,27 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## auth_only sessions and the disconnect lock are audited, and unenrolled SSH lines are limited
+
+- **An `auth_only` session writes `SESSION_CONNECTED` and
+  `SESSION_DISCONNECTED`, with reason `auth_only`.** apadmin's read-only batch
+  commands log in this way; they wrote neither.
+- **The lock `lock_on_disconnect` makes writes `IDENTITY_LOCKED`,** with reason
+  `lock_on_disconnect` and the ending session's principal, when the signer was
+  not locked already. It wrote none.
+- **What the SSH server prints for connections without an enrolled key is
+  limited:** the first 20 lines, then one every 3 seconds, and a count of the
+  rest. Anyone who can reach the port can open such connections, and each
+  printed its lines. The refused `none` method every client tries first is no
+  longer printed, and a queued key asking again no longer prints a daemon line
+  of its own.
+- **Reopening apadmin's backup import form aborts an upload still running.** A
+  recovery keeps an upload going and takes the operator off the form; opening
+  it again from the backups page dropped the upload, which stayed open on the
+  signer, and its file.
+- **A script's LogicSig argument that can't be read is described, not quoted,**
+  as the shell already did: a preimage is a secret until it is spent.
+
 ## Scripts take LogicSig arguments everywhere, and the console shows config
 
 - **Every script function that sends from one account takes `lsigArgs`:**

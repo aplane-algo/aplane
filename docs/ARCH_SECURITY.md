@@ -1331,6 +1331,17 @@ Denial behavior:
   budget, and its `SESSION_DISCONNECTED` is written exactly when that was. An
   enrolled key's connections are not limited. The enrollment queue, of 16,
   bounds `CLIENT_ENROLLMENT_REQUESTED`.
+- What the SSH server prints to the signer's log for connections without an
+  enrolled key (a refused authentication attempt, an unknown key, and every
+  line of an `enroll` connection, its connect, keepalive and disconnect
+  included) is limited too: the first 20 lines, then one every 3 seconds, and
+  the count of the rest a minute after the first of them and at shutdown, as
+  `[SSH] N more lines about connections without an enrolled key were not
+  printed` (`internal/sshtunnel/unenrolled_log.go`). An enrolled key's lines
+  are not limited. The `none` method every SSH client tries before its key is
+  not printed, since it says nothing and would spend that budget, and a key
+  already waiting in the enrollment queue that asks again is printed only by
+  the limited server line.
 - Cosigner rejections (`SIGN_REJECTED` for a cosigner component: a policy
   rejection, `cosigner_policy_rejected:`, or a signer-invariant refusal,
   `signer_invariant:`) are rate limited the same way, with a separate budget
@@ -1601,9 +1612,13 @@ Store-management audit semantics:
   recorded before the daemon exits, and a helper that returns none is not. An
   unlock that finds the signer unlocked changes nothing, so only a refusal of
   its passphrase is recorded. The entry is the request's outcome, not the state
-  after it: a lock from another session can come first in the log. Only a lock
-  request writes `IDENTITY_LOCKED`; a lock that an admin session's end brings
-  (`lock_on_disconnect`) follows its `SESSION_DISCONNECTED`
+  after it: a lock from another session can come first in the log. A lock
+  request writes `IDENTITY_LOCKED` with its reason, and so does the end of the
+  session responsible for the signer with no owner left, when
+  `lock_on_disconnect` is set and the signer was not locked already, with
+  reason `lock_on_disconnect`
+- An `auth_only` session, which reads and never owns the signer, writes
+  `SESSION_CONNECTED` and `SESSION_DISCONNECTED` with reason `auth_only`
 - `STORE_RECONCILED` is emitted for every explicit reconcile, with `outcome`
   `succeeded` or `failed`; what it quarantined has entries of its own
 - `IDENTITY_UNLOCKED`, `STORE_RECONCILED`, `BACKUP_DELETED`, `KEY_TYPE_CHANGED`
