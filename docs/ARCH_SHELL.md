@@ -1234,7 +1234,7 @@ the shell-app to engine to signer path.
 | `internal/apshellcli/commands_app*.go` | CLI adapter and app command parsing surface |
 | `internal/jsapi/apps.go` | JS app interaction bindings |
 | `internal/txnreview/describe.go` | The description of a transaction, app calls included, shown by the signer's approval prompt and by apshell's plugin group review |
-| `internal/txnreview/findings.go` | What a reviewer must not miss: rekeys, closes, clawbacks, app updates, deletes and clear-states, asset reconfigures, destroys and freezes, a payment of ALGO to the zero address, and an unusually high fee. The signer's approval warnings (`internal/signerapp/approvalpolicy`) and the plugin group review are both built from it |
+| `internal/txnreview/findings.go` | What a reviewer must not miss: rekeys, closes, clawbacks, app updates, deletes and clear-states, asset reconfigures, destroys and freezes, a payment of ALGO to the zero address, and an unusually high fee. The signer's approval warnings (`approval.ViolationFor`) and the plugin group review are both built from it |
 | `internal/txnreview/lookalike.go` | The warning that two accounts in one request look alike. The signer's prompt and the plugin group review both give it, for the group as a whole |
 | `internal/apshellapp/lookalike.go` | A send's receiver or a sweep's destination typed as an address that looks like a held account or an address-book entry (`txnreview.LookAlike`). The CLI asks before anything is signed (`ConfirmLookalikes`); without a prompt (MCP, scripts) the command goes on and its result warns |
 | `internal/txnreview/review.go`, `effects.go` | A request as data (`Review`): what the signer prints its approval text from and sends to apadmin as `review`. apshell does not draw one |

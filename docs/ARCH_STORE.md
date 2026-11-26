@@ -1149,7 +1149,7 @@ Invalid files are reported as invalid entries; duplicate or ambiguous library ca
 events. Compiled providers that are `library` visible in `internal/keytypecatalog` also appear in this list
 with `template_type:"compiled_provider"`; their enabled state comes from product-store key type state
 records. `compiled_provider` is an admin/library wire projection of
-`keytypestate.SourceCompiled`, not a `templatestore.TemplateType`; the encrypted
+`keytypestate.SourceCompiled`, not a `templatespec.TemplateType`; the encrypted
 template store accepts only YAML-backed `generic` and `composed` template types.
 YAML template entries use `installed` for encrypted template-file presence and `enabled` for whether
 the installed template is exposed to generation. Installed-only entries are derived from
@@ -1201,7 +1201,7 @@ names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 #### Template file format
 
 Encrypted YAML in the term envelope, bound to its key type. The parsed template spec
-(`generictemplate.TemplateSpec`, which embeds `templatestore.BaseTemplateSpec`)
+(`generictemplate.TemplateSpec`, which embeds `templatespec.BaseTemplateSpec`)
 contains:
 
 - `schema_version`

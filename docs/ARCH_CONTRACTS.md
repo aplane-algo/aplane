@@ -260,7 +260,7 @@ Validation:
   (`::`) displays `::1`. Without an advertise URL and a live SSH port, no
   display URL is produced.
 - the passphrase helper is configured only in product
-  `identities/default/unlock.yaml` (`startup.ResolveUnlockConfig`); `config.yaml`
+  `identities/default/unlock.yaml` (`unlockconfig.LoadPassphraseHelper`); `config.yaml`
   has no passphrase helper field. When a helper is configured, the runtime forces lock-on-disconnect off and the session timeout to 0 instead
   of rejecting the settings
 - `ipc_path` is the admin IPC Unix socket path. It defaults to
