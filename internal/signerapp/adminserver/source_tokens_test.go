@@ -151,7 +151,7 @@ func TestSourceTokenChangesRecordIntentThenOneOutcome(t *testing.T) {
 	svc := &stubServices{sourceTokenResult: adminproto.SourceTokenChangeResult{Success: true}}
 	session, _, conn := boundSourceTokenSession(svc, audit)
 	session.HandleSetSourceToken(setTokenMessage("set-1"))
-	svc.sourceTokenResult = adminproto.SourceTokenChangeResult{Code: protocol.ErrCodeKeyNotFound, Error: "no token is set for this source"}
+	svc.sourceTokenResult = adminproto.SourceTokenChangeResult{Code: protocol.ErrCodeSourceTokenNotSet, Error: "no token is set for this source"}
 	session.HandleRemoveSourceToken(&protocol.SourceTokenRemoveMessage{
 		BaseMessage: protocol.BaseMessage{ID: "rm-1", Type: protocol.MsgTypeSourceTokenRemove}, Selector: "default", Source: "ops",
 	})
@@ -164,7 +164,7 @@ func TestSourceTokenChangesRecordIntentThenOneOutcome(t *testing.T) {
 	}
 	msgs := decodeAdminProtoWrites(t, conn)
 	if len(msgs) != 2 || msgs[0].Type != protocol.MsgTypeSourceTokenSetResult || !msgs[0].Success ||
-		msgs[1].Type != protocol.MsgTypeSourceTokenRemoveResult || msgs[1].Success || msgs[1].Code != protocol.ErrCodeKeyNotFound {
+		msgs[1].Type != protocol.MsgTypeSourceTokenRemoveResult || msgs[1].Success || msgs[1].Code != protocol.ErrCodeSourceTokenNotSet {
 		t.Fatalf("responses = %+v", msgs)
 	}
 }

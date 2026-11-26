@@ -50,6 +50,7 @@ const (
 	ErrorNotFound          = svcerr.KindNotFound
 	ErrorCacheRefresh      = svcerr.KindCacheRefresh
 	ErrorRecoveryBlocked   = svcerr.KindRecoveryBlocked
+	ErrorSourceTokenNotSet = svcerr.KindSourceTokenNotSet
 	ErrorInternal          = svcerr.KindInternal
 )
 

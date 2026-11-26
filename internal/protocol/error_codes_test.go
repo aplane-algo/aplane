@@ -29,6 +29,7 @@ var codeWireValues = map[string]string{
 	"ErrCodeAuthorizationDenied":                "authorization_denied",
 	"ErrCodeSignerLocked":                       "signer_locked",
 	"ErrCodeKeyNotFound":                        "key_not_found",
+	"ErrCodeSourceTokenNotSet":                  "source_token_not_set",
 	"ErrCodeNodeFailClosed":                     "node_fail_closed",
 	"ErrCodeLoginTimeout":                       "login_timeout",
 	"ErrCodeInternal":                           "internal_error",

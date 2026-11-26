@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -181,8 +182,8 @@ func TestSourceTokenChangeResultListsStatesWithoutValues(t *testing.T) {
 		t.Fatalf("RemoveSourceToken() = %+v", removed)
 	}
 	again := ipc.RemoveSourceToken(adminproto.RemoveSourceTokenRequest{Selector: sourcetokens.DefaultSelector, Source: "screening"})
-	if again.Success || again.Code == "" || again.Error == "" {
-		t.Fatalf("RemoveSourceToken(none set) = %+v", again)
+	if again.Success || again.Code != protocol.ErrCodeSourceTokenNotSet || again.Error == "" {
+		t.Fatalf("RemoveSourceToken(none set) = %+v, want %s", again, protocol.ErrCodeSourceTokenNotSet)
 	}
 	list := ipc.ListSourceTokens(adminproto.ListSourceTokensRequest{})
 	if !list.Success || len(list.Selectors) != 1 || len(list.Selectors[0].Tokens) != 2 {

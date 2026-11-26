@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sourcetokens"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -217,8 +218,12 @@ func TestRemoveSourceTokenDeletesTheLastTokensFile(t *testing.T) {
 	if _, ok := svc.Runtime.SourceTokenFor(keyID, "ops"); ok {
 		t.Fatal("a removed token is still published")
 	}
-	if _, svcErr := svc.RemoveSourceToken(keyID, "ops"); svcErr == nil || svcErr.Kind != ErrorNotFound {
-		t.Fatalf("RemoveSourceToken(again) error = %#v, want not found", svcErr)
+	if _, svcErr := svc.RemoveSourceToken(keyID, "ops"); svcErr == nil || svcErr.Kind != ErrorSourceTokenNotSet {
+		t.Fatalf("RemoveSourceToken(again) error = %#v, want no token set", svcErr)
+	}
+	// On the wire it is its own code, not a missing key.
+	if got := ipcCodeForErrorKind(&Error{Kind: ErrorSourceTokenNotSet}); got != protocol.ErrCodeSourceTokenNotSet {
+		t.Fatalf("wire code = %q, want %q", got, protocol.ErrCodeSourceTokenNotSet)
 	}
 	listing, svcErr = svc.RemoveSourceToken(keyID, "screening")
 	if svcErr != nil || len(listing) != 0 {
@@ -238,8 +243,8 @@ func TestRemoveSourceTokenDeletesTheLastTokensFile(t *testing.T) {
 	if _, ok := svc.Runtime.SourceTokenFor(keyID, "screening"); ok {
 		t.Fatal("the last removed token is still published")
 	}
-	if _, svcErr := svc.RemoveSourceToken(unheldWitnessKeyID, "screening"); svcErr == nil || svcErr.Kind != ErrorNotFound {
-		t.Fatalf("RemoveSourceToken(no file) error = %#v, want not found", svcErr)
+	if _, svcErr := svc.RemoveSourceToken(unheldWitnessKeyID, "screening"); svcErr == nil || svcErr.Kind != ErrorSourceTokenNotSet {
+		t.Fatalf("RemoveSourceToken(no file) error = %#v, want no token set", svcErr)
 	}
 }
 

@@ -865,8 +865,9 @@ store mutation lock, as key generation is; they mint nothing, and the runtime
 token index is published once the write is durable. List reads the token
 files under the same lock and zeroes every token it decrypts. All three
 need an unlocked cosigner node: a signer node refuses them with
-`invalid_request`, a locked node with `signer_locked`, and a key the node
-does not hold, or a source with no token to remove, with `key_not_found`.
+`invalid_request`, a locked node with `signer_locked`, a key the node does
+not hold with `key_not_found`, and a source with no token to remove with
+`source_token_not_set`.
 
 Policy selection semantics:
 
@@ -1090,6 +1091,7 @@ error-message codes are defined in `internal/protocol/error_codes.go`:
 - `invalid_request`
 - `unknown_message_type`
 - `key_not_found`
+- `source_token_not_set`
 - `node_fail_closed`
 - `login_timeout`
 - `internal_error`

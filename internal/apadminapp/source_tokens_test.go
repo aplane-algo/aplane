@@ -159,12 +159,12 @@ func TestSourceTokenSetWarnsWhenTheTokenIsUnused(t *testing.T) {
 
 func TestSourceTokenSetAndRemoveFailures(t *testing.T) {
 	requester := &fakeRequester{handle: func(message, out any) error {
-		*out.(*protocol.SourceTokenChangeResultMessage) = protocol.SourceTokenChangeResultMessage{Code: protocol.ErrCodeKeyNotFound, Error: "no token is set for this source"}
+		*out.(*protocol.SourceTokenChangeResultMessage) = protocol.SourceTokenChangeResultMessage{Code: protocol.ErrCodeSourceTokenNotSet, Error: "no token is set for this source"}
 		return nil
 	}}
 	err := (Catalog{Client: requester, ReadSecret: func(string) ([]byte, error) { return []byte(testToken), nil }}).
 		Run("source", []string{"token", "remove", "default", "screening"})
-	if err == nil || protocol.CodeForError(err) != protocol.ErrCodeKeyNotFound || !strings.Contains(err.Error(), "source token remove failed: no token is set") {
+	if err == nil || protocol.CodeForError(err) != protocol.ErrCodeSourceTokenNotSet || !strings.Contains(err.Error(), "source token remove failed: no token is set") {
 		t.Fatalf("remove failure = %v", err)
 	}
 	if _, ok := requester.requests[0].(protocol.SourceTokenRemoveMessage); !ok {
