@@ -568,12 +568,11 @@ func parseJSByteString(v interface{}) ([]byte, error) {
 	case []interface{}:
 		out := make([]byte, len(raw))
 		for i, item := range raw {
+			// The element is never quoted: the bytes can be a LogicSig
+			// argument, a secret until it is spent.
 			val, err := toUint64Interface(item)
-			if err != nil {
-				return nil, fmt.Errorf("invalid byte %d: %v", i, err)
-			}
-			if val > 255 {
-				return nil, fmt.Errorf("invalid byte %d: value %d out of range", i, val)
+			if err != nil || val > 255 {
+				return nil, fmt.Errorf("invalid byte %d: not a number from 0 to 255", i)
 			}
 			out[i] = byte(val)
 		}

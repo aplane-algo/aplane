@@ -91,28 +91,10 @@ func ParseLsigArg(token string) (LsigArg, error) {
 	}
 	value, err := appinput.ParseByteValue(rawValue)
 	if err != nil {
-		return LsigArg{}, fmt.Errorf("invalid %s: %s", arg.Word(), lsigArgValueProblem(rawValue))
+		return LsigArg{}, fmt.Errorf("invalid %s: %s", arg.Word(), appinput.ByteValueProblem(rawValue))
 	}
 	arg.Value = value
 	return arg, nil
-}
-
-// lsigArgValueProblem says what is wrong with a value appinput.ParseByteValue
-// refused, by the form its prefix names, without the value or the decoder's
-// detail, which can quote part of it.
-func lsigArgValueProblem(raw string) string {
-	switch {
-	case strings.HasPrefix(raw, "hex:"), strings.HasPrefix(raw, "0x"):
-		return "the value is not valid hex"
-	case strings.HasPrefix(raw, "b64:"):
-		return "the value is not valid base64"
-	case strings.HasPrefix(raw, "int:"):
-		return "the value is not a decimal unsigned 64-bit number"
-	case strings.HasPrefix(raw, "addr:"):
-		return "the value is not a valid Algorand address"
-	default:
-		return fmt.Sprintf("the value has a ':' but no known prefix (supported: %s); write text:<value> for literal text", appinput.BytePrefixes)
-	}
 }
 
 // AddLsigArg parses an arg: token and appends it to args. A name given twice
