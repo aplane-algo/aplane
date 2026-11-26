@@ -799,8 +799,9 @@ that document alone, and a held key without one is governed by the default.
 The shipped cosigner default is deny-all (`transaction_types` `{"*":
 "reject"}`, no routes, `reject_rekey: true`), so a new key rejects every
 request with `transaction_type:<type>` until it is given a document of its
-own or the operator loosens the default. Before any rule, a target whose
-genesis hash maps to no known network is rejected as `unknown_genesis_hash`
+own or the operator loosens the default. Before policy, a request whose group
+names a network the node does not know is refused as a bad request (400), as
+on `/sign`; nothing is audited, as for this route's other bad requests
 (see [ARCH_POLICY.md](ARCH_POLICY.md#known-network-gate)). Policy is
 evaluated before the cosigner key is loaded. Decode refuses review-producing fields on a cosigner node, so every verdict
 is sign or reject. The cosigner-specific rule IDs are
@@ -1171,9 +1172,11 @@ Primary packages and files:
 - `internal/signerapp/policyapply`: shared policy check and generation-commit
   rules.
 - `internal/signerapp/signing/cosigner_policy.go`: cosigner key and policy
-  selection, and the rejection and audit that act on its verdict.
-- `internal/signerapp/policyeval/cosigner.go`: the cosigner verdict: the
-  known-network check and each target's rules.
+  selection, the refusals before policy (an unknown network, transaction
+  bounds, mixed networks or disjoint validity windows), and the rejection and
+  audit that act on its verdict.
+- `internal/signerapp/policyeval/cosigner.go`: the cosigner verdict: each
+  target's rules.
 - `internal/signerapp/signing/external_checks.go`: the last cosigner gate,
   which runs the governing document's external checks under a key use;
   `internal/signerapp/externalcheck` plans, fetches and judges them, and

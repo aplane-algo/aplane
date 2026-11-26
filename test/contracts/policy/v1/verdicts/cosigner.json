@@ -157,7 +157,7 @@
       }
     },
     {
-      "name": "unknown networks are violations on each target",
+      "name": "an unknown network is refused before policy",
       "surface": "cosigner",
       "policies": {
         "W1": {}
@@ -192,9 +192,9 @@
       ],
       "component_key": "W1",
       "expect": {
-        "outcome": "reject",
-        "kind": "forbidden",
-        "message": "cosigner policy rejected request: txn 1: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 2: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000; txn 3: [unknown_genesis_hash] cannot evaluate cosigner policy for unknown genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
+        "outcome": "error",
+        "kind": "bad_request",
+        "message": "transaction 1 has unrecognized genesis hash ee00000000000000000000000000000000000000000000000000000000000000"
       }
     },
     {

@@ -437,6 +437,50 @@ func TestCosignerRefusesMixedGenesisGroupBeforePolicyOrExternalChecks(t *testing
 	}
 }
 
+// A cosigner refuses a target on a network it doesn't know before its policy
+// or external checks run: a bad request, as on /sign, not a policy rejection,
+// and nothing is audited. A network the node's own mapping adds is known, and
+// the request goes on to the policy.
+func TestCosignerRefusesAnUnknownNetworkBeforePolicy(t *testing.T) {
+	const custom = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+	networks, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{custom: "devnet-x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := newExternalGate(t)
+	g.svc.Planner = &Planner{Snapshot: cosignerTestPlanner.Snapshot, GenesisHashResolver: networks}
+	// A node compiles its policies with the mapping it checks networks with.
+	g.cfg.GenesisHashResolver = networks
+	planOn := func(genesis types.Digest) *ComponentSignPlan {
+		txn := testnetPaymentTransaction(t, g.source, g.allowed, 1)
+		txn.GenesisHash = genesis
+		return mustPrepareComponentSigning(t, componentPlanRequest{
+			RequestID:     "cmp-cosigner-unknown-network",
+			ComponentKey:  testFalconComponentSelector(t, 0xab),
+			Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
+			TargetIndices: []int{0},
+		})
+	}
+
+	signErr := g.svc.runCosignerGates(context.Background(), planOn(types.Digest{0xee}))
+	if signErr == nil || signErr.Kind != ErrorBadRequest || !strings.Contains(signErr.Message, "unrecognized genesis hash ee00") {
+		t.Fatalf("runCosignerGates(unknown network) = %#v, want a bad request naming the genesis hash", signErr)
+	}
+	if g.hits.Load() != 0 || len(g.audit.limited) != 0 {
+		t.Fatalf("hits=%d audit=%d, want neither before policy", g.hits.Load(), len(g.audit.limited))
+	}
+
+	// The policy routes testnet only, so the known custom network reaches it
+	// and is refused there, audited.
+	signErr = g.svc.runCosignerGates(context.Background(), planOn(verdictGenesis(t, custom)))
+	if signErr == nil || signErr.Kind != ErrorForbidden || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("runCosignerGates(custom network) = %#v, want the policy's route miss", signErr)
+	}
+	if len(g.audit.limited) != 1 {
+		t.Fatalf("audit = %d, want the policy rejection recorded", len(g.audit.limited))
+	}
+}
+
 // Network parameter validation runs before signer invariants: a group that
 // both violates cross-slot network rules (mixed genesis or disjoint windows)
 // and breaks a signer invariant (such as a nonparticipating keyreg) must get

@@ -14,31 +14,16 @@ import (
 // cosignerVerdict is the cosigner verdict: Approve when every target passes
 // its policy, else Reject with the violations of every target, each at its
 // group index. A cosigner has no operator, so a review-producing rule is a
-// rejection, and a target on a network the node does not know is a violation
-// rather than a refusal before policy.
+// rejection.
 func cosignerVerdict(in Input) (Verdict, error) {
 	for _, slot := range in.Slots {
 		if slot.Policy == nil {
 			return Verdict{}, ErrPolicyNotLoaded
 		}
 	}
-	// Known-network gate: asset references are only meaningful on a known
-	// network; the gate applies to every target, including ones that name no
-	// asset (a cosigner rekey is a 0 ALGO self-payment), so no rule has to
-	// prove it cannot carry one.
 	var violations []policy.LintViolation
 	for _, slot := range in.Slots {
-		txn := in.Group[slot.Index]
-		if _, ok := in.Networks.NetworkForGenesisHashBytes(txn.GenesisHash[:]); !ok {
-			violations = append(violations, policy.LintViolation{
-				RuleID:   policy.UnknownGenesisHashRuleID,
-				Scope:    "txn",
-				TxnIndex: slot.Index,
-				Message:  fmt.Sprintf("cannot evaluate cosigner policy for unknown genesis hash %x", txn.GenesisHash[:]),
-			})
-			continue
-		}
-		violations = append(violations, cosignerTargetLints(txn, slot.Index, slot.Policy)...)
+		violations = append(violations, cosignerTargetLints(in.Group[slot.Index], slot.Index, slot.Policy)...)
 	}
 	if len(violations) > 0 {
 		return Verdict{Outcome: Reject, Violations: violations}, nil

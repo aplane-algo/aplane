@@ -118,7 +118,7 @@ func TestPrepareComponentSigningUsesCosignerRoleDomain(t *testing.T) {
 func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	sender := types.Address{7}.String()
 	receiver := types.Address{8}.String()
-	txn := paymentTransaction(t, sender, receiver, 10)
+	txn := testnetPaymentTransaction(t, sender, receiver, 10)
 
 	_, err := (&Service{Planner: cosignerTestPlanner, HoldsCosignerKey: holdsAllCosignerKeys}).signComponentWithContext(context.Background(), componentPlanRequest{
 		ComponentKey:  testFalconComponentSelector(t, 0xab),
@@ -1544,9 +1544,9 @@ func TestSignComponentCosignerKeyOnDenyAllDefaultRejectsEverything(t *testing.T)
 }
 
 // A rekey that rekey_policy allows is still refused when its genesis hash names
-// no network this node recognizes: the cosigner fails closed on an unknown
-// network before any rekey or routing rule runs, and never loads the key.
-func TestSignComponentCosignerRejectsAllowedRekeyOnUnknownNetwork(t *testing.T) {
+// no network this node recognizes: the cosigner refuses an unknown network
+// before its policy runs, and never loads the key.
+func TestSignComponentCosignerRefusesAllowedRekeyOnUnknownNetwork(t *testing.T) {
 	publicKey, _ := testFalconComponentKeypair(t, 0x63)
 	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
@@ -1573,11 +1573,11 @@ func TestSignComponentCosignerRejectsAllowedRekeyOnUnknownNetwork(t *testing.T) 
 		Group:         componentTestGroup(t, []string{txnutil.EncodeWithPrefixHex(txn)}),
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
-	if signErr == nil || signErr.Kind != ErrorForbidden || !strings.Contains(signErr.Message, policy.UnknownGenesisHashRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden %s", signErr, policy.UnknownGenesisHashRuleID)
+	if signErr == nil || signErr.Kind != ErrorBadRequest || !strings.Contains(signErr.Message, "unrecognized genesis hash") {
+		t.Fatalf("SignComponentWithContext() error = %#v, want a bad request for the unknown network", signErr)
 	}
 	if store.calls != 0 {
-		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+		t.Fatalf("store calls = %d, want 0 before policy", store.calls)
 	}
 }
 

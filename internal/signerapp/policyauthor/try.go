@@ -137,9 +137,8 @@ func TryWithAnswers(f *File, txn TryTxn, answers ExternalAnswers, networks Netwo
 		return TryResult{}, err
 	}
 	in := policyeval.Input{
-		Group:    []types.Transaction{built},
-		Slots:    []policyeval.Slot{{Index: 0, Policy: cfg}},
-		Networks: networks.Resolver,
+		Group: []types.Transaction{built},
+		Slots: []policyeval.Slot{{Index: 0, Policy: cfg}},
 	}
 	if f.Role == noderole.RoleCosigner {
 		in.Role = policyeval.RoleCosigner

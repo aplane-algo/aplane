@@ -177,18 +177,8 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		return nil, err
 	}
 
-	if err = validateKnownNetwork(txns, p.GenesisHashResolver); err != nil {
+	if err = validateGroupBeforePolicy(txns, p.GenesisHashResolver, console); err != nil {
 		return nil, err
-	}
-
-	if err = validateTransactionBounds(txns); err != nil {
-		return nil, err
-	}
-
-	if len(txns) > 1 {
-		if err = validateNetworkParams(txns, console); err != nil {
-			return nil, err
-		}
 	}
 
 	var snapshot PlannerRuntimeSnapshot
@@ -654,6 +644,26 @@ func verifyClaimedGroupID(txns []types.Transaction, claimed types.Digest) *Servi
 	}
 	if computed != claimed {
 		return badRequest("claimed group ID does not match the transactions in the group")
+	}
+	return nil
+}
+
+// validateGroupBeforePolicy refuses a group before any invariant or policy
+// judges it when this node can't tell which network it is for or the network
+// would never accept it: a transaction on a network the node doesn't know, one
+// outside the protocol's bounds, or a group whose transactions name different
+// networks or share no validity window. The planner, the frozen-component
+// validation, the cosigner and the rotating spend all call it, so each
+// refuses alike.
+func validateGroupBeforePolicy(txns []types.Transaction, resolver apconfig.GenesisHashNetworkResolver, console Console) *ServiceError {
+	if err := validateKnownNetwork(txns, resolver); err != nil {
+		return err
+	}
+	if err := validateTransactionBounds(txns); err != nil {
+		return err
+	}
+	if len(txns) > 1 {
+		return validateNetworkParams(txns, console)
 	}
 	return nil
 }

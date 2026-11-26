@@ -56,25 +56,26 @@ func TestCosignerApprovesOrRejectsAcrossSparseTargets(t *testing.T) {
 	}
 }
 
-func TestCosignerKnownNetworksComeFromTheInput(t *testing.T) {
+// The node refuses a network it doesn't know before policy, so the verdict
+// never sees one. Routing still names its networks through the mapping
+// compiled into each policy: a policy compiled without the node's custom
+// network can't route on it, and fails closed.
+func TestCosignerRoutesOnTheNetworksCompiledIntoItsPolicy(t *testing.T) {
 	const custom = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
 	networks, err := apconfig.NewGenesisHashNetworkResolver(map[string]string{custom: "devnet-x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The node compiles its policies with the same mapping it checks
-	// networks with, so routing knows the custom network too.
-	open := cosignerPolicy(t, anyRoute)
-	open.GenesisHashResolver = networks
 	group := []types.Transaction{onNetwork(t, pay(1, 2, 1), custom)}
-	in := Input{Role: RoleCosigner, Group: group, Slots: []Slot{{Index: 0, Policy: open}}}
 
-	verdict, err := Evaluate(in)
-	if err != nil || verdict.Outcome != Reject || verdict.Violations[0].RuleID != policy.UnknownGenesisHashRuleID {
-		t.Fatalf("built-in networks only: %+v, %v; want the unknown-network violation", verdict, err)
+	builtIn := cosignerPolicy(t, anyRoute)
+	verdict, err := Evaluate(Input{Role: RoleCosigner, Group: group, Slots: []Slot{{Index: 0, Policy: builtIn}}})
+	if err != nil || verdict.Outcome != Reject || verdict.Violations[0].RuleID != policy.TransferRoutingUnknownGenesisRuleID {
+		t.Fatalf("built-in networks only: %+v, %v; want %s", verdict, err, policy.TransferRoutingUnknownGenesisRuleID)
 	}
-	in.Networks = networks
-	if verdict, err := Evaluate(in); err != nil || verdict.Outcome != Approve {
+	withCustom := cosignerPolicy(t, anyRoute)
+	withCustom.GenesisHashResolver = networks
+	if verdict, err := Evaluate(Input{Role: RoleCosigner, Group: group, Slots: []Slot{{Index: 0, Policy: withCustom}}}); err != nil || verdict.Outcome != Approve {
 		t.Fatalf("with the node's mapping: %+v, %v; want Approve", verdict, err)
 	}
 }

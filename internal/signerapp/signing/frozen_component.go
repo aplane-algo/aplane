@@ -32,16 +32,8 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	// DecodeGroupHex has checked the group's consistency and recomputed its
 	// ID, so a group is pre-grouped exactly when it has one.
 	isPreGrouped := group.GroupID != (types.Digest{})
-	if err := validateKnownNetwork(allTxns, s.Planner.GenesisHashResolver); err != nil {
+	if err := validateGroupBeforePolicy(allTxns, s.Planner.GenesisHashResolver, consoleOf(s.Console)); err != nil {
 		return nil, signerapi.GroupSignRequest{}, err
-	}
-	if err := validateTransactionBounds(allTxns); err != nil {
-		return nil, signerapi.GroupSignRequest{}, err
-	}
-	if len(allTxns) > 1 {
-		if err := validateNetworkParams(allTxns, consoleOf(s.Console)); err != nil {
-			return nil, signerapi.GroupSignRequest{}, err
-		}
 	}
 
 	// The partition check refused an empty prefix, so the request has at

@@ -103,12 +103,14 @@ passing answer release a request the policy refused (SI5 fails on
   refuses a rekey to one at any position. Its signed-position invariants run
   before its policy as on a signer.
 - `Decide` also transcribes cross-slot network parameter validation
-  (`planner.go::validateNetworkParams`, called by the planner,
+  (`planner.go::validateNetworkParams`, which
+  `planner.go::validateGroupBeforePolicy` runs for the planner,
   `frozen_component.go::ValidateFrozenComponentContext`, and
   `cosigner_policy.go::runCosignerGates`), modeled as the boolean
   `valid_network_params` checked ahead of the invariants, policy, and
-  external lookups under `NetworkParamsBeforeGates` (SI7). The cosigner's
-  key lookup, per-transaction bounds validation, and the building of
+  external lookups under `NetworkParamsBeforeGates` (SI7). The known-network
+  check and per-transaction bounds validation that the same helper runs
+  first, the cosigner's key lookup, and the building of
   `cosignerKeyAddresses` remain outside the model; a set that cannot be
   built refuses the request.
 - A position outside the group fails closed in the code

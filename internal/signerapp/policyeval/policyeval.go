@@ -9,9 +9,7 @@
 // What happens after the verdict (User Auto-Approve, the operator prompt,
 // reviewability, audit and console output) and refusals made before policy
 // (an unknown network, a rekey to a rotating account, a nonparticipating
-// keyreg) stay with the caller. A cosigner is the exception for an unknown
-// network: its verdict counts one as a policy violation (cosignerVerdict), so
-// the refusal is audited with the other rejections of the target.
+// keyreg) stay with the caller, on both node roles.
 package policyeval
 
 import (
@@ -19,7 +17,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	signingutil "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -82,10 +79,6 @@ type Input struct {
 	// Plan is the planner's report for Always Approve. Nil means the surface
 	// has no Always Approve. The cosigner role does not read it.
 	Plan *PlanFacts
-	// Networks maps genesis hashes to networks for the cosigner role's
-	// known-network check; the zero value knows the built-in networks.
-	// Client routing reads the mapping compiled into each policy instead.
-	Networks apconfig.GenesisHashNetworkResolver
 }
 
 // PlanFacts are what the planner reports about how it built Group. The
