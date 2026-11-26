@@ -395,7 +395,7 @@ anywhere.
 and `aplane.ed25519.v1` render when they are given overlay parameters and no bounds
 (see [plain hosts](ARCH_KEYTYPES.md#plain-hosts)); with any bounds parameter they
 render a `bounded2` shape instead. It is stored in the same
-`bounded_authorization` record as `bounded2` (`signing_metadata_version: 2`), so the
+`host` record as `bounded2`, without that record's `bounds` object, so the
 cosigner and rekey-to list overlays, the static argument layout, the planner and
 assembly work unchanged. It differs only in what the host allows:
 
@@ -405,8 +405,8 @@ assembly work unchanged. It differs only in what the host allows:
 | Spending bases | Falcon-1024 and Ed25519; an Ed25519 spending key is classical |
 | TEAL version | 13 |
 | Spend | every transaction without `RekeyTo`, of any type, closes, asset closes and clawback included (`open_spend`) |
-| Spend effects | none declared: `spend_effects` is empty |
-| Fee ceiling | none: `max_fee` is absent |
+| Spend effects | none declared: the key file has no `bounds`, and `/keys` shows `spend_effects` empty |
+| Fee ceiling | none: the key file has no `bounds`, and `/keys` shows no `max_fee` |
 | Layer 3 | `none`, with no author TEAL |
 | Rekey setting | as `bounded2`: `refused` or `spending_key`, either with a rekey-to list (`only_these`, `plus_cosigned`) |
 | Cosigner | optional; `plus_cosigned` needs one |
@@ -427,9 +427,11 @@ cosigner's policy is the only restriction on spends, so the cosigner sees every
 transaction type and effect; `PLAIN_EFFECT_CLASSIFICATIONS.json` lists the fields it
 judges under `cosigner_policy`.
 
-Durable validation requires `max_fee` absent, an empty spend-effect list and
-`layer3_policy: none` on `plain1`, and refuses an unknown contract;
-`txeffects.ClassifyFor` does too rather than treating it as `bounded2`. The
+Durable validation requires `bounds` absent on `plain1` and present on
+`bounded2`, through `boundedmeta.CheckBounds`, and refuses an unknown contract;
+`txeffects.ClassifyFor` makes the same check rather than treating a
+contract it doesn't know as `bounded2`. Without bounds a `plain1` account has
+no Layer 3, and is held to the rules of `none`. The
 classifier's plain manifest (`txeffects.PlainManifest`) and the independent
 classification file have different owners, like `bounded2`'s;
 `TestIndependentPlainInventoryMatchesManifest`,
@@ -437,7 +439,7 @@ classification file have different owners, like `bounded2`'s;
 `TestIndependentPlainInventoryClassifiesEveryAVMField` compare them.
 
 With no parameters a plain type renders the plain program instead: the spending-key
-check alone, with no bounded record (`signing_metadata_version: 1`). It is the
+check alone, with no `host` record. It is the
 composition base every bounded account names, the program of restored plain keys,
 and an account of its own once the type is enabled.
 
@@ -518,7 +520,7 @@ definition order. A cosigner-enabled profile includes the framework-injected
 `cosigner_public_key`, so the encoding commits to the resolved cosigner key. A
 profile with a rekey-to list includes the framework-injected `rekey_to`, so the
 encoding commits to the list's entries. The list root
-(`bounded_rekey_to_root`) is not a creation parameter and is excluded.
+(`rekey_to_root`) is not a creation parameter and is excluded.
 Display metadata, file paths, runtime values, and policy provenance are
 excluded.
 
@@ -535,7 +537,7 @@ new parameter types require a new encoding rule before use by bounded.
 
 For `cosigned1`, the user signer also returns a Falcon-signed assembly
 receipt on every path, listed rekeys included. With `field` as above, `metadata_json` equal to JSON encoding of the
-normalized durable `bounded_authorization` structure, and runtime arguments
+normalized durable `host` structure, and runtime arguments
 sorted by name, its message is:
 
 ```text
@@ -549,8 +551,15 @@ SHA512_256(
 ```
 
 Assembly verifies this receipt with the bounded spending public key before it
-accepts the base component or cosigner signature. The domain and message are
-the ones `bounded-cosigner1` used.
+accepts the base component or cosigner signature. The domain and message layout
+are the ones `bounded-cosigner1` used.
+
+The receipt is opaque outside the signer that issued it. That signer builds it
+and is the only one that checks it, at `/sign/assemble`; apshell and the SDKs
+carry it unread. `metadata_json` is therefore the signer's own stored form, not
+a format a client reproduces. A change to that form, such as the bounds moving
+under `host.bounds`, only invalidates a receipt issued before an upgrade and
+presented after it.
 
 ### Golden vector 1: allowlist with author TEAL
 
@@ -725,7 +734,7 @@ rotating account's address is a one-time stage key. The refusal has three limits
 
 No list escapes the check for lack of addresses. A creation request always gives the
 list as `rekey_to`, and key generation computes the root from it; a request that
-carries `bounded_rekey_to_root` is refused.
+carries `rekey_to_root` is refused.
 
 Every other entry is the user's choice, including one that can never act on the
 account, such as a cosigner key's native address.
@@ -821,7 +830,7 @@ proof.
 runtime argument named `cosigner` or starting with `cosigner_` rejects. Under
 `only_these` or `plus_cosigned`, `rekey_to` is the framework's too. User
 parameters, variables, runtime args, and references using
-the `bounded_` prefix reject, which covers the generator's `bounded_rekey_to_root`.
+the `bounded_` prefix reject, and so does the generator's own `rekey_to_root`, by name.
 Author labels and executable references using
 `__aplane_bounded1_` reject. Author TEAL cannot use `return` or escape the
 composer-owned pure-spend boundary.
@@ -858,7 +867,7 @@ The seed is derived from the spending key, so nothing extra is stored, every bac
 of the key carries it, and no secret travels in creation parameters. The list's
 privacy rests on the spending key staying secret. Key generation computes the root
 once the keypair exists and adds it as the reserved parameter
-`bounded_rekey_to_root` before rendering; durable metadata records it as
+`rekey_to_root` before rendering; durable metadata records it as
 `rekey_list.root`. It is not a creation parameter, so no request can set it. The
 account's provenance is computed from the request's own parameters, without it.
 `internal/rekeylist` owns the implementation.
@@ -932,9 +941,10 @@ selected-path LogicSig argument and opcode ceilings. The list's entries are the
 stored `rekey_to` creation parameter. Program bytes come
 from the final stored bytecode.
 
-Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
-`signing_metadata_version: 2` and require the canonical
-`bounded_authorization` object. The closed `layer3_policy` value is `custom`,
+Every LogicSig key uses `signing_metadata_version: 1`. A host account's key
+also carries the canonical `host` object, and a bounded host's `host` carries
+`bounds`: its spend effects, fee ceiling and Layer 3 policy, all three or
+none. A plain host has no `bounds`. The closed `layer3_policy` value is `custom`,
 `fixed_allowlist`, `merkle_allowlist`, `fixed_allowlist_custom`,
 `merkle_allowlist_custom`, or `none`; declared runtime and derived arguments and their complete
 slot masks are persisted. Top-level `signing_args` are ignored for bounded

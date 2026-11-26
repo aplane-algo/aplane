@@ -476,10 +476,9 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	lsigprovider.Register(restTestDSAProvider{
 		keyType: keyType,
 		bounded: &composeddsa.BoundedAuthorizationProfile{
-			Contract:     composeddsa.BoundedContract,
-			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
-			MaxFee:       new(uint64(2_000)),
-			Rekey:        boundedmeta.RekeySpendingKey,
+			Contract: composeddsa.BoundedContract,
+			Bounds:   &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
+			Rekey:    boundedmeta.RekeySpendingKey,
 		},
 	})
 
@@ -508,7 +507,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	const keyType = "test.rest-bounded-cosigner.v1"
 	profile := &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000)),
+		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
@@ -537,10 +536,8 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		SpendEffects:           []string{"pay"},
-		MaxFee:                 new(uint64(1_000)),
+		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
 		Rekey:                  boundedmeta.RekeyRefused,
-		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: strings.Repeat("ab", 32), ComponentKeyID: "COSIGNER",
@@ -689,7 +686,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	// A fixed-contract cosigned template: its cosigner key becomes a selector.
 	const keyType = "test.rest-reference-options.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
+		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
@@ -760,7 +757,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 
 	const keyType = "test.rest-reference-bounded-cosigner.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
-		Contract: composeddsa.BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000)),
+		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 		Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
@@ -1139,8 +1136,7 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		Contract:               p.bounded.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		MaxFee:                 p.bounded.MaxFee,
-		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+		Bounds:                 &boundedmeta.Bounds{MaxFee: p.bounded.Bounds.MaxFee, Layer3Policy: boundedmeta.Layer3PolicyCustom},
 	}
 	if p.bounded.Cosigner != nil {
 		cosigner := *p.bounded.Cosigner
@@ -1152,11 +1148,11 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
 		})
 	}
-	for _, spendType := range p.bounded.SpendEffects {
-		metadata.SpendEffects = append(metadata.SpendEffects, string(spendType))
+	for _, spendType := range p.bounded.Bounds.SpendEffects {
+		metadata.Bounds.SpendEffects = append(metadata.Bounds.SpendEffects, string(spendType))
 	}
-	sort.Slice(metadata.SpendEffects, func(i, j int) bool {
-		return metadata.SpendEffects[i] == string(txeffects.SpendEffectPay)
+	sort.Slice(metadata.Bounds.SpendEffects, func(i, j int) bool {
+		return metadata.Bounds.SpendEffects[i] == string(txeffects.SpendEffectPay)
 	})
 	metadata.Rekey = p.bounded.Rekey
 	return metadata

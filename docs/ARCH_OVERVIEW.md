@@ -1419,9 +1419,9 @@ refused.
 LogicSig key files without `signing_metadata_version` are refused by the key
 parser, which runs at key scan, on every key load and at restore, so none
 reaches signing. Key files with
-`signing_metadata_version >= 1` are **versioned signing-metadata keys**;
-non-bounded keys use version 1 and bounded
-keys require version 2 plus durable `bounded_authorization`. DSA LogicSig
+`signing_metadata_version` are **versioned signing-metadata keys**;
+every LogicSig key records version 1, and a host account's key also carries
+the durable `host` object. DSA LogicSig
 files persist `base_key_type` even when it equals `key_type`. The stored
 bytecode must derive an off-curve LogicSig address.
 
@@ -2437,8 +2437,8 @@ is in [ARCH_STORE.md](ARCH_STORE.md#keys-and-key-types).
     `cmd/apshell/deps_test.go` pins the client/signer registration boundary,
     including native Falcon signer registration and operations.
 15. Key files are the signing authority. DSA-backed and generic LogicSig keys
-    require versioned signing metadata (version 1 for non-bounded, version 2
-    for bounded); signing and restore reject missing or inconsistent metadata
+    require versioned signing metadata (version 1; a host account's key adds
+    the `host` object); signing and restore reject missing or inconsistent metadata
     rather than reconstructing it from templates. Rotating LogicSig keys
     instead persist seed and network-bound derivation material, reject stored
     bytecode and signing metadata, and derive stage programs through their

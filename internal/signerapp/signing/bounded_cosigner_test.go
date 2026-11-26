@@ -110,7 +110,7 @@ func TestBoundedAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
 		t.Fatal("receipt did not bind runtime arguments")
 	}
 	changedMetadata := boundedmeta.Clone(metadata)
-	changedMetadata.MaxFee = new(*changedMetadata.MaxFee + 1)
+	changedMetadata.Bounds.MaxFee = new(*changedMetadata.FeeCeiling() + 1)
 	changedProfile, _ := boundedAssemblyReceiptMessage("ACCOUNT", txID, changedMetadata, map[string][]byte{"preimage": {1}})
 	if first == changedProfile {
 		t.Fatal("receipt did not bind durable metadata")
@@ -209,7 +209,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 	root := list.Root()
 	list.Zero()
 	onlyThese := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	onlyThese.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
+	onlyThese.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
 	onlyThese.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])}
 	onlyThese.DerivedArgs = []boundedmeta.DerivedArg{{Name: "rekey_list_proof", Kind: boundedmeta.DerivedArgRekeyListProof, Parameter: boundedmeta.RekeyListEntriesParameter, MaxSize: rekeylist.ProofSize}}
 	cosignerSlot := onlyThese.ArgumentLayout[1]
@@ -316,9 +316,8 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 	metadata := &boundedmeta.Metadata{
 		Contract:               boundedmeta.Contract,
 		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.DefaultCosignerSignatureMaxSize}},
-		SpendEffects:           []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)),
-		Rekey:        boundedmeta.RekeyRefused,
-		Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
+		Rekey:                  boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
@@ -444,8 +443,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x57}
 	account := logicSigAddressForTest(t, bytecode)
 	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	metadata.Contract, metadata.SpendEffects, metadata.MaxFee = boundedmeta.PlainContract, nil, nil
-	metadata.Layer3Policy = boundedmeta.Layer3PolicyNone
+	metadata.Contract, metadata.Bounds = boundedmeta.PlainContract, nil
 	if err := metadata.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +526,7 @@ func TestPlainSignRefusesACosignedAccount(t *testing.T) {
 	cosignerKey := bytes.Repeat([]byte{0x47}, boundedmeta.DefaultCosignerPublicKeySize)
 	bounded := boundedCosignerTestMetadata(t, cosignerKey)
 	plain := boundedmeta.Clone(bounded)
-	plain.Contract, plain.SpendEffects, plain.MaxFee, plain.Layer3Policy = boundedmeta.PlainContract, nil, nil, boundedmeta.Layer3PolicyNone
+	plain.Contract, plain.Bounds = boundedmeta.PlainContract, nil
 	uncosigned := boundedmeta.Clone(plain)
 	uncosigned.Cosigner = nil
 	for name, test := range map[string]struct {

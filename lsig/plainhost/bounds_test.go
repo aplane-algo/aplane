@@ -249,11 +249,11 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if fromMetadata.Descriptor() != shape.Descriptor() {
 						t.Fatalf("metadata selects %s", fromMetadata.Descriptor())
 					}
-					if bounded.Layer3Policy != shape.Policy() || strings.Join(bounded.SpendEffects, ",") != joinEffects(shape.Spend) {
-						t.Fatalf("policy %s, spend %v", bounded.Layer3Policy, bounded.SpendEffects)
+					if bounded.Layer3Policy() != shape.Policy() || strings.Join(bounded.Bounds.SpendEffects, ",") != joinEffects(shape.Spend) {
+						t.Fatalf("policy %s, spend %v", bounded.Layer3Policy(), bounded.Bounds.SpendEffects)
 					}
-					if bounded.MaxFee == nil || *bounded.MaxFee != plainhost.DefaultMaxFee {
-						t.Fatalf("MaxFee = %v", bounded.MaxFee)
+					if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != plainhost.DefaultMaxFee {
+						t.Fatalf("MaxFee = %v", bounded.FeeCeiling())
 					}
 					if bounded.Rekey != wantRekeySetting(shape.Rekey) {
 						t.Fatalf("rekey setting %s", bounded.Rekey)
@@ -363,7 +363,7 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 					t.Fatal(err)
 				}
 				bounded := instance.Bounded
-				if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy != test.shape.Policy() || bounded.Rekey != wantRekeySetting(test.shape.Rekey) ||
+				if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy() != test.shape.Policy() || bounded.Rekey != wantRekeySetting(test.shape.Rekey) ||
 					(bounded.Cosigner != nil) != (test.shape.Cosigner != "") || (bounded.RekeyList != nil) != test.shape.HasRekeyList() {
 					t.Fatalf("metadata = %+v", bounded)
 				}
@@ -872,12 +872,12 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 	}
 	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
 	custom := boundedmeta.Clone(instance.Bounded)
-	custom.Layer3Policy = boundedmeta.Layer3PolicyCustom
+	custom.Bounds.Layer3Policy = boundedmeta.Layer3PolicyCustom
 	if _, err := provider.StoredFingerprint(nil, custom); err == nil {
 		t.Fatal("accepted a custom policy")
 	}
 	unknown := boundedmeta.Clone(instance.Bounded)
-	unknown.SpendEffects = []string{"pay", "keyreg"}
+	unknown.Bounds.SpendEffects = []string{"pay", "keyreg"}
 	if _, err := provider.StoredFingerprint(nil, unknown); err == nil {
 		t.Fatal("accepted an unknown transfer kind")
 	}
@@ -1223,8 +1223,8 @@ func TestBoundaryFileFeeCeiling(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if direct.Bounded.MaxFee == nil || *direct.Bounded.MaxFee != 20_000 {
-			t.Fatalf("%s: direct MaxFee = %v", b.name, direct.Bounded.MaxFee)
+		if direct.Bounded.FeeCeiling() == nil || *direct.Bounded.FeeCeiling() != 20_000 {
+			t.Fatalf("%s: direct MaxFee = %v", b.name, direct.Bounded.FeeCeiling())
 		}
 		for _, line := range []string{"max_fee: 20000\n", "max_fee: \"20000\"\n"} {
 			params, err := boundary.LoadFile(writeBoundaryFile(t, directory, valid+line))
@@ -1578,8 +1578,8 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: ceiling %d was refused: %v", b.name, ceiling, err)
 			}
-			if metadata.MaxFee == nil || *metadata.MaxFee != ceiling {
-				t.Fatalf("%s: ceiling %d recorded as %v", b.name, ceiling, metadata.MaxFee)
+			if metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != ceiling {
+				t.Fatalf("%s: ceiling %d recorded as %v", b.name, ceiling, metadata.FeeCeiling())
 			}
 			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, low, make([]byte, 10_000_000)); err == nil || !strings.Contains(err.Error(), "resource limits") {
 				t.Fatalf("%s: ceiling %d, oversized program: error = %v", b.name, ceiling, err)
@@ -1602,7 +1602,7 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	// no longer refuses it, and the review warns instead.
 	for _, ceiling := range []uint64{0, 1_000} {
 		lowCeiling := boundedmeta.Clone(instance.Bounded)
-		lowCeiling.MaxFee = new(ceiling)
+		lowCeiling.Bounds.MaxFee = new(ceiling)
 		if err := plainhost.CheckResources(lowCeiling, opcodes, 3_000); err != nil {
 			t.Fatalf("CheckResources(ceiling %d) error = %v", ceiling, err)
 		}
@@ -1666,8 +1666,8 @@ func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
 			if _, persisted := want.Values[plainhost.ParameterMaxFee]; persisted {
 				t.Fatalf("%s %s: the default ceiling is persisted", b.name, shape.Descriptor())
 			}
-			if want.Bounded.MaxFee == nil || *want.Bounded.MaxFee != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
-				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Bounded.MaxFee)
+			if want.Bounded.FeeCeiling() == nil || *want.Bounded.FeeCeiling() != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
+				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Bounded.FeeCeiling())
 			}
 			if want.Fingerprint != b.provider.ShapeFingerprintForTest(shape) {
 				t.Fatalf("%s %s: the default is not the grammar's own program", b.name, shape.Descriptor())
@@ -1740,15 +1740,15 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				if !maps.Equal(withoutFee, standard.Values) {
 					t.Fatalf("%s: the ceiling changed another value: %v, want %v", name, withoutFee, standard.Values)
 				}
-				if instance.Bounded == nil || instance.Bounded.MaxFee == nil || *instance.Bounded.MaxFee != ceiling {
-					t.Fatalf("%s: contract MaxFee = %v", name, instance.Bounded.MaxFee)
+				if instance.Bounded == nil || instance.Bounded.FeeCeiling() == nil || *instance.Bounded.FeeCeiling() != ceiling {
+					t.Fatalf("%s: contract MaxFee = %v", name, instance.Bounded.FeeCeiling())
 				}
 				if err := instance.Bounded.ValidateProfile(); err != nil {
 					t.Fatalf("%s: ValidateProfile() error = %v", name, err)
 				}
 				// Apart from the ceiling it is the default account's contract.
 				sameButFee := boundedmeta.Clone(instance.Bounded)
-				sameButFee.MaxFee = new(plainhost.DefaultMaxFee)
+				sameButFee.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
 				if !reflect.DeepEqual(sameButFee, boundedmeta.Clone(standard.Bounded)) {
 					t.Fatalf("%s: the contract differs beyond the ceiling", name)
 				}
@@ -1794,8 +1794,8 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", name, err)
 				}
-				if generated.MaxFee == nil || *generated.MaxFee != ceiling {
-					t.Fatalf("%s: generated MaxFee = %v", name, generated.MaxFee)
+				if generated.FeeCeiling() == nil || *generated.FeeCeiling() != ceiling {
+					t.Fatalf("%s: generated MaxFee = %v", name, generated.FeeCeiling())
 				}
 				if got, err := b.provider.StoredFingerprint(nil, generated); err != nil || got != instance.Fingerprint {
 					t.Fatalf("%s: StoredFingerprint(generated) = %q, %v; want %s", name, got, err, instance.Fingerprint)
@@ -1807,9 +1807,16 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				t.Fatalf("%s %s: StoredFingerprint(default) = %q, %v", b.name, shape.Descriptor(), got, err)
 			}
 			noCeiling := boundedmeta.Clone(standard.Bounded)
-			noCeiling.MaxFee = nil
+			noCeiling.Bounds.MaxFee = nil
 			if _, err := b.provider.StoredFingerprint(nil, noCeiling); err == nil || !strings.Contains(err.Error(), "no fee ceiling") {
 				t.Fatalf("%s %s: StoredFingerprint(no ceiling) error = %v", b.name, shape.Descriptor(), err)
+			}
+			// Metadata that names the bounded contract without its bounds has
+			// no shape to look up.
+			noBounds := boundedmeta.Clone(standard.Bounded)
+			noBounds.Bounds = nil
+			if _, err := b.provider.StoredFingerprint(nil, noBounds); err == nil || !strings.Contains(err.Error(), "no bounds") {
+				t.Fatalf("%s %s: StoredFingerprint(no bounds) error = %v", b.name, shape.Descriptor(), err)
 			}
 		}
 		// Custom ceilings are built beside the grammar, never into it.
@@ -1841,7 +1848,7 @@ func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
 		}
 		// And it is not the default-ceiling account's.
 		standard := boundedmeta.Clone(instance.Bounded)
-		standard.MaxFee = new(plainhost.DefaultMaxFee)
+		standard.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
 		if def, err := fresh.StoredFingerprint(nil, standard); err != nil || def == got || def != fresh.ShapeFingerprintForTest(shape) {
 			t.Fatalf("%s: StoredFingerprint(default) = %q, %v", b.name, def, err)
 		}

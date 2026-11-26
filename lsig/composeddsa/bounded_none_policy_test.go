@@ -54,7 +54,7 @@ func TestNonePolicyRendersNoLayer3(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
+	if metadata == nil || metadata.Layer3Policy() != boundedmeta.Layer3PolicyNone {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	if len(provider.CreationParams()) != 0 {

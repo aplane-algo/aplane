@@ -35,7 +35,7 @@ func BoundedMetadataLabel(metadata *boundedmeta.Metadata) string {
 	if metadata == nil {
 		return ""
 	}
-	return boundedLabel(metadata.Contract, metadata.Layer3Policy, metadata.Rekey, metadata.RekeyList != nil, metadata.Cosigner != nil)
+	return boundedLabel(metadata.Contract, metadata.Layer3Policy(), metadata.Rekey, metadata.RekeyList != nil, metadata.Cosigner != nil)
 }
 
 func boundedLabel(contract, layer3Policy string, rekey boundedmeta.RekeySetting, rekeyList, cosigner bool) string {

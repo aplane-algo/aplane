@@ -73,8 +73,8 @@ func TestPlainHostRendersNoEnvelope(t *testing.T) {
 	}
 
 	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Contract != PlainContract || metadata.MaxFee != nil ||
-		len(metadata.SpendEffects) != 0 || metadata.Layer3Policy != boundedmeta.Layer3PolicyNone {
+	if metadata == nil || metadata.Contract != PlainContract || metadata.Bounds != nil ||
+		metadata.Layer3Policy() != boundedmeta.Layer3PolicyNone {
 		t.Fatalf("metadata = %+v", metadata)
 	}
 	if err := metadata.ValidateProfile(); err != nil {
@@ -91,10 +91,10 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 		layer3 *Layer3Policy
 		want   string
 	}{
-		{name: "fee ceiling", mutate: func(p *BoundedAuthorizationProfile) { p.MaxFee = new(uint64(1_000)) }, layer3: none, want: "max_fee must be absent"},
-		{name: "spend effects", mutate: func(p *BoundedAuthorizationProfile) {
-			p.SpendEffects = []txeffects.SpendEffect{txeffects.SpendEffectPay}
-		}, layer3: none, want: "declares no spend effects"},
+		{name: "bounds", mutate: func(p *BoundedAuthorizationProfile) {
+			p.Bounds = &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))}
+		}, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
+		{name: "empty bounds", mutate: func(p *BoundedAuthorizationProfile) { p.Bounds = &ProfileBounds{} }, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
 		{name: "author TEAL", suffix: "int 1\nassert", layer3: none, want: "no author TEAL"},
 		{name: "a recipient list", layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}, want: "layer3 policy none"},
 		{name: "no Layer 3", want: "layer3 policy none"},

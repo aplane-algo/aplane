@@ -168,7 +168,7 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider := authorAllowlistProvider(t, authorAllowlistYAML(test))
 			metadata := provider.BoundedAuthorizationMetadata()
-			if metadata == nil || metadata.Layer3Policy != test.stored {
+			if metadata == nil || metadata.Layer3Policy() != test.stored {
 				t.Fatalf("metadata = %#v, want layer3_policy %q", metadata, test.stored)
 			}
 			encoded, err := composeddsa.CanonicalBoundedProfile(provider.BoundedAuthorizationProfile(), metadata)

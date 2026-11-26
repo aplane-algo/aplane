@@ -658,8 +658,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x12, fill}
 	account := logicSigAddressForTest(t, bytecode)
 	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	metadata.Contract, metadata.SpendEffects, metadata.MaxFee = boundedmeta.PlainContract, nil, nil
-	metadata.Layer3Policy = boundedmeta.Layer3PolicyNone
+	metadata.Contract, metadata.Bounds = boundedmeta.PlainContract, nil
 	if err := metadata.Validate(); err != nil {
 		t.Fatal(err)
 	}

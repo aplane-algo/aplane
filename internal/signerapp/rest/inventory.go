@@ -333,10 +333,13 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects: append([]string{}, metadata.SpendEffects...), // [] on a plain host, never null
-		MaxFee:       boundedmeta.CloneMaxFee(metadata.MaxFee),
+		SpendEffects: []string{}, // [] on a plain host, never null
+		MaxFee:       boundedmeta.CloneMaxFee(metadata.FeeCeiling()),
 		RuntimeArgs:  keytypemeta.BoundedRuntimeArgs(metadata.RuntimeArgs),
-		Layer3Policy: metadata.Layer3Policy,
+		Layer3Policy: metadata.Layer3Policy(),
+	}
+	if metadata.Bounds != nil {
+		info.SpendEffects = append(info.SpendEffects, metadata.Bounds.SpendEffects...)
 	}
 	if metadata.Cosigner != nil {
 		info.Cosigner = &signerapi.BoundedCosignerAuthorizationInfo{

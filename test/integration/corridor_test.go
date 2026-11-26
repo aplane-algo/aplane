@@ -360,10 +360,10 @@ func newCorridorAccountFor(t *testing.T, provider *plainhost.Provider, cosignerK
 		rekeyToStrings[i] = target.String()
 	}
 	account := newBoundsAccount(t, provider, corridorShapeFor(cosignerKeyType), recipientStrings, rekeyToStrings)
-	if account.metadata.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
+	if account.metadata.Layer3Policy() != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
 		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",
-			account.metadata.Layer3Policy, account.metadata.Cosigner != nil, account.metadata.Rekey, account.metadata.RekeyList != nil)
+			account.metadata.Layer3Policy(), account.metadata.Cosigner != nil, account.metadata.Rekey, account.metadata.RekeyList != nil)
 	}
 	return account
 }

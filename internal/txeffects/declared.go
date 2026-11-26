@@ -71,15 +71,15 @@ func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration)
 	if err := boundedmeta.ValidateRekeySetting(declaration.Rekey); err != nil {
 		return Decision{}, err
 	}
-	contract := declaration.Contract
-	switch contract {
-	case boundedmeta.Contract:
-	case boundedmeta.PlainContract:
-		if declaration.MaxFee != nil || len(declaration.SpendEffects) != 0 {
-			return Decision{}, fmt.Errorf("%s declares no fee ceiling or spend effects", contract)
+	contract, bounds := declaration.Contract, declaration.Bounds
+	if err := boundedmeta.CheckBounds(contract, bounds != nil); err != nil {
+		return Decision{}, err
+	}
+	if bounds != nil {
+		// Bounds without a ceiling are corrupt, not unlimited.
+		if err := boundedmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
+			return Decision{}, err
 		}
-	default:
-		return Decision{}, fmt.Errorf("unsupported bounded authorization contract %q", contract)
 	}
 	refuse := func(decision Decision, rule Rule, reason string) (Decision, error) {
 		decision.Path, decision.Rule, decision.Reason = PathRefused, rule, reason
@@ -87,10 +87,10 @@ func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration)
 	}
 
 	decision := Decision{Classification: Classify(txn)}
-	if declaration.MaxFee != nil && uint64(txn.Fee) > *declaration.MaxFee {
-		return refuse(decision, RuleFeeCeiling, fmt.Sprintf("%s fee %d exceeds account maximum %d", contract, txn.Fee, *declaration.MaxFee))
+	if bounds != nil && uint64(txn.Fee) > *bounds.MaxFee {
+		return refuse(decision, RuleFeeCeiling, fmt.Sprintf("%s fee %d exceeds account maximum %d", contract, txn.Fee, *bounds.MaxFee))
 	}
-	if contract == boundedmeta.PlainContract && !decision.Facts.Has(EffectRekey) {
+	if bounds == nil && !decision.Facts.Has(EffectRekey) {
 		return classifyOpenSpend(txn, decision, refuse)
 	}
 	switch decision.Shape {

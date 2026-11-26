@@ -172,10 +172,8 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 			Count: 1, MaxSizes: []int{4},
 		},
 		ArgumentLayout: boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}),
-		SpendEffects:   []string{"pay", "axfer"},
-		MaxFee:         new(uint64(1_000)),
+		Bounds:         &boundedmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
 		Rekey:          boundedmeta.RekeySpendingKey,
-		Layer3Policy:   boundedmeta.Layer3PolicyCustom,
 	}
 	if err := payload.SetBoundedAuthorization(metadata); err != nil {
 		t.Fatalf("SetBoundedAuthorization() error = %v", err)
@@ -194,15 +192,15 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.SigningMetadataVersion != BoundedSigningMetadataVersion {
-		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, BoundedSigningMetadataVersion)
+	if parsed.SigningMetadataVersion != CurrentSigningMetadataVersion {
+		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, CurrentSigningMetadataVersion)
 	}
 	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.Contract || got.Rekey != boundedmeta.RekeySpendingKey || got.ArgumentBytesForPath(boundedmeta.PathSpend) != 4 {
 		t.Fatalf("BoundedAuthorization = %#v", got)
 	}
 
-	metadata.SpendEffects[0] = "tampered"
-	if parsed.BoundedAuthorization.SpendEffects[0] != "pay" {
+	metadata.Bounds.SpendEffects[0] = "tampered"
+	if parsed.BoundedAuthorization.Bounds.SpendEffects[0] != "pay" {
 		t.Fatal("bounded authorization metadata was not deep-copied")
 	}
 }
@@ -240,7 +238,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			}
 			if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
 				Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-				SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, DerivedArgs: test.derived, Layer3Policy: test.policy,
+				Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: test.policy}, Rekey: boundedmeta.RekeyRefused, DerivedArgs: test.derived,
 			}); err != nil {
 				t.Fatalf("SetBoundedAuthorization() error = %v", err)
 			}
@@ -254,7 +252,7 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 				t.Fatalf("ParsePayload() error = %v", err)
 			}
 			defer parsed.ZeroSecrets()
-			if got := parsed.BoundedAuthorization; got == nil || got.Layer3Policy != test.policy {
+			if got := parsed.BoundedAuthorization; got == nil || got.Layer3Policy() != test.policy {
 				t.Fatalf("BoundedAuthorization = %#v, want layer3_policy %q", got, test.policy)
 			}
 		})
@@ -278,7 +276,7 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		Bounds: &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
@@ -335,7 +333,7 @@ func cosignedTestPayload(t *testing.T, componentKeyType, recordedType string) *P
 	payloadWithOpcodeProfile(t, payload, true)
 	metadata := &boundedmeta.Metadata{
 		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Rekey: boundedmeta.RekeyRefused, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		Bounds: &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused,
 		Cosigner: &boundedmeta.CosignerAuthorization{
 			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: componentKeyType,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
@@ -404,10 +402,94 @@ func TestCosignedPayloadParametersAgreeOnTheCosignerType(t *testing.T) {
 	}
 }
 
+// A host account's key file stores its contract under host, at the one
+// signing-metadata version, and carries bounds exactly when the host is
+// bounded. A plain host writes no bounds object at all, with or without a
+// cosigner, and reads back without one.
+func TestHostPayloadStoredShape(t *testing.T) {
+	boundedCosigned := cosignedTestPayload(t, boundedmeta.DefaultCosignerComponentKeyType, "")
+	defer boundedCosigned.ZeroSecrets()
+
+	plainCosigned := cosignedTestPayload(t, boundedmeta.DefaultCosignerComponentKeyType, "")
+	defer plainCosigned.ZeroSecrets()
+	plainCosigned.BoundedAuthorization.Contract, plainCosigned.BoundedAuthorization.Bounds = boundedmeta.PlainContract, nil
+
+	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	plain := NewDSALSigPayload("test.plain.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, canonicalOffCurveBytecode(t), "", nil, "1:plain")
+	defer plain.ZeroSecrets()
+	plain.CreatedAt = canonicalTestTime
+	payloadWithOpcodeProfile(t, plain, true)
+	if err := plain.SetBoundedAuthorization(&boundedmeta.Metadata{
+		Contract: boundedmeta.PlainContract, BaseSignatureArgLayout: layout,
+		ArgumentLayout: boundedmeta.BaseArgumentLayout(layout), Rekey: boundedmeta.RekeyRefused,
+	}); err != nil {
+		t.Fatalf("SetBoundedAuthorization(plain) error = %v", err)
+	}
+
+	for name, tc := range map[string]struct {
+		payload    *Payload
+		wantBounds bool
+	}{
+		"bounded and cosigned": {boundedCosigned, true},
+		"plain and cosigned":   {plainCosigned, false},
+		"plain":                {plain, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := MarshalPayload(tc.payload)
+			if err != nil {
+				t.Fatalf("MarshalPayload() error = %v", err)
+			}
+			defer zeroTestBytes(encoded)
+			var stored struct {
+				Version int                        `json:"signing_metadata_version"`
+				Host    map[string]json.RawMessage `json:"host"`
+				Old     json.RawMessage            `json:"bounded_authorization"`
+			}
+			if err := json.Unmarshal(encoded, &stored); err != nil {
+				t.Fatal(err)
+			}
+			if stored.Version != 1 || stored.Host == nil || stored.Old != nil {
+				t.Fatalf("stored version = %d, host present = %v, old object present = %v", stored.Version, stored.Host != nil, stored.Old != nil)
+			}
+			for _, flat := range []string{"spend_effects", "max_fee", "layer3_policy"} {
+				if _, present := stored.Host[flat]; present {
+					t.Fatalf("host carries %s beside its overlays, outside bounds", flat)
+				}
+			}
+			bounds, hasBounds := stored.Host["bounds"]
+			if hasBounds != tc.wantBounds {
+				t.Fatalf("host has bounds = %v, want %v", hasBounds, tc.wantBounds)
+			}
+			if tc.wantBounds {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(bounds, &fields); err != nil || len(fields) != 3 ||
+					fields["spend_effects"] == nil || fields["max_fee"] == nil || fields["layer3_policy"] == nil {
+					t.Fatalf("bounds = %s, want exactly spend_effects, max_fee and layer3_policy", bounds)
+				}
+			}
+			parsed, err := ParsePayload(encoded)
+			if err != nil {
+				t.Fatalf("ParsePayload() error = %v", err)
+			}
+			defer parsed.ZeroSecrets()
+			if !parsed.BoundedAuthorization.Equal(tc.payload.BoundedAuthorization) || (parsed.BoundedAuthorization.Bounds != nil) != tc.wantBounds {
+				t.Fatalf("parsed host metadata = %+v", parsed.BoundedAuthorization)
+			}
+		})
+	}
+}
+
+// preReshapePayload is a bounded key as it was stored before host metadata
+// was nested: under bounded_authorization, with version 2 and flat bounds.
+func preReshapePayload(bytecodeHex string) string {
+	return `{"format_version":1,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
+		`","signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+}
+
 func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
 	base := `{"format_version":1}`
-	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","signing_metadata_version":1,"base_key_type":"test.base.v1","host":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"rekey":"refused","runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"bounds":{"spend_effects":["pay"],"max_fee":1000,"layer3_policy":"custom"}},"created_at":"2026-07-10T12:34:56Z"}`
 	if payload, err := ParsePayload([]byte(base)); err != nil {
 		t.Fatalf("ParsePayload(base) error = %v", err)
 	} else {
@@ -425,7 +507,21 @@ func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 		{name: "bounded1 admin operations", data: strings.Replace(base, `"rekey":"refused"`, `"admin_operations":[]`, 1), want: "unknown field"},
 		{name: "bounded1 admin_rekey path", data: strings.Replace(base, `"listed_rekey":"required"}`, `"listed_rekey":"required","admin_rekey":"required"}`, 1), want: "unknown field"},
 		{name: "unknown rekey setting", data: strings.Replace(base, `"rekey":"refused"`, `"rekey":"admin_key"`, 1), want: `unsupported rekey setting "admin_key"`},
-		{name: "wrong metadata version", data: strings.Replace(base, `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: "requires signing_metadata_version 2"},
+		// The version that once marked a key with this object is refused: every
+		// LogicSig key records 1.
+		{name: "retired metadata version", data: strings.Replace(base, `"signing_metadata_version":1`, `"signing_metadata_version":2`, 1), want: "dsa_lsig requires signing_metadata_version 1"},
+		{name: "unknown field in bounds", data: strings.Replace(base, `"max_fee":1000`, `"max_fee":1000,"future":true`, 1), want: "unknown field"},
+		{name: "no bounds on the bounded contract", data: strings.Replace(base, `,"bounds":{"spend_effects":["pay"],"max_fee":1000,"layer3_policy":"custom"}`, ``, 1), want: "bounded2 requires bounds"},
+		// A bounds object without a fee ceiling is refused, never read as zero.
+		{name: "bounds without a fee ceiling", data: strings.Replace(base, `"max_fee":1000,`, ``, 1), want: "bounded2 requires max_fee"},
+		{name: "null fee ceiling", data: strings.Replace(base, `"max_fee":1000`, `"max_fee":null`, 1), want: "null values are not canonical"},
+		{name: "bounds on the plain contract", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"plain1"`, 1), want: "plain1 has no host rules: bounds must be absent"},
+		// The stored shape before the host object: its field name, its version,
+		// and the bounds beside the overlays. It must never load, least of all
+		// as a key without host metadata.
+		{name: "pre-reshape payload", data: preReshapePayload(bytecodeHex), want: `unknown field "bounded_authorization"`},
+		{name: "pre-reshape field under the current version", data: strings.Replace(preReshapePayload(bytecodeHex), `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: `unknown field "bounded_authorization"`},
+		{name: "flat bounds inside host", data: strings.Replace(base, `"rekey":"refused"`, `"rekey":"refused","max_fee":1000`, 1), want: "unknown field"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -448,18 +544,20 @@ func TestParsePayloadChecksTheRekeyToListParameters(t *testing.T) {
 	root := strings.Repeat("ab", 32)
 	entry := "AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKE3PRHE"
 	base := `{"format_version":1,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex +
-		`","signing_metadata_version":2,"base_key_type":"test.base.v1","parameters":{"bounded_rekey_to_root":"` + root + `","rekey_to":"` + entry +
-		`"},"bounded_authorization":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["axfer"],"max_fee":1000,"rekey":"refused","rekey_list":{"contract":"rekey_list1","depth":4,"root":"` + root +
-		`"},"runtime_args":[],"derived_args":[{"name":"rekey_list_proof","kind":"rekey_list_proof","parameter":"rekey_to","max_size":160}],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}},{"index":1,"name":"rekey_list_proof","source":"derived","max_size":160,"paths":{"spend":"forbidden","spending_rekey":"forbidden","listed_rekey":"required"}}],"layer3_policy":"custom"},"created_at":"2026-07-10T12:34:56Z"}`
+		`","signing_metadata_version":1,"base_key_type":"test.base.v1","parameters":{"rekey_to_root":"` + root + `","rekey_to":"` + entry +
+		`"},"host":{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"rekey":"refused","rekey_list":{"contract":"rekey_list1","depth":4,"root":"` + root +
+		`"},"runtime_args":[],"derived_args":[{"name":"rekey_list_proof","kind":"rekey_list_proof","parameter":"rekey_to","max_size":160}],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}},{"index":1,"name":"rekey_list_proof","source":"derived","max_size":160,"paths":{"spend":"forbidden","spending_rekey":"forbidden","listed_rekey":"required"}}],"bounds":{"spend_effects":["axfer"],"max_fee":1000,"layer3_policy":"custom"}},"created_at":"2026-07-10T12:34:56Z"}`
 	if payload, err := ParsePayload([]byte(base)); err != nil {
 		t.Fatalf("ParsePayload(base) error = %v", err)
 	} else {
 		payload.ZeroSecrets()
 	}
 	for name, test := range map[string]struct{ data, want string }{
-		"another root in the parameters": {strings.Replace(base, `"bounded_rekey_to_root":"`+root, `"bounded_rekey_to_root":"`+strings.Repeat("cd", 32), 1), "rekey-to list root does not match"},
-		"no root in the parameters":      {strings.Replace(base, `"bounded_rekey_to_root":"`+root+`",`, ``, 1), "rekey-to list root does not match"},
-		"unreadable entries":             {strings.Replace(base, `"rekey_to":"`+entry, `"rekey_to":"NOTANADDRESS`, 1), "invalid parameters.rekey_to"},
+		"another root in the parameters": {strings.Replace(base, `"rekey_to_root":"`+root, `"rekey_to_root":"`+strings.Repeat("cd", 32), 1), "rekey-to list root does not match"},
+		"no root in the parameters":      {strings.Replace(base, `"rekey_to_root":"`+root+`",`, ``, 1), "rekey-to list root does not match"},
+		// The root's name before it lost its prefix is no root at all.
+		"the root under its retired name": {strings.Replace(base, `"rekey_to_root":"`+root, `"bounded_rekey_to_root":"`+root, 1), "rekey-to list root does not match parameters.rekey_to_root"},
+		"unreadable entries":              {strings.Replace(base, `"rekey_to":"`+entry, `"rekey_to":"NOTANADDRESS`, 1), "invalid parameters.rekey_to"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			payload, err := ParsePayload([]byte(test.data))
@@ -886,8 +984,8 @@ func zeroTestBytes(data []byte) {
 	}
 }
 
-// A LogicSig key without bounded authorization must carry the current
-// signing metadata version. The signer relies on this refusal alone: a key
+// A LogicSig key must carry the current signing metadata version, the one
+// version every LogicSig key records. The signer relies on this refusal alone: a key
 // that loads has a version it can sign with (S2).
 func TestLogicSigPayloadRequiresTheCurrentSigningMetadataVersion(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
@@ -900,13 +998,13 @@ func TestLogicSigPayloadRequiresTheCurrentSigningMetadataVersion(t *testing.T) {
 		},
 	}
 	for category, build := range builds {
-		for _, version := range []int{0, BoundedSigningMetadataVersion} {
+		for _, version := range []int{0, 2} {
 			t.Run(fmt.Sprintf("%s version %d", category, version), func(t *testing.T) {
 				p := build()
 				defer p.ZeroSecrets()
 				p.CreatedAt = canonicalTestTime
 				p.SigningMetadataVersion = version
-				want := fmt.Sprintf("%s without bounded_authorization requires signing_metadata_version %d", category, CurrentSigningMetadataVersion)
+				want := fmt.Sprintf("%s requires signing_metadata_version %d", category, CurrentSigningMetadataVersion)
 				if err := p.Validate(); err == nil || !errors.Is(err, ErrIncompatibleKeyFormat) || !strings.Contains(err.Error(), want) {
 					t.Fatalf("Validate() error = %v, want %q", err, want)
 				}

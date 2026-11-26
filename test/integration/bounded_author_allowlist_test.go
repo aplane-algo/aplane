@@ -242,8 +242,8 @@ func newAuthorAllowlistAccount(t *testing.T, network *harness.TestnetConfig, enc
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata.Layer3Policy != encoding.stored {
-		t.Fatalf("layer3_policy = %q, want %q", metadata.Layer3Policy, encoding.stored)
+	if metadata.Layer3Policy() != encoding.stored {
+		t.Fatalf("layer3_policy = %q, want %q", metadata.Layer3Policy(), encoding.stored)
 	}
 	return authorAllowlistAccount{
 		boundedExecutionAccount: boundedExecutionAccount{

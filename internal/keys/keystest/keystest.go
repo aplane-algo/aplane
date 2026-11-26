@@ -121,6 +121,28 @@ func NativeFalconKeyJSON(t testing.TB, entropy []byte) (address string, keyJSON 
 	return derived.String(), marshal(t, payload, "native_pq")
 }
 
+// PreReshapeHostKeyJSON returns keyJSON, a canonical dsa_lsig payload, as a
+// bounded account's key was written before host metadata was nested: the
+// contract under bounded_authorization with its bounds flat beside the
+// overlays, and signing_metadata_version 2.
+func PreReshapeHostKeyJSON(t testing.TB, keyJSON []byte) []byte {
+	t.Helper()
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(keyJSON, &object); err != nil {
+		t.Fatalf("decode dsa_lsig payload: %v", err)
+	}
+	object["signing_metadata_version"] = json.RawMessage("2")
+	object["bounded_authorization"] = json.RawMessage(`{"contract":"bounded2","base_signature_arg_layout":{"count":1,"max_sizes":[4]},` +
+		`"spend_effects":["pay"],"max_fee":1000,"rekey":"refused","runtime_args":[],"derived_args":[],` +
+		`"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,` +
+		`"paths":{"spend":"required","spending_rekey":"required","listed_rekey":"required"}}],"layer3_policy":"custom"}`)
+	out, err := json.MarshalIndent(object, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 // PreChangeNativeFalconKeyJSON returns keyJSON, a canonical native Falcon
 // payload, as writers wrote it before key files dropped pq_scheme and
 // pq_address_salt: format_version 2 and both fields after the key material.

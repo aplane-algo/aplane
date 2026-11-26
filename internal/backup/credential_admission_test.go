@@ -204,6 +204,19 @@ func TestCredentialAdmissionAgreesAcrossVerifyRestoreAndRebuild(t *testing.T) {
 			skip: preChangeNativeFalconReason,
 		},
 		{
+			// A bounded account's key from before host metadata was nested
+			// must never restore as a key without its bounds.
+			name: "host account credential from before the host object",
+			build: func(t *testing.T, _, keysDir string) (string, string) {
+				keyJSON := keystest.DSALSigKeyJSON(t, "example.bounded.v1", "example.base.v1",
+					[]byte{0x01}, []byte{0x02}, logicSigBytecodeForTest())
+				selector := selectorForTest(t, keyJSON)
+				sealAdmissionMember(t, keysDir, selector, keystest.PreReshapeHostKeyJSON(t, keyJSON), admissionPassphrase)
+				return selector, selector
+			},
+			skip: `failed to parse backup credential: incompatible key file format: failed to decode canonical payload: json: unknown field "bounded_authorization"; restore or regenerate the key file using the current key schema`,
+		},
+		{
 			name: "member that is not JSON",
 			build: func(t *testing.T, _, keysDir string) (string, string) {
 				writeAdmissionMember(t, keysDir, other, []byte("not json"))

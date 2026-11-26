@@ -171,7 +171,7 @@ const RekeyListContractV1 = "rekey_list1"
 // and a seed derived from the spending key; that name is reserved.
 const (
 	RekeyListEntriesParameter = "rekey_to"
-	RekeyListRootParameter    = "bounded_rekey_to_root"
+	RekeyListRootParameter    = "rekey_to_root"
 )
 
 // RekeyList is the rekey-to list overlay: with it, a rekey may go to a listed
@@ -184,21 +184,93 @@ type RekeyList struct {
 	RootHex  string `json:"root,omitempty"`
 }
 
-// Metadata is the complete non-secret signing contract for one bounded key.
+// Bounds is what a bounded host adds to a host account: the transaction kinds
+// it may spend, a fee ceiling, and a Layer 3 policy. They come together or not
+// at all, so a plain host's metadata carries no Bounds rather than empty ones.
+type Bounds struct {
+	SpendEffects []string `json:"spend_effects"`
+	// MaxFee is the fee ceiling. It is a pointer so that a stored object
+	// without one is refused rather than read as a ceiling of zero.
+	MaxFee       *uint64 `json:"max_fee"`
+	Layer3Policy string  `json:"layer3_policy"`
+}
+
+// Metadata is the complete non-secret signing contract for one host account.
 type Metadata struct {
-	Contract               string             `json:"contract"`
-	BaseSignatureArgLayout SignatureArgLayout `json:"base_signature_arg_layout"`
-	SpendEffects           []string           `json:"spend_effects"`
-	// MaxFee is the bounded host's fee ceiling. A plain host has none, and the
-	// field is absent rather than zero.
-	MaxFee         *uint64                `json:"max_fee,omitempty"`
-	Rekey          RekeySetting           `json:"rekey"`
-	Cosigner       *CosignerAuthorization `json:"cosigner,omitempty"`
-	RekeyList      *RekeyList             `json:"rekey_list,omitempty"`
-	RuntimeArgs    []RuntimeArg           `json:"runtime_args"`
-	DerivedArgs    []DerivedArg           `json:"derived_args"`
-	ArgumentLayout []ArgumentSlot         `json:"argument_layout"`
-	Layer3Policy   string                 `json:"layer3_policy"`
+	Contract               string                 `json:"contract"`
+	BaseSignatureArgLayout SignatureArgLayout     `json:"base_signature_arg_layout"`
+	Rekey                  RekeySetting           `json:"rekey"`
+	Cosigner               *CosignerAuthorization `json:"cosigner,omitempty"`
+	RekeyList              *RekeyList             `json:"rekey_list,omitempty"`
+	RuntimeArgs            []RuntimeArg           `json:"runtime_args"`
+	DerivedArgs            []DerivedArg           `json:"derived_args"`
+	ArgumentLayout         []ArgumentSlot         `json:"argument_layout"`
+	// Bounds is set on a bounded host and nil on a plain one; CheckBounds
+	// holds the two together.
+	Bounds *Bounds `json:"bounds,omitempty"`
+}
+
+// cloneBounds returns a deep copy of bounds, with a nil spend-effect list made
+// empty as Clone makes every list.
+func cloneBounds(bounds *Bounds) *Bounds {
+	if bounds == nil {
+		return nil
+	}
+	cloned := Bounds{
+		SpendEffects: slices.Clone(bounds.SpendEffects),
+		MaxFee:       CloneMaxFee(bounds.MaxFee),
+		Layer3Policy: bounds.Layer3Policy,
+	}
+	if cloned.SpendEffects == nil {
+		cloned.SpendEffects = []string{}
+	}
+	return &cloned
+}
+
+func equalBounds(a, b *Bounds) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return slices.Equal(a.SpendEffects, b.SpendEffects) &&
+		EqualMaxFee(a.MaxFee, b.MaxFee) &&
+		a.Layer3Policy == b.Layer3Policy
+}
+
+// CheckBounds refuses a contract this package doesn't know, and bounds that
+// don't belong to the contract: the bounded host has them and the plain host
+// doesn't. It is the one place that ties a contract to having bounds.
+func CheckBounds(contract string, hasBounds bool) error {
+	switch contract {
+	case Contract:
+		if !hasBounds {
+			return fmt.Errorf("%s requires bounds", Contract)
+		}
+	case PlainContract:
+		if hasBounds {
+			return fmt.Errorf("%s has no host rules: bounds must be absent", PlainContract)
+		}
+	default:
+		return fmt.Errorf("unsupported bounded authorization contract %q", contract)
+	}
+	return nil
+}
+
+// FeeCeiling is the account's fee ceiling, or nil when it has none: a host
+// without bounds. The caller must not change the value it points to.
+func (metadata *Metadata) FeeCeiling() *uint64 {
+	if metadata == nil || metadata.Bounds == nil {
+		return nil
+	}
+	return metadata.Bounds.MaxFee
+}
+
+// Layer3Policy is the account's Layer 3 policy: its bounds', or none for a
+// host without bounds, which compiles no Layer 3.
+func (metadata *Metadata) Layer3Policy() string {
+	if metadata == nil || metadata.Bounds == nil {
+		return Layer3PolicyNone
+	}
+	return metadata.Bounds.Layer3Policy
 }
 
 // Clone returns a deep copy suitable for crossing cache and API boundaries.
@@ -207,9 +279,8 @@ func Clone(metadata *Metadata) *Metadata {
 		return nil
 	}
 	cloned := *metadata
-	cloned.MaxFee = CloneMaxFee(metadata.MaxFee)
+	cloned.Bounds = cloneBounds(metadata.Bounds)
 	cloned.BaseSignatureArgLayout.MaxSizes = slices.Clone(metadata.BaseSignatureArgLayout.MaxSizes)
-	cloned.SpendEffects = slices.Clone(metadata.SpendEffects)
 	if metadata.Cosigner != nil {
 		cosigner := *metadata.Cosigner
 		cosigner.RequiredOn = slices.Clone(metadata.Cosigner.RequiredOn)
@@ -224,9 +295,6 @@ func Clone(metadata *Metadata) *Metadata {
 	cloned.ArgumentLayout = slices.Clone(metadata.ArgumentLayout)
 	if cloned.BaseSignatureArgLayout.MaxSizes == nil {
 		cloned.BaseSignatureArgLayout.MaxSizes = []int{}
-	}
-	if cloned.SpendEffects == nil {
-		cloned.SpendEffects = []string{}
 	}
 	if cloned.RuntimeArgs == nil {
 		cloned.RuntimeArgs = []RuntimeArg{}
@@ -250,15 +318,13 @@ func (metadata *Metadata) Equal(other *Metadata) bool {
 	return metadata.Contract == other.Contract &&
 		metadata.BaseSignatureArgLayout.Count == other.BaseSignatureArgLayout.Count &&
 		slices.Equal(metadata.BaseSignatureArgLayout.MaxSizes, other.BaseSignatureArgLayout.MaxSizes) &&
-		slices.Equal(metadata.SpendEffects, other.SpendEffects) &&
-		EqualMaxFee(metadata.MaxFee, other.MaxFee) &&
+		equalBounds(metadata.Bounds, other.Bounds) &&
 		metadata.Rekey == other.Rekey &&
 		equalCosignerAuthorization(metadata.Cosigner, other.Cosigner) &&
 		equalRekeyList(metadata.RekeyList, other.RekeyList) &&
 		slices.Equal(metadata.RuntimeArgs, other.RuntimeArgs) &&
 		slices.Equal(metadata.DerivedArgs, other.DerivedArgs) &&
-		slices.Equal(metadata.ArgumentLayout, other.ArgumentLayout) &&
-		metadata.Layer3Policy == other.Layer3Policy
+		slices.Equal(metadata.ArgumentLayout, other.ArgumentLayout)
 }
 
 // Validate checks the durable bounded vocabulary without consulting an
@@ -287,17 +353,13 @@ func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
 		return fmt.Errorf("bounded authorization metadata is nil")
 	}
-	switch metadata.Contract {
-	case Contract:
-		if err := metadata.validateBoundedHost(); err != nil {
+	if err := CheckBounds(metadata.Contract, metadata.Bounds != nil); err != nil {
+		return err
+	}
+	if metadata.Bounds != nil {
+		if err := metadata.Bounds.validate(); err != nil {
 			return err
 		}
-	case PlainContract:
-		if err := metadata.validatePlainHost(); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported bounded authorization contract %q", metadata.Contract)
 	}
 	if err := ValidateRekeySetting(metadata.Rekey); err != nil {
 		return err
@@ -320,6 +382,8 @@ func (metadata *Metadata) ValidateProfile() error {
 		return err
 	}
 	// Layer 3 reads recipient proofs; a rekey-list proof serves the rekey path.
+	// A host without bounds has no Layer 3, so it is held to the rules of none.
+	layer3 := metadata.Layer3Policy()
 	recipientProofs := 0
 	for _, arg := range metadata.DerivedArgs {
 		if arg.Kind == DerivedArgMerkleProof {
@@ -329,48 +393,44 @@ func (metadata *Metadata) ValidateProfile() error {
 	// A Merkle list takes exactly one recipient proof. Author TEAL with no
 	// framework policy may declare its own; every other known policy takes none.
 	switch {
-	case IsMerkleListPolicy(metadata.Layer3Policy):
+	case IsMerkleListPolicy(layer3):
 		if recipientProofs != 1 {
-			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", metadata.Layer3Policy)
+			return fmt.Errorf("%s requires exactly one derived Merkle proof argument", layer3)
 		}
-	case metadata.Layer3Policy != Layer3PolicyCustom:
+	case layer3 != Layer3PolicyCustom:
 		if recipientProofs != 0 {
-			return fmt.Errorf("%s must not declare derived arguments", metadata.Layer3Policy)
+			return fmt.Errorf("%s must not declare derived arguments", layer3)
 		}
 	}
 	// "none" has nothing that could read a runtime argument.
-	if metadata.Layer3Policy == Layer3PolicyNone && len(metadata.RuntimeArgs) != 0 {
-		return fmt.Errorf("%s must not declare runtime arguments", metadata.Layer3Policy)
+	if layer3 == Layer3PolicyNone && len(metadata.RuntimeArgs) != 0 {
+		return fmt.Errorf("%s must not declare runtime arguments", layer3)
 	}
 	return nil
 }
 
-// validateBoundedHost checks the bounded host's own rules: a fee ceiling the
-// wire can carry, a known Layer 3 policy, and at least one spend effect.
-func (metadata *Metadata) validateBoundedHost() error {
-	if metadata.MaxFee == nil {
-		return fmt.Errorf("%s requires max_fee", Contract)
+// validate checks a bounded host's own rules: a fee ceiling the wire can
+// carry, a known Layer 3 policy, and at least one spend effect.
+func (bounds *Bounds) validate() error {
+	if err := ValidateMaxFee(bounds.MaxFee); err != nil {
+		return err
 	}
-	if *metadata.MaxFee > MaxFeeLimit {
-		return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *metadata.MaxFee, MaxFeeLimit)
+	if !IsKnownLayer3Policy(bounds.Layer3Policy) {
+		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, bounds.Layer3Policy)
 	}
-	if !IsKnownLayer3Policy(metadata.Layer3Policy) {
-		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, metadata.Layer3Policy)
-	}
-	return ValidateSpendEffects(metadata.SpendEffects)
+	return ValidateSpendEffects(bounds.SpendEffects)
 }
 
-// validatePlainHost checks that a plain host states no host rule: no fee
-// ceiling, no spend-effect list, no Layer 3. Its overlays are optional.
-func (metadata *Metadata) validatePlainHost() error {
-	if metadata.MaxFee != nil {
-		return fmt.Errorf("%s has no fee ceiling: max_fee must be absent", PlainContract)
+// ValidateMaxFee checks a bounded host's fee ceiling: it has one, and it is no
+// larger than the wire can carry. Storage, generation and the classifier all
+// use this one check, so bounds without a ceiling are refused everywhere and
+// never read as a ceiling of zero or as none.
+func ValidateMaxFee(fee *uint64) error {
+	if fee == nil {
+		return fmt.Errorf("%s requires max_fee", Contract)
 	}
-	if len(metadata.SpendEffects) != 0 {
-		return fmt.Errorf("%s declares no spend effects: every transaction that doesn't rekey is a spend", PlainContract)
-	}
-	if metadata.Layer3Policy != Layer3PolicyNone {
-		return fmt.Errorf("%s requires layer3_policy %s, got %q", PlainContract, Layer3PolicyNone, metadata.Layer3Policy)
+	if *fee > MaxFeeLimit {
+		return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *fee, MaxFeeLimit)
 	}
 	return nil
 }
@@ -508,7 +568,7 @@ func (metadata *Metadata) RefusesRekeys() bool {
 
 // HasRecipientList reports whether Layer 3 limits spending to a recipient list.
 func (metadata *Metadata) HasRecipientList() bool {
-	return metadata != nil && IsRecipientListPolicy(metadata.Layer3Policy)
+	return IsRecipientListPolicy(metadata.Layer3Policy())
 }
 
 // Contained reports whether the spending key alone can move value only to

@@ -165,10 +165,9 @@ func TestFixedAllowlistPolicyAcceptsEitherRekeySettingWithoutPay(t *testing.T) {
 	}}
 	for _, rekey := range []boundedmeta.RekeySetting{boundedmeta.RekeySpendingKey, boundedmeta.RekeyRefused} {
 		profile := &BoundedAuthorizationProfile{
-			Contract:     BoundedContract,
-			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer},
-			MaxFee:       new(uint64(10_000)),
-			Rekey:        rekey,
+			Contract: BoundedContract,
+			Bounds:   &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
+			Rekey:    rekey,
 		}
 		if err := validateLayer3Policy(policy, params, profile, false); err != nil {
 			t.Fatalf("validateLayer3Policy(rekey %s) error = %v", rekey, err)
@@ -219,7 +218,7 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 
 func fixedAllowlistTestProfile() *BoundedAuthorizationProfile {
 	return &BoundedAuthorizationProfile{
-		Contract: BoundedContract, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000)),
+		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
 		Rekey: boundedmeta.RekeyRefused,
 	}
 }

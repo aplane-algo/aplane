@@ -378,10 +378,8 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	if spec.MaxFee == nil {
 		return nil, fmt.Errorf("bounded.max_fee is required")
 	}
-	profile := &BoundedAuthorizationProfile{
-		Contract: spec.Contract,
-		MaxFee:   new(*spec.MaxFee),
-	}
+	bounds := &ProfileBounds{MaxFee: new(*spec.MaxFee)}
+	profile := &BoundedAuthorizationProfile{Contract: spec.Contract, Bounds: bounds}
 	if spec.Cosigner != nil {
 		// A template's cosigner is the default type; only a plain host's
 		// bounds choose another, through the spec's unexported field.
@@ -403,11 +401,11 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	for _, effect := range spec.SpendEffects {
 		switch effect {
 		case string(txeffects.SpendEffectPay):
-			profile.SpendEffects = append(profile.SpendEffects, txeffects.SpendEffectPay)
+			bounds.SpendEffects = append(bounds.SpendEffects, txeffects.SpendEffectPay)
 		case string(txeffects.SpendEffectAxfer):
-			profile.SpendEffects = append(profile.SpendEffects, txeffects.SpendEffectAxfer)
+			bounds.SpendEffects = append(bounds.SpendEffects, txeffects.SpendEffectAxfer)
 		case string(txeffects.SpendEffectAssetOptIn):
-			profile.SpendEffects = append(profile.SpendEffects, txeffects.SpendEffectAssetOptIn)
+			bounds.SpendEffects = append(bounds.SpendEffects, txeffects.SpendEffectAssetOptIn)
 		default:
 			return nil, fmt.Errorf("bounded.spend_effects contains unsupported effect %q", effect)
 		}

@@ -45,9 +45,11 @@ func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRunt
 		default:
 			budgets[i].mutable = true
 			// A plain host has no fee ceiling, so its fee is unconstrained.
-			if i < len(boundedItems) && boundedItems[i] != nil && boundedItems[i].Metadata != nil && boundedItems[i].Metadata.MaxFee != nil {
-				budgets[i].maxFeeConstrained = true
-				budgets[i].maxFee = *boundedItems[i].Metadata.MaxFee
+			if i < len(boundedItems) && boundedItems[i] != nil {
+				if fee := boundedItems[i].Metadata.FeeCeiling(); fee != nil {
+					budgets[i].maxFeeConstrained = true
+					budgets[i].maxFee = *fee
+				}
 			}
 			// A held native PQ key's scheme comes from its key type; one the
 			// fee rules below do not know is refused, not planned as non-PQ.

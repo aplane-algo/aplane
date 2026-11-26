@@ -230,7 +230,7 @@ For bounded (`bounded2`) work, read
   account is meant to pay its fees;
 - caller runtime args can never supply the cosigner signature or a
   signer-derived argument;
-- generated bounded keys persist signing-metadata version 2 with the complete
+- generated host account keys persist a `host` object with the complete
   runtime-argument, signer-derived-argument, and path-specific slot layout;
   signing, inventory, backup, and restore use that stored snapshot rather than
   the installed YAML;
