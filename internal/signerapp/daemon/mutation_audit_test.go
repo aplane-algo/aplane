@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
-	signeraudit "github.com/aplane-algo/aplane/internal/signerapp/audit"
 )
 
 // auditEntries reads the audit log's entries of the given events.
@@ -204,7 +203,7 @@ func TestOversizedMutationRequestsLeaveTheAuditLogReadable(t *testing.T) {
 			t.Fatalf("intent %q and outcome %v do not correlate", id, entries[i+1]["operation_id"])
 		}
 	}
-	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
+	if _, err := server.auditLog.ReadRotatingReleases(); err != nil {
 		t.Fatalf("the release history no longer loads: %v", err)
 	}
 }
@@ -246,7 +245,7 @@ func TestOlderEventsStayBounded(t *testing.T) {
 	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 5 {
 		t.Fatalf("%d entries, want 5", got)
 	}
-	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
+	if _, err := logger.ReadRotatingReleases(); err != nil {
 		t.Fatalf("the release history no longer loads: %v", err)
 	}
 }

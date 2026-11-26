@@ -45,7 +45,7 @@ func rotateOnce(logger *AuditLogger) {
 
 func history(t *testing.T, path string) map[string]RotatingRelease {
 	t.Helper()
-	got, err := ReadRotatingReleases(path)
+	got, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}

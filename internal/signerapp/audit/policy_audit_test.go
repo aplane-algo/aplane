@@ -241,7 +241,7 @@ func TestReadRotatingReleasesSkipsAnOversizedLine(t *testing.T) {
 	}
 	_ = f.Close()
 
-	got, err := ReadRotatingReleases(path)
+	got, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatalf("ReadRotatingReleases after an oversized line: %v", err)
 	}

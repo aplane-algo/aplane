@@ -106,7 +106,7 @@ func TestAShortWriteDoesNotSwallowTheNextEntry(t *testing.T) {
 	if err := logger.logDurable(rotatingRelease("after-the-fragment")); err != nil {
 		t.Fatal(err)
 	}
-	releases, err := ReadRotatingReleases(path)
+	releases, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestATornLineFromAnEarlierRunDoesNotSwallowTheFirstEntry(t *testing.T) {
 	if err := logger.logDurable(rotatingRelease("after-restart")); err != nil {
 		t.Fatal(err)
 	}
-	releases, err := ReadRotatingReleases(path)
+	releases, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
