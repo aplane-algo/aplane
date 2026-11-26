@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -772,6 +773,38 @@ func TestToUint64ResultsAndThrows(t *testing.T) {
 		}
 		if result != tc.want {
 			t.Errorf("toUint64(%s) = %s, want %s", tc.expr, result, tc.want)
+		}
+	}
+}
+
+// An lsigArgs value that can't be read is described, never quoted: a LogicSig
+// argument such as a preimage is a secret until it is spent.
+func TestLsigArgsErrorsLeaveTheValueOut(t *testing.T) {
+	api := &API{runtime: goja.New()}
+	for value, want := range map[string]string{
+		`"s3cret:value"`:                    "no known prefix",
+		`"hex:s3cretvalue"`:                 "not valid hex",
+		`"b64:s3cret!value"`:                "not valid base64",
+		`"int:s3cretvalue"`:                 "not a decimal unsigned 64-bit number",
+		`"addr:s3cretvalue"`:                "not a valid Algorand address",
+		`[1, 2, 3, 987654]`:                 "not a number from 0 to 255",
+		`[1, "s3cret"]`:                     "not a number from 0 to 255",
+		`[1, 987654.5]`:                     "not a number from 0 to 255",
+		`[1, 987654e20]`:                    "not a number from 0 to 255",
+		`[1, 987654000000000000000000000n]`: "not a number from 0 to 255",
+	} {
+		v, err := api.runtime.RunString("({lsigArgs: {preimage: " + value + "}})")
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = jsError(func() {
+			api.lsigArgsOption(v.Export().(map[string]interface{}), "send()")
+		})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: error = %v, want %q", value, err, want)
+		}
+		if err != nil && (strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "987654") || strings.Contains(err.Error(), "e+")) {
+			t.Errorf("%s: the error quotes the value: %v", value, err)
 		}
 	}
 }

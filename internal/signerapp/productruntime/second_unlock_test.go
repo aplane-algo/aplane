@@ -94,7 +94,7 @@ func countReconciles() (reconcile func(*crypto.Keyring) error, runs *int) {
 func TestAnUnlockThatFindsTheSignerUnlockedEndsAtItsCheck(t *testing.T) {
 	ir, mutation, loads, locks := unlockedRuntimeForTest(t)
 	before := ir.LockGeneration()
-	mutation.afterRelease = ir.Lock // after the answer, as soon as the lock is free
+	mutation.afterRelease = func() { ir.Lock() } // after the answer, as soon as the lock is free
 	reconcile, reconciles := countReconciles()
 
 	unlockedCalls := 0

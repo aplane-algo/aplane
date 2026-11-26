@@ -100,7 +100,7 @@ func TestRefusedSigningRequestsLeaveSmallAuditEntries(t *testing.T) {
 			t.Fatalf("an audit entry is %d bytes: %.200s…", len(line), line)
 		}
 	}
-	if _, err := signeraudit.ReadRotatingReleases(path); err != nil {
+	if _, err := server.auditLog.ReadRotatingReleases(); err != nil {
 		t.Fatalf("the release history no longer loads: %v", err)
 	}
 }

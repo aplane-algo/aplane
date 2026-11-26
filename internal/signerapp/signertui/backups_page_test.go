@@ -447,6 +447,39 @@ func TestBackupImportEscDuringUploadAborts(t *testing.T) {
 	}
 }
 
+// A recovery keeps an upload going and takes the operator off the form; from
+// there the backups page can open the form again, which ends that upload as
+// leaving the form does: aborted, its file closed, its late reply ignored.
+func TestBackupImportReopenedDuringAnUploadAbortsIt(t *testing.T) {
+	m, _, _ := importFixture(t)
+	m, begin := startImport(t, m)
+	m, cmd := update(t, m, beginReply(begin, "upload-1"))
+	appendID := sentRequest(cmd, "backup-import-append")
+	file := m.backups.imp.file
+	if appendID == "" || file == nil {
+		t.Fatalf("no upload under way: sent %v", sentRequestIDs(cmd))
+	}
+	m, _ = update(t, m, SignerStatusMsg{State: "recovery"})
+	if m.viewState != ViewStoreRecovery || m.backups.imp.phase != importUploading {
+		t.Fatalf("recovery: view %v phase %v, want the upload kept", m.viewState, m.backups.imp.phase)
+	}
+	m, _ = pressKey(t, m, "b")
+	m, cmd = pressKey(t, m, "i")
+	if m.viewState != ViewBackupImport || m.backups.imp.phase != importIdle {
+		t.Fatalf("reopened: view %v phase %v", m.viewState, m.backups.imp.phase)
+	}
+	if sentRequest(cmd, "backup-import-abort") == "" {
+		t.Fatalf("the upload in flight was not aborted: sent %v", sentRequestIDs(cmd))
+	}
+	if _, err := file.Stat(); err == nil {
+		t.Fatal("the upload's file is still open")
+	}
+	m, cmd = update(t, m, appendReply(appendID, 1))
+	if ids := sentRequestIDs(cmd); len(ids) != 0 || m.backups.imp.phase != importIdle {
+		t.Fatalf("the late reply moved the import: sent %v phase %v", ids, m.backups.imp.phase)
+	}
+}
+
 func TestBackupImportLateCommitReplySettlesUnresolvedOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		name, warning, errText string

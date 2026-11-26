@@ -41,7 +41,7 @@ func TestRotatingReleaseRoundTripsThroughTheLog(t *testing.T) {
 	// A signature entry naming a transaction is not a release.
 	a.LogSignApprovedAttributed(Attribution{}, TxnRecord{TxnAuth: "ACCT1", TxnSender: "ACCT1", TxnDetails: "unrelated", TxID: "TX9"})
 
-	got, err := ReadRotatingReleases(path)
+	got, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestReadRotatingReleasesSpansRotatedFilesOldestFirst(t *testing.T) {
 	if err := os.WriteFile(path, []byte(line("A", "new", 3)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadRotatingReleases(path)
+	got, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestReadRotatingReleasesSpansRotatedFilesOldestFirst(t *testing.T) {
 	if err := os.WriteFile(path, []byte(line("A", "new", 3)+line("B", "b2", 5)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err = ReadRotatingReleases(path)
+	got, err = readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestReadRotatingReleasesSpansRotatedFilesOldestFirst(t *testing.T) {
 		t.Fatalf("reuse across rotated files: %+v", got)
 	}
 	// No log at all is not an error.
-	empty, err := ReadRotatingReleases(filepath.Join(dir, "missing.log"))
+	empty, err := readReleasesAt(filepath.Join(dir, "missing.log"))
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("missing log: %v, %v", empty, err)
 	}
@@ -138,7 +138,7 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := ReadRotatingReleases(path)
+	got, err := readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX9", 4, 500, 2, 5); err != nil {
 		t.Fatal(err)
 	}
-	got, err = ReadRotatingReleases(path)
+	got, err = readReleasesAt(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX10", 5, 600, 2, 64); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = ReadRotatingReleases(path)
+	got, _ = readReleasesAt(path)
 	if r := got["ACCT5"]; r.Reused || len(r.Leaves) != 1 || r.Stage != 5 {
 		t.Fatalf("new stage = %+v", r)
 	}
@@ -173,7 +173,7 @@ func TestReadRotatingReleasesTracksLeaves(t *testing.T) {
 	if err := a.LogRotatingReleaseAttributed(attr, "ACCT5", "TX12", 5, 620, 2, 65); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = ReadRotatingReleases(path)
+	got, _ = readReleasesAt(path)
 	if r := got["ACCT5"]; r.Stage != 5 || r.TxID != "TX12" || len(r.Leaves) != 2 || r.Leaves[0].TxID != "TX10" || r.Leaves[1].TxID != "TX12" || r.Reused {
 		t.Fatalf("stage 5 after an earlier stage's entry = %+v", r)
 	}
@@ -199,7 +199,7 @@ func TestReadRotatingReleasesListsEveryLeafOfARetriedTransaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		got, err := ReadRotatingReleases(path)
+		got, err := readReleasesAt(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -236,4 +236,14 @@ func TestReadRotatingReleasesListsEveryLeafOfARetriedTransaction(t *testing.T) {
 	if r.Reused || !listed(r, leaf(6, "A"), leaf(5, "A")) {
 		t.Fatalf("one transaction on two leaves = %+v, want both listed, not reused", r)
 	}
+}
+
+// readReleasesAt reads the release history of the log at path, which no
+// logger is writing.
+func readReleasesAt(path string) (map[string]RotatingRelease, error) {
+	files, err := openReleaseLogs(path)
+	if err != nil {
+		return nil, err
+	}
+	return readReleaseLogs(files)
 }

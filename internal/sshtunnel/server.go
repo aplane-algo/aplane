@@ -195,6 +195,9 @@ type Server struct {
 	// Product registry hook; nil enrolls no key.
 	keyChecker KeyCheckerFunc
 
+	// unenrolled prints the lines about connections without an enrolled key.
+	unenrolled *unenrolledLog
+
 	// API channel handoff; nil refuses every API channel.
 	apiHandoff APIHandoff
 
@@ -360,12 +363,24 @@ func NewServer(listenAddr, hostKeyPath string) (*Server, error) {
 		enrollmentRespDeadline: enrollmentResponseDeadline,
 		keepaliveInterval:      keepaliveInterval,
 		keepaliveTimeout:       keepaliveReplyTimeout,
+		unenrolled:             newUnenrolledLog(os.Stdout),
 	}
 
 	server.sshConfig = &ssh.ServerConfig{
 		PublicKeyAuthAlgorithms: clientKeyAlgorithms,
 		PublicKeyCallback:       server.handlePublicKeyAuth,
 		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
+			// Every client asks for "none" before offering its key, and is
+			// refused: the line says nothing, and an enrolled client's would
+			// spend the limit below.
+			if method == "none" {
+				return
+			}
+			// An enrollment connection proves only that it holds its key.
+			if err != nil || conn.User() == enrollmentSSHUsername {
+				server.unenrolled.printf("%s\n", formatSSHAuthLog(conn, method, err))
+				return
+			}
 			fmt.Println(formatSSHAuthLog(conn, method, err))
 		},
 		ServerVersion: "SSH-2.0-APlane",
@@ -373,6 +388,12 @@ func NewServer(listenAddr, hostKeyPath string) (*Server, error) {
 	server.sshConfig.AddHostKey(hostKey)
 
 	return server, nil
+}
+
+// printLine prints a line to the signer's log without a limit, for a
+// connection from an enrolled key.
+func printLine(format string, args ...any) {
+	fmt.Printf(format, args...)
 }
 
 func formatSSHAuthLog(conn ssh.ConnMetadata, method string, err error) string {
@@ -497,7 +518,7 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 		return nil, fmt.Errorf("unsupported SSH username: only %q is accepted", productSSHUsername)
 	}
 	if !s.isEnrolled(key) {
-		fmt.Printf("[SSH] Rejected unknown key from %s: %s\n", remoteAddr, keyFingerprint)
+		s.unenrolled.printf("[SSH] Rejected unknown key from %s: %s\n", remoteAddr, keyFingerprint)
 		return nil, fmt.Errorf("unknown key %s; run enroll in apshell to request enrollment", keyFingerprint)
 	}
 	return &ssh.Permissions{Extensions: map[string]string{
@@ -514,10 +535,10 @@ func (s *Server) handleEnrollmentAuth(key ssh.PublicKey, remoteAddr, keyFingerpr
 	// clientKeyAlgorithms has already refused other key types before
 	// verification; this keeps enrollment to the same set.
 	if err := CheckClientKey(key); err != nil {
-		fmt.Printf("[SSH] Enrollment key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
+		s.unenrolled.printf("[SSH] Enrollment key from %s refused (key: %s): %v\n", remoteAddr, keyFingerprint, err)
 		return nil, err
 	}
-	fmt.Printf("[SSH] Enrollment request from %s (key: %s)\n", remoteAddr, keyFingerprint)
+	s.unenrolled.printf("[SSH] Enrollment request from %s (key: %s)\n", remoteAddr, keyFingerprint)
 	return &ssh.Permissions{
 		Extensions: map[string]string{
 			"auth_method":     "enrollment",
@@ -737,6 +758,12 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	s.sshConnsMu.Unlock()
 
 	remoteAddr := sshConn.RemoteAddr().String()
+	// An enrollment connection proves only that it holds its key, so what it
+	// prints goes through the limit.
+	logf := printLine
+	if isEnrollment {
+		logf = s.unenrolled.printf
+	}
 
 	// Channel to signal keepalive monitor to stop
 	keepaliveDone := make(chan struct{})
@@ -752,11 +779,11 @@ func (s *Server) handleConnection(netConn net.Conn) {
 		s.sshConnsMu.Unlock()
 
 		if err := sshConn.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close SSH connection: %v\n", err)
+			logf("Failed to close SSH connection: %v\n", err)
 		}
 		if connectedLogged {
 			// Log the session disconnect.
-			fmt.Printf("[SSH] Client disconnected: %s\n", remoteAddr)
+			logf("[SSH] Client disconnected: %s\n", remoteAddr)
 			if s.sessionCallback != nil {
 				s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil})
 			}
@@ -776,7 +803,7 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	}
 
 	// Log the successful SSH connection.
-	fmt.Printf("[SSH] Client connected from %s\n", remoteAddr)
+	logf("[SSH] Client connected from %s\n", remoteAddr)
 	if s.sessionCallback != nil {
 		s.sessionCallback(SessionEvent{RemoteAddr: remoteAddr, Fingerprint: info.fingerprint, EnrolledKey: info.key != nil, Connected: true})
 	}
@@ -797,12 +824,12 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	s.activeConns.Add(1)
 	go func() {
 		defer s.activeConns.Done()
-		s.monitorClientConnection(sshConn, remoteAddr, keepaliveDone)
+		s.monitorClientConnection(sshConn, remoteAddr, keepaliveDone, logf)
 	}()
 
 	if isEnrollment {
 		if !s.admitEnrollmentConn() {
-			fmt.Printf("[SSH] Too many pending enrollment requests; closing %s\n", remoteAddr)
+			s.unenrolled.printf("[SSH] Too many pending enrollment requests; closing %s\n", remoteAddr)
 			return
 		}
 		defer s.releaseEnrollmentConn(sshConn)
@@ -832,7 +859,7 @@ func (s *Server) serveChannels(sshConn *ssh.ServerConn, info sshConnInfo, isEnro
 			// before any is accepted.
 			if enrollmentChannels.Load() >= maxEnrollmentChannels {
 				if err := newChannel.Reject(ssh.ResourceShortage, "too many channels for enrollment"); err != nil && !isClosedConnError(err) {
-					fmt.Printf("Failed to reject SSH channel: %v\n", err)
+					s.unenrolled.printf("Failed to reject SSH channel: %v\n", err)
 				}
 				continue
 			}
@@ -938,10 +965,10 @@ func (s *Server) handleGlobalRequests(reqs <-chan *ssh.Request) {
 // monitorClientConnection sends keepalive pings to detect dead clients.
 // This ensures the server detects when a client's network dies (laptop closes,
 // cable pulled, etc.) rather than waiting for TCP timeout.
-func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr string, done chan struct{}) {
+func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr string, done chan struct{}, logf func(string, ...any)) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Printf("[SSH] Keepalive goroutine panic for %s: %v\n", remoteAddr, r)
+			logf("[SSH] Keepalive goroutine panic for %s: %v\n", remoteAddr, r)
 			_ = sshConn.Close()
 		}
 	}()
@@ -965,12 +992,12 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 			select {
 			case err := <-replied:
 				if err != nil {
-					fmt.Printf("[SSH] Keepalive failed for %s: %v\n", remoteAddr, err)
+					logf("[SSH] Keepalive failed for %s: %v\n", remoteAddr, err)
 					_ = sshConn.Close()
 					return
 				}
 			case <-time.After(s.keepaliveTimeout):
-				fmt.Printf("[SSH] No keepalive reply from %s within %v; closing\n", remoteAddr, s.keepaliveTimeout)
+				logf("[SSH] No keepalive reply from %s within %v; closing\n", remoteAddr, s.keepaliveTimeout)
 				_ = sshConn.Close()
 				return
 			case <-done:
@@ -985,7 +1012,7 @@ func (s *Server) monitorClientConnection(sshConn *ssh.ServerConn, remoteAddr str
 func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh.NewChannel) {
 	if newChannel.ChannelType() != "session" {
 		if err := newChannel.Reject(ssh.UnknownChannelType, "only session channels are supported for enrollment"); err != nil {
-			fmt.Printf("Failed to reject channel: %v\n", err)
+			s.unenrolled.printf("Failed to reject channel: %v\n", err)
 		}
 		return
 	}
@@ -1001,7 +1028,7 @@ func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh
 	claimed := false
 	defer func() {
 		if err := channel.Close(); err != nil && !isClosedConnError(err) {
-			fmt.Printf("Failed to close enrollment channel: %v\n", err)
+			s.unenrolled.printf("Failed to close enrollment channel: %v\n", err)
 		}
 		if claimed {
 			_ = sshConn.Close()
@@ -1025,7 +1052,7 @@ func (s *Server) handleEnrollmentChannel(sshConn *ssh.ServerConn, newChannel ssh
 			}
 			label, ok := parseEnrollmentCommand(command)
 			if !ok {
-				fmt.Printf("[SSH] Unknown enrollment command from %s: %s\n", remoteAddr, quoteClientText(command))
+				s.unenrolled.printf("[SSH] Unknown enrollment command from %s: %s\n", remoteAddr, quoteClientText(command))
 				if req.WantReply {
 					_ = req.Reply(false, nil)
 				}
@@ -1086,7 +1113,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 		return false
 	}
 	if !validEnrollmentLabel(label) {
-		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v: %s\n", remoteAddr, fingerprint, errInvalidEnrollmentLabel, quoteClientText(label))
+		s.unenrolled.printf("[SSH] Enrollment request from %s refused (key: %s): %v: %s\n", remoteAddr, fingerprint, errInvalidEnrollmentLabel, quoteClientText(label))
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+errInvalidEnrollmentLabel.Error()+"\n", 1)
 		return true
 	}
@@ -1099,7 +1126,7 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 	}
 
 	if s.enrollmentRequest == nil {
-		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): enrollment unavailable\n", remoteAddr, fingerprint)
+		s.unenrolled.printf("[SSH] Enrollment request from %s refused (key: %s): enrollment unavailable\n", remoteAddr, fingerprint)
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: failed to record enrollment request\n", 1)
 		return true
 	}
@@ -1107,13 +1134,13 @@ func (s *Server) requestEnrollment(sshConn *ssh.ServerConn, channel ssh.Channel,
 	pending, err := s.enrollmentRequest(key, label, remoteAddr)
 	switch {
 	case err != nil:
-		fmt.Printf("[SSH] Enrollment request from %s refused (key: %s): %v\n", remoteAddr, fingerprint, err)
+		s.unenrolled.printf("[SSH] Enrollment request from %s refused (key: %s): %v\n", remoteAddr, fingerprint, err)
 		_ = s.respondEnrollment(sshConn, channel, "ERROR: "+quoteClientText(err.Error())+"\n", 1)
 	case pending:
-		fmt.Printf("[SSH] Enrollment request recorded from %s; waiting for the operator (key: %s)\n", remoteAddr, fingerprint)
+		s.unenrolled.printf("[SSH] Enrollment request recorded from %s; waiting for the operator (key: %s)\n", remoteAddr, fingerprint)
 		_ = s.respondEnrollment(sshConn, channel, "pending "+fingerprint+"\n", 0)
 	default:
-		fmt.Printf("[SSH] Enrollment request from %s: key already enrolled (key: %s)\n", remoteAddr, fingerprint)
+		s.unenrolled.printf("[SSH] Enrollment request from %s: key already enrolled (key: %s)\n", remoteAddr, fingerprint)
 		_ = s.respondEnrollment(sshConn, channel, "enrolled "+fingerprint+"\n", 0)
 	}
 	return true
@@ -1311,6 +1338,7 @@ func (s *Server) StopContext(ctx context.Context) error {
 	}
 
 	close(s.closeChan)
+	defer s.unenrolled.close()
 
 	listener := s.listener
 	s.listener = nil

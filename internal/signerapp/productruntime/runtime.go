@@ -536,11 +536,14 @@ func (ir *Runtime) endSignRequests() {
 	}
 }
 
-// Lock transitions this identity to the locked state.
-func (ir *Runtime) Lock() {
-	if ir.lockRuntime.Lock() {
-		ir.notifyLocked()
+// Lock transitions this identity to the locked state, and reports whether it
+// was unlocked or in recovery until then.
+func (ir *Runtime) Lock() bool {
+	if !ir.lockRuntime.Lock() {
+		return false
 	}
+	ir.notifyLocked()
+	return true
 }
 
 // BeginStoreMaintenance blocks signing and clears sensitive runtime state

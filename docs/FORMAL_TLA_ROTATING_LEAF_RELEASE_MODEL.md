@@ -151,8 +151,8 @@ for each.
   count.
 - A restore reads the log once, at `RestoreBegin`; the audited release names
   the highest stage in the log with every leaf the log holds for it. The
-  reader keeps that promise (`releaseHistory.add`, which both
-  `AuditLogger.ReadRotatingReleases` and the path-based reader use): an
+  reader keeps that promise (`releaseHistory.add`, which
+  `AuditLogger.ReadRotatingReleases` and the rotation's carry use): an
   entry from an earlier stage, which a sign on a lagging chain read can log
   after a later stage's, never replaces the later stage's list, and the list
   holds every logged pair of leaf and transaction once, as the model's

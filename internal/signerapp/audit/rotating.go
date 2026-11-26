@@ -44,32 +44,20 @@ type RotatingLeaf struct {
 }
 
 // ReadRotatingReleases returns the newest ROTATING_RELEASE entry per account
-// from the audit log at path and its rotated predecessors (path+".2", then
-// path+".1", then path), oldest first so later entries win, except that an
+// from the log this logger writes and its rotated predecessors (.2, then .1,
+// then the current file), oldest first so later entries win, except that an
 // entry from an earlier stage never replaces a later stage's. The collected
 // history feeds both one-time leaf selection and release alerts. A rotation
 // carries each account's newest stage forward (carryReleases), so earlier
 // stages' entries are the ones it drops. Malformed lines are skipped; missing
 // history can cause undetected leaf reuse after release memory is rebuilt.
 //
-// It is for a log no AuditLogger is writing: a rotation between two of its
-// opens would hide a whole file. The signer reads its own log with
-// AuditLogger.ReadRotatingReleases.
-func ReadRotatingReleases(path string) (map[string]RotatingRelease, error) {
-	files, err := openReleaseLogs(path)
-	if err != nil {
-		return nil, err
-	}
-	return readReleaseLogs(files)
-}
-
-// ReadRotatingReleases reads the release history of the log this logger
-// writes, as the package function does. It opens the current file and both
-// rotated files under the logger's mutex, which every rotation holds, so a
-// rotation cannot move a file between two opens and hide it: the three are
-// the log at one instant. The reads run after the mutex is released, so
-// audit writes are not held up; they read the open files, which a later
-// rotation's renames do not change, and see what was appended until then.
+// It opens the current file and both rotated files under the logger's mutex,
+// which every rotation holds, so a rotation cannot move a file between two
+// opens and hide it: the three are the log at one instant. The reads run after
+// the mutex is released, so audit writes are not held up; they read the open
+// files, which a later rotation's renames do not change, and see what was
+// appended until then.
 func (a *AuditLogger) ReadRotatingReleases() (map[string]RotatingRelease, error) {
 	a.mu.Lock()
 	files, err := openReleaseLogs(a.path)

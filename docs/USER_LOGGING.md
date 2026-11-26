@@ -221,9 +221,9 @@ LogicSig argument values.
 
 | Event | Description |
 |-------|-------------|
-| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`): `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal; rate limited, see [Authentication](#authentication)), and `ssh_fingerprint` names the key |
-| `SESSION_DISCONNECTED` | Session or SSH client connection ended; written for an `enroll` connection exactly when its `SESSION_CONNECTED` was |
-| `IDENTITY_LOCKED` | Signing authority locked by a request from an authenticated admin session. A lock when an admin session ends (`lock_on_disconnect`) writes none: it follows that session's `SESSION_DISCONNECTED` |
+| `SESSION_CONNECTED` | IPC admin session established, or SSH client connection opened (`transport` `ssh`). On IPC, `reason` is empty for the session that owns the signer and `auth_only` for one that only reads (apadmin's read-only batch commands), which never owns it. On SSH, `reason` is `ssh` for an enrolled key (principal `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (unenrolled key; no principal; rate limited, see [Authentication](#authentication)), and `ssh_fingerprint` names the key |
+| `SESSION_DISCONNECTED` | Session or SSH client connection ended, with its `SESSION_CONNECTED`'s `reason`; written for an `enroll` connection exactly when its `SESSION_CONNECTED` was |
+| `IDENTITY_LOCKED` | Signing authority locked by a request from an authenticated admin session, with that request's `reason`, or, when `lock_on_disconnect` is set, by the end of the session responsible for the signer with no owner left (the owner, or one whose login unlocked the signer and was never promoted), with `reason` `lock_on_disconnect` and that session's principal. The second is written only when the signer was unlocked or in recovery: a session that locked before it ended has its own entry |
 | `IDENTITY_UNLOCKED` | How an unlock ended (`outcome` `unlocked`, `recovery` or `failed`), whether an admin login, an `unlock` command or the startup asked for it |
 | `SETTING_CHANGE_INTENT` | Durable intent written before saving a non-restrictive admin setting change (`reason` `setting=<key> old=<old> new=<new>`); failure refuses the update |
 | `SETTING_CHANGED` | Admin setting change saved (`reason` `setting=<key> old=<old> new=<new>`) |

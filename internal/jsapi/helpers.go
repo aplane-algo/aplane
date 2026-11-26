@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/appinput"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/dop251/goja"
 )
@@ -390,7 +391,13 @@ func (a *API) lsigArgsOption(m map[string]interface{}, funcName string) map[stri
 	for name, raw := range argMap {
 		value, err := parseJSByteString(raw)
 		if err != nil {
-			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid lsigArgs[%q]: %v", funcName, name, err)))
+			// A string's error can quote it, and an argument is a secret
+			// until it is spent.
+			problem := err.Error()
+			if text, isText := raw.(string); isText {
+				problem = appinput.ByteValueProblem(text)
+			}
+			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid lsigArgs[%q]: %s", funcName, name, problem)))
 		}
 		args[name] = value
 	}

@@ -47,6 +47,25 @@ func ParseByteValue(raw string) ([]byte, error) {
 	return []byte(raw), nil
 }
 
+// ByteValueProblem says what is wrong with a value ParseByteValue refused, by
+// the form its prefix names, without the value or the decoder's detail, which
+// can quote part of it: a LogicSig argument such as a preimage is a secret
+// until it is spent.
+func ByteValueProblem(raw string) string {
+	switch {
+	case strings.HasPrefix(raw, "hex:"), strings.HasPrefix(raw, "0x"):
+		return "the value is not valid hex"
+	case strings.HasPrefix(raw, "b64:"):
+		return "the value is not valid base64"
+	case strings.HasPrefix(raw, "int:"):
+		return "the value is not a decimal unsigned 64-bit number"
+	case strings.HasPrefix(raw, "addr:"):
+		return "the value is not a valid Algorand address"
+	default:
+		return fmt.Sprintf("the value has a ':' but no known prefix (supported: %s); write text:<value> for literal text", BytePrefixes)
+	}
+}
+
 // BytePrefixes names the encoding prefixes ParseByteValue reads, for messages.
 const BytePrefixes = "hex:, b64:, text:, str:, int:, addr:, 0x"
 
