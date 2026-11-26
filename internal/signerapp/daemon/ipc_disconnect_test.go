@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -22,26 +24,39 @@ import (
 // operations under the race detector and concurrent CI package load.
 const ipcDisconnectTestTimeout = 5 * time.Second
 
+// The lock a disconnect makes is recorded, and only when it locked the signer:
+// one the session locked itself before leaving has its own entry.
 func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		lockOnDisconnect bool
+		lockFirst        bool
 		wantUnlocked     bool
+		wantLocks        []string // the IDENTITY_LOCKED reasons
 	}{
 		{
 			name:             "true locks signer",
 			lockOnDisconnect: true,
 			wantUnlocked:     false,
+			wantLocks:        []string{autoLockReason},
 		},
 		{
 			name:             "false leaves signer unlocked",
 			lockOnDisconnect: false,
 			wantUnlocked:     true,
 		},
+		{
+			name:             "true after the session locked",
+			lockOnDisconnect: true,
+			lockFirst:        true,
+			wantUnlocked:     false,
+			wantLocks:        []string{"operator"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			signer, cleanup := setupTestSigner(t)
 			defer cleanup()
+			auditPath := useTestAuditLog(t, signer)
 
 			ir := signer.productRuntime()
 			ir.SetUnlocked()
@@ -85,6 +100,13 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				t.Fatalf("auth_result success = false: %+v", authResult)
 			}
 			readAdminMessageType(t, clientConn, reader, protocol.MsgTypeStatus)
+			if tc.lockFirst {
+				writeAdminMessage(t, clientConn, protocol.LockIdentityMessage{
+					BaseMessage: protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeLockIdentity, ID: "lock-1"},
+					Reason:      "operator",
+				})
+				readAdminMessageType(t, clientConn, reader, protocol.MsgTypeLockIdentityResult)
+			}
 
 			_ = clientConn.Close()
 			select {
@@ -96,6 +118,22 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			if got := ir.IsUnlocked(); got != tc.wantUnlocked {
 				t.Fatalf("IsUnlocked() = %v, want %v", got, tc.wantUnlocked)
 			}
+			var locks []string
+			for _, entry := range auditEntries(t, auditPath, "IDENTITY_LOCKED") {
+				locks = append(locks, entry["reason"].(string))
+				if entry["principal"] == nil {
+					t.Errorf("IDENTITY_LOCKED names no principal: %v", entry)
+				}
+			}
+			if !slices.Equal(locks, tc.wantLocks) {
+				t.Fatalf("IDENTITY_LOCKED reasons = %v, want %v", locks, tc.wantLocks)
+			}
+			// The owner's session entries carry no reason; an observer's say auth_only.
+			for _, entry := range auditEntries(t, auditPath, "SESSION_CONNECTED", "SESSION_DISCONNECTED") {
+				if reason, given := entry["reason"]; given {
+					t.Errorf("the owner's %v has reason %q", entry["event"], reason)
+				}
+			}
 		})
 	}
 }
@@ -103,6 +141,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	signer, cleanup := setupTestSigner(t)
 	defer cleanup()
+	auditPath := useTestAuditLog(t, signer)
 
 	ir := signer.productRuntime()
 	ir.SetUnlocked()
@@ -178,6 +217,18 @@ func TestAdminAuthOnlyIsNonOwningAndPreservesActiveSigner(t *testing.T) {
 	}
 	if !ir.IsUnlocked() {
 		t.Fatal("auth_only disconnect locked the serving signer")
+	}
+	// The observer's connection and its end are recorded, as such.
+	entries := auditEntries(t, auditPath, "SESSION_CONNECTED", "SESSION_DISCONNECTED", "IDENTITY_LOCKED")
+	var got []string
+	for _, entry := range entries {
+		got = append(got, fmt.Sprintf("%v %v", entry["event"], entry["reason"]))
+		if entry["principal"] == nil {
+			t.Errorf("%v names no principal: %v", entry["event"], entry)
+		}
+	}
+	if want := []string{"SESSION_CONNECTED auth_only", "SESSION_DISCONNECTED auth_only"}; !slices.Equal(got, want) {
+		t.Fatalf("audit = %v, want %v", got, want)
 	}
 }
 

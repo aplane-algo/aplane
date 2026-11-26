@@ -426,7 +426,9 @@ distinct message type so an older server rejects it before processing instead
 of ignoring a new flag and unlocking. First-party clients use it only for
 operations whose handlers require an authenticated bound runtime. It does not
 occupy or replace the active admin-owner slot and cannot receive approval
-notifications, fail pending approvals, or trigger disconnect cleanup. The server permits only
+notifications, fail pending approvals, or trigger disconnect cleanup. Its
+start and end are audited, as `SESSION_CONNECTED` and `SESSION_DISCONNECTED`
+with reason `auth_only`. The server permits only
 `get_admin_settings`, cosigner-reference list/get/public-export, generation
 inventory, and enrolled-client inventory (`list_enrolled_keys`,
 `list_pending_enrollments`) requests; those requests still pass through their

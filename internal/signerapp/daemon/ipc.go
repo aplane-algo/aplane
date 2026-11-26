@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/ipcbind"
+	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 )
 
 // IPCServer handles Unix socket connections for local IPC.
@@ -249,6 +250,14 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn) {
 	s.handleRegisteredClient(session, displacementConfirmedFor)
 }
 
+// The audit reasons for a session that observes the signer without owning it
+// (auth_only), and for the lock a disconnect makes when lock_on_disconnect is
+// set.
+const (
+	authOnlyReason = "auth_only"
+	autoLockReason = "lock_on_disconnect"
+)
+
 func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displacementConfirmedFor *adminserver.Session) {
 	// If auth unlocks an identity for this session, either the session becomes
 	// the active owner or cleanup must leave the identity locked (when
@@ -266,20 +275,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		// active owner remains. Displaced clients skip cleanup because the
 		// replacement is already active before they are notified and closed.
 		if cleanupRuntime && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient()) {
-			// Route disconnect cleanup through the bound identity
-			if wasActiveClient && s.signer != nil {
-				s.signer.auditLog.LogSessionDisconnectedContext(session.SessionContext())
-			}
-			boundIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
-
-			// Lock behavior is driven by the live product runtime config,
-			// which should already reflect any stored overrides.
-			if boundIR.Config().LockOnDisconnect() {
-				boundIR.Lock()
-				logWarnf("apadmin client disconnected - signer locked")
-			} else {
-				logWarnf("apadmin disconnected - signer remains unlocked")
-			}
+			s.endOwnerSession(session, boundIR, wasActiveClient)
 		}
 	}()
 
@@ -308,6 +304,10 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 		// They never occupy or replace the active owner slot, receive approval
 		// notifications, fail pending approvals, or run lock-on-disconnect cleanup.
 		s.clearPendingSession(session)
+		if s.signer != nil {
+			s.signer.auditLog.LogSessionConnectedContext(session.SessionContext(), authOnlyReason)
+			defer s.signer.auditLog.LogSessionDisconnectedContext(session.SessionContext(), authOnlyReason)
+		}
 		s.serveAdminMessages(session, adminConn)
 		return
 	}
@@ -331,7 +331,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	}
 
 	if s.signer != nil {
-		s.signer.auditLog.LogSessionConnectedContext(session.SessionContext())
+		s.signer.auditLog.LogSessionConnectedContext(session.SessionContext(), "")
 	}
 
 	// Send initial status after successful authentication
@@ -343,6 +343,30 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, displac
 	}
 
 	s.serveAdminMessages(session, adminConn)
+}
+
+// endOwnerSession is the cleanup when the session responsible for the signer
+// ends and no owner remains: its pending approvals fail, and with
+// lock_on_disconnect the signer locks.
+func (s *IPCServer) endOwnerSession(session *adminserver.Session, boundIR *productruntime.Runtime, wasActiveClient bool) {
+	if wasActiveClient && s.signer != nil {
+		s.signer.auditLog.LogSessionDisconnectedContext(session.SessionContext(), "")
+	}
+	boundIR.FailAllPendingApprovals(signerapproval.SignRequestCancelReasonApproverDisconnected)
+
+	// Lock behavior is driven by the live product runtime config, which
+	// should already reflect any stored overrides.
+	if !boundIR.Config().LockOnDisconnect() {
+		logWarnf("apadmin disconnected - signer remains unlocked")
+		return
+	}
+	if !boundIR.Lock() {
+		return
+	}
+	if s.signer != nil {
+		s.signer.auditLog.LogIdentityLockedContext(session.SessionContext(), autoLockReason)
+	}
+	logWarnf("apadmin client disconnected - signer locked")
 }
 
 func (s *IPCServer) serveAdminMessages(session *adminserver.Session, adminConn adminproto.AdminConn) {

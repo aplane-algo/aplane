@@ -41,7 +41,7 @@ func TestAReloadThatFindsAContentDefectEntersRecovery(t *testing.T) {
 		{name: "recovery, address collision", from: func(ir *Runtime) { ir.EnterRecovery(nil) }, err: collision, want: signerruntime.SignerStateRecovery},
 		{name: "unlocked, other failure", from: func(*Runtime) {}, err: other, want: signerruntime.SignerStateUnlocked},
 		{name: "recovery, validation", from: func(ir *Runtime) { ir.EnterRecovery(nil) }, err: validation, want: signerruntime.SignerStateRecovery},
-		{name: "locked, validation", from: (*Runtime).Lock, err: validation, want: signerruntime.SignerStateLocked},
+		{name: "locked, validation", from: func(ir *Runtime) { ir.Lock() }, err: validation, want: signerruntime.SignerStateLocked},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ir, mutation, _, _ := unlockedRuntimeForTest(t)

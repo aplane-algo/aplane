@@ -1085,10 +1085,13 @@ func (a *AuditLogger) LogSSHSessionConnected(remoteAddr, sshFingerprint string, 
 }
 
 // LogSessionConnectedContext logs a structured admin session connection.
-func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext) {
+// reason is empty for the session that owns the signer, and names any other
+// kind: an auth_only session observes and does not own it.
+func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
+	entry.Reason = reason
 	a.Log(entry)
 }
 
@@ -1108,15 +1111,18 @@ func (a *AuditLogger) LogSSHSessionDisconnected(remoteAddr, sshFingerprint strin
 	a.Log(entry)
 }
 
-// LogSessionDisconnectedContext logs a structured admin session disconnection.
-func (a *AuditLogger) LogSessionDisconnectedContext(ctx adminserver.SessionContext) {
+// LogSessionDisconnectedContext logs a structured admin session disconnection,
+// with the reason its connection was logged with.
+func (a *AuditLogger) LogSessionDisconnectedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
+	entry.Reason = reason
 	a.Log(entry)
 }
 
-// LogIdentityLockedContext logs an explicit admin lock request for an identity.
+// LogIdentityLockedContext logs a lock of the identity by an admin session: a
+// lock request, or the end of the owning session under lock_on_disconnect.
 func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditIdentityLocked

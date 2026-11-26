@@ -213,8 +213,8 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 		RequesterPrincipal: adminserver.SessionPrincipal{ID: "requester"},
 		ApproverPrincipal:  adminserver.SessionPrincipal{ID: "approver"},
 	}
-	logger.LogSessionConnectedContext(ctx)
-	logger.LogSessionDisconnectedContext(ctx)
+	logger.LogSessionConnectedContext(ctx, "")
+	logger.LogSessionDisconnectedContext(ctx, "")
 
 	entries := readAuditEntries(t, path)
 	if len(entries) != 2 {
