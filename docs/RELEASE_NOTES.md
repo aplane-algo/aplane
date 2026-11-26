@@ -7,6 +7,38 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Audit entries carry their facts in fields
+
+Twenty-two audit events wrote facts into `reason` as text, which a reader
+had to parse. They now write them to fields, and `reason` keeps only free
+text: a cause, or a recovery grant's budget:
+
+- **Settings:** `SETTING_CHANGE_INTENT`, `SETTING_CHANGED` and
+  `SETTING_SAVE_ERROR` carry `setting`, `old_value`, `new_value` and, on the
+  last, `in_effect`.
+- **Backups:** `BACKUP_CREATED`, `BACKUP_IMPORTED`, `BACKUP_EXPORT_STARTED`,
+  `BACKUP_DELETED`, `BACKUP_RESTORE_PREVIEWED` and
+  `CREDENTIAL_RESTORE_INTENT` name the backup in `archive`, kept whole up to
+  4096 bytes as every name and path now is, and `BACKUP_IMPORTED` its size
+  in `byte_count`.
+- **`PASSPHRASE_CHANGED`** carries its four counts in `migrated`, the entry's
+  one nested object.
+- **`COSIGNER_REFERENCE_CHANGED`** carries `cosigner_action` and
+  `cosigner_name`; a failure's entry used to name the action only in
+  `reason`.
+- **Keys:** `KEY_REJECTED` and `KEY_DELETED` carry `key_file`, and
+  `KEY_GENERATED`, `KEY_IMPORTED` and `KEY_EXPORTED` the key type in
+  `key_type`.
+- **Clients:** `CLIENT_ENROLLMENT_REQUESTED`, `CLIENT_ENROLLED`,
+  `CLIENT_ENROLLMENT_REJECTED` and `CLIENT_KEY_REVOKED` carry the key in
+  `ssh_fingerprint`.
+- **`AUTHORIZATION_DENIED`** carries `authorization_action`,
+  `resource_type` and `resource_id`.
+- **`ROTATING_RECOVERY`** carries `grant_id`. A cancel's entry named the
+  grant twice (`grant 1: grant 1 cancelled`), and now says `cancelled`.
+
+A search on the old `reason` text needs the new fields.
+
 ## Loose ends: displaced and shutdown session entries, a source token code, a quiet hex error
 
 - **A displaced owner's end is recorded:** `SESSION_DISCONNECTED` with reason

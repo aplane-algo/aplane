@@ -1552,34 +1552,35 @@ Signing-audit semantics:
   prepare signs nothing and writes no entry
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - client-signing `SIGN_APPROVED` records carry `approval_source` (`human`, `user_auto_approve`, or `always_approve`), and `policy_rule_id` whenever a review rule or Always Approve rule matched (including when User Auto-Approve satisfied a review rule without a human decision); policy rejections (`SIGN_REJECTED`) carry the first violated rule ID in `policy_rule_id`
-- admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, action/resource details in `reason`, and remote address when available
+- admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, principal attribution, the action and resource in `authorization_action`, `resource_type` and `resource_id`, the denial reason in `reason`, and remote address when available
 - IPC admin session connected/disconnected audit records the admin session ID, transport, principal, and remote address; SSH connect/disconnect entries record `transport:"ssh"`, the remote address, the outcome, `ssh_fingerprint` (the fingerprint of the client key that opened the connection), and `reason`: `ssh` for an enrolled key's connection (attributed to `client:<ssh_fingerprint>`), `ssh-enroll` for an `enroll` connection (whose key is not enrolled, so `principal` and `requester_principal` are omitted)
 - key-management audit events are recorded once the key file is written or archived, before the reload that follows, so a change whose reload fails, and which therefore still happened, is audited too. They are emitted for both REST and authenticated IPC admin operations and name the requester: REST `KEY_GENERATED`/`KEY_DELETED` entries carry the enrolled client's `client:<fingerprint>` principal with `transport: http` and its remote address, and IPC entries (including `KEY_IMPORTED` and `PASSPHRASE_CHANGED`) carry the admin session's principal, session ID, and transport
 - `KEY_REJECTED` is emitted when signer key scanning skips a key file that
   violates a load-time LogicSig invariant (an on-curve address, or missing or
-  undecodable bytecode); `reason` includes the key filename and rejection reason
+  undecodable bytecode); `key_file` names the file and `reason` gives the
+  rejection reason
 
 Backup-audit semantics:
 
 - `BACKUP_CREATED` is emitted when an authenticated admin backup operation
-  writes a managed archive; `reason` contains the archive path
+  writes a managed archive; `archive` contains the archive path
 - `BACKUP_IMPORTED` is emitted after an uploaded archive passes deep
-  verification and is published into the managed backup set; `reason`
-  contains the file name and size, and `skipped_keys` the keys in it a
-  restore would skip
+  verification and is published into the managed backup set; `archive`
+  contains the file name, `byte_count` its size, and `skipped_keys` the keys
+  in it a restore would skip
 - `BACKUP_EXPORT_STARTED` is emitted on the first successful chunk read for a
-  managed archive transfer, including when a client starts at a non-zero
-  offset; reaching EOF closes the inferred transfer for subsequent auditing
+  managed archive transfer, which `archive` names, including when a client
+  starts at a non-zero offset; reaching EOF closes the inferred transfer for subsequent auditing
 - `BACKUP_FAILED` is emitted when backup creation, import commit, or export
   streaming fails; `reason` contains the failure reason
 - `BACKUP_DELETED` is emitted for every request to delete a managed archive,
-  with `outcome` `deleted` or `failed`; `reason` contains the path as requested
-  and, on failure, the error
-- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `reason` contains the resolved archive path, `key_count` the keys a restore would admit, and `skipped_keys` the ones it would skip
+  with `outcome` `deleted` or `failed`; `archive` contains the path as
+  requested and, on failure, `reason` the error
+- `BACKUP_RESTORE_PREVIEWED` is emitted when an authenticated preview operation successfully decrypts and inspects a managed archive; `archive` contains the resolved archive path, `key_count` the keys a restore would admit, and `skipped_keys` the ones it would skip
 - `BACKUP_RESTORE_PREVIEW_FAILED` is emitted when an authenticated preview request fails; `reason` contains the failure reason
 - `CREDENTIAL_RESTORE_INTENT` is durably audited before restore can make its
-  first generation-store write. It records the operation ID and
-  `replace_existing`; durable-write failure aborts with no store mutation.
+  first generation-store write. It records the operation ID, the archive
+  (`archive`) and `replace_existing`; durable-write failure aborts with no store mutation.
 - `CREDENTIAL_RESTORE_SUCCEEDED` and `CREDENTIAL_RESTORE_FAILED` carry the
   available archive SHA-256, operation ID, replacement option, and key count.
 - `CREDENTIAL_RESTORE_COMMIT_UNCERTAIN` distinguishes a store-root
@@ -1594,12 +1595,13 @@ Backup-audit semantics:
 
 Store-management audit semantics:
 
-- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key, template, policy-sidecar, and source-token-file counts are recorded in `reason`
+- `PASSPHRASE_CHANGED` is emitted when authenticated local IPC passphrase rotation succeeds; re-encrypted key, template, policy-sidecar, and source-token-file counts are recorded in `migrated`
 - `PASSPHRASE_CHANGE_FAILED` is emitted when authenticated local IPC passphrase rotation fails
-- `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports,
-  promotes, or removes a cosigner-reference record; `outcome` is the action
-  (or `failed`) and `witness_key_id` identifies the authority, with no
-  public-key material in the entry
+- `COSIGNER_REFERENCE_CHANGED` is emitted when an admin session imports or
+  removes a cosigner-reference record; `outcome` is the action (or
+  `failed`), `cosigner_action` the action in either case, `cosigner_name`
+  the reference's name, and `witness_key_id` identifies the authority, with
+  no public-key material in the entry
 - `KEY_TYPE_CHANGED` is emitted for every admin command that changes the key
   types the node offers: `key_type_action` is `install`, `import`, `remove`,
   `activate` or `deactivate`, and `key_type` names the type. `changed` says
@@ -1641,7 +1643,7 @@ Store-management audit semantics:
     `require_contained`, `require_cosigner`, or `lock_on_disconnect` off,
     changing `passphrase_timeout` or `theme`, or re-saving an unchanged
     value) writes a durable `SETTING_CHANGE_INTENT` (`outcome:"requested"`,
-    `reason` `setting=<key> old=<old> new=<new>`) after validation and before
+    with `setting`, `old_value` and `new_value`) after validation and before
     touching the file or memory. A missing audit log refuses the update with
     `audit_unavailable` and a failed write refuses it with
     `audit_write_failed`
@@ -1650,16 +1652,16 @@ Store-management audit semantics:
     on, or retrying an unsaved restrictive value) publishes and saves without
     waiting on the audit log, so an audit failure never blocks locking down
   - every saved update, either direction, emits a best-effort
-    `SETTING_CHANGED` (`outcome:"changed"`, `reason`
-    `setting=<key> old=<old> new=<new>`) with admin session attribution and
+    `SETTING_CHANGED` (`outcome:"changed"`, with `setting`, `old_value` and
+    `new_value`) with admin session attribution and
     `operation_id` (including when the post-rename directory flush failed,
     which is a success)
   - every save that fails before the rename writes `SETTING_SAVE_ERROR`, with
-    the admin session's attribution and a `reason` of `setting=<key>
-    value=<value> in_effect=<true|false>: <cause>`. `in_effect=true`
+    the admin session's attribution, `setting`, the value in `new_value`,
+    `in_effect`, and the cause in `reason`. `in_effect:true`
     (`outcome:"applied"`) is a restrictive value left in effect but not saved
     (`applied_not_saved`), which a restart reverts and nothing else durable
-    records; `in_effect=false` (`outcome:"failed"`) is a change that took no
+    records; `in_effect:false` (`outcome:"failed"`) is a change that took no
     effect. A request refused before any audit or save (a bad value, a
     headless-mode refusal, an unknown setting) writes none
 - generation maintenance is audited in intent/result pairs: each `*_INTENT`
@@ -1708,7 +1710,8 @@ Store-management audit semantics:
   missing audit log does not name rescue, which has no token commands.
 - every audit entry is normalized before it is written (`normalizeEntry`,
   in `Log` and `logDurable`): `reason` and `txn_details` are cut to 8 KiB,
-  every other string field to 128 bytes, and every list to 64 members of
+  a name or path (`archive`, `key_file`, `resource_id`, `cosigner_name`) to
+  4096 bytes, every other string field to 128 bytes, and every list to 64 members of
   128 bytes, with `*_omitted` counts. This covers paths that log before
   validating, such as signing requests (`SIGN_REQUEST` and `PLAN_REQUEST`
   carry the client's `auth_address` and transaction details); real identifiers are

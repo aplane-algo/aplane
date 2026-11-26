@@ -993,7 +993,7 @@ When an update takes effect depends on the change's direction:
   value. A failed save of the value already saved answers the plain
   "unchanged" failure, not `applied_not_saved`, since nothing in effect
   would be undone by a restart; like every failed save it writes a
-  `SETTING_SAVE_ERROR` entry, with `in_effect=false`.
+  `SETTING_SAVE_ERROR` entry, with `in_effect` false.
 
 The rule covers only the four boolean settings the signer itself enforces.
 `passphrase_timeout` is not one of them: only the admin client enforces it
