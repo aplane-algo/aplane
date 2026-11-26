@@ -100,12 +100,16 @@ type unresolvedBackupImport struct {
 	commitID string
 }
 
+// openBackupImport opens a fresh form. A recovery keeps an import going and
+// takes the operator off the form, so one may be in flight: it ends as leaving
+// the form ends it.
 func (m Model) openBackupImport() (tea.Model, tea.Cmd) {
+	m, cmd := m.endBackupImportTransfer()
 	imp := &m.backups.imp
 	crypto.ZeroBytes(imp.passphrase)
 	*imp = backupImportState{canceledBegins: imp.canceledBegins, unresolved: imp.unresolved}
 	m.viewState = ViewBackupImport
-	return m, nil
+	return m, cmd
 }
 
 func (m Model) handleBackupImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -380,6 +384,15 @@ func importedStatus(name string, result protocol.CommitBackupImportResultMessage
 // leaveBackupImport handles esc while a transfer runs: before commit it
 // cancels the upload; after commit it leaves the outcome unresolved.
 func (m Model) leaveBackupImport() (tea.Model, tea.Cmd) {
+	m, cmd := m.endBackupImportTransfer()
+	m = m.closeBackupImportForm()
+	m.viewState = ViewBackups
+	return m, cmd
+}
+
+// endBackupImportTransfer ends the import in flight, if there is one: a begin
+// is abandoned, an upload aborted, and a commit's outcome is left to arrive.
+func (m Model) endBackupImportTransfer() (Model, tea.Cmd) {
 	imp := &m.backups.imp
 	var cmd tea.Cmd
 	switch imp.phase {
@@ -394,10 +407,7 @@ func (m Model) leaveBackupImport() (tea.Model, tea.Cmd) {
 	case importCommitting:
 		m.markBackupImportUnresolved(imp.pendingID)
 	}
-	m = m.resetBackupImportTransfer()
-	m = m.closeBackupImportForm()
-	m.viewState = ViewBackups
-	return m, cmd
+	return m.resetBackupImportTransfer(), cmd
 }
 
 func (m *Model) cancelBackupImportBegin() {
