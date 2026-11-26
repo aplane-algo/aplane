@@ -176,6 +176,15 @@ func TestEnrolledClientLinesAreNotLimited(t *testing.T) {
 	for range unenrolledLogBurst + 5 {
 		client, _ := connectEnrolledClient(t, srv, set, tmpDir, host, port, known)
 		_ = client.Close()
+		// The next connection's helper counts from the server's live
+		// connections, so this one must be gone first.
+		deadline := time.Now().Add(5 * time.Second)
+		for srv.ActiveConnectionCount() != 0 {
+			if time.Now().After(deadline) {
+				t.Fatalf("a closed connection is still counted: %d", srv.ActiveConnectionCount())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 	time.Sleep(100 * time.Millisecond)
 	if got := strings.TrimSpace(strings.Join(out.lines(), "\n")); got != "" {
