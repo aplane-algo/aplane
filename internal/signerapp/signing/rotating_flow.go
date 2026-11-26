@@ -721,10 +721,7 @@ func (s *Service) rotatingSpendPreamble(ctx context.Context, deps *RotatingDeps,
 	if err := validateRotatingSpend(spend, account, genesis); err != nil {
 		return types.Address{}, nil, nil, nil, err
 	}
-	if err := validateKnownNetwork([]types.Transaction{spend}, s.genesisHashResolver()); err != nil {
-		return types.Address{}, nil, nil, nil, err
-	}
-	if err := validateTransactionBounds([]types.Transaction{spend}); err != nil {
+	if err := validateGroupBeforePolicy([]types.Transaction{spend}, s.genesisHashResolver(), consoleOf(s.Console)); err != nil {
 		return types.Address{}, nil, nil, nil, err
 	}
 	table, tableErr := deps.Tables.Table(account, genesis, s.keyPresent(accountText), s.Planner.Snapshot().KeyTypes[accountText])

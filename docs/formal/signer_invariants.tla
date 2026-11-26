@@ -60,7 +60,8 @@ The model intentionally omits:
     invariant refuses such a rekey first, and the rotating check is a second
     line folded into the signed-position flag here,
   - the cosigner's key lookup, which runs before the invariants there, and
-    transaction bounds validation, which runs before both,
+    the known-network check and transaction bounds validation, which run
+    before both,
   - what the external checks look up, how many lookups a request makes, and
     the order the checks run in (the runner stops at the first refusal); a
     lookup that fails, a node that cannot run its document's checks, a lock

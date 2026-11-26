@@ -18,16 +18,17 @@ import (
 )
 
 // runCosignerGates is the cosigner's gate sequence for a component request.
-// It checks that this node holds the component key, then runs the signer
-// invariants over the targets, then applies the cosigner key's policy (its
-// own document, or the node default) to every target. The invariants come
-// after the key check, so a request for a key this node doesn't hold is
-// refused as such and never audited, and before the policy, so no policy can
-// allow what they refuse. A cosigner has no operator, so every verdict is sign
-// or reject: a review verdict, which the document format cannot express on a
-// cosigner node, is treated as a rejection. Last come the document's external
-// checks, which run only for a request the policy would sign and can only
-// refuse it.
+// It checks that this node holds the component key, then refuses a group on
+// a network it doesn't know or one the network would never accept, then runs
+// the signer invariants over the targets, then applies the cosigner key's
+// policy (its own document, or the node default) to every target. The
+// invariants come after the key check, so a request for a key this node
+// doesn't hold is refused as such and never audited, and before the policy,
+// so no policy can allow what they refuse. A cosigner has no operator, so
+// every verdict is sign or reject: a review verdict, which the document
+// format cannot express on a cosigner node, is treated as a rejection. Last
+// come the document's external checks, which run only for a request the
+// policy would sign and can only refuse it.
 func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
@@ -47,16 +48,13 @@ func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan)
 	}
 	group := makeTxnSlice(plan.Group)
 	targets := componentTargetPositions(plan)
-	// A group the network could never accept gets no witness signature. This
+	// A group for a network this node doesn't know, or one the network could
+	// never accept, gets no witness signature: a bad request, as on /sign,
+	// and nothing is audited, as for this route's other bad requests. This
 	// route reaches neither the planner nor the frozen-component validation,
-	// which make the same checks.
-	if err := validateTransactionBounds(group); err != nil {
+	// so it makes their checks itself.
+	if err := validateGroupBeforePolicy(group, s.genesisHashResolver(), consoleOf(s.Console)); err != nil {
 		return err
-	}
-	if len(group) > 1 {
-		if err := validateNetworkParams(group, consoleOf(s.Console)); err != nil {
-			return err
-		}
 	}
 	// A cosigner holds only witness keys. Their 52-character IDs never equal
 	// a 58-character RekeyTo address, but an Ed25519 witness key's public key
@@ -88,10 +86,9 @@ func (s *Service) runCosignerGates(ctx context.Context, plan *ComponentSignPlan)
 		slots[i] = policyeval.Slot{Index: target, Policy: cfg}
 	}
 	verdict, evalErr := policyeval.Evaluate(policyeval.Input{
-		Role:     policyeval.RoleCosigner,
-		Group:    group,
-		Slots:    slots,
-		Networks: s.genesisHashResolver(),
+		Role:  policyeval.RoleCosigner,
+		Group: group,
+		Slots: slots,
 	})
 	if evalErr != nil {
 		return internal(evalErr.Error())

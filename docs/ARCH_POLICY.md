@@ -316,12 +316,13 @@ transactions that name no asset, such as a cosigner rekey (a 0 ALGO
 self-payment), so that no signing path has to prove it cannot carry an asset
 reference. Rules that do not depend on the network, such as `rekey_policy` and
 the transaction-type verdicts, take no network input. `/sign`,
-bounded-cosigner, and cosigned user-component requests
-are refused with a bad request (400) before policy; a cosigner has no operator,
-so cosigner component requests are refused as an audited policy rejection
-(`unknown_genesis_hash`, 403). Rotating-account spends are not looked up in the
-resolver; they must carry the genesis hash recorded in the account's key, the
-network it was created for.
+bounded-cosigner, cosigned user-component, and cosigner component requests
+are all refused with a bad request (400) before policy; a cosigner audits
+nothing for it, as for its other bad requests (a key it does not hold,
+transaction bounds, mixed networks or disjoint validity windows).
+Rotating-account spends are checked against the resolver too, and must also
+carry the genesis hash recorded in the account's key, the network it was
+created for.
 
 Document-level `limits.<network>.<asset>.reject_above` is the deny side of
 transfer guards. If a matching `review_above` is also configured, `reject_above`
@@ -381,7 +382,10 @@ values.
 Because the known-network gate runs first on every signing path, the
 policy-level `unknown_genesis_hash`, `review_unknown_genesis_hash`, and
 `transfer_policy:unknown_genesis_hash` rules are defense in depth: they keep
-policy fail-closed if it is ever evaluated for an unknown network.
+the rules that read the network fail-closed if policy is ever evaluated for
+an unknown one. Rules that take no network input, such as a cosigner's
+`rekey_policy`, and the network scoping of external checks have no such
+second line: for them the gate is the only guard.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
 and before auto-approval. Routing review applies only to signer-controlled
@@ -1311,9 +1315,8 @@ a fixed encoding: an address, a transaction ID, a Witness Key ID, a decimal
 number, a movement kind, `algo` or `asa:<id>`, a network token, or a
 transaction type the document format knows. A transaction whose type is any
 other text has no `type` fact, and a network the node does not know is no
-`network` fact (a cosigner refuses an unknown genesis hash with
-`unknown_genesis_hash` before the checks run, so no request reaches them
-without one). A unit that lacks a fact its check uses is refused with
+`network` fact (a cosigner refuses an unknown genesis hash before policy, so
+no request reaches the checks without one). A unit that lacks a fact its check uses is refused with
 `external_check:<id>:missing_fact`.
 
 **Templates.** A template is literal text with `{fact}` placeholders, each a

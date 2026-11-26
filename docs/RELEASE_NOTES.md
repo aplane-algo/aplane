@@ -7,6 +7,17 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## A cosigner refuses an unknown network before policy
+
+A cosigner component request for a network the node doesn't know is now
+refused before policy with a bad request (400), as `/sign` and the
+cosigned user component already refuse one. It used to be a policy
+rejection (403, `unknown_genesis_hash`) with a `SIGN_REJECTED` entry for
+each target; like a cosigner's other bad requests, it now writes no audit
+entry. The planner, the frozen-component validation and
+the cosigner share one check of the group's network, bounds and validity
+window.
+
 ## Audit entries carry their facts in fields
 
 Twenty-two audit events wrote facts into `reason` as text, which a reader
