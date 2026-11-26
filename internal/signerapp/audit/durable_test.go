@@ -50,6 +50,9 @@ func TestLogCredentialRestoreIntentDurableWritesEntry(t *testing.T) {
 	if !entry.ReplaceExisting {
 		t.Fatal("replace_existing not recorded")
 	}
+	if entry.Archive != "backup.tar.gz" || entry.Reason != "" {
+		t.Fatalf("archive %q, reason %q: the archive is its own field", entry.Archive, entry.Reason)
+	}
 }
 
 func TestLogCredentialRestoreIntentDurableFailsOnWriteFailure(t *testing.T) {

@@ -4,6 +4,7 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -142,20 +143,22 @@ func TestCosignerReferenceAuditIncludesWitnessKeyID(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.LogCosignerReferenceChangedContext(adminserver.SessionContext{}, "import", "prod-cosigner", "WITNESSKEYID", true)
+	a.LogCosignerReferenceChangedContext(adminserver.SessionContext{}, "remove", "old-cosigner", "WITNESSKEYID", false)
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	entries := readAuditEntries(t, path)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v", entries)
 	}
-	var entry AuditEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		t.Fatal(err)
-	}
-	if entry.Event != AuditCosignerReferenceChanged || entry.WitnessKeyID != "WITNESSKEYID" ||
-		entry.Outcome != "import" {
+	if entry := entries[0]; entry.Event != AuditCosignerReferenceChanged || entry.WitnessKeyID != "WITNESSKEYID" ||
+		entry.Outcome != "import" || entry.CosignerAction != "import" || entry.CosignerName != "prod-cosigner" ||
+		entry.Reason != "" {
 		t.Fatalf("audit entry = %+v", entry)
+	}
+	// A failure's outcome says only that; the action is still named.
+	if entry := entries[1]; entry.Outcome != "failed" || entry.CosignerAction != "remove" || entry.CosignerName != "old-cosigner" {
+		t.Fatalf("failed change = %+v", entry)
 	}
 }
 
@@ -184,10 +187,15 @@ func TestSettingSaveErrorAuditNamesTheSettingValueAndWhetherInEffect(t *testing.
 			t.Fatal(err)
 		}
 		outcome := map[bool]string{true: "applied", false: "failed"}[inEffect]
-		reason := fmt.Sprintf("setting=user_auto_approve value=false in_effect=%t: disk full", inEffect)
-		if entry.Event != AuditSettingSaveError || entry.Outcome != outcome || entry.Reason != reason ||
+		if entry.Event != AuditSettingSaveError || entry.Outcome != outcome || entry.Reason != "disk full" ||
+			entry.Setting != "user_auto_approve" || entry.NewValue != "false" || entry.OldValue != "" ||
+			entry.InEffect == nil || *entry.InEffect != inEffect ||
 			entry.AdminSessionID != "admin-7" || entry.Principal != "system:product-admin" {
 			t.Fatalf("in effect %v: audit entry = %+v", inEffect, entry)
+		}
+		// false is written, not left out.
+		if !bytes.Contains(data, []byte(fmt.Sprintf(`"in_effect":%t`, inEffect))) {
+			t.Fatalf("in effect %v: the line has no in_effect: %s", inEffect, data)
 		}
 	}
 }
@@ -429,13 +437,15 @@ func TestSettingChangeIntentAndChangedAuditCarrySessionAndValues(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2", len(entries))
 	}
-	wantReason := "setting=user_auto_approve old=false new=true"
+	values := func(e AuditEntry) bool {
+		return e.Setting == "user_auto_approve" && e.OldValue == "false" && e.NewValue == "true" && e.Reason == ""
+	}
 	if e := entries[0]; e.Event != AuditSettingChangeIntent || e.Outcome != "requested" ||
-		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || e.Reason != wantReason {
+		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || !values(e) {
 		t.Fatalf("intent entry = %+v", e)
 	}
 	if e := entries[1]; e.Event != AuditSettingChanged || e.Outcome != "changed" ||
-		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || e.Reason != wantReason {
+		e.OperationID != "op-9" || e.AdminSessionID != "admin-42" || e.Transport != "ipc" || !values(e) {
 		t.Fatalf("changed entry = %+v", e)
 	}
 }
@@ -515,13 +525,23 @@ func TestPassphraseChangedAuditsAllFourMigrationCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.LogPassphraseChanged(context.Background(), 2, 3, 4, 5)
+	a.LogPassphraseChanged(context.Background(), 0, 0, 0, 0)
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}
 	entries := readAuditEntries(t, path)
-	want := "keys_migrated=2 templates_migrated=3 policy_sidecars_migrated=4 source_token_files_migrated=5"
-	if len(entries) != 1 || entries[0].Event != AuditPassphraseChanged || entries[0].Reason != want {
-		t.Fatalf("entries = %+v, want PASSPHRASE_CHANGED with reason %q", entries, want)
+	want := PassphraseMigration{Keys: 2, Templates: 3, PolicySidecars: 4, SourceTokenFiles: 5}
+	if len(entries) != 2 || entries[0].Event != AuditPassphraseChanged || entries[0].Migrated == nil ||
+		*entries[0].Migrated != want || entries[0].Reason != "" {
+		t.Fatalf("entries = %+v, want PASSPHRASE_CHANGED migrating %+v", entries, want)
+	}
+	// A change that rewrapped nothing still says so, count by count.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"migrated":{"keys":0,"templates":0,"policy_sidecars":0,"source_token_files":0}`)) {
+		t.Fatalf("zero counts are not written:\n%s", data)
 	}
 }
 

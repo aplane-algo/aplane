@@ -168,7 +168,8 @@ type AuditEntry struct {
 	ClosedConnections     int    `json:"closed_connections,omitempty"`
 	// SESSION_CONNECTED / SESSION_DISCONNECTED for an SSH client connection:
 	// the SHA256 fingerprint of the client key that opened it (an enrolled
-	// key, or the key an enroll connection asks to have enrolled).
+	// key, or the key an enroll connection asks to have enrolled). CLIENT_*:
+	// the client key enrolled, asked for, rejected or revoked.
 	SSHFingerprint string `json:"ssh_fingerprint,omitempty"`
 	// SIGN_APPROVED: the signed transaction's final fee in microAlgos (0 is
 	// written), and, when it was signed in a group, the final group ID
@@ -214,9 +215,43 @@ type AuditEntry struct {
 	PolicySelector    string `json:"policy_selector,omitempty"`
 	ExternalSource    string `json:"external_source,omitempty"`
 	// KEY_TYPE_CHANGED: install, import, remove, activate or deactivate, and
-	// the key type.
+	// the key type. KEY_GENERATED, KEY_IMPORTED and KEY_EXPORTED: the key's
+	// type.
 	KeyTypeAction string `json:"key_type_action,omitempty"`
 	KeyType       string `json:"key_type,omitempty"`
+	// SETTING_*: the setting, the value it had and the one it was given;
+	// SETTING_SAVE_ERROR says whether that one is in effect anyway.
+	Setting  string `json:"setting,omitempty"`
+	OldValue string `json:"old_value,omitempty"`
+	NewValue string `json:"new_value,omitempty"`
+	InEffect *bool  `json:"in_effect,omitempty"`
+	// Archive names the backup an entry is about: created, imported,
+	// exported, deleted, previewed or restored.
+	Archive string `json:"archive,omitempty"`
+	// KEY_REJECTED and KEY_DELETED: the key file's name.
+	KeyFile string `json:"key_file,omitempty"`
+	// AUTHORIZATION_DENIED: what was refused, on what.
+	AuthorizationAction string `json:"authorization_action,omitempty"`
+	ResourceType        string `json:"resource_type,omitempty"`
+	ResourceID          string `json:"resource_id,omitempty"`
+	// COSIGNER_REFERENCE_CHANGED: the change asked for, which a failure's
+	// outcome does not say, and the reference's name.
+	CosignerAction string `json:"cosigner_action,omitempty"`
+	CosignerName   string `json:"cosigner_name,omitempty"`
+	// ROTATING_RECOVERY: the recovery grant.
+	GrantID uint64 `json:"grant_id,omitempty"`
+	// PASSPHRASE_CHANGED: what the change rewrapped. The entry's one nested
+	// object: it holds counts, so a zero is written, and nothing in it is a
+	// string, which normalizeEntry bounds only at the top level.
+	Migrated *PassphraseMigration `json:"migrated,omitempty"`
+}
+
+// PassphraseMigration counts what a passphrase change rewrapped.
+type PassphraseMigration struct {
+	Keys             int `json:"keys"`
+	Templates        int `json:"templates"`
+	PolicySidecars   int `json:"policy_sidecars"`
+	SourceTokenFiles int `json:"source_token_files"`
 }
 
 // auditFile is the audit log's open file. *os.File is the only one in
@@ -319,8 +354,8 @@ func NewAuditLogger(path string) (*AuditLogger, error) {
 // normalizeEntry bounds every string field of entry, so no request makes a
 // large entry, whatever path logged it and whether or not the request was
 // later refused: free text (reason, transaction details) to maxEntryReason,
-// every identifier to maxAuditField, and each list to maxAuditSelectors
-// members. Legitimate identifiers (addresses, transaction IDs, digests,
+// a name or path to maxAuditName, every identifier to maxAuditField, and
+// each list to maxAuditSelectors members. Legitimate identifiers (addresses, transaction IDs, digests,
 // generation IDs, principals) are far shorter and pass unchanged, so
 // rotating-release entries stay exact. Only the log copy is bounded: the
 // request and result it describes are untouched, and lists are copied, never
@@ -343,8 +378,13 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 		&entry.Network, &entry.GenesisHash, &entry.GroupID,
 		&entry.SourceTokenAction, &entry.PolicySelector, &entry.ExternalSource,
 		&entry.KeyTypeAction, &entry.KeyType,
+		&entry.Setting, &entry.OldValue, &entry.NewValue,
+		&entry.AuthorizationAction, &entry.ResourceType, &entry.CosignerAction,
 	} {
 		*field = boundText(*field, maxAuditField)
+	}
+	for _, field := range []*string{&entry.Archive, &entry.KeyFile, &entry.ResourceID, &entry.CosignerName} {
+		*field = boundText(*field, maxAuditName)
 	}
 	var omitted int
 	if entry.GenerationIDs, omitted = boundList(entry.GenerationIDs); omitted > 0 {
@@ -377,6 +417,12 @@ func normalizeEntry(entry AuditEntry) AuditEntry {
 // escaping (up to six bytes per byte) and a full list, an entry stays under
 // 128 KiB.
 const maxEntryReason = 8 * 1024
+
+// maxAuditName bounds a name or path an entry takes from a request or the
+// store: a backup, a key file, a cosigner reference or an authorization
+// resource. Nothing caps those at 128 bytes, and reason, where they were,
+// kept them whole, so they get Linux's PATH_MAX.
+const maxAuditName = 4096
 
 // maxAuditOperationID bounds an entry's operation ID. Most are request IDs
 // a client chose, so one longer than this is replaced by a short prefix and
@@ -854,16 +900,15 @@ func (a *AuditLogger) LogRotatingReleaseAttributed(attr Attribution, account, tx
 // LogRotatingRecoveryAttributed records an operator's request to start or
 // cancel a stage recovery grant for a rotating account. Recovery derives
 // stage addresses into the signer's cache and never signs, so the entry is
-// informational: Outcome is the action, Reason describes the grant.
+// informational: Outcome is the action, GrantID the grant, and Reason
+// describes it: a started grant's budget, or what a cancel did.
 func (a *AuditLogger) LogRotatingRecoveryAttributed(attr Attribution, account, action string, grantID uint64, detail string) {
 	entry := attr.entry(false)
 	entry.Event = AuditRotatingRecovery
 	entry.Outcome = action
 	entry.TxnAuth = account
 	entry.Reason = detail
-	if grantID != 0 {
-		entry.Reason = fmt.Sprintf("grant %d: %s", grantID, detail)
-	}
+	entry.GrantID = grantID
 	a.Log(entry)
 }
 
@@ -985,19 +1030,9 @@ func (a *AuditLogger) LogAuthorizationDenied(ctx adminserver.SessionContext, act
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditAuthorizationDenied
 	entry.Outcome = "denied"
-	entry.Reason = authorizationDeniedReason(action, resource, reason)
+	entry.AuthorizationAction, entry.ResourceType, entry.ResourceID = string(action), resource.Type, resource.ID
+	entry.Reason = reason
 	a.Log(entry)
-}
-
-func authorizationDeniedReason(action auth.Action, resource auth.Resource, reason string) string {
-	out := fmt.Sprintf("action=%s resource_type=%s", action, resource.Type)
-	if resource.ID != "" {
-		out += " resource_id=" + resource.ID
-	}
-	if reason != "" {
-		out += " reason=" + reason
-	}
-	return out
 }
 
 // LogServerStart logs the startup of the signing server.
@@ -1151,7 +1186,7 @@ func (a *AuditLogger) LogSettingChangeIntentDurable(ctx context.Context, operati
 	entry.Event = AuditSettingChangeIntent
 	entry.Outcome = "requested"
 	entry.OperationID = operationID
-	entry.Reason = fmt.Sprintf("setting=%s old=%s new=%s", key, oldValue, newValue)
+	entry.Setting, entry.OldValue, entry.NewValue = key, oldValue, newValue
 	return a.logDurable(entry)
 }
 
@@ -1161,7 +1196,7 @@ func (a *AuditLogger) LogSettingChanged(ctx context.Context, operationID, key, o
 	entry.Event = AuditSettingChanged
 	entry.Outcome = "changed"
 	entry.OperationID = operationID
-	entry.Reason = fmt.Sprintf("setting=%s old=%s new=%s", key, oldValue, newValue)
+	entry.Setting, entry.OldValue, entry.NewValue = key, oldValue, newValue
 	a.Log(entry)
 }
 
@@ -1178,7 +1213,8 @@ func (a *AuditLogger) LogSettingSaveErrorContext(ctx adminserver.SessionContext,
 	if inEffect {
 		entry.Outcome = "applied"
 	}
-	entry.Reason = fmt.Sprintf("setting=%s value=%s in_effect=%t: %s", key, value, inEffect, cause)
+	entry.Setting, entry.NewValue, entry.InEffect = key, value, &inEffect
+	entry.Reason = cause
 	a.Log(entry)
 }
 
@@ -1193,7 +1229,7 @@ func (a *AuditLogger) LogClientEnrollmentRequested(sshFingerprint, label, remote
 	entry.Event = AuditClientEnrollmentRequested
 	entry.Outcome = "pending"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = sshFingerprint
+	entry.SSHFingerprint = sshFingerprint
 	entry.ClientLabel = label
 	a.Log(entry)
 }
@@ -1206,7 +1242,7 @@ func (a *AuditLogger) LogClientEnrolledContext(ctx adminserver.SessionContext, s
 	entry.Event = AuditClientEnrolled
 	entry.Outcome = "enrolled"
 	entry.RemoteAddr = remoteAddr
-	entry.Reason = sshFingerprint
+	entry.SSHFingerprint = sshFingerprint
 	entry.ClientLabel = label
 	a.Log(entry)
 }
@@ -1217,7 +1253,7 @@ func (a *AuditLogger) LogClientEnrollmentRejectedContext(ctx adminserver.Session
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditClientEnrollmentRejected
 	entry.Outcome = "rejected"
-	entry.Reason = sshFingerprint
+	entry.SSHFingerprint = sshFingerprint
 	entry.ClientLabel = label
 	a.Log(entry)
 }
@@ -1228,7 +1264,7 @@ func (a *AuditLogger) LogClientKeyRevokedContext(ctx adminserver.SessionContext,
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditClientKeyRevoked
 	entry.Outcome = "revoked"
-	entry.Reason = sshFingerprint
+	entry.SSHFingerprint = sshFingerprint
 	entry.ClientLabel = label
 	entry.ClosedConnections = closedConnections
 	a.Log(entry)
@@ -1240,21 +1276,17 @@ func (a *AuditLogger) LogKeyGenerated(ctx context.Context, address, keyType stri
 	entry.Event = AuditKeyGenerated
 	entry.Outcome = "generated"
 	entry.TxnAuth = address
-	entry.Reason = keyType
+	entry.KeyType = keyType
 	a.Log(entry)
 }
 
 // LogKeyDeleted logs a key deletion event.
 func (a *AuditLogger) LogKeyDeleted(ctx context.Context, address, deletedPath string) {
-	reason := filepath.Base(deletedPath)
-	if reason == "." || reason == string(filepath.Separator) {
-		reason = deletedPath
-	}
 	entry := contextAuditFields(ctx)
 	entry.Event = AuditKeyDeleted
 	entry.Outcome = "deleted"
 	entry.TxnAuth = address
-	entry.Reason = reason
+	entry.KeyFile = keyFileName(deletedPath)
 	a.Log(entry)
 }
 
@@ -1264,31 +1296,35 @@ func (a *AuditLogger) LogKeyImported(ctx context.Context, address, keyType strin
 	entry.Event = AuditKeyImported
 	entry.Outcome = "imported"
 	entry.TxnAuth = address
-	entry.Reason = keyType
+	entry.KeyType = keyType
 	a.Log(entry)
 }
 
 // LogKeyRejected logs when a key file is skipped during scan because it violates
 // a load-time key-file invariant.
 func (a *AuditLogger) LogKeyRejected(keyFile, reason string) {
-	if keyFile != "" {
-		base := filepath.Base(keyFile)
-		if base != "." && base != string(filepath.Separator) {
-			reason = fmt.Sprintf("file=%s reason=%s", base, reason)
-		}
-	}
 	entry := productPrincipalAuditFields()
 	entry.Event = AuditKeyRejected
 	entry.Outcome = "rejected"
+	entry.KeyFile = keyFileName(keyFile)
 	entry.Reason = reason
 	a.Log(entry)
+}
+
+// keyFileName is the name of the key file at path, or "" for a path that
+// names none, so an entry carries a file name and never a directory.
+func keyFileName(path string) string {
+	if name := filepath.Base(path); name != "." && name != string(filepath.Separator) {
+		return name
+	}
+	return ""
 }
 
 func (a *AuditLogger) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupCreated
 	entry.Outcome = "created"
-	entry.Reason = archivePath
+	entry.Archive = archivePath
 	a.Log(entry)
 }
 
@@ -1298,7 +1334,7 @@ func (a *AuditLogger) LogBackupImportedContext(ctx adminserver.SessionContext, r
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupImported
 	entry.Outcome = "imported"
-	entry.Reason = fmt.Sprintf("file=%s size=%d", result.Backup.FileName, result.Backup.Size)
+	entry.Archive, entry.ByteCount = result.Backup.FileName, result.Backup.Size
 	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	a.Log(entry)
 }
@@ -1307,7 +1343,7 @@ func (a *AuditLogger) LogBackupExportStartedContext(ctx adminserver.SessionConte
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupExportStarted
 	entry.Outcome = "started"
-	entry.Reason = fmt.Sprintf("file=%s", fileName)
+	entry.Archive = fileName
 	a.Log(entry)
 }
 
@@ -1325,11 +1361,10 @@ func (a *AuditLogger) LogBackupDeletedContext(ctx adminserver.SessionContext, ar
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupDeleted
 	entry.Outcome = "deleted"
-	entry.Reason = archivePath
+	entry.Archive = archivePath
 	if !result.Success {
 		entry.Outcome = "failed"
-		entry.ResultCode = result.Code
-		entry.Reason = boundText(archivePath, maxAuditField) + ": " + result.Error
+		entry.ResultCode, entry.Reason = result.Code, result.Error
 	}
 	a.Log(entry)
 }
@@ -1355,7 +1390,7 @@ func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionCo
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePreviewed
 	entry.Outcome = "previewed"
-	entry.Reason = result.ArchivePath
+	entry.Archive = result.ArchivePath
 	entry.KeyCount = len(result.Keys)
 	entry.SkippedKeys, entry.SkippedKeysOmitted = skippedSelectors(result.Skipped), result.SkippedOmitted
 	a.Log(entry)
@@ -1390,7 +1425,7 @@ func (a *AuditLogger) LogCredentialRestoreIntentDurableContext(
 	entry.Event = AuditCredentialRestoreIntent
 	entry.Outcome = "requested"
 	entry.OperationID = operationID
-	entry.Reason = archivePath
+	entry.Archive = archivePath
 	entry.ReplaceExisting = replaceExisting
 	return a.logDurable(entry)
 }
@@ -1575,13 +1610,10 @@ func (a *AuditLogger) LogPassphraseChanged(ctx context.Context, keysMigrated, te
 	entry := contextAuditFields(ctx)
 	entry.Event = AuditPassphraseChanged
 	entry.Outcome = "changed"
-	entry.Reason = fmt.Sprintf(
-		"keys_migrated=%d templates_migrated=%d policy_sidecars_migrated=%d source_token_files_migrated=%d",
-		keysMigrated,
-		templatesMigrated,
-		policySidecarsMigrated,
-		sourceTokenFilesMigrated,
-	)
+	entry.Migrated = &PassphraseMigration{
+		Keys: keysMigrated, Templates: templatesMigrated,
+		PolicySidecars: policySidecarsMigrated, SourceTokenFiles: sourceTokenFilesMigrated,
+	}
 	a.Log(entry)
 }
 
@@ -1603,7 +1635,7 @@ func (a *AuditLogger) LogCosignerReferenceChangedContext(ctx adminserver.Session
 	if !success {
 		entry.Outcome = "failed"
 	}
-	entry.Reason = fmt.Sprintf("action=%s name=%s", action, name)
+	entry.CosignerAction, entry.CosignerName = action, name
 	entry.WitnessKeyID = componentKey
 	a.Log(entry)
 }
@@ -1629,6 +1661,6 @@ func (a *AuditLogger) LogKeyExported(ctx context.Context, address, keyType, outc
 	entry.Event = AuditKeyExported
 	entry.Outcome = outcome
 	entry.TxnAuth = address
-	entry.Reason = keyType
+	entry.KeyType = keyType
 	a.Log(entry)
 }

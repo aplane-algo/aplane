@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
@@ -86,8 +87,10 @@ func TestOlderEventsAreBoundedWhateverTheInput(t *testing.T) {
 		if err := json.Unmarshal(line, &entry); err != nil {
 			t.Fatalf("entry %d: %v", i, err)
 		}
-		if reason, _ := entry["reason"].(string); reason != "" && !strings.Contains(reason, "bytes)") {
-			t.Fatalf("entry %d reason was not marked as cut", i)
+		for _, field := range []string{"reason", "archive"} {
+			if value, _ := entry[field].(string); value != "" && !strings.Contains(value, "bytes)") {
+				t.Fatalf("entry %d %s was not marked as cut", i, field)
+			}
 		}
 		for _, list := range []string{"generation_ids", "archive_entries"} {
 			members, ok := entry[list].([]any)
@@ -162,12 +165,22 @@ func TestNormalizeEntryBoundsEveryStringField(t *testing.T) {
 			f.Set(reflect.ValueOf(list))
 		}
 	}
+	// Free text gets maxEntryReason and a name or path maxAuditName; every
+	// other string is an identifier, held to maxAuditField.
+	bounds := map[string]int{
+		"Reason": maxEntryReason, "TxnDetails": maxEntryReason,
+		"Archive": maxAuditName, "KeyFile": maxAuditName, "ResourceID": maxAuditName, "CosignerName": maxAuditName,
+	}
 	got := reflect.ValueOf(normalizeEntry(entry))
 	for i := 0; i < got.NumField(); i++ {
 		name, f := got.Type().Field(i).Name, got.Field(i)
+		bound, ok := bounds[name]
+		if !ok {
+			bound = maxAuditField
+		}
 		switch {
-		case f.Kind() == reflect.String && len(f.String()) > maxEntryReason:
-			t.Errorf("%s is %d bytes after normalization", name, len(f.String()))
+		case f.Kind() == reflect.String && len(f.String()) > bound:
+			t.Errorf("%s is %d bytes after normalization, over %d", name, len(f.String()), bound)
 		case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String:
 			if f.Len() > maxAuditSelectors {
 				t.Errorf("%s has %d members after normalization", name, f.Len())
@@ -186,6 +199,39 @@ func TestNormalizeEntryBoundsEveryStringField(t *testing.T) {
 	}
 	if len(line) > 128*1024 {
 		t.Fatalf("a fully oversized entry encodes to %d bytes", len(line))
+	}
+}
+
+// normalizeEntry bounds top-level strings and string lists only, so every
+// other field must be a kind that holds no text: a number, a bool, the
+// timestamp, or a pointer to one of those or to a struct of counts
+// (migrated). A map, an interface, a *string or a list of structs would go
+// unbounded.
+func TestEntryFieldsHoldNoUnboundedText(t *testing.T) {
+	numeric := func(k reflect.Kind) bool {
+		switch k {
+		case reflect.Bool, reflect.Int, reflect.Int64, reflect.Uint32, reflect.Uint64:
+			return true
+		}
+		return false
+	}
+	entryType := reflect.TypeOf(AuditEntry{})
+	for i := 0; i < entryType.NumField(); i++ {
+		field := entryType.Field(i)
+		ft := field.Type
+		switch {
+		case ft.Kind() == reflect.String, ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.String:
+		case numeric(ft.Kind()), ft == reflect.TypeOf(time.Time{}):
+		case ft.Kind() == reflect.Pointer && numeric(ft.Elem().Kind()):
+		case ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Struct:
+			for j := 0; j < ft.Elem().NumField(); j++ {
+				if inner := ft.Elem().Field(j); inner.Type.Kind() != reflect.Int {
+					t.Errorf("%s.%s is a %s: a nested object holds counts only", field.Name, inner.Name, inner.Type)
+				}
+			}
+		default:
+			t.Errorf("%s is a %s, which normalizeEntry does not bound", field.Name, ft)
+		}
 	}
 }
 

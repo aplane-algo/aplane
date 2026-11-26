@@ -4,14 +4,17 @@
 package audit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
 
@@ -76,7 +79,7 @@ func TestRestorePreviewRecordShape(t *testing.T) {
 		})
 	})
 	want := map[string]any{
-		"event": string(AuditBackupRestorePreviewed), "outcome": "previewed", "reason": "backup.tar.gz",
+		"event": string(AuditBackupRestorePreviewed), "outcome": "previewed", "archive": "backup.tar.gz",
 		"key_count": float64(1), "skipped_keys": []any{"BAD"},
 	}
 	if !reflect.DeepEqual(record, want) {
@@ -103,7 +106,7 @@ func TestBackupImportedRecordShape(t *testing.T) {
 		{
 			name:   "no skips",
 			result: adminproto.CommitBackupImportResult{Success: true, Backup: adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42}},
-			want:   map[string]any{"event": string(AuditBackupImported), "outcome": "imported", "reason": "file=import.tar.gz size=42"},
+			want:   map[string]any{"event": string(AuditBackupImported), "outcome": "imported", "archive": "import.tar.gz", "byte_count": float64(42)},
 		},
 		{
 			name: "a list the result already bounded",
@@ -112,7 +115,7 @@ func TestBackupImportedRecordShape(t *testing.T) {
 				Skipped: skipped[:maxAuditSelectors], SkippedOmitted: 6,
 			},
 			want: map[string]any{
-				"event": string(AuditBackupImported), "outcome": "imported", "reason": "file=import.tar.gz size=42",
+				"event": string(AuditBackupImported), "outcome": "imported", "archive": "import.tar.gz", "byte_count": float64(42),
 				"skipped_keys": selectors, "skipped_keys_omitted": float64(6),
 			},
 		},
@@ -122,7 +125,7 @@ func TestBackupImportedRecordShape(t *testing.T) {
 				Success: true, Backup: adminproto.BackupInfo{FileName: "import.tar.gz", Size: 42}, Skipped: skipped,
 			},
 			want: map[string]any{
-				"event": string(AuditBackupImported), "outcome": "imported", "reason": "file=import.tar.gz size=42",
+				"event": string(AuditBackupImported), "outcome": "imported", "archive": "import.tar.gz", "byte_count": float64(42),
 				"skipped_keys": selectors, "skipped_keys_omitted": float64(6),
 			},
 		},
@@ -158,4 +161,188 @@ func recordForTest(t *testing.T, log func(*AuditLogger)) map[string]any {
 	delete(record, "timestamp")
 	delete(record, "transport")
 	return record
+}
+
+// Each event writes its facts to fields of their own, and its reason keeps
+// only the cause, if any.
+func TestTypedFieldRecordShapes(t *testing.T) {
+	longPath := "/backups/" + strings.Repeat("p", 300) + ".tar.gz"
+	for _, tc := range []struct {
+		name string
+		log  func(*AuditLogger)
+		want map[string]any
+	}{
+		{
+			name: "backup created",
+			log:  func(a *AuditLogger) { a.LogBackupCreatedContext(adminserver.SessionContext{}, "/backups/b.tar.gz") },
+			want: map[string]any{"event": string(AuditBackupCreated), "outcome": "created", "archive": "/backups/b.tar.gz"},
+		},
+		{
+			name: "backup export started",
+			log:  func(a *AuditLogger) { a.LogBackupExportStartedContext(adminserver.SessionContext{}, "b.tar.gz") },
+			want: map[string]any{"event": string(AuditBackupExportStarted), "outcome": "started", "archive": "b.tar.gz"},
+		},
+		{
+			// A path past maxAuditField is kept whole.
+			name: "backup delete failed",
+			log: func(a *AuditLogger) {
+				a.LogBackupDeletedContext(adminserver.SessionContext{}, longPath, adminproto.DeleteBackupResult{
+					Code: "delete_backup_failed", Error: "not found",
+				})
+			},
+			want: map[string]any{
+				"event": string(AuditBackupDeleted), "outcome": "failed", "archive": longPath,
+				"result_code": "delete_backup_failed", "reason": "not found",
+			},
+		},
+		{
+			name: "rotating recovery with a grant",
+			log: func(a *AuditLogger) {
+				a.LogRotatingRecoveryAttributed(Attribution{}, "ACCT", "cancel", 7, "cancelled")
+			},
+			want: map[string]any{
+				"event": string(AuditRotatingRecovery), "outcome": "cancel", "txn_auth": "ACCT",
+				"grant_id": float64(7), "reason": "cancelled",
+			},
+		},
+		{
+			name: "rotating recovery without one",
+			log: func(a *AuditLogger) {
+				a.LogRotatingRecoveryAttributed(Attribution{}, "ACCT", "cancel", 0, "nothing to cancel")
+			},
+			want: map[string]any{
+				"event": string(AuditRotatingRecovery), "outcome": "cancel", "txn_auth": "ACCT",
+				"reason": "nothing to cancel",
+			},
+		},
+		{
+			name: "authorization denied",
+			log: func(a *AuditLogger) {
+				a.LogAuthorizationDenied(adminserver.SessionContext{}, "keys.delete", auth.Resource{Type: "key", ID: "ADDR"}, "forbidden")
+			},
+			want: map[string]any{
+				"event": string(AuditAuthorizationDenied), "outcome": "denied",
+				"authorization_action": "keys.delete", "resource_type": "key", "resource_id": "ADDR", "reason": "forbidden",
+			},
+		},
+		{
+			name: "key generated",
+			log:  func(a *AuditLogger) { a.LogKeyGenerated(context.Background(), "ADDR", "ed25519") },
+			want: map[string]any{"event": string(AuditKeyGenerated), "outcome": "generated", "txn_auth": "ADDR", "key_type": "ed25519"},
+		},
+		{
+			name: "key imported",
+			log:  func(a *AuditLogger) { a.LogKeyImported(context.Background(), "ADDR", "falcon1024") },
+			want: map[string]any{"event": string(AuditKeyImported), "outcome": "imported", "txn_auth": "ADDR", "key_type": "falcon1024"},
+		},
+		{
+			name: "key deleted",
+			log:  func(a *AuditLogger) { a.LogKeyDeleted(context.Background(), "ADDR", "/keys/deleted/ADDR.key") },
+			want: map[string]any{"event": string(AuditKeyDeleted), "outcome": "deleted", "txn_auth": "ADDR", "key_file": "ADDR.key"},
+		},
+		{
+			// A path that names no file leaves key_file out.
+			name: "key deleted at a path with no name",
+			log:  func(a *AuditLogger) { a.LogKeyDeleted(context.Background(), "ADDR", "/") },
+			want: map[string]any{"event": string(AuditKeyDeleted), "outcome": "deleted", "txn_auth": "ADDR"},
+		},
+		{
+			name: "client enrollment requested",
+			log:  func(a *AuditLogger) { a.LogClientEnrollmentRequested("SHA256:abc", "laptop", "10.0.0.1:5") },
+			want: map[string]any{
+				"event": string(AuditClientEnrollmentRequested), "outcome": "pending", "ssh_fingerprint": "SHA256:abc",
+				"client_label": "laptop", "remote_addr": "10.0.0.1:5",
+			},
+		},
+		{
+			name: "client enrolled",
+			log: func(a *AuditLogger) {
+				a.LogClientEnrolledContext(adminserver.SessionContext{}, "SHA256:abc", "laptop", "10.0.0.1:5")
+			},
+			want: map[string]any{
+				"event": string(AuditClientEnrolled), "outcome": "enrolled", "ssh_fingerprint": "SHA256:abc",
+				"client_label": "laptop", "remote_addr": "10.0.0.1:5",
+			},
+		},
+		{
+			name: "client enrollment rejected",
+			log: func(a *AuditLogger) {
+				a.LogClientEnrollmentRejectedContext(adminserver.SessionContext{}, "SHA256:abc", "laptop")
+			},
+			want: map[string]any{
+				"event": string(AuditClientEnrollmentRejected), "outcome": "rejected", "ssh_fingerprint": "SHA256:abc",
+				"client_label": "laptop",
+			},
+		},
+		{
+			name: "client key revoked",
+			log: func(a *AuditLogger) {
+				a.LogClientKeyRevokedContext(adminserver.SessionContext{}, "SHA256:abc", "laptop", 2)
+			},
+			want: map[string]any{
+				"event": string(AuditClientKeyRevoked), "outcome": "revoked", "ssh_fingerprint": "SHA256:abc",
+				"client_label": "laptop", "closed_connections": float64(2),
+			},
+		},
+		{
+			name: "authorization denied without a resource ID or cause",
+			log: func(a *AuditLogger) {
+				a.LogAuthorizationDenied(adminserver.SessionContext{}, "keys.list", auth.Resource{Type: "key"}, "")
+			},
+			want: map[string]any{
+				"event": string(AuditAuthorizationDenied), "outcome": "denied",
+				"authorization_action": "keys.list", "resource_type": "key",
+			},
+		},
+	} {
+		got := recordForTest(t, tc.log)
+		for _, principal := range []string{"principal", "requester_principal"} {
+			delete(got, principal)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: record = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A key file's name is recorded only when there is one: a path with no name
+// leaves the field out.
+func TestKeyRejectedNamesOnlyARealFile(t *testing.T) {
+	for _, tc := range []struct{ path, want string }{
+		{"/keys/BAD.key", "BAD.key"},
+		{"", ""},
+		{"/", ""},
+		{".", ""},
+	} {
+		record := recordForTest(t, func(a *AuditLogger) { a.LogKeyRejected(tc.path, "invalid") })
+		if got, _ := record["key_file"].(string); got != tc.want || record["reason"] != "invalid" {
+			t.Errorf("%q: record = %v, want key_file %q and reason invalid", tc.path, record, tc.want)
+		}
+	}
+}
+
+// A name or path is kept whole up to maxAuditName, 4096 bytes, and cut past
+// it, in each field that holds one.
+func TestNamesAndPathsAreKeptWholeTo4096Bytes(t *testing.T) {
+	for _, n := range []int{4096, 4097} {
+		name := strings.Repeat("n", n)
+		for _, tc := range []struct {
+			field string
+			log   func(*AuditLogger)
+		}{
+			{"archive", func(a *AuditLogger) { a.LogBackupCreatedContext(adminserver.SessionContext{}, name) }},
+			{"key_file", func(a *AuditLogger) { a.LogKeyRejected(name, "invalid") }},
+			{"resource_id", func(a *AuditLogger) {
+				a.LogAuthorizationDenied(adminserver.SessionContext{}, "backups.export", auth.Resource{Type: "backup", ID: name}, "")
+			}},
+			{"cosigner_name", func(a *AuditLogger) {
+				a.LogCosignerReferenceChangedContext(adminserver.SessionContext{}, "import", name, "W", true)
+			}},
+		} {
+			got, _ := recordForTest(t, tc.log)[tc.field].(string)
+			if whole := got == name; whole != (n <= 4096) || len(got) > 4096 {
+				t.Errorf("%s of %d bytes: logged %d bytes, whole %v", tc.field, n, len(got), whole)
+			}
+		}
+	}
 }

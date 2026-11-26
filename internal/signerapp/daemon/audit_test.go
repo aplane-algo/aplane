@@ -113,9 +113,10 @@ func TestAuditRuntimeEventsOmitProductLocator(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[10]), &passChanged); err != nil {
 		t.Fatalf("decode passphrase changed entry: %v", err)
 	}
-	wantReason := "keys_migrated=2 templates_migrated=1 policy_sidecars_migrated=3 source_token_files_migrated=4"
-	if passChanged.Event != signeraudit.AuditPassphraseChanged || passChanged.Reason != wantReason {
-		t.Fatalf("passphrase changed = %#v, want reason %q", passChanged, wantReason)
+	wantMigrated := signeraudit.PassphraseMigration{Keys: 2, Templates: 1, PolicySidecars: 3, SourceTokenFiles: 4}
+	if passChanged.Event != signeraudit.AuditPassphraseChanged || passChanged.Migrated == nil ||
+		*passChanged.Migrated != wantMigrated || passChanged.Reason != "" {
+		t.Fatalf("passphrase changed = %#v, want migrated %+v", passChanged, wantMigrated)
 	}
 }
 
@@ -137,8 +138,8 @@ func TestAuditKeyRejected(t *testing.T) {
 	if entry.Event != signeraudit.AuditKeyRejected || entry.Outcome != "rejected" {
 		t.Fatalf("entry event/outcome = %s/%s, want %s/rejected", entry.Event, entry.Outcome, signeraudit.AuditKeyRejected)
 	}
-	if !strings.Contains(entry.Reason, "file=BAD.key") || !strings.Contains(entry.Reason, "logic_sig_address_invalid") {
-		t.Fatalf("entry reason = %q", entry.Reason)
+	if entry.KeyFile != "BAD.key" || entry.Reason != "logic_sig_address_invalid: logic sig key file address is on-curve" {
+		t.Fatalf("entry key file %q, reason %q", entry.KeyFile, entry.Reason)
 	}
 }
 
@@ -266,10 +267,9 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	if entry.AdminSessionID != "admin-42" || entry.Transport != "ipc" || entry.RemoteAddr != "10.0.0.1:2222" {
 		t.Fatalf("entry session fields = %#v", entry)
 	}
-	for _, want := range []string{"action=keys.delete", "resource_type=key", "resource_id=ADDR", "reason=forbidden"} {
-		if !strings.Contains(entry.Reason, want) {
-			t.Fatalf("entry reason = %q, want to contain %q", entry.Reason, want)
-		}
+	if entry.AuthorizationAction != "keys.delete" || entry.ResourceType != "key" || entry.ResourceID != "ADDR" ||
+		entry.Reason != "forbidden" {
+		t.Fatalf("entry = %#v, want keys.delete on key ADDR, reason forbidden", entry)
 	}
 }
 
@@ -504,7 +504,8 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[0]), &generated); err != nil {
 		t.Fatal(err)
 	}
-	if generated.Event != signeraudit.AuditKeyGenerated || generated.TxnAuth != "ADDR1" || generated.Reason != "ed25519" {
+	if generated.Event != signeraudit.AuditKeyGenerated || generated.TxnAuth != "ADDR1" ||
+		generated.KeyType != "ed25519" || generated.Reason != "" {
 		t.Fatalf("unexpected generated entry: %#v", generated)
 	}
 
@@ -512,7 +513,8 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[1]), &deleted); err != nil {
 		t.Fatal(err)
 	}
-	if deleted.Event != signeraudit.AuditKeyDeleted || deleted.TxnAuth != "ADDR2" || deleted.Reason != "ADDR2.key" {
+	if deleted.Event != signeraudit.AuditKeyDeleted || deleted.TxnAuth != "ADDR2" ||
+		deleted.KeyFile != "ADDR2.key" || deleted.Reason != "" {
 		t.Fatalf("unexpected deleted entry: %#v", deleted)
 	}
 
@@ -520,7 +522,8 @@ func TestAuditKeyMutationEventsCarryAddressAndReason(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[2]), &imported); err != nil {
 		t.Fatal(err)
 	}
-	if imported.Event != signeraudit.AuditKeyImported || imported.TxnAuth != "ADDR4" || imported.Reason != "ed25519" {
+	if imported.Event != signeraudit.AuditKeyImported || imported.TxnAuth != "ADDR4" ||
+		imported.KeyType != "ed25519" || imported.Reason != "" {
 		t.Fatalf("unexpected imported entry: %#v", imported)
 	}
 }
@@ -576,5 +579,29 @@ func TestAuditKeyMutationAttributionFromContext(t *testing.T) {
 	}
 	if e := entries[2]; e.Principal != "system:product-admin" || e.AdminSessionID != "sess-1" || e.Transport != "ipc" {
 		t.Errorf("session attribution: %#v", e)
+	}
+}
+
+// The signing service's recovery entries reach the log with the requester's
+// attribution, the grant in grant_id and the service's detail in reason.
+func TestSigningAuditLoggerRecordsRotatingRecovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	logger, err := NewAuditLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+	r := requestWithIdentityID(http.MethodPost, "/rotating/recover", nil, "alice")
+	audit := &signingAuditLogger{log: logger, attribution: signingAuditAttributionFromRequest(r)}
+
+	audit.LogRotatingRecovery(context.Background(), "ACCT", "cancel", 7, "cancelled")
+
+	entries := readAuditEntries(t, path)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if e := entries[0]; e.Event != signeraudit.AuditRotatingRecovery || e.RequesterPrincipal != "alice" ||
+		e.TxnAuth != "ACCT" || e.Outcome != "cancel" || e.GrantID != 7 || e.Reason != "cancelled" {
+		t.Fatalf("entry = %#v", e)
 	}
 }

@@ -6,7 +6,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -224,10 +223,10 @@ func TestSettingSaveOutcomesReachTheAdminClientAndTheLogs(t *testing.T) {
 			outcome := map[bool]string{true: "applied", false: "failed"}[tc.inEffect]
 			reason, _ := entries[0]["reason"].(string)
 			sessionID, _ := entries[0]["admin_session_id"].(string)
-			wantReason := fmt.Sprintf("setting=%s value=%s in_effect=%t: ", adminproto.AdminSettingUserAutoApprove, tc.value, tc.inEffect)
 			if entries[0]["outcome"] != outcome || entries[0]["transport"] != "ipc" || sessionID == "" ||
-				!strings.HasPrefix(reason, wantReason) || !strings.Contains(reason, "injected rename failure") {
-				t.Fatalf("SETTING_SAVE_ERROR entry = %#v, want outcome %s and reason %q plus the cause", entries[0], outcome, wantReason)
+				entries[0]["setting"] != adminproto.AdminSettingUserAutoApprove || entries[0]["new_value"] != tc.value ||
+				entries[0]["in_effect"] != tc.inEffect || !strings.Contains(reason, "injected rename failure") {
+				t.Fatalf("SETTING_SAVE_ERROR entry = %#v, want outcome %s, the setting and value, and the cause", entries[0], outcome)
 			}
 		})
 	}
@@ -263,15 +262,17 @@ func TestUpdateAdminSettingAuditDirectionOverIPC(t *testing.T) {
 		t.Fatalf("messages = %#v, want both setting updates to succeed", msgs)
 	}
 	intents := auditEntries(t, auditPath, string(signeraudit.AuditSettingChangeIntent))
-	if len(intents) != 1 || intents[0]["operation_id"] != "req-enable" ||
-		intents[0]["reason"] != "setting=user_auto_approve old=false new=true" ||
+	values := func(e map[string]any, oldValue, newValue string) bool {
+		return e["setting"] == "user_auto_approve" && e["old_value"] == oldValue && e["new_value"] == newValue && e["reason"] == nil
+	}
+	if len(intents) != 1 || intents[0]["operation_id"] != "req-enable" || !values(intents[0], "false", "true") ||
 		intents[0]["transport"] != "ipc" || intents[0]["admin_session_id"] == "" {
 		t.Fatalf("SETTING_CHANGE_INTENT entries = %#v, want one for req-enable", intents)
 	}
 	changed := auditEntries(t, auditPath, string(signeraudit.AuditSettingChanged))
 	if len(changed) != 2 ||
-		changed[0]["operation_id"] != "req-enable" || changed[0]["reason"] != "setting=user_auto_approve old=false new=true" ||
-		changed[1]["operation_id"] != "req-disable" || changed[1]["reason"] != "setting=user_auto_approve old=true new=false" {
+		changed[0]["operation_id"] != "req-enable" || !values(changed[0], "false", "true") ||
+		changed[1]["operation_id"] != "req-disable" || !values(changed[1], "true", "false") {
 		t.Fatalf("SETTING_CHANGED entries = %#v, want enable then disable", changed)
 	}
 

@@ -78,19 +78,19 @@ func TestBackupDeletionsAndReconcilesAreRecorded(t *testing.T) {
 		a.LogStoreReconciledContext(ctx, adminproto.ReconcileStoreResult{Code: "recovery_blocked", Error: "damaged"})
 	})
 	type record struct {
-		event                         AuditEventType
-		outcome, code, reason, genera string
-		keys                          int
+		event                                  AuditEventType
+		outcome, code, archive, reason, genera string
+		keys                                   int
 	}
 	var got []record
 	for _, e := range entries {
-		got = append(got, record{e.Event, e.Outcome, e.ResultCode, e.Reason, e.GenerationID, e.KeyCount})
+		got = append(got, record{e.Event, e.Outcome, e.ResultCode, e.Archive, e.Reason, e.GenerationID, e.KeyCount})
 	}
 	want := []record{
-		{AuditBackupDeleted, "deleted", "", "b.tar.gz", "", 0},
-		{AuditBackupDeleted, "failed", "delete_backup_failed", "b.tar.gz: not found", "", 0},
-		{AuditStoreReconciled, "succeeded", "", "", "gen-2", 3},
-		{AuditStoreReconciled, "failed", "recovery_blocked", "damaged", "", 0},
+		{AuditBackupDeleted, "deleted", "", "b.tar.gz", "", "", 0},
+		{AuditBackupDeleted, "failed", "delete_backup_failed", "b.tar.gz", "not found", "", 0},
+		{AuditStoreReconciled, "succeeded", "", "", "", "gen-2", 3},
+		{AuditStoreReconciled, "failed", "recovery_blocked", "", "damaged", "", 0},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries = %+v, want %+v", got, want)
