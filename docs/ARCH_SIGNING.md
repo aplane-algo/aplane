@@ -1201,7 +1201,7 @@ audited as `approval_withdrawn_session_ended`, not as an operator rejection.
 A session end cancels no request's context. A request that is still planning,
 or waiting at its gates, meets the session check and answers `locked`. Every
 signing and assembly path past its gates and approval — rotating sign, ordinary
-`/sign`, bounded-base and cosigner-role `/sign/component`, and `/sign/assemble`
+`/sign`, base and cosigner-role `/sign/component`, and `/sign/assemble`
 — registers a key use (`KeyUseContext`) for its post-approval key load and use
 (never spanning operator approval wait) and releases it once loaded key
 material is zeroed and before any blocking audit write:
@@ -1210,11 +1210,11 @@ material is zeroed and before any blocking audit write:
   cancels every registered key use and waits for each to zero its loaded key
   material and release before clearing the key session and keyring. Any signing
   or assembly request whose key use was canceled withholds its signatures and
-  answers `locked` (on `/sign` and bounded-base `/sign/component`, an approved
+  answers `locked` (on `/sign` and base `/sign/component`, an approved
   request stopped before `SIGN_APPROVED` is audited as
   `session_ended_after_approval`). After releasing its key use, every route
   makes a final session check before returning: for audited signing paths
-  (`/sign`, bounded-base and cosigner `/sign/component`, and rotating sign)
+  (`/sign`, base and cosigner `/sign/component`, and rotating sign)
   that check runs after `SIGN_APPROVED` is written, withholding the signatures
   and recording a countermanding `SIGN_FAILED` (`LogSignWithheld`) if the
   session ended during the audit write; for `/sign/assemble` it runs directly
@@ -1320,7 +1320,7 @@ They still route on advertised signing flows and resource metadata.
 For inventory rows with `signing_flow: cosigned1`, the client must:
 
 1. call `POST /plan` to freeze canonical bytes, dummies, fees, and group ID;
-2. call `POST /sign/component` with `kind:"bounded-base"` on the user signer, which validates the
+2. call `POST /sign/component` with `kind:"base"` on the user signer, which validates the
    group and applies signer policy/operator approval before returning base args,
    the assembly receipt, and each target's `path` (`spend`, `spending_rekey`, or
    `listed_rekey`);
@@ -1336,7 +1336,7 @@ For inventory rows with `signing_flow: cosigned1`, the client must:
 The flow carries a cosigned account's spends, its cosigned rekeys (spending key
 and cosigner) and its listed rekeys (spending key alone). Ordinary `/sign`
 rejects every target of a cosigned account, listed rekeys included, with
-`bounded_cosigner_required`. The `path` mark routes the request only:
+`cosigner_required`. The `path` mark routes the request only:
 `/sign/assemble` classifies the canonical transaction against stored metadata
 again, through the planner's function, and requires a cosigner signature on
 `spend` and `spending_rekey` and refuses one on `listed_rekey`. A wrong mark can
@@ -1365,7 +1365,7 @@ path's resource profile. Under `plus_cosigned` a pure rekey to a listed target
 takes `listed_rekey`, and one to any other target the cosigned `spending_rekey`.
 The planner checks the target against the account's stored `rekey_to` entries
 and refuses one that isn't listed, where the account takes no other rekey, with
-`bounded_rekey_target_not_listed` before anything is signed. The executor
+`rekey_target_not_listed` before anything is signed. The executor
 rebuilds the list from the spending private key and the stored entries, requires
 its root to equal the stored `rekey_list.root`, and places the target's 160-byte
 proof in the list-proof slot; recipient proofs stay empty. The tree is specified
@@ -1458,8 +1458,8 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
-| `bounded_cosigner_required` | a cosigned bounded account's spend or rekey, listed rekeys included, sent to ordinary `/sign` | `400` |
-| `bounded_rekey_target_not_listed` | a rekey on a bounded account with a rekey-to list, to an address not on the list; nothing was signed | `400` |
+| `cosigner_required` | a cosigned account's spend or rekey, on a plain or bounded host, listed rekeys included, sent to ordinary `/sign` | `400` |
+| `rekey_target_not_listed` | a rekey on a host account with a rekey-to list, plain or bounded, to an address not on the list; nothing was signed | `400` |
 | `rotating_signing_required` | rotating account sent to `/plan`, `/sign` or `/sign/component` | `400` |
 | `rotating_stage_unproven` | the signer has not yet found the rotating account's live stage; its background scan continues and a retry usually succeeds | `409` |
 | `rotating_stage_changed` | the account's authorizer moved between prepare and sign; no signature was released, rebuild and prepare again | `409` |
@@ -1491,7 +1491,7 @@ Timeout behavior:
   `/sign/rotating/prepare` 60 seconds, `/sign/cancel` 5 seconds,
   `/sign/component` 2 minutes for cosigner targets, `/sign/assemble` 2 minutes,
   and `/sign`, `/sign/rotating/sign`, or approval-bearing `/sign/component` based on approval wait.
-  User and bounded-base `/sign/component` requests can
+  Base `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
 - caller-provided contexts with earlier deadlines are preserved.
@@ -1672,10 +1672,10 @@ Errors arrive as a non-2xx `ErrorResponse`.
 - Bounded pure spends, spending-key-authorized rekeys, and listed rekeys return
   complete LogicSigs from `/sign` only when the account has no cosigner. A
   rekey on an account that takes only listed rekeys, to an address not on its
-  list, is rejected with `code:"bounded_rekey_target_not_listed"`.
+  list, is rejected with `code:"rekey_target_not_listed"`.
 - Every transaction of a cosigner-enabled bounded account, spends, cosigned
   rekeys and listed rekeys alike, is rejected with
-  `code:"bounded_cosigner_required"`; it must use the `cosigned1` choreography
+  `code:"cosigner_required"`; it must use the `cosigned1` choreography
   below.
 - Rotating accounts (`signing_flow: rotating1`) are rejected before approval
   with `code:"rotating_signing_required"` on `/plan`, `/sign` and
@@ -1686,7 +1686,7 @@ Errors arrive as a non-2xx `ErrorResponse`.
   gates is judged at every position by the first. A request refused before
   the gates is refused for that earlier reason, with its own code, and
   nothing is signed: for example a cosigned account sent to `/sign`
-  (`bounded_cosigner_required`), a witness or rotating key type as an
+  (`cosigner_required`), a witness or rotating key type as an
   ordinary signing authority, a `/sign/component` target that is not an
   admitted cosigned spend or rekey, or a planning error. Those checks keep
   their order.
@@ -1789,7 +1789,7 @@ position of the frozen group. It comes in two forms:
   where a bounded account needs them to be classified. The signer sizes it from
   its own records, exactly as `/plan` did, and refuses a hint on it. An
   `auth_address` the signer doesn't hold is refused, and so is a rotating
-  account. Only a `bounded-base` request sizes the group, so only it takes
+  account. Only a `base` request sizes the group, so only it takes
   these two fields; a `cosigner` request refuses them.
 
 The frozen group must carry exactly the dummies its resources require, so the
@@ -1798,24 +1798,24 @@ and here. apshell and the SDKs send every non-cosigned position this way: each
 is signed later through `/sign`, so the signer must hold its key, and a group
 with a position it doesn't hold is refused by the client before planning.
 
-Target `kind` is `cosigner` or `bounded-base`; kind-specific fields are
+Target `kind` is `cosigner` or `base`; kind-specific fields are
 rejected on other kinds.
 Dummy classification is semantic in both directions: every declared dummy must
 match the canonical signer-added suffix form, and a canonical dummy suffix may
 not be relabeled as caller-supplied original positions.
 
-The endpoint never plans or mutates a group. User and bounded-base targets are
+The endpoint never plans or mutates a group. Base targets are
 policy- and operator-gated and use the live `/sign/cancel` lifecycle. Cosigner
-targets use deterministic cosigner policy without operator approval. Bounded-base
+targets use deterministic cosigner policy without operator approval. Base
 authorization is reconstructed from frozen bytes and signer-held metadata,
 including resources, fees, runtime arguments, and the canonical dummy suffix.
 The response is `signerapi.ComponentResponse`, with `request_id` and
-kind-tagged `components[]`. User/cosigner components carry `signature`; bounded
+kind-tagged `components[]`. Cosigner components carry `signature`; base
 components carry `auth_address`, `base_signatures[]`, canonical `runtime_args`,
 `assembly_receipt`, and `path`: `spend`, `spending_rekey`, or `listed_rekey`, the
-path the signer classified. A bounded component with any other `path`, or a
-user or cosigner component with one, fails validation. A client asks the
-cosigner for every bounded target except a `listed_rekey` one. Every component
+path the signer classified. A base component with any other `path`, or a
+cosigner component with one, fails validation. A client asks the
+cosigner for every base target except a `listed_rekey` one. Every component
 carries `target_index`, `kind`, and `signature_scheme`.
 
 The Falcon-signed bounded assembly receipt commits to the account, target TxID,
@@ -2281,12 +2281,10 @@ warning does not establish that no leaf was reused.
   implement, the retired `cosigner1` and `bounded1` included.
 - optional `cosigner_component_key_type`: the cosigner component key type used by
   this key's `signing_flow` (for `cosigned1`)
-- optional `bounded_authorization`: present for a bounded or plain host
+- optional `host`: present for a bounded or plain host
   account, with an empty `signing_flow` or `cosigned1`.
   It contains `contract` (`bounded2`, or `plain1` for a plain host account without bounds),
-  `base_signature_arg_layout`, `spend_effects` (empty on `plain1`), `max_fee`
-  (present on `bounded2`, absent on `plain1`, which has no fee ceiling; clients
-  must not read a missing value as zero), `rekey` (`refused` or `spending_key`),
+  `base_signature_arg_layout`, `rekey` (`refused` or `spending_key`),
   optional `rekey_list` (`contract` `rekey_list1`, `depth`, and `root`: a pure
   rekey may go to a listed address with the spending key alone, under
   `rekey: refused` (*only these*) or, with a cosigner, `rekey: spending_key`
@@ -2295,7 +2293,12 @@ warning does not establish that no leaf was reused.
   beside `rekey: spending_key`), `runtime_args`,
   `derived_args`, the path-specific
   `argument_layout` (each slot with `spend`, `spending_rekey`, and
-  `listed_rekey` rules), and `layer3_policy`. This is routing and assembly
+  `listed_rekey` rules), and `bounds`. `bounds` is present on `bounded2` and
+  absent on `plain1`, which has no host rules; it holds `spend_effects`,
+  `max_fee` (the fee ceiling, always present, and `0` is a value) and
+  `layer3_policy`. A client takes the fee ceiling from `bounds` on a
+  `bounded2` host, never from a zero, and refuses a host whose `contract` and
+  `bounds` disagree. This is routing and assembly
   metadata, not permission; signer
   classification and stored bytecode remain authoritative.
 - optional `logic_sig_resources`, containing final compiled program bytes and
@@ -2400,13 +2403,13 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `bounded_authorization`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, optional `authorization_kind` (`ed25519`, `native_pq`, or `logic_sig`), `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `cosigner_component_key_types` (the cosigner key types an account of the type can take, the default first: one for a fixed bounded type, `aplane.witness-falcon1024.v1` and `aplane.witness-ed25519.v1` for a plain host), optional definition-level `host`, `valid_rekey_target` (always present: the key type author's current declaration that an aplane key of this type may be the signing authority an account is rekeyed to, its own account included, subject to that key's own restrictions; each aplane key records it when created; see [ARCH_KEYTYPES.md](ARCH_KEYTYPES.md#valid-rekey-target)), `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `type`, and optional `label`, `description`, `required`, `byte_length`, and `max_size`
 
 `per_key_contract: true` marks a type whose accounts each select their own contract at
-generation. It has no `signing_flow` or `bounded_authorization`, so clients route its
+generation. It has no `signing_flow` or `host`, so clients route its
 accounts by `/keys`. Its optional cosigner stays a plain optional parameter: a
 reference never turns into a required selector with a default.
 
@@ -2485,7 +2488,7 @@ the request context and withdraw any pending manual approval prompt. This
 tracking is not a durable request table, not a polling API, and not an exposed
 async signing state machine.
 
-Cancelable: live `/sign`, `/sign/rotating/sign`, and approval-bearing user or bounded-base `/sign/component`. Cosigner-only
+Cancelable: live `/sign`, `/sign/rotating/sign`, and approval-bearing base `/sign/component`. Cosigner-only
 `/sign/component` and `/sign/assemble` request IDs are correlation-only. Once a cancelable request
 is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
@@ -2498,7 +2501,7 @@ is no longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `state`
 
 `/sign/cancel` withdraws a live `/sign`, `/sign/rotating/sign`, or
-approval-bearing user or bounded-base
+approval-bearing base
 `/sign/component` request. It is idempotent
 for client behavior. A valid, authenticated cancel request returns `200` with
 its `state`; cancellation miss is represented in `state`, not as an HTTP
@@ -2625,10 +2628,10 @@ Cross-SDK compatibility-bearing behavior:
   for a pure spend, `spending_rekey` for a pure rekey under
   `rekey: spending_key` without a list, and `listed_rekey` for a pure rekey under
   `rekey: refused` with `rekey_list`. They parse `rekey_list` and the
-  `listed_rekey` path-mask field, and classify `bounded_rekey_target_not_listed`
+  `listed_rekey` path-mask field, and classify `rekey_target_not_listed`
   as a request error
   (`test/contracts/signerapi/error_code_classifications.json`). For a
-  `cosigned1` account they take the path from the bounded-base component's
+  `cosigned1` account they take the path from the base component's
   `path` instead, since under *plus cosigned* only the signer knows whether a
   target is listed.
 - For equivalent normalized typed transaction intents, SDK prep should converge
@@ -2647,13 +2650,13 @@ Cross-SDK compatibility-bearing behavior:
   sizes each from its own records, so no resource hint is sent); validate the
   returned canonical group and mutation report; derive the
   target/context/dummy position partition; locally sign only the canonical
-  dummy suffix returned by `/plan`; obtain the required bounded-base and
+  dummy suffix returned by `/plan`; obtain the required base and
   cosigner components, asking the cosigner for no `listed_rekey` target and
   sending no cosigner request when no target needs one; call ordinary `/sign` for any non-cosigned original
   positions; and call `/sign/assemble` with the frozen group and signed
   passthrough positions. Resource hints are planning inputs, not locally
   inserted transactions. Final cosigned assembly remains signer-owned, and
-  submission or simulation uses the exact assembled group. Bounded-base
+  submission or simulation uses the exact assembled group. Base
   `/sign/component` requests run the signer-domain approval gates and can block
   on operator approval, so SDK deadlines for them follow the same
   approval-aware rule as `/sign`, not the short cosigner-role component deadline.
@@ -2709,7 +2712,7 @@ Cross-SDK compatibility-bearing behavior:
   `endpoints.yaml` endpoint with role `cosigner` and use the one that lists a
   witness record whose address is the Witness Key ID derived from its key type
   and public key. More than one endpoint listing the key is refused. The
-  cosigner is resolved before the bounded-base `/sign/component` request for
+  cosigner is resolved before the base `/sign/component` request for
   every target that cannot take the `listed_rekey` path, and afterwards, only
   if the path needs one, for a target that can.
 

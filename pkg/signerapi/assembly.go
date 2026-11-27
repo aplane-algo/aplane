@@ -15,17 +15,17 @@ type AssemblyRequest struct {
 }
 
 // AssemblyTarget carries the authorization material for one frozen group
-// position of a cosigned (bounded-cosigner) account.
+// position of a cosigned account.
 type AssemblyTarget struct {
 	TargetIndex int    `json:"target_index"`
 	AuthAddress string `json:"auth_address"`
 
 	BaseSignatures      []string          `json:"base_signatures,omitempty"`
-	BoundedRuntimeArgs  map[string]string `json:"bounded_runtime_args,omitempty"`
+	RuntimeArgs         map[string]string `json:"runtime_args,omitempty"`
 	AssemblyReceipt     string            `json:"assembly_receipt,omitempty"`
 	BaseSourceRequestID string            `json:"base_source_request_id,omitempty"`
 
-	// CosignerSignature is required on every bounded-cosigner target except a
+	// CosignerSignature is required on every cosigned target except a
 	// listed rekey, which takes none; assembly classifies the transaction to
 	// decide.
 	CosignerSignature       string `json:"cosigner_signature,omitempty"`

@@ -183,6 +183,18 @@ func TestAssembleRefusesTheRetiredTargetKind(t *testing.T) {
 	assertUnknownFieldRefusal(t, w, `request has unknown field "kind"`)
 }
 
+// A target's runtime arguments are runtime_args; the retired name is an
+// unknown field, never read as no arguments.
+func TestAssembleRefusesTheRetiredRuntimeArgsName(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	body := []byte(`{"group_bytes_hex":["5458aa"],"targets":[{"target_index":0,"auth_address":"A","base_signatures":["aa"],"bounded_runtime_args":{"a":"00"},"assembly_receipt":"bb"}]}`)
+	w := httptest.NewRecorder()
+	server.handleSignAssemble(w, requestWithIdentity(http.MethodPost, "/sign/assemble", body))
+	assertUnknownFieldRefusal(t, w, `request has unknown field "bounded_runtime_args"`)
+}
+
 func assertUnknownFieldRefusal(t *testing.T, w *httptest.ResponseRecorder, want string) {
 	t.Helper()
 	if w.Code != http.StatusBadRequest {
@@ -362,7 +374,7 @@ func TestSignerClientRequestsDecodeStrictly(t *testing.T) {
 				RequestID:     "req-2",
 				GroupBytesHex: []string{"00", "01", "02", "03", "04"},
 				Targets: []signerapi.ComponentTarget{{
-					TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "AUTH",
+					TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "AUTH",
 					LsigArgs: map[string]string{"a": "00"}, AppCallInfo: appCall,
 				}},
 				ContextualPositions: []signerapi.ComponentContextPosition{
@@ -391,7 +403,7 @@ func TestSignerClientRequestsDecodeStrictly(t *testing.T) {
 				GroupBytesHex: []string{"00", "01"},
 				Targets: []signerapi.AssemblyTarget{{
 					TargetIndex: 0, AuthAddress: "AUTH",
-					BaseSignatures: []string{"aa"}, BoundedRuntimeArgs: map[string]string{"a": "00"},
+					BaseSignatures: []string{"aa"}, RuntimeArgs: map[string]string{"a": "00"},
 					AssemblyReceipt: "bb", BaseSourceRequestID: "req-2",
 					CosignerSignature: "cc", CosignerSourceRequestID: "req-3",
 				}},

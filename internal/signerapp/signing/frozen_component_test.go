@@ -38,7 +38,7 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 	groupHex := make([]string, len(planned.AllTxns))
 	componentRequest := signerapi.ComponentRequest{
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 		}},
 	}
 	for i, plannedTxn := range planned.AllTxns {
@@ -155,7 +155,7 @@ func TestValidateFrozenComponentContextAcceptsRekeyedAuthorizer(t *testing.T) {
 	}
 	request := signerapi.ComponentRequest{
 		GroupBytesHex:  groupHex,
-		Targets:        []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+		Targets:        []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer}},
 		DummyPositions: dummyPositions,
 	}
 	plan, groupRequest, serviceErr := service.ValidateFrozenComponentContext(request)
@@ -197,7 +197,7 @@ func TestValidateFrozenComponentContextRejectsFabricatedDummy(t *testing.T) {
 	}
 	request := signerapi.ComponentRequest{
 		GroupBytesHex: groupHex,
-		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer}},
 	}
 	for index := 1; index < len(groupHex); index++ {
 		request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: index})
@@ -230,7 +230,7 @@ func TestFrozenComponentDummyPartitionIsSemanticForEveryKind(t *testing.T) {
 
 	for _, kind := range []signerapi.ComponentTargetKind{
 		signerapi.ComponentTargetKindCosigner,
-		signerapi.ComponentTargetKindBoundedBase,
+		signerapi.ComponentTargetKindBase,
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			target := signerapi.ComponentTarget{TargetIndex: 0, Kind: kind}
@@ -279,7 +279,7 @@ func TestValidateFrozenComponentContextPrefersConcurrentLock(t *testing.T) {
 	}
 	request := signerapi.ComponentRequest{
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 		}},
 	}
 	for i, plannedTxn := range planned.AllTxns {
@@ -312,7 +312,7 @@ func TestValidateFrozenComponentContextAuditsEveryOriginalPosition(t *testing.T)
 	service.Planner.GenerateTxnDescription = describeAs("frozen bounded transaction")
 	request := signerapi.ComponentRequest{
 		Targets: []signerapi.ComponentTarget{{
-			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+			TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 		}},
 	}
 	for i, plannedTxn := range planned.AllTxns {
@@ -362,7 +362,7 @@ func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T)
 	request := func(position signerapi.ComponentContextPosition) signerapi.ComponentRequest {
 		componentRequest := signerapi.ComponentRequest{
 			Targets: []signerapi.ComponentTarget{{
-				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 			}},
 			ContextualPositions: []signerapi.ComponentContextPosition{position},
 		}
@@ -486,7 +486,7 @@ func TestPlanningRefusesLsigArgsForANativeKey(t *testing.T) {
 	request := func(lsigArgs map[string]string) signerapi.ComponentRequest {
 		componentRequest := signerapi.ComponentRequest{
 			Targets: []signerapi.ComponentTarget{{
-				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 			}},
 			ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: falcon.String(), LsigArgs: lsigArgs}},
 		}
@@ -546,7 +546,7 @@ func TestPlanningRefusesAMissingRequiredArgument(t *testing.T) {
 	request := func(lsigArgs map[string]string) signerapi.ComponentRequest {
 		componentRequest := signerapi.ComponentRequest{
 			Targets: []signerapi.ComponentTarget{{
-				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer,
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer,
 			}},
 			ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: lsig.String(), LsigArgs: lsigArgs}},
 		}

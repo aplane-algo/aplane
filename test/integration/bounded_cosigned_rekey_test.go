@@ -161,8 +161,8 @@ func (n *cosignedNode) account(t *testing.T, keyType, rekey string, rekeyTo ...s
 		if key.SigningFlow != signerapi.SigningFlowCosigned1 {
 			t.Fatalf("%s signing flow = %q, want %s", address, key.SigningFlow, signerapi.SigningFlowCosigned1)
 		}
-		if key.BoundedAuthorization == nil || key.BoundedAuthorization.Contract != signerapi.BoundedContractBounded2 {
-			t.Fatalf("%s contract = %+v, want %s", address, key.BoundedAuthorization, signerapi.BoundedContractBounded2)
+		if key.Host == nil || key.Host.Contract != signerapi.HostContractBounded2 {
+			t.Fatalf("%s contract = %+v, want %s", address, key.Host, signerapi.HostContractBounded2)
 		}
 		// The signer recorded the reference's type, and reports it.
 		if key.CosignerComponentKeyType != n.cosignerKeyType {

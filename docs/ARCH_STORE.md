@@ -965,7 +965,7 @@ Valid roles are exactly `signer` and `cosigner`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary, bounded, plain host (cosigned or not) and rotating LogicSig account keys, and public cosigner references used for generation. | Cosigner component private keys. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, bounded-base `/sign/component`, `/sign/assemble`. |
+| `signer` | Native signing keys, ordinary, bounded, plain host (cosigned or not) and rotating LogicSig account keys, and public cosigner references used for generation. | Cosigner component private keys. | Normal `/sign`, `/sign/rotating/prepare` and `/sign/rotating/sign`, base `/sign/component`, `/sign/assemble`. |
 | `cosigner` | Cosigner component private keys and their public sidecars. | Every account key class: native signing keys and ordinary, bounded, plain host, cosigned and rotating LogicSig account keys. | Cosigner-role `/sign/component`. |
 
 Rules:
@@ -1298,7 +1298,7 @@ key is rejected during reload rather than published as a signable key.
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, a valid derivation record, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Cosigner key valid | Payload category/type is a cosigner key and Witness Key ID is canonical. | Only through cosigner-role component signing on cosigner nodes; normal `/sign` and spending paths reject it. | Restores as a cosigner key on cosigner nodes, regenerating the public sidecar; never as a spending account. |
 | Host account key valid | DSA LogicSig key with a valid `host` object (a plain host's without `bounds`, a bounded host's with them). | Pure spends, spending-key rekeys, and listed rekeys use signer-held authority, with a cosigner signature on spends when the account has one. | Restores from durable host metadata. |
-| Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: bounded-base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
+| Cosigned account key valid | DSA LogicSig key whose bounded metadata carries the cosigner overlay and whose bytecode embeds the cosigner public key (a plain or bounded host). | Only on signer nodes through the cosigned flow: base component, cosigner component (none for a listed rekey), local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig derivation invalid | Payload has bytecode but an unknown or inconsistent derivation record; for example, an `algod_v13_auto_salt` key stores pre-v13 bytecode. | No; scan rejects it and verify fails. | Restore skips that key. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan rejects it and verify fails. | Restore skips that key. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore skips that key instead of reconstructing it from a template. |

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"slices"
 	"testing"
 	"time"
 
@@ -148,8 +149,9 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 	session, conn, svc := newKeyTransportTestSession()
 	svc.prepareGenerateResult = adminproto.PrepareGenerateKeyResult{
 		Success: true, KeyType: "test.bounded.v1", Fingerprint: "1:abc", CosignerKeyID: "COSIGNER",
-		Bounded: &adminproto.PreparedBoundedProfile{
-			Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)), Rekey: "refused", Layer3Policy: "merkle_allowlist", CosignerRequired: true,
+		Host: &adminproto.PreparedHostProfile{
+			Rekey: "refused", CosignerRequired: true,
+			Bounds: &adminproto.PreparedHostBounds{SpendEffects: []string{"pay"}, MaxFee: 10_000, Layer3Policy: "merkle_allowlist"},
 		},
 	}
 	session.HandlePrepareGenerateKey(&protocol.PrepareGenerateKeyMessage{
@@ -165,9 +167,10 @@ func TestPrepareGenerateKeyOverIPC(t *testing.T) {
 	if !msg.Success || msg.Type != protocol.MsgTypePrepareGenerateResult || msg.ID != "prepare-ipc" || msg.Fingerprint != "1:abc" || msg.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("response = %+v", msg)
 	}
-	if msg.Bounded == nil || !msg.Bounded.CosignerRequired || msg.Bounded.Contract != "bounded2" ||
-		msg.Bounded.Rekey != "refused" || msg.Bounded.Layer3Policy != "merkle_allowlist" {
-		t.Fatalf("bounded = %+v", msg.Bounded)
+	if msg.Host == nil || !msg.Host.CosignerRequired ||
+		msg.Host.Rekey != "refused" || msg.Host.Bounds == nil || msg.Host.Bounds.Layer3Policy != "merkle_allowlist" ||
+		msg.Host.Bounds.MaxFee != 10_000 || !slices.Equal(msg.Host.Bounds.SpendEffects, []string{"pay"}) {
+		t.Fatalf("host = %+v", msg.Host)
 	}
 }
 

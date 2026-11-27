@@ -130,7 +130,7 @@ func newCosignedExecutableTestHandler(t *testing.T, publicKeyHex string, capture
 			return
 		}
 		switch req.TargetKind() {
-		case signerapi.ComponentTargetKindBoundedBase:
+		case signerapi.ComponentTargetKindBase:
 			capture.baseCalls.Add(1)
 			capture.record("base")
 			capture.mu.Lock()
@@ -479,9 +479,9 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TargetKind() == signerapi.ComponentTargetKindBoundedBase {
+		if req.TargetKind() == signerapi.ComponentTargetKindBase {
 			appendEvent("base")
-			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: path}}})
+			_ = json.NewEncoder(w).Encode(signerapi.ComponentResponse{RequestID: req.RequestID, Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: txn.Sender.String(), BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: path}}})
 			return
 		}
 		appendEvent("cosigner")
@@ -511,8 +511,8 @@ func testBoundedCosignerChoreography(t *testing.T, path, wantEvents string) {
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
-		c.SetBoundedContractForAddress(account, signerapi.BoundedContractBounded2)
-		c.SetBoundedMaxFeeForAddress(account, 10_000)
+		c.SetHostContractForAddress(account, signerapi.HostContractBounded2)
+		c.SetHostMaxFeeForAddress(account, 10_000)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes:  4_000,
 			Spend:         &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
@@ -585,8 +585,8 @@ func TestMixedGroupsFinishUserSideBeforeCosigner(t *testing.T) {
 					c.SetSigningFlowForAddress(cosigned, signerapi.SigningFlowCosigned1)
 					c.SetCosignerComponentKeyTypeForAddress(cosigned, witness.Falcon1024V1)
 					c.SetCosignerPublicKeyForAddress(cosigned, cosignerHex)
-					c.SetBoundedContractForAddress(cosigned, signerapi.BoundedContractBounded2)
-					c.SetBoundedMaxFeeForAddress(cosigned, 10_000)
+					c.SetHostContractForAddress(cosigned, signerapi.HostContractBounded2)
+					c.SetHostMaxFeeForAddress(cosigned, 10_000)
 					c.SetLogicSigResourceProfile(cosigned, lsigresource.Profile{
 						ProgramBytes: 4_000,
 						Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 20_000},
@@ -650,8 +650,8 @@ func TestBoundedCosignerRejectsPlannedFeeBeforeReleasingComponents(t *testing.T)
 		c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(account, cosignerHex)
-		c.SetBoundedContractForAddress(account, signerapi.BoundedContractBounded2)
-		c.SetBoundedMaxFeeForAddress(account, uint64(txn.Fee)-1)
+		c.SetHostContractForAddress(account, signerapi.HostContractBounded2)
+		c.SetHostMaxFeeForAddress(account, uint64(txn.Fee)-1)
 		c.SetLogicSigResourceProfile(account, lsigresource.Profile{
 			ProgramBytes: 1,
 			Spend:        &lsigresource.PathProfile{MaxOpcodeCost: 1},

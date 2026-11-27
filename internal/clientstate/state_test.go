@@ -243,9 +243,9 @@ func TestPopulateSignerCacheUpdatesMetadataAndKeysSnapshotIsIsolated(t *testing.
 			SpendingRekey: &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 			ListedRekey:   &signerapi.LogicSigResourceUsage{ProgramBytes: 77, ArgumentBytes: 1_423, MaxOpcodeCost: 20_000},
 		},
-		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+		Host: &signerapi.HostInfo{
 			Contract: "plain1",
-			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"},
+			Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -287,17 +287,17 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 		Address: "BOUNDED", KeyType: "aplane.custom-bounded-cosigner.v1",
 		SigningFlow:              signerapi.SigningFlowCosigned1,
 		CosignerComponentKeyType: "aplane.witness-falcon1024.v1",
-		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+		Host: &signerapi.HostInfo{
 			Contract: "bounded2",
-			MaxFee:   new(uint64(10_000)),
-			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
+			Bounds:   &signerapi.HostBoundsInfo{MaxFee: 10_000},
+			Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "abcd"},
 		},
 	}, {
 		Address: "PLAIN", KeyType: "aplane.falcon1024.v1",
 		SigningFlow: signerapi.SigningFlowCosigned1,
-		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+		Host: &signerapi.HostInfo{
 			Contract: "plain1",
-			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "ef01"},
+			Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "ef01"},
 		},
 	}}); err != nil {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
@@ -577,8 +577,8 @@ func TestPopulateAndSaveSignerCacheLockedReplacesEveryEntry(t *testing.T) {
 	seed.SigningFlows = map[string]string{"OLD": "cosigned1"}
 	seed.CosignerComponentKeyTypes = map[string]string{"OLD": "t"}
 	seed.CosignerPublicKeys = map[string]string{"OLD": "ab"}
-	seed.BoundedMaxFees = map[string]uint64{"OLD": 7}
-	seed.BoundedContracts = map[string]string{"OLD": "plain1"}
+	seed.HostMaxFees = map[string]uint64{"OLD": 7}
+	seed.HostContracts = map[string]string{"OLD": "plain1"}
 	seed.Locked = true
 	state.SetSignerCache(seed)
 
@@ -591,9 +591,9 @@ func TestPopulateAndSaveSignerCacheLockedReplacesEveryEntry(t *testing.T) {
 			IsGenericLsig:     true,
 			SigningFlow:       "cosigned1",
 			SigningArgs:       []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true}},
-			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Host: &signerapi.HostInfo{
 				Contract: "bounded2",
-				MaxFee:   &maxFee,
+				Bounds:   &signerapi.HostBoundsInfo{MaxFee: maxFee},
 			},
 		}})
 	}); err != nil {
@@ -606,7 +606,7 @@ func TestPopulateAndSaveSignerCacheLockedReplacesEveryEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema_version":4,"keys":{"NEW":"aplane.falcon1024.v1"},"authorization_kinds":{"NEW":"logic_sig"},"generic_lsigs":{"NEW":true},"signing_args":{"NEW":[{"name":"secret","type":"bytes","required":true}]},"signing_flows":{"NEW":"cosigned1"},"bounded_max_fees":{"NEW":5000},"bounded_contracts":{"NEW":"bounded2"}}`
+	want := `{"schema_version":5,"keys":{"NEW":"aplane.falcon1024.v1"},"authorization_kinds":{"NEW":"logic_sig"},"generic_lsigs":{"NEW":true},"signing_args":{"NEW":[{"name":"secret","type":"bytes","required":true}]},"signing_flows":{"NEW":"cosigned1"},"host_max_fees":{"NEW":5000},"host_contracts":{"NEW":"bounded2"}}`
 	if string(got) != want {
 		t.Fatalf("signer cache after populate\n got: %s\nwant: %s", got, want)
 	}
@@ -640,7 +640,7 @@ func TestAddAliasRefusesAnAddressAsAName(t *testing.T) {
 	}
 }
 
-// The cosigner key comes from bounded_authorization, the structured field
+// The cosigner key comes from host, the structured field
 // the signer always sends for a cosigned account. The creation parameter of
 // the same name is not read.
 func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testing.T) {
@@ -648,9 +648,9 @@ func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testi
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
 		{Address: "PARAMS", KeyType: "k", Parameters: map[string]string{"cosigner_public_key": "aa"}},
 		{Address: "BOTH", KeyType: "k", Parameters: map[string]string{"cosigner_public_key": "aa"},
-			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Contract: "plain1", Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "bb"}}},
+			Host: &signerapi.HostInfo{Contract: "plain1", Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "bb"}}},
 		{Address: "STRUCT", KeyType: "k",
-			BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{Contract: "plain1", Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "cc"}}},
+			Host: &signerapi.HostInfo{Contract: "plain1", Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "cc"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -658,6 +658,41 @@ func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testi
 		if got, ok := state.SignerCacheCosignerPublicKey(address); ok != (want != "") || got != want {
 			t.Fatalf("%s cosigner key = %q/%v, want %q", address, got, ok, want)
 		}
+	}
+}
+
+// The cache records what /keys says about a host, contradictions included, so
+// the signing path can refuse them: a zero ceiling is a ceiling, bounds without
+// max_fee read as the tightest one, and a host without bounds has none.
+func TestPopulateSignerCacheReadsHostBoundsFromTheWire(t *testing.T) {
+	for _, test := range []struct {
+		name, host, contract string
+		maxFee               uint64
+		hasMaxFee            bool
+	}{
+		{"bounded", `{"contract":"bounded2","bounds":{"spend_effects":["pay"],"max_fee":2000,"layer3_policy":"none"}}`, "bounded2", 2000, true},
+		{"zero ceiling", `{"contract":"bounded2","bounds":{"spend_effects":["pay"],"max_fee":0,"layer3_policy":"none"}}`, "bounded2", 0, true},
+		{"bounds without max_fee", `{"contract":"bounded2","bounds":{}}`, "bounded2", 0, true},
+		{"bounded without bounds", `{"contract":"bounded2"}`, "bounded2", 0, false},
+		{"plain", `{"contract":"plain1"}`, "plain1", 0, false},
+		{"plain with bounds", `{"contract":"plain1","bounds":{"max_fee":1000}}`, "plain1", 1000, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var key signerapi.KeyInfo
+			if err := json.Unmarshal([]byte(`{"address":"HOST","key_type":"k","host":`+test.host+`}`), &key); err != nil {
+				t.Fatal(err)
+			}
+			state := New("testnet")
+			if err := state.PopulateSignerCache([]signerapi.KeyInfo{key}); err != nil {
+				t.Fatal(err)
+			}
+			if contract, ok := state.SignerCacheBoundedContract("HOST"); !ok || contract != test.contract {
+				t.Fatalf("contract = %q/%v, want %q", contract, ok, test.contract)
+			}
+			if maxFee, ok := state.SignerCacheBoundedMaxFee("HOST"); ok != test.hasMaxFee || maxFee != test.maxFee {
+				t.Fatalf("max fee = %d/%v, want %d/%v", maxFee, ok, test.maxFee, test.hasMaxFee)
+			}
+		})
 	}
 }
 
@@ -771,10 +806,10 @@ func TestEverySignerCacheMethodIsRaceSafe(t *testing.T) {
 			Default: &signerapi.LogicSigResourceUsage{ProgramBytes: 128, ArgumentBytes: 64, MaxOpcodeCost: 20_000},
 		},
 		SigningArgs: []signerapi.RuntimeArgInfo{{Name: "secret", Type: "bytes", Required: true}},
-		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+		Host: &signerapi.HostInfo{
 			Contract: "bounded2",
-			MaxFee:   &maxFee,
-			Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: "abcd"},
+			Bounds:   &signerapi.HostBoundsInfo{MaxFee: maxFee},
+			Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: "abcd"},
 		},
 	}}
 	validArgs := map[string][]byte{"secret": []byte("ok")}

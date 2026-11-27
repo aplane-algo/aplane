@@ -42,8 +42,8 @@ type SignerCache struct {
 	SigningFlows              map[string]string               `json:"signing_flows,omitempty"`                // address -> signing choreography label (e.g. "cosigned1"); empty = plain /sign
 	CosignerComponentKeyTypes map[string]string               `json:"cosigner_component_key_types,omitempty"` // address -> cosigner component key type for signing_flow "cosigned1"
 	CosignerPublicKeys        map[string]string               `json:"cosigner_public_keys,omitempty"`         // address -> embedded cosigner public key hex
-	BoundedMaxFees            map[string]uint64               `json:"bounded_max_fees,omitempty"`             // address -> bounded authorization max_fee
-	BoundedContracts          map[string]string               `json:"bounded_contracts,omitempty"`            // address -> bounded authorization contract (bounded2, plain1)
+	HostMaxFees               map[string]uint64               `json:"host_max_fees,omitempty"`                // address -> a bounded host's max_fee
+	HostContracts             map[string]string               `json:"host_contracts,omitempty"`               // address -> host contract (bounded2, plain1)
 	Locked                    bool                            `json:"-"`                                      // True if signer reported 403 (locked) on last /keys check
 	store                     *Store
 }

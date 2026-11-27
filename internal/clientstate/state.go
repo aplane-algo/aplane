@@ -203,14 +203,14 @@ func buildSignerCache(keys []signerapi.KeyInfo) (cache.SignerCache, error) {
 		if keyInfo.CosignerComponentKeyType != "" {
 			next.SetCosignerComponentKeyTypeForAddress(keyInfo.Address, keyInfo.CosignerComponentKeyType)
 		}
-		if keyInfo.BoundedAuthorization != nil {
-			if cosigner := keyInfo.BoundedAuthorization.Cosigner; cosigner != nil {
-				next.SetCosignerPublicKeyForAddress(keyInfo.Address, cosigner.PublicKeyHex)
+		if host := keyInfo.Host; host != nil {
+			if host.Cosigner != nil {
+				next.SetCosignerPublicKeyForAddress(keyInfo.Address, host.Cosigner.PublicKeyHex)
 			}
-			// A plain host has no fee ceiling; its contract says so.
-			next.SetBoundedContractForAddress(keyInfo.Address, keyInfo.BoundedAuthorization.Contract)
-			if keyInfo.BoundedAuthorization.MaxFee != nil {
-				next.SetBoundedMaxFeeForAddress(keyInfo.Address, *keyInfo.BoundedAuthorization.MaxFee)
+			next.SetHostContractForAddress(keyInfo.Address, host.Contract)
+			// A plain host has no bounds, and so no fee ceiling.
+			if host.Bounds != nil {
+				next.SetHostMaxFeeForAddress(keyInfo.Address, host.Bounds.MaxFee)
 			}
 		}
 		if len(keyInfo.SigningArgs) > 0 {
@@ -454,14 +454,14 @@ func (s *State) SignerCacheCosignerPublicKey(address string) (string, bool) {
 func (s *State) SignerCacheBoundedContract(address string) (string, bool) {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
-	return s.signerCache.BoundedContractForAddress(address)
+	return s.signerCache.HostContractForAddress(address)
 }
 
 // SignerCacheBoundedMaxFee returns the on-chain fee ceiling cached for address.
 func (s *State) SignerCacheBoundedMaxFee(address string) (uint64, bool) {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
-	return s.signerCache.BoundedMaxFeeForAddress(address)
+	return s.signerCache.HostMaxFeeForAddress(address)
 }
 
 // SignerCacheIsGenericLsig reports whether address is cached as a generic

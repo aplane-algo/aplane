@@ -43,7 +43,7 @@ This document covers two domains:
   review verdict.
 
 The client-signing domain applies to ordinary `/sign` requests and to
-bounded-base `/sign/component` requests: a cosigned account's base component
+base `/sign/component` requests: a cosigned account's base component
 runs the same hard rejection, always-review, and operator approval sequence,
 with the cosigned account as the per-target policy key and non-target group
 positions evaluated as foreign context. Cosigner-role `/sign/component` requests use the
@@ -185,7 +185,7 @@ transaction sender:
 
 - ordinary `/sign` requests select by the request's `auth_address`, so a
   rekeyed account uses the policy of its auth address;
-- bounded-base `/sign/component` requests select by the cosigned account;
+- base `/sign/component` requests select by the cosigned account;
 - cosigner-role `/sign/component` requests select by the `component_key`
   Witness Key ID. A key the node does not hold fails as a bad request
   (`Witness Key ID "<id>" not found`) before any policy evaluation. The held
@@ -675,7 +675,7 @@ Non-routing rule IDs:
   `review_unknown_genesis_hash` for `limits.*.review_above`
 - `always_review_warnings`
 - `auto_approve_self_noop_transfer`
-- `bounded_rekey_requires_review`
+- `host_rekey_requires_review`
 
 Routing rule IDs:
 
@@ -759,8 +759,8 @@ envelope or raise its `max_fee`.
 Every transaction classified onto a bounded rekey path, spending-key
 (`spending_rekey`, cosigned or not) or listed (`listed_rekey`), triggers the
 stable client-signing Always Review rule
-`bounded_rekey_requires_review`, on ordinary `/sign` and on the `cosigned1`
-bounded-base component step alike. The rule runs after hard
+`host_rekey_requires_review`, on ordinary `/sign` and on the `cosigned1`
+base component step alike. The rule runs after hard
 rejection and before every Always Approve or Operator Default path. It therefore
 defeats `auto_approve_self_noop_transfer` and warning configuration;
 `user_auto_approve:true` satisfies it without a prompt.
@@ -768,7 +768,7 @@ A client intent to simulate is not an exception because apsigner releases the
 same executable signatures and receives no simulation designation.
 
 A rekey on an *only these* account to an address not on its list never reaches
-policy: the planner refuses it with `bounded_rekey_target_not_listed`, because the
+policy: the planner refuses it with `rekey_target_not_listed`, because the
 program would reject it. Under *plus cosigned* such a target is a cosigned rekey
 instead. A listed rekey does reach policy, where
 `reject_foreign_rekey` counts its target as declared (see

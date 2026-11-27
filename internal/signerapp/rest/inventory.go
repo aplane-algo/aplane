@@ -71,7 +71,7 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 				keyInfo.SigningFlow = signerapi.SigningFlowCosigned1
 				keyInfo.CosignerComponentKeyType = cosigner.ComponentKeyType
 			}
-			keyInfo.BoundedAuthorization = boundedInfo(metadata.BoundedAuthorization)
+			keyInfo.Host = hostInfo(metadata.BoundedAuthorization)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, metadata.TemplateFingerprint, metadata.Parameters, metadata.BoundedAuthorization)
 
@@ -295,7 +295,7 @@ func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigPro
 				info.SigningFlow = signerapi.SigningFlowCosigned1
 				info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
 			}
-			info.BoundedAuthorization = boundedInfo(metadata)
+			info.Host = hostInfo(metadata)
 		}
 	}
 
@@ -323,26 +323,31 @@ type boundedInventoryProvider interface {
 	BoundedAuthorizationMetadata() *boundedmeta.Metadata
 }
 
-func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorizationInfo {
+func hostInfo(metadata *boundedmeta.Metadata) *signerapi.HostInfo {
 	if metadata == nil {
 		return nil
 	}
-	info := &signerapi.BoundedAuthorizationInfo{
+	info := &signerapi.HostInfo{
 		Contract: metadata.Contract,
-		BaseSignatureArgLayout: signerapi.BoundedSignatureArgLayout{
+		BaseSignatureArgLayout: signerapi.HostSignatureArgLayout{
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		SpendEffects: []string{}, // [] on a plain host, never null
-		MaxFee:       boundedmeta.CloneMaxFee(metadata.FeeCeiling()),
-		RuntimeArgs:  keytypemeta.BoundedRuntimeArgs(metadata.RuntimeArgs),
-		Layer3Policy: metadata.Layer3Policy(),
+		RuntimeArgs: keytypemeta.BoundedRuntimeArgs(metadata.RuntimeArgs),
 	}
-	if metadata.Bounds != nil {
-		info.SpendEffects = append(info.SpendEffects, metadata.Bounds.SpendEffects...)
+	if bounds := metadata.Bounds; bounds != nil {
+		info.Bounds = &signerapi.HostBoundsInfo{
+			SpendEffects: append([]string{}, bounds.SpendEffects...),
+			Layer3Policy: bounds.Layer3Policy,
+		}
+		// Valid metadata always has a ceiling; without one this publishes 0,
+		// the tightest ceiling.
+		if bounds.MaxFee != nil {
+			info.Bounds.MaxFee = *bounds.MaxFee
+		}
 	}
 	if metadata.Cosigner != nil {
-		info.Cosigner = &signerapi.BoundedCosignerAuthorizationInfo{
+		info.Cosigner = &signerapi.HostCosignerInfo{
 			Contract: metadata.Cosigner.Contract, ComponentKeyType: metadata.Cosigner.ComponentKeyType,
 			PublicKeyHex: metadata.Cosigner.PublicKeyHex, ComponentKeyID: metadata.Cosigner.ComponentKeyID,
 			SignatureMaxSize: metadata.Cosigner.SignatureMaxSize,
@@ -350,28 +355,28 @@ func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorization
 		}
 	}
 	if metadata.RekeyList != nil {
-		info.RekeyList = &signerapi.BoundedRekeyListInfo{
+		info.RekeyList = &signerapi.HostRekeyListInfo{
 			Contract: metadata.RekeyList.Contract, Depth: metadata.RekeyList.Depth, RootHex: metadata.RekeyList.RootHex,
 		}
 	}
 	for _, arg := range metadata.DerivedArgs {
-		info.DerivedArgs = append(info.DerivedArgs, signerapi.BoundedDerivedArgInfo{
+		info.DerivedArgs = append(info.DerivedArgs, signerapi.HostDerivedArgInfo{
 			Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize,
 		})
 	}
 	for _, slot := range metadata.ArgumentLayout {
-		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.BoundedArgumentSlotInfo{
+		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.HostArgumentSlotInfo{
 			Index: slot.Index, Name: slot.Name, Source: slot.Source, MaxSize: slot.MaxSize,
-			Paths: signerapi.BoundedArgumentPathMask{
+			Paths: signerapi.HostArgumentPathMask{
 				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey, ListedRekey: slot.Paths.ListedRekey,
 			},
 		})
 	}
 	if info.DerivedArgs == nil {
-		info.DerivedArgs = []signerapi.BoundedDerivedArgInfo{}
+		info.DerivedArgs = []signerapi.HostDerivedArgInfo{}
 	}
 	if info.ArgumentLayout == nil {
-		info.ArgumentLayout = []signerapi.BoundedArgumentSlotInfo{}
+		info.ArgumentLayout = []signerapi.HostArgumentSlotInfo{}
 	}
 	info.Rekey = string(metadata.Rekey)
 	return info

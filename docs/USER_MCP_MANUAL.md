@@ -249,7 +249,7 @@ a supported provider. Compiler-auto-salted records carry
   spending key alone. Any other rekey, when allowed, needs the spending key, plus
   the cosigner on a cosigned account. On an account that takes only listed
   rekeys, a rekey to an address not on the list fails with
-  `bounded_rekey_target_not_listed`.
+  `rekey_target_not_listed`.
 - `aplane.htlc.v1` — ALGO only and all-or-nothing: `close` to the recipient with the
   preimage before timeout, or to the refund address after.
 
@@ -332,7 +332,7 @@ signer decides what to sign:
 |----------|---------|
 | `POST /sign` | `signed[]` — hex signed-txn blobs, 1:1 with positions |
 | `POST /plan` | `transactions[]` — TX-prefixed **unsigned** canonical txns (no signing, no approval) |
-| `POST /sign/component` | bounded-base and cosigner component signatures over a frozen group |
+| `POST /sign/component` | base and cosigner component signatures over a frozen group |
 | `POST /sign/assemble` | final cosigned signed group after component verification |
 | `POST /sign/cancel` | cancel a pending approval prompt by request ID |
 
@@ -454,7 +454,7 @@ a cosigned account (`signing_flow` `cosigned1`) — it never receives account
 signing keys:
 
 - Cosigned accounts and cosigner keys are **never** signed via plain `/sign`
-  (it rejects them). They go through `/sign/component` (kinds `bounded-base`
+  (it rejects them). They go through `/sign/component` (kinds `base`
   and `cosigner`) and `/sign/assemble`.
 - Cosigner endpoints live in `endpoints.yaml` with `role: cosigner`. For each
   operation, the client queries authenticated `/keys` and routes to the one

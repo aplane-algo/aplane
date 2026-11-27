@@ -370,46 +370,46 @@ const SigningFlowCosigned1 = "cosigned1"
 // endpoints refuse these accounts with rotating_signing_required.
 const SigningFlowRotating1 = "rotating1"
 
-// BoundedSignatureArgLayout describes the stored maximum spending-signature
+// HostSignatureArgLayout describes the stored maximum spending-signature
 // argument shape.
-type BoundedSignatureArgLayout struct {
+type HostSignatureArgLayout struct {
 	Count    int   `json:"count"`
 	MaxSizes []int `json:"max_sizes"`
 }
 
-type BoundedDerivedArgInfo struct {
+type HostDerivedArgInfo struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
 	Parameter string `json:"parameter"`
 	MaxSize   int    `json:"max_size"`
 }
 
-type BoundedArgumentPathMask struct {
+type HostArgumentPathMask struct {
 	Spend         string `json:"spend"`
 	SpendingRekey string `json:"spending_rekey"`
 	ListedRekey   string `json:"listed_rekey"`
 }
 
-// BoundedRekeyListInfo says that a bounded account has a rekey-to list, and
+// HostRekeyListInfo says that a host account has a rekey-to list, and
 // commits to it. The entries are never published: the root reveals nothing
 // about them.
-type BoundedRekeyListInfo struct {
+type HostRekeyListInfo struct {
 	Contract string `json:"contract"`
 	Depth    int    `json:"depth"`
 	RootHex  string `json:"root,omitempty"`
 }
 
-type BoundedArgumentSlotInfo struct {
-	Index   int                     `json:"index"`
-	Name    string                  `json:"name"`
-	Source  string                  `json:"source"`
-	MaxSize int                     `json:"max_size"`
-	Paths   BoundedArgumentPathMask `json:"paths"`
+type HostArgumentSlotInfo struct {
+	Index   int                  `json:"index"`
+	Name    string               `json:"name"`
+	Source  string               `json:"source"`
+	MaxSize int                  `json:"max_size"`
+	Paths   HostArgumentPathMask `json:"paths"`
 }
 
-// BoundedCosignerAuthorizationInfo is the public non-secret projection of the
-// optional cosigner authority embedded in a bounded account.
-type BoundedCosignerAuthorizationInfo struct {
+// HostCosignerInfo is the public non-secret projection of the
+// optional cosigner authority embedded in a host account.
+type HostCosignerInfo struct {
 	Contract         string   `json:"contract"`
 	ComponentKeyType string   `json:"component_key_type"`
 	PublicKeyHex     string   `json:"public_key_hex,omitempty"`
@@ -418,34 +418,38 @@ type BoundedCosignerAuthorizationInfo struct {
 	RequiredOn       []string `json:"required_on"`
 }
 
-// The bounded authorization contracts a client signs for.
+// The contracts of a host account.
 const (
-	BoundedContractBounded2 = "bounded2"
-	BoundedContractPlain1   = "plain1"
+	HostContractBounded2 = "bounded2"
+	HostContractPlain1   = "plain1"
 )
 
-// BoundedAuthorizationInfo is the public, non-secret bounded capability
-// projection shared by /keytypes and /keys. Instance-only fields are omitted
+// HostBoundsInfo is what a bounded host's program enforces on a spend. A plain
+// host has none.
+type HostBoundsInfo struct {
+	SpendEffects []string `json:"spend_effects"`
+	MaxFee       uint64   `json:"max_fee"`
+	Layer3Policy string   `json:"layer3_policy"`
+}
+
+// HostInfo is the public, non-secret projection of a host account's signing
+// contract, shared by /keytypes and /keys. Instance-only fields are omitted
 // from /keytypes until a concrete LogicSig has been generated.
 //
-// Contract is BoundedContractBounded2 for a bounded host, which has a fee
-// ceiling, or BoundedContractPlain1 for a plain host, which has none.
-type BoundedAuthorizationInfo struct {
-	Contract               string                    `json:"contract"`
-	BaseSignatureArgLayout BoundedSignatureArgLayout `json:"base_signature_arg_layout"`
-	SpendEffects           []string                  `json:"spend_effects"`
-	// MaxFee is the bounded host's fee ceiling. A plain host (contract plain1)
-	// has none, and the field is absent.
-	MaxFee *uint64 `json:"max_fee,omitempty"`
+// Contract is HostContractBounded2 for a bounded host, which has Bounds, or
+// HostContractPlain1 for a plain host, which has none.
+type HostInfo struct {
+	Contract               string                 `json:"contract"`
+	BaseSignatureArgLayout HostSignatureArgLayout `json:"base_signature_arg_layout"`
 	// Rekey is refused or spending_key. With RekeyList, refused is "only these":
 	// a rekey may go to a listed address.
-	Rekey          string                            `json:"rekey"`
-	RekeyList      *BoundedRekeyListInfo             `json:"rekey_list,omitempty"`
-	Cosigner       *BoundedCosignerAuthorizationInfo `json:"cosigner,omitempty"`
-	RuntimeArgs    []RuntimeArgInfo                  `json:"runtime_args"`
-	DerivedArgs    []BoundedDerivedArgInfo           `json:"derived_args"`
-	ArgumentLayout []BoundedArgumentSlotInfo         `json:"argument_layout"`
-	Layer3Policy   string                            `json:"layer3_policy"`
+	Rekey          string                 `json:"rekey"`
+	RekeyList      *HostRekeyListInfo     `json:"rekey_list,omitempty"`
+	Cosigner       *HostCosignerInfo      `json:"cosigner,omitempty"`
+	RuntimeArgs    []RuntimeArgInfo       `json:"runtime_args"`
+	DerivedArgs    []HostDerivedArgInfo   `json:"derived_args"`
+	ArgumentLayout []HostArgumentSlotInfo `json:"argument_layout"`
+	Bounds         *HostBoundsInfo        `json:"bounds,omitempty"`
 }
 
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.
@@ -461,8 +465,8 @@ type KeyTypeInfo struct {
 	SigningFlow       string `json:"signing_flow,omitempty"` // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
 	// CosignerComponentKeyTypes are the cosigner component key types an
 	// account of this type can take, in order, the default first.
-	CosignerComponentKeyTypes []string                  `json:"cosigner_component_key_types,omitempty"`
-	BoundedAuthorization      *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
+	CosignerComponentKeyTypes []string  `json:"cosigner_component_key_types,omitempty"`
+	Host                      *HostInfo `json:"host,omitempty"`
 	// PerKeyContract means each account selects its own contract at generation,
 	// so this type has no fixed signing flow or bounded profile. Route by /keys.
 	PerKeyContract bool `json:"per_key_contract,omitempty"`
@@ -533,20 +537,20 @@ type KeyTypesResponse struct {
 
 // KeyInfo represents a key returned from the /keys endpoint.
 type KeyInfo struct {
-	Address                  string                    `json:"address"`
-	PublicKeyHex             string                    `json:"public_key_hex"`
-	KeyType                  string                    `json:"key_type"`
-	AuthorizationKind        string                    `json:"authorization_kind,omitempty"`
-	SigningFlow              string                    `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
-	CosignerComponentKeyType string                    `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
-	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
-	LogicSigResources        *LogicSigResourceProfile  `json:"logic_sig_resources,omitempty"`
-	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
-	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
-	SigningArgs              []RuntimeArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
-	Parameters               map[string]string         `json:"parameters,omitempty"`
-	TemplateProvenanceStatus string                    `json:"template_provenance_status,omitempty"`
-	TemplateProvenanceNote   string                    `json:"template_provenance_note,omitempty"`
+	Address                  string                   `json:"address"`
+	PublicKeyHex             string                   `json:"public_key_hex"`
+	KeyType                  string                   `json:"key_type"`
+	AuthorizationKind        string                   `json:"authorization_kind,omitempty"`
+	SigningFlow              string                   `json:"signing_flow,omitempty"`                // signing choreography label (for example "cosigned1" or "rotating1"); empty = plain /sign
+	CosignerComponentKeyType string                   `json:"cosigner_component_key_type,omitempty"` // cosigner component key type for cosigner-backed signing flows
+	Host                     *HostInfo                `json:"host,omitempty"`
+	LogicSigResources        *LogicSigResourceProfile `json:"logic_sig_resources,omitempty"`
+	IsGenericLsig            bool                     `json:"is_generic_lsig,omitempty"`
+	IsWitnessKey             bool                     `json:"is_witness_key,omitempty"`
+	SigningArgs              []RuntimeArgInfo         `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
+	Parameters               map[string]string        `json:"parameters,omitempty"`
+	TemplateProvenanceStatus string                   `json:"template_provenance_status,omitempty"`
+	TemplateProvenanceNote   string                   `json:"template_provenance_note,omitempty"`
 	// ValidRekeyTarget is the valid_rekey_target this aplane key recorded when
 	// it was created, from its key type's declaration at that moment
 	// (KeyTypeInfo.ValidRekeyTarget is the declaration now). When it is false

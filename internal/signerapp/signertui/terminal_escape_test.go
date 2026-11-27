@@ -179,7 +179,7 @@ func TestGenerateReviewDetailsEscapeWarningsAndValues(t *testing.T) {
 		KeyType:    secondPerKeyType,
 		Warnings:   []string{"Check this" + clearScreen + ". More."},
 		Parameters: map[string]string{"note": "typed" + setTitle},
-		Bounded:    &protocol.PreparedBoundedProfile{SpendEffects: []string{"pay"}},
+		Host:       &protocol.PreparedHostProfile{Bounds: &protocol.PreparedHostBounds{SpendEffects: []string{"pay"}}},
 	}}}
 	assertNeutralized(t, "review details", m.renderGenerateReviewDetails(), `Check this\x1b[2J`)
 	assertNeutralized(t, "review", m.renderGenerateReview(), `Check this\x1b[2J`)

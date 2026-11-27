@@ -64,7 +64,7 @@ type Service struct {
 	// release is not called: the context it returns ends when the node
 	// locks or enters recovery, and a lock waits for the release before
 	// clearing the session. Every post-approval signing and assembly path
-	// (/sign, bounded-base and cosigner /sign/component, /sign/assemble)
+	// (/sign, base and cosigner /sign/component, /sign/assemble)
 	// and the external check step hold a key use while they load or use
 	// secret material, releasing it before blocking audit or console writes.
 	// Signing and assembly refuse when KeyUse is nil.
@@ -319,7 +319,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
 			if planHasBoundedRekey(plan) {
-				return policy.BoundedRekeyRequiresReviewRuleID
+				return policy.HostRekeyRequiresReviewRuleID
 			}
 			return ""
 		}(),

@@ -283,7 +283,7 @@ show (state proof, heartbeat) sign as well; reject them by type for a key an
 agent drives if it must never issue them. Within Always Deny and Always Review, the `transaction_types` verdict is
 evaluated first: a rejected type never reaches the other rules, and the
 rejection names the type. A spending-key, cosigned or listed rekey of a bounded
-account always needs review (rule id `bounded_rekey_requires_review`), ahead of
+account always needs review (rule id `host_rekey_requires_review`), ahead of
 every approval rule; User Auto-Approve satisfies it.
 
 The policy for a request is resolved per signing key from one snapshot taken

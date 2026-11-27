@@ -598,7 +598,7 @@ both can rekey it anywhere, out of its recipient list.
 
 To use it, rekey the account to a listed address as usual (`rekey <account> to
 <address>` in apshell). The signer builds the list proof itself. It refuses an address
-that isn't on the list with `bounded_rekey_target_not_listed` before anything is signed.
+that isn't on the list with `rekey_target_not_listed` before anything is signed.
 Every listed rekey needs operator review, which User Auto-Approve satisfies; the approval
 says the account is being handed to an address on its rekey-to list and, when this signer
 doesn't hold that address, that the account leaves this signer's custody. Signer policy

@@ -50,7 +50,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 			})
 		}
 		return &signerapi.ComponentResponse{RequestID: result.RequestID, Components: components}, nil
-	case signerapi.ComponentTargetKindBoundedBase:
+	case signerapi.ComponentTargetKindBase:
 		// ValidateFrozenComponentContext decodes and partition-checks the
 		// group itself, as the cosigner case above does.
 		return s.PrepareBoundedComponentWithContext(ctx, req, session)

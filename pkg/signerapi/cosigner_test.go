@@ -12,7 +12,7 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 	validBounded := ComponentRequest{
 		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
 		Targets: []ComponentTarget{{
-			TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+			TargetIndex: 0, Kind: ComponentTargetKindBase,
 			AuthAddress: "BOUNDED", LsigArgs: map[string]string{"preimage": "aa"},
 		}},
 		ContextualPositions: []ComponentContextPosition{{TargetIndex: 1}},
@@ -28,6 +28,10 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 			GroupBytesHex: []string{"5458aa"},
 			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: "user", AuthAddress: "USER"}},
 		}, wantErr: "unsupported component kind"},
+		{name: "the retired bounded-base kind", request: ComponentRequest{
+			GroupBytesHex: []string{"5458aa"},
+			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: "bounded-base", AuthAddress: "USER"}},
+		}, wantErr: "unsupported component kind"},
 		{name: "cosigner", request: ComponentRequest{
 			GroupBytesHex: []string{"5458aa"},
 			Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"}},
@@ -36,13 +40,13 @@ func TestComponentRequestValidateKindsAndClosedPartition(t *testing.T) {
 			GroupBytesHex: []string{"5458aa", "5458bb"},
 			Targets: []ComponentTarget{
 				{TargetIndex: 0, Kind: ComponentTargetKindCosigner, ComponentKey: "COSIGNER"},
-				{TargetIndex: 1, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED"},
+				{TargetIndex: 1, Kind: ComponentTargetKindBase, AuthAddress: "BOUNDED"},
 			},
 		}, wantErr: "mixed component target kinds"},
 		{name: "bounded discriminator forbids cosigner key", request: ComponentRequest{
 			GroupBytesHex: []string{"5458aa"},
 			Targets: []ComponentTarget{{
-				TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+				TargetIndex: 0, Kind: ComponentTargetKindBase,
 				AuthAddress: "BOUNDED", ComponentKey: "COSIGNER",
 			}},
 		}, wantErr: "forbids component_key"},
@@ -133,7 +137,7 @@ func TestComponentRequestGroupSignRequestPreservesApprovalMetadata(t *testing.T)
 	request := ComponentRequest{
 		GroupBytesHex: []string{"5458aa", "5458bb", "5458cc"},
 		Targets: []ComponentTarget{{
-			TargetIndex: 0, Kind: ComponentTargetKindBoundedBase,
+			TargetIndex: 0, Kind: ComponentTargetKindBase,
 			AuthAddress: "BOUNDED", AppCallInfo: targetInfo,
 		}},
 		ContextualPositions: []ComponentContextPosition{{TargetIndex: 1, AppCallInfo: contextInfo}},
@@ -169,11 +173,11 @@ func TestComponentResponseValidateForRequestRejectsOutOfGroupIndex(t *testing.T)
 	}
 }
 
-// A bounded-base component names the path the signer classified, from the closed
+// A base component names the path the signer classified, from the closed
 // set; the client skips the cosigner on a listed rekey only.
 func TestComponentResponseNamesTheBoundedPath(t *testing.T) {
 	component := Component{
-		TargetIndex: 0, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED",
+		TargetIndex: 0, Kind: ComponentTargetKindBase, AuthAddress: "BOUNDED",
 		BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
 	}
 	for path, needsCosigner := range map[string]bool{ComponentPathSpend: true, ComponentPathSpendingRekey: true, ComponentPathListedRekey: false} {

@@ -120,7 +120,7 @@ Init ==
 ----------------------------------------------------------------------------
 (* Choreography *)
 
-(* POST /sign/component (bounded-base) for an admitted path. An invalid shape
+(* POST /sign/component (base) for an admitted path. An invalid shape
    and every failed signer-domain gate reject before release. *)
 BaseStep ==
     /\ stage = "planned"

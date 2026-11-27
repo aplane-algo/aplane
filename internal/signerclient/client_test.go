@@ -39,7 +39,7 @@ func TestRequestComponentsRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClient("http://127.0.0.1:1")
 	_, err := client.RequestComponentsWithContext(context.Background(), signerapi.ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid component request") {
 		t.Fatalf("RequestComponents() error = %v", err)
@@ -533,7 +533,7 @@ func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 			}
 			return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
 				RequestID:  got.RequestID,
-				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: signerapi.ComponentPathSpend}},
+				Components: []signerapi.Component{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ADDR1", BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1", Path: signerapi.ComponentPathSpend}},
 			})), nil
 		case "/sign/assemble":
 			var got signerapi.AssemblyRequest
@@ -547,7 +547,7 @@ func TestRequestUnifiedBoundedCosignerEndpoints(t *testing.T) {
 		}
 	})
 	c.cacheApprovalWaitSeconds(60)
-	component, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR1"}}})
+	component, err := c.RequestComponentsWithContext(t.Context(), signerapi.ComponentRequest{GroupBytesHex: []string{"5458aa"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ADDR1"}}})
 	if err != nil || len(component.Components) != 1 {
 		t.Fatalf("RequestComponentsWithContext() = %#v, %v", component, err)
 	}
@@ -570,7 +570,7 @@ func TestRequestComponentsRejectsUnrequestedTargetKind(t *testing.T) {
 		return mockResponse(http.StatusOK, jsonBody(t, signerapi.ComponentResponse{
 			RequestID: got.RequestID,
 			Components: []signerapi.Component{{
-				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR",
+				TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ADDR",
 				BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",
 				Path: signerapi.ComponentPathSpend,
 			}},

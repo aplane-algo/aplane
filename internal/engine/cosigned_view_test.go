@@ -28,8 +28,8 @@ func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(addr, "aplane.falcon1024.v1", "logic_sig")
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowCosigned1)
-	signerCache.SetBoundedContractForAddress(addr, signerapi.BoundedContractBounded2)
-	signerCache.SetBoundedMaxFeeForAddress(addr, 10_000)
+	signerCache.SetHostContractForAddress(addr, signerapi.HostContractBounded2)
+	signerCache.SetHostMaxFeeForAddress(addr, 10_000)
 	signerCache.SetCosignerComponentKeyTypeForAddress(addr, witness.Falcon1024V1)
 	signerCache.SetCosignerPublicKeyForAddress(addr, cosignerHex)
 	signerCache.SetLogicSigResourceProfile(addr, lsigresource.Profile{ProgramBytes: 1_500, Default: &lsigresource.PathProfile{MaxOpcodeCost: 1}})
@@ -44,7 +44,7 @@ func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowCosigned1)
 	}
-	if got, ok := view.BoundedContract(addr); !ok || got != signerapi.BoundedContractBounded2 {
+	if got, ok := view.BoundedContract(addr); !ok || got != signerapi.HostContractBounded2 {
 		t.Fatalf("BoundedContract() = %q/%v", got, ok)
 	}
 	if got, ok := view.BoundedMaxFee(addr); !ok || got != 10_000 {

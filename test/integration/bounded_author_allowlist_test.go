@@ -387,8 +387,8 @@ func assertAuthorAllowlistInventory(t *testing.T, client *signerclient.Client, a
 		if key.Address != address {
 			continue
 		}
-		if key.BoundedAuthorization == nil || key.BoundedAuthorization.Layer3Policy != want {
-			t.Fatalf("inventory for %s = %#v, want layer3_policy %q", address, key.BoundedAuthorization, want)
+		if key.Host == nil || key.Host.Bounds == nil || key.Host.Bounds.Layer3Policy != want {
+			t.Fatalf("inventory for %s = %#v, want layer3_policy %q", address, key.Host, want)
 		}
 		return
 	}

@@ -18,7 +18,7 @@ func TestSignBatchLabelIsCheckedOnEveryPromptingRequest(t *testing.T) {
 		"component": func(b *SignBatch) error {
 			return ComponentRequest{
 				GroupBytesHex: []string{"5458aa"},
-				Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED"}},
+				Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindBase, AuthAddress: "BOUNDED"}},
 				Batch:         b,
 			}.Validate()
 		},
@@ -56,7 +56,7 @@ func TestComponentRequestKeepsItsBatchLabel(t *testing.T) {
 	batch := &SignBatch{Position: 2, Count: 5}
 	req := ComponentRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindBoundedBase, AuthAddress: "BOUNDED"}},
+		Targets:       []ComponentTarget{{TargetIndex: 0, Kind: ComponentTargetKindBase, AuthAddress: "BOUNDED"}},
 		Batch:         batch,
 	}
 	if got := req.GroupSignRequest().Batch; got != batch {

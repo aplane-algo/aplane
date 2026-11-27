@@ -37,9 +37,9 @@ const (
 	// auto-approve a single 0-value self-transfer request.
 	AutoApproveSelfNoOpTransferRuleID = "auto_approve_self_noop_transfer"
 
-	// BoundedRekeyRequiresReviewRuleID identifies the unconditional
-	// operator-review gate for every bounded rekey.
-	BoundedRekeyRequiresReviewRuleID = "bounded_rekey_requires_review"
+	// HostRekeyRequiresReviewRuleID identifies the unconditional
+	// operator-review gate for every rekey of a host account.
+	HostRekeyRequiresReviewRuleID = "host_rekey_requires_review"
 
 	TransferRoutingBlockedDestinationRuleID = "transfer_policy:blocked_destination"
 	TransferRoutingRouteMissRuleID          = "transfer_policy:route_miss"

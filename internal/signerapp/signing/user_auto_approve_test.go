@@ -44,7 +44,7 @@ func TestUserAutoApproveReviewAndRejectAcrossSigningPaths(t *testing.T) {
 		{name: "transaction_type", policyJSON: `{"transaction_types":{"*":"allow","pay":"review"}}`},
 		{name: "route_miss", policyJSON: `{"transfer_policy":{"on_no_route":"review","routes":[]}}`},
 		{name: "foreign_warning", policyJSON: `{"always_review_warnings":false}`, foreign: true},
-		{name: "bounded_rekey", policyJSON: `{}`, forcedRule: policy.BoundedRekeyRequiresReviewRuleID},
+		{name: "bounded_rekey", policyJSON: `{}`, forcedRule: policy.HostRekeyRequiresReviewRuleID},
 		{name: "rejected_type", policyJSON: `{"transaction_types":{"*":"reject"}}`, reject: true},
 		{name: "rejected_fee", policyJSON: `{"max_fee_microalgos":"1000","always_review_warnings":true}`, mutate: func(tx *types.Transaction) { tx.Fee = 1_000_001 }, reject: true},
 		{name: "rejected_route", policyJSON: `{"transfer_policy":{"on_no_route":"reject","routes":[]}}`, reject: true},

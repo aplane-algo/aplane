@@ -724,7 +724,7 @@ func TestSessionAuthenticateRejectsOldVersionBeforeUnknownField(t *testing.T) {
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=10" {
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage || result.Error != "admin protocol version mismatch: client=4 server=11" {
 		t.Fatalf("auth result = %+v, want version-first rejection", result)
 	}
 }
@@ -1063,10 +1063,10 @@ func TestSessionAuthenticateAdminProtocolVersionRule(t *testing.T) {
 		version string // the auth frame's protocol_version, or "" for none
 		wantErr string // "" when the frame authenticates
 	}{
-		{name: "current", version: `10`},
-		{name: "older", version: `9`, wantErr: "admin protocol version mismatch: client=9 server=10"},
-		{name: "newer", version: `11`, wantErr: "admin protocol version mismatch: client=11 server=10"},
-		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=10"},
+		{name: "current", version: `11`},
+		{name: "older", version: `10`, wantErr: "admin protocol version mismatch: client=10 server=11"},
+		{name: "newer", version: `12`, wantErr: "admin protocol version mismatch: client=12 server=11"},
+		{name: "missing", wantErr: "admin protocol version mismatch: client=0 server=11"},
 		{name: "major and minor", version: `{"major":9,"minor":0}`, wantErr: "invalid auth message format"},
 	}
 	for _, tt := range tests {

@@ -405,8 +405,8 @@ assembly work unchanged. It differs only in what the host allows:
 | Spending bases | Falcon-1024 and Ed25519; an Ed25519 spending key is classical |
 | TEAL version | 13 |
 | Spend | every transaction without `RekeyTo`, of any type, closes, asset closes and clawback included (`open_spend`) |
-| Spend effects | none declared: the key file has no `bounds`, and `/keys` shows `spend_effects` empty |
-| Fee ceiling | none: the key file has no `bounds`, and `/keys` shows no `max_fee` |
+| Spend effects | none declared: neither the key file nor `/keys` has a `bounds` object |
+| Fee ceiling | none: neither the key file nor `/keys` has a `bounds` object |
 | Layer 3 | `none`, with no author TEAL |
 | Rekey setting | as `bounded2`: `refused` or `spending_key`, either with a rekey-to list (`only_these`, `plus_cosigned`) |
 | Cosigner | optional; `plus_cosigned` needs one |
@@ -917,7 +917,7 @@ The planner classifies before group sizing, finalizes fee pooling, then
 revalidates the finalized transactions at the single classification boundary.
 For a pure rekey under `only_these` it takes `listed_rekey`, sized from that
 path's resource profile, and refuses a target that is not on the stored list with
-`bounded_rekey_target_not_listed` (HTTP 400), before anything is signed, instead
+`rekey_target_not_listed` (HTTP 400), before anything is signed, instead
 of building a transaction the program would reject. Under `plus_cosigned` it moves
 a listed target from `spending_rekey` to `listed_rekey`, and an unlisted target
 stays on the cosigned path. Cosigned assembly decides the path again through the
@@ -957,11 +957,11 @@ consulting the installed template.
 cosigner, which sign through ordinary `/sign`, and `signing_flow: cosigned1`
 for profiles whose durable
 metadata contains `cosigner.contract: cosigner1`. Both expose the same typed
-`bounded_authorization` object. `/keytypes` exposes definition-level
+`host` object. `/keytypes` exposes definition-level
 profile and base-layout capabilities. `/keys` additionally exposes the
 structured selected-path LogicSig resource profile, with `spend`,
 `spending_rekey`, and `listed_rekey` cells. An account with a rekey-to list
-carries `bounded_authorization.rekey_list` with its `contract` and `depth`, and in
+carries `host.rekey_list` with its `contract` and `depth`, and in
 `/keys` its `root`; the entries are never projected, so a client cannot tell
 whether a target is listed before it asks. Asking does tell it: the signer
 refuses an unlisted target under *only these* by name, and under *plus
@@ -972,13 +972,13 @@ rekey. Clients route:
 
 - a pure spend or rekey of an account without a cosigner to ordinary `/sign`,
   rekeys with forced review; the signer refuses an unlisted target with
-  `bounded_rekey_target_not_listed`;
+  `rekey_target_not_listed`;
 - every pure spend and pure rekey of a cosigned account through the first-party
   client's user-first `/plan`, kind-tagged signer and cosigner `/sign/component`,
   then signer `/sign/assemble` choreography (`cosigned1`); and
 - malformed, hybrid, refused, or unknown effects to local rejection.
 
-In `cosigned1`, each bounded-base component in the `/sign/component` response
+In `cosigned1`, each base component in the `/sign/component` response
 carries `path`: `spend`, `spending_rekey` or `listed_rekey`, the path the signer
 classified. The client asks the cosigner for every target except a
 `listed_rekey` one, sends no cosigner request when no target needs one, and
@@ -991,12 +991,12 @@ node decides a cosigned rekey as it decides any rekey, by its `reject_rekey`,
 `rekey_policy` edge and pure-shape check; a listed rekey never reaches it.
 
 Ordinary `/sign` rejects every target of a cosigned account
-(`bounded_cosigner_required`), a listed rekey included, because only the cosigned
+(`cosigner_required`), a listed rekey included, because only the cosigned
 flow carries that account. Signer-side classification remains authoritative for
 each target it signs or assembles. Unknown flow labels fail closed, the retired
 `cosigner1` flow label among them.
 Every bounded rekey, spending-key, cosigned or listed, on either flow, triggers the
-stable unconditional `bounded_rekey_requires_review` rule before
+stable unconditional `host_rekey_requires_review` rule before
 policy self-no-op autoapproval, regardless of warning configuration. User
 Auto-Approve satisfies this review requirement without a prompt. A client intent to simulate
 does not alter this requirement; apsigner sees an ordinary executable signing

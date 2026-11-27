@@ -163,7 +163,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 	if len(composedInfo.RuntimeArgs) != 1 || composedInfo.RuntimeArgs[0].Description != "The preimage" {
 		t.Fatalf("composed runtime arguments = %+v", composedInfo.RuntimeArgs)
 	}
-	if bounded := composedInfo.BoundedAuthorization; bounded == nil || len(bounded.RuntimeArgs) != 1 || bounded.RuntimeArgs[0].Description != "The preimage" {
+	if bounded := composedInfo.Host; bounded == nil || len(bounded.RuntimeArgs) != 1 || bounded.RuntimeArgs[0].Description != "The preimage" {
 		t.Fatalf("composed bounded authorization = %+v", bounded)
 	}
 	assertNoLineBreak(t, "/keytypes", []signerapi.KeyTypeInfo{genericInfo, composedInfo})
@@ -182,7 +182,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 				t.Fatalf("generic key signing arguments = %+v", key.SigningArgs)
 			}
 		case composed.KeyType():
-			if bounded := key.BoundedAuthorization; bounded == nil || len(bounded.RuntimeArgs) != 1 || bounded.RuntimeArgs[0].Description != "The preimage" {
+			if bounded := key.Host; bounded == nil || len(bounded.RuntimeArgs) != 1 || bounded.RuntimeArgs[0].Description != "The preimage" {
 				t.Fatalf("bounded key authorization = %+v", bounded)
 			}
 		default:

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -675,16 +674,19 @@ func ProtocolPrepareGenerateResultMessage(id string, result adminproto.PrepareGe
 		Code:              result.Code,
 		Error:             result.Error,
 	}
-	if profile := result.Bounded; profile != nil {
-		message.Bounded = &protocol.PreparedBoundedProfile{
-			Contract:         profile.Contract,
-			SpendEffects:     profile.SpendEffects,
-			MaxFee:           boundedmeta.CloneMaxFee(profile.MaxFee),
+	if profile := result.Host; profile != nil {
+		message.Host = &protocol.PreparedHostProfile{
 			Rekey:            profile.Rekey,
 			RekeyList:        profile.RekeyList,
-			Layer3Policy:     profile.Layer3Policy,
 			CosignerRequired: profile.CosignerRequired,
 			CosignerKeyType:  profile.CosignerKeyType,
+		}
+		if bounds := profile.Bounds; bounds != nil {
+			message.Host.Bounds = &protocol.PreparedHostBounds{
+				SpendEffects: bounds.SpendEffects,
+				MaxFee:       bounds.MaxFee,
+				Layer3Policy: bounds.Layer3Policy,
+			}
 		}
 	}
 	return message

@@ -35,7 +35,7 @@ func TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths(t *testing.T) {
 	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))
 	request := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"TX00"},
-		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ACCOUNT"}},
+		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ACCOUNT"}},
 	}
 	for _, path := range []boundedPath{boundedPathPureSpend, boundedPathSpendingKeyRekey, boundedPathListedRekey} {
 		plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}}}
@@ -426,8 +426,8 @@ func layoutOf(construction sigconstruction.Construction) boundedmeta.SignatureAr
 
 func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
 	err := boundedCosignerRequired()
-	if err.Code() != signerapi.ErrCodeBoundedCosignerRequired {
-		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeBoundedCosignerRequired)
+	if err.Code() != signerapi.ErrCodeCosignerRequired {
+		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeCosignerRequired)
 	}
 	if err.HTTPStatus() != 400 {
 		t.Fatalf("HTTPStatus() = %d, want 400", err.HTTPStatus())
@@ -542,7 +542,7 @@ func TestPlainSignRefusesACosignedAccount(t *testing.T) {
 			t.Fatalf("%s: planHasCosignedBoundedTarget() = %v, want %v", name, got, test.refused)
 		}
 	}
-	if err := boundedCosignerRequired(); err.Code() != signerapi.ErrCodeBoundedCosignerRequired {
+	if err := boundedCosignerRequired(); err.Code() != signerapi.ErrCodeCosignerRequired {
 		t.Fatalf("refusal code = %q", err.Code())
 	}
 }

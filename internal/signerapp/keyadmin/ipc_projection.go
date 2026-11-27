@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -55,22 +54,25 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 		Warnings:          prepared.Warnings,
 	}
 	if metadata := prepared.Bounded; metadata != nil {
-		profile := &adminproto.PreparedBoundedProfile{
-			Contract:         metadata.Contract,
-			SpendEffects:     []string{}, // [] on a plain host, never null
-			MaxFee:           boundedmeta.CloneMaxFee(metadata.FeeCeiling()),
+		profile := &adminproto.PreparedHostProfile{
 			Rekey:            string(metadata.Rekey),
 			RekeyList:        metadata.RekeyList != nil,
-			Layer3Policy:     metadata.Layer3Policy(),
 			CosignerRequired: metadata.Cosigner != nil,
 		}
-		if metadata.Bounds != nil {
-			profile.SpendEffects = append(profile.SpendEffects, metadata.Bounds.SpendEffects...)
+		if bounds := metadata.Bounds; bounds != nil {
+			profile.Bounds = &adminproto.PreparedHostBounds{
+				SpendEffects: append([]string{}, bounds.SpendEffects...),
+				Layer3Policy: bounds.Layer3Policy,
+			}
+			// Prepared metadata always has a ceiling; without one this shows 0.
+			if bounds.MaxFee != nil {
+				profile.Bounds.MaxFee = *bounds.MaxFee
+			}
 		}
 		if metadata.Cosigner != nil {
 			profile.CosignerKeyType = metadata.Cosigner.ComponentKeyType
 		}
-		result.Bounded = profile
+		result.Host = profile
 	}
 	return result
 }

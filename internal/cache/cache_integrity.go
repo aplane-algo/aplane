@@ -30,11 +30,11 @@ var errNoCacheStore = errors.New("cache has no client data directory")
 const (
 	signedCacheEnvelopeVersion = 1
 	cachePayloadSchemaVersion  = 1
-	// signerCachePayloadSchemaVersion 4 adds authorization_kinds, the kind
-	// the signer reports for each key, which the client no longer derives. A
-	// cache of another version is discarded and refilled from the signer, so
-	// an upgraded client never fails on an older cache.
-	signerCachePayloadSchemaVersion = 4
+	// signerCachePayloadSchemaVersion 5 renames bounded_max_fees and
+	// bounded_contracts to host_max_fees and host_contracts. A cache of
+	// another version is discarded and refilled from the signer, so an
+	// upgraded client never fails on an older cache.
+	signerCachePayloadSchemaVersion = 5
 )
 
 type cachePayloadVersioner interface {

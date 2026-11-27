@@ -125,7 +125,7 @@ against the selected network. The plain host signs the same 0 ALGO self-send
 through the Python, TypeScript and Go SDKs' prepared cosigned flow, and again
 through each SDK's one-call send with the cosigner found from endpoints.yaml,
 then closes out through apshell. It also sends an allowlisted Corridor payment through the
-SDK's bounded-base component, cosigner component, and shared assembly choreography,
+SDK's base component, cosigner component, and shared assembly choreography,
 and proves a non-allowlisted recipient is rejected. The Corridor flow also
 proves that cosigner loss blocks spend while the account's listed key can still
 take it over, and a plus cosigned account's unlisted rekey waits on the cosigner
