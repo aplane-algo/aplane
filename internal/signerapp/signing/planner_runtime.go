@@ -213,7 +213,7 @@ func logicSigAuthorizationPath(path hostPath) (lsigresource.AuthorizationPath, e
 	case hostPathListedRekey:
 		return lsigresource.PathListedRekey, nil
 	default:
-		return 0, fmt.Errorf("unknown bounded authorization path %q", path)
+		return 0, fmt.Errorf("unknown host authorization path %q", path)
 	}
 }
 

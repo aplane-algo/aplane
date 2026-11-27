@@ -617,8 +617,8 @@ records with `role: signer` or `role: cosigner`; the one `signer` endpoint is
 the default for `connect` and `enroll`. Endpoint records own connection
 details: the `ssh://` URL, SSH identity file, and known-hosts path.
 
-Cosigner endpoint records do not contain key inventory. Cosigned and
-bounded-cosigner operations query authenticated `/keys` and retain routing only
+Cosigner endpoint records do not contain key inventory. Cosigned
+operations query authenticated `/keys` and retain routing only
 for the lifetime of that operation. The signer reference catalog is a
 generation trust-input inventory, while live endpoint discovery is routing
 only. Neither proves endpoint ownership; the embedded public key and verified

@@ -281,22 +281,22 @@ func (s *Signer) requestBaseComponents(ctx context.Context, group frozenGroup, r
 	componentReq.Batch = batch
 	componentResp, err := s.conn.RequestComponentsWithContext(ctx, componentReq)
 	if err != nil {
-		return nil, "", fmt.Errorf("bounded base component signing failed: %w", err)
+		return nil, "", fmt.Errorf("base component signing failed: %w", err)
 	}
 	components := make(map[int]signerapi.Component, len(componentResp.Components))
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
 		if !ok || component.Kind != signerapi.ComponentTargetKindBase || component.AuthAddress != target.Account {
-			return nil, "", fmt.Errorf("signer returned an unexpected bounded component for target index %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned an unexpected base component for target index %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {
-			return nil, "", fmt.Errorf("signer returned a duplicate bounded component for target index %d", component.TargetIndex)
+			return nil, "", fmt.Errorf("signer returned a duplicate base component for target index %d", component.TargetIndex)
 		}
 		components[component.TargetIndex] = component
 	}
 	for _, target := range targets {
 		if _, ok := components[target.Index]; !ok {
-			return nil, "", fmt.Errorf("signer returned no bounded component for target index %d", target.Index)
+			return nil, "", fmt.Errorf("signer returned no base component for target index %d", target.Index)
 		}
 	}
 	return components, componentResp.RequestID, nil
@@ -411,7 +411,7 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 func validateHostTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
 	for _, target := range targets {
 		if target.Index < 0 || target.Index >= len(planned) {
-			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
+			return fmt.Errorf("cosigned target index %d is outside planned group", target.Index)
 		}
 		if target.HostMaxFee == nil {
 			continue
@@ -595,7 +595,7 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 func (s *Signer) hostFeeCeiling(account string) (*uint64, error) {
 	contract, found := s.cache.HostContract(account)
 	if !found {
-		return nil, fmt.Errorf("bounded account %s is missing contract metadata; run keys refresh", account)
+		return nil, fmt.Errorf("host account %s is missing contract metadata; run keys refresh", account)
 	}
 	switch contract {
 	case signerapi.HostContractBounded2:
@@ -610,7 +610,7 @@ func (s *Signer) hostFeeCeiling(account string) (*uint64, error) {
 		}
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("bounded account %s has contract %q, which this client does not support; upgrade the client", account, contract)
+		return nil, fmt.Errorf("host account %s has contract %q, which this client does not support; upgrade the client", account, contract)
 	}
 }
 

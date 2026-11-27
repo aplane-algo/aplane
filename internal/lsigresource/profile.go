@@ -108,7 +108,7 @@ func Materialize(programBytes uint64, defaultArgs *uint64, hostArgs map[Authoriz
 	spendingRekey, spendingRekeyOK := hostArgs[PathSpendingRekey]
 	listedRekey, listedRekeyOK := hostArgs[PathListedRekey]
 	if !spendOK || !spendingRekeyOK || !listedRekeyOK {
-		return Profile{}, fmt.Errorf("%w: bounded argument profile is incomplete", ErrInvalidUsage)
+		return Profile{}, fmt.Errorf("%w: host argument profile is incomplete", ErrInvalidUsage)
 	}
 	profile.Spend = &PathProfile{ArgumentBytes: spend, MaxOpcodeCost: opcodes.Spend}
 	profile.SpendingRekey = &PathProfile{ArgumentBytes: spendingRekey, MaxOpcodeCost: opcodes.SpendingRekey}

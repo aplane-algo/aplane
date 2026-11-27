@@ -250,7 +250,7 @@ func CheckBounds(contract string, hasBounds bool) error {
 			return fmt.Errorf("%s has no host rules: bounds must be absent", PlainContract)
 		}
 	default:
-		return fmt.Errorf("unsupported bounded authorization contract %q", contract)
+		return fmt.Errorf("unsupported host contract %q", contract)
 	}
 	return nil
 }
@@ -351,7 +351,7 @@ func (metadata *Metadata) Validate() error {
 // generation.
 func (metadata *Metadata) ValidateProfile() error {
 	if metadata == nil {
-		return fmt.Errorf("bounded authorization metadata is nil")
+		return fmt.Errorf("host metadata is nil")
 	}
 	if err := CheckBounds(metadata.Contract, metadata.Bounds != nil); err != nil {
 		return err
@@ -472,17 +472,17 @@ func ValidateCosignerAuthorizationProfile(cosigner *CosignerAuthorization, rekey
 		return nil
 	}
 	if cosigner.Contract != CosignerContractV1 {
-		return fmt.Errorf("unsupported bounded cosigner contract %q", cosigner.Contract)
+		return fmt.Errorf("unsupported cosigner contract %q", cosigner.Contract)
 	}
 	_, signatureMaxSize, ok := CosignerSizes(cosigner.ComponentKeyType)
 	if !ok {
-		return fmt.Errorf("unsupported bounded cosigner component key type %q", cosigner.ComponentKeyType)
+		return fmt.Errorf("unsupported cosigner component key type %q", cosigner.ComponentKeyType)
 	}
 	if cosigner.SignatureMaxSize != signatureMaxSize {
-		return fmt.Errorf("bounded cosigner signature_max_size %d invalid (expected %d)", cosigner.SignatureMaxSize, signatureMaxSize)
+		return fmt.Errorf("cosigner signature_max_size %d invalid (expected %d)", cosigner.SignatureMaxSize, signatureMaxSize)
 	}
 	if want := CosignerRequiredOn(rekey); !slices.Equal(cosigner.RequiredOn, want) {
-		return fmt.Errorf("bounded cosigner required_on must be exactly [%s] with rekey %s", strings.Join(want, ", "), rekey)
+		return fmt.Errorf("cosigner required_on must be exactly [%s] with rekey %s", strings.Join(want, ", "), rekey)
 	}
 	return nil
 }
@@ -514,7 +514,7 @@ func validateCosignerMetadata(cosigner *CosignerAuthorization) error {
 	}
 	publicKeySize, _, ok := CosignerSizes(cosigner.ComponentKeyType)
 	if !ok {
-		return fmt.Errorf("unsupported bounded cosigner component key type %q", cosigner.ComponentKeyType)
+		return fmt.Errorf("unsupported cosigner component key type %q", cosigner.ComponentKeyType)
 	}
 	publicKey, err := DecodeCanonicalHex("cosigner public_key", cosigner.PublicKeyHex, publicKeySize, publicKeySize)
 	if err != nil {

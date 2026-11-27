@@ -29,7 +29,7 @@ func rekeyListEntriesParameterDef(rekey hostmeta.RekeySetting) lsigprovider.Para
 		description = "Addresses the account may be rekeyed to with the spending key alone. Any other rekey needs the spending key and the cosigner."
 	}
 	return lsigprovider.ParameterDef{
-		Name:        RekeyToParameter,
+		Name:        hostmeta.RekeyListEntriesParameter,
 		Label:       "Rekey-To Addresses",
 		Description: description,
 		Type:        "address[]",
@@ -44,19 +44,19 @@ func rekeyListProofArg() hostmeta.DerivedArg {
 	return hostmeta.DerivedArg{
 		Name:      rekeyListProofSlot,
 		Kind:      hostmeta.DerivedArgRekeyListProof,
-		Parameter: RekeyToParameter,
+		Parameter: hostmeta.RekeyListEntriesParameter,
 		MaxSize:   hostmeta.RekeyListProofSize,
 	}
 }
 
 // RekeyListEntries parses a rekey-to list's entries from creation parameters.
 func RekeyListEntries(params map[string]string) ([]types.Address, error) {
-	if strings.TrimSpace(params[RekeyToParameter]) == "" {
-		return nil, fmt.Errorf("%s is required", RekeyToParameter)
+	if strings.TrimSpace(params[hostmeta.RekeyListEntriesParameter]) == "" {
+		return nil, fmt.Errorf("%s is required", hostmeta.RekeyListEntriesParameter)
 	}
-	entries, err := rekeylist.ParseEntries(params[RekeyToParameter])
+	entries, err := rekeylist.ParseEntries(params[hostmeta.RekeyListEntriesParameter])
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", RekeyToParameter, err)
+		return nil, fmt.Errorf("%s: %w", hostmeta.RekeyListEntriesParameter, err)
 	}
 	return entries, nil
 }

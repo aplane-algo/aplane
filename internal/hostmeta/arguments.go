@@ -115,7 +115,7 @@ func (metadata *Metadata) ValidateNetworkLimits() error {
 		return nil
 	}
 	if len(metadata.ArgumentLayout) > lsigresource.MaxLogicSigArgs {
-		return fmt.Errorf("bounded argument_layout has %d arguments: a LogicSig carries at most %d", len(metadata.ArgumentLayout), lsigresource.MaxLogicSigArgs)
+		return fmt.Errorf("argument_layout has %d arguments: a LogicSig carries at most %d", len(metadata.ArgumentLayout), lsigresource.MaxLogicSigArgs)
 	}
 	for i, slot := range metadata.ArgumentLayout {
 		if slot.MaxSize > lsigresource.MaxLogicSigArgBytes {
@@ -127,7 +127,7 @@ func (metadata *Metadata) ValidateNetworkLimits() error {
 
 func validateArgumentLayout(metadata *Metadata) error {
 	if len(metadata.ArgumentLayout) == 0 {
-		return fmt.Errorf("bounded argument_layout must not be empty")
+		return fmt.Errorf("argument_layout must not be empty")
 	}
 	derivedKinds, err := validateDerivedArgDeclarations(metadata.DerivedArgs)
 	if err != nil {
@@ -317,7 +317,7 @@ func (c *argumentLayoutCheck) cosignerSlot(slot ArgumentSlot) error {
 	cosigner := c.metadata.Cosigner
 	if slot.Name != CosignerSignatureSlot || cosigner == nil || slot.MaxSize != cosigner.SignatureMaxSize ||
 		slot.Paths != CosignerSlotPaths(cosigner) {
-		return fmt.Errorf("bounded cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata")
+		return fmt.Errorf("cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata")
 	}
 	return nil
 }

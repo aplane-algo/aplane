@@ -1673,7 +1673,7 @@ Errors arrive as a non-2xx `ErrorResponse`.
   complete LogicSigs from `/sign` only when the account has no cosigner. A
   rekey on an account that takes only listed rekeys, to an address not on its
   list, is rejected with `code:"rekey_target_not_listed"`.
-- Every transaction of a cosigner-enabled bounded account, spends, cosigned
+- Every transaction of a cosigned account, spends, cosigned
   rekeys and listed rekeys alike, is rejected with
   `code:"cosigner_required"`; it must use the `cosigned1` choreography
   below.

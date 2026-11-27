@@ -165,7 +165,7 @@ func TestFixedAllowlistPolicyAcceptsEitherRekeySettingWithoutPay(t *testing.T) {
 	}}
 	for _, rekey := range []hostmeta.RekeySetting{hostmeta.RekeySpendingKey, hostmeta.RekeyRefused} {
 		profile := &HostProfile{
-			Contract: BoundedContract,
+			Contract: hostmeta.BoundedContract,
 			Bounds:   &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
 			Rekey:    rekey,
 		}
@@ -218,7 +218,7 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 
 func fixedAllowlistTestProfile() *HostProfile {
 	return &HostProfile{
-		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
+		Contract: hostmeta.BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
 		Rekey: hostmeta.RekeyRefused,
 	}
 }

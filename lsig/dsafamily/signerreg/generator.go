@@ -156,7 +156,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if hostProvider, ok := dsa.(hostMetadataProvider); ok {
 		hostMetadata, err = hostProvider.BuildHostMetadata(pub, params, lsigBytecode)
 		if err != nil {
-			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
+			return nil, fmt.Errorf("failed to capture host metadata: %w", err)
 		}
 	}
 	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(dsa, hostMetadata != nil)

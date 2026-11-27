@@ -39,7 +39,7 @@ func internal(msg string) *ServiceError { return &ServiceError{Kind: ErrorIntern
 func cosignerRequired() *ServiceError {
 	return &ServiceError{
 		Kind:    ErrorCosignerRequired,
-		Message: "bounded-cosigner operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
+		Message: "a cosigned account's operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
 	}
 }
 

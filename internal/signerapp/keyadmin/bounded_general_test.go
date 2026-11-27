@@ -19,7 +19,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
@@ -152,13 +151,13 @@ func TestGenerationRequirements(t *testing.T) {
 	spendingKey := generalParams(plainhost.RekeySpendingKey)
 	refused := generalParams(plainhost.RekeyOnlyThese)
 	cosigned := generalParams(plainhost.RekeyOnlyThese)
-	cosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	cosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Cosigned rekeys are not containment either: two online keys can rekey the
 	// account anywhere the cosigner's policy allows.
 	cosignedSpending := generalParams(plainhost.RekeySpendingKey)
-	cosignedSpending[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	cosignedSpending[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	plusCosigned := generalParams(plainhost.RekeyPlusCosigned)
-	plusCosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	plusCosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a limits-only account pays
 	// anyone. Nor is a cosigner: it pays anyone the cosigner signs for.
 	limitsOnly := generalParams(plainhost.RekeyOnlyThese)
@@ -167,7 +166,7 @@ func TestGenerationRequirements(t *testing.T) {
 	limitsCosigned := generalParams(plainhost.RekeyOnlyThese)
 	delete(limitsCosigned, plainhost.ParameterRecipients)
 	limitsCosigned[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
-	limitsCosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	limitsCosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
 		name               string
@@ -256,7 +255,7 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	if prepared.Parameters[composeddsa.CosignerPublicKeyParameter] != hex.EncodeToString(publicKey) || prepared.CosignerKeyID != keyID {
+	if prepared.Parameters[hostmeta.CosignerPublicKeyParameter] != hex.EncodeToString(publicKey) || prepared.CosignerKeyID != keyID {
 		t.Fatalf("resolved cosigner = %v, %s", prepared.Parameters, prepared.CosignerKeyID)
 	}
 	if _, present := prepared.Parameters[cosignerrefs.ParamCosignerName]; present {
@@ -348,7 +347,7 @@ func TestRekeyListTakesAnyAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	params := generalParams(plainhost.RekeyPlusCosigned)
-	params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
+	params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
 	params[plainhost.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
 	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)

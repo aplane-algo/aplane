@@ -119,7 +119,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				// A profile takes only the keys its authorities declare.
 				params := map[string]string{}
 				if profile.cosigner != nil {
-					params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x44}, hostmeta.DefaultCosignerPublicKeySize))
+					params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x44}, hostmeta.DefaultCosignerPublicKeySize))
 				}
 				spendingKey := bytes.Repeat([]byte{0x22}, base.publicKeySize)
 				_, err := composer.GenerateTEAL(spendingKey, params)

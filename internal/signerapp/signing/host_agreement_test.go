@@ -56,7 +56,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -137,7 +136,7 @@ func agAddCosigner(params map[string]string, componentKeyType string) {
 	if componentKeyType == "" {
 		return
 	}
-	params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKeyFor(componentKeyType))
+	params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKeyFor(componentKeyType))
 	if componentKeyType != hostmeta.DefaultCosignerComponentKeyType {
 		params[hostmeta.CosignerKeyTypeParameter] = componentKeyType
 	}

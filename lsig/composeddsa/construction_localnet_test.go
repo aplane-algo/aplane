@@ -92,7 +92,7 @@ func newCompositeAccount(t *testing.T, network *harness.TestnetConfig, funder *h
 		cosigner := newFalconKey(t)
 		account.cosigner = &cosigner
 		extra, support.Cosigner = cosignerYAML, true
-		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosigner.public)
+		params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(cosigner.public)
 	}
 	account.provider = compositeProvider(t, compositeConstruction(t, primitives...), extra, support)
 	account.provider.SetAlgodClient(network.Client)

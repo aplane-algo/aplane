@@ -317,7 +317,7 @@ func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 		source    string
 		heading   string
 	}{
-		"cosigner": {cosignerYAML, composeddsa.CosignerPublicKeyParameter, hostmeta.ArgSourceCosigner, "__aplane_bounded1_cosigner:"},
+		"cosigner": {cosignerYAML, hostmeta.CosignerPublicKeyParameter, hostmeta.ArgSourceCosigner, "__aplane_bounded1_cosigner:"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
@@ -390,7 +390,7 @@ func TestProductionRefusesFixtureIdentities(t *testing.T) {
 func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	params := map[string]string{composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))}
+	params := map[string]string{hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))}
 
 	// A fixture's template rules and generation policy come from the same support,
 	// so a composer without cosigner support is refused when it is built.
@@ -401,7 +401,7 @@ func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	if _, err := permitted.GenerateTEAL(key, params); err != nil {
 		t.Fatalf("GenerateTEAL() with fixture support error = %v", err)
 	}
-	if composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, fixtureBaseKeyType) {
+	if composeddsa.ProductionSupportsBase(hostmeta.BoundedContract, fixtureBaseKeyType) {
 		t.Fatal("a fixture base reached the production policy")
 	}
 }
@@ -428,8 +428,8 @@ func TestEveryProductionBaseResolvesToASupportedConstruction(t *testing.T) {
 		if got := registration.Ops.PublicKeySize(); got != construction.PublicKeySize() {
 			t.Fatalf("%q public key size = %d, construction says %d", base, got, construction.PublicKeySize())
 		}
-		if !composeddsa.ProductionSupportsBase(composeddsa.BoundedContract, base) {
-			t.Fatalf("registered base %q has no %s support policy", base, composeddsa.BoundedContract)
+		if !composeddsa.ProductionSupportsBase(hostmeta.BoundedContract, base) {
+			t.Fatalf("registered base %q has no %s support policy", base, hostmeta.BoundedContract)
 		}
 		if composeddsa.ProductionSupportsBase("bounded-unknown", base) {
 			t.Fatalf("base %q has support under a contract nothing reviewed", base)
@@ -456,7 +456,7 @@ func TestWitnessKeyMustDifferFromEverySpendingComponent(t *testing.T) {
 				extra     string
 				parameter string
 			}{
-				"cosigner": {cosignerYAML, composeddsa.CosignerPublicKeyParameter},
+				"cosigner": {cosignerYAML, hostmeta.CosignerPublicKeyParameter},
 			} {
 				provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
 				_, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(reused)})

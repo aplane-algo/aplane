@@ -253,7 +253,7 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 	rekey := selected.Rekey
 	setting := arrangementSetting(rekey)
 	profile := &composeddsa.HostProfile{
-		Contract: composeddsa.PlainContract,
+		Contract: hostmeta.PlainContract,
 		Rekey:    setting,
 	}
 	if selected.Cosigner != "" {
@@ -382,7 +382,7 @@ func present(params map[string]string) (map[string]string, error) {
 // value does.
 func hasContract(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
-		composeddsa.CosignerPublicKeyParameter, hostmeta.CosignerKeyTypeParameter, hostmeta.RekeyListRootParameter} {
+		hostmeta.CosignerPublicKeyParameter, hostmeta.CosignerKeyTypeParameter, hostmeta.RekeyListRootParameter} {
 		if _, ok := params[name]; ok {
 			return true
 		}
@@ -566,7 +566,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 // cosigner is optional, so a request naming none returns false.
 func (p *Provider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
 	_, hasName := params[ParameterCosigner]
-	_, hasKey := params[composeddsa.CosignerPublicKeyParameter]
+	_, hasKey := params[hostmeta.CosignerPublicKeyParameter]
 	if !hasName && !hasKey {
 		return nil, false
 	}

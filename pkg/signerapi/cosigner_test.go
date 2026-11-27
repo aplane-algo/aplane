@@ -191,7 +191,7 @@ func TestComponentResponseNamesTheHostPath(t *testing.T) {
 	}
 	for _, path := range []string{"", "admin_rekey"} {
 		component.Path = path
-		if err := (ComponentResponse{RequestID: "request-1", Components: []Component{component}}).Validate(); err == nil || !strings.Contains(err.Error(), "unknown bounded path") {
+		if err := (ComponentResponse{RequestID: "request-1", Components: []Component{component}}).Validate(); err == nil || !strings.Contains(err.Error(), "unknown path") {
 			t.Fatalf("path %q: Validate() error = %v", path, err)
 		}
 	}

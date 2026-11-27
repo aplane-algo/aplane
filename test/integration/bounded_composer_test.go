@@ -500,7 +500,7 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.HostProfile) *com
 
 func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey hostmeta.RekeySetting) *composeddsa.HostProfile {
 	return &composeddsa.HostProfile{
-		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: allowed, MaxFee: new(boundedIntegrationMaxFee)}, Rekey: rekey,
+		Contract: hostmeta.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: allowed, MaxFee: new(boundedIntegrationMaxFee)}, Rekey: rekey,
 	}
 }
 

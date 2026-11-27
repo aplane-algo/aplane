@@ -97,7 +97,7 @@ func TestValidateArgumentLayoutAccepts(t *testing.T) {
 // pin which check runs first.
 func TestValidateArgumentLayoutRefusals(t *testing.T) {
 	const (
-		cosignerMismatch = "bounded cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata"
+		cosignerMismatch = "cosigner signature slot must be required on exactly the cosigner's required_on paths and match cosigner metadata"
 		uncovered        = "argument layout does not cover every declared Layer-3 argument"
 		baseRequired     = "base signature slot 0 must be required on every path"
 		baseMismatch     = "base signature slot 0 does not match base_signature_arg_layout"
@@ -116,7 +116,7 @@ func TestValidateArgumentLayoutRefusals(t *testing.T) {
 		mutate func(*Metadata)
 		want   string
 	}{
-		{"empty layout", func(m *Metadata) { m.ArgumentLayout = nil }, "bounded argument_layout must not be empty"},
+		{"empty layout", func(m *Metadata) { m.ArgumentLayout = nil }, "argument_layout must not be empty"},
 
 		// Derived declarations.
 		{"derived arg wrong size", func(m *Metadata) { m.DerivedArgs[0].MaxSize = 1 }, invalidDerived("proof", DerivedArgMerkleProof)},
@@ -186,7 +186,7 @@ func TestValidateArgumentLayoutRefusals(t *testing.T) {
 		{"empty layout before declarations", func(m *Metadata) {
 			m.ArgumentLayout = nil
 			m.RuntimeArgs[0].Type = "blob"
-		}, "bounded argument_layout must not be empty"},
+		}, "argument_layout must not be empty"},
 		{"derived declarations before runtime declarations", func(m *Metadata) {
 			m.DerivedArgs[0].Kind = "x"
 			m.RuntimeArgs[0].Type = "blob"

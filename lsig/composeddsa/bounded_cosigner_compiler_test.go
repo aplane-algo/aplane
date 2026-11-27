@@ -56,7 +56,7 @@ teal: |
 	spendingKey := bytes.Repeat([]byte{0x11}, falconfamily.PublicKeySize)
 	cosignerKey := bytes.Repeat([]byte{0x22}, hostmeta.DefaultCosignerPublicKeySize)
 	params := map[string]string{
-		composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+		hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 	}
 	teal, err := provider.GenerateTEAL(spendingKey, params)
 	if err != nil {

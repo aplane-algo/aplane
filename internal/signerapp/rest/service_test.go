@@ -476,7 +476,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	lsigprovider.Register(restTestDSAProvider{
 		keyType: keyType,
 		bounded: &composeddsa.HostProfile{
-			Contract: composeddsa.BoundedContract,
+			Contract: hostmeta.BoundedContract,
 			Bounds:   &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
 			Rekey:    hostmeta.RekeySpendingKey,
 		},
@@ -493,7 +493,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
 	bounded := info.Host
-	if bounded.Contract != composeddsa.BoundedContract || bounded.Bounds == nil || bounded.Bounds.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Bounds.Layer3Policy != hostmeta.Layer3PolicyCustom {
+	if bounded.Contract != hostmeta.BoundedContract || bounded.Bounds == nil || bounded.Bounds.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Bounds.Layer3Policy != hostmeta.Layer3PolicyCustom {
 		t.Fatalf("host = %#v", bounded)
 	}
 	if got := strings.Join(bounded.Bounds.SpendEffects, ","); got != "pay,axfer" {
@@ -507,7 +507,7 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	const keyType = "test.rest-bounded-cosigner.v1"
 	profile := &composeddsa.HostProfile{
-		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
+		Contract: hostmeta.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
 		Rekey: hostmeta.RekeyRefused,
 		Cosigner: &hostmeta.CosignerAuthorization{
 			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
@@ -586,12 +586,12 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 
 func TestHostAccountParametersProjection(t *testing.T) {
 	got := hostAccountParameters(map[string]string{
-		"recipients":                           "ADDR1,ADDR2",
-		composeddsa.CosignerPublicKeyParameter: "cosigner-public",
-		"future_sensitive_parameter":           "must-not-leak",
+		"recipients":                        "ADDR1,ADDR2",
+		hostmeta.CosignerPublicKeyParameter: "cosigner-public",
+		"future_sensitive_parameter":        "must-not-leak",
 	})
 	if len(got) != 2 || got["recipients"] != "ADDR1,ADDR2" ||
-		got[composeddsa.CosignerPublicKeyParameter] != "cosigner-public" {
+		got[hostmeta.CosignerPublicKeyParameter] != "cosigner-public" {
 		t.Fatalf("hostAccountParameters() = %#v, want reviewed public projection", got)
 	}
 	if _, ok := got["future_sensitive_parameter"]; ok {
@@ -719,7 +719,7 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	// A fixed-contract cosigned template: its cosigner key becomes a selector.
 	const keyType = "test.rest-reference-options.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.HostProfile{
-		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
+		Contract: hostmeta.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 		Rekey: hostmeta.RekeyRefused,
 		Cosigner: &hostmeta.CosignerAuthorization{
 			Contract: hostmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
@@ -790,7 +790,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 
 	const keyType = "test.rest-reference-bounded-cosigner.v1"
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.HostProfile{
-		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
+		Contract: hostmeta.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 		Rekey: hostmeta.RekeyRefused,
 		Cosigner: &hostmeta.CosignerAuthorization{
 			Contract: hostmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
@@ -812,7 +812,7 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 			continue
 		}
 		if info.SigningFlow != signerapi.SigningFlowCosigned1 || len(info.CreationParams) != 1 {
-			t.Fatalf("bounded cosigner key type = %#v", info)
+			t.Fatalf("cosigner key type = %#v", info)
 		}
 		param := info.CreationParams[0]
 		if param.Name != cosignerrefs.ParamCosignerName || len(param.Options) != 1 || param.Options[0] != componentKey {

@@ -303,7 +303,7 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 		t.Fatalf("PopulateSignerCache() error = %v", err)
 	}
 	if got, ok := state.SignerCacheCosignerPublicKey("BOUNDED"); !ok || got != "abcd" {
-		t.Fatalf("bounded cosigner public key = %q/%v", got, ok)
+		t.Fatalf("cosigner public key = %q/%v", got, ok)
 	}
 	if got := state.SignerCacheSigningFlow("BOUNDED"); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("bounded cosigner flow = %q", got)

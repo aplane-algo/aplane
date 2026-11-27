@@ -105,7 +105,7 @@ func shapeRequest(shape plainhost.Shape, recipients string) map[string]string {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
-		params[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
+		params[hostmeta.CosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
 		if shape.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 			params[hostmeta.CosignerKeyTypeParameter] = shape.Cosigner
 		}
@@ -429,7 +429,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
 		// Without a cosigner the spending key would rekey anywhere, so the list
 		// would add nothing: that is spending_key.
-		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) },
+		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, hostmeta.CosignerPublicKeyParameter) },
 			"rekey_authority=plus_cosigned needs a cosigner; without one it is rekey_authority=spending_key"},
 		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
 			"rekey_authority=plus_cosigned needs the addresses the account may be rekeyed to in rekey_to"},
@@ -438,7 +438,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"rekey_to with a spending-key rekey", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"rekey_to with a cosigned spending-key rekey", spendingKey, func(p map[string]string) {
 			p[plainhost.ParameterRekeyTo] = targets(1)
-			p[composeddsa.CosignerPublicKeyParameter] = testCosigner
+			p[hostmeta.CosignerPublicKeyParameter] = testCosigner
 		}, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"rekey_to with a refused rekey", refused, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"17 plus-cosigned rekey_to entries", plusCosigned, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
@@ -514,7 +514,7 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 	for _, name := range []string{
 		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
 		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority, plainhost.ParameterMaxFee,
-		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.CosignerPublicKeyParameter,
+		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, hostmeta.CosignerPublicKeyParameter,
 	} {
 		for _, empty := range []string{"", "  "} {
 			params := shapeRequest(cosigned, testRecipients(2))
@@ -670,7 +670,7 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 	for _, shape := range plainhost.Shapes() {
 		request := shapeRequest(shape, testRecipients(2))
 		request[plainhost.ParameterRekeyTo] = listedRekeyTo
-		request[composeddsa.CosignerPublicKeyParameter] = testCosigner
+		request[hostmeta.CosignerPublicKeyParameter] = testCosigner
 		values := provider.ComposerValuesForTest(shape, request)
 		for _, selector := range []string{plainhost.ParameterSpendEffects, plainhost.ParameterRekeyAuthority, plainhost.ParameterListEncoding, plainhost.ParameterRecipientScope} {
 			if _, ok := values[selector]; ok {
@@ -680,7 +680,7 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 		if _, ok := values[plainhost.ParameterRekeyTo]; ok != shape.HasRekeyList() {
 			t.Fatalf("%s: rekey_to reached the composer = %v", shape.Descriptor(), ok)
 		}
-		if _, ok := values[composeddsa.CosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
+		if _, ok := values[hostmeta.CosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
 			t.Fatalf("%s: the cosigner key reached the composer = %v", shape.Descriptor(), ok)
 		}
 		// The cosigner's type selects the composer; it isn't one of its parameters.
@@ -726,7 +726,7 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	base := digest(t, func(map[string]string) {})
 	for name, mutate := range map[string]func(map[string]string){
 		"cosigner key": func(p map[string]string) {
-			p[composeddsa.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
+			p[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 		},
 		"recipients": func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(4) },
 		"spend":      func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay" },
@@ -738,7 +738,7 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 			p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyRefused
 			delete(p, plainhost.ParameterRekeyTo)
 		},
-		"no cosigner": func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) },
+		"no cosigner": func(p map[string]string) { delete(p, hostmeta.CosignerPublicKeyParameter) },
 	} {
 		if digest(t, mutate) == base {
 			t.Errorf("changing %s did not change the digest", name)
@@ -1378,8 +1378,8 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 						t.Fatalf("file cosigner = %q", fromFile[plainhost.ParameterCosigner])
 					}
 					delete(fromFile, plainhost.ParameterCosigner)
-					fromFile[composeddsa.CosignerPublicKeyParameter] = testCosigner
-					form[composeddsa.CosignerPublicKeyParameter] = testCosigner
+					fromFile[hostmeta.CosignerPublicKeyParameter] = testCosigner
+					form[hostmeta.CosignerPublicKeyParameter] = testCosigner
 				}
 				first, err := b.provider.ResolveInstance(form)
 				if err != nil {

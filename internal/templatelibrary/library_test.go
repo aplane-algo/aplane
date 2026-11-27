@@ -202,7 +202,7 @@ func TestParseYAMLRefusesBounded1Template(t *testing.T) {
 	for _, test := range []struct {
 		name, old, new, want string
 	}{
-		{name: "bounded1 contract", old: "contract: bounded2", new: "contract: bounded1", want: `unsupported bounded authorization contract "bounded1"`},
+		{name: "bounded1 contract", old: "contract: bounded2", new: "contract: bounded1", want: `unsupported host contract "bounded1"`},
 		{name: "administrative operations", old: "rekey: refused", new: "admin_operations: []", want: "field admin_operations not found"},
 		{name: "missing rekey", old: "  rekey: refused\n", new: "", want: "bounded.rekey is required"},
 		{name: "unknown rekey", old: "rekey: refused", new: "rekey: admin_key", want: `unsupported rekey setting "admin_key"`},

@@ -47,7 +47,7 @@ type PathDeclaration struct {
 // Declaration projects stored bounded metadata onto its path declaration.
 func (metadata *Metadata) Declaration() (PathDeclaration, error) {
 	if metadata == nil {
-		return PathDeclaration{}, fmt.Errorf("bounded authorization metadata is nil")
+		return PathDeclaration{}, fmt.Errorf("host metadata is nil")
 	}
 	declaration := PathDeclaration{
 		Contract:  metadata.Contract,

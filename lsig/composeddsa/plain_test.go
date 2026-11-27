@@ -15,7 +15,7 @@ import (
 
 func plainTestProfile(rekey hostmeta.RekeySetting) *HostProfile {
 	return &HostProfile{
-		Contract: PlainContract,
+		Contract: hostmeta.PlainContract,
 		Rekey:    rekey,
 		Cosigner: &hostmeta.CosignerAuthorization{
 			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
@@ -44,7 +44,7 @@ func newPlainTestProvider(profile *HostProfile, suffix string, layer3 *Layer3Pol
 func TestPlainHostRendersNoEnvelope(t *testing.T) {
 	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
 	cosignerKey := strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
-	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{CosignerPublicKeyParameter: cosignerKey})
+	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{hostmeta.CosignerPublicKeyParameter: cosignerKey})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
@@ -73,7 +73,7 @@ func TestPlainHostRendersNoEnvelope(t *testing.T) {
 	}
 
 	metadata := provider.HostMetadata()
-	if metadata == nil || metadata.Contract != PlainContract || metadata.Bounds != nil ||
+	if metadata == nil || metadata.Contract != hostmeta.PlainContract || metadata.Bounds != nil ||
 		metadata.Layer3Policy() != hostmeta.Layer3PolicyNone {
 		t.Fatalf("metadata = %+v", metadata)
 	}
@@ -107,7 +107,7 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 			provider := newPlainTestProvider(profile, tc.suffix, tc.layer3)
 			params := map[string]string{}
 			if profile.Cosigner != nil {
-				params[CosignerPublicKeyParameter] = strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
+				params[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
 			}
 			_, err := provider.GenerateTEAL([]byte{0x01}, params)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {

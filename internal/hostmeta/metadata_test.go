@@ -598,7 +598,7 @@ func TestNetworkLimitsRefuseArgumentsTheNetworkRefuses(t *testing.T) {
 		{name: "base signature at the size limit", input: base(4096)},
 		{name: "base signature over the size limit", input: base(4097), wantErr: "argument slot 0 (base_signature_0) is 4097 bytes: a LogicSig argument is at most 4096"},
 		{name: "255 arguments", input: withRuntimeArgs(base(64), 254, 8)},
-		{name: "256 arguments", input: withRuntimeArgs(base(64), 255, 8), wantErr: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+		{name: "256 arguments", input: withRuntimeArgs(base(64), 255, 8), wantErr: "argument_layout has 256 arguments: a LogicSig carries at most 255"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// Durable validation is structure only, so a stored account past a

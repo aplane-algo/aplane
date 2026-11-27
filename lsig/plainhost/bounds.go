@@ -176,7 +176,7 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 		spend[i] = string(effect)
 	}
 	bounded := &generictemplate.BoundedAuthorizationSpec{
-		Contract:     composeddsa.BoundedContract,
+		Contract:     hostmeta.BoundedContract,
 		SpendEffects: spend,
 		MaxFee:       &maxFee,
 		Layer3:       &generictemplate.TransactionLayer3Spec{Policy: shape.Policy()},

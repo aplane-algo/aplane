@@ -6,6 +6,7 @@ package composeddsa
 import (
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 )
 
@@ -30,15 +31,15 @@ type hostSupportKey struct {
 // completes (internal/signerapp/signing/host_construction.go), and this policy
 // must stay within that table.
 var hostSupportPolicy = map[hostSupportKey]hostWorkflowSupport{
-	{BoundedContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
+	{hostmeta.BoundedContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
 	// Reviewed with the plain hosts' bounds (account overlays phase 6.5), as
 	// plain1 was in phase 5: an Ed25519 spending key is classical, which the
 	// review says.
-	{BoundedContract, sigconstruction.Ed25519().ID()}: {cosigner: true},
+	{hostmeta.BoundedContract, sigconstruction.Ed25519().ID()}: {cosigner: true},
 	// A plain host may be cosigned on either base. Its Ed25519 spending key is
 	// classical, which the review says.
-	{PlainContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
-	{PlainContract, sigconstruction.Ed25519().ID()}:    {cosigner: true},
+	{hostmeta.PlainContract, sigconstruction.Falcon1024().ID()}: {cosigner: true},
+	{hostmeta.PlainContract, sigconstruction.Ed25519().ID()}:    {cosigner: true},
 }
 
 // hostGenerationPolicy answers the support question for one composer.
