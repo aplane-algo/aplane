@@ -13,9 +13,9 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -104,7 +104,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 		if info.TemplateFingerprint != prepared.Fingerprint {
 			t.Fatalf("account records %q, want its shape fingerprint %q", info.TemplateFingerprint, prepared.Fingerprint)
 		}
-		if info.BoundedAuthorization == nil {
+		if info.Host == nil {
 			t.Fatal("account has no bounded contract")
 		}
 		return nil
@@ -152,13 +152,13 @@ func TestGenerationRequirements(t *testing.T) {
 	spendingKey := generalParams(plainhost.RekeySpendingKey)
 	refused := generalParams(plainhost.RekeyOnlyThese)
 	cosigned := generalParams(plainhost.RekeyOnlyThese)
-	cosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	cosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Cosigned rekeys are not containment either: two online keys can rekey the
 	// account anywhere the cosigner's policy allows.
 	cosignedSpending := generalParams(plainhost.RekeySpendingKey)
-	cosignedSpending[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	cosignedSpending[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	plusCosigned := generalParams(plainhost.RekeyPlusCosigned)
-	plusCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	plusCosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a limits-only account pays
 	// anyone. Nor is a cosigner: it pays anyone the cosigner signs for.
 	limitsOnly := generalParams(plainhost.RekeyOnlyThese)
@@ -167,7 +167,7 @@ func TestGenerationRequirements(t *testing.T) {
 	limitsCosigned := generalParams(plainhost.RekeyOnlyThese)
 	delete(limitsCosigned, plainhost.ParameterRecipients)
 	limitsCosigned[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
-	limitsCosigned[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+	limitsCosigned[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
 		name               string
@@ -256,7 +256,7 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	if prepared.Parameters[composeddsa.BoundedCosignerPublicKeyParameter] != hex.EncodeToString(publicKey) || prepared.CosignerKeyID != keyID {
+	if prepared.Parameters[composeddsa.CosignerPublicKeyParameter] != hex.EncodeToString(publicKey) || prepared.CosignerKeyID != keyID {
 		t.Fatalf("resolved cosigner = %v, %s", prepared.Parameters, prepared.CosignerKeyID)
 	}
 	if _, present := prepared.Parameters[cosignerrefs.ParamCosignerName]; present {
@@ -283,10 +283,10 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	if prepared.Bounded == nil || prepared.Bounded.RekeyList == nil || prepared.Bounded.RekeyList.RootHex != "" {
-		t.Fatalf("prepared bounded profile = %+v", prepared.Bounded)
+	if prepared.Host == nil || prepared.Host.RekeyList == nil || prepared.Host.RekeyList.RootHex != "" {
+		t.Fatalf("prepared bounded profile = %+v", prepared.Host)
 	}
-	if _, present := prepared.Parameters[boundedmeta.RekeyListRootParameter]; present {
+	if _, present := prepared.Parameters[hostmeta.RekeyListRootParameter]; present {
 		t.Fatal("a review carries a root")
 	}
 	changed := maps.Clone(prepared.Parameters)
@@ -315,9 +315,9 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		root := info.Parameters[boundedmeta.RekeyListRootParameter]
-		if len(root) != 64 || info.BoundedAuthorization.RekeyList == nil || info.BoundedAuthorization.RekeyList.RootHex != root {
-			t.Fatalf("stored root %q, metadata %+v", root, info.BoundedAuthorization.RekeyList)
+		root := info.Parameters[hostmeta.RekeyListRootParameter]
+		if len(root) != 64 || info.Host.RekeyList == nil || info.Host.RekeyList.RootHex != root {
+			t.Fatalf("stored root %q, metadata %+v", root, info.Host.RekeyList)
 		}
 		if info.Parameters[plainhost.ParameterRekeyTo] != listedTarget.String() {
 			t.Fatalf("stored entries = %q", info.Parameters[plainhost.ParameterRekeyTo])
@@ -342,13 +342,13 @@ func TestRekeyListTakesAnyAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownCosigner := bytes.Repeat([]byte{0x62}, boundedmeta.DefaultCosignerPublicKeySize)
+	ownCosigner := bytes.Repeat([]byte{0x62}, hostmeta.DefaultCosignerPublicKeySize)
 	_, ownCosignerAddress, err := nativefalcon.CanonicalAddress(ownCosigner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	params := generalParams(plainhost.RekeyPlusCosigned)
-	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
+	params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
 	params[plainhost.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
 	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)

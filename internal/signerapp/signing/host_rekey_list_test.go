@@ -13,7 +13,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
@@ -32,27 +32,27 @@ var (
 
 // listTestAccount is an "only these" account with listTestTarget on its list,
 // as the signer's snapshot holds it.
-func listTestAccount(t *testing.T) (*boundedmeta.Metadata, map[string]string) {
+func listTestAccount(t *testing.T) (*hostmeta.Metadata, map[string]string) {
 	t.Helper()
-	params := map[string]string{boundedmeta.RekeyListEntriesParameter: listTestTarget.String()}
+	params := map[string]string{hostmeta.RekeyListEntriesParameter: listTestTarget.String()}
 	list, err := rekeylist.FromSpendingKey(listTestPrivateKey, []types.Address{listTestTarget})
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := list.Root()
 	list.Zero()
-	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}
-	slots := append(boundedmeta.BaseArgumentLayout(layout), boundedmeta.ArgumentSlot{
-		Index: 1, Name: "rekey_list_proof", Source: boundedmeta.ArgSourceDerived, MaxSize: boundedmeta.RekeyListProofSize,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired},
+	layout := hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}
+	slots := append(hostmeta.BaseArgumentLayout(layout), hostmeta.ArgumentSlot{
+		Index: 1, Name: "rekey_list_proof", Source: hostmeta.ArgSourceDerived, MaxSize: hostmeta.RekeyListProofSize,
+		Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgRequired},
 	})
-	metadata := &boundedmeta.Metadata{
-		Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-		Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(5_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused,
-		RekeyList: &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])},
-		DerivedArgs: []boundedmeta.DerivedArg{{
-			Name: "rekey_list_proof", Kind: boundedmeta.DerivedArgRekeyListProof,
-			Parameter: boundedmeta.RekeyListEntriesParameter, MaxSize: boundedmeta.RekeyListProofSize,
+	metadata := &hostmeta.Metadata{
+		Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+		Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(5_000)), Layer3Policy: hostmeta.Layer3PolicyCustom}, Rekey: hostmeta.RekeyRefused,
+		RekeyList: &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])},
+		DerivedArgs: []hostmeta.DerivedArg{{
+			Name: "rekey_list_proof", Kind: hostmeta.DerivedArgRekeyListProof,
+			Parameter: hostmeta.RekeyListEntriesParameter, MaxSize: hostmeta.RekeyListProofSize,
 		}},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -72,22 +72,22 @@ func listTestRekey(target types.Address) types.Transaction {
 func TestPlannerTakesTheListedPathOnlyForAListedTarget(t *testing.T) {
 	metadata, params := listTestAccount(t)
 	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{
-		"ACCOUNT": {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, BoundedAuthorization: metadata},
+		"ACCOUNT": {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, Host: metadata},
 	}}
 	request := []signerapi.SignRequest{{AuthAddress: "ACCOUNT"}}
-	items, err := resolveBoundedPlanItems(snapshot, request, []types.Transaction{listTestRekey(listTestTarget)}, nil, nil)
+	items, err := resolveHostPlanItems(snapshot, request, []types.Transaction{listTestRekey(listTestTarget)}, nil, nil)
 	if err != nil {
 		t.Fatalf("listed target: %+v", err)
 	}
-	if items[0].Path != boundedPathListedRekey || !items[0].ListedRekeyTargets[listTestTarget.String()] {
+	if items[0].Path != hostPathListedRekey || !items[0].ListedRekeyTargets[listTestTarget.String()] {
 		t.Fatalf("item = %+v", items[0])
 	}
-	_, err = resolveBoundedPlanItems(snapshot, request, []types.Transaction{listTestRekey(listTestOther)}, nil, nil)
-	if err == nil || err.Kind != ErrorBoundedRekeyNotListed || err.Code() != signerapi.ErrCodeRekeyTargetNotListed ||
+	_, err = resolveHostPlanItems(snapshot, request, []types.Transaction{listTestRekey(listTestOther)}, nil, nil)
+	if err == nil || err.Kind != ErrorRekeyTargetNotListed || err.Code() != signerapi.ErrCodeRekeyTargetNotListed ||
 		!strings.Contains(err.Message, "not on this account's rekey-to list") {
 		t.Fatalf("unlisted target: error = %+v", err)
 	}
-	if path, err := logicSigAuthorizationPath(boundedPathListedRekey); err != nil || path != lsigresource.PathListedRekey {
+	if path, err := logicSigAuthorizationPath(hostPathListedRekey); err != nil || path != lsigresource.PathListedRekey {
 		t.Fatalf("resource path = %v, %v", path, err)
 	}
 }
@@ -97,7 +97,7 @@ func TestPlannerTakesTheListedPathOnlyForAListedTarget(t *testing.T) {
 func TestListedRekeyDerivesTheListProof(t *testing.T) {
 	metadata, params := listTestAccount(t)
 	key := &coresigning.KeyMaterial{Value: &coresigning.LsigKeyMaterial{PrivateKey: listTestPrivateKey}, Parameters: params}
-	values, err := boundedDerivedArgs(listTestRekey(listTestTarget), key, metadata, boundedPathListedRekey)
+	values, err := hostDerivedArgs(listTestRekey(listTestTarget), key, metadata, hostPathListedRekey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +108,12 @@ func TestListedRekeyDerivesTheListProof(t *testing.T) {
 	if len(values) != 1 || !rekeylist.Verify(listTestTarget, values[proofName], root32) {
 		t.Fatalf("derived proof does not verify: %x", values)
 	}
-	tampered := boundedmeta.Clone(metadata)
+	tampered := hostmeta.Clone(metadata)
 	tampered.RekeyList.RootHex = strings.Repeat("00", 32)
-	if _, err := boundedDerivedArgs(listTestRekey(listTestTarget), key, tampered, boundedPathListedRekey); err == nil || !strings.Contains(err.Message, "does not match the account's stored root") {
+	if _, err := hostDerivedArgs(listTestRekey(listTestTarget), key, tampered, hostPathListedRekey); err == nil || !strings.Contains(err.Message, "does not match the account's stored root") {
 		t.Fatalf("mismatched root: error = %+v", err)
 	}
-	if values, err := boundedDerivedArgs(testBoundedPayment(), key, metadata, boundedPathPureSpend); err != nil || len(values[proofName]) != 0 {
+	if values, err := hostDerivedArgs(testBoundedPayment(), key, metadata, hostPathPureSpend); err != nil || len(values[proofName]) != 0 {
 		t.Fatalf("a spend carries a list proof: %x, %+v", values, err)
 	}
 }
@@ -140,13 +140,13 @@ func TestListedRekeyWarningNamesTheHandover(t *testing.T) {
 func TestListedRekeyIsForcedToReview(t *testing.T) {
 	metadata, params := listTestAccount(t)
 	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{
-		"ACCOUNT": {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, BoundedAuthorization: metadata},
+		"ACCOUNT": {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, Host: metadata},
 	}}
-	items, err := resolveBoundedPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: "ACCOUNT"}}, []types.Transaction{listTestRekey(listTestTarget)}, nil, nil)
+	items, err := resolveHostPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: "ACCOUNT"}}, []types.Transaction{listTestRekey(listTestTarget)}, nil, nil)
 	if err != nil {
 		t.Fatalf("listed target: %+v", err)
 	}
-	if !planHasBoundedRekey(&PlanResult{BoundedItems: items}) {
+	if !planHasHostRekey(&PlanResult{HostItems: items}) {
 		t.Fatal("a listed rekey is not forced to review")
 	}
 
@@ -194,12 +194,12 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		}),
 	}
 	rekey := listTestRekey(listTestTarget)
-	item := &boundedPlanItem{
-		Path: boundedPathListedRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused),
+	item := &hostPlanItem{
+		Path: hostPathListedRekey, Metadata: testBoundedMetadata(t, hostmeta.RekeyRefused),
 		ListedRekeyTargets: map[string]bool{listTestTarget.String(): true},
 	}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
-		policy.HostRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
+		policy.HostRekeyRequiresReviewRuleID, &PlanResult{HostItems: []*hostPlanItem{item}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
@@ -210,9 +210,9 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		!strings.Contains(description, "Authorization: spending key only, to an address on the account's rekey-to list") {
 		t.Fatalf("single prompt = %q, want the bounded rekey's authorization", description)
 	}
-	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))}
+	cosigned := &hostPlanItem{Path: hostPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
-		policy.HostRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
+		policy.HostRekeyRequiresReviewRuleID, &PlanResult{HostItems: []*hostPlanItem{cosigned}}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(description, "Authorization: spending key and cosigner") {

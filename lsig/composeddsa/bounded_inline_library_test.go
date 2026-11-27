@@ -11,7 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -40,8 +40,8 @@ func TestBoundedInlineAllowlistGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			metadata := provider.BoundedAuthorizationMetadata()
-			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != boundedmeta.Contract || metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != 10_000 || metadata.Layer3Policy() != boundedmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
+			metadata := provider.HostMetadata()
+			if spec.SchemaVersion != 2 || metadata == nil || metadata.Contract != hostmeta.BoundedContract || metadata.Rekey != hostmeta.RekeySpendingKey || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != 10_000 || metadata.Layer3Policy() != hostmeta.Layer3PolicyFixedAllowlist || len(metadata.ArgumentLayout) != 1 {
 				t.Fatalf("bounded inline metadata = %#v", metadata)
 			}
 			teal, err := provider.GenerateTEAL(test.publicKey, map[string]string{"recipients": recipient})

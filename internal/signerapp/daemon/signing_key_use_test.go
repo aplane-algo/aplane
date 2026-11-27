@@ -21,9 +21,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -76,7 +76,7 @@ type nonRotatingDaemonFixture struct {
 	edPriv            ed25519.PrivateKey
 	edPub             ed25519.PublicKey
 	boundedAddr       string
-	boundedMeta       *boundedmeta.Metadata
+	hostMeta          *hostmeta.Metadata
 	boundedBytecode   []byte
 	boundedSpendPub   []byte
 	boundedSpendPriv  []byte
@@ -130,22 +130,22 @@ func newNonRotatingDaemonFixture(t *testing.T, role noderole.Role) *nonRotatingD
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.DefaultCosignerSignatureMaxSize}},
-		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
-		Rekey:                  boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract:         boundedmeta.CosignerContractV1,
+	metadata := &hostmeta.Metadata{
+		Contract:               hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{hostmeta.DefaultCosignerSignatureMaxSize}},
+		Bounds:                 &hostmeta.Bounds{SpendEffects: []string{hostmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
+		Rekey:                  hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract:         hostmeta.CosignerContractV1,
 			ComponentKeyType: witness.Falcon1024V1,
 			PublicKeyHex:     hex.EncodeToString(cosignPub),
 			ComponentKeyID:   cosignID,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize,
-			RequiredOn:       []string{boundedmeta.PathSpend},
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize,
+			RequiredOn:       []string{hostmeta.PathSpend},
 		},
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+			{Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -189,7 +189,7 @@ func newNonRotatingDaemonFixture(t *testing.T, role noderole.Role) *nonRotatingD
 		edPriv:            edPriv,
 		edPub:             edPub,
 		boundedAddr:       boundedAddr,
-		boundedMeta:       metadata,
+		hostMeta:          metadata,
 		boundedBytecode:   bytecode,
 		boundedSpendPub:   spendPub,
 		boundedSpendPriv:  spendPriv,
@@ -222,13 +222,13 @@ func (fx *nonRotatingDaemonFixture) newStore(holdAddr string) *holdingNonRotatin
 			fx.boundedAddr: func() (*coresigning.KeyMaterial, []byte) {
 				priv := append([]byte(nil), fx.boundedSpendPriv...)
 				return &coresigning.KeyMaterial{
-					Type:                 "test.bounded-cosigner.v1",
-					Category:             keys.CategoryDSALsig,
-					BaseKeyType:          "aplane.falcon1024.v1",
-					PublicKey:            append([]byte(nil), fx.boundedSpendPub...),
-					Bytecode:             append([]byte(nil), fx.boundedBytecode...),
-					BoundedAuthorization: boundedmeta.Clone(fx.boundedMeta),
-					Value:                &coresigning.LsigKeyMaterial{PrivateKey: priv},
+					Type:        "test.bounded-cosigner.v1",
+					Category:    keys.CategoryDSALsig,
+					BaseKeyType: "aplane.falcon1024.v1",
+					PublicKey:   append([]byte(nil), fx.boundedSpendPub...),
+					Bytecode:    append([]byte(nil), fx.boundedBytecode...),
+					Host:        hostmeta.Clone(fx.hostMeta),
+					Value:       &coresigning.LsigKeyMaterial{PrivateKey: priv},
 				}, priv
 			},
 			fx.cosignerKeyID: func() (*coresigning.KeyMaterial, []byte) {
@@ -262,9 +262,9 @@ func (fx *nonRotatingDaemonFixture) newService(audit signingAudit) *signersignin
 			},
 			KeyMetadata: map[string]signersigning.PlannerKeyMetadata{
 				fx.boundedAddr: {
-					BaseKeyType:          "aplane.falcon1024.v1",
-					PublicKeyHex:         hex.EncodeToString(fx.boundedSpendPub),
-					BoundedAuthorization: boundedmeta.Clone(fx.boundedMeta),
+					BaseKeyType:  "aplane.falcon1024.v1",
+					PublicKeyHex: hex.EncodeToString(fx.boundedSpendPub),
+					Host:         hostmeta.Clone(fx.hostMeta),
 				},
 			},
 		}
@@ -352,7 +352,7 @@ func (fx *nonRotatingDaemonFixture) assemblyRequest(t *testing.T, svc *signersig
 	txns[0].Group, txns[1].Group = gid, gid
 	rawHex := []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])}
 
-	compResp, compErr := svc.PrepareBoundedComponentWithContext(context.Background(), signerapi.ComponentRequest{
+	compResp, compErr := svc.PrepareHostComponentWithContext(context.Background(), signerapi.ComponentRequest{
 		RequestID:     "prep-assembly-base",
 		GroupBytesHex: rawHex,
 		Targets: []signerapi.ComponentTarget{{
@@ -366,7 +366,7 @@ func (fx *nonRotatingDaemonFixture) assemblyRequest(t *testing.T, svc *signersig
 		}},
 	}, session)
 	if compErr != nil || len(compResp.Components) != 1 {
-		t.Fatalf("PrepareBoundedComponentWithContext() = (%+v, %v)", compResp, compErr)
+		t.Fatalf("PrepareHostComponentWithContext() = (%+v, %v)", compResp, compErr)
 	}
 	group, err := canonical.DecodeGroupHex(rawHex)
 	if err != nil {
@@ -432,7 +432,7 @@ func TestLockWaitsForEveryNonRotatingKeyLoad(t *testing.T) {
 			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 				req := fx.boundedComponentRequest(t)
 				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-					res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+					res, err := svc.PrepareHostComponentWithContext(context.Background(), req, session)
 					return res != nil, err
 				}
 			},
@@ -597,7 +597,7 @@ func TestLockDoesNotWaitForNonRotatingApprovalPrompt(t *testing.T) {
 		{"bounded_component", func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 			req := fx.boundedComponentRequest(t)
 			return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-				res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+				res, err := svc.PrepareHostComponentWithContext(context.Background(), req, session)
 				return res != nil, err
 			}
 		}},
@@ -717,7 +717,7 @@ func TestNonRotatingSignStopsAtLockOrRecoveryDuringAuditWrite(t *testing.T) {
 			return res != nil, err
 		}},
 		{"bounded_component", noderole.RoleSigner, func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-			res, err := svc.PrepareBoundedComponentWithContext(context.Background(), fx.boundedComponentRequest(t), session)
+			res, err := svc.PrepareHostComponentWithContext(context.Background(), fx.boundedComponentRequest(t), session)
 			return res != nil, err
 		}},
 		{"cosigner_component", noderole.RoleCosigner, func(t *testing.T, fx *nonRotatingDaemonFixture, svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
@@ -843,7 +843,7 @@ func TestStalledConsoleDoesNotBlockLockOrLeakSignature(t *testing.T) {
 			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 				req := fx.boundedComponentRequest(t)
 				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {
-					res, err := svc.PrepareBoundedComponentWithContext(context.Background(), req, session)
+					res, err := svc.PrepareHostComponentWithContext(context.Background(), req, session)
 					return res != nil, err
 				}
 			},

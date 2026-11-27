@@ -271,8 +271,8 @@ func TestGenerateKeyPlainHostPersistsSigningMetadata(t *testing.T) {
 			if payload.Parameters[keytypes.ParameterCosignerPublicKey] != tt.cosignerPublicKey {
 				t.Fatalf("cosigner public key param = %q, want %q", payload.Parameters[keytypes.ParameterCosignerPublicKey], tt.cosignerPublicKey)
 			}
-			if payload.BoundedAuthorization == nil || payload.BoundedAuthorization.Contract != "plain1" || payload.BoundedAuthorization.Cosigner == nil {
-				t.Fatalf("BoundedAuthorization = %+v, want a cosigned plain1 contract", payload.BoundedAuthorization)
+			if payload.Host == nil || payload.Host.Contract != "plain1" || payload.Host.Cosigner == nil {
+				t.Fatalf("Host = %+v, want a cosigned plain1 contract", payload.Host)
 			}
 			if len(payload.LogicSigBytecode) == 0 {
 				t.Fatal("LogicSigBytecode is empty")

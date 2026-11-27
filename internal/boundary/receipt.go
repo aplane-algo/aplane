@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 )
 
 // ReceiptSchemaV1 identifies a resolved account receipt.
@@ -48,6 +48,6 @@ func (r Receipt) Encode() ([]byte, error) {
 // RecipientListDigest is a short comparison value for a canonical recipient list,
 // so a reviewer can tell two long lists apart without reading them.
 func RecipientListDigest(recipients string) string {
-	sum := sha512.Sum512_256(boundedmeta.AppendField([]byte("APLANE_BOUNDARY_RECIPIENTS_V1"), []byte(recipients)))
+	sum := sha512.Sum512_256(hostmeta.AppendField([]byte("APLANE_BOUNDARY_RECIPIENTS_V1"), []byte(recipients)))
 	return hex.EncodeToString(sum[:])
 }

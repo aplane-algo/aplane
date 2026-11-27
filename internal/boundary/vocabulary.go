@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 )
 
 const (
@@ -35,7 +35,7 @@ const (
 	ParameterMaxFee = "max_fee"
 	// ParameterRekeyTo is a rekey-to list's addresses, required with
 	// rekey_authority=only_these or plus_cosigned and refused otherwise.
-	ParameterRekeyTo = boundedmeta.RekeyListEntriesParameter
+	ParameterRekeyTo = hostmeta.RekeyListEntriesParameter
 	// ParameterCosigner is the signer-side reference selector. It is resolved to
 	// a public key before an instance is selected.
 	ParameterCosigner = "cosigner"
@@ -57,10 +57,10 @@ const (
 	// account, lets the spending key alone rekey it to a listed address and, with
 	// the cosigner, to any other. RekeyRefused gives an account no rekey path at
 	// all: its only way out is what it may spend or close.
-	RekeySpendingKey  = string(boundedmeta.RekeySpendingKey)
-	RekeyOnlyThese    = boundedmeta.RekeyOnlyThese
-	RekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
-	RekeyRefused      = string(boundedmeta.RekeyRefused)
+	RekeySpendingKey  = string(hostmeta.RekeySpendingKey)
+	RekeyOnlyThese    = hostmeta.RekeyOnlyThese
+	RekeyPlusCosigned = hostmeta.RekeyPlusCosigned
+	RekeyRefused      = string(hostmeta.RekeyRefused)
 )
 
 // DefaultMaxFeeText is DefaultMaxFee as a request or a file writes it.
@@ -76,8 +76,8 @@ func ParseMaxFee(value string) (uint64, error) {
 	if err != nil || strconv.FormatUint(fee, 10) != text {
 		return 0, fmt.Errorf("%s must be a whole number of microAlgos: %q", ParameterMaxFee, value)
 	}
-	if fee > boundedmeta.MaxFeeLimit {
-		return 0, fmt.Errorf("%s %d is above %d, the largest value every client reads exactly", ParameterMaxFee, fee, boundedmeta.MaxFeeLimit)
+	if fee > hostmeta.MaxFeeLimit {
+		return 0, fmt.Errorf("%s %d is above %d, the largest value every client reads exactly", ParameterMaxFee, fee, hostmeta.MaxFeeLimit)
 	}
 	return fee, nil
 }

@@ -16,8 +16,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -60,7 +60,7 @@ func TestPreviewSummarizesTheFileWithoutResolvingAnything(t *testing.T) {
 	if preview.Parameters[boundary.ParameterCosigner] != "ops-cosigner" {
 		t.Fatalf("the name must reach the signer unresolved: %v", preview.Parameters)
 	}
-	if _, present := preview.Parameters[boundedmeta.CosignerPublicKeyParameter]; present {
+	if _, present := preview.Parameters[hostmeta.CosignerPublicKeyParameter]; present {
 		t.Fatal("apshell resolved a cosigner locally")
 	}
 }

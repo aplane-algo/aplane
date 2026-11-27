@@ -51,4 +51,4 @@ func (o *FalconOps) SignatureArgLayout() composeddsa.SignatureArgLayout {
 	return composeddsa.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
 
-var _ composeddsa.BoundedCapableDSAOps = (*FalconOps)(nil)
+var _ composeddsa.HostCapableDSAOps = (*FalconOps)(nil)

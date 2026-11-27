@@ -53,7 +53,7 @@ func ProjectPrepareGenerateIPC(prepared *PreparedGeneration, err *Error) adminpr
 		CosignerKeyID:     prepared.CosignerKeyID,
 		Warnings:          prepared.Warnings,
 	}
-	if metadata := prepared.Bounded; metadata != nil {
+	if metadata := prepared.Host; metadata != nil {
 		profile := &adminproto.PreparedHostProfile{
 			Rekey:            string(metadata.Rekey),
 			RekeyList:        metadata.RekeyList != nil,

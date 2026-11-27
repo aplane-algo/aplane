@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -143,7 +143,7 @@ func TestGenerateResultDecoderCopiesWarnings(t *testing.T) {
 // without warnings shows none of the earlier account's.
 func TestGeneratedWarningsFollowTheGenerationResult(t *testing.T) {
 	warnings := []string{cosignerHeldWarning(testAddress(9))}
-	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2)
+	prepared := preparedAccount(hostmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2)
 	// The review showed no warning: this one is new since.
 	m, result := reviewedResult(testAddress(3), prepared)
 	result.Warnings = warnings
@@ -200,7 +200,7 @@ func TestGeneratedScreenWithWarningsFitsAt80x24(t *testing.T) {
 	held := cosignerHeldWarning(testAddress(9))
 	onePath := feeLimitWarning(0, "spend (at least 2000)")
 	everyPath := feeLimitWarning(1999, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
-	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2)
+	prepared := preparedAccount(hostmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2)
 	for _, test := range []struct {
 		name     string
 		warnings []string
@@ -269,7 +269,7 @@ func TestGeneratedScreenCountsWarningsItHasNoRowsFor(t *testing.T) {
 	if len(warnings) <= generatedWarningRows {
 		t.Fatalf("the test needs more than %d warnings", generatedWarningRows)
 	}
-	base, result := reviewedResult(testAddress(3), preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
+	base, result := reviewedResult(testAddress(3), preparedAccount(hostmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
 	base.standalone, base.connectionState = true, ConnectionConnected
 	result.Warnings = warnings
 	next, _ := base.Update(result)
@@ -302,7 +302,7 @@ func TestGeneratedScreenShowsWarningsInFull(t *testing.T) {
 	fee := feeLimitWarning(1999, "spend (at least 4000), spending_rekey (at least 3060), listed_rekey (at least 2160)")
 	held := cosignerHeldWarning(testAddress(9))
 	w := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}
-	base, result := reviewedResult(testAddress(3), preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
+	base, result := reviewedResult(testAddress(3), preparedAccount(hostmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 2))
 	base.standalone, base.connectionState = true, ConnectionConnected
 	result.Warnings = []string{fee, held}
 	next, _ := base.Update(result)

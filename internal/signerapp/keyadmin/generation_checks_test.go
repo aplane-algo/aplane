@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/witness"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -38,10 +38,10 @@ func cosignerHeldText(selector string) string {
 // key, with a fee limit when one is named.
 func cosignedRequest(cosignerPublicKeyHex, maxFee string) map[string]string {
 	params := map[string]string{
-		plainhost.ParameterSpendEffects:        "pay",
-		plainhost.ParameterRecipientScope:      plainhost.RecipientScopeAny,
-		plainhost.ParameterRekeyAuthority:      plainhost.RekeySpendingKey,
-		boundedmeta.CosignerPublicKeyParameter: cosignerPublicKeyHex,
+		plainhost.ParameterSpendEffects:     "pay",
+		plainhost.ParameterRecipientScope:   plainhost.RecipientScopeAny,
+		plainhost.ParameterRekeyAuthority:   plainhost.RekeySpendingKey,
+		hostmeta.CosignerPublicKeyParameter: cosignerPublicKeyHex,
 	}
 	if maxFee != "" {
 		params[plainhost.ParameterMaxFee] = maxFee
@@ -90,10 +90,10 @@ func TestARekeyToListNamingTheCosignerWarns(t *testing.T) {
 		"another address listed":        {listedTarget.String(), false},
 	} {
 		params := map[string]string{
-			plainhost.ParameterRekeyAuthority:      plainhost.RekeyPlusCosigned,
-			plainhost.ParameterRekeyTo:             tc.rekeyTo,
-			boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
-			boundedmeta.CosignerKeyTypeParameter:   witness.Ed25519V1,
+			plainhost.ParameterRekeyAuthority:   plainhost.RekeyPlusCosigned,
+			plainhost.ParameterRekeyTo:          tc.rekeyTo,
+			hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+			hostmeta.CosignerKeyTypeParameter:   witness.Ed25519V1,
 		}
 		prepared, reviewed, unreviewed := prepareThenGenerate(t, service, params)
 		for step, got := range map[string][]string{"prepare": prepared, "reviewed generation": reviewed, "unreviewed generation": unreviewed} {
@@ -133,9 +133,9 @@ func TestACosignerKeyThisSignerHoldsIsAllowedWithAWarning(t *testing.T) {
 	// told the same.
 	t.Run("no bounds", func(t *testing.T) {
 		params := map[string]string{
-			plainhost.ParameterRekeyAuthority:      plainhost.RekeyPlusCosigned,
-			plainhost.ParameterRekeyTo:             listedTarget.String(),
-			boundedmeta.CosignerPublicKeyParameter: heldHex,
+			plainhost.ParameterRekeyAuthority:   plainhost.RekeyPlusCosigned,
+			plainhost.ParameterRekeyTo:          listedTarget.String(),
+			hostmeta.CosignerPublicKeyParameter: heldHex,
 		}
 		prepared, reviewed, unreviewed := prepareThenGenerate(t, service, params)
 		for step, got := range map[string][]string{"prepare": prepared, "reviewed generation": reviewed, "unreviewed generation": unreviewed} {
@@ -156,7 +156,7 @@ func TestACosignerKeyThisSignerHoldsIsAllowedWithAWarning(t *testing.T) {
 
 	t.Run("by reference name", func(t *testing.T) {
 		params := cosignedRequest("", "")
-		delete(params, boundedmeta.CosignerPublicKeyParameter)
+		delete(params, hostmeta.CosignerPublicKeyParameter)
 		params[plainhost.ParameterCosigner] = prepareTestReference
 		prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, params)
 		if prepareErr != nil || len(prepared.Warnings) != 0 {
@@ -167,7 +167,7 @@ func TestACosignerKeyThisSignerHoldsIsAllowedWithAWarning(t *testing.T) {
 	// An account with no cosigner has nothing to warn of, whatever the signer holds.
 	t.Run("no cosigner", func(t *testing.T) {
 		params := cosignedRequest("", "")
-		delete(params, boundedmeta.CosignerPublicKeyParameter)
+		delete(params, hostmeta.CosignerPublicKeyParameter)
 		prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, params)
 		if prepareErr != nil || len(prepared.Warnings) != 0 {
 			t.Fatalf("PrepareGenerateKey(no cosigner) = %q, %#v; want no warning", warningsOfPrepared(prepared), prepareErr)
@@ -209,7 +209,7 @@ func generateHeldFalconKey(t *testing.T, ir *productruntime.Runtime, service Ser
 		t.Fatalf("GenerateKey(falcon1024) error = %#v", err)
 	}
 	publicKeyHex = ir.KeyStore().GetPublicKeyHexMap()[held.Address]
-	if len(publicKeyHex) != 2*boundedmeta.DefaultCosignerPublicKeySize {
+	if len(publicKeyHex) != 2*hostmeta.DefaultCosignerPublicKeySize {
 		t.Fatalf("the held key's public key is %d hex characters", len(publicKeyHex))
 	}
 	return held.Address, publicKeyHex
@@ -638,7 +638,7 @@ func TestTheRotatingTargetCheckRefusesWhatItCannotRead(t *testing.T) {
 		"a cut-off address": target[:len(target)-1],
 	} {
 		err := refuseRekeyToHeldRotatingAccount(ir, entries)
-		if err == nil || !strings.HasPrefix(err.Error(), boundedmeta.RekeyListEntriesParameter+": ") {
+		if err == nil || !strings.HasPrefix(err.Error(), hostmeta.RekeyListEntriesParameter+": ") {
 			t.Errorf("%s: error = %v, want a refusal naming the parameter", name, err)
 		}
 	}

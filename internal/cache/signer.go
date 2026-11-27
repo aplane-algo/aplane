@@ -197,7 +197,7 @@ func (cache *SignerCache) HostMaxFeeForAddress(address string) (uint64, bool) {
 	return value, ok
 }
 
-// SetHostMaxFeeForAddress stores the advertised bounded fee ceiling.
+// SetHostMaxFeeForAddress stores a bounded host's advertised fee ceiling.
 func (cache *SignerCache) SetHostMaxFeeForAddress(address string, maxFee uint64) {
 	if cache.HostMaxFees == nil {
 		cache.HostMaxFees = make(map[string]uint64)
@@ -205,7 +205,7 @@ func (cache *SignerCache) SetHostMaxFeeForAddress(address string, maxFee uint64)
 	cache.HostMaxFees[address] = maxFee
 }
 
-// HostContractForAddress returns the bounded authorization contract the
+// HostContractForAddress returns the host contract the
 // signer inventory reported for an account: bounded2 for a bounded host, which
 // has a fee ceiling, or plain1 for a plain host, which has none.
 func (cache *SignerCache) HostContractForAddress(address string) (string, bool) {
@@ -213,7 +213,7 @@ func (cache *SignerCache) HostContractForAddress(address string) (string, bool) 
 	return value, ok && value != ""
 }
 
-// SetHostContractForAddress stores or clears an account's bounded contract.
+// SetHostContractForAddress stores or clears an account's host contract.
 func (cache *SignerCache) SetHostContractForAddress(address, contract string) {
 	if cache.HostContracts == nil {
 		cache.HostContracts = make(map[string]string)

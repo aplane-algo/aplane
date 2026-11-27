@@ -302,7 +302,7 @@ func TestPlainHostsRemainComposableAndAreOptIn(t *testing.T) {
 				t.Fatalf("%s exposed user mnemonic import", keyType)
 			}
 			instance, err := lsigprovider.ResolveInstance(lsigprovider.Get(keyType), nil)
-			if err != nil || instance.Bounded != nil {
+			if err != nil || instance.Host != nil {
 				t.Fatalf("%s without overlays: instance %+v, %v; want the plain program", keyType, instance, err)
 			}
 		})

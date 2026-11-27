@@ -42,7 +42,7 @@ func (splitSignatureOps) SignatureArgLayout() composeddsa.SignatureArgLayout {
 func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
 	tests := []struct {
 		name      string
-		ops       composeddsa.BoundedCapableDSAOps
+		ops       composeddsa.HostCapableDSAOps
 		signature []byte
 	}{
 		{name: "Falcon-1024", ops: falconv1.NewFalconOps(), signature: []byte{1}},

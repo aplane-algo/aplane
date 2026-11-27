@@ -19,10 +19,10 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -111,9 +111,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 				cosignerPublicKey, cosignerPrivateKey := newTestCosignerKey(t, witness.Ed25519V1)
 				apcrypto.ZeroBytes(cosignerPrivateKey)
 				return plainFalconKeyType, map[string]string{
-					keytypes.ParameterCosignerPublicKey:  hex.EncodeToString(cosignerPublicKey),
-					boundedmeta.CosignerKeyTypeParameter: witness.Ed25519V1,
-					"rekey_authority":                    "spending_key",
+					keytypes.ParameterCosignerPublicKey: hex.EncodeToString(cosignerPublicKey),
+					hostmeta.CosignerKeyTypeParameter:   witness.Ed25519V1,
+					"rekey_authority":                   "spending_key",
 				}
 			},
 		},

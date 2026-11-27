@@ -120,8 +120,8 @@ waits for it; KU2 and KU3 cover that case.
   and assembly windows (`signGroupWithPlanContext`, `signComponentWithContext`,
   `AssembleWithContext`, `openKeyUse`, `keyUseRefused` in
   `internal/signerapp/signing/service.go`, `executeGroupSigning` in
-  `execution.go`, `PrepareBoundedComponentWithContext` and
-  `assembleBoundedTarget` in `bounded_cosigner.go`,
+  `execution.go`, `PrepareHostComponentWithContext` and
+  `assembleHostTarget` in `host_cosigner.go`,
   `signPreparedCosignerComponents` in `component_sign.go`, and
   `assembleDecoded` / `rejectLocalCosignedPassthrough` in
   `component_assemble.go`): the session generation captured at request start

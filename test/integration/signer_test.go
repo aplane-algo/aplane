@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -157,7 +157,7 @@ parameters:
     max_items: 30
     label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
-`, integrationTemplatePublisher, boundedmeta.Contract, boundedmeta.RekeySpendingKey)
+`, integrationTemplatePublisher, hostmeta.BoundedContract, hostmeta.RekeySpendingKey)
 }
 
 // installBoundedAllowlistTemplate imports boundedAllowlistTemplateYAML from the

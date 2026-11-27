@@ -9,7 +9,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -30,7 +30,7 @@ const (
 	// Layer3PolicyNone compiles no Layer 3: the bounded envelope and the spending
 	// signature are the whole spending rule. Only the plain hosts' bounds offer
 	// it, with recipient_scope=any.
-	Layer3PolicyNone = boundedmeta.Layer3PolicyNone
+	Layer3PolicyNone = hostmeta.Layer3PolicyNone
 
 	// BoundedInlineListMax is the audited maximum for each framework-owned
 	// inline membership list.
@@ -77,7 +77,7 @@ func cloneLayer3Policy(policy *Layer3Policy) *Layer3Policy {
 	return &cloned
 }
 
-func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) (*Layer3Policy, error) {
+func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, params []lsigprovider.ParameterDef, profile *HostProfile, hasAuthorTEAL bool) (*Layer3Policy, error) {
 	if spec == nil || spec.Layer3 == nil {
 		return nil, nil
 	}
@@ -97,7 +97,7 @@ func layer3PolicyFromTemplate(spec *generictemplate.BoundedAuthorizationSpec, pa
 // validateLayer3Policy checks a framework policy. Author TEAL may run after an
 // allowlist and read its own parameters, so a parameter the policy does not use
 // is an error only when there is no author TEAL to use it.
-func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *BoundedAuthorizationProfile, hasAuthorTEAL bool) error {
+func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterDef, profile *HostProfile, hasAuthorTEAL bool) error {
 	if policy == nil {
 		return nil
 	}
@@ -163,7 +163,7 @@ func validateRecipientsParameter(name string, params []lsigprovider.ParameterDef
 	return fmt.Errorf("recipients_parameter references unknown parameter %q", name)
 }
 
-func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...txeffects.SpendEffect) bool {
+func profileAllowsSpendEffect(profile *HostProfile, wanted ...txeffects.SpendEffect) bool {
 	if profile.Bounds == nil {
 		return false
 	}
@@ -177,7 +177,7 @@ func profileAllowsSpendEffect(profile *BoundedAuthorizationProfile, wanted ...tx
 	return false
 }
 
-func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
+func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *HostProfile) (string, error) {
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
 		return "", err
 	}
@@ -214,7 +214,7 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Boun
 	return b.String(), nil
 }
 
-func (c *ComposedDSA) renderFixedAllowlist(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
+func (c *ComposedDSA) renderFixedAllowlist(params map[string]string, profile *HostProfile) (string, error) {
 	recipients := splitCanonicalList(params[c.layer3.RecipientsParameter])
 	var b strings.Builder
 	b.WriteString("// === framework-owned fixed allowlist ===\n")
@@ -253,7 +253,7 @@ func (c *ComposedDSA) renderFixedAllowlist(params map[string]string, profile *Bo
 	return b.String(), nil
 }
 
-func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
+func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *HostProfile) (string, error) {
 	root, err := merkleallowlist.RootHexFromRecipientsParam(params[c.layer3.RecipientsParameter])
 	if err != nil {
 		return "", fmt.Errorf("compute recipient Merkle root: %w", err)
@@ -264,7 +264,7 @@ func (c *ComposedDSA) renderMerkleAllowlist(params map[string]string, profile *B
 	}
 	proofIndex := -1
 	for i, arg := range c.derivedArgs {
-		if arg.Kind == boundedmeta.DerivedArgMerkleProof && arg.Parameter == c.layer3.RecipientsParameter {
+		if arg.Kind == hostmeta.DerivedArgMerkleProof && arg.Parameter == c.layer3.RecipientsParameter {
 			proofIndex = layout.Count + i
 			break
 		}
@@ -323,8 +323,8 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 		return fmt.Errorf("%s requires exactly one derived Merkle proof argument", c.layer3.Policy)
 	}
 	arg := c.derivedArgs[0]
-	if arg.Kind != boundedmeta.DerivedArgMerkleProof || arg.Parameter != c.layer3.RecipientsParameter || arg.MaxSize != boundedmeta.MerkleProofSize {
-		return fmt.Errorf("%s derived argument must be a %d-byte %s for parameter %q", c.layer3.Policy, boundedmeta.MerkleProofSize, boundedmeta.DerivedArgMerkleProof, c.layer3.RecipientsParameter)
+	if arg.Kind != hostmeta.DerivedArgMerkleProof || arg.Parameter != c.layer3.RecipientsParameter || arg.MaxSize != hostmeta.MerkleProofSize {
+		return fmt.Errorf("%s derived argument must be a %d-byte %s for parameter %q", c.layer3.Policy, hostmeta.MerkleProofSize, hostmeta.DerivedArgMerkleProof, c.layer3.RecipientsParameter)
 	}
 	return nil
 }
@@ -335,10 +335,10 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 func (c *ComposedDSA) paramsWithoutCosignerKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name == BoundedCosignerPublicKeyParameter {
+		if param.Name == CosignerPublicKeyParameter {
 			continue
 		}
-		if param.Name == BoundedRekeyToParameter && c.bounded != nil && c.bounded.RekeyList != nil {
+		if param.Name == RekeyToParameter && c.host != nil && c.host.RekeyList != nil {
 			continue
 		}
 		params = append(params, param)

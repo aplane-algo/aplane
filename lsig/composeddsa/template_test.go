@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -278,9 +278,9 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	profile := provider.BoundedAuthorizationProfile()
-	if profile == nil || profile.Contract != BoundedContract || profile.Bounds.MaxFee == nil || *profile.Bounds.MaxFee != 10_000 || profile.Rekey != boundedmeta.RekeySpendingKey {
-		t.Fatalf("BoundedAuthorizationProfile() = %#v", profile)
+	profile := provider.HostProfile()
+	if profile == nil || profile.Contract != BoundedContract || profile.Bounds.MaxFee == nil || *profile.Bounds.MaxFee != 10_000 || profile.Rekey != hostmeta.RekeySpendingKey {
+		t.Fatalf("HostProfile() = %#v", profile)
 	}
 	if got := provider.CreationParams(); len(got) != 0 {
 		t.Fatalf("CreationParams() = %#v, want no injected parameters", got)
@@ -288,9 +288,9 @@ teal: |
 	if got := provider.RuntimeArgs(); len(got) != 1 || got[0].Name != "preimage" || got[0].MaxSize != 64 || !got[0].Required {
 		t.Fatalf("RuntimeArgs() = %#v, want bounded preimage", got)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || len(metadata.ArgumentLayout) != 2 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceRuntime {
-		t.Fatalf("BoundedAuthorizationMetadata() = %#v, want base/runtime layout", metadata)
+	metadata := provider.HostMetadata()
+	if metadata == nil || len(metadata.ArgumentLayout) != 2 || metadata.ArgumentLayout[1].Source != hostmeta.ArgSourceRuntime {
+		t.Fatalf("HostMetadata() = %#v, want base/runtime layout", metadata)
 	}
 }
 
@@ -461,14 +461,14 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	params := provider.CreationParams()
-	if len(params) != 1 || params[0].Name != BoundedCosignerPublicKeyParameter || params[0].MaxLength != boundedmeta.DefaultCosignerPublicKeySize*2 {
+	if len(params) != 1 || params[0].Name != CosignerPublicKeyParameter || params[0].MaxLength != hostmeta.DefaultCosignerPublicKeySize*2 {
 		t.Fatalf("CreationParams() = %#v, want injected cosigner public key", params)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.Contract != boundedmeta.CosignerContractV1 || metadata.Rekey != boundedmeta.RekeyRefused {
-		t.Fatalf("BoundedAuthorizationMetadata() = %#v", metadata)
+	metadata := provider.HostMetadata()
+	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.Contract != hostmeta.CosignerContractV1 || metadata.Rekey != hostmeta.RekeyRefused {
+		t.Fatalf("HostMetadata() = %#v", metadata)
 	}
-	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != boundedmeta.ArgSourceCosigner || got[1].Paths.Spend != boundedmeta.ArgRequired {
+	if got := metadata.ArgumentLayout; len(got) != 2 || got[1].Source != hostmeta.ArgSourceCosigner || got[1].Paths.Spend != hostmeta.ArgRequired {
 		t.Fatalf("ArgumentLayout = %#v, want base/cosigner layout", got)
 	}
 }
@@ -669,7 +669,7 @@ bounded:
   assert
 `, baseKeyType, block)
 	}
-	for _, rekey := range []boundedmeta.RekeySetting{boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey} {
+	for _, rekey := range []hostmeta.RekeySetting{hostmeta.RekeyRefused, hostmeta.RekeySpendingKey} {
 		spec, err := ParseTemplateSpec([]byte(template("  rekey: " + string(rekey) + "\n")))
 		if err != nil {
 			t.Fatalf("ParseTemplateSpec(%s) error = %v", rekey, err)
@@ -678,10 +678,10 @@ bounded:
 		if err != nil {
 			t.Fatalf("NewProviderFromTemplateSpec(%s) error = %v", rekey, err)
 		}
-		if got := provider.BoundedAuthorizationProfile().Rekey; got != rekey {
+		if got := provider.HostProfile().Rekey; got != rekey {
 			t.Fatalf("profile rekey = %q, want %q", got, rekey)
 		}
-		if got := provider.BoundedAuthorizationMetadata().Rekey; got != rekey {
+		if got := provider.HostMetadata().Rekey; got != rekey {
 			t.Fatalf("metadata rekey = %q, want %q", got, rekey)
 		}
 	}
@@ -1127,16 +1127,16 @@ bounded:
   int 1
   assert
 `, baseKeyType, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, 8, true))), tt.want)
-			_, err := provider.BuildBoundedAuthorizationMetadata([]byte{1}, nil, []byte{1, 2, 3})
+			_, err := provider.BuildHostMetadata([]byte{1}, nil, []byte{1, 2, 3})
 			if tt.want == "" {
 				if err != nil {
-					t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+					t.Fatalf("BuildHostMetadata() error = %v", err)
 				}
 				return
 			}
 			// The stored template loads, but no key can be generated from it.
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v, want %q", err, tt.want)
+				t.Fatalf("BuildHostMetadata() error = %v, want %q", err, tt.want)
 			}
 		})
 	}
@@ -1194,9 +1194,9 @@ bounded:
 `, tt.cosigner, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, tt.maxSize, true))), tt.want)
 			params := map[string]string{}
 			if tt.cosigner != "" {
-				params[BoundedCosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize))
+				params[CosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize))
 			}
-			_, err := provider.BuildBoundedAuthorizationMetadata(bytes.Repeat([]byte{0x31}, boundedmeta.DefaultCosignerPublicKeySize), params, []byte{1, 2, 3})
+			_, err := provider.BuildHostMetadata(bytes.Repeat([]byte{0x31}, hostmeta.DefaultCosignerPublicKeySize), params, []byte{1, 2, 3})
 			if tt.wantKeygen == "" {
 				if err != nil {
 					t.Fatalf("key metadata: %v", err)

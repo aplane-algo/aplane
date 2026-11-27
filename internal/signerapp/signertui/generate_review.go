@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	tea "github.com/charmbracelet/bubbletea"
@@ -138,7 +138,7 @@ func rekeyToList(review PrepareGenerateResultMessage) []string {
 	if review.Host == nil || !review.Host.RekeyList {
 		return nil
 	}
-	value := strings.TrimSpace(review.Parameters[boundedmeta.RekeyListEntriesParameter])
+	value := strings.TrimSpace(review.Parameters[hostmeta.RekeyListEntriesParameter])
 	if value == "" {
 		return nil
 	}
@@ -156,7 +156,7 @@ func recipientList(parameters map[string]string) []string {
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
-	setting := boundedmeta.RekeySetting(review.Host.Rekey)
+	setting := hostmeta.RekeySetting(review.Host.Rekey)
 	cosigned := review.Host.CosignerRequired
 	plain := review.Host.Bounds == nil
 	if review.Host.RekeyList {
@@ -166,7 +166,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 			these, them = "this address", "it"
 		}
 		consequence = "The spending key alone can hand the account to " + them + ", at any time."
-		if setting == boundedmeta.RekeySpendingKey {
+		if setting == hostmeta.RekeySpendingKey {
 			// Plus cosigned: the listed targets, and any other the cosigner allows.
 			short := fmt.Sprintf("These %d", count)
 			if count == 1 {
@@ -180,7 +180,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		return "Only " + these + ", spending key alone", consequence
 	}
 	switch setting {
-	case boundedmeta.RekeyRefused:
+	case hostmeta.RekeyRefused:
 		if plain && cosigned {
 			// A plain host can always close out, with the cosigner.
 			return "None", "No rekey path. Every spend, closes included, needs the cosigner."
@@ -189,7 +189,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 			return "None", "No rekey path. The spending key alone can spend or close everything."
 		}
 		return "None", "No rekey path. Losing a required authority cannot be repaired."
-	case boundedmeta.RekeySpendingKey:
+	case hostmeta.RekeySpendingKey:
 		if cosigned {
 			return "Spending key and cosigner", "Together they can rekey out of this boundary, to a target both nodes' policies allow."
 		}
@@ -213,20 +213,20 @@ func reviewRecipients(bounds *protocol.PreparedHostBounds, cosigned bool, recipi
 	}
 	policy := bounds.Layer3Policy
 	switch {
-	case policy == boundedmeta.Layer3PolicyCustom:
+	case policy == hostmeta.Layer3PolicyCustom:
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
-	case policy == boundedmeta.Layer3PolicyNone:
+	case policy == hostmeta.Layer3PolicyNone:
 		return reviewRow("Recipients", "any; only the fee limit and transfer kinds apply"), ""
-	case !boundedmeta.IsRecipientListPolicy(policy):
+	case !hostmeta.IsRecipientListPolicy(policy):
 		return reviewRow("Policy", fmt.Sprintf("%s, see details", policy)), ""
 	}
 	encoding := "inline"
 	note = "The whole list is public once the program is published."
-	if boundedmeta.IsMerkleListPolicy(policy) {
+	if hostmeta.IsMerkleListPolicy(policy) {
 		encoding = "Merkle"
 		note = "A spend reveals its recipient and proof, so the list is only partly hidden."
 	}
-	if boundedmeta.IsCustomPolicy(policy) {
+	if hostmeta.IsCustomPolicy(policy) {
 		encoding += ", custom policy"
 	}
 	if len(recipients) == 0 {
@@ -424,9 +424,9 @@ func reviewDetailParameters(review PrepareGenerateResultMessage) []string {
 	listed := rekeyToList(review) != nil
 	for name := range review.Parameters {
 		switch {
-		case name == boundary.ParameterRecipients, name == boundedmeta.CosignerPublicKeyParameter:
+		case name == boundary.ParameterRecipients, name == hostmeta.CosignerPublicKeyParameter:
 			continue
-		case name == boundedmeta.RekeyListEntriesParameter && listed:
+		case name == hostmeta.RekeyListEntriesParameter && listed:
 			// Shown below as the rekey-to list.
 			continue
 		}
@@ -550,14 +550,14 @@ func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuan
 // the online keys.
 func reviewRekeyProtection(review PrepareGenerateResultMessage) string {
 	profile := review.Host
-	switch setting := boundedmeta.RekeySetting(profile.Rekey); {
-	case setting != boundedmeta.RekeyRefused && setting != boundedmeta.RekeySpendingKey:
+	switch setting := hostmeta.RekeySetting(profile.Rekey); {
+	case setting != hostmeta.RekeyRefused && setting != hostmeta.RekeySpendingKey:
 		return "This client cannot describe that rekey setting, so it claims no protection for it."
-	case profile.RekeyList && setting == boundedmeta.RekeyRefused:
+	case profile.RekeyList && setting == hostmeta.RekeyRefused:
 		return "Independent of the online keys: rekeys go only to the listed addresses."
 	case profile.RekeyList:
 		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."
-	case setting == boundedmeta.RekeyRefused:
+	case setting == hostmeta.RekeyRefused:
 		return "Independent of the online keys: no key can rekey it."
 	case profile.CosignerRequired:
 		return "As strong as its two online keys: together they can rekey it anywhere their policies allow."

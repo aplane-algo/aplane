@@ -26,7 +26,7 @@ type authorizationBudget struct {
 	maxFee            uint64
 }
 
-func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRuntimeSnapshot, boundedItems []*boundedPlanItem, passthrough, foreign map[int]bool, passthroughBytes map[int][]byte) ([]authorizationBudget, *ServiceError) {
+func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRuntimeSnapshot, hostItems []*hostPlanItem, passthrough, foreign map[int]bool, passthroughBytes map[int][]byte) ([]authorizationBudget, *ServiceError) {
 	budgets := make([]authorizationBudget, len(requests))
 	for i, request := range requests {
 		switch {
@@ -45,8 +45,8 @@ func authorizationBudgets(requests []signerapi.SignRequest, snapshot PlannerRunt
 		default:
 			budgets[i].mutable = true
 			// A plain host has no fee ceiling, so its fee is unconstrained.
-			if i < len(boundedItems) && boundedItems[i] != nil {
-				if fee := boundedItems[i].Metadata.FeeCeiling(); fee != nil {
+			if i < len(hostItems) && hostItems[i] != nil {
+				if fee := hostItems[i].Metadata.FeeCeiling(); fee != nil {
 					budgets[i].maxFeeConstrained = true
 					budgets[i].maxFee = *fee
 				}

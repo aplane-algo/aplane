@@ -11,13 +11,13 @@ package signing
 // transaction in a corpus under every combination of supplied, wrong and absent
 // arguments, and requires the program to accept exactly when:
 //
-//   - the planner admits the transaction (resolveBoundedPlanItems returns a path),
+//   - the planner admits the transaction (resolveHostPlanItems returns a path),
 //   - the host's rules hold on that path, as an independent model below: the
 //     spending rules on the spend path, and on a rekey path only the rekey rule
 //     (a pure rekey, and on a list shape one to a listed target), never a
 //     spending rule (O11), and
 //   - every slot the planner's assembly fills for that path (the required masks,
-//     and a recipient or rekey-to list proof boundedDerivedArgs derives) holds the
+//     and a recipient or rekey-to list proof hostDerivedArgs derives) holds the
 //     signer's value.
 //
 // Slots the planner leaves empty may hold anything: the program checks what each
@@ -48,8 +48,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/avmsim"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
@@ -95,7 +95,7 @@ var (
 	// agSpendingPrivateKey is the private half the rekey-to list's seed derives
 	// from. The harness fakes signatures, so any fixed bytes serve.
 	agSpendingPrivateKey = bytes.Repeat([]byte{0x31}, falconfamily.PrivateKeySize)
-	agCosignerKey        = bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize)
+	agCosignerKey        = bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize)
 	// agEd25519CosignerKey is the Ed25519-cosigned shapes' cosigner.
 	agEd25519CosignerKey = bytes.Repeat([]byte{0x42}, witness.Ed25519PublicKeySize)
 	agSender             = agAddress(0xA0)
@@ -137,9 +137,9 @@ func agAddCosigner(params map[string]string, componentKeyType string) {
 	if componentKeyType == "" {
 		return
 	}
-	params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKeyFor(componentKeyType))
-	if componentKeyType != boundedmeta.DefaultCosignerComponentKeyType {
-		params[boundedmeta.CosignerKeyTypeParameter] = componentKeyType
+	params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(agCosignerKeyFor(componentKeyType))
+	if componentKeyType != hostmeta.DefaultCosignerComponentKeyType {
+		params[hostmeta.CosignerKeyTypeParameter] = componentKeyType
 	}
 }
 
@@ -416,7 +416,7 @@ var agStateNames = map[agState]string{
 var agRoleNames = map[agRole]string{agRoleBase: "base", agRoleProof: "proof", agRoleListProof: "rekey proof", agRoleCosigner: "cosigner"}
 
 type agSlot struct {
-	boundedmeta.ArgumentSlot
+	hostmeta.ArgumentSlot
 	role agRole
 }
 
@@ -430,7 +430,7 @@ type agPlan struct {
 	// path. refusal is its error kind when it did not.
 	planned bool
 	refusal ErrorKind
-	path    boundedPath
+	path    hostPath
 	// required marks, by slot index, the slots the signer fills on this path.
 	required []bool
 	// absent marks, by slot index, the slots that must be empty for the program
@@ -483,7 +483,7 @@ type agAccount struct {
 	spendingKey []byte
 	teal        string
 	program     *avmsim.Program
-	metadata    *boundedmeta.Metadata
+	metadata    *hostmeta.Metadata
 	keyMaterial *coresigning.KeyMaterial
 	// snapshot is the planner's view of the account, as the signer scans it.
 	snapshot    PlannerRuntimeSnapshot
@@ -575,7 +575,7 @@ type agHost interface {
 	ResolveInstance(map[string]string) (*lsigprovider.Instance, error)
 	PrepareRekeyList([]byte, map[string]string) (map[string]string, error)
 	GenerateTEAL([]byte, map[string]string) (string, error)
-	BuildBoundedAuthorizationMetadata([]byte, map[string]string, []byte) (*boundedmeta.Metadata, error)
+	BuildHostMetadata([]byte, map[string]string, []byte) (*hostmeta.Metadata, error)
 	KeyType() string
 	BaseKeyType() string
 }
@@ -636,13 +636,13 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 	}
 	// The bytecode length only feeds generation's resource backstop; the harness
 	// runs the source, so a placeholder of a realistic size stands in for it.
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(spec.spendingKey, params, make([]byte, 3_000))
+	metadata, err := provider.BuildHostMetadata(spec.spendingKey, params, make([]byte, 3_000))
 	if err != nil {
-		return nil, fmt.Errorf("%s: BuildBoundedAuthorizationMetadata: %w", name, err)
+		return nil, fmt.Errorf("%s: BuildHostMetadata: %w", name, err)
 	}
-	wantContract := boundedmeta.Contract
+	wantContract := hostmeta.BoundedContract
 	if spec.plain {
-		wantContract = boundedmeta.PlainContract
+		wantContract = hostmeta.PlainContract
 	}
 	if metadata.Contract != wantContract {
 		return nil, fmt.Errorf("%s: contract %s, want %s", name, metadata.Contract, wantContract)
@@ -652,11 +652,11 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 		keyMaterial: &coresigning.KeyMaterial{
 			Type: provider.KeyType(), BaseKeyType: provider.BaseKeyType(), PublicKey: spec.spendingKey,
 			Value:      &coresigning.LsigKeyMaterial{PrivateKey: agSpendingPrivateKey},
-			Parameters: params, BoundedAuthorization: metadata,
+			Parameters: params, Host: metadata,
 		},
 		snapshot: PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{agSender.String(): {
 			BaseKeyType: provider.BaseKeyType(), PublicKeyHex: hex.EncodeToString(spec.spendingKey),
-			Parameters: params, BoundedAuthorization: metadata,
+			Parameters: params, Host: metadata,
 		}}},
 		listed: map[types.Address]bool{}, proofs: map[types.Address][]byte{},
 		rekeyListed: map[types.Address]bool{}, rekeyProofs: map[types.Address][]byte{}, listProofIndex: -1,
@@ -691,9 +691,9 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 		switch {
 		case params[plainhost.ParameterRekeyTo] != agRekeyTo:
 			return nil, fmt.Errorf("%s: stored rekey-to list %q is not the harness's %q", name, params[plainhost.ParameterRekeyTo], agRekeyTo)
-		case params[boundedmeta.RekeyListRootParameter] != list.rekeyRoot || metadata.RekeyList.RootHex != list.rekeyRoot:
+		case params[hostmeta.RekeyListRootParameter] != list.rekeyRoot || metadata.RekeyList.RootHex != list.rekeyRoot:
 			return nil, fmt.Errorf("%s: stored rekey-to list root %s (metadata %s) is not the harness's %s",
-				name, params[boundedmeta.RekeyListRootParameter], metadata.RekeyList.RootHex, list.rekeyRoot)
+				name, params[hostmeta.RekeyListRootParameter], metadata.RekeyList.RootHex, list.rekeyRoot)
 		}
 		for _, listed := range []types.Address{agRekeyListedA, agRekeyListedB} {
 			a.rekeyListed[listed] = true
@@ -707,19 +707,19 @@ func agBuildAccount(provider agHost, list *agList, spec agSpec, corpus []*agTxn)
 	for _, slot := range metadata.ArgumentLayout {
 		s := agSlot{ArgumentSlot: slot}
 		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
+		case hostmeta.ArgSourceBaseSignature:
 			s.role = agRoleBase
-		case boundedmeta.ArgSourceDerived:
+		case hostmeta.ArgSourceDerived:
 			switch kind := derivedKinds[slot.Name]; kind {
-			case boundedmeta.DerivedArgMerkleProof:
+			case hostmeta.DerivedArgMerkleProof:
 				s.role = agRoleProof
-			case boundedmeta.DerivedArgRekeyListProof:
+			case hostmeta.DerivedArgRekeyListProof:
 				s.role = agRoleListProof
 				a.listProofIndex = slot.Index
 			default:
 				return nil, fmt.Errorf("%s: derived slot %q has kind %q the harness does not model", name, slot.Name, kind)
 			}
-		case boundedmeta.ArgSourceCosigner:
+		case hostmeta.ArgSourceCosigner:
 			s.role = agRoleCosigner
 		default:
 			return nil, fmt.Errorf("%s: slot %q has source %q the harness does not model", name, slot.Name, slot.Source)
@@ -806,10 +806,10 @@ func (a *agAccount) feeWithinCeiling(tx *agTxn) bool {
 var agRequests = []signerapi.SignRequest{{AuthAddress: agSender.String()}}
 
 func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, error) {
-	items, planErr := resolveBoundedPlanItems(a.snapshot, agRequests, []types.Transaction{tx.txn}, nil, nil)
+	items, planErr := resolveHostPlanItems(a.snapshot, agRequests, []types.Transaction{tx.txn}, nil, nil)
 	if planErr != nil {
-		if planErr.Kind != ErrorBadRequest && planErr.Kind != ErrorBoundedRekeyNotListed {
-			return agPlan{}, fmt.Errorf("resolveBoundedPlanItems failed internally (%s): %s", planErr.Kind, planErr.Message)
+		if planErr.Kind != ErrorBadRequest && planErr.Kind != ErrorRekeyTargetNotListed {
+			return agPlan{}, fmt.Errorf("resolveHostPlanItems failed internally (%s): %s", planErr.Kind, planErr.Message)
 		}
 		return agPlan{why: "planner: " + planErr.Message, refusal: planErr.Kind}, nil
 	}
@@ -819,27 +819,27 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 	item := items[0]
 	path := item.Path
 	switch path {
-	case boundedPathPureSpend:
+	case hostPathPureSpend:
 		if reason := a.agHostRule(tx); reason != "" {
 			return agPlan{why: reason, planned: true, path: path}, nil
 		}
-	case boundedPathSpendingKeyRekey, boundedPathListedRekey:
+	case hostPathSpendingKeyRekey, hostPathListedRekey:
 		if reason := a.agRekeyRule(tx); reason != "" {
 			return agPlan{why: reason, planned: true, path: path}, nil
 		}
 	default:
 		return agPlan{}, fmt.Errorf("the planner chose path %q the harness does not model", path)
 	}
-	// boundedDerivedArgs depends only on the path, the type and the recipient, and
+	// hostDerivedArgs depends only on the path, the type and the recipient, and
 	// on a listed rekey the target, and building a Merkle proof is slow, so its
 	// results are shared across the corpus.
 	key := fmt.Sprintf("%s/%s/%s/%v", path, tx.txn.Type, tx.receiver, tx.receiver == tx.txn.Sender)
-	if path == boundedPathListedRekey {
+	if path == hostPathListedRekey {
 		key += "/" + tx.txn.RekeyTo.String()
 	}
 	derived, ok := derivedMemo[key]
 	if !ok {
-		values, err := boundedDerivedArgs(tx.txn, a.keyMaterial, a.metadata, path)
+		values, err := hostDerivedArgs(tx.txn, a.keyMaterial, a.metadata, path)
 		derived = agDerived{values: values, err: err}
 		derivedMemo[key] = derived
 	}
@@ -850,35 +850,35 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 	var base [][]byte
 	var cosignerSignature []byte
 	for _, slot := range a.slots {
-		rule := boundedSlotRule(slot.ArgumentSlot, path)
+		rule := hostSlotRule(slot.ArgumentSlot, path)
 		switch rule {
-		case boundedmeta.ArgRequired, boundedmeta.ArgOptional, boundedmeta.ArgForbidden:
+		case hostmeta.ArgRequired, hostmeta.ArgOptional, hostmeta.ArgForbidden:
 		default:
 			return agPlan{}, fmt.Errorf("slot %q has no rule on path %s", slot.Name, path)
 		}
 		switch slot.role {
 		case agRoleBase:
 			base = append(base, a.value(slot, agValid, tx))
-			plan.required[slot.Index] = rule == boundedmeta.ArgRequired
+			plan.required[slot.Index] = rule == hostmeta.ArgRequired
 		case agRoleProof, agRoleListProof:
 			filled := derived.values[slot.Name]
-			plan.required[slot.Index] = rule == boundedmeta.ArgRequired || len(filled) != 0
+			plan.required[slot.Index] = rule == hostmeta.ArgRequired || len(filled) != 0
 			if len(filled) != 0 && !bytes.Equal(filled, a.value(slot, agValid, tx)) {
 				return agPlan{}, fmt.Errorf("the signer's %s differs from the list's proof for this transaction", agRoleNames[slot.role])
 			}
 			// The rekey rule admits a listed rekey only with the target's proof,
 			// so the plan must require it, whatever the mask says.
-			if slot.role == agRoleListProof && path == boundedPathListedRekey && !plan.required[slot.Index] {
+			if slot.role == agRoleListProof && path == hostPathListedRekey && !plan.required[slot.Index] {
 				return agPlan{}, fmt.Errorf("the planner does not require the rekey-to list proof on a listed rekey")
 			}
 		case agRoleCosigner:
-			plan.required[slot.Index] = rule == boundedmeta.ArgRequired
+			plan.required[slot.Index] = rule == hostmeta.ArgRequired
 			if plan.required[slot.Index] {
 				cosignerSignature = a.value(slot, agValid, tx)
 			}
 		}
 	}
-	assembled, assembleErr := assembleBoundedArgsWithCosigner(a.metadata, item, base, derived.values, cosignerSignature)
+	assembled, assembleErr := assembleHostArgsWithCosigner(a.metadata, item, base, derived.values, cosignerSignature)
 	if assembleErr != nil {
 		return agPlan{}, fmt.Errorf("the signer's assembly failed: %s", assembleErr.Message)
 	}
@@ -887,9 +887,9 @@ func (a *agAccount) plan(tx *agTxn, derivedMemo map[string]agDerived) (agPlan, e
 		emptyProof := make([]bool, len(a.slots))
 		emptyProof[a.listProofIndex] = true
 		switch path {
-		case boundedPathSpendingKeyRekey:
+		case hostPathSpendingKeyRekey:
 			plan.absent = emptyProof
-		case boundedPathListedRekey:
+		case hostPathListedRekey:
 			alt := agNeed{required: make([]bool, len(a.slots)), absent: emptyProof}
 			for _, slot := range a.slots {
 				alt.required[slot.Index] = slot.role == agRoleBase || slot.role == agRoleCosigner
@@ -1174,19 +1174,19 @@ func TestBoundedPlannerAgreesWithProgram(t *testing.T) {
 							t.Errorf("%s / %s: the planner admits %v (%s), the rekey rule admits %v (%s)",
 								a.name, tx.name, plan.planned, plan.why, reason == "", reason)
 						}
-					case unlisted && plan.refusal != ErrorBoundedRekeyNotListed:
-						t.Errorf("%s / %s: the planner refuses an unlisted target with %q, want %q", a.name, tx.name, plan.refusal, ErrorBoundedRekeyNotListed)
+					case unlisted && plan.refusal != ErrorRekeyTargetNotListed:
+						t.Errorf("%s / %s: the planner refuses an unlisted target with %q, want %q", a.name, tx.name, plan.refusal, ErrorRekeyTargetNotListed)
 					}
 				}
 				// A plain host takes every transaction without RekeyTo as a spend.
-				if a.plain && tx.txn.RekeyTo.IsZero() && (!plan.planned || plan.path != boundedPathPureSpend) {
+				if a.plain && tx.txn.RekeyTo.IsZero() && (!plan.planned || plan.path != hostPathPureSpend) {
 					t.Errorf("%s / %s: the planner does not take a plain host's transaction as a spend (%s)", a.name, tx.name, plan.why)
 				}
 				if !plan.admit {
 					continue
 				}
 				admitted++
-				if plan.path == boundedPathListedRekey {
+				if plan.path == hostPathListedRekey {
 					listedAdmitted[tx.txn.RekeyTo] = true
 				}
 				// The signer's own argument vector must be what the harness calls
@@ -1419,7 +1419,7 @@ func agCheckRekeyFirst(a *agAccount) error {
 	listed := a.metadata.RekeyList != nil
 	// A cosigned spending-key rekey calls the cosigner check; under plus cosigned
 	// only its cosigned branch does, taken when the proof slot is empty.
-	cosignedRekey := a.metadata.Cosigner != nil && slices.Contains(a.metadata.Cosigner.RequiredOn, boundedmeta.PathSpendingRekey)
+	cosignedRekey := a.metadata.Cosigner != nil && slices.Contains(a.metadata.Cosigner.RequiredOn, hostmeta.PathSpendingRekey)
 	var proofArg, root string
 	if listed {
 		proofArg, root = fmt.Sprint(a.listProofIndex), "0x"+a.metadata.RekeyList.RootHex
@@ -1578,7 +1578,7 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 	find := func(rekey string, cosigner bool) *agAccount {
 		want := ""
 		if cosigner {
-			want = boundedmeta.DefaultCosignerComponentKeyType
+			want = hostmeta.DefaultCosignerComponentKeyType
 		}
 		for _, a := range accounts {
 			if a.shape.Rekey == rekey && a.shape.Cosigner == want && a.shape.Encoding == plainhost.EncodingMerkle {
@@ -1597,7 +1597,7 @@ func TestBoundedRekeyFirstCheckRefusesOtherLayouts(t *testing.T) {
 		t.Fatalf("no plain host %s", name)
 		return nil
 	}
-	plain := findPlain("plain falcon1024 rekey=spending_key cosigner=" + boundedmeta.DefaultCosignerComponentKeyType)
+	plain := findPlain("plain falcon1024 rekey=spending_key cosigner=" + hostmeta.DefaultCosignerComponentKeyType)
 	plainEd25519 := findPlain("plain ed25519 rekey=only_these cosigner=none")
 	spending, cosignedListed := find(plainhost.RekeySpendingKey, false), find(plainhost.RekeyOnlyThese, true)
 	listed := find(plainhost.RekeyOnlyThese, false)

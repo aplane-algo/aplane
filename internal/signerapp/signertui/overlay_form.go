@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
@@ -42,7 +42,7 @@ const (
 func isOverlayParameter(name string) bool {
 	switch name {
 	case overlayCosigner, overlayList, overlayRekey,
-		boundedmeta.CosignerPublicKeyParameter, boundedmeta.RekeyListRootParameter:
+		hostmeta.CosignerPublicKeyParameter, hostmeta.RekeyListRootParameter:
 		return true
 	}
 	return false

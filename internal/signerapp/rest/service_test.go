@@ -18,12 +18,12 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/crypto/cryptotest"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -475,10 +475,10 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	const keyType = "test.rest-runtime-bounded.v1"
 	lsigprovider.Register(restTestDSAProvider{
 		keyType: keyType,
-		bounded: &composeddsa.BoundedAuthorizationProfile{
+		bounded: &composeddsa.HostProfile{
 			Contract: composeddsa.BoundedContract,
 			Bounds:   &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
-			Rekey:    boundedmeta.RekeySpendingKey,
+			Rekey:    hostmeta.RekeySpendingKey,
 		},
 	})
 
@@ -493,25 +493,25 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
 	bounded := info.Host
-	if bounded.Contract != composeddsa.BoundedContract || bounded.Bounds == nil || bounded.Bounds.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Bounds.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+	if bounded.Contract != composeddsa.BoundedContract || bounded.Bounds == nil || bounded.Bounds.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Bounds.Layer3Policy != hostmeta.Layer3PolicyCustom {
 		t.Fatalf("host = %#v", bounded)
 	}
 	if got := strings.Join(bounded.Bounds.SpendEffects, ","); got != "pay,axfer" {
 		t.Fatalf("spend_effects = %q", got)
 	}
-	if bounded.Rekey != string(boundedmeta.RekeySpendingKey) {
+	if bounded.Rekey != string(hostmeta.RekeySpendingKey) {
 		t.Fatalf("rekey = %q", bounded.Rekey)
 	}
 }
 
 func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	const keyType = "test.rest-bounded-cosigner.v1"
-	profile := &composeddsa.BoundedAuthorizationProfile{
+	profile := &composeddsa.HostProfile{
 		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(2_000))},
-		Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}
 	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: profile})
@@ -526,7 +526,7 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	if info.Host == nil || info.Host.Cosigner == nil {
 		t.Fatalf("bounded cosigner metadata = %#v", info.Host)
 	}
-	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.CosignerPublicKeyParameter {
+	if got := info.CreationParams; len(got) != 1 || got[0].Name != hostmeta.CosignerPublicKeyParameter {
 		t.Fatalf("creation params = %#v, want raw cosigner public key before reference projection", got)
 	}
 }
@@ -534,10 +534,10 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 // /keys and /keytypes nest a bounded host's rules in bounds, with a fee
 // ceiling of zero written out, and give a plain host no bounds at all.
 func TestHostInfoNestsTheBounds(t *testing.T) {
-	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}
-	bounded, err := json.Marshal(hostInfo(&boundedmeta.Metadata{
-		Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, Rekey: boundedmeta.RekeyRefused,
-		Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)), Layer3Policy: boundedmeta.Layer3PolicyNone},
+	layout := hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}
+	bounded, err := json.Marshal(hostInfo(&hostmeta.Metadata{
+		Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: layout, Rekey: hostmeta.RekeyRefused,
+		Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)), Layer3Policy: hostmeta.Layer3PolicyNone},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -548,8 +548,8 @@ func TestHostInfoNestsTheBounds(t *testing.T) {
 	if strings.Count(string(bounded), `"max_fee"`) != 1 || strings.Count(string(bounded), `"spend_effects"`) != 1 {
 		t.Fatalf("bounded host repeats its bounds outside the object: %s", bounded)
 	}
-	plain, err := json.Marshal(hostInfo(&boundedmeta.Metadata{
-		Contract: boundedmeta.PlainContract, BaseSignatureArgLayout: layout, Rekey: boundedmeta.RekeySpendingKey,
+	plain, err := json.Marshal(hostInfo(&hostmeta.Metadata{
+		Contract: hostmeta.PlainContract, BaseSignatureArgLayout: layout, Rekey: hostmeta.RekeySpendingKey,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -565,40 +565,40 @@ func TestHostInfoNestsTheBounds(t *testing.T) {
 }
 
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
-	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
-		Rekey:                  boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+	metadata := &hostmeta.Metadata{
+		Contract:               hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         hostmeta.BaseArgumentLayout(hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
+		Bounds:                 &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
+		Rekey:                  hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: strings.Repeat("ab", 32), ComponentKeyID: "COSIGNER",
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}
 	info := hostInfo(metadata)
 	if info.Cosigner == nil || info.Cosigner.ComponentKeyID != "COSIGNER" || info.Cosigner.PublicKeyHex != metadata.Cosigner.PublicKeyHex ||
-		info.Bounds == nil || info.Bounds.Layer3Policy != boundedmeta.Layer3PolicyCustom || info.Rekey != string(boundedmeta.RekeyRefused) {
+		info.Bounds == nil || info.Bounds.Layer3Policy != hostmeta.Layer3PolicyCustom || info.Rekey != string(hostmeta.RekeyRefused) {
 		t.Fatalf("hostInfo() = %#v", info)
 	}
 }
 
-func TestBoundedAccountParametersProjection(t *testing.T) {
-	got := boundedAccountParameters(map[string]string{
-		"recipients": "ADDR1,ADDR2",
-		composeddsa.BoundedCosignerPublicKeyParameter: "cosigner-public",
-		"future_sensitive_parameter":                  "must-not-leak",
+func TestHostAccountParametersProjection(t *testing.T) {
+	got := hostAccountParameters(map[string]string{
+		"recipients":                           "ADDR1,ADDR2",
+		composeddsa.CosignerPublicKeyParameter: "cosigner-public",
+		"future_sensitive_parameter":           "must-not-leak",
 	})
 	if len(got) != 2 || got["recipients"] != "ADDR1,ADDR2" ||
-		got[composeddsa.BoundedCosignerPublicKeyParameter] != "cosigner-public" {
-		t.Fatalf("boundedAccountParameters() = %#v, want reviewed public projection", got)
+		got[composeddsa.CosignerPublicKeyParameter] != "cosigner-public" {
+		t.Fatalf("hostAccountParameters() = %#v, want reviewed public projection", got)
 	}
 	if _, ok := got["future_sensitive_parameter"]; ok {
-		t.Fatalf("boundedAccountParameters() projected unreviewed parameter: %#v", got)
+		t.Fatalf("hostAccountParameters() projected unreviewed parameter: %#v", got)
 	}
-	if empty := boundedAccountParameters(nil); empty != nil {
-		t.Fatalf("boundedAccountParameters(nil) = %#v, want nil", empty)
+	if empty := hostAccountParameters(nil); empty != nil {
+		t.Fatalf("hostAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
 
@@ -718,12 +718,12 @@ func TestServiceKeyTypesForRuntimeUsesCosignerReferenceOptions(t *testing.T) {
 	}}}
 	// A fixed-contract cosigned template: its cosigner key becomes a selector.
 	const keyType = "test.rest-reference-options.v1"
-	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.HostProfile{
 		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
@@ -789,12 +789,12 @@ func TestServiceKeyTypesUsesCosignerReferenceForBoundedProvider(t *testing.T) {
 	}
 
 	const keyType = "test.rest-reference-bounded-cosigner.v1"
-	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.HostProfile{
 		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}})
 	if err := keytypestate.Put(ir.KeyPaths(), keytypestate.Record{
@@ -1117,7 +1117,7 @@ teal: |
 
 type restTestDSAProvider struct {
 	keyType string
-	bounded *composeddsa.BoundedAuthorizationProfile
+	bounded *composeddsa.HostProfile
 }
 
 func (p restTestDSAProvider) KeyType() string { return p.keyType }
@@ -1132,8 +1132,8 @@ func (p restTestDSAProvider) DisplayColor() string { return "" }
 func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef {
 	if p.bounded != nil && p.bounded.Cosigner != nil {
 		return []lsigprovider.ParameterDef{{
-			Name: boundedmeta.CosignerPublicKeyParameter, Type: "bytes", Required: true,
-			MaxLength: boundedmeta.DefaultCosignerPublicKeySize * 2,
+			Name: hostmeta.CosignerPublicKeyParameter, Type: "bytes", Required: true,
+			MaxLength: hostmeta.DefaultCosignerPublicKeySize * 2,
 		}}
 	}
 	return nil
@@ -1144,7 +1144,7 @@ func (p restTestDSAProvider) ValidateCreationParams(map[string]string) error {
 func (p restTestDSAProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
 func (p restTestDSAProvider) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
 	if p.bounded != nil {
-		return lsigresource.BoundedOpcodeProfile(
+		return lsigresource.HostOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
@@ -1161,24 +1161,24 @@ func (p restTestDSAProvider) MnemonicWordCount() int   { return 24 }
 func (p restTestDSAProvider) DeriveLsig(context.Context, []byte, map[string]string) ([]byte, string, error) {
 	return nil, "", nil
 }
-func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadata {
+func (p restTestDSAProvider) HostMetadata() *hostmeta.Metadata {
 	if p.bounded == nil {
 		return nil
 	}
-	metadata := &boundedmeta.Metadata{
+	metadata := &hostmeta.Metadata{
 		Contract:               p.bounded.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		Bounds:                 &boundedmeta.Bounds{MaxFee: p.bounded.Bounds.MaxFee, Layer3Policy: boundedmeta.Layer3PolicyCustom},
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         hostmeta.BaseArgumentLayout(hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
+		Bounds:                 &hostmeta.Bounds{MaxFee: p.bounded.Bounds.MaxFee, Layer3Policy: hostmeta.Layer3PolicyCustom},
 	}
 	if p.bounded.Cosigner != nil {
 		cosigner := *p.bounded.Cosigner
 		cosigner.RequiredOn = append([]string(nil), p.bounded.Cosigner.RequiredOn...)
 		metadata.Cosigner = &cosigner
-		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
-			Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
-			MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize,
-			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+		metadata.ArgumentLayout = append(metadata.ArgumentLayout, hostmeta.ArgumentSlot{
+			Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner,
+			MaxSize: hostmeta.DefaultCosignerSignatureMaxSize,
+			Paths:   hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden},
 		})
 	}
 	for _, spendType := range p.bounded.Bounds.SpendEffects {

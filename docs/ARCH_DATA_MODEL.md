@@ -426,7 +426,7 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
 
 - Durable non-secret capability is stored on the account key as
   `host`, owned by
-  `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
+  `internal/hostmeta` and assembled by `lsig/composeddsa` at generation.
 - Inventory advertises no `signing_flow` without a cosigner (ordinary `/sign`)
   and `cosigned1` with a cosigner.
 - The stored `rekey` setting is `refused` or `spending_key`. The spending key is
@@ -439,7 +439,7 @@ rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). From a data-model pers
   parameter, never projected to `/keys`; its salts derive from the spending key, so
   the key file and its backups are the only copy of what it needs.
 - The signer classifies each target against the account's path declaration,
-  projected from that metadata (`boundedmeta.PathDeclaration`).
+  projected from that metadata (`hostmeta.PathDeclaration`).
 
 ### Key Types And Templates
 
@@ -1336,8 +1336,8 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Rotating account key | signing authority | `.key` category `rotating_lsig` | address, rotating stage material, stage table | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Inventory uses `signing_flow: rotating1`; served only by `/sign/rotating/prepare` and `/sign/rotating/sign`; ordinary signing endpoints refuse with `rotating_signing_required`. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
-| Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a `plain1` account of a plain host such as `aplane.falcon1024.v1`, or a `bounded2` one such as a Corridor `aplane.falcon1024.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
-| Bounded account key metadata | signing authority metadata | key payload `host` | inventory `host` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; the `bounds` object, and so `max_fee`, is present on `bounded2` and absent on `plain1`, in the key payload and in inventory alike. |
+| Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a `plain1` account of a plain host such as `aplane.falcon1024.v1`, or a `bounded2` one such as a Corridor `aplane.falcon1024.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/hostmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
+| Bounded account key metadata | signing authority metadata | key payload `host` | inventory `host` / path sizing | `internal/hostmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; the `bounds` object, and so `max_fee`, is present on `bounded2` and absent on `plain1`, in the key payload and in inventory alike. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
@@ -1561,7 +1561,7 @@ name a test inline:
   `test/integration/policy_per_key_test.go`.
 - Key payload parsing, scan, backup, and restore: `internal/keys`,
   `internal/backup/service_test.go`, `cmd/apstore/policy_test.go`.
-- Bounded metadata: `internal/boundedmeta`, `test/contracts/signerapi/bounded_*`.
+- Bounded metadata: `internal/hostmeta`, `test/contracts/signerapi/bounded_*`.
 - Authorization vocabulary and product action allowlists:
   `internal/auth/authorizer.go`, `internal/authz/authorizer_test.go`.
 - Integration coverage for signer/client flows: `test/integration`.
@@ -1584,7 +1584,7 @@ name a test inline:
 | Signing-arg schema model | `internal/signingargs` |
 | Node role / key class gates | `internal/noderole`, `internal/keyclass` |
 | Cosigner key types/messages/references | `internal/cosigner`, `pkg/signerapi/cosigner.go`, [ARCH_COSIGNED.md](ARCH_COSIGNED.md) |
-| Bounded authorization | `internal/boundedmeta`, `lsig/composeddsa`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
+| Bounded authorization | `internal/hostmeta`, `lsig/composeddsa`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
 | Signing flow | `internal/signerapp/signing`, [ARCH_SIGNING.md](ARCH_SIGNING.md) |

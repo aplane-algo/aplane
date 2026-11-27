@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -138,7 +138,7 @@ func payloadWithOpcodeProfile(t *testing.T, payload *Payload, bounded bool) *Pay
 	t.Helper()
 	profile := lsigresource.DefaultOpcodeProfile(lsigresource.SingleTransactionOpcodeCeiling)
 	if bounded {
-		profile = lsigresource.BoundedOpcodeProfile(
+		profile = lsigresource.HostOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
@@ -166,20 +166,20 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
 	payloadWithOpcodeProfile(t, payload, true)
-	metadata := &boundedmeta.Metadata{
-		Contract: boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
+	metadata := &hostmeta.Metadata{
+		Contract: hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{
 			Count: 1, MaxSizes: []int{4},
 		},
-		ArgumentLayout: boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}),
-		Bounds:         &boundedmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
-		Rekey:          boundedmeta.RekeySpendingKey,
+		ArgumentLayout: hostmeta.BaseArgumentLayout(hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}),
+		Bounds:         &hostmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
+		Rekey:          hostmeta.RekeySpendingKey,
 	}
-	if err := payload.SetBoundedAuthorization(metadata); err != nil {
-		t.Fatalf("SetBoundedAuthorization() error = %v", err)
+	if err := payload.SetHost(metadata); err != nil {
+		t.Fatalf("SetHost() error = %v", err)
 	}
 	if payload.SigningArgs != nil {
-		t.Fatalf("SetBoundedAuthorization() retained legacy signing args: %#v", payload.SigningArgs)
+		t.Fatalf("SetHost() retained legacy signing args: %#v", payload.SigningArgs)
 	}
 
 	encoded, err := MarshalPayload(payload)
@@ -195,12 +195,12 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 	if parsed.SigningMetadataVersion != CurrentSigningMetadataVersion {
 		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, CurrentSigningMetadataVersion)
 	}
-	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.Contract || got.Rekey != boundedmeta.RekeySpendingKey || got.ArgumentBytesForPath(boundedmeta.PathSpend) != 4 {
-		t.Fatalf("BoundedAuthorization = %#v", got)
+	if got := parsed.Host; got == nil || got.Contract != hostmeta.BoundedContract || got.Rekey != hostmeta.RekeySpendingKey || got.ArgumentBytesForPath(hostmeta.PathSpend) != 4 {
+		t.Fatalf("Host = %#v", got)
 	}
 
 	metadata.Bounds.SpendEffects[0] = "tampered"
-	if parsed.BoundedAuthorization.Bounds.SpendEffects[0] != "pay" {
+	if parsed.Host.Bounds.SpendEffects[0] != "pay" {
 		t.Fatal("bounded authorization metadata was not deep-copied")
 	}
 }
@@ -208,17 +208,17 @@ func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
 // A key file written with any policy added after the original three must load
 // back unchanged. Scan, backup, and restore all read it through this path.
 func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
-	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
-	proof := boundedmeta.DerivedArg{
-		Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
-		Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+	layout := hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	proof := hostmeta.DerivedArg{
+		Name: "merkle_proof", Kind: hostmeta.DerivedArgMerkleProof,
+		Parameter: "recipients", MaxSize: hostmeta.MerkleProofSize,
 	}
 	for _, test := range []struct {
 		policy  string
-		derived []boundedmeta.DerivedArg
+		derived []hostmeta.DerivedArg
 	}{
-		{policy: boundedmeta.Layer3PolicyFixedAllowlistCustom},
-		{policy: boundedmeta.Layer3PolicyMerkleAllowlistCustom, derived: []boundedmeta.DerivedArg{proof}},
+		{policy: hostmeta.Layer3PolicyFixedAllowlistCustom},
+		{policy: hostmeta.Layer3PolicyMerkleAllowlistCustom, derived: []hostmeta.DerivedArg{proof}},
 	} {
 		t.Run(test.policy, func(t *testing.T) {
 			bytecode := canonicalOffCurveBytecode(t)
@@ -229,18 +229,18 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 			defer payload.ZeroSecrets()
 			payload.CreatedAt = canonicalTestTime
 			payloadWithOpcodeProfile(t, payload, true)
-			slots := boundedmeta.BaseArgumentLayout(layout)
+			slots := hostmeta.BaseArgumentLayout(layout)
 			for _, arg := range test.derived {
-				slots = append(slots, boundedmeta.ArgumentSlot{
-					Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
-					Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+				slots = append(slots, hostmeta.ArgumentSlot{
+					Index: len(slots), Name: arg.Name, Source: hostmeta.ArgSourceDerived, MaxSize: arg.MaxSize,
+					Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden},
 				})
 			}
-			if err := payload.SetBoundedAuthorization(&boundedmeta.Metadata{
-				Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
-				Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: test.policy}, Rekey: boundedmeta.RekeyRefused, DerivedArgs: test.derived,
+			if err := payload.SetHost(&hostmeta.Metadata{
+				Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+				Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: test.policy}, Rekey: hostmeta.RekeyRefused, DerivedArgs: test.derived,
 			}); err != nil {
-				t.Fatalf("SetBoundedAuthorization() error = %v", err)
+				t.Fatalf("SetHost() error = %v", err)
 			}
 			encoded, err := MarshalPayload(payload)
 			if err != nil {
@@ -252,8 +252,8 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 				t.Fatalf("ParsePayload() error = %v", err)
 			}
 			defer parsed.ZeroSecrets()
-			if got := parsed.BoundedAuthorization; got == nil || got.Layer3Policy() != test.policy {
-				t.Fatalf("BoundedAuthorization = %#v, want layer3_policy %q", got, test.policy)
+			if got := parsed.Host; got == nil || got.Layer3Policy() != test.policy {
+				t.Fatalf("Host = %#v, want layer3_policy %q", got, test.policy)
 			}
 		})
 	}
@@ -261,33 +261,33 @@ func TestBoundedCombinedLayer3PolicyPayloadRoundTrip(t *testing.T) {
 
 func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 	bytecode := canonicalOffCurveBytecode(t)
-	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, boundedmeta.DefaultCosignerPublicKeySize)
-	componentKeyID, err := witness.ID(boundedmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
+	cosignerPublicKey := bytes.Repeat([]byte{0x6d}, hostmeta.DefaultCosignerPublicKeySize)
+	componentKeyID, err := witness.ID(hostmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload := NewDSALSigPayload(
 		"test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
-		map[string]string{boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
+		map[string]string{hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
 		bytecode, "", nil, "1:bounded-cosigner",
 	)
 	defer payload.ZeroSecrets()
 	payload.CreatedAt = canonicalTestTime
 	payloadWithOpcodeProfile(t, payload, true)
-	metadata := &boundedmeta.Metadata{
-		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		Bounds: &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
+	metadata := &hostmeta.Metadata{
+		Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
+		Bounds: &hostmeta.Bounds{SpendEffects: []string{hostmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom}, Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+			{Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
 		},
 	}
-	if err := payload.SetBoundedAuthorization(metadata); err != nil {
+	if err := payload.SetHost(metadata); err != nil {
 		t.Fatal(err)
 	}
 	encoded, err := MarshalPayload(payload)
@@ -300,11 +300,11 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parsed.ZeroSecrets()
-	if parsed.BoundedAuthorization.Cosigner == nil || parsed.BoundedAuthorization.Cosigner.ComponentKeyID != componentKeyID {
-		t.Fatalf("cosigner metadata = %#v", parsed.BoundedAuthorization.Cosigner)
+	if parsed.Host.Cosigner == nil || parsed.Host.Cosigner.ComponentKeyID != componentKeyID {
+		t.Fatalf("cosigner metadata = %#v", parsed.Host.Cosigner)
 	}
 
-	payload.Parameters[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("00", boundedmeta.DefaultCosignerPublicKeySize)
+	payload.Parameters[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("00", hostmeta.DefaultCosignerPublicKeySize)
 	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "does not match parameters.cosigner_public_key") {
 		t.Fatalf("MarshalPayload() mismatch error = %v", err)
 	}
@@ -314,7 +314,7 @@ func TestBoundedCosignerPayloadMetadataRoundTrip(t *testing.T) {
 // with parameters recording recordedType (none when empty).
 func cosignedTestPayload(t *testing.T, componentKeyType, recordedType string) *Payload {
 	t.Helper()
-	publicKeySize, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+	publicKeySize, signatureMaxSize, ok := hostmeta.CosignerSizes(componentKeyType)
 	if !ok {
 		t.Fatalf("no sizes for %s", componentKeyType)
 	}
@@ -323,28 +323,28 @@ func cosignedTestPayload(t *testing.T, componentKeyType, recordedType string) *P
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := map[string]string{boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)}
+	params := map[string]string{hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)}
 	if recordedType != "" {
-		params[boundedmeta.CosignerKeyTypeParameter] = recordedType
+		params[hostmeta.CosignerKeyTypeParameter] = recordedType
 	}
 	payload := NewDSALSigPayload("test.bounded-cosigner.v1", "test.base.v1", []byte{0x01}, []byte{0x02},
 		params, canonicalOffCurveBytecode(t), "", nil, "1:bounded-cosigner")
 	payload.CreatedAt = canonicalTestTime
 	payloadWithOpcodeProfile(t, payload, true)
-	metadata := &boundedmeta.Metadata{
-		Contract: boundedmeta.Contract, BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		Bounds: &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: componentKeyType,
+	metadata := &hostmeta.Metadata{
+		Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
+		Bounds: &hostmeta.Bounds{SpendEffects: []string{hostmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom}, Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: componentKeyType,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: signatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: signatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: signatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+			{Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner, MaxSize: signatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
 		},
 	}
-	if err := payload.SetBoundedAuthorization(metadata); err != nil {
+	if err := payload.SetHost(metadata); err != nil {
 		t.Fatal(err)
 	}
 	return payload
@@ -383,20 +383,20 @@ func TestCosignedPayloadParametersAgreeOnTheCosignerType(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer parsed.ZeroSecrets()
-			if parsed.BoundedAuthorization.Cosigner.ComponentKeyType != tc.metadata {
-				t.Fatalf("cosigner type = %s", parsed.BoundedAuthorization.Cosigner.ComponentKeyType)
+			if parsed.Host.Cosigner.ComponentKeyType != tc.metadata {
+				t.Fatalf("cosigner type = %s", parsed.Host.Cosigner.ComponentKeyType)
 			}
 		})
 	}
 	// A recorded type without a cosigner names nothing.
 	payload := cosignedTestPayload(t, witness.Falcon1024V1, "")
 	defer payload.ZeroSecrets()
-	payload.Parameters[boundedmeta.CosignerKeyTypeParameter] = witness.Ed25519V1
-	delete(payload.Parameters, boundedmeta.CosignerPublicKeyParameter)
-	metadata := *payload.BoundedAuthorization
+	payload.Parameters[hostmeta.CosignerKeyTypeParameter] = witness.Ed25519V1
+	delete(payload.Parameters, hostmeta.CosignerPublicKeyParameter)
+	metadata := *payload.Host
 	metadata.Cosigner = nil
 	metadata.ArgumentLayout = metadata.ArgumentLayout[:1]
-	payload.BoundedAuthorization = &metadata
+	payload.Host = &metadata
 	if _, err := MarshalPayload(payload); err == nil || !strings.Contains(err.Error(), "without a cosigner") {
 		t.Fatalf("MarshalPayload() error = %v, want a type without a cosigner refused", err)
 	}
@@ -407,23 +407,23 @@ func TestCosignedPayloadParametersAgreeOnTheCosignerType(t *testing.T) {
 // bounded. A plain host writes no bounds object at all, with or without a
 // cosigner, and reads back without one.
 func TestHostPayloadStoredShape(t *testing.T) {
-	boundedCosigned := cosignedTestPayload(t, boundedmeta.DefaultCosignerComponentKeyType, "")
+	boundedCosigned := cosignedTestPayload(t, hostmeta.DefaultCosignerComponentKeyType, "")
 	defer boundedCosigned.ZeroSecrets()
 
-	plainCosigned := cosignedTestPayload(t, boundedmeta.DefaultCosignerComponentKeyType, "")
+	plainCosigned := cosignedTestPayload(t, hostmeta.DefaultCosignerComponentKeyType, "")
 	defer plainCosigned.ZeroSecrets()
-	plainCosigned.BoundedAuthorization.Contract, plainCosigned.BoundedAuthorization.Bounds = boundedmeta.PlainContract, nil
+	plainCosigned.Host.Contract, plainCosigned.Host.Bounds = hostmeta.PlainContract, nil
 
-	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+	layout := hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
 	plain := NewDSALSigPayload("test.plain.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil, canonicalOffCurveBytecode(t), "", nil, "1:plain")
 	defer plain.ZeroSecrets()
 	plain.CreatedAt = canonicalTestTime
 	payloadWithOpcodeProfile(t, plain, true)
-	if err := plain.SetBoundedAuthorization(&boundedmeta.Metadata{
-		Contract: boundedmeta.PlainContract, BaseSignatureArgLayout: layout,
-		ArgumentLayout: boundedmeta.BaseArgumentLayout(layout), Rekey: boundedmeta.RekeyRefused,
+	if err := plain.SetHost(&hostmeta.Metadata{
+		Contract: hostmeta.PlainContract, BaseSignatureArgLayout: layout,
+		ArgumentLayout: hostmeta.BaseArgumentLayout(layout), Rekey: hostmeta.RekeyRefused,
 	}); err != nil {
-		t.Fatalf("SetBoundedAuthorization(plain) error = %v", err)
+		t.Fatalf("SetHost(plain) error = %v", err)
 	}
 
 	for name, tc := range map[string]struct {
@@ -472,8 +472,8 @@ func TestHostPayloadStoredShape(t *testing.T) {
 				t.Fatalf("ParsePayload() error = %v", err)
 			}
 			defer parsed.ZeroSecrets()
-			if !parsed.BoundedAuthorization.Equal(tc.payload.BoundedAuthorization) || (parsed.BoundedAuthorization.Bounds != nil) != tc.wantBounds {
-				t.Fatalf("parsed host metadata = %+v", parsed.BoundedAuthorization)
+			if !parsed.Host.Equal(tc.payload.Host) || (parsed.Host.Bounds != nil) != tc.wantBounds {
+				t.Fatalf("parsed host metadata = %+v", parsed.Host)
 			}
 		})
 	}

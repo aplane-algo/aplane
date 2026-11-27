@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
@@ -118,11 +118,11 @@ func TestPrepareGenerateKeyDescribesTheAccountAndCreatesNothing(t *testing.T) {
 	if _, named := prepared.Parameters[cosignerrefs.ParamCosignerName]; named {
 		t.Fatalf("Parameters still carry the reference name: %#v", prepared.Parameters)
 	}
-	if got := prepared.Parameters[boundedmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
+	if got := prepared.Parameters[hostmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
 		t.Fatalf("resolved public key = %q", got)
 	}
-	if prepared.Bounded == nil || prepared.Bounded.Cosigner == nil || prepared.Bounded.Layer3Policy() != boundedmeta.Layer3PolicyCustom {
-		t.Fatalf("Bounded = %+v", prepared.Bounded)
+	if prepared.Host == nil || prepared.Host.Cosigner == nil || prepared.Host.Layer3Policy() != hostmeta.Layer3PolicyCustom {
+		t.Fatalf("Host = %+v", prepared.Host)
 	}
 	if want := lsigprovider.TemplateFingerprintForKeyType(keyType); prepared.Fingerprint == "" || prepared.Fingerprint != want {
 		t.Fatalf("Fingerprint = %q, want %q", prepared.Fingerprint, want)
@@ -151,7 +151,7 @@ func TestReviewedGenerationKeepsTheReviewedAuthority(t *testing.T) {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
 	summary := ir.KeyStore().GetSigningSummary()[result.Address]
-	if got := summary.Parameters[boundedmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
+	if got := summary.Parameters[hostmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
 		t.Fatalf("stored cosigner = %q, want the reviewed key", got)
 	}
 }
@@ -216,8 +216,8 @@ func TestPrepareGenerateKeyRefusesWhatGenerationRefuses(t *testing.T) {
 		{name: "no key type", want: "key_type is required"},
 		{name: "unknown reference", key: keyType, params: map[string]string{cosignerrefs.ParamCosignerName: "missing"}, want: "not found"},
 		{name: "reference and raw key", key: keyType, params: map[string]string{
-			cosignerrefs.ParamCosignerName:         prepareTestReference,
-			boundedmeta.CosignerPublicKeyParameter: strings.Repeat("ab", falconfamily.PublicKeySize),
+			cosignerrefs.ParamCosignerName:      prepareTestReference,
+			hostmeta.CosignerPublicKeyParameter: strings.Repeat("ab", falconfamily.PublicKeySize),
 		}, want: "not both"},
 		{name: "unknown key type", key: "test.prepare-missing.v1", want: "invalid key type"},
 	} {
@@ -254,7 +254,7 @@ func TestPrepareGenerateKeyAcceptsAStableWitnessKeyID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	if got := prepared.Parameters[boundedmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
+	if got := prepared.Parameters[hostmeta.CosignerPublicKeyParameter]; got != hex.EncodeToString(publicKey) {
 		t.Fatalf("resolved public key = %q", got)
 	}
 }
@@ -264,27 +264,27 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 		KeyType: "test.projected.v1", Parameters: map[string]string{"recipients": "A"}, Fingerprint: "1:abc",
 		CosignerKeyID: "COSIGNER",
 		Warnings:      []string{"first warning", "second warning"},
-		Bounded: &boundedmeta.Metadata{
-			Contract: boundedmeta.Contract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyMerkleAllowlist},
-			Cosigner: &boundedmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
-			Rekey:    boundedmeta.RekeyRefused,
+		Host: &hostmeta.Metadata{
+			Contract: hostmeta.BoundedContract, Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(10_000)), Layer3Policy: hostmeta.Layer3PolicyMerkleAllowlist},
+			Cosigner: &hostmeta.CosignerAuthorization{ComponentKeyType: witness.Falcon1024V1},
+			Rekey:    hostmeta.RekeyRefused,
 		},
 	}, nil)
 	if !result.Success || result.Host == nil || !result.Host.CosignerRequired ||
-		result.Host.Rekey != string(boundedmeta.RekeyRefused) ||
+		result.Host.Rekey != string(hostmeta.RekeyRefused) ||
 		result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}
 	if bounds := result.Host.Bounds; bounds == nil || bounds.MaxFee != 10_000 ||
-		bounds.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || !slices.Equal(bounds.SpendEffects, []string{"pay"}) {
+		bounds.Layer3Policy != hostmeta.Layer3PolicyMerkleAllowlist || !slices.Equal(bounds.SpendEffects, []string{"pay"}) {
 		t.Fatalf("bounds = %+v", bounds)
 	}
 	// A plain host has no bounds, and the reviewer is sent none.
 	plain := ProjectPrepareGenerateIPC(&PreparedGeneration{
 		KeyType: "test.projected.v1",
-		Bounded: &boundedmeta.Metadata{Contract: boundedmeta.PlainContract, Rekey: boundedmeta.RekeySpendingKey},
+		Host:    &hostmeta.Metadata{Contract: hostmeta.PlainContract, Rekey: hostmeta.RekeySpendingKey},
 	}, nil)
-	if plain.Host == nil || plain.Host.Rekey != string(boundedmeta.RekeySpendingKey) || plain.Host.Bounds != nil {
+	if plain.Host == nil || plain.Host.Rekey != string(hostmeta.RekeySpendingKey) || plain.Host.Bounds != nil {
 		t.Fatalf("plain host result = %+v", plain.Host)
 	}
 	// The provider's warnings reach the reviewer in order; a result without any

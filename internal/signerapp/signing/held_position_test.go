@@ -10,7 +10,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	"github.com/aplane-algo/aplane/internal/txnreview"
@@ -26,7 +26,7 @@ func heldTestSnapshot(t *testing.T, account, native types.Address) PlannerRuntim
 	return PlannerRuntimeSnapshot{
 		KeyFiles: map[string]string{account.String(): "account.key", native.String(): "native.key"},
 		KeyMetadata: map[string]PlannerKeyMetadata{
-			account.String(): {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, BoundedAuthorization: metadata},
+			account.String(): {PublicKeyHex: "01", BaseKeyType: "aplane.falcon1024.v1", Parameters: params, Host: metadata},
 		},
 	}
 }
@@ -102,7 +102,7 @@ func TestHeldForeignPositionsComeFromTheSignersRecords(t *testing.T) {
 	// signs the position fails on it.
 	broken := heldTestSnapshot(t, account, native)
 	metadata := broken.KeyMetadata[account.String()]
-	metadata.Parameters = map[string]string{boundedmeta.RekeyListEntriesParameter: "not-an-address"}
+	metadata.Parameters = map[string]string{hostmeta.RekeyListEntriesParameter: "not-an-address"}
 	broken.KeyMetadata[account.String()] = metadata
 	got := heldForeignPositions(broken, txns[:1], map[int]bool{0: true}, nil)[0]
 	if got == nil || !got.SenderHeld || !got.ListUnreadable || got.ListedRekeyTargets != nil {
@@ -134,7 +134,7 @@ func TestGroupReviewNamesAHeldPositionAndItsListedHandover(t *testing.T) {
 		foreign := map[int]bool{0: true}
 		plan := &PlanResult{
 			AllTxns: txns, ForeignIndices: foreign, HasForeign: true,
-			PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2),
+			PassthroughIndices: map[int]bool{}, HostItems: make([]*hostPlanItem, 2),
 			HeldForeign: heldForeignPositions(snapshot, txns, foreign, nil),
 		}
 		req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{TxnBytesHex: "00"}, {AuthAddress: native.String()}}}
@@ -270,7 +270,7 @@ func TestGroupReviewDoesNotVouchForANamedAuthorizer(t *testing.T) {
 	foreign := map[int]bool{0: true}
 	plan := &PlanResult{
 		AllTxns: txns, ForeignIndices: foreign, HasForeign: true,
-		PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2),
+		PassthroughIndices: map[int]bool{}, HostItems: make([]*hostPlanItem, 2),
 		HeldForeign: heldForeignPositions(snapshot, txns, foreign, map[int]string{0: account.String()}),
 	}
 	if plan.HeldForeign[0] == nil || plan.HeldForeign[0].NamedAuthorizer != account.String() {
@@ -329,7 +329,7 @@ func TestGroupReviewCountsHeldAndForeignPositionsApart(t *testing.T) {
 	foreign := map[int]bool{0: true, 1: true, 2: true, 3: true}
 	plan := &PlanResult{
 		AllTxns: txns, ForeignIndices: foreign, HasForeign: true,
-		PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, len(txns)),
+		PassthroughIndices: map[int]bool{}, HostItems: make([]*hostPlanItem, len(txns)),
 		HeldForeign: heldForeignPositions(snapshot, txns, foreign, map[int]string{2: account.String(), 3: native.String()}),
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{

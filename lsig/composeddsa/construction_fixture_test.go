@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/lsig/clientreg"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -191,16 +191,16 @@ func TestCompositeBaseRequiresEveryComponentInOrder(t *testing.T) {
 				}
 				offset += found + len(want)
 			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(key, nil, []byte{1})
+			metadata, err := provider.BuildHostMetadata(key, nil, []byte{1})
 			if err != nil {
-				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+				t.Fatalf("BuildHostMetadata() error = %v", err)
 			}
 			if metadata.BaseSignatureArgLayout.Count != len(parts) {
 				t.Fatalf("base layout count = %d, want %d", metadata.BaseSignatureArgLayout.Count, len(parts))
 			}
 			base := 0
 			for _, slot := range metadata.ArgumentLayout {
-				if slot.Source == boundedmeta.ArgSourceBaseSignature {
+				if slot.Source == hostmeta.ArgSourceBaseSignature {
 					if slot.Index != base {
 						t.Fatalf("base slot %q index = %d, want %d", slot.Name, slot.Index, base)
 					}
@@ -238,11 +238,11 @@ func TestAdmissionStaysOutOfLoadAndFingerprint(t *testing.T) {
 			}
 			// An existing account's metadata is rebuilt from its bytecode, which no
 			// admission decision may block.
-			want, err := admitted.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			want, err := admitted.BuildHostMetadata(key, params, []byte(admittedTEAL))
 			if err != nil {
 				t.Fatalf("admitted metadata: %v", err)
 			}
-			got, err := refused.BuildBoundedAuthorizationMetadata(key, params, []byte(admittedTEAL))
+			got, err := refused.BuildHostMetadata(key, params, []byte(admittedTEAL))
 			if err != nil {
 				t.Fatalf("refused metadata: %v", err)
 			}
@@ -257,16 +257,16 @@ func TestAdmissionStaysOutOfLoadAndFingerprint(t *testing.T) {
 // signer's assembly does: each base signature argument in its slot, the
 // cosigner's signature when one is given, every other slot empty, and the empty
 // slots at the end dropped.
-func layoutArgs(metadata *boundedmeta.Metadata, signatureArgs [][]byte, cosignature []byte) [][]byte {
+func layoutArgs(metadata *hostmeta.Metadata, signatureArgs [][]byte, cosignature []byte) [][]byte {
 	args := make([][]byte, len(metadata.ArgumentLayout))
 	base := 0
 	for _, slot := range metadata.ArgumentLayout {
 		args[slot.Index] = []byte{}
 		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
+		case hostmeta.ArgSourceBaseSignature:
 			args[slot.Index] = signatureArgs[base]
 			base++
-		case boundedmeta.ArgSourceCosigner:
+		case hostmeta.ArgSourceCosigner:
 			if cosignature != nil {
 				args[slot.Index] = cosignature
 			}
@@ -284,9 +284,9 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveEd25519, sigconstruction.PrimitiveFalcon1024)
 	provider := compositeProvider(t, construction, spendingKeyRekeyYAML, composeddsa.FixtureSupport{})
 	key, _ := syntheticKey(construction)
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(key, map[string]string{}, []byte("program"))
+	metadata, err := provider.BuildHostMetadata(key, map[string]string{}, []byte("program"))
 	if err != nil {
-		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+		t.Fatalf("BuildHostMetadata() error = %v", err)
 	}
 	if layout := metadata.BaseSignatureArgLayout; layout.Count != 2 || !slices.Equal(layout.MaxSizes, construction.Layout().MaxSizes()) {
 		t.Fatalf("base signature layout = %+v, want one slot per component sized %v", layout, construction.Layout().MaxSizes())
@@ -310,14 +310,14 @@ func TestCompositeArgumentsAreAssembledFromEverySlot(t *testing.T) {
 func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	falconKey := bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize)
+	falconKey := bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize)
 	for name, test := range map[string]struct {
 		extra     string
 		parameter string
 		source    string
 		heading   string
 	}{
-		"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.ArgSourceCosigner, "__aplane_bounded1_cosigner:"},
+		"cosigner": {cosignerYAML, composeddsa.CosignerPublicKeyParameter, hostmeta.ArgSourceCosigner, "__aplane_bounded1_cosigner:"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
@@ -326,9 +326,9 @@ func TestAuthorityGatesFollowEveryBaseSlot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateTEAL() error = %v", err)
 			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(key, params, []byte{1})
+			metadata, err := provider.BuildHostMetadata(key, params, []byte{1})
 			if err != nil {
-				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+				t.Fatalf("BuildHostMetadata() error = %v", err)
 			}
 			index := -1
 			for _, slot := range metadata.ArgumentLayout {
@@ -380,7 +380,7 @@ func TestProductionRefusesFixtureIdentities(t *testing.T) {
 		FamilyName:  "example.construction-allof",
 		Version:     1,
 		Ops:         compositeOps{construction: construction},
-		Bounded:     fixture.BoundedAuthorizationProfile(),
+		Host:        fixture.HostProfile(),
 	})
 	if _, err := unprivileged.GenerateTEAL(key, nil); err == nil || !strings.Contains(err.Error(), "cannot be generated on base key type") {
 		t.Fatalf("GenerateTEAL() error = %v", err)
@@ -390,7 +390,7 @@ func TestProductionRefusesFixtureIdentities(t *testing.T) {
 func TestFixturePolicyBelongsToOneComposer(t *testing.T) {
 	construction := compositeConstruction(t, sigconstruction.PrimitiveFalcon1024, sigconstruction.PrimitiveEd25519)
 	key, _ := syntheticKey(construction)
-	params := map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))}
+	params := map[string]string{composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))}
 
 	// A fixture's template rules and generation policy come from the same support,
 	// so a composer without cosigner support is refused when it is built.
@@ -456,16 +456,16 @@ func TestWitnessKeyMustDifferFromEverySpendingComponent(t *testing.T) {
 				extra     string
 				parameter string
 			}{
-				"cosigner": {cosignerYAML, composeddsa.BoundedCosignerPublicKeyParameter},
+				"cosigner": {cosignerYAML, composeddsa.CosignerPublicKeyParameter},
 			} {
 				provider := compositeProvider(t, construction, test.extra, composeddsa.FixtureSupport{Cosigner: true})
 				_, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(reused)})
 				if err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
 					t.Fatalf("%s: GenerateTEAL() error = %v", role, err)
 				}
-				_, err = provider.BuildBoundedAuthorizationMetadata(key, map[string]string{test.parameter: hex.EncodeToString(reused)}, []byte{1})
+				_, err = provider.BuildHostMetadata(key, map[string]string{test.parameter: hex.EncodeToString(reused)}, []byte{1})
 				if err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
-					t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", role, err)
+					t.Fatalf("%s: BuildHostMetadata() error = %v", role, err)
 				}
 				if _, err := provider.GenerateTEAL(key, map[string]string{test.parameter: hex.EncodeToString(distinct)}); err != nil {
 					t.Fatalf("%s: GenerateTEAL() with a distinct key error = %v", role, err)

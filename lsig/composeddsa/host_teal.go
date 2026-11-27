@@ -8,44 +8,44 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	cosignermessage "github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
 const (
-	boundedRekeyLabel  = "__aplane_bounded1_rekey"
-	boundedSpendLabel  = "__aplane_bounded1_spend"
+	hostRekeyLabel     = "__aplane_bounded1_rekey"
+	hostSpendLabel     = "__aplane_bounded1_spend"
 	boundedLayer3Label = "__aplane_bounded1_layer3"
-	boundedAcceptLabel = "__aplane_bounded1_accept"
+	hostAcceptLabel    = "__aplane_bounded1_accept"
 	boundedPayLabel    = "__aplane_bounded1_effect_pay"
 	boundedAxferLabel  = "__aplane_bounded1_effect_axfer"
 	boundedOptInLabel  = "__aplane_bounded1_effect_asset_opt_in"
 
-	boundedRekeyListCombineLabel = "__aplane_bounded1_rekey_list_combine"
-	boundedRekeyListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
+	hostRekeyListCombineLabel = "__aplane_bounded1_rekey_list_combine"
+	hostRekeyListOrderedLabel = "__aplane_bounded1_rekey_list_ordered"
 	// merkleCombineLabel is the Merkle allowlist's proof fold, which a listed
 	// rekey shares when the program has one.
 	merkleCombineLabel = "__aplane_bounded1_merkle_combine"
 	merkleOrderedLabel = "__aplane_bounded1_merkle_ordered"
 
-	// boundedCosignerLabel is the cosigner check, one subroutine every path the
+	// hostCosignerLabel is the cosigner check, one subroutine every path the
 	// cosigner signs calls, so its key compiles once.
-	boundedCosignerLabel = "__aplane_bounded1_cosigner"
-	// boundedCosignedRekeyLabel is plus cosigned's cosigned branch, taken when
+	hostCosignerLabel = "__aplane_bounded1_cosigner"
+	// hostCosignedRekeyLabel is plus cosigned's cosigned branch, taken when
 	// the list proof slot is empty.
-	boundedCosignedRekeyLabel = "__aplane_bounded1_cosigned_rekey"
+	hostCosignedRekeyLabel = "__aplane_bounded1_cosigned_rekey"
 )
 
-func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]string, profile *BoundedAuthorizationProfile) (string, error) {
-	metadata, err := c.boundedAuthorizationMetadataBase()
+func (c *ComposedDSA) renderHostPrelude(publicKey []byte, params map[string]string, profile *HostProfile) (string, error) {
+	metadata, err := c.hostMetadataBase()
 	if err != nil {
 		return "", err
 	}
 	// The render-time guard for contradictions such as a cosigner beside a
 	// spending-key rekey.
-	if _, err := validatedBoundedProfile(profile, metadata); err != nil {
+	if _, err := validatedHostProfile(profile, metadata); err != nil {
 		return "", err
 	}
 
@@ -57,8 +57,8 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		// where the cosigner signs it.
 		b.WriteString("// === plain host: rekey dispatch ===\n")
 		b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
-		b.WriteString("bnz " + boundedRekeyLabel + "\n")
-		b.WriteString("b " + boundedSpendLabel + "\n\n")
+		b.WriteString("bnz " + hostRekeyLabel + "\n")
+		b.WriteString("b " + hostSpendLabel + "\n\n")
 	} else {
 		b.WriteString("// === bounded transaction envelope ===\n")
 		b.WriteString("txn Fee\n")
@@ -66,7 +66,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		b.WriteString("<=\nassert\n\n")
 
 		b.WriteString("txn RekeyTo\nglobal ZeroAddress\n!=\n")
-		b.WriteString("bnz " + boundedRekeyLabel + "\n\n")
+		b.WriteString("bnz " + hostRekeyLabel + "\n\n")
 
 		for _, predicate := range manifest.Predicates {
 			if predicate.Effect == txeffects.EffectRekey {
@@ -95,7 +95,7 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 
 	// No host rule gates a rekey: the rekey path ends here, before the spend
 	// path's Layer 3 and cosigner checks.
-	b.WriteString(boundedRekeyLabel + ":\n")
+	b.WriteString(hostRekeyLabel + ":\n")
 	writePureRekey := func() {
 		b.WriteString("txn TypeEnum\npushint 1\n==\nassert\n")
 		b.WriteString("txn Amount\npushint 0\n==\nassert\n")
@@ -108,9 +108,9 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 			writeZeroAddressAssertion(&b, predicate.Field)
 		}
 	}
-	cosignedRekey := profile.Rekey == boundedmeta.RekeySpendingKey && profile.Cosigner != nil
+	cosignedRekey := profile.Rekey == hostmeta.RekeySpendingKey && profile.Cosigner != nil
 	switch {
-	case profile.RekeyList != nil && profile.Rekey == boundedmeta.RekeySpendingKey:
+	case profile.RekeyList != nil && profile.Rekey == hostmeta.RekeySpendingKey:
 		// Plus cosigned: a non-empty proof commits the rekey to the listed
 		// branch, which never falls through; an empty one takes the cosigner.
 		// The proof slot precedes the cosigner slot (the layout's source order),
@@ -121,11 +121,11 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		}
 		proofIndex := c.rekeyListProofIndex(metadata)
 		writePureRekey()
-		b.WriteString(fmt.Sprintf("arg %d\nlen\nbz %s\n", proofIndex, boundedCosignedRekeyLabel))
+		b.WriteString(fmt.Sprintf("arg %d\nlen\nbz %s\n", proofIndex, hostCosignedRekeyLabel))
 		renderListedRekey(&b, proofIndex, root, c.sharesMerkleCombine())
-		b.WriteString(boundedCosignedRekeyLabel + ":\n")
-		b.WriteString("callsub " + boundedCosignerLabel + "\n")
-		b.WriteString("b " + boundedAcceptLabel + "\n\n")
+		b.WriteString(hostCosignedRekeyLabel + ":\n")
+		b.WriteString("callsub " + hostCosignerLabel + "\n")
+		b.WriteString("b " + hostAcceptLabel + "\n\n")
 	case profile.RekeyList != nil:
 		// Only these addresses: a pure rekey to a listed target, nothing else.
 		// The cosigner, if any, is not asked.
@@ -137,11 +137,11 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		renderListedRekey(&b, c.rekeyListProofIndex(metadata), root, c.sharesMerkleCombine())
 	case cosignedRekey:
 		writePureRekey()
-		b.WriteString("callsub " + boundedCosignerLabel + "\n")
-		b.WriteString("b " + boundedAcceptLabel + "\n\n")
-	case profile.Rekey == boundedmeta.RekeySpendingKey:
+		b.WriteString("callsub " + hostCosignerLabel + "\n")
+		b.WriteString("b " + hostAcceptLabel + "\n\n")
+	case profile.Rekey == hostmeta.RekeySpendingKey:
 		writePureRekey()
-		b.WriteString("b " + boundedAcceptLabel + "\n\n")
+		b.WriteString("b " + hostAcceptLabel + "\n\n")
 	default:
 		b.WriteString("err\n\n")
 	}
@@ -153,21 +153,21 @@ func (c *ComposedDSA) renderBoundedPrelude(publicKey []byte, params map[string]s
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(boundedCosignerLabel + ":\n")
+		b.WriteString(hostCosignerLabel + ":\n")
 		b.WriteString(cosignerTEAL)
 		b.WriteString("retsub\n\n")
 	}
 
-	b.WriteString(boundedSpendLabel + ":\n")
+	b.WriteString(hostSpendLabel + ":\n")
 	if profile.Cosigner != nil {
-		b.WriteString("callsub " + boundedCosignerLabel + "\n")
+		b.WriteString("callsub " + hostCosignerLabel + "\n")
 		b.WriteString("b " + boundedLayer3Label + "\n\n")
 		b.WriteString(boundedLayer3Label + ":\n")
 	}
 	return b.String(), nil
 }
 
-func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[string]string, metadata *boundedmeta.Metadata) (string, error) {
+func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[string]string, metadata *hostmeta.Metadata) (string, error) {
 	if metadata == nil || metadata.Cosigner == nil {
 		return "", fmt.Errorf("bounded cosigner metadata is required")
 	}
@@ -177,7 +177,7 @@ func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[s
 	}
 	cosignerArgIndex := -1
 	for _, slot := range metadata.ArgumentLayout {
-		if slot.Source == boundedmeta.ArgSourceCosigner {
+		if slot.Source == hostmeta.ArgSourceCosigner {
 			cosignerArgIndex = slot.Index
 			break
 		}
@@ -212,7 +212,7 @@ assert
 
 func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
 	if allowed {
-		b.WriteString("b " + boundedSpendLabel + "\n\n")
+		b.WriteString("b " + hostSpendLabel + "\n\n")
 		return
 	}
 	b.WriteString("err\n\n")
@@ -223,14 +223,14 @@ func writeZeroAddressAssertion(b *strings.Builder, field txeffects.TxField) {
 	b.WriteString("global ZeroAddress\n==\nassert\n")
 }
 
-func renderBoundedAccept() string {
-	return "\nb " + boundedAcceptLabel + "\n\n" + boundedAcceptLabel + ":\npushint 1\nreturn\n"
+func renderHostAccept() string {
+	return "\nb " + hostAcceptLabel + "\n\n" + hostAcceptLabel + ":\npushint 1\nreturn\n"
 }
 
 // rekeyListProofIndex is the list proof's argument slot.
-func (c *ComposedDSA) rekeyListProofIndex(metadata *boundedmeta.Metadata) int {
+func (c *ComposedDSA) rekeyListProofIndex(metadata *hostmeta.Metadata) int {
 	for _, slot := range metadata.ArgumentLayout {
-		if slot.Source == boundedmeta.ArgSourceDerived && slot.Name == rekeyListProofSlot {
+		if slot.Source == hostmeta.ArgSourceDerived && slot.Name == rekeyListProofSlot {
 			return slot.Index
 		}
 	}

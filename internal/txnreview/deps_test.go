@@ -34,7 +34,7 @@ func TestDescriberStaysClientSafe(t *testing.T) {
 		"internal/config": true, "internal/asa/registry": true, "internal/fsutil": true,
 		"internal/endpointrefs": true, // internal/config's endpoint URL rule
 		// internal/txeffects and its closure.
-		"internal/txeffects": true, "internal/boundedmeta": true, "internal/witness": true,
+		"internal/txeffects": true, "internal/hostmeta": true, "internal/witness": true,
 		"internal/rekeylist": true, "internal/falconparams": true, "internal/lsigresource": true,
 		"internal/crypto": true, "internal/storepaths": true, "internal/productmode": true,
 	}

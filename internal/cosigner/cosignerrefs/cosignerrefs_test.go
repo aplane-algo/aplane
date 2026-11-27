@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -331,14 +331,14 @@ func TestResolveCreationParamsTakesAnyListedCosignerType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ed25519 reference: %v", err)
 	}
-	if resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(edPub) || resolved[boundedmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 {
+	if resolved[keytypes.ParameterCosignerPublicKey] != hex.EncodeToString(edPub) || resolved[hostmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 {
 		t.Fatalf("Ed25519 reference resolved to %v", resolved)
 	}
 	resolved, err = ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "falcon"})
 	if err != nil {
 		t.Fatalf("Falcon reference: %v", err)
 	}
-	if _, recorded := resolved[boundedmeta.CosignerKeyTypeParameter]; recorded {
+	if _, recorded := resolved[hostmeta.CosignerKeyTypeParameter]; recorded {
 		t.Fatalf("the default type was recorded: %v", resolved)
 	}
 
@@ -349,7 +349,7 @@ func TestResolveCreationParamsTakesAnyListedCosignerType(t *testing.T) {
 		want   string
 	}{
 		{"a type the account type doesn't take", []string{witness.Falcon1024V1}, map[string]string{ParamCosignerName: "ed"}, "takes aplane.witness-falcon1024.v1"},
-		{"a type that contradicts the reference", both, map[string]string{ParamCosignerName: "ed", boundedmeta.CosignerKeyTypeParameter: witness.Falcon1024V1}, "contradicts"},
+		{"a type that contradicts the reference", both, map[string]string{ParamCosignerName: "ed", hostmeta.CosignerKeyTypeParameter: witness.Falcon1024V1}, "contradicts"},
 	} {
 		if _, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", tc.types, tc.params); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: error = %v, want %q", tc.name, err, tc.want)
@@ -358,7 +358,7 @@ func TestResolveCreationParamsTakesAnyListedCosignerType(t *testing.T) {
 	// An empty type isn't a contradiction: the provider refuses it as empty.
 	// One with stray spaces is compared as the type it names.
 	for _, given := range []string{"", " " + witness.Ed25519V1 + " "} {
-		if _, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "ed", boundedmeta.CosignerKeyTypeParameter: given}); err != nil {
+		if _, err := ResolveCreationParamsForComponents(paths, "aplane.falcon1024.v1", both, map[string]string{ParamCosignerName: "ed", hostmeta.CosignerKeyTypeParameter: given}); err != nil {
 			t.Errorf("type %q: error = %v, want the reference to resolve", given, err)
 		}
 	}

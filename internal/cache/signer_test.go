@@ -429,7 +429,7 @@ func TestSignerCache_CosignerPublicKeyHelpers(t *testing.T) {
 	}
 }
 
-func TestSignerCache_BoundedMaxFeePreservesZero(t *testing.T) {
+func TestSignerCache_HostMaxFeePreservesZero(t *testing.T) {
 	cache := NewSignerCache()
 	if _, ok := cache.HostMaxFeeForAddress("ADDR1"); ok {
 		t.Fatal("HostMaxFeeForAddress(empty) found value")

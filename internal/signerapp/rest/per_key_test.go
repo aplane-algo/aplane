@@ -14,9 +14,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/witness"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -81,12 +81,12 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 // none, such as a plain host, takes its parameters directly and is checked apart.
 func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 	lsigsignerreg.RegisterSigner()
-	cosignerKey := strings.Repeat("41", boundedmeta.DefaultCosignerPublicKeySize)
+	cosignerKey := strings.Repeat("41", hostmeta.DefaultCosignerPublicKeySize)
 	recipient := types.Address{1}.String()
 	field := map[string][2]string{
 		boundary.ParameterRecipients: {boundary.ParameterRecipients, recipient},
 		boundary.ParameterRekeyTo:    {boundary.ParameterRekeyTo, types.Address{2}.String()},
-		boundary.ParameterCosigner:   {boundedmeta.CosignerPublicKeyParameter, cosignerKey},
+		boundary.ParameterCosigner:   {hostmeta.CosignerPublicKeyParameter, cosignerKey},
 	}
 
 	perKey := 0
@@ -128,7 +128,7 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 				t.Errorf("%s: preset %s: %v", provider.KeyType(), preset.Name, err)
 				continue
 			}
-			metadata := instance.Bounded
+			metadata := instance.Host
 			if metadata == nil {
 				t.Errorf("%s: preset %s resolved no contract", provider.KeyType(), preset.Name)
 				continue
@@ -138,7 +138,7 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 			}
 			// "Only these" is stored as rekey refused plus the rekey-to list.
 			got := string(metadata.Rekey)
-			if metadata.RekeyList != nil && metadata.Rekey == boundedmeta.RekeyRefused {
+			if metadata.RekeyList != nil && metadata.Rekey == hostmeta.RekeyRefused {
 				got = boundary.RekeyOnlyThese
 			}
 			if want := preset.Fixed[boundary.ParameterRekeyAuthority]; got != want {
@@ -156,7 +156,7 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 
 // The wire's contract names are the durable record's.
 func TestWireBoundedContractsMatchTheRecord(t *testing.T) {
-	if signerapi.HostContractBounded2 != boundedmeta.Contract || signerapi.HostContractPlain1 != boundedmeta.PlainContract {
-		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.HostContractBounded2, signerapi.HostContractPlain1, boundedmeta.Contract, boundedmeta.PlainContract)
+	if signerapi.HostContractBounded2 != hostmeta.BoundedContract || signerapi.HostContractPlain1 != hostmeta.PlainContract {
+		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.HostContractBounded2, signerapi.HostContractPlain1, hostmeta.BoundedContract, hostmeta.PlainContract)
 	}
 }

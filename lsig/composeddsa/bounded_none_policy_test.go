@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -53,8 +53,8 @@ func TestNonePolicyRendersNoLayer3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Layer3Policy() != boundedmeta.Layer3PolicyNone {
+	metadata := provider.HostMetadata()
+	if metadata == nil || metadata.Layer3Policy() != hostmeta.Layer3PolicyNone {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	if len(provider.CreationParams()) != 0 {
@@ -100,7 +100,7 @@ func TestNonePolicyComposerRejections(t *testing.T) {
 			}
 		})
 	}
-	if composeddsa.Layer3PolicyNone != boundedmeta.Layer3PolicyNone {
+	if composeddsa.Layer3PolicyNone != hostmeta.Layer3PolicyNone {
 		t.Fatal("generation and storage disagree on the policy name")
 	}
 }

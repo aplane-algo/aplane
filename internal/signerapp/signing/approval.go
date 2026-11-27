@@ -264,7 +264,7 @@ func buildReview(req signerapi.GroupSignRequest, plan *PlanResult, allTxns []typ
 	}
 
 	for i, txn := range allTxns[:total] {
-		item := reviewItem(txn, req.Requests[i], describe, plan.boundedItem(i))
+		item := reviewItem(txn, req.Requests[i], describe, plan.hostItem(i))
 		switch held := plan.HeldForeign[i]; {
 		case plan.PassthroughIndices[i]:
 			item.Position = txnreview.PositionPassthrough
@@ -436,16 +436,16 @@ func approvalTransactionNumbers(indices []int) []int {
 	return numbers
 }
 
-// boundedRekeyFields names a bounded rekey's authorization for the operator:
+// hostRekeyFields names a host account's rekey authorization for the operator:
 // the group and the single-request prompts both carry it. It is empty for
-// anything but a bounded rekey.
-func boundedRekeyFields(item *boundedPlanItem) []txnreview.Field {
-	if item == nil || item.Path == boundedPathPureSpend {
+// anything but a host account's rekey.
+func hostRekeyFields(item *hostPlanItem) []txnreview.Field {
+	if item == nil || item.Path == hostPathPureSpend {
 		return nil
 	}
 	fields := []txnreview.Field{
 		{Label: "Bounded authorization operation", Value: "REKEY"},
-		{Label: "Authorization", Value: boundedAuthorizationLabel(item)},
+		{Label: "Authorization", Value: rekeyAuthorizationLabel(item)},
 	}
 	if fee := item.Metadata.FeeCeiling(); fee != nil {
 		fields = append(fields, txnreview.Field{Label: "Profile maximum fee", Value: fmt.Sprintf("%d microAlgos", *fee)})
@@ -453,17 +453,17 @@ func boundedRekeyFields(item *boundedPlanItem) []txnreview.Field {
 	return fields
 }
 
-// boundedAuthorizationLabel names who authorizes a bounded rekey: on a cosigned
+// rekeyAuthorizationLabel names who authorizes a host account's rekey: on a cosigned
 // account a declared rekey needs the cosigner too, while a listed rekey never
 // asks it.
-func boundedAuthorizationLabel(item *boundedPlanItem) string {
+func rekeyAuthorizationLabel(item *hostPlanItem) string {
 	switch item.Path {
-	case boundedPathSpendingKeyRekey:
+	case hostPathSpendingKeyRekey:
 		if item.Metadata != nil && item.Metadata.Cosigner != nil {
 			return "spending key and cosigner"
 		}
 		return "spending key only"
-	case boundedPathListedRekey:
+	case hostPathListedRekey:
 		return "spending key only, to an address on the account's rekey-to list"
 	default:
 		return "unknown"
@@ -787,10 +787,10 @@ func (s *ApprovalService) logGroupApprovalTimeout(req signerapi.GroupSignRequest
 }
 
 // reviewItem describes one requested transaction: what it does, the client's
-// claims about an app call, and a bounded rekey's authorization.
-func reviewItem(txn types.Transaction, txReq signerapi.SignRequest, describe DescribeTxnFunc, bounded *boundedPlanItem) txnreview.Item {
+// claims about an app call, and a host account's rekey authorization.
+func reviewItem(txn types.Transaction, txReq signerapi.SignRequest, describe DescribeTxnFunc, hostItem *hostPlanItem) txnreview.Item {
 	item := txnreview.Item{Details: describe(txn), Claims: appCallClaims(txn, txReq)}
-	item.Details.Fields = append(item.Details.Fields, boundedRekeyFields(bounded)...)
+	item.Details.Fields = append(item.Details.Fields, hostRekeyFields(hostItem)...)
 	return item
 }
 

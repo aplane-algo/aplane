@@ -22,7 +22,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -229,11 +229,11 @@ func characterizationValues(defs []lsigprovider.ParameterDef) map[string]string 
 	values := map[string]string{}
 	for _, def := range defs {
 		switch {
-		case def.Name == composeddsa.BoundedCosignerPublicKeyParameter:
+		case def.Name == composeddsa.CosignerPublicKeyParameter:
 			// Hex with the digits a-f, half of it in upper case.
 			size := def.MaxLength / 2
 			values[def.Name] = strings.ToUpper(strings.Repeat("a5", size/2)) + strings.Repeat("3c", size-size/2)
-		case def.Name == composeddsa.BoundedRekeyToParameter:
+		case def.Name == composeddsa.RekeyToParameter:
 			values[def.Name] = address(0x61) + "," + address(0x62)
 		case def.Type == "address[]":
 			values[def.Name] = address(3) + "," + address(1) + "," + address(2)
@@ -328,8 +328,8 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 	r.add(name+" runtime args", provider.RuntimeArgs())
 	r.add(name+" opcode profile", provider.LogicSigOpcodeProfile())
 	r.add(name+" layer3", provider.Layer3PolicyName())
-	r.add(name+" bounded profile", provider.BoundedAuthorizationProfile())
-	r.add(name+" template metadata", provider.BoundedAuthorizationMetadata())
+	r.add(name+" bounded profile", provider.HostProfile())
+	r.add(name+" template metadata", provider.HostMetadata())
 	layout, described := provider.SignatureArgLayout()
 	r.add(name+" signature layout", fmt.Sprintf("%v %v", layout, described))
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
@@ -370,21 +370,21 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 	if _, err := provider.GenerateTEAL(publicKey, map[string]string{}); err != nil {
 		r.add(name+" teal no values", err)
 	}
-	if cosigner, ok := prepared[composeddsa.BoundedCosignerPublicKeyParameter]; ok {
+	if cosigner, ok := prepared[composeddsa.CosignerPublicKeyParameter]; ok {
 		shared := map[string]string{}
 		for k, v := range prepared {
 			shared[k] = v
 		}
-		shared[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+		shared[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 		_, err := provider.GenerateTEAL(publicKey, shared)
 		r.add(name+" teal shared cosigner", err)
-		_, err = provider.BuildBoundedAuthorizationMetadata(publicKey, shared, []byte("program"))
+		_, err = provider.BuildHostMetadata(publicKey, shared, []byte("program"))
 		r.add(name+" metadata shared cosigner", err)
-		shared[composeddsa.BoundedCosignerPublicKeyParameter] = cosigner[:len(cosigner)-2]
-		_, err = provider.BuildBoundedAuthorizationMetadata(publicKey, shared, []byte("program"))
+		shared[composeddsa.CosignerPublicKeyParameter] = cosigner[:len(cosigner)-2]
+		_, err = provider.BuildHostMetadata(publicKey, shared, []byte("program"))
 		r.add(name+" metadata short cosigner", err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(publicKey, prepared, []byte("program"))
+	metadata, err := provider.BuildHostMetadata(publicKey, prepared, []byte("program"))
 	if err != nil {
 		r.add(name+" metadata", err)
 	} else {
@@ -407,7 +407,7 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 			r.add(name+" declaration", declaration)
 		}
 		r.addErr(name+" metadata validate", metadata.Validate())
-		unknown := boundedmeta.Clone(metadata)
+		unknown := hostmeta.Clone(metadata)
 		unknown.Rekey = "admin_key"
 		r.addErr(name+" metadata unknown rekey", unknown.Validate())
 	}
@@ -433,8 +433,8 @@ func TestComposedOutputIsUnchanged(t *testing.T) {
 			characterizeComposedTemplate(r, client, name, set[name])
 		}
 	}
-	for _, keyType := range []string{boundedmeta.DefaultCosignerComponentKeyType, "aplane.witness-ed25519.v1", "example.unknown.v1"} {
-		r.add("cosigner parameter "+keyType, composeddsa.BoundedCosignerParameterDef(keyType))
+	for _, keyType := range []string{hostmeta.DefaultCosignerComponentKeyType, "aplane.witness-ed25519.v1", "example.unknown.v1"} {
+		r.add("cosigner parameter "+keyType, composeddsa.CosignerParameterDef(keyType))
 	}
 	joined := strings.Join(r.lines, "\n") + "\n"
 	if path := os.Getenv(composedCharacterizationDumpEnv); path != "" {

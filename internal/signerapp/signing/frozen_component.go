@@ -70,7 +70,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 	if _, err := s.Planner.VerifySignableKeys(snapshot, sizing, map[int]bool{}, sizingForeign); err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
-	sizingItems, err := resolveBoundedPlanItems(snapshot, sizing, originals, map[int]bool{}, sizingForeign)
+	sizingItems, err := resolveHostPlanItems(snapshot, sizing, originals, map[int]bool{}, sizingForeign)
 	if err != nil {
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
@@ -79,10 +79,10 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		return nil, signerapi.GroupSignRequest{}, s.frozenComponentPlannerError(err)
 	}
 	// The plan this request acts on covers only what it signs: the targets.
-	boundedItems := make([]*boundedPlanItem, len(sizingItems))
+	hostItems := make([]*hostPlanItem, len(sizingItems))
 	for i, item := range sizingItems {
 		if !foreign[i] {
-			boundedItems[i] = item
+			hostItems[i] = item
 		}
 	}
 	lsigIndices := make([]int, 0, len(sizingLsigIndices))
@@ -121,7 +121,7 @@ func (s *Service) ValidateFrozenComponentContext(request signerapi.ComponentRequ
 		LogicSigResourcePlan: resourcePlan, FeeInfo: feeInfo,
 		NeedsRegroup: false, IsPreGrouped: isPreGrouped, HasPassthrough: false,
 		AuthKeyTypes: authKeyTypes, KnownAddresses: knownAddressesFromSnapshot(snapshot), RotatingAddresses: rotatingAddressesFromSnapshot(snapshot),
-		InvalidRekeyTargets: invalidRekeyTargetsForGroup(snapshot, allTxns), BoundedItems: boundedItems, Frozen: true,
+		InvalidRekeyTargets: invalidRekeyTargetsForGroup(snapshot, allTxns), HostItems: hostItems, Frozen: true,
 		presented: group,
 	}, req, nil
 }

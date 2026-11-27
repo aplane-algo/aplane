@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
@@ -113,18 +113,18 @@ func incompatibleKeyFormatErr(detail error) error {
 // This allows scanning to extract all needed info in a single decrypt operation,
 // avoiding the need to re-decrypt keys for /keys API or signing budget calculation.
 type KeyScanInfo struct {
-	KeyFile              string // Path to the key file
-	KeyType              string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
-	Category             string // Key category from the key file, if present
-	LogicSigResources    *lsigresource.Profile
-	PublicKeyHex         string // Hex-encoded public key (for /keys API)
-	BaseKeyType          string // Base DSA key type used for signing metadata, if present
-	Parameters           map[string]string
-	SigningArgs          []StoredSigningArg
-	BoundedAuthorization *boundedmeta.Metadata
-	TemplateFingerprint  string
-	ValidRekeyTarget     bool   // recorded in the aplane key at creation
-	CreatedAt            string // RFC 3339 creation timestamp
+	KeyFile             string // Path to the key file
+	KeyType             string // Key type (ed25519, aplane.falcon1024.v1, aplane.htlc.v1, etc.)
+	Category            string // Key category from the key file, if present
+	LogicSigResources   *lsigresource.Profile
+	PublicKeyHex        string // Hex-encoded public key (for /keys API)
+	BaseKeyType         string // Base DSA key type used for signing metadata, if present
+	Parameters          map[string]string
+	SigningArgs         []StoredSigningArg
+	Host                *hostmeta.Metadata
+	TemplateFingerprint string
+	ValidRekeyTarget    bool   // recorded in the aplane key at creation
+	CreatedAt           string // RFC 3339 creation timestamp
 }
 
 // KeyScanWarningCode classifies a key file skipped during directory scan.
@@ -351,7 +351,7 @@ func scanKeysDirectory(active storepaths.GenPaths, excluded map[string]bool, dec
 			// only the account address.
 			publicKeyHex = ""
 		case CategoryDSALsig:
-			if signingMeta.BoundedAuthorization == nil {
+			if signingMeta.Host == nil {
 				baseArgumentBytes = dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
 			}
 		}
@@ -369,18 +369,18 @@ func scanKeysDirectory(active storepaths.GenPaths, excluded map[string]bool, dec
 		// keysMap is never returned with either entry.
 		addressFiles[selector] = append(addressFiles[selector], keyFile)
 		keysMap[selector] = KeyScanInfo{
-			KeyFile:              keyFile,
-			KeyType:              keyType,
-			Category:             category,
-			LogicSigResources:    logicSigResources,
-			PublicKeyHex:         publicKeyHex,
-			BaseKeyType:          signingMeta.BaseKeyType,
-			Parameters:           signingMeta.Parameters,
-			SigningArgs:          signingMeta.SigningArgs,
-			BoundedAuthorization: boundedmeta.Clone(signingMeta.BoundedAuthorization),
-			TemplateFingerprint:  payload.TemplateFingerprint,
-			ValidRekeyTarget:     payload.ValidRekeyTarget,
-			CreatedAt:            payload.CreatedAt.UTC().Format(time.RFC3339),
+			KeyFile:             keyFile,
+			KeyType:             keyType,
+			Category:            category,
+			LogicSigResources:   logicSigResources,
+			PublicKeyHex:        publicKeyHex,
+			BaseKeyType:         signingMeta.BaseKeyType,
+			Parameters:          signingMeta.Parameters,
+			SigningArgs:         signingMeta.SigningArgs,
+			Host:                hostmeta.Clone(signingMeta.Host),
+			TemplateFingerprint: payload.TemplateFingerprint,
+			ValidRekeyTarget:    payload.ValidRekeyTarget,
+			CreatedAt:           payload.CreatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 
@@ -409,8 +409,8 @@ func scanLogicSigResources(payload *Payload, baseArgumentBytes int) (*lsigresour
 	if payload.LogicSigOpcodeProfile == (lsigresource.OpcodeProfile{}) {
 		return nil, fmt.Errorf("LogicSig resource profile has no opcode profile")
 	}
-	if metadata := payload.BoundedAuthorization; metadata != nil {
-		return profileFromBoundedMetadata(uint64(programBytes), metadata, payload.LogicSigOpcodeProfile)
+	if metadata := payload.Host; metadata != nil {
+		return profileFromHostMetadata(uint64(programBytes), metadata, payload.LogicSigOpcodeProfile)
 	}
 	argumentBytes := baseArgumentBytes
 	for _, arg := range payload.SigningArgs {
@@ -452,11 +452,11 @@ func rotatingLogicSigResources(keyType string) (*lsigresource.Profile, error) {
 	return &profile, nil
 }
 
-func profileFromBoundedMetadata(programBytes uint64, metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile) (*lsigresource.Profile, error) {
+func profileFromHostMetadata(programBytes uint64, metadata *hostmeta.Metadata, opcodes lsigresource.OpcodeProfile) (*lsigresource.Profile, error) {
 	arguments := map[lsigresource.AuthorizationPath]uint64{
-		lsigresource.PathSpend:         uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpend)),
-		lsigresource.PathSpendingRekey: uint64(metadata.ArgumentBytesForPath(boundedmeta.PathSpendingRekey)),
-		lsigresource.PathListedRekey:   uint64(metadata.ArgumentBytesForPath(boundedmeta.PathListedRekey)),
+		lsigresource.PathSpend:         uint64(metadata.ArgumentBytesForPath(hostmeta.PathSpend)),
+		lsigresource.PathSpendingRekey: uint64(metadata.ArgumentBytesForPath(hostmeta.PathSpendingRekey)),
+		lsigresource.PathListedRekey:   uint64(metadata.ArgumentBytesForPath(hostmeta.PathListedRekey)),
 	}
 	profile, err := lsigresource.Materialize(programBytes, nil, arguments, opcodes)
 	if err != nil {
@@ -513,5 +513,5 @@ type SigningMetadata struct {
 	Parameters            map[string]string
 	SigningArgs           []StoredSigningArg
 	LogicSigOpcodeProfile lsigresource.OpcodeProfile
-	BoundedAuthorization  *boundedmeta.Metadata
+	Host                  *hostmeta.Metadata
 }

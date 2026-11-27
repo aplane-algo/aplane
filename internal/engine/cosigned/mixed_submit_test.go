@@ -106,7 +106,7 @@ func TestRequestNonCosignedSignaturesShapesModesAndExtracts(t *testing.T) {
 // A non-cosigned position goes to /plan and /sign/component as the signer's
 // own, with no size hint: the signer sizes it from its records and can put the
 // group's authorization charge on it (audit #10, #19).
-func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testing.T) {
+func TestBuildBaseComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testing.T) {
 	cosigned := testAddress(1).String()
 	nativeFalcon := testAddress(2).String()
 	stranger := testAddress(3)
@@ -123,11 +123,11 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 		testPaymentTxn(t, testAddress(2), testAddress(5), "native-falcon"),
 	}
 	targets := map[int]cosignedTarget{0: cosignedTargetForTest(cosigned, cosignerHex)}
-	requests, err := s.buildBoundedComponentRequests(txns, targets, clientsign.SubmitOptions{
+	requests, err := s.buildBaseComponentRequests(txns, targets, clientsign.SubmitOptions{
 		AppCallInfo: []*signerapi.AppCallInfo{nil, {Mode: "raw"}},
 	})
 	if err != nil {
-		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
+		t.Fatalf("buildBaseComponentRequests() error = %v", err)
 	}
 	held := requests[1]
 	if mode, _ := held.Mode(); mode != signerapi.RequestModeSign || held.AuthAddress != nativeFalcon {
@@ -140,7 +140,7 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 	// /sign/component names the same account for that position, with no hint,
 	// so the signer sizes it as /plan did.
 	group := frozenGroup{BytesHex: []string{"a", "b", "dummy"}, OriginalCount: 2}
-	component := boundedBaseComponentRequest(group, requests, targets)
+	component := baseComponentRequest(group, requests, targets)
 	if len(component.Targets) != 1 || component.Targets[0].TargetIndex != 0 || component.Targets[0].AuthAddress != cosigned {
 		t.Fatalf("component targets = %#v", component.Targets)
 	}
@@ -154,7 +154,7 @@ func TestBuildBoundedComponentRequestsSendsHeldPositionsAsTheSignersOwn(t *testi
 
 	// A position the signer doesn't hold could never be signed through /sign,
 	// so the group is refused before anything is planned or approved.
-	_, err = s.buildBoundedComponentRequests(
+	_, err = s.buildBaseComponentRequests(
 		append(txns, testPaymentTxn(t, stranger, testAddress(5), "not-held")),
 		targets,
 		clientsign.SubmitOptions{},
@@ -196,7 +196,7 @@ func TestRequestNonCosignedSignaturesUsesCosignedAuthorizerResources(t *testing.
 			Account:                  cosignedAuthorizer,
 			CosignerComponentKeyType: witness.Falcon1024V1,
 			CosignerPublicKey:        cosignerHex,
-			BoundedPath:              signerapi.ComponentPathSpend,
+			HostPath:                 signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -244,7 +244,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 		len(txns),
 		map[int]cosignedTarget{0: {
 			Index: 0, Sender: cosigned, Account: cosigned,
-			CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpend,
+			CosignerPublicKey: cosignerHex, HostPath: signerapi.ComponentPathSpend,
 		}},
 		clientsign.SubmitOptions{},
 	)
@@ -262,7 +262,7 @@ func TestBuildGroupSignRequestsUsesSelectedBoundedSpendResources(t *testing.T) {
 	requests, _, err = s.buildGroupSignRequests(txns, encodeGroupHex(txns), len(txns),
 		map[int]cosignedTarget{0: {
 			Index: 0, Sender: cosigned, Account: cosigned,
-			CosignerPublicKey: cosignerHex, BoundedPath: signerapi.ComponentPathSpendingRekey,
+			CosignerPublicKey: cosignerHex, HostPath: signerapi.ComponentPathSpendingRekey,
 		}}, clientsign.SubmitOptions{})
 	if err != nil {
 		t.Fatalf("buildGroupSignRequests(rekey) error = %v", err)

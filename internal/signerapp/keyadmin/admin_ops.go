@@ -9,8 +9,8 @@ import (
 	"maps"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -38,7 +38,7 @@ func (s Service) ListKeys() ([]adminproto.KeyInfo, *Error) {
 			if err != nil {
 				return fmt.Errorf("read key %s: %w", addr, err)
 			}
-			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
+			templateProvenanceStatus, templateProvenanceNote := lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.Host)
 			keysList = append(keysList, adminproto.KeyInfo{
 				Address:                  addr,
 				KeyType:                  info.Type,
@@ -76,9 +76,9 @@ func (s Service) GetKeyDetails(address string) (*adminproto.GetKeyDetailsResult,
 		if witness.IsKeyType(info.Type) {
 			result.PublicKeyHex = info.PublicKeyHex
 		}
-		result.Parameters = keyDetailsParameters(info.Parameters, info.BoundedAuthorization)
-		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.BoundedAuthorization)
-		result.PolicyLabel = keytypeux.BoundedMetadataLabel(info.BoundedAuthorization)
+		result.Parameters = keyDetailsParameters(info.Parameters, info.Host)
+		result.TemplateProvenanceStatus, result.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(info.Type, info.TemplateFingerprint, info.Parameters, info.Host)
+		result.PolicyLabel = keytypeux.HostMetadataLabel(info.Host)
 		result.DisplayTEAL = info.DisplayTEAL
 		return nil
 	})
@@ -98,12 +98,12 @@ const keyDetailsCosignerParameter = "cosigner"
 // the name an operator compares with the cosigner node, instead of the raw
 // public key, which identifies nothing at a glance. The ID is checked against
 // the public key when the key loads.
-func keyDetailsParameters(parameters map[string]string, metadata *boundedmeta.Metadata) map[string]string {
+func keyDetailsParameters(parameters map[string]string, metadata *hostmeta.Metadata) map[string]string {
 	projected := maps.Clone(parameters)
 	if metadata == nil || metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID == "" {
 		return projected
 	}
-	delete(projected, boundedmeta.CosignerPublicKeyParameter)
+	delete(projected, hostmeta.CosignerPublicKeyParameter)
 	projected[keyDetailsCosignerParameter] = metadata.Cosigner.ComponentKeyID
 	return projected
 }

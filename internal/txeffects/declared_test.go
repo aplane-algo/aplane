@@ -11,7 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -36,14 +36,14 @@ var (
 
 // grammarDeclarations is every declaration the plain host's bounded2 shapes
 // produce, read from each shape's resolved metadata.
-func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
+func grammarDeclarations(t *testing.T) map[string]hostmeta.PathDeclaration {
 	t.Helper()
 	falcon.RegisterClient()
 	provider, ok := logicsigdsa.Get("aplane.falcon1024.v1").(*plainhost.Provider)
 	if !ok {
 		t.Fatal("the Falcon plain host is not registered")
 	}
-	declarations := make(map[string]boundedmeta.PathDeclaration)
+	declarations := make(map[string]hostmeta.PathDeclaration)
 	for _, shape := range plainhost.Shapes() {
 		params := map[string]string{
 			plainhost.ParameterSpendEffects:   joinSpend(shape.Spend),
@@ -64,7 +64,7 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if err != nil {
 			t.Fatalf("%s: %v", shape.Descriptor(), err)
 		}
-		declaration, err := instance.Bounded.Declaration()
+		declaration, err := instance.Host.Declaration()
 		if err != nil {
 			t.Fatalf("%s: %v", shape.Descriptor(), err)
 		}
@@ -76,14 +76,14 @@ func grammarDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 // plainDeclarations is every plain host arrangement, read from the registered
 // plain Falcon host's resolved metadata: each rekey setting, with and without a
 // cosigner.
-func plainDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
+func plainDeclarations(t *testing.T) map[string]hostmeta.PathDeclaration {
 	t.Helper()
 	falcon.RegisterClient()
 	resolver, ok := lsigprovider.Get("aplane.falcon1024.v1").(lsigprovider.InstanceResolver)
 	if !ok {
 		t.Fatal("aplane.falcon1024.v1 is not a plain host")
 	}
-	declarations := make(map[string]boundedmeta.PathDeclaration)
+	declarations := make(map[string]hostmeta.PathDeclaration)
 	for _, arrangement := range plainhost.Arrangements() {
 		params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 		addTestCosigner(params, arrangement.Cosigner)
@@ -94,7 +94,7 @@ func plainDeclarations(t *testing.T) map[string]boundedmeta.PathDeclaration {
 		if err != nil {
 			t.Fatalf("%+v: %v", arrangement, err)
 		}
-		declaration, err := instance.Bounded.Declaration()
+		declaration, err := instance.Host.Declaration()
 		if err != nil {
 			t.Fatalf("%+v: %v", arrangement, err)
 		}
@@ -167,7 +167,7 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 	// The general type never refuses every rekey, but an expert template may: its
 	// declaration is the grammar's with neither a spending-key rekey nor a list.
 	for descriptor, declaration := range declarations {
-		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.RekeyList {
+		if declaration.Rekey == hostmeta.RekeyRefused && declaration.RekeyList {
 			declaration.RekeyList = false
 			declarations["expert refused, from "+descriptor] = declaration
 			break
@@ -177,7 +177,7 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 	corpus := surfaceCorpus(t)
 	reached := make(map[txeffects.Rule]bool)
 	for descriptor, declaration := range declarations {
-		plain := declaration.Contract == boundedmeta.PlainContract
+		plain := declaration.Contract == hostmeta.PlainContract
 		for name, txn := range corpus {
 			decision, err := txeffects.ClassifyFor(txn, declaration)
 			if err != nil {
@@ -210,7 +210,7 @@ func TestClassifyForReachesAnExplicitRuleForEveryEffect(t *testing.T) {
 					t.Fatalf("%s / %s: allowed an undeclared spend %q", descriptor, name, decision.SpendEffect)
 				}
 			case txeffects.PathSpendingRekey:
-				if declaration.Rekey != boundedmeta.RekeySpendingKey || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender {
+				if declaration.Rekey != hostmeta.RekeySpendingKey || txn.Type != types.PaymentTx || txn.Amount != 0 || txn.Receiver != txn.Sender {
 					t.Fatalf("%s / %s: allowed a rekey the declaration refuses", descriptor, name)
 				}
 			case txeffects.PathListedRekey:
@@ -236,15 +236,15 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 	ceiling := uint64(1_000)
 	for _, tc := range []struct {
 		name        string
-		declaration boundedmeta.PathDeclaration
+		declaration hostmeta.PathDeclaration
 		want        string
 	}{
-		{"rekey setting", boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Rekey: "admin_key"}, "unsupported rekey setting"},
-		{"contract", boundedmeta.PathDeclaration{Contract: "bounded1", Rekey: boundedmeta.RekeyRefused}, "unsupported bounded authorization contract"},
-		{"plain host with bounds", boundedmeta.PathDeclaration{Contract: boundedmeta.PlainContract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: boundedmeta.RekeyRefused}, "plain1 has no host rules: bounds must be absent"},
+		{"rekey setting", hostmeta.PathDeclaration{Contract: hostmeta.BoundedContract, Rekey: "admin_key"}, "unsupported rekey setting"},
+		{"contract", hostmeta.PathDeclaration{Contract: "bounded1", Rekey: hostmeta.RekeyRefused}, "unsupported bounded authorization contract"},
+		{"plain host with bounds", hostmeta.PathDeclaration{Contract: hostmeta.PlainContract, Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: hostmeta.RekeyRefused}, "plain1 has no host rules: bounds must be absent"},
 		// Without its bounds a bounded host would be classified as an open
 		// spend, with no fee ceiling and no spend-effect list.
-		{"bounded host without bounds", boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Rekey: boundedmeta.RekeyRefused}, "bounded2 requires bounds"},
+		{"bounded host without bounds", hostmeta.PathDeclaration{Contract: hostmeta.BoundedContract, Rekey: hostmeta.RekeyRefused}, "bounded2 requires bounds"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := txeffects.ClassifyFor(types.Transaction{Type: types.PaymentTx}, tc.declaration)
@@ -258,7 +258,7 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 // A plain host's spend may carry a close or clawback, but a rekey still passes
 // only as a pure rekey.
 func TestClassifyForPlainHost(t *testing.T) {
-	declaration := plainDeclarations(t)["plain plus_cosigned cosigner="+boundedmeta.DefaultCosignerComponentKeyType]
+	declaration := plainDeclarations(t)["plain plus_cosigned cosigner="+hostmeta.DefaultCosignerComponentKeyType]
 	var sender, other types.Address
 	sender[0], other[0] = 1, 2
 	closing := types.Transaction{Type: types.PaymentTx}
@@ -296,7 +296,7 @@ func TestClassifyForPlainHost(t *testing.T) {
 
 func TestClassifyForChecksTheFeeCeilingFirst(t *testing.T) {
 	ceiling := uint64(2_000)
-	declaration := boundedmeta.PathDeclaration{Contract: boundedmeta.Contract, Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: boundedmeta.RekeySpendingKey}
+	declaration := hostmeta.PathDeclaration{Contract: hostmeta.BoundedContract, Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: hostmeta.RekeySpendingKey}
 	var sender types.Address
 	sender[0] = 1
 	txn := types.Transaction{Type: types.PaymentTx}
@@ -319,9 +319,9 @@ func addTestCosigner(params map[string]string, componentKeyType string) {
 	if componentKeyType == "" {
 		return
 	}
-	size, _, _ := boundedmeta.CosignerSizes(componentKeyType)
-	params[boundedmeta.CosignerPublicKeyParameter] = strings.Repeat("41", size)
-	if componentKeyType != boundedmeta.DefaultCosignerComponentKeyType {
-		params[boundedmeta.CosignerKeyTypeParameter] = componentKeyType
+	size, _, _ := hostmeta.CosignerSizes(componentKeyType)
+	params[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("41", size)
+	if componentKeyType != hostmeta.DefaultCosignerComponentKeyType {
+		params[hostmeta.CosignerKeyTypeParameter] = componentKeyType
 	}
 }

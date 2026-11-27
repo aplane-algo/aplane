@@ -109,8 +109,8 @@ func (s *Service) SignGroupWithContext(ctx context.Context, req signerapi.GroupS
 	if err != nil {
 		return nil, err
 	}
-	if planHasCosignedBoundedTarget(plan) {
-		return nil, boundedCosignerRequired()
+	if planHasCosignedHostTarget(plan) {
+		return nil, cosignerRequired()
 	}
 	return s.signGroupWithPlanContext(ctx, req, session, plan)
 }
@@ -318,7 +318,7 @@ func (s *Service) approveGroupWithPlanContext(ctx context.Context, req signerapi
 		ProtocolRekeyTargets: protocolRekeyTargetsForPlan(plan),
 		ListedRekeyTargets:   listedRekeyTargetsForPlan(plan),
 		ForcedReviewRuleID: func() string {
-			if planHasBoundedRekey(plan) {
+			if planHasHostRekey(plan) {
 				return policy.HostRekeyRequiresReviewRuleID
 			}
 			return ""

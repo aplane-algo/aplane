@@ -26,7 +26,7 @@ import (
 type RequestKind int
 
 const (
-	// RequestToSign is /sign, and a bounded account's base component: each
+	// RequestToSign is /sign, and a host account's base component: each
 	// slot is a SIGN_REQUEST.
 	RequestToSign RequestKind = iota
 	// RequestToPlan is /plan, which signs nothing: each slot is a
@@ -87,9 +87,9 @@ type PlanResult struct {
 	// before approval (a rotating account's next stage). A rekey to one of
 	// them is not a warning-level finding. Nil for every other plan.
 	ProtocolRekeyTargets map[string]bool
-	// BoundedItems[i] records the signer-classified path for a bounded key after
+	// HostItems[i] records the signer-classified path for a host key after
 	// all group and fee mutations. Other entries are nil.
-	BoundedItems []*boundedPlanItem
+	HostItems []*hostPlanItem
 	// Rotating describes a rotating account's spend; nil on every other path.
 	Rotating *rotatingPlanItem
 	// Frozen is set for a group checked as sent (/sign/component, and
@@ -106,13 +106,13 @@ type PlanResult struct {
 	approval approvalBinding
 }
 
-// boundedItem is the plan's bounded classification for position i, or nil
-// for a position that is not a bounded account's (or no plan).
-func (p *PlanResult) boundedItem(i int) *boundedPlanItem {
-	if p == nil || i < 0 || i >= len(p.BoundedItems) {
+// hostItem is the plan's host classification for position i, or nil
+// for a position that is not a host account's (or no plan).
+func (p *PlanResult) hostItem(i int) *hostPlanItem {
+	if p == nil || i < 0 || i >= len(p.HostItems) {
 		return nil
 	}
-	return p.BoundedItems[i]
+	return p.HostItems[i]
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.
@@ -243,7 +243,7 @@ func (p *Planner) planGroup(req signerapi.GroupSignRequest, kind RequestKind) (*
 		KnownAddresses:        knownAddresses,
 		RotatingAddresses:     rotatingAddressesFromSnapshot(snapshot),
 		InvalidRekeyTargets:   invalidRekeyTargetsForGroup(snapshot, final.AllTxns),
-		BoundedItems:          final.BoundedItems,
+		HostItems:             final.HostItems,
 	}, nil
 }
 
@@ -273,7 +273,7 @@ type finalizedGroup struct {
 	DummiesNeeded int
 	FeeInfo       DummyFeeInfo
 	NeedsRegroup  bool
-	BoundedItems  []*boundedPlanItem
+	HostItems     []*hostPlanItem
 }
 
 // finalizeGroup solves resource dummies, appends them, allocates the
@@ -285,12 +285,12 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 	// Classify bounded requests before budgeting: each path's argument bytes size
 	// the group. This pass sees pre-pooling fees, so it is sizing input only — the
 	// authoritative classification runs on the finalized group below.
-	sizingBoundedItems, err := resolveBoundedPlanItems(in.Snapshot, in.Requests, in.Txns, in.PassthroughIndices, in.ForeignIndices)
+	sizingHostItems, err := resolveHostPlanItems(in.Snapshot, in.Requests, in.Txns, in.PassthroughIndices, in.ForeignIndices)
 	if err != nil {
 		return nil, err
 	}
 
-	resourcePlan, lsigIndices, err := calculateLogicSigResources(p.Console, in.Snapshot, in.Requests, in.Txns, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns, in.HasPassthrough, in.IsPreGrouped)
+	resourcePlan, lsigIndices, err := calculateLogicSigResources(p.Console, in.Snapshot, in.Requests, in.Txns, sizingHostItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns, in.HasPassthrough, in.IsPreGrouped)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +301,7 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 		return nil, err
 	}
 
-	budgets, budgetErr := authorizationBudgets(in.Requests, in.Snapshot, sizingBoundedItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns)
+	budgets, budgetErr := authorizationBudgets(in.Requests, in.Snapshot, sizingHostItems, in.PassthroughIndices, in.ForeignIndices, in.PassthroughSignedTxns)
 	if budgetErr != nil {
 		return nil, budgetErr
 	}
@@ -328,7 +328,7 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 	// fees actually signed. Fee pooling cannot change a transaction's shape, so
 	// the sizing pass and this pass always agree on the path. Dummies are
 	// appended after the originals, so request indices are unchanged.
-	boundedItems, err := resolveBoundedPlanItems(in.Snapshot, in.Requests, allTxns, in.PassthroughIndices, in.ForeignIndices)
+	hostItems, err := resolveHostPlanItems(in.Snapshot, in.Requests, allTxns, in.PassthroughIndices, in.ForeignIndices)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +340,7 @@ func (p *Planner) finalizeGroup(in groupFinalization) (*finalizedGroup, *Service
 		DummiesNeeded: dummiesNeeded,
 		FeeInfo:       feeInfo,
 		NeedsRegroup:  needsRegroup,
-		BoundedItems:  boundedItems,
+		HostItems:     hostItems,
 	}, nil
 }
 

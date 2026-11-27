@@ -271,7 +271,7 @@ rule.
   only, since it would refuse the designated rotating slot); it must pass
   `cosignerSignRejectMessage`, which refuses witness and cosigned key types;
   and its credential metadata must carry no bounded authorization
-  (`boundedmeta.Metadata`), checked explicitly because ordinary sign plans
+  (`hostmeta.Metadata`), checked explicitly because ordinary sign plans
   bounded accounts rather than refusing them and that planning cannot nest
   inside this flow. Same genesis hash as the rotating slot. Window equal to
   the rotating slot's. A sender that is not held is fine when its

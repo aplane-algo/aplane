@@ -11,7 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 )
@@ -23,13 +23,13 @@ const rekeyListProofSlot = "rekey_list_proof"
 // description follows the rekey setting: only these refuses every other rekey,
 // and plus cosigned (rekey spending_key with a list) takes any other one with the
 // spending key and the cosigner.
-func rekeyListEntriesParameterDef(rekey boundedmeta.RekeySetting) lsigprovider.ParameterDef {
+func rekeyListEntriesParameterDef(rekey hostmeta.RekeySetting) lsigprovider.ParameterDef {
 	description := "Addresses the account may be rekeyed to with the spending key alone. Every other rekey is refused."
-	if rekey == boundedmeta.RekeySpendingKey {
+	if rekey == hostmeta.RekeySpendingKey {
 		description = "Addresses the account may be rekeyed to with the spending key alone. Any other rekey needs the spending key and the cosigner."
 	}
 	return lsigprovider.ParameterDef{
-		Name:        BoundedRekeyToParameter,
+		Name:        RekeyToParameter,
 		Label:       "Rekey-To Addresses",
 		Description: description,
 		Type:        "address[]",
@@ -40,23 +40,23 @@ func rekeyListEntriesParameterDef(rekey boundedmeta.RekeySetting) lsigprovider.P
 	}
 }
 
-func rekeyListProofArg() boundedmeta.DerivedArg {
-	return boundedmeta.DerivedArg{
+func rekeyListProofArg() hostmeta.DerivedArg {
+	return hostmeta.DerivedArg{
 		Name:      rekeyListProofSlot,
-		Kind:      boundedmeta.DerivedArgRekeyListProof,
-		Parameter: BoundedRekeyToParameter,
-		MaxSize:   boundedmeta.RekeyListProofSize,
+		Kind:      hostmeta.DerivedArgRekeyListProof,
+		Parameter: RekeyToParameter,
+		MaxSize:   hostmeta.RekeyListProofSize,
 	}
 }
 
 // RekeyListEntries parses a rekey-to list's entries from creation parameters.
 func RekeyListEntries(params map[string]string) ([]types.Address, error) {
-	if strings.TrimSpace(params[BoundedRekeyToParameter]) == "" {
-		return nil, fmt.Errorf("%s is required", BoundedRekeyToParameter)
+	if strings.TrimSpace(params[RekeyToParameter]) == "" {
+		return nil, fmt.Errorf("%s is required", RekeyToParameter)
 	}
-	entries, err := rekeylist.ParseEntries(params[BoundedRekeyToParameter])
+	entries, err := rekeylist.ParseEntries(params[RekeyToParameter])
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", BoundedRekeyToParameter, err)
+		return nil, fmt.Errorf("%s: %w", RekeyToParameter, err)
 	}
 	return entries, nil
 }
@@ -65,12 +65,12 @@ func RekeyListEntries(params map[string]string) ([]types.Address, error) {
 // it: it is not a creation parameter, so creation-parameter validation refuses
 // it as unknown.
 func rekeyListRoot(params map[string]string) ([]byte, error) {
-	value, ok := params[boundedmeta.RekeyListRootParameter]
+	value, ok := params[hostmeta.RekeyListRootParameter]
 	if !ok {
 		return nil, fmt.Errorf("the rekey-to list root is computed at key generation, and this program has none")
 	}
 	// The stored metadata holds the same root under the same canonicality rule.
-	root, err := boundedmeta.DecodeCanonicalHex(boundedmeta.RekeyListRootParameter, value, 32, 32)
+	root, err := hostmeta.DecodeCanonicalHex(hostmeta.RekeyListRootParameter, value, 32, 32)
 	if err != nil {
 		return nil, err
 	}
@@ -81,13 +81,13 @@ func rekeyListRoot(params map[string]string) ([]byte, error) {
 // rekey-to list's root) from the creation parameters, which are validated
 // without them. It is the one place that decides which names are generated.
 func SplitGeneratedParams(params map[string]string) (request, generated map[string]string) {
-	value, ok := params[boundedmeta.RekeyListRootParameter]
+	value, ok := params[hostmeta.RekeyListRootParameter]
 	if !ok {
 		return params, nil
 	}
 	request = maps.Clone(params)
-	delete(request, boundedmeta.RekeyListRootParameter)
-	return request, map[string]string{boundedmeta.RekeyListRootParameter: value}
+	delete(request, hostmeta.RekeyListRootParameter)
+	return request, map[string]string{hostmeta.RekeyListRootParameter: value}
 }
 
 // PrepareRekeyList returns params with the rekey-to list's root added. The
@@ -95,18 +95,18 @@ func SplitGeneratedParams(params map[string]string) (request, generated map[stri
 // key, so the generator calls this once the keypair exists and before it
 // renders the program. A composer without a list returns params unchanged.
 func (c *ComposedDSA) PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error) {
-	if c.bounded == nil || c.bounded.RekeyList == nil {
+	if c.host == nil || c.host.RekeyList == nil {
 		return params, nil
 	}
-	if _, present := params[boundedmeta.RekeyListRootParameter]; present {
-		return nil, fmt.Errorf("%s is set by key generation, not by a request", boundedmeta.RekeyListRootParameter)
+	if _, present := params[hostmeta.RekeyListRootParameter]; present {
+		return nil, fmt.Errorf("%s is set by key generation, not by a request", hostmeta.RekeyListRootParameter)
 	}
 	root, err := RekeyListRootFor(privateKey, params)
 	if err != nil {
 		return nil, err
 	}
 	prepared := maps.Clone(params)
-	prepared[boundedmeta.RekeyListRootParameter] = hex.EncodeToString(root[:])
+	prepared[hostmeta.RekeyListRootParameter] = hex.EncodeToString(root[:])
 	return prepared, nil
 }
 
@@ -136,7 +136,7 @@ func RekeyListRootFor(privateKey []byte, params map[string]string) ([32]byte, er
 // the Merkle allowlist's, so a program whose Layer 3 already emits that
 // subroutine (shareCombine) calls it instead of carrying a second copy.
 func renderListedRekey(b *strings.Builder, proofIndex int, root []byte, shareCombine bool) {
-	combine := boundedRekeyListCombineLabel
+	combine := hostRekeyListCombineLabel
 	if shareCombine {
 		combine = merkleCombineLabel
 	}
@@ -147,9 +147,9 @@ func renderListedRekey(b *strings.Builder, proofIndex int, root []byte, shareCom
 		b.WriteString(fmt.Sprintf("arg %d\npushint %d\npushint 32\nextract3\ncallsub %s\n", proofIndex, offset, combine))
 	}
 	b.WriteString("pushbytes 0x" + hex.EncodeToString(root) + "\n==\nassert\n")
-	b.WriteString("b " + boundedAcceptLabel + "\n\n")
+	b.WriteString("b " + hostAcceptLabel + "\n\n")
 	if !shareCombine {
-		writeSortedPairCombine(b, boundedRekeyListCombineLabel, boundedRekeyListOrderedLabel)
+		writeSortedPairCombine(b, hostRekeyListCombineLabel, hostRekeyListOrderedLabel)
 	}
 }
 

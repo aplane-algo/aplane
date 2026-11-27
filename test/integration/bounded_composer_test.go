@@ -10,7 +10,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -46,7 +46,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		profile    *composeddsa.BoundedAuthorizationProfile
+		profile    *composeddsa.HostProfile
 		bytecode   int
 		spendArgs  int
 		spendGroup int
@@ -55,7 +55,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 	}{
 		{
 			name:       "rekey-disabled-pay",
-			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}, boundedmeta.RekeyRefused),
+			profile:    boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}, hostmeta.RekeyRefused),
 			bytecode:   1878,
 			spendArgs:  1423,
 			spendGroup: 2,
@@ -66,7 +66,7 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 			name: "spending-key-rekey-pay-axfer",
 			profile: boundedIntegrationProfile(
 				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
-				boundedmeta.RekeySpendingKey,
+				hostmeta.RekeySpendingKey,
 			),
 			bytecode: 1919, spendArgs: 1423, spendGroup: 2, spendFee: 2000,
 			address: "KPFJDQQIX32RFQTA23NYCFQU6HDIYYQEKKALOZJS2DZGAW3SPD47YQHRRU",
@@ -86,11 +86,11 @@ func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, result.Bytecode)
+			metadata, err := provider.BuildHostMetadata(spendingPublicKey, params, result.Bytecode)
 			if err != nil {
 				t.Fatal(err)
 			}
-			spendArgs := metadata.ArgumentBytesForPath(boundedmeta.PathSpend)
+			spendArgs := metadata.ArgumentBytesForPath(hostmeta.PathSpend)
 			spendPlan := solveV42IntegrationPath(t, consensus, len(result.Bytecode), spendArgs)
 			spendFee := v42IntegrationPathFee(spendPlan)
 			if len(result.Bytecode) != test.bytecode || spendArgs != test.spendArgs ||
@@ -360,7 +360,7 @@ type boundedExecutionAccount struct {
 	spendingPublicKey  []byte
 	spendingPrivateKey []byte
 	provider           *composeddsa.ComposedDSA
-	metadata           *boundedmeta.Metadata
+	metadata           *hostmeta.Metadata
 }
 
 // newBoundedExecutionAccount's spending key may also rekey the account. A rekey
@@ -374,7 +374,7 @@ func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, re
 	}
 	profile := boundedIntegrationProfile(
 		[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
-		boundedmeta.RekeySpendingKey,
+		hostmeta.RekeySpendingKey,
 	)
 	provider := newFixedAllowlistIntegrationProvider(profile)
 	provider.SetAlgodClient(network.Client)
@@ -383,7 +383,7 @@ func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, re
 	if err != nil {
 		t.Fatalf("derive bounded LogicSig: %v", err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublicKey, params, derived.Bytecode)
+	metadata, err := provider.BuildHostMetadata(spendingPublicKey, params, derived.Bytecode)
 	if err != nil {
 		t.Fatalf("build bounded authorization metadata: %v", err)
 	}
@@ -480,26 +480,26 @@ func (account boundedExecutionAccount) signedGroupWithLayer3Args(t *testing.T, t
 	return group, algocrypto.GetTxID(targetTxn)
 }
 
-func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
+func newBoundedIntegrationProvider(profile *composeddsa.HostProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
 		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt,
 		TemplateMode: "generated",
-		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
+		TEALSuffix:   "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Host: profile,
 	})
 }
 
-func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
+func newFixedAllowlistIntegrationProvider(profile *composeddsa.HostProfile) *composeddsa.ComposedDSA {
 	return composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
-		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", Bounded: profile,
+		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", Host: profile,
 		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
 		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
 }
 
-func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey boundedmeta.RekeySetting) *composeddsa.BoundedAuthorizationProfile {
-	return &composeddsa.BoundedAuthorizationProfile{
+func boundedIntegrationProfile(allowed []txeffects.SpendEffect, rekey hostmeta.RekeySetting) *composeddsa.HostProfile {
+	return &composeddsa.HostProfile{
 		Contract: composeddsa.BoundedContract, Bounds: &composeddsa.ProfileBounds{SpendEffects: allowed, MaxFee: new(boundedIntegrationMaxFee)}, Rekey: rekey,
 	}
 }

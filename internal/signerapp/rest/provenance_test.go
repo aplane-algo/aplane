@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -45,7 +45,7 @@ func (p perKeyRESTProvider) CosignerComponentKeyTypes(map[string]string) ([]stri
 func (p perKeyRESTProvider) ResolveInstance(map[string]string) (*lsigprovider.Instance, error) {
 	return nil, errors.New("not used by inventory")
 }
-func (p perKeyRESTProvider) StoredFingerprint(parameters map[string]string, _ *boundedmeta.Metadata) (string, error) {
+func (p perKeyRESTProvider) StoredFingerprint(parameters map[string]string, _ *hostmeta.Metadata) (string, error) {
 	if parameters["shape"] != "list" {
 		return "", errors.New("unknown shape")
 	}

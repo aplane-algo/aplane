@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package boundedmeta
+package hostmeta
 
 import "testing"
 
 func TestDeclarationProjectsTheStoredContract(t *testing.T) {
 	metadata := &Metadata{
-		Contract: Contract,
+		Contract: BoundedContract,
 		Bounds:   &Bounds{SpendEffects: []string{SpendEffectPay, SpendEffectAxfer}, MaxFee: new(uint64(5_000)), Layer3Policy: Layer3PolicyFixedAllowlist},
 		Rekey:    RekeyRefused,
 		Cosigner: &CosignerAuthorization{ComponentKeyType: DefaultCosignerComponentKeyType, RequiredOn: []string{PathSpend}},

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -658,7 +658,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x12, fill}
 	account := logicSigAddressForTest(t, bytecode)
 	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	metadata.Contract, metadata.Bounds = boundedmeta.PlainContract, nil
+	metadata.Contract, metadata.Bounds = hostmeta.PlainContract, nil
 	if err := metadata.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -666,7 +666,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiptMessage, err := boundedAssemblyReceiptMessage(account, entry.TxID[:], metadata, nil)
+	receiptMessage, err := hostAssemblyReceiptMessage(account, entry.TxID[:], metadata, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +685,7 @@ func newCosignedAssemblyFixture(t *testing.T, fill byte, entry canonical.Txn, ta
 		keyMaterial: &coresigning.KeyMaterial{
 			Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
 			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
-			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
+			Bytecode: append([]byte(nil), bytecode...), Host: hostmeta.Clone(metadata),
 		},
 		baseSignature:     baseSignature,
 		cosignerSignature: cosignerSignature,
@@ -780,8 +780,8 @@ func TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough(t *testi
 	rekeyedTxn := paymentTransaction(t, rekeyed, types.Address{33}.String(), 6)
 	held := func() *componentKeyTestSession {
 		return &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-			cosigned: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{
-				Contract: boundedmeta.PlainContract, Cosigner: &boundedmeta.CosignerAuthorization{Contract: boundedmeta.CosignerContractV1},
+			cosigned: {Type: "aplane.falcon1024.v1", Host: &hostmeta.Metadata{
+				Contract: hostmeta.PlainContract, Cosigner: &hostmeta.CosignerAuthorization{Contract: hostmeta.CosignerContractV1},
 			}},
 		}}
 	}
@@ -809,7 +809,7 @@ func TestAssembleDecodedRejectsALocallyHeldCosignedAccountAsPassthrough(t *testi
 	}
 	// A held account without a cosigner is an ordinary passthrough.
 	uncosigned := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		cosigned: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{Contract: boundedmeta.Contract}},
+		cosigned: {Type: "aplane.falcon1024.v1", Host: &hostmeta.Metadata{Contract: hostmeta.BoundedContract}},
 	}}
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
 	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
@@ -1420,7 +1420,7 @@ func TestValidateCosignedPassthroughRequiresSignatureAndCanonical(t *testing.T) 
 	// A passthrough whose sender is a locally held cosigned account is rejected:
 	// it must go through component assembly, not passthrough.
 	cosignedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		sender: {Type: "aplane.falcon1024.v1", BoundedAuthorization: &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{}}},
+		sender: {Type: "aplane.falcon1024.v1", Host: &hostmeta.Metadata{Cosigner: &hostmeta.CosignerAuthorization{}}},
 	}}
 	if _, err := validateCosignedPassthrough(context.Background(), signerapi.AssemblyPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, cosignedSession); err == nil {
 		t.Fatal("cosigned-account passthrough: expected rejection, got nil")

@@ -22,11 +22,11 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
 	"github.com/aplane-algo/aplane/internal/genstore/genstoretest"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
@@ -309,12 +309,12 @@ teal: |
 		t.Fatalf("GenerateKey() error = %#v", svcErr)
 	}
 	summary := ir.KeyStore().GetSigningSummary()[result.Address]
-	if summary.Parameters[boundedmeta.CosignerPublicKeyParameter] != hex.EncodeToString(cosignerPublicKey) {
+	if summary.Parameters[hostmeta.CosignerPublicKeyParameter] != hex.EncodeToString(cosignerPublicKey) {
 		t.Fatalf("stored parameters = %#v", summary.Parameters)
 	}
-	if summary.BoundedAuthorization == nil || summary.BoundedAuthorization.Cosigner == nil ||
-		summary.BoundedAuthorization.Cosigner.ComponentKeyID != componentKey {
-		t.Fatalf("stored bounded cosigner metadata = %#v", summary.BoundedAuthorization)
+	if summary.Host == nil || summary.Host.Cosigner == nil ||
+		summary.Host.Cosigner.ComponentKeyID != componentKey {
+		t.Fatalf("stored bounded cosigner metadata = %#v", summary.Host)
 	}
 
 	// A Witness Key ID no valid reference holds, beside a reference file that
@@ -990,7 +990,7 @@ func (p keyadminInstanceProvider) ResolveInstance(params map[string]string) (*ls
 	return &lsigprovider.Instance{Values: params}, nil
 }
 
-func (p keyadminInstanceProvider) StoredFingerprint(parameters map[string]string, _ *boundedmeta.Metadata) (string, error) {
+func (p keyadminInstanceProvider) StoredFingerprint(parameters map[string]string, _ *hostmeta.Metadata) (string, error) {
 	if parameters["shape"] != "list" {
 		return "", errors.New("unknown shape")
 	}
@@ -1077,7 +1077,7 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 	const want = "key type aplane.ed25519.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, boundedmeta.CosignerPublicKeyParameter: strings.Repeat("41", boundedmeta.DefaultCosignerPublicKeySize)}
+	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("41", hostmeta.DefaultCosignerPublicKeySize)}
 	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}

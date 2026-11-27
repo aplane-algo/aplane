@@ -10,7 +10,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 )
 
 // EffectKind identifies an authority-bearing transaction effect.
@@ -67,7 +67,7 @@ type ContractManifest struct {
 }
 
 var boundedManifest = mustValidManifest(ContractManifest{
-	Contract:     boundedmeta.Contract,
+	Contract:     hostmeta.BoundedContract,
 	TEALVersion:  13,
 	SpendEffects: []SpendEffect{SpendEffectPay, SpendEffectAxfer, SpendEffectAssetOptIn},
 	Predicates: []FieldPredicate{
@@ -106,7 +106,7 @@ type PlainContractManifest struct {
 // type is listed because the program doesn't read the type; the protocol
 // refuses such a transaction before any program runs.
 var plainManifest = mustValidPlainManifest(PlainContractManifest{
-	Contract:    boundedmeta.PlainContract,
+	Contract:    hostmeta.PlainContract,
 	TEALVersion: 13,
 	SpendTypes: []types.TxType{
 		"",

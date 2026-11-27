@@ -17,8 +17,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
@@ -66,7 +66,7 @@ func TestFrozenComponentReconstructionMatchesCanonicalPlan(t *testing.T) {
 		!reflect.DeepEqual(planned.LogicSigResourcePlan, reconstructed.LogicSigResourcePlan) ||
 		!reflect.DeepEqual(planned.AuthKeyTypes, reconstructed.AuthKeyTypes) ||
 		!reflect.DeepEqual(planned.KnownAddresses, reconstructed.KnownAddresses) ||
-		!reflect.DeepEqual(planned.BoundedItems, reconstructed.BoundedItems) {
+		!reflect.DeepEqual(planned.HostItems, reconstructed.HostItems) {
 		t.Fatalf("frozen gate inputs drifted from canonical plan:\nplanned=%#v\nreconstructed=%#v", planned, reconstructed)
 	}
 	// The same group, planned and then checked as sent: the plan's prompt
@@ -102,14 +102,14 @@ func frozenBoundedTestServiceWith(t *testing.T, programBytes uint64, extraKeyTyp
 		t.Fatal(err)
 	}
 	authorizer := types.Address{1}.String()
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x51}, boundedmeta.DefaultCosignerPublicKeySize))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x51}, hostmeta.DefaultCosignerPublicKeySize))
 	profile := &lsigresource.Profile{
 		ProgramBytes: programBytes,
 		Spend: &lsigresource.PathProfile{
-			ArgumentBytes: uint64(2 * boundedmeta.DefaultCosignerSignatureMaxSize),
+			ArgumentBytes: uint64(2 * hostmeta.DefaultCosignerSignatureMaxSize),
 			MaxOpcodeCost: 1,
 		},
-		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(boundedmeta.DefaultCosignerSignatureMaxSize), MaxOpcodeCost: 1},
+		SpendingRekey: &lsigresource.PathProfile{ArgumentBytes: uint64(hostmeta.DefaultCosignerSignatureMaxSize), MaxOpcodeCost: 1},
 	}
 	keyTypes := map[string]string{authorizer: "aplane.test-bounded-cosigner.v1"}
 	for address, keyType := range extraKeyTypes {
@@ -119,7 +119,7 @@ func frozenBoundedTestServiceWith(t *testing.T, programBytes uint64, extraKeyTyp
 		keyTypes: keyTypes,
 		keyMetadata: map[string]PlannerKeyMetadata{authorizer: {
 			Category: "dsa_lsig", PublicKeyHex: "aabb",
-			BoundedAuthorization: metadata, LogicSigResources: profile,
+			Host: metadata, LogicSigResources: profile,
 		}},
 	}, PlannerOptions{GenesisHashResolver: resolver})
 	txn := types.Transaction{
@@ -386,9 +386,9 @@ func TestFrozenComponentSizesAHeldContextPositionFromSignerRecords(t *testing.T)
 		t.Fatalf("frozen sizing drifted from /plan:\nplanned=%#v\nreconstructed=%#v", planned.LogicSigResourcePlan, reconstructed.LogicSigResourcePlan)
 	}
 	// Not signed or judged here: foreign to this request, with no plan item.
-	if !reconstructed.ForeignIndices[1] || reconstructed.BoundedItems[1] != nil || reconstructed.AuthKeyTypes[1] != "" {
+	if !reconstructed.ForeignIndices[1] || reconstructed.HostItems[1] != nil || reconstructed.AuthKeyTypes[1] != "" {
 		t.Fatalf("held context position leaked into this request's signing plan: foreign=%v item=%v keyType=%q",
-			reconstructed.ForeignIndices[1], reconstructed.BoundedItems[1], reconstructed.AuthKeyTypes[1])
+			reconstructed.ForeignIndices[1], reconstructed.HostItems[1], reconstructed.AuthKeyTypes[1])
 	}
 	if !reflect.DeepEqual(reconstructed.LsigIndices, []int{0}) {
 		t.Fatalf("LsigIndices = %v, want only the target", reconstructed.LsigIndices)

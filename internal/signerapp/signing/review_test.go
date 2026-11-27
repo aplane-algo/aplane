@@ -98,8 +98,8 @@ func TestBuildReviewAddsBoundedAndRotationFields(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{
 		PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
-		BoundedItems: []*boundedPlanItem{{Path: boundedPathListedRekey}},
-		Rotating:     &rotatingPlanItem{Stage: 4, Target: 5},
+		HostItems: []*hostPlanItem{{Path: hostPathListedRekey}},
+		Rotating:  &rotatingPlanItem{Stage: 4, Target: 5},
 	}
 	review := buildReview(req, plan, []types.Transaction{{Type: types.PaymentTx}}, describeAs("txn\n  From: A"))
 	var labels []string

@@ -18,10 +18,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -124,7 +124,7 @@ type nonRotatingFixture struct {
 	edAddr            string
 	edPriv            ed25519.PrivateKey
 	boundedAddr       string
-	boundedMeta       *boundedmeta.Metadata
+	hostMeta          *hostmeta.Metadata
 	boundedBytecode   []byte
 	boundedSpendPub   []byte
 	boundedSpendPriv  []byte
@@ -175,13 +175,13 @@ func newNonRotatingFixture(t *testing.T) *nonRotatingFixture {
 			},
 			boundedAddr: func() *coresigning.KeyMaterial {
 				return &coresigning.KeyMaterial{
-					Type:                 "test.bounded-cosigner.v1",
-					Category:             keys.CategoryDSALsig,
-					BaseKeyType:          "aplane.falcon1024.v1",
-					PublicKey:            append([]byte(nil), spendPub...),
-					Bytecode:             append([]byte(nil), bytecode...),
-					BoundedAuthorization: boundedmeta.Clone(metadata),
-					Value:                &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), spendPriv...)},
+					Type:        "test.bounded-cosigner.v1",
+					Category:    keys.CategoryDSALsig,
+					BaseKeyType: "aplane.falcon1024.v1",
+					PublicKey:   append([]byte(nil), spendPub...),
+					Bytecode:    append([]byte(nil), bytecode...),
+					Host:        hostmeta.Clone(metadata),
+					Value:       &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), spendPriv...)},
 				}
 			},
 			cosignerKeyID: func() *coresigning.KeyMaterial {
@@ -206,7 +206,7 @@ func newNonRotatingFixture(t *testing.T) *nonRotatingFixture {
 		edAddr:            edAddr.String(),
 		edPriv:            edPriv,
 		boundedAddr:       boundedAddr,
-		boundedMeta:       metadata,
+		hostMeta:          metadata,
 		boundedBytecode:   bytecode,
 		boundedSpendPub:   spendPub,
 		boundedSpendPriv:  spendPriv,
@@ -243,9 +243,9 @@ func (f *nonRotatingFixture) planner() *Planner {
 				},
 				KeyMetadata: map[string]PlannerKeyMetadata{
 					f.boundedAddr: {
-						BaseKeyType:          "aplane.falcon1024.v1",
-						PublicKeyHex:         hex.EncodeToString(f.boundedSpendPub),
-						BoundedAuthorization: boundedmeta.Clone(f.boundedMeta),
+						BaseKeyType:  "aplane.falcon1024.v1",
+						PublicKeyHex: hex.EncodeToString(f.boundedSpendPub),
+						Host:         hostmeta.Clone(f.hostMeta),
 					},
 				},
 			}
@@ -283,7 +283,7 @@ func (f *nonRotatingFixture) boundedComponentSign(t *testing.T, svc *Service, ct
 			AuthAddress: f.boundedAddr,
 		}},
 	}
-	res, err := svc.PrepareBoundedComponentWithContext(ctx, req, f.session)
+	res, err := svc.PrepareHostComponentWithContext(ctx, req, f.session)
 	return res != nil && len(res.Components) == 1, err
 }
 
@@ -340,7 +340,7 @@ func (f *nonRotatingFixture) assemblyRequest(t *testing.T, withPassthrough bool)
 		return hex.EncodeToString(sig)
 	}
 	txID := group.Entries[0].TxID
-	receiptMsg, err := boundedAssemblyReceiptMessage(f.boundedAddr, txID[:], f.boundedMeta, nil)
+	receiptMsg, err := hostAssemblyReceiptMessage(f.boundedAddr, txID[:], f.hostMeta, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1053,7 +1053,7 @@ func TestSessionEndInsideKeyUseIsAuditedOnceAfterRelease(t *testing.T) {
 			t.Fatal(err)
 		}
 		a.Group, b.Group = gid, gid
-		_, signErr := svc.PrepareBoundedComponentWithContext(context.Background(), signerapi.ComponentRequest{
+		_, signErr := svc.PrepareHostComponentWithContext(context.Background(), signerapi.ComponentRequest{
 			RequestID:     "req-two-bounded",
 			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(a), txnutil.EncodeWithPrefixHex(b)},
 			Targets: []signerapi.ComponentTarget{

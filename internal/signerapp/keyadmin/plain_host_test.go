@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -42,8 +42,8 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(no parameters) error = %#v", err)
 	}
-	if summary := ir.KeyStore().GetSigningSummary()[plain.Address]; summary.BoundedAuthorization != nil {
-		t.Fatalf("the plain program has an overlay contract: %+v", summary.BoundedAuthorization)
+	if summary := ir.KeyStore().GetSigningSummary()[plain.Address]; summary.Host != nil {
+		t.Fatalf("the plain program has an overlay contract: %+v", summary.Host)
 	}
 	prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, map[string]string{
 		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
@@ -52,7 +52,7 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 	if prepareErr != nil {
 		t.Fatalf("PrepareGenerateKey(only these, no cosigner) error = %#v", prepareErr)
 	}
-	if bounded := prepared.Bounded; bounded == nil || bounded.Contract != boundedmeta.PlainContract || bounded.Cosigner != nil || bounded.RekeyList == nil {
+	if bounded := prepared.Host; bounded == nil || bounded.Contract != hostmeta.PlainContract || bounded.Cosigner != nil || bounded.RekeyList == nil {
 		t.Fatalf("prepared contract = %+v", bounded)
 	}
 	listed, err := service.GenerateReviewedKey(context.Background(), plainHostKeyType, prepared.Parameters,
@@ -60,8 +60,8 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
-	metadata := ir.KeyStore().GetSigningSummary()[listed.Address].BoundedAuthorization
-	if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.Cosigner != nil || metadata.RekeyList == nil {
+	metadata := ir.KeyStore().GetSigningSummary()[listed.Address].Host
+	if metadata == nil || metadata.Contract != hostmeta.PlainContract || metadata.Cosigner != nil || metadata.RekeyList == nil {
 		t.Fatalf("stored contract = %+v", metadata)
 	}
 }
@@ -103,8 +103,8 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if prepareErr != nil {
 				t.Fatalf("PrepareGenerateKey() error = %#v", prepareErr)
 			}
-			if prepared.Bounded == nil || prepared.Bounded.Contract != boundedmeta.Contract || prepared.Bounded.FeeCeiling() == nil || *prepared.Bounded.FeeCeiling() != test.want {
-				t.Fatalf("prepared contract = %+v", prepared.Bounded)
+			if prepared.Host == nil || prepared.Host.Contract != hostmeta.BoundedContract || prepared.Host.FeeCeiling() == nil || *prepared.Host.FeeCeiling() != test.want {
+				t.Fatalf("prepared contract = %+v", prepared.Host)
 			}
 			// Only a limit other than the default is a parameter of the account, and
 			// the default is the account that names none.
@@ -152,7 +152,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateReviewedKey() error = %#v", err)
 			}
-			metadata := ir.KeyStore().GetSigningSummary()[generated.Address].BoundedAuthorization
+			metadata := ir.KeyStore().GetSigningSummary()[generated.Address].Host
 			if metadata == nil || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != test.want {
 				t.Fatalf("stored contract = %+v", metadata)
 			}
@@ -210,7 +210,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		}
 	}
 	largest, prepareErr := service.PrepareGenerateKey(plainHostKeyType, request("9007199254740991"))
-	if prepareErr != nil || largest.Bounded == nil || largest.Bounded.FeeCeiling() == nil || *largest.Bounded.FeeCeiling() != boundedmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
+	if prepareErr != nil || largest.Host == nil || largest.Host.FeeCeiling() == nil || *largest.Host.FeeCeiling() != hostmeta.MaxFeeLimit || len(largest.Warnings) != 0 {
 		t.Fatalf("PrepareGenerateKey(largest max_fee) = %+v, %#v", largest, prepareErr)
 	}
 	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991")); err != nil ||
@@ -243,9 +243,9 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	bounded := prepared.Bounded
-	if bounded == nil || bounded.Contract != boundedmeta.PlainContract || bounded.Bounds != nil || bounded.Cosigner == nil ||
-		bounded.RekeyList == nil || bounded.Rekey != boundedmeta.RekeySpendingKey {
+	bounded := prepared.Host
+	if bounded == nil || bounded.Contract != hostmeta.PlainContract || bounded.Bounds != nil || bounded.Cosigner == nil ||
+		bounded.RekeyList == nil || bounded.Rekey != hostmeta.RekeySpendingKey {
 		t.Fatalf("prepared contract = %+v", bounded)
 	}
 	if prepared.BoundaryDigest == "" || prepared.Fingerprint == prepared.ReviewFingerprint {
@@ -263,8 +263,8 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 		t.Fatalf("GenerateReviewedKey() error = %#v", genErr)
 	}
 	summary := ir.KeyStore().GetSigningSummary()[result.Address]
-	metadata := summary.BoundedAuthorization
-	if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.Cosigner == nil ||
+	metadata := summary.Host
+	if metadata == nil || metadata.Contract != hostmeta.PlainContract || metadata.Cosigner == nil ||
 		metadata.Cosigner.PublicKeyHex != hex.EncodeToString(cosignerKey) || metadata.RekeyList == nil || metadata.RekeyList.RootHex == "" {
 		t.Fatalf("stored contract = %+v", metadata)
 	}
@@ -308,26 +308,26 @@ func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 // Key details name a cosigned account's cosigner by its Witness Key ID, never
 // the raw public key; an account without a cosigner keeps its parameters.
 func TestKeyDetailsNameTheCosignerByWitnessKeyID(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x61}, boundedmeta.DefaultCosignerPublicKeySize)
+	publicKey := bytes.Repeat([]byte{0x61}, hostmeta.DefaultCosignerPublicKeySize)
 	id, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	parameters := map[string]string{
-		boundedmeta.CosignerPublicKeyParameter: hex.EncodeToString(publicKey),
-		"rekey_authority":                      "refused",
+		hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(publicKey),
+		"rekey_authority":                   "refused",
 	}
-	metadata := &boundedmeta.Metadata{Cosigner: &boundedmeta.CosignerAuthorization{
+	metadata := &hostmeta.Metadata{Cosigner: &hostmeta.CosignerAuthorization{
 		ComponentKeyType: witness.Falcon1024V1, PublicKeyHex: hex.EncodeToString(publicKey), ComponentKeyID: id,
 	}}
 	got := keyDetailsParameters(parameters, metadata)
-	if got[keyDetailsCosignerParameter] != id || got[boundedmeta.CosignerPublicKeyParameter] != "" || got["rekey_authority"] != "refused" {
+	if got[keyDetailsCosignerParameter] != id || got[hostmeta.CosignerPublicKeyParameter] != "" || got["rekey_authority"] != "refused" {
 		t.Fatalf("details = %v", got)
 	}
-	if plain := keyDetailsParameters(parameters, &boundedmeta.Metadata{}); plain[boundedmeta.CosignerPublicKeyParameter] == "" || plain[keyDetailsCosignerParameter] != "" {
+	if plain := keyDetailsParameters(parameters, &hostmeta.Metadata{}); plain[hostmeta.CosignerPublicKeyParameter] == "" || plain[keyDetailsCosignerParameter] != "" {
 		t.Fatalf("uncosigned details = %v", plain)
 	}
-	if parameters[boundedmeta.CosignerPublicKeyParameter] == "" {
+	if parameters[hostmeta.CosignerPublicKeyParameter] == "" {
 		t.Fatal("the projection changed the account's own parameters")
 	}
 }

@@ -56,12 +56,12 @@ func (v cosignedSignerCacheView) CosignerPublicKey(address string) (string, bool
 	return v.core.SignerCacheCosignerPublicKey(address)
 }
 
-func (v cosignedSignerCacheView) BoundedContract(address string) (string, bool) {
-	return v.core.SignerCacheBoundedContract(address)
+func (v cosignedSignerCacheView) HostContract(address string) (string, bool) {
+	return v.core.SignerCacheHostContract(address)
 }
 
-func (v cosignedSignerCacheView) BoundedMaxFee(address string) (uint64, bool) {
-	return v.core.SignerCacheBoundedMaxFee(address)
+func (v cosignedSignerCacheView) HostMaxFee(address string) (uint64, bool) {
+	return v.core.SignerCacheHostMaxFee(address)
 }
 
 func (v cosignedSignerCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {

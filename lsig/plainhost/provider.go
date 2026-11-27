@@ -27,7 +27,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -60,7 +60,7 @@ var RekeyAuthorities = []string{RekeyRefused, RekeySpendingKey, RekeyOnlyThese, 
 
 // CosignerKeyTypes is every cosigner key type a plain host account can take,
 // the default first.
-var CosignerKeyTypes = []string{boundedmeta.DefaultCosignerComponentKeyType, witness.Ed25519V1}
+var CosignerKeyTypes = []string{hostmeta.DefaultCosignerComponentKeyType, witness.Ed25519V1}
 
 // Arrangement is one overlay arrangement: a rekey setting, with or without a
 // cosigner, named by its key type (empty for none). Plus cosigned always has
@@ -86,7 +86,7 @@ func Arrangements() []Arrangement {
 		if rekey != RekeyPlusCosigned {
 			arrangements = append(arrangements, Arrangement{Rekey: rekey})
 		}
-		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: boundedmeta.DefaultCosignerComponentKeyType})
+		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: hostmeta.DefaultCosignerComponentKeyType})
 	}
 	for _, cosigner := range CosignerKeyTypes[1:] {
 		for _, rekey := range RekeyAuthorities {
@@ -97,7 +97,7 @@ func Arrangements() []Arrangement {
 }
 
 // storedCosigner is a stored account's cosigner key type, empty for none.
-func storedCosigner(metadata *boundedmeta.Metadata) string {
+func storedCosigner(metadata *hostmeta.Metadata) string {
 	if metadata.Cosigner == nil {
 		return ""
 	}
@@ -106,16 +106,16 @@ func storedCosigner(metadata *boundedmeta.Metadata) string {
 
 // cosignerAuthorization is the cosigner contract for a cosigner of
 // componentKeyType on a rekey setting.
-func cosignerAuthorization(componentKeyType string, setting boundedmeta.RekeySetting) (*boundedmeta.CosignerAuthorization, error) {
-	_, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+func cosignerAuthorization(componentKeyType string, setting hostmeta.RekeySetting) (*hostmeta.CosignerAuthorization, error) {
+	_, signatureMaxSize, ok := hostmeta.CosignerSizes(componentKeyType)
 	if !ok {
 		return nil, fmt.Errorf("unsupported cosigner key type %q", componentKeyType)
 	}
-	return &boundedmeta.CosignerAuthorization{
-		Contract:         boundedmeta.CosignerContractV1,
+	return &hostmeta.CosignerAuthorization{
+		Contract:         hostmeta.CosignerContractV1,
 		ComponentKeyType: componentKeyType,
 		SignatureMaxSize: signatureMaxSize,
-		RequiredOn:       boundedmeta.CosignerRequiredOn(setting),
+		RequiredOn:       hostmeta.CosignerRequiredOn(setting),
 	}, nil
 }
 
@@ -252,7 +252,7 @@ func MustWrap(plain Plain, base Base) *Provider {
 func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.ComposedDSA, error) {
 	rekey := selected.Rekey
 	setting := arrangementSetting(rekey)
-	profile := &composeddsa.BoundedAuthorizationProfile{
+	profile := &composeddsa.HostProfile{
 		Contract: composeddsa.PlainContract,
 		Rekey:    setting,
 	}
@@ -264,7 +264,7 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		profile.Cosigner = cosigner
 	}
 	if selected.HasRekeyList() {
-		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
+		profile.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth}
 	}
 	composer := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType:       plain.KeyType(),
@@ -275,11 +275,11 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		Description:   plain.Description(),
 		Ops:           base.Ops,
 		SaltStyle:     base.SaltStyle,
-		OpcodeProfile: lsigresource.BoundedOpcodeProfile(opcodeCost, opcodeCost, opcodeCost),
-		Bounded:       profile,
+		OpcodeProfile: lsigresource.HostOpcodeProfile(opcodeCost, opcodeCost, opcodeCost),
+		Host:          profile,
 		Layer3:        &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone},
 	})
-	metadata := composer.BoundedAuthorizationMetadata()
+	metadata := composer.HostMetadata()
 	if metadata == nil || storedCosigner(metadata) != selected.Cosigner {
 		return nil, fmt.Errorf("the overlay program has no valid contract")
 	}
@@ -291,9 +291,9 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 // request with overlays or bounds must give a rekey authority, and one with
 // bounds the transfer kinds, which resolve checks.
 func creationParameters() []lsigprovider.ParameterDef {
-	cosigner := composeddsa.BoundedCosignerParameterDef(boundedmeta.DefaultCosignerComponentKeyType)
+	cosigner := composeddsa.CosignerParameterDef(hostmeta.DefaultCosignerComponentKeyType)
 	cosigner.Required = false
-	cosigner.Description = "The cosigner's public key, which the signer fills from a cosigner reference: a Falcon-1024 key, or an Ed25519 one with " + boundedmeta.CosignerKeyTypeParameter + "."
+	cosigner.Description = "The cosigner's public key, which the signer fills from a cosigner reference: a Falcon-1024 key, or an Ed25519 one with " + hostmeta.CosignerKeyTypeParameter + "."
 	return []lsigprovider.ParameterDef{
 		{
 			Name:        ParameterSpendEffects,
@@ -337,9 +337,9 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Type:        "string",
 		},
 		{
-			Name:        boundedmeta.CosignerKeyTypeParameter,
+			Name:        hostmeta.CosignerKeyTypeParameter,
 			Label:       "Cosigner Key Type",
-			Description: "The cosigner's key type, which the signer fills from a cosigner reference. Absent means " + boundedmeta.DefaultCosignerComponentKeyType + ".",
+			Description: "The cosigner's key type, which the signer fills from a cosigner reference. Absent means " + hostmeta.DefaultCosignerComponentKeyType + ".",
 			Type:        "string",
 			Options:     slices.Clone(CosignerKeyTypes),
 		},
@@ -382,7 +382,7 @@ func present(params map[string]string) (map[string]string, error) {
 // value does.
 func hasContract(params map[string]string) bool {
 	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
-		composeddsa.BoundedCosignerPublicKeyParameter, boundedmeta.CosignerKeyTypeParameter, boundedmeta.RekeyListRootParameter} {
+		composeddsa.CosignerPublicKeyParameter, hostmeta.CosignerKeyTypeParameter, hostmeta.RekeyListRootParameter} {
 		if _, ok := params[name]; ok {
 			return true
 		}
@@ -566,7 +566,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 // cosigner is optional, so a request naming none returns false.
 func (p *Provider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
 	_, hasName := params[ParameterCosigner]
-	_, hasKey := params[composeddsa.BoundedCosignerPublicKeyParameter]
+	_, hasKey := params[composeddsa.CosignerPublicKeyParameter]
 	if !hasName && !hasKey {
 		return nil, false
 	}
@@ -603,7 +603,7 @@ func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Inst
 	return &lsigprovider.Instance{
 		Parameters:        composer.CreationParams(),
 		Values:            values,
-		Bounded:           composer.BoundedAuthorizationMetadata(),
+		Host:              composer.HostMetadata(),
 		Fingerprint:       selected.fingerprint,
 		ReviewFingerprint: p.grammar,
 		BoundaryDigest:    digest,
@@ -612,19 +612,19 @@ func (p *Provider) ResolveInstance(params map[string]string) (*lsigprovider.Inst
 
 // StoredFingerprint returns the current fingerprint of a stored account's
 // program, read from its durable metadata alone.
-func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.Metadata) (string, error) {
+func (p *Provider) StoredFingerprint(_ map[string]string, metadata *hostmeta.Metadata) (string, error) {
 	if metadata == nil {
 		return "", fmt.Errorf("stored account has no overlay contract")
 	}
 	switch metadata.Contract {
-	case boundedmeta.PlainContract:
+	case hostmeta.PlainContract:
 		stored := Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}
 		selected, ok := p.byArrangement[stored]
 		if !ok {
 			return "", fmt.Errorf("unsupported plain host arrangement %s", descriptor(stored))
 		}
 		return selected.fingerprint, nil
-	case boundedmeta.Contract:
+	case hostmeta.BoundedContract:
 		shape, err := shapeFromMetadata(metadata)
 		if err != nil {
 			return "", err
@@ -645,11 +645,11 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *boundedmeta.
 
 // storedRekey is a stored account's rekey option: only these is refused plus the
 // list, plus cosigned a spending-key rekey plus the list.
-func storedRekey(metadata *boundedmeta.Metadata) string {
+func storedRekey(metadata *hostmeta.Metadata) string {
 	switch {
-	case metadata.Rekey == boundedmeta.RekeySpendingKey && metadata.RekeyList != nil:
+	case metadata.Rekey == hostmeta.RekeySpendingKey && metadata.RekeyList != nil:
 		return RekeyPlusCosigned
-	case metadata.Rekey == boundedmeta.RekeySpendingKey:
+	case metadata.Rekey == hostmeta.RekeySpendingKey:
 		return RekeySpendingKey
 	case metadata.RekeyList != nil:
 		return RekeyOnlyThese
@@ -659,7 +659,7 @@ func storedRekey(metadata *boundedmeta.Metadata) string {
 }
 
 // shapeFromMetadata reads a stored bounded account's shape.
-func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
+func shapeFromMetadata(metadata *hostmeta.Metadata) (Shape, error) {
 	bounds := metadata.Bounds
 	if bounds == nil {
 		return Shape{}, fmt.Errorf("stored account has no bounds")
@@ -668,7 +668,7 @@ func shapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
 	if err != nil {
 		return Shape{}, err
 	}
-	if err := boundedmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
+	if err := hostmeta.ValidateRekeySetting(metadata.Rekey); err != nil {
 		return Shape{}, fmt.Errorf("stored account: %w", err)
 	}
 	shape := Shape{Arrangement: Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}, Spend: spend}
@@ -761,19 +761,19 @@ func (p *Provider) PrepareRekeyList(privateKey []byte, params map[string]string)
 	if err != nil {
 		return nil, err
 	}
-	root, ok := prepared[boundedmeta.RekeyListRootParameter]
+	root, ok := prepared[hostmeta.RekeyListRootParameter]
 	if !ok {
 		return params, nil
 	}
 	out := maps.Clone(params)
-	out[boundedmeta.RekeyListRootParameter] = root
+	out[hostmeta.RekeyListRootParameter] = root
 	return out, nil
 }
 
-// BuildBoundedAuthorizationMetadata snapshots a program's signing contract and
+// BuildHostMetadata snapshots a program's signing contract and
 // refuses one the network could not run in one transaction, before the key is
 // persisted. The plain program has none.
-func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
+func (p *Provider) BuildHostMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*hostmeta.Metadata, error) {
 	request, plain, err := plainRequest(params)
 	if err != nil {
 		return nil, err
@@ -785,19 +785,19 @@ func (p *Provider) BuildBoundedAuthorizationMetadata(publicKey []byte, params ma
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := selected.composer.BuildBoundedAuthorizationMetadata(publicKey, values, bytecode)
+	metadata, err := selected.composer.BuildHostMetadata(publicKey, values, bytecode)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkResources(metadata, p.BoundedLogicSigOpcodeProfile(), len(bytecode)); err != nil {
+	if err := checkResources(metadata, p.HostLogicSigOpcodeProfile(), len(bytecode)); err != nil {
 		return nil, err
 	}
 	return metadata, nil
 }
 
-// BoundedLogicSigOpcodeProfile is every program's path ceilings.
-func (p *Provider) BoundedLogicSigOpcodeProfile() lsigresource.OpcodeProfile {
-	return lsigresource.BoundedOpcodeProfile(opcodeCost, opcodeCost, opcodeCost)
+// HostLogicSigOpcodeProfile is every program's path ceilings.
+func (p *Provider) HostLogicSigOpcodeProfile() lsigresource.OpcodeProfile {
+	return lsigresource.HostOpcodeProfile(opcodeCost, opcodeCost, opcodeCost)
 }
 
 // SetAlgodClient configures TEAL compilation for the plain program and every
@@ -825,7 +825,7 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 // each path the program has must fit one transaction's resources. Signing still
 // checks the selected path against the actual network rules. A fee ceiling below
 // what a path costs is the user's choice, which the review warns about.
-func checkResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
+func checkResources(metadata *hostmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
 	_, err := pathFees(metadata, opcodes, programBytes)
 	return err
 }
@@ -837,7 +837,7 @@ type pathFee struct {
 }
 
 // pathFees solves each path the program has as a transaction on its own.
-func pathFees(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) ([]pathFee, error) {
+func pathFees(metadata *hostmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) ([]pathFee, error) {
 	consensus, err := lsigresource.CurrentConsensus()
 	if err != nil {
 		return nil, fmt.Errorf("read consensus profile: %w", err)
@@ -846,16 +846,16 @@ func pathFees(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile
 		name   string
 		opcode uint64
 	}
-	paths := []path{{boundedmeta.PathSpend, opcodes.Spend}}
+	paths := []path{{hostmeta.PathSpend, opcodes.Spend}}
 	switch metadata.Rekey {
-	case boundedmeta.RekeyRefused:
-	case boundedmeta.RekeySpendingKey:
-		paths = append(paths, path{boundedmeta.PathSpendingRekey, opcodes.SpendingRekey})
+	case hostmeta.RekeyRefused:
+	case hostmeta.RekeySpendingKey:
+		paths = append(paths, path{hostmeta.PathSpendingRekey, opcodes.SpendingRekey})
 	default:
 		return nil, fmt.Errorf("no resource path for rekey setting %q", metadata.Rekey)
 	}
 	if metadata.RekeyList != nil {
-		paths = append(paths, path{boundedmeta.PathListedRekey, opcodes.ListedRekey})
+		paths = append(paths, path{hostmeta.PathListedRekey, opcodes.ListedRekey})
 	}
 	fees := make([]pathFee, 0, len(paths))
 	for _, path := range paths {
@@ -893,14 +893,14 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	metadata := selected.composer.BoundedAuthorizationMetadata()
+	metadata := selected.composer.HostMetadata()
 	maxFee := metadata.FeeCeiling()
 	if maxFee == nil {
 		return nil, nil
 	}
 	programBytes := p.base.Ops.PublicKeySize()
 	if metadata.Cosigner != nil {
-		publicKeySize, _, ok := boundedmeta.CosignerSizes(metadata.Cosigner.ComponentKeyType)
+		publicKeySize, _, ok := hostmeta.CosignerSizes(metadata.Cosigner.ComponentKeyType)
 		if !ok {
 			return nil, fmt.Errorf("unsupported cosigner key type %q", metadata.Cosigner.ComponentKeyType)
 		}
@@ -909,7 +909,7 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 	if values[ParameterListEncoding] == EncodingInline {
 		programBytes += addressBytes * (strings.Count(values[ParameterRecipients], ",") + 1)
 	}
-	fees, err := pathFees(metadata, p.BoundedLogicSigOpcodeProfile(), programBytes)
+	fees, err := pathFees(metadata, p.HostLogicSigOpcodeProfile(), programBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -941,13 +941,13 @@ func planFee(plan lsigresource.Plan, minFee uint64) uint64 {
 
 // Compile-time interface checks.
 var (
-	_ logicsigdsa.LogicSigDSA                   = (*Provider)(nil)
-	_ logicsigdsa.SaltedDeriver                 = (*Provider)(nil)
-	_ logicsigdsa.TEALGenerator                 = (*Provider)(nil)
-	_ lsigprovider.SigningProvider              = (*Provider)(nil)
-	_ lsigprovider.AlgodConfigurable            = (*Provider)(nil)
-	_ lsigprovider.InstanceResolver             = (*Provider)(nil)
-	_ lsigprovider.CreationAdvisor              = (*Provider)(nil)
-	_ lsigprovider.OpcodeProfileProvider        = (*Provider)(nil)
-	_ lsigprovider.BoundedOpcodeProfileProvider = (*Provider)(nil)
+	_ logicsigdsa.LogicSigDSA                = (*Provider)(nil)
+	_ logicsigdsa.SaltedDeriver              = (*Provider)(nil)
+	_ logicsigdsa.TEALGenerator              = (*Provider)(nil)
+	_ lsigprovider.SigningProvider           = (*Provider)(nil)
+	_ lsigprovider.AlgodConfigurable         = (*Provider)(nil)
+	_ lsigprovider.InstanceResolver          = (*Provider)(nil)
+	_ lsigprovider.CreationAdvisor           = (*Provider)(nil)
+	_ lsigprovider.OpcodeProfileProvider     = (*Provider)(nil)
+	_ lsigprovider.HostOpcodeProfileProvider = (*Provider)(nil)
 )

@@ -88,6 +88,12 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"ErrCodeBounded" + "RekeyTargetNotListed",
 		"BoundedContract" + "Bounded2",
 		"BoundedRekey" + "RequiresReviewRuleID",
+		// The internal host rename: the package and the shared host names.
+		"internal/" + "boundedmeta",
+		"BoundedAuthorization" + "Profile",
+		"BoundedAuthorization" + "Metadata",
+		"PrepareBounded" + "Component",
+		"BoundedCapable" + "DSAOps",
 	}
 	// The naming pass: "guarded" became "cosigned" wherever it named a cosigned
 	// account. These are the package, ARCH doc, progress tag, public SDK names

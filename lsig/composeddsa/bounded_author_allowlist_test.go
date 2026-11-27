@@ -14,7 +14,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -41,7 +41,7 @@ var authorAllowlistCases = []authorAllowlistCase{
 	{
 		name:       "fixed",
 		policy:     composeddsa.Layer3PolicyFixedAllowlist,
-		stored:     boundedmeta.Layer3PolicyFixedAllowlistCustom,
+		stored:     hostmeta.Layer3PolicyFixedAllowlistCustom,
 		maxItems:   composeddsa.BoundedInlineListMax,
 		preimageAt: 1,
 		profileHex: authorFixedProfileHex,
@@ -54,7 +54,7 @@ var authorAllowlistCases = []authorAllowlistCase{
 	{
 		name:     "merkle",
 		policy:   composeddsa.Layer3PolicyMerkleAllowlist,
-		stored:   boundedmeta.Layer3PolicyMerkleAllowlistCustom,
+		stored:   hostmeta.Layer3PolicyMerkleAllowlistCustom,
 		maxItems: 65536,
 		derived: `
   derived_args:
@@ -167,11 +167,11 @@ func TestAllowlistWithAuthorTEALGoldenVectors(t *testing.T) {
 	for _, test := range authorAllowlistCases {
 		t.Run(test.name, func(t *testing.T) {
 			provider := authorAllowlistProvider(t, authorAllowlistYAML(test))
-			metadata := provider.BoundedAuthorizationMetadata()
+			metadata := provider.HostMetadata()
 			if metadata == nil || metadata.Layer3Policy() != test.stored {
 				t.Fatalf("metadata = %#v, want layer3_policy %q", metadata, test.stored)
 			}
-			encoded, err := composeddsa.CanonicalBoundedProfile(provider.BoundedAuthorizationProfile(), metadata)
+			encoded, err := composeddsa.CanonicalBoundedProfile(provider.HostProfile(), metadata)
 			if err != nil {
 				t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 			}

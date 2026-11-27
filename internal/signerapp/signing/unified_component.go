@@ -53,7 +53,7 @@ func (s *Service) SignComponentsWithContext(ctx context.Context, req signerapi.C
 	case signerapi.ComponentTargetKindBase:
 		// ValidateFrozenComponentContext decodes and partition-checks the
 		// group itself, as the cosigner case above does.
-		return s.PrepareBoundedComponentWithContext(ctx, req, session)
+		return s.PrepareHostComponentWithContext(ctx, req, session)
 	default:
 		return nil, badRequest("unsupported component target kind")
 	}

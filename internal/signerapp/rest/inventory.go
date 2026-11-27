@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -63,17 +63,17 @@ func (s Service) BuildKeyInfoList(ir *productruntime.Runtime) []signerapi.KeyInf
 			keyInfo.PublicKeyHex = ""
 			keyInfo.SigningFlow = signerapi.SigningFlowRotating1
 		}
-		if metadata.BoundedAuthorization != nil {
-			keyInfo.Parameters = boundedAccountParameters(metadata.Parameters)
+		if metadata.Host != nil {
+			keyInfo.Parameters = hostAccountParameters(metadata.Parameters)
 			// Without a cosigner a bounded account signs through ordinary
 			// /sign, so it advertises no flow.
-			if cosigner := metadata.BoundedAuthorization.Cosigner; cosigner != nil {
+			if cosigner := metadata.Host.Cosigner; cosigner != nil {
 				keyInfo.SigningFlow = signerapi.SigningFlowCosigned1
 				keyInfo.CosignerComponentKeyType = cosigner.ComponentKeyType
 			}
-			keyInfo.Host = hostInfo(metadata.BoundedAuthorization)
+			keyInfo.Host = hostInfo(metadata.Host)
 		}
-		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, metadata.TemplateFingerprint, metadata.Parameters, metadata.BoundedAuthorization)
+		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = lsigprovider.CompareAccountProvenance(keyType, metadata.TemplateFingerprint, metadata.Parameters, metadata.Host)
 
 		if len(metadata.SigningArgs) > 0 {
 			keyInfo.SigningArgs = keytypemeta.RuntimeArgs(metadata.SigningArgs)
@@ -122,17 +122,17 @@ func publicLogicSigResourceProfile(profile *lsigresource.Profile) *signerapi.Log
 	}
 }
 
-// boundedInventoryParameterNames is the explicit public projection of current
+// hostInventoryParameterNames is the explicit public projection of current
 // bounded creation parameters. Adding a new stored parameter does not expose it
 // through /keys unless its public status is reviewed here.
-var boundedInventoryParameterNames = []string{
+var hostInventoryParameterNames = []string{
 	"recipients",
-	boundedmeta.CosignerPublicKeyParameter,
+	hostmeta.CosignerPublicKeyParameter,
 }
 
-func boundedAccountParameters(parameters map[string]string) map[string]string {
+func hostAccountParameters(parameters map[string]string) map[string]string {
 	var out map[string]string
-	for _, name := range boundedInventoryParameterNames {
+	for _, name := range hostInventoryParameterNames {
 		value, ok := parameters[name]
 		if !ok {
 			continue
@@ -289,8 +289,8 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 func describeProvider(info *signerapi.KeyTypeInfo, provider lsigprovider.LSigProvider) {
 	info.DisplayName = provider.DisplayName()
 	info.Description = lsigprovider.DescriptionText(provider.Description())
-	if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
-		if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
+	if hostProvider, ok := provider.(hostInventoryProvider); ok {
+		if metadata := hostProvider.HostMetadata(); metadata != nil {
 			if metadata.Cosigner != nil {
 				info.SigningFlow = signerapi.SigningFlowCosigned1
 				info.CosignerComponentKeyTypes = []string{metadata.Cosigner.ComponentKeyType}
@@ -319,11 +319,11 @@ type boundaryGrammarProvider interface {
 	BoundarySchema() string
 }
 
-type boundedInventoryProvider interface {
-	BoundedAuthorizationMetadata() *boundedmeta.Metadata
+type hostInventoryProvider interface {
+	HostMetadata() *hostmeta.Metadata
 }
 
-func hostInfo(metadata *boundedmeta.Metadata) *signerapi.HostInfo {
+func hostInfo(metadata *hostmeta.Metadata) *signerapi.HostInfo {
 	if metadata == nil {
 		return nil
 	}
@@ -333,7 +333,7 @@ func hostInfo(metadata *boundedmeta.Metadata) *signerapi.HostInfo {
 			Count:    metadata.BaseSignatureArgLayout.Count,
 			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
 		},
-		RuntimeArgs: keytypemeta.BoundedRuntimeArgs(metadata.RuntimeArgs),
+		RuntimeArgs: keytypemeta.HostRuntimeArgs(metadata.RuntimeArgs),
 	}
 	if bounds := metadata.Bounds; bounds != nil {
 		info.Bounds = &signerapi.HostBoundsInfo{

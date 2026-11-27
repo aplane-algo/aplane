@@ -42,4 +42,4 @@ func (o *Ops) SignatureArgLayout() composeddsa.SignatureArgLayout {
 	return composeddsa.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
 
-var _ composeddsa.BoundedCapableDSAOps = (*Ops)(nil)
+var _ composeddsa.HostCapableDSAOps = (*Ops)(nil)

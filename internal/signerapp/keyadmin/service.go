@@ -15,9 +15,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -309,7 +309,7 @@ func (s Service) checkGenerationRequirements(creation *resolvedCreation) *Error 
 	if !creation.perKey {
 		return nil
 	}
-	metadata := creation.instance.Bounded
+	metadata := creation.instance.Host
 	requireContained, requireCosigner := s.Runtime.Config().GenerationRequirements()
 	if requireContained && (metadata == nil || !metadata.Contained()) {
 		return &Error{Kind: ErrorInvalidInput, Message: "this signer requires new accounts to pay only listed recipients and to refuse rekeys or take only listed ones (require_contained)"}
@@ -367,20 +367,20 @@ func (s Service) resolveRotatingNetwork(params map[string]string) map[string]str
 // leaves the creation as it found it, so running it again gives the same answer.
 func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Error) {
 	warnings := slices.Clone(creation.warnings)
-	if creation.instance == nil || creation.instance.Bounded == nil {
+	if creation.instance == nil || creation.instance.Host == nil {
 		return warnings, nil
 	}
-	bounded := creation.instance.Bounded
-	if bounded.RekeyList != nil {
-		if err := refuseRekeyToHeldRotatingAccount(s.Runtime, creation.params[boundedmeta.RekeyListEntriesParameter]); err != nil {
+	host := creation.instance.Host
+	if host.RekeyList != nil {
+		if err := refuseRekeyToHeldRotatingAccount(s.Runtime, creation.params[hostmeta.RekeyListEntriesParameter]); err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 	}
-	if bounded.Cosigner != nil {
-		if warning := cosignerHeldWarning(s.Runtime, creation.params[boundedmeta.CosignerPublicKeyParameter]); warning != "" {
+	if host.Cosigner != nil {
+		if warning := cosignerHeldWarning(s.Runtime, creation.params[hostmeta.CosignerPublicKeyParameter]); warning != "" {
 			warnings = append(warnings, warning)
 		}
-		if warning := cosignerListedWarning(bounded.Cosigner, creation.params[boundedmeta.CosignerPublicKeyParameter], creation.params[boundedmeta.RekeyListEntriesParameter]); warning != "" {
+		if warning := cosignerListedWarning(host.Cosigner, creation.params[hostmeta.CosignerPublicKeyParameter], creation.params[hostmeta.RekeyListEntriesParameter]); warning != "" {
 			warnings = append(warnings, warning)
 		}
 	}
@@ -394,7 +394,7 @@ func (s Service) checkAgainstHeldKeys(creation *resolvedCreation) ([]string, *Er
 // choice, not a refusal.
 //
 // The first sentence stands alone: a review with no room shows only it.
-func cosignerListedWarning(cosigner *boundedmeta.CosignerAuthorization, cosignerPublicKeyHex, entries string) string {
+func cosignerListedWarning(cosigner *hostmeta.CosignerAuthorization, cosignerPublicKeyHex, entries string) string {
 	if cosigner == nil || strings.TrimSpace(entries) == "" {
 		return ""
 	}
@@ -464,16 +464,16 @@ func refuseRekeyToHeldRotatingAccount(ir *productruntime.Runtime, entries string
 	// A list this can't read, or a signer whose keys it can't see, is refused:
 	// passing it would leave the check to whatever runs later.
 	if ir == nil || ir.KeyStore() == nil {
-		return fmt.Errorf("%s: this signer's keys are unavailable, so the list can't be checked", boundedmeta.RekeyListEntriesParameter)
+		return fmt.Errorf("%s: this signer's keys are unavailable, so the list can't be checked", hostmeta.RekeyListEntriesParameter)
 	}
 	targets, err := rekeylist.ParseEntries(entries)
 	if err != nil {
-		return fmt.Errorf("%s: %w", boundedmeta.RekeyListEntriesParameter, err)
+		return fmt.Errorf("%s: %w", hostmeta.RekeyListEntriesParameter, err)
 	}
 	keyTypes := ir.KeyStore().GetKeyTypes()
 	for _, target := range targets {
 		if rotatingkey.IsRotatingKeyType(keyTypes[target.String()]) {
-			return fmt.Errorf("%s: %s", boundedmeta.RekeyListEntriesParameter, rotatingkey.RekeyTargetRefusal(target.String()))
+			return fmt.Errorf("%s: %s", hostmeta.RekeyListEntriesParameter, rotatingkey.RekeyTargetRefusal(target.String()))
 		}
 	}
 	return nil
