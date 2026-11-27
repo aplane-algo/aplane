@@ -42,7 +42,7 @@ func newPlainTestProvider(profile *HostProfile, suffix string, layer3 *Layer3Pol
 // A plain host's program is the spending-key check, the rekey dispatch, and the
 // cosigner: no fee gate, no zero-address envelope and no transaction-type list.
 func TestPlainHostRendersNoEnvelope(t *testing.T) {
-	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
+	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: hostmeta.Layer3PolicyNone})
 	cosignerKey := strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
 	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{hostmeta.CosignerPublicKeyParameter: cosignerKey})
 	if err != nil {
@@ -83,7 +83,7 @@ func TestPlainHostRendersNoEnvelope(t *testing.T) {
 }
 
 func TestPlainHostRefusesHostRules(t *testing.T) {
-	none := &Layer3Policy{Policy: Layer3PolicyNone}
+	none := &Layer3Policy{Policy: hostmeta.Layer3PolicyNone}
 	for _, tc := range []struct {
 		name   string
 		mutate func(*HostProfile)
@@ -96,7 +96,7 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 		}, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
 		{name: "empty bounds", mutate: func(p *HostProfile) { p.Bounds = &ProfileBounds{} }, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
 		{name: "author TEAL", suffix: "int 1\nassert", layer3: none, want: "no author TEAL"},
-		{name: "a recipient list", layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}, want: "layer3 policy none"},
+		{name: "a recipient list", layer3: &Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}, want: "layer3 policy none"},
 		{name: "no Layer 3", want: "layer3 policy none"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 
 // The plain contract's encoding has no fee field, and leads with its own name.
 func TestCanonicalPlainProfileGolden(t *testing.T) {
-	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
+	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: hostmeta.Layer3PolicyNone})
 	metadata := provider.HostMetadata()
 	if metadata == nil {
 		t.Fatal("no metadata")
@@ -139,7 +139,7 @@ func TestCanonicalPlainProfileGolden(t *testing.T) {
 func TestPlainHostWithoutACosigner(t *testing.T) {
 	profile := plainTestProfile(hostmeta.RekeySpendingKey)
 	profile.Cosigner = nil
-	teal, err := newPlainTestProvider(profile, "", &Layer3Policy{Policy: Layer3PolicyNone}).GenerateTEAL([]byte{0x01}, map[string]string{})
+	teal, err := newPlainTestProvider(profile, "", &Layer3Policy{Policy: hostmeta.Layer3PolicyNone}).GenerateTEAL([]byte{0x01}, map[string]string{})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}

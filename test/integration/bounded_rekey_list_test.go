@@ -12,12 +12,12 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policy/policytest"
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -80,10 +80,10 @@ func (n *onlyTheseNode) key(t *testing.T, keyType string, params map[string]stri
 func (n *onlyTheseNode) onlyThese(t *testing.T, rekeyTo ...string) string {
 	t.Helper()
 	return n.key(t, plainFalconKeyType, map[string]string{
-		plainhost.ParameterSpendEffects:   "pay",
-		plainhost.ParameterRecipients:     n.funder.GetAddress(),
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
-		plainhost.ParameterRekeyTo:        strings.Join(rekeyTo, ","),
+		boundary.ParameterSpendEffects:   "pay",
+		boundary.ParameterRecipients:     n.funder.GetAddress(),
+		boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese,
+		boundary.ParameterRekeyTo:        strings.Join(rekeyTo, ","),
 	}, 1_000_000)
 }
 
@@ -165,9 +165,9 @@ func TestRejectForeignRekeyTakesListedTargets(t *testing.T) {
 
 	// With no list, the same unheld target is foreign.
 	spending := n.key(t, plainFalconKeyType, map[string]string{
-		plainhost.ParameterSpendEffects:   "pay",
-		plainhost.ParameterRecipients:     n.funder.GetAddress(),
-		plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+		boundary.ParameterSpendEffects:   "pay",
+		boundary.ParameterRecipients:     n.funder.GetAddress(),
+		boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 	}, 1_000_000)
 	assertSignerRefusesRekey(t, n.apshell, n.network, spending, unheld.Address.String(), policy.RejectForeignRekeyRuleID)
 }
@@ -237,10 +237,10 @@ func TestRekeyReachesReviewWithoutUserAutoApprove(t *testing.T) {
 	}
 	unheld := algocrypto.GenerateAccount().Address.String()
 	listed := mustAdminGenerateKeyNoCleanup(t, client, n.signerd, plainFalconKeyType, map[string]string{
-		plainhost.ParameterSpendEffects:   "pay",
-		plainhost.ParameterRecipients:     funder.GetAddress(),
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
-		plainhost.ParameterRekeyTo:        unheld,
+		boundary.ParameterSpendEffects:   "pay",
+		boundary.ParameterRecipients:     funder.GetAddress(),
+		boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese,
+		boundary.ParameterRekeyTo:        unheld,
 	})
 	if err := funder.FundMicroAlgosAndWait(listed, 1_000_000); err != nil {
 		t.Fatalf("fund %s: %v", listed, err)

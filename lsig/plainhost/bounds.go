@@ -16,23 +16,10 @@ import (
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 )
 
-// The bounds: a request with any of these selects a bounded2 shape over the
-// plain host's base, the host rules beside the overlays. The vocabulary is the
-// boundary file grammar's.
+// The bounds: a request with any of the boundary grammar's bounds parameters
+// selects a bounded2 shape over the plain host's base, the host rules beside
+// the overlays.
 const (
-	ParameterSpendEffects   = boundary.ParameterSpendEffects
-	ParameterListEncoding   = boundary.ParameterListEncoding
-	ParameterRecipients     = boundary.ParameterRecipients
-	ParameterRecipientScope = boundary.ParameterRecipientScope
-	ParameterMaxFee         = boundary.ParameterMaxFee
-
-	RecipientScopeListed = boundary.RecipientScopeListed
-	RecipientScopeAny    = boundary.RecipientScopeAny
-
-	EncodingAuto   = boundary.EncodingAuto
-	EncodingInline = boundary.EncodingInline
-	EncodingMerkle = boundary.EncodingMerkle
-
 	// AutoInlineMax is the largest list auto encodes inline. It is part of the
 	// grammar's meaning, so changing it changes the grammar fingerprint.
 	AutoInlineMax = 10
@@ -40,11 +27,6 @@ const (
 	InlineMax = composeddsa.BoundedInlineListMax
 	// RecipientsMax is the largest list any encoding accepts.
 	RecipientsMax = merkleallowlist.MaxItems
-
-	// DefaultMaxFee is the fee ceiling a request gets when it names none, in
-	// microAlgos. The grammar's shapes are built with it; another ceiling is the
-	// same shape compiled with that value.
-	DefaultMaxFee = boundary.DefaultMaxFee
 
 	// shapeDerivationVersion is the template schema's derivation version for a
 	// shape's spec. The host's own salt style replaces it when the shape is
@@ -56,7 +38,7 @@ const (
 
 // boundsParameters are the parameters that select a shape.
 var boundsParameters = []string{
-	ParameterSpendEffects, ParameterRecipients, ParameterRecipientScope, ParameterListEncoding, ParameterMaxFee,
+	boundary.ParameterSpendEffects, boundary.ParameterRecipients, boundary.ParameterRecipientScope, boundary.ParameterListEncoding, boundary.ParameterMaxFee,
 }
 
 // hasBounds reports whether a request asks for a bounded2 shape.
@@ -93,7 +75,7 @@ type Shape struct {
 // arrangementSetting is the contract's rekey setting under a rekey option: only
 // these is refused plus the list, plus cosigned a spending-key rekey plus the list.
 func arrangementSetting(rekey string) hostmeta.RekeySetting {
-	if rekey == RekeySpendingKey || rekey == RekeyPlusCosigned {
+	if rekey == boundary.RekeySpendingKey || rekey == boundary.RekeyPlusCosigned {
 		return hostmeta.RekeySpendingKey
 	}
 	return hostmeta.RekeyRefused
@@ -103,11 +85,11 @@ func arrangementSetting(rekey string) hostmeta.RekeySetting {
 func (s Shape) Policy() string {
 	switch {
 	case s.AnyRecipient:
-		return composeddsa.Layer3PolicyNone
-	case s.Encoding == EncodingMerkle:
-		return composeddsa.Layer3PolicyMerkleAllowlist
+		return hostmeta.Layer3PolicyNone
+	case s.Encoding == boundary.EncodingMerkle:
+		return hostmeta.Layer3PolicyMerkleAllowlist
 	default:
-		return composeddsa.Layer3PolicyFixedAllowlist
+		return hostmeta.Layer3PolicyFixedAllowlist
 	}
 }
 
@@ -154,7 +136,7 @@ func Shapes() []Shape {
 			}
 		}
 	}
-	for _, encoding := range []string{EncodingInline, EncodingMerkle} {
+	for _, encoding := range []string{boundary.EncodingInline, boundary.EncodingMerkle} {
 		family(encoding, false)
 	}
 	family("", true)
@@ -193,13 +175,13 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 	}
 	var parameters []generictemplate.ParameterSpec
 	if shape.Encoding != "" {
-		bounded.Layer3.RecipientsParameter = ParameterRecipients
+		bounded.Layer3.RecipientsParameter = boundary.ParameterRecipients
 		maxItems := InlineMax
-		if shape.Encoding == EncodingMerkle {
+		if shape.Encoding == boundary.EncodingMerkle {
 			maxItems = RecipientsMax
 		}
 		parameters = append(parameters, generictemplate.ParameterSpec{
-			Name:        ParameterRecipients,
+			Name:        boundary.ParameterRecipients,
 			Label:       "Allowed Recipients",
 			Description: "Addresses that may receive payments or asset transfers.",
 			Type:        "address[]",
@@ -208,11 +190,11 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 			MaxItems:    maxItems,
 		})
 	}
-	if shape.Encoding == EncodingMerkle {
+	if shape.Encoding == boundary.EncodingMerkle {
 		bounded.DerivedArgs = []generictemplate.BoundedDerivedArgSpec{{
 			Name:      merkleProofArg,
 			Kind:      hostmeta.DerivedArgMerkleProof,
-			Parameter: ParameterRecipients,
+			Parameter: boundary.ParameterRecipients,
 			MaxSize:   merkleProofSize,
 		}}
 	}

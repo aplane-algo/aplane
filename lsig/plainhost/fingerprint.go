@@ -50,7 +50,7 @@ const (
 // descriptor names an arrangement in fingerprints. The default cosigner's
 // label predates other types and is frozen with it; another type is named.
 func descriptor(selected Arrangement) string {
-	name := ParameterRekeyAuthority + "=" + selected.Rekey
+	name := boundary.ParameterRekeyAuthority + "=" + selected.Rekey
 	switch selected.Cosigner {
 	case "":
 	case hostmeta.DefaultCosignerComponentKeyType:

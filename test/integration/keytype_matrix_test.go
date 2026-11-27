@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -178,10 +179,10 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 		{
 			keyType: plainFalconKeyType,
 			params: map[string]string{
-				plainhost.ParameterSpendEffects:   matrixAllTransfers,
-				plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-				plainhost.ParameterListEncoding:   plainhost.EncodingInline,
-				plainhost.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+				boundary.ParameterSpendEffects:   matrixAllTransfers,
+				boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+				boundary.ParameterListEncoding:   boundary.EncodingInline,
+				boundary.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
 			},
 			negative: includedKeyTypeNegative{
 				name:     "non-allowlisted receiver",
@@ -191,19 +192,19 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 		{
 			keyType: plainFalconKeyType,
 			params: map[string]string{
-				plainhost.ParameterSpendEffects:   matrixAllTransfers,
-				plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-				plainhost.ParameterListEncoding:   plainhost.EncodingMerkle,
-				plainhost.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
+				boundary.ParameterSpendEffects:   matrixAllTransfers,
+				boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+				boundary.ParameterListEncoding:   boundary.EncodingMerkle,
+				boundary.ParameterRecipients:     matrixMaximumRecipients(funder.GetAddress()),
 			},
 		},
 		{
 			keyType: plainFalconKeyType,
 			params: map[string]string{
-				plainhost.ParameterSpendEffects:   matrixAllTransfers,
-				plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
-				plainhost.ParameterRekeyTo:        cleanupAuthority.Address.String(),
-				plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
+				boundary.ParameterSpendEffects:   matrixAllTransfers,
+				boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese,
+				boundary.ParameterRekeyTo:        cleanupAuthority.Address.String(),
+				boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
 			},
 		},
 	}
@@ -381,7 +382,7 @@ func prepareMatrixRekeyCleanup(
 	)
 	txn.RekeyTo = cleanupAuthority.Address
 	path := lsigresource.PathSpendingRekey
-	if account.params[plainhost.ParameterRekeyAuthority] == plainhost.RekeyOnlyThese {
+	if account.params[boundary.ParameterRekeyAuthority] == boundary.RekeyOnlyThese {
 		path = lsigresource.PathListedRekey
 	}
 	req := matrixSignRequest(t, sp, fundingAddress, []matrixSignTxn{{authAddress: account.address, txn: txn}})
@@ -482,8 +483,8 @@ func matrixSupportsRekeyCleanup(account includedKeyTypeAccount) bool {
 	if !account.boundedPlainHost() {
 		return false
 	}
-	switch account.params[plainhost.ParameterRekeyAuthority] {
-	case plainhost.RekeySpendingKey, plainhost.RekeyOnlyThese:
+	switch account.params[boundary.ParameterRekeyAuthority] {
+	case boundary.RekeySpendingKey, boundary.RekeyOnlyThese:
 		return true
 	default:
 		return false

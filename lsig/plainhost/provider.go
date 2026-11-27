@@ -38,25 +38,14 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
-// The request vocabulary is the boundary file grammar's, so a file and a form
-// ask for the same account.
 const (
-	ParameterCosigner       = boundary.ParameterCosigner
-	ParameterRekeyAuthority = boundary.ParameterRekeyAuthority
-	ParameterRekeyTo        = boundary.ParameterRekeyTo
-
-	RekeyRefused      = boundary.RekeyRefused
-	RekeySpendingKey  = boundary.RekeySpendingKey
-	RekeyOnlyThese    = boundary.RekeyOnlyThese
-	RekeyPlusCosigned = boundary.RekeyPlusCosigned
-
 	// opcodeCost is every path's ceiling: two signature checks and, on a listed
 	// rekey, the list proof, within one transaction's budget.
 	opcodeCost = lsigresource.SingleTransactionOpcodeCeiling
 )
 
 // RekeyAuthorities is every rekey setting a plain host takes, in order.
-var RekeyAuthorities = []string{RekeyRefused, RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned}
+var RekeyAuthorities = []string{boundary.RekeyRefused, boundary.RekeySpendingKey, boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned}
 
 // CosignerKeyTypes is every cosigner key type a plain host account can take,
 // the default first.
@@ -73,7 +62,7 @@ type Arrangement struct {
 
 // HasRekeyList reports whether the arrangement takes a rekey-to list.
 func (a Arrangement) HasRekeyList() bool {
-	return a.Rekey == RekeyOnlyThese || a.Rekey == RekeyPlusCosigned
+	return a.Rekey == boundary.RekeyOnlyThese || a.Rekey == boundary.RekeyPlusCosigned
 }
 
 // Arrangements is the plain host's grammar, in order: each rekey setting
@@ -83,7 +72,7 @@ func (a Arrangement) HasRekeyList() bool {
 func Arrangements() []Arrangement {
 	var arrangements []Arrangement
 	for _, rekey := range RekeyAuthorities {
-		if rekey != RekeyPlusCosigned {
+		if rekey != boundary.RekeyPlusCosigned {
 			arrangements = append(arrangements, Arrangement{Rekey: rekey})
 		}
 		arrangements = append(arrangements, Arrangement{Rekey: rekey, Cosigner: hostmeta.DefaultCosignerComponentKeyType})
@@ -217,7 +206,7 @@ func (p *Provider) loadShapes() error {
 		byShape := make(map[string]*program)
 		ordered := append([]*program(nil), p.arrangements...)
 		for _, shape := range Shapes() {
-			composer, err := newShapeComposer(p.Plain, p.base, shape, DefaultMaxFee)
+			composer, err := newShapeComposer(p.Plain, p.base, shape, boundary.DefaultMaxFee)
 			if err != nil {
 				p.shapesErr = fmt.Errorf("plain host %s, shape %s: %w", p.KeyType(), shape.Descriptor(), err)
 				return
@@ -277,7 +266,7 @@ func newComposer(plain Plain, base Base, selected Arrangement) (*composeddsa.Com
 		SaltStyle:     base.SaltStyle,
 		OpcodeProfile: lsigresource.HostOpcodeProfile(opcodeCost, opcodeCost, opcodeCost),
 		Host:          profile,
-		Layer3:        &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone},
+		Layer3:        &composeddsa.Layer3Policy{Policy: hostmeta.Layer3PolicyNone},
 	})
 	metadata := composer.HostMetadata()
 	if metadata == nil || storedCosigner(metadata) != selected.Cosigner {
@@ -296,42 +285,42 @@ func creationParameters() []lsigprovider.ParameterDef {
 	cosigner.Description = "The cosigner's public key, which the signer fills from a cosigner reference: a Falcon-1024 key, or an Ed25519 one with " + hostmeta.CosignerKeyTypeParameter + "."
 	return []lsigprovider.ParameterDef{
 		{
-			Name:        ParameterSpendEffects,
+			Name:        boundary.ParameterSpendEffects,
 			Label:       "Transfer Kinds",
 			Description: "Bounds: comma-separated transfer kinds the account may make: pay, axfer, asset_opt_in. Any bounds parameter makes the account a bounded one, with a fee limit per transaction.",
 			Type:        "string",
 			Example:     "pay,axfer,asset_opt_in",
 		},
 		{
-			Name:        ParameterRecipients,
+			Name:        boundary.ParameterRecipients,
 			Label:       "Allowed Recipients",
 			Description: "Bounds: addresses that may receive payments or asset transfers. Absent with recipient scope any.",
 			Type:        "address[]",
 			MaxItems:    RecipientsMax,
 		},
 		{
-			Name:        ParameterRecipientScope,
+			Name:        boundary.ParameterRecipientScope,
 			Label:       "Recipient Scope",
 			Description: "Bounds: listed (default) limits transfers to the recipient list; any keeps only the fee limit and transfer kinds.",
 			Type:        "string",
-			Options:     []string{RecipientScopeListed, RecipientScopeAny},
+			Options:     []string{boundary.RecipientScopeListed, boundary.RecipientScopeAny},
 		},
 		{
-			Name:        ParameterListEncoding,
+			Name:        boundary.ParameterListEncoding,
 			Label:       "List Encoding",
 			Description: "Bounds: how the program holds the recipient list. Auto chooses inline through 10 recipients and Merkle above that.",
 			Type:        "string",
-			Options:     []string{EncodingAuto, EncodingInline, EncodingMerkle},
+			Options:     []string{boundary.EncodingAuto, boundary.EncodingInline, boundary.EncodingMerkle},
 		},
 		{
-			Name:        ParameterMaxFee,
+			Name:        boundary.ParameterMaxFee,
 			Label:       "Fee Limit",
 			Description: "Bounds: the most the account may pay in fees on one transaction, in microAlgos. Absent means 10,000. Below what one of its transactions costs alone, it needs a group that shares the cost or another account to pay.",
 			Type:        "uint64",
 			Example:     "10000",
 		},
 		{
-			Name:        ParameterCosigner,
+			Name:        boundary.ParameterCosigner,
 			Label:       "Cosigner",
 			Description: "A cosigner reference name or Witness Key ID, which the signer resolves to its public key. Leave empty for no cosigner.",
 			Type:        "string",
@@ -344,14 +333,14 @@ func creationParameters() []lsigprovider.ParameterDef {
 			Options:     slices.Clone(CosignerKeyTypes),
 		},
 		{
-			Name:        ParameterRekeyAuthority,
+			Name:        boundary.ParameterRekeyAuthority,
 			Label:       "Rekey Authority",
 			Description: "How the account can be rekeyed: never (refused); by the spending key, with the cosigner too on a cosigned account (spending_key); by the spending key alone, only to an address on its rekey-to list (only_these); or by the spending key alone to a listed address and with the cosigner to any other (plus_cosigned).",
 			Type:        "string",
 			Options:     slices.Clone(RekeyAuthorities),
 		},
 		{
-			Name:        ParameterRekeyTo,
+			Name:        boundary.ParameterRekeyTo,
 			Label:       "Rekey-To Addresses",
 			Description: "With only_these or plus_cosigned: the 1 to 16 addresses the spending key alone may rekey the account to. Each can take the account over.",
 			Type:        "address[]",
@@ -381,7 +370,7 @@ func present(params map[string]string) (map[string]string, error) {
 // one, a plain1 or bounded2 contract: any overlay or bounds parameter with a
 // value does.
 func hasContract(params map[string]string) bool {
-	for _, name := range []string{ParameterCosigner, ParameterRekeyAuthority, ParameterRekeyTo,
+	for _, name := range []string{boundary.ParameterCosigner, boundary.ParameterRekeyAuthority, boundary.ParameterRekeyTo,
 		hostmeta.CosignerPublicKeyParameter, hostmeta.CosignerKeyTypeParameter, hostmeta.RekeyListRootParameter} {
 		if _, ok := params[name]; ok {
 			return true
@@ -461,7 +450,7 @@ func (p *Provider) shapeProgram(shape Shape, maxFee uint64) (*program, error) {
 	if !ok {
 		return nil, fmt.Errorf("unsupported bounded shape %s", shape.Descriptor())
 	}
-	if maxFee == DefaultMaxFee {
+	if maxFee == boundary.DefaultMaxFee {
 		return standard, nil
 	}
 	key := customShape{shape.Descriptor(), maxFee}
@@ -475,7 +464,7 @@ func (p *Provider) shapeProgram(shape Shape, maxFee uint64) (*program, error) {
 	// Two requests may build the same program; the first stored is kept.
 	composer, err := newShapeComposer(p.Plain, p.base, shape, maxFee)
 	if err != nil {
-		return nil, fmt.Errorf("plain host %s, shape %s, %s %d: %w", p.KeyType(), shape.Descriptor(), ParameterMaxFee, maxFee, err)
+		return nil, fmt.Errorf("plain host %s, shape %s, %s %d: %w", p.KeyType(), shape.Descriptor(), boundary.ParameterMaxFee, maxFee, err)
 	}
 	built = &program{descriptor: shape.Descriptor(), composer: composer, fingerprint: shapeFingerprint(shape, composer)}
 	// Both locks, in SetAlgodClient's order, so a client set meanwhile reaches
@@ -565,7 +554,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 // reference picks one of them, and its type then selects the program. A
 // cosigner is optional, so a request naming none returns false.
 func (p *Provider) CosignerComponentKeyTypes(params map[string]string) ([]string, bool) {
-	_, hasName := params[ParameterCosigner]
+	_, hasName := params[boundary.ParameterCosigner]
 	_, hasKey := params[hostmeta.CosignerPublicKeyParameter]
 	if !hasName && !hasKey {
 		return nil, false
@@ -648,13 +637,13 @@ func (p *Provider) StoredFingerprint(_ map[string]string, metadata *hostmeta.Met
 func storedRekey(metadata *hostmeta.Metadata) string {
 	switch {
 	case metadata.Rekey == hostmeta.RekeySpendingKey && metadata.RekeyList != nil:
-		return RekeyPlusCosigned
+		return boundary.RekeyPlusCosigned
 	case metadata.Rekey == hostmeta.RekeySpendingKey:
-		return RekeySpendingKey
+		return boundary.RekeySpendingKey
 	case metadata.RekeyList != nil:
-		return RekeyOnlyThese
+		return boundary.RekeyOnlyThese
 	default:
-		return RekeyRefused
+		return boundary.RekeyRefused
 	}
 }
 
@@ -673,11 +662,11 @@ func shapeFromMetadata(metadata *hostmeta.Metadata) (Shape, error) {
 	}
 	shape := Shape{Arrangement: Arrangement{Rekey: storedRekey(metadata), Cosigner: storedCosigner(metadata)}, Spend: spend}
 	switch bounds.Layer3Policy {
-	case composeddsa.Layer3PolicyFixedAllowlist:
-		shape.Encoding = EncodingInline
-	case composeddsa.Layer3PolicyMerkleAllowlist:
-		shape.Encoding = EncodingMerkle
-	case composeddsa.Layer3PolicyNone:
+	case hostmeta.Layer3PolicyFixedAllowlist:
+		shape.Encoding = boundary.EncodingInline
+	case hostmeta.Layer3PolicyMerkleAllowlist:
+		shape.Encoding = boundary.EncodingMerkle
+	case hostmeta.Layer3PolicyNone:
 		shape.AnyRecipient = true
 	default:
 		return Shape{}, fmt.Errorf("stored account has policy %q", bounds.Layer3Policy)
@@ -906,8 +895,8 @@ func (p *Provider) CreationWarnings(params map[string]string) ([]string, error) 
 		}
 		programBytes += publicKeySize
 	}
-	if values[ParameterListEncoding] == EncodingInline {
-		programBytes += addressBytes * (strings.Count(values[ParameterRecipients], ",") + 1)
+	if values[boundary.ParameterListEncoding] == boundary.EncodingInline {
+		programBytes += addressBytes * (strings.Count(values[boundary.ParameterRecipients], ",") + 1)
 	}
 	fees, err := pathFees(metadata, p.HostLogicSigOpcodeProfile(), programBytes)
 	if err != nil {

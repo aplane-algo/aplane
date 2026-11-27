@@ -494,7 +494,7 @@ func newFixedAllowlistIntegrationProvider(profile *composeddsa.HostProfile) *com
 		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
 		Ops: falconv1.NewFalconOps(), SaltStyle: lsigsalt.StyleAlgodAutoSalt, TemplateMode: "generated", Host: profile,
 		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
-		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
+		Layer3: &composeddsa.Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
 }
 

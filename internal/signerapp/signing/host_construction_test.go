@@ -113,7 +113,7 @@ func TestBoundedGenerationAdmitsOnlySignableWorkflows(t *testing.T) {
 				if profile.contract == hostmeta.PlainContract {
 					config.TEALSuffix = ""
 					config.Host.Bounds = nil
-					config.Layer3 = &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyNone}
+					config.Layer3 = &composeddsa.Layer3Policy{Policy: hostmeta.Layer3PolicyNone}
 				}
 				composer := composeddsa.NewComposedDSA(config)
 				// A profile takes only the keys its authorities declare.

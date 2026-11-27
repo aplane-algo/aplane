@@ -20,6 +20,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
@@ -80,7 +81,7 @@ func newSpendingKey(t *testing.T, keyType string) ([]byte, []byte, stded25519.Pr
 }
 
 func listedArrangement(arrangement plainhost.Arrangement) bool {
-	return arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
+	return arrangement.Rekey == boundary.RekeyOnlyThese || arrangement.Rekey == boundary.RekeyPlusCosigned
 }
 
 // newPlainHostAccount generates a plain host as the signer does: resolve the
@@ -92,7 +93,7 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	var account plainHostAccount
 	spendingPublic, spendingPrivate, edKey := newSpendingKey(t, keyType)
 	account.edKey = edKey
-	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+	params := map[string]string{boundary.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
 		cosignerPublic, cosignerPrivate := newTestCosignerKey(t, arrangement.Cosigner)
 		params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
@@ -103,7 +104,7 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 		account.cosignerKeyType = arrangement.Cosigner
 	}
 	if listedArrangement(arrangement) {
-		params[plainhost.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
+		params[boundary.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
 	}
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
@@ -244,14 +245,14 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 	var cases []plainCase
 	for _, arrangement := range plainhost.Arrangements() {
 		cases = append(cases, plainCase{plainFalconKeyType, arrangement,
-			arrangement == plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Falcon1024V1}})
+			arrangement == plainhost.Arrangement{Rekey: boundary.RekeySpendingKey, Cosigner: witness.Falcon1024V1}})
 	}
 	cases = append(cases,
-		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Falcon1024V1}, true},
-		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeyOnlyThese}, false},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: boundary.RekeySpendingKey, Cosigner: witness.Falcon1024V1}, true},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: boundary.RekeyOnlyThese}, false},
 		// Two classical keys: an Ed25519 spending key with an Ed25519 cosigner.
-		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1}, false},
-		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: plainhost.RekeyPlusCosigned, Cosigner: witness.Ed25519V1}, false},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: boundary.RekeySpendingKey, Cosigner: witness.Ed25519V1}, false},
+		plainCase{plainEd25519KeyType, plainhost.Arrangement{Rekey: boundary.RekeyPlusCosigned, Cosigner: witness.Ed25519V1}, false},
 	)
 
 	for _, tc := range cases {
@@ -432,9 +433,9 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 				submit(false, txn, nil)
 			})
 			switch tc.arrangement.Rekey {
-			case plainhost.RekeyRefused:
+			case boundary.RekeyRefused:
 				t.Run("rekey refused", func(t *testing.T) { submit(false, rekeyTo(listed.Address, "k"), nil) })
-			case plainhost.RekeySpendingKey:
+			case boundary.RekeySpendingKey:
 				if cosigned {
 					t.Run("rekey without the cosigner", func(t *testing.T) { submit(false, rekeyTo(listed.Address, "k"), withoutCosigner) })
 				}
@@ -442,13 +443,13 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 					submit(true, rekeyTo(listed.Address, "l"), nil)
 					handBack(t, network, account.address, listed)
 				})
-			case plainhost.RekeyOnlyThese:
+			case boundary.RekeyOnlyThese:
 				t.Run("rekey to an unlisted address", func(t *testing.T) { submit(false, rekeyTo(unlisted.Address, "k"), nil) })
 				t.Run("listed rekey with the spending key alone", func(t *testing.T) {
 					submit(true, rekeyTo(listed.Address, "l"), withoutCosigner)
 					handBack(t, network, account.address, listed)
 				})
-			case plainhost.RekeyPlusCosigned:
+			case boundary.RekeyPlusCosigned:
 				t.Run("unlisted rekey without the cosigner", func(t *testing.T) {
 					submit(false, rekeyTo(unlisted.Address, "k"), withoutCosigner)
 				})
@@ -529,7 +530,7 @@ func TestPlainHostMixedGroupThroughSigner(t *testing.T) {
 	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
-		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 	})
 	ordinary := generatePlainHost(t, n, plainFalconKeyType, nil)
 	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
@@ -582,7 +583,7 @@ func TestCosignedGroupChargesTheNativeFalconPosition(t *testing.T) {
 	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
-		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 	})
 	falcon := generatePlainHost(t, n, nativefalcon.KeyType, nil)
 	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
@@ -639,7 +640,7 @@ func TestCosignedPlainHostSignsANonTransferType(t *testing.T) {
 	n := newCosignedNode(t, witness.Falcon1024V1)
 	activatePlainHosts(t, n)
 	cosigned := generatePlainHost(t, n, plainFalconKeyType, map[string]string{
-		cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+		cosignerrefs.ParamCosignerName: cosignedReferenceName, boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 	})
 	if err := n.eng.EnsureSignerCache(context.Background()); err != nil {
 		t.Fatalf("refresh signer cache: %v", err)
@@ -704,13 +705,13 @@ func TestPlainHostThroughSigner(t *testing.T) {
 		cosigned bool
 	}{
 		{"cosigned plain host on Falcon", plainFalconKeyType, map[string]string{
-			cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+			cosignerrefs.ParamCosignerName: cosignedReferenceName, boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 		}, signerapi.SigningFlowCosigned1, true},
 		{"cosigned plain host on Ed25519", plainEd25519KeyType, map[string]string{
-			cosignerrefs.ParamCosignerName: cosignedReferenceName, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused,
+			cosignerrefs.ParamCosignerName: cosignedReferenceName, boundary.ParameterRekeyAuthority: boundary.RekeyRefused,
 		}, signerapi.SigningFlowCosigned1, true},
 		{"plain host without a cosigner", plainFalconKeyType, map[string]string{
-			plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: algocrypto.GenerateAccount().Address.String(),
+			boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese, boundary.ParameterRekeyTo: algocrypto.GenerateAccount().Address.String(),
 		}, "", false},
 		{"the plain program", plainFalconKeyType, nil, "", false},
 	} {
@@ -887,8 +888,8 @@ func TestBoundedMeshLocalnet(t *testing.T) {
 	provider := plainHostProvider(t, network, plainFalconKeyType)
 	shape := plainhost.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay},
-		Encoding: plainhost.EncodingInline,
-		Rekey:    plainhost.RekeyOnlyThese,
+		Encoding: boundary.EncodingInline,
+		Rekey:    boundary.RekeyOnlyThese,
 	}
 
 	hatch := algocrypto.GenerateAccount()

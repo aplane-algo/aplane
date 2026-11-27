@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
@@ -301,8 +302,8 @@ type corridorExecutionAccount struct {
 func corridorShapeFor(cosignerKeyType string) plainhost.Shape {
 	return plainhost.Shape{
 		Spend:    []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
-		Encoding: plainhost.EncodingMerkle,
-		Rekey:    plainhost.RekeyOnlyThese,
+		Encoding: boundary.EncodingMerkle,
+		Rekey:    boundary.RekeyOnlyThese,
 		Cosigner: cosignerKeyType,
 	}
 }

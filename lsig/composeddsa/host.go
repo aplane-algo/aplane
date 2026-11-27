@@ -536,8 +536,8 @@ func (c *ComposedDSA) validateHostConfig() (*HostProfile, SignatureArgLayout, er
 	switch {
 	case profile.Bounds == nil:
 		// A plain host has no spending rule: Layer 3 is none, and no author TEAL.
-		if c.layer3 == nil || c.layer3.Policy != Layer3PolicyNone || c.hasAuthorTEAL() {
-			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", hostmeta.PlainContract, Layer3PolicyNone)
+		if c.layer3 == nil || c.layer3.Policy != hostmeta.Layer3PolicyNone || c.hasAuthorTEAL() {
+			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", hostmeta.PlainContract, hostmeta.Layer3PolicyNone)
 		}
 	case c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "":
 		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires a Layer-3 spending policy suffix")

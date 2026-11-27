@@ -42,16 +42,16 @@ func limitsOnlyShapes(t *testing.T) []plainhost.Shape {
 // authorities, so the two programs differ only in what Layer 3 renders.
 func listedTwin(shape plainhost.Shape) plainhost.Shape {
 	shape.AnyRecipient = false
-	shape.Encoding = plainhost.EncodingInline
+	shape.Encoding = boundary.EncodingInline
 	return shape
 }
 
 func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 	for _, b := range bases(t) {
 		instance, err := b.provider.ResolveInstance(map[string]string{
-			plainhost.ParameterSpendEffects:   "pay",
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-			plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
+			boundary.ParameterSpendEffects:   "pay",
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+			boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
 		})
 		if err != nil {
 			t.Fatalf("%s: %v", b.name, err)
@@ -60,13 +60,13 @@ func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 		if bounded.Contract != hostmeta.BoundedContract || bounded.Layer3Policy() != hostmeta.Layer3PolicyNone {
 			t.Fatalf("%s: contract %s, policy %s", b.name, bounded.Contract, bounded.Layer3Policy())
 		}
-		if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != plainhost.DefaultMaxFee || !slices.Equal(bounded.Bounds.SpendEffects, []string{"pay"}) {
+		if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != boundary.DefaultMaxFee || !slices.Equal(bounded.Bounds.SpendEffects, []string{"pay"}) {
 			t.Fatalf("%s: limits = %v %v", b.name, bounded.FeeCeiling(), bounded.Bounds.SpendEffects)
 		}
 		if len(bounded.DerivedArgs) != 0 || len(bounded.RuntimeArgs) != 0 {
 			t.Fatalf("%s: limits-only shape declares Layer 3 arguments", b.name)
 		}
-		if _, present := instance.Values[plainhost.ParameterRecipients]; present || instance.Values[plainhost.ParameterRecipientScope] != plainhost.RecipientScopeAny {
+		if _, present := instance.Values[boundary.ParameterRecipients]; present || instance.Values[boundary.ParameterRecipientScope] != boundary.RecipientScopeAny {
 			t.Fatalf("%s: values = %v", b.name, instance.Values)
 		}
 		if len(instance.Parameters) != 0 {
@@ -90,9 +90,9 @@ func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 	base := func() map[string]string {
 		return map[string]string{
-			plainhost.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-			plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
+			boundary.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+			boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
 		}
 	}
 	tests := []struct {
@@ -100,24 +100,24 @@ func TestLimitsOnlyRequestsFailClosed(t *testing.T) {
 		mutate func(map[string]string)
 		want   string
 	}{
-		{"no scope and no list", func(p map[string]string) { delete(p, plainhost.ParameterRecipientScope) }, "recipients is required"},
+		{"no scope and no list", func(p map[string]string) { delete(p, boundary.ParameterRecipientScope) }, "recipients is required"},
 		// An empty scope is unset, which is listed: it is not any.
-		{"empty scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "" }, "recipient_scope is empty"},
-		{"listed scope and no list", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeListed }, "recipients is required"},
-		{"unknown scope", func(p map[string]string) { p[plainhost.ParameterRecipientScope] = "open" }, "recipient_scope must be"},
-		{"any with recipients", func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(1) }, "takes no recipients"},
-		{"any with an encoding", func(p map[string]string) { p[plainhost.ParameterListEncoding] = plainhost.EncodingInline }, "no list to encode"},
+		{"empty scope", func(p map[string]string) { p[boundary.ParameterRecipientScope] = "" }, "recipient_scope is empty"},
+		{"listed scope and no list", func(p map[string]string) { p[boundary.ParameterRecipientScope] = boundary.RecipientScopeListed }, "recipients is required"},
+		{"unknown scope", func(p map[string]string) { p[boundary.ParameterRecipientScope] = "open" }, "recipient_scope must be"},
+		{"any with recipients", func(p map[string]string) { p[boundary.ParameterRecipients] = testRecipients(1) }, "takes no recipients"},
+		{"any with an encoding", func(p map[string]string) { p[boundary.ParameterListEncoding] = boundary.EncodingInline }, "no list to encode"},
 		// The framework timelock is gone, so nothing but the scope asks for no list.
 		{"any with an unlock round", func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
 		{"an unlock round and no scope", func(p map[string]string) {
-			delete(p, plainhost.ParameterRecipientScope)
+			delete(p, boundary.ParameterRecipientScope)
 			p["unlock_round"] = "5"
 		}, "unknown parameter"},
-		{"any with only_these and no rekey-to list", func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyOnlyThese },
+		{"any with only_these and no rekey-to list", func(p map[string]string) { p[boundary.ParameterRekeyAuthority] = boundary.RekeyOnlyThese },
 			"rekey_authority=only_these needs the addresses"},
 		{"any with plus_cosigned and no cosigner", func(p map[string]string) {
-			p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyPlusCosigned
-			p[plainhost.ParameterRekeyTo] = listedRekeyTo
+			p[boundary.ParameterRekeyAuthority] = boundary.RekeyPlusCosigned
+			p[boundary.ParameterRekeyTo] = listedRekeyTo
 		}, "rekey_authority=plus_cosigned needs a cosigner"},
 	}
 	for _, b := range bases(t) {
@@ -275,7 +275,7 @@ func TestLimitsOnlyBoundaryFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer[:2], Rekey: plainhost.RekeySpendingKey, AnyRecipient: true}, "")
+	direct := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer[:2], Rekey: boundary.RekeySpendingKey, AnyRecipient: true}, "")
 	if instance.Fingerprint != direct.Fingerprint || instance.BoundaryDigest != direct.BoundaryDigest {
 		t.Fatal("the file and direct parameters resolved differently")
 	}
@@ -283,7 +283,7 @@ func TestLimitsOnlyBoundaryFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(head+"recipient_scope: any\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if loaded, err := boundary.LoadFile(path); err != nil || loaded[plainhost.ParameterRecipientScope] != plainhost.RecipientScopeAny {
+	if loaded, err := boundary.LoadFile(path); err != nil || loaded[boundary.ParameterRecipientScope] != boundary.RecipientScopeAny {
 		t.Fatalf("LoadFile = %v, %v", loaded, err)
 	}
 	for body, want := range map[string]string{

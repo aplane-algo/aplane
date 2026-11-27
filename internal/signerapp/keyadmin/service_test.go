@@ -22,6 +22,7 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -46,7 +47,6 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -1077,7 +1077,7 @@ func TestServiceRefusesTheDisabledPlainHostAndKeepsNativeDefaults(t *testing.T) 
 	const want = "key type aplane.ed25519.v1 is not enabled on this node"
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
-	cosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("41", hostmeta.DefaultCosignerPublicKeySize)}
+	cosigned := map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("41", hostmeta.DefaultCosignerPublicKeySize)}
 	if _, err := svc.GenerateKey(context.Background(), "aplane.ed25519.v1", cosigned); err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, want) {
 		t.Fatalf("GenerateKey(aplane.ed25519.v1) before enabling = %#v, want %q", err, want)
 	}

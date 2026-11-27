@@ -11,6 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -46,18 +47,18 @@ func grammarDeclarations(t *testing.T) map[string]hostmeta.PathDeclaration {
 	declarations := make(map[string]hostmeta.PathDeclaration)
 	for _, shape := range plainhost.Shapes() {
 		params := map[string]string{
-			plainhost.ParameterSpendEffects:   joinSpend(shape.Spend),
-			plainhost.ParameterRekeyAuthority: shape.Rekey,
+			boundary.ParameterSpendEffects:   joinSpend(shape.Spend),
+			boundary.ParameterRekeyAuthority: shape.Rekey,
 		}
 		if shape.Encoding != "" {
-			params[plainhost.ParameterListEncoding] = shape.Encoding
-			params[plainhost.ParameterRecipients] = types.Address{1}.String() + "," + types.Address{2}.String()
+			params[boundary.ParameterListEncoding] = shape.Encoding
+			params[boundary.ParameterRecipients] = types.Address{1}.String() + "," + types.Address{2}.String()
 		}
 		if shape.AnyRecipient {
-			params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
+			params[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
 		}
 		if shape.HasRekeyList() {
-			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
+			params[boundary.ParameterRekeyTo] = types.Address{3}.String()
 		}
 		addTestCosigner(params, shape.Cosigner)
 		instance, err := provider.ResolveInstance(params)
@@ -85,10 +86,10 @@ func plainDeclarations(t *testing.T) map[string]hostmeta.PathDeclaration {
 	}
 	declarations := make(map[string]hostmeta.PathDeclaration)
 	for _, arrangement := range plainhost.Arrangements() {
-		params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+		params := map[string]string{boundary.ParameterRekeyAuthority: arrangement.Rekey}
 		addTestCosigner(params, arrangement.Cosigner)
-		if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
-			params[plainhost.ParameterRekeyTo] = types.Address{3}.String()
+		if arrangement.Rekey == boundary.RekeyOnlyThese || arrangement.Rekey == boundary.RekeyPlusCosigned {
+			params[boundary.ParameterRekeyTo] = types.Address{3}.String()
 		}
 		instance, err := resolver.ResolveInstance(params)
 		if err != nil {

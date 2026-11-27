@@ -27,9 +27,15 @@ const (
 	// no host rules. Every transaction that doesn't rekey is a spend, of any
 	// type, closes and clawback included, and there is no fee ceiling. A
 	// cosigner, when it has one, is the only restriction on what gets signed.
-	PlainContract               = "plain1"
-	Layer3PolicyCustom          = "custom"
-	Layer3PolicyFixedAllowlist  = "fixed_allowlist"
+	PlainContract      = "plain1"
+	Layer3PolicyCustom = "custom"
+	// Layer3PolicyFixedAllowlist is the framework-owned bounded spending
+	// policy. It compiles all membership checks inline and uses no runtime
+	// witness or signer-generated argument.
+	Layer3PolicyFixedAllowlist = "fixed_allowlist"
+	// Layer3PolicyMerkleAllowlist is the framework-owned bounded spending
+	// policy for large recipient sets. Membership is proven by a fixed-size,
+	// signer-derived Merkle witness.
 	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
 	// The *Custom values record a framework allowlist followed by author TEAL.
 	// Plain "custom" would hide that the allowlist is framework-enforced.
@@ -59,7 +65,8 @@ const (
 
 // Layer3PolicyNone compiles no Layer 3: the envelope's transfer kinds and fee
 // ceiling, and the spending signature, are the whole spending rule. It reads no
-// parameter and takes no author TEAL.
+// parameter and takes no author TEAL. Only the plain hosts' bounds offer it,
+// with recipient_scope=any.
 const Layer3PolicyNone = "none"
 
 // layer3Traits is what a stored Layer 3 policy name says about the program.
