@@ -91,18 +91,18 @@ var listedRekeyTo = rekeyTarget(0x08) + "," + rekeyTarget(0xd0)
 // which the request passes through for the provider to choose.
 func shapeRequest(shape plainhost.Shape, recipients string) map[string]string {
 	params := map[string]string{
-		plainhost.ParameterSpendEffects:   joinEffects(shape.Spend),
-		plainhost.ParameterRekeyAuthority: shape.Rekey,
+		boundary.ParameterSpendEffects:   joinEffects(shape.Spend),
+		boundary.ParameterRekeyAuthority: shape.Rekey,
 	}
 	if shape.Encoding != "" {
-		params[plainhost.ParameterListEncoding] = shape.Encoding
-		params[plainhost.ParameterRecipients] = recipients
+		params[boundary.ParameterListEncoding] = shape.Encoding
+		params[boundary.ParameterRecipients] = recipients
 	}
 	if shape.HasRekeyList() {
-		params[plainhost.ParameterRekeyTo] = listedRekeyTo
+		params[boundary.ParameterRekeyTo] = listedRekeyTo
 	}
 	if shape.AnyRecipient {
-		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
+		params[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
 		params[hostmeta.CosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
@@ -136,7 +136,7 @@ func resolveShape(t *testing.T, provider *plainhost.Provider, shape plainhost.Sh
 // wantRekeySetting is the contract's rekey setting under a rekey option: only
 // these is refused plus the list, plus cosigned a spending-key rekey plus the list.
 func wantRekeySetting(rekey string) hostmeta.RekeySetting {
-	if rekey == plainhost.RekeySpendingKey || rekey == plainhost.RekeyPlusCosigned {
+	if rekey == boundary.RekeySpendingKey || rekey == boundary.RekeyPlusCosigned {
 		return hostmeta.RekeySpendingKey
 	}
 	return hostmeta.RekeyRefused
@@ -151,19 +151,19 @@ func wantRekeySetting(rekey string) hostmeta.RekeySetting {
 // names one.
 func TestShapesEnumerateTheGrammar(t *testing.T) {
 	policies := []string{
-		composeddsa.Layer3PolicyFixedAllowlist, composeddsa.Layer3PolicyMerkleAllowlist,
-		composeddsa.Layer3PolicyNone,
+		hostmeta.Layer3PolicyFixedAllowlist, hostmeta.Layer3PolicyMerkleAllowlist,
+		hostmeta.Layer3PolicyNone,
 	}
 	encodings := map[string]string{
-		composeddsa.Layer3PolicyFixedAllowlist: plainhost.EncodingInline, composeddsa.Layer3PolicyMerkleAllowlist: plainhost.EncodingMerkle,
+		hostmeta.Layer3PolicyFixedAllowlist: boundary.EncodingInline, hostmeta.Layer3PolicyMerkleAllowlist: boundary.EncodingMerkle,
 	}
 	arrangements := []plainhost.Arrangement{
-		{Rekey: plainhost.RekeyRefused}, {Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner},
-		{Rekey: plainhost.RekeySpendingKey}, {Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner},
-		{Rekey: plainhost.RekeyOnlyThese}, {Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner},
-		{Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
-		{Rekey: plainhost.RekeyRefused, Cosigner: witness.Ed25519V1}, {Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1},
-		{Rekey: plainhost.RekeyOnlyThese, Cosigner: witness.Ed25519V1}, {Rekey: plainhost.RekeyPlusCosigned, Cosigner: witness.Ed25519V1},
+		{Rekey: boundary.RekeyRefused}, {Rekey: boundary.RekeyRefused, Cosigner: falconCosigner},
+		{Rekey: boundary.RekeySpendingKey}, {Rekey: boundary.RekeySpendingKey, Cosigner: falconCosigner},
+		{Rekey: boundary.RekeyOnlyThese}, {Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner},
+		{Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner},
+		{Rekey: boundary.RekeyRefused, Cosigner: witness.Ed25519V1}, {Rekey: boundary.RekeySpendingKey, Cosigner: witness.Ed25519V1},
+		{Rekey: boundary.RekeyOnlyThese, Cosigner: witness.Ed25519V1}, {Rekey: boundary.RekeyPlusCosigned, Cosigner: witness.Ed25519V1},
 	}
 	if !slices.Equal(plainhost.Arrangements(), arrangements) {
 		t.Fatalf("Arrangements() = %v, want %v", plainhost.Arrangements(), arrangements)
@@ -182,13 +182,13 @@ func TestShapesEnumerateTheGrammar(t *testing.T) {
 		if shape.Policy() != policy || shape.Rekey != arrangement.Rekey || shape.Cosigner != arrangement.Cosigner || joinEffects(shape.Spend) != subset {
 			t.Fatalf("shape %d is %s, want policy %s, %s, cosigner %v, spend %s", index, shape.Descriptor(), policy, arrangement.Rekey, arrangement.Cosigner, subset)
 		}
-		if shape.Encoding != encodings[policy] || shape.AnyRecipient != (policy == composeddsa.Layer3PolicyNone) {
+		if shape.Encoding != encodings[policy] || shape.AnyRecipient != (policy == hostmeta.Layer3PolicyNone) {
 			t.Fatalf("shape %d %s: encoding %q, any recipient %v", index, shape.Descriptor(), shape.Encoding, shape.AnyRecipient)
 		}
 		if strings.Contains(shape.Policy(), "timelock") || strings.Contains(shape.Descriptor(), "timelock") {
 			t.Fatalf("shape %d %s names a timelock", index, shape.Descriptor())
 		}
-		if shape.HasRekeyList() != (shape.Rekey == plainhost.RekeyOnlyThese || shape.Rekey == plainhost.RekeyPlusCosigned) {
+		if shape.HasRekeyList() != (shape.Rekey == boundary.RekeyOnlyThese || shape.Rekey == boundary.RekeyPlusCosigned) {
 			t.Fatalf("%s: HasRekeyList() = %v", shape.Descriptor(), shape.HasRekeyList())
 		}
 		if seen[shape.Descriptor()] {
@@ -206,17 +206,17 @@ func TestShapeDescriptorFormat(t *testing.T) {
 		shape plainhost.Shape
 		want  string
 	}{
-		{plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
+		{plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey},
 			"spend=pay,axfer,asset_opt_in;policy=fixed_allowlist;rekey=spending_key;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner},
+		{plainhost.Shape{Spend: pay, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyRefused, Cosigner: falconCosigner},
 			"spend=pay;policy=merkle_allowlist;rekey=refused;cosigner=required"},
-		{plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused},
+		{plainhost.Shape{Spend: pay, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused},
 			"spend=pay;policy=fixed_allowlist;rekey=refused;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeySpendingKey, AnyRecipient: true},
+		{plainhost.Shape{Spend: pay, Rekey: boundary.RekeySpendingKey, AnyRecipient: true},
 			"spend=pay;policy=none;rekey=spending_key;cosigner=none"},
-		{plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true},
+		{plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, Rekey: boundary.RekeyOnlyThese, AnyRecipient: true},
 			"spend=axfer;policy=none;rekey=only_these;cosigner=none"},
-		{plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true},
+		{plainhost.Shape{Spend: pay, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true},
 			"spend=pay;policy=none;rekey=plus_cosigned;cosigner=required"},
 	} {
 		if got := test.shape.Descriptor(); got != test.want {
@@ -252,7 +252,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if bounded.Layer3Policy() != shape.Policy() || strings.Join(bounded.Bounds.SpendEffects, ",") != joinEffects(shape.Spend) {
 						t.Fatalf("policy %s, spend %v", bounded.Layer3Policy(), bounded.Bounds.SpendEffects)
 					}
-					if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != plainhost.DefaultMaxFee {
+					if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != boundary.DefaultMaxFee {
 						t.Fatalf("MaxFee = %v", bounded.FeeCeiling())
 					}
 					if bounded.Rekey != wantRekeySetting(shape.Rekey) {
@@ -280,8 +280,8 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 						t.Fatalf("fingerprint %q is shared with %s", instance.Fingerprint, previous)
 					}
 					fingerprints[instance.Fingerprint] = shape.Descriptor()
-					if instance.Values[plainhost.ParameterRekeyAuthority] != shape.Rekey {
-						t.Fatalf("persisted rekey_authority = %q", instance.Values[plainhost.ParameterRekeyAuthority])
+					if instance.Values[boundary.ParameterRekeyAuthority] != shape.Rekey {
+						t.Fatalf("persisted rekey_authority = %q", instance.Values[boundary.ParameterRekeyAuthority])
 					}
 					if _, present := instance.Values[hostmeta.RekeyListRootParameter]; present {
 						t.Fatal("persisted values hold the rekey-to list root")
@@ -348,10 +348,10 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 			shape     plainhost.Shape
 			contained bool
 		}{
-			{"refused without a cosigner", plainhost.Shape{Spend: pay, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}, true},
-			{"refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner}, true},
-			{"limits only, refused", plainhost.Shape{Spend: pay, Rekey: plainhost.RekeyRefused, AnyRecipient: true}, false},
-			{"allowlist, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner}, false},
+			{"refused without a cosigner", plainhost.Shape{Spend: pay, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused}, true},
+			{"refused with a cosigner", plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyRefused, Cosigner: falconCosigner}, true},
+			{"limits only, refused", plainhost.Shape{Spend: pay, Rekey: boundary.RekeyRefused, AnyRecipient: true}, false},
+			{"allowlist, cosigned spending key", plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey, Cosigner: falconCosigner}, false},
 		} {
 			t.Run(b.name+"/"+test.name, func(t *testing.T) {
 				params := shapeRequest(test.shape, testRecipients(2))
@@ -367,10 +367,10 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 					(bounded.Cosigner != nil) != (test.shape.Cosigner != "") || (bounded.RekeyList != nil) != test.shape.HasRekeyList() {
 					t.Fatalf("metadata = %+v", bounded)
 				}
-				if bounded.RefusesRekeys() != (test.shape.Rekey == plainhost.RekeyRefused || test.shape.Rekey == plainhost.RekeyOnlyThese) || bounded.Contained() != test.contained {
+				if bounded.RefusesRekeys() != (test.shape.Rekey == boundary.RekeyRefused || test.shape.Rekey == boundary.RekeyOnlyThese) || bounded.Contained() != test.contained {
 					t.Fatalf("refuses rekeys %v, contained %v", bounded.RefusesRekeys(), bounded.Contained())
 				}
-				if got := instance.Values[plainhost.ParameterRekeyAuthority]; got != test.shape.Rekey {
+				if got := instance.Values[boundary.ParameterRekeyAuthority]; got != test.shape.Rekey {
 					t.Fatalf("rekey_authority = %q", got)
 				}
 				if instance.Fingerprint != b.provider.ShapeFingerprintForTest(test.shape) {
@@ -392,11 +392,11 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 }
 
 func TestInvalidRequestsFailClosed(t *testing.T) {
-	spendingKey := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeySpendingKey}
-	onlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese}
-	cosignedOnlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
-	plusCosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner}
-	refused := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyRefused}
+	spendingKey := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeySpendingKey}
+	onlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeyOnlyThese}
+	cosignedOnlyThese := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner}
+	plusCosigned := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner}
+	refused := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeyRefused}
 	zero := types.Address{}.String()
 	targets := func(count int) string {
 		entries := make([]string, count)
@@ -411,81 +411,81 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		mutate func(map[string]string)
 		want   string
 	}{
-		{"no spend", spendingKey, func(p map[string]string) { delete(p, plainhost.ParameterSpendEffects) }, "spend_effects is required"},
-		{"unknown spend", spendingKey, func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay,keyreg" }, "unknown effect"},
-		{"repeated spend", spendingKey, func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay,pay" }, "repeats"},
-		{"no rekey", spendingKey, func(p map[string]string) { delete(p, plainhost.ParameterRekeyAuthority) }, "rekey_authority must be"},
-		{"bad rekey", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = "none" }, "rekey_authority must be"},
-		{"no recipients", spendingKey, func(p map[string]string) { delete(p, plainhost.ParameterRecipients) }, "recipients is required"},
+		{"no spend", spendingKey, func(p map[string]string) { delete(p, boundary.ParameterSpendEffects) }, "spend_effects is required"},
+		{"unknown spend", spendingKey, func(p map[string]string) { p[boundary.ParameterSpendEffects] = "pay,keyreg" }, "unknown effect"},
+		{"repeated spend", spendingKey, func(p map[string]string) { p[boundary.ParameterSpendEffects] = "pay,pay" }, "repeats"},
+		{"no rekey", spendingKey, func(p map[string]string) { delete(p, boundary.ParameterRekeyAuthority) }, "rekey_authority must be"},
+		{"bad rekey", spendingKey, func(p map[string]string) { p[boundary.ParameterRekeyAuthority] = "none" }, "rekey_authority must be"},
+		{"no recipients", spendingKey, func(p map[string]string) { delete(p, boundary.ParameterRecipients) }, "recipients is required"},
 		// The framework timelock is gone: its parameter is refused, with a list,
 		// with no list, and whatever it holds.
 		{"unlock round", spendingKey, func(p map[string]string) { p["unlock_round"] = "50000000" }, "unknown parameter"},
 		{"unlock round with no list", spendingKey, func(p map[string]string) {
-			delete(p, plainhost.ParameterRecipients)
-			delete(p, plainhost.ParameterListEncoding)
+			delete(p, boundary.ParameterRecipients)
+			delete(p, boundary.ParameterListEncoding)
 			p["unlock_round"] = "5"
 		}, "unknown parameter"},
-		{"unlock round with any recipient", plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, AnyRecipient: true},
+		{"unlock round with any recipient", plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeySpendingKey, AnyRecipient: true},
 			func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
 		// Without a cosigner the spending key would rekey anywhere, so the list
 		// would add nothing: that is spending_key.
 		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, hostmeta.CosignerPublicKeyParameter) },
 			"rekey_authority=plus_cosigned needs a cosigner; without one it is rekey_authority=spending_key"},
-		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
+		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, boundary.ParameterRekeyTo) },
 			"rekey_authority=plus_cosigned needs the addresses the account may be rekeyed to in rekey_to"},
-		{"only_these without rekey_to", onlyThese, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
+		{"only_these without rekey_to", onlyThese, func(p map[string]string) { delete(p, boundary.ParameterRekeyTo) },
 			"rekey_authority=only_these needs the addresses the account may be rekeyed to in rekey_to"},
-		{"rekey_to with a spending-key rekey", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
+		{"rekey_to with a spending-key rekey", spendingKey, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"rekey_to with a cosigned spending-key rekey", spendingKey, func(p map[string]string) {
-			p[plainhost.ParameterRekeyTo] = targets(1)
+			p[boundary.ParameterRekeyTo] = targets(1)
 			p[hostmeta.CosignerPublicKeyParameter] = testCosigner
 		}, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
-		{"rekey_to with a refused rekey", refused, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
-		{"17 plus-cosigned rekey_to entries", plusCosigned, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
-		{"zero rekey_to entry", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) + "," + zero }, "must not contain the zero address"},
-		{"repeated rekey_to entry", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) + "," + targets(1) }, "repeats"},
-		{"17 rekey_to entries", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
-		{"bad rekey_to entry", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "NOTANADDRESS" }, "rekey_to: invalid address"},
-		{"empty rekey_to item", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) + ",," + rekeyTarget(0xd0) }, "empty item"},
+		{"rekey_to with a refused rekey", refused, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
+		{"17 plus-cosigned rekey_to entries", plusCosigned, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
+		{"zero rekey_to entry", onlyThese, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(1) + "," + zero }, "must not contain the zero address"},
+		{"repeated rekey_to entry", onlyThese, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(1) + "," + targets(1) }, "repeats"},
+		{"17 rekey_to entries", onlyThese, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
+		{"bad rekey_to entry", onlyThese, func(p map[string]string) { p[boundary.ParameterRekeyTo] = "NOTANADDRESS" }, "rekey_to: invalid address"},
+		{"empty rekey_to item", onlyThese, func(p map[string]string) { p[boundary.ParameterRekeyTo] = targets(1) + ",," + rekeyTarget(0xd0) }, "empty item"},
 		// Key generation computes the root; no request can set it.
 		{"rekey-to list root", onlyThese, func(p map[string]string) { p[hostmeta.RekeyListRootParameter] = strings.Repeat("00", 32) }, "unknown parameter"},
-		{"zero recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = testAddress(1) + "," + zero }, "zero address"},
-		{"repeated recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = testAddress(1) + "," + testAddress(1) }, "repeats"},
-		{"bad recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = "NOTANADDRESS" }, "invalid address"},
-		{"bad encoding", spendingKey, func(p map[string]string) { p[plainhost.ParameterListEncoding] = "blinded" }, "list_encoding must be"},
+		{"zero recipient", spendingKey, func(p map[string]string) { p[boundary.ParameterRecipients] = testAddress(1) + "," + zero }, "zero address"},
+		{"repeated recipient", spendingKey, func(p map[string]string) { p[boundary.ParameterRecipients] = testAddress(1) + "," + testAddress(1) }, "repeats"},
+		{"bad recipient", spendingKey, func(p map[string]string) { p[boundary.ParameterRecipients] = "NOTANADDRESS" }, "invalid address"},
+		{"bad encoding", spendingKey, func(p map[string]string) { p[boundary.ParameterListEncoding] = "blinded" }, "list_encoding must be"},
 		{"inline too long", spendingKey, func(p map[string]string) {
-			p[plainhost.ParameterListEncoding] = plainhost.EncodingInline
-			p[plainhost.ParameterRecipients] = testRecipients(plainhost.InlineMax + 1)
+			p[boundary.ParameterListEncoding] = boundary.EncodingInline
+			p[boundary.ParameterRecipients] = testRecipients(plainhost.InlineMax + 1)
 		}, "inline encoding accepts at most 30"},
 		{"too many recipients", spendingKey, func(p map[string]string) {
-			p[plainhost.ParameterRecipients] = testRecipients(plainhost.RecipientsMax + 1)
+			p[boundary.ParameterRecipients] = testRecipients(plainhost.RecipientsMax + 1)
 		}, "maximum is 65536"},
 		// The admin key is gone: its parameter and its rekey authority are refused.
 		{"admin key parameter", spendingKey, func(p map[string]string) {
 			// Spelled in two parts so the retired-names scan in test/arch skips it.
 			p["bounded_"+"admin_public_key"] = hex.EncodeToString(bytes.Repeat([]byte{0x31}, 1793))
 		}, "unknown parameter"},
-		{"admin rekey authority", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = "admin_key" }, "rekey_authority must be"},
-		{"unresolved cosigner", cosignedOnlyThese, func(p map[string]string) { p[plainhost.ParameterCosigner] = "ops" }, "not resolved"},
+		{"admin rekey authority", spendingKey, func(p map[string]string) { p[boundary.ParameterRekeyAuthority] = "admin_key" }, "rekey_authority must be"},
+		{"unresolved cosigner", cosignedOnlyThese, func(p map[string]string) { p[boundary.ParameterCosigner] = "ops" }, "not resolved"},
 		{"teal", spendingKey, func(p map[string]string) { p["teal"] = "int 1" }, "unknown parameter"},
 		{"template", spendingKey, func(p map[string]string) { p["template"] = "x" }, "unknown parameter"},
 		// The fee ceiling is a whole number of microAlgos that fits a uint64.
-		{"max fee text", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "abc" }, "max_fee must be a whole number of microAlgos"},
-		{"negative max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "-1" }, "max_fee must be a whole number of microAlgos"},
-		{"signed max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "+1" }, "max_fee must be a whole number of microAlgos"},
-		{"fractional max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "1.5" }, "max_fee must be a whole number of microAlgos"},
-		{"hex max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "0x10" }, "max_fee must be a whole number of microAlgos"},
-		{"leading zero max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "010" }, "max_fee must be a whole number of microAlgos"},
-		{"max fee above uint64", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "18446744073709551616" }, "max_fee must be a whole number of microAlgos"},
-		{"empty max fee", spendingKey, func(p map[string]string) { p[plainhost.ParameterMaxFee] = "" }, "max_fee is empty"},
+		{"max fee text", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "abc" }, "max_fee must be a whole number of microAlgos"},
+		{"negative max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "-1" }, "max_fee must be a whole number of microAlgos"},
+		{"signed max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "+1" }, "max_fee must be a whole number of microAlgos"},
+		{"fractional max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "1.5" }, "max_fee must be a whole number of microAlgos"},
+		{"hex max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "0x10" }, "max_fee must be a whole number of microAlgos"},
+		{"leading zero max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "010" }, "max_fee must be a whole number of microAlgos"},
+		{"max fee above uint64", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "18446744073709551616" }, "max_fee must be a whole number of microAlgos"},
+		{"empty max fee", spendingKey, func(p map[string]string) { p[boundary.ParameterMaxFee] = "" }, "max_fee is empty"},
 		// It is a bounds parameter: alone it asks for bounds that name no transfer kind.
 		{"max fee without transfer kinds", spendingKey, func(p map[string]string) {
 			for name := range p {
-				if name != plainhost.ParameterRekeyAuthority {
+				if name != boundary.ParameterRekeyAuthority {
 					delete(p, name)
 				}
 			}
-			p[plainhost.ParameterMaxFee] = "20000"
+			p[boundary.ParameterMaxFee] = "20000"
 		}, "spend_effects is required"},
 	}
 	for _, b := range bases(t) {
@@ -510,11 +510,11 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 // out to leave it unset.
 func TestEmptyValuesAreRefused(t *testing.T) {
 	provider := falconHost(t)
-	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
+	cosigned := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner}
 	for _, name := range []string{
-		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
-		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority, plainhost.ParameterMaxFee,
-		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, hostmeta.CosignerPublicKeyParameter,
+		boundary.ParameterSpendEffects, boundary.ParameterRecipients, boundary.ParameterRecipientScope,
+		boundary.ParameterListEncoding, boundary.ParameterRekeyAuthority, boundary.ParameterMaxFee,
+		boundary.ParameterRekeyTo, boundary.ParameterCosigner, hostmeta.CosignerPublicKeyParameter,
 	} {
 		for _, empty := range []string{"", "  "} {
 			params := shapeRequest(cosigned, testRecipients(2))
@@ -532,7 +532,7 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 	}
 	// The fail-open cases the rule closes.
 	for name, params := range map[string]map[string]string{
-		"empty transfer kinds": {plainhost.ParameterSpendEffects: "", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused},
+		"empty transfer kinds": {boundary.ParameterSpendEffects: "", boundary.ParameterRekeyAuthority: boundary.RekeyRefused},
 	} {
 		if instance, err := provider.ResolveInstance(params); err == nil {
 			t.Fatalf("%s resolved to %+v", name, instance.Host)
@@ -542,23 +542,23 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 
 func TestEncodingThreshold(t *testing.T) {
 	provider := falconHost(t)
-	auto := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeySpendingKey}
+	auto := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeySpendingKey}
 	for _, test := range []struct {
 		count int
 		want  string
-	}{{1, plainhost.EncodingInline}, {plainhost.AutoInlineMax, plainhost.EncodingInline}, {plainhost.AutoInlineMax + 1, plainhost.EncodingMerkle}, {plainhost.RecipientsMax, plainhost.EncodingMerkle}} {
+	}{{1, boundary.EncodingInline}, {plainhost.AutoInlineMax, boundary.EncodingInline}, {plainhost.AutoInlineMax + 1, boundary.EncodingMerkle}, {plainhost.RecipientsMax, boundary.EncodingMerkle}} {
 		instance := resolveShape(t, provider, auto, testRecipients(test.count))
-		if got := instance.Values[plainhost.ParameterListEncoding]; got != test.want {
+		if got := instance.Values[boundary.ParameterListEncoding]; got != test.want {
 			t.Errorf("%d recipients encode as %s, want %s", test.count, got, test.want)
 		}
 	}
 	for _, explicit := range []struct {
 		encoding string
 		count    int
-	}{{plainhost.EncodingInline, plainhost.InlineMax}, {plainhost.EncodingMerkle, 1}} {
-		shape := plainhost.Shape{Spend: everyTransfer, Encoding: explicit.encoding, Rekey: plainhost.RekeySpendingKey}
+	}{{boundary.EncodingInline, plainhost.InlineMax}, {boundary.EncodingMerkle, 1}} {
+		shape := plainhost.Shape{Spend: everyTransfer, Encoding: explicit.encoding, Rekey: boundary.RekeySpendingKey}
 		instance := resolveShape(t, provider, shape, testRecipients(explicit.count))
-		if got := instance.Values[plainhost.ParameterListEncoding]; got != explicit.encoding {
+		if got := instance.Values[boundary.ParameterListEncoding]; got != explicit.encoding {
 			t.Errorf("explicit %s became %s", explicit.encoding, got)
 		}
 	}
@@ -566,10 +566,10 @@ func TestEncodingThreshold(t *testing.T) {
 
 func TestRequestsCanonicalize(t *testing.T) {
 	provider := falconHost(t)
-	base := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingAuto, Rekey: plainhost.RekeySpendingKey}
+	base := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingAuto, Rekey: boundary.RekeySpendingKey}
 	first := resolveShape(t, provider, base, testAddress(1)+","+testAddress(2)+","+testAddress(3))
 	reordered := shapeRequest(base, testAddress(3)+", "+testAddress(1)+","+testAddress(2))
-	reordered[plainhost.ParameterSpendEffects] = "asset_opt_in, pay,axfer"
+	reordered[boundary.ParameterSpendEffects] = "asset_opt_in, pay,axfer"
 	second, err := provider.ResolveInstance(reordered)
 	if err != nil {
 		t.Fatal(err)
@@ -577,7 +577,7 @@ func TestRequestsCanonicalize(t *testing.T) {
 	if first.BoundaryDigest != second.BoundaryDigest || first.Fingerprint != second.Fingerprint || !maps.Equal(first.Values, second.Values) {
 		t.Fatal("equivalent requests resolved differently")
 	}
-	if got := first.Values[plainhost.ParameterSpendEffects]; got != "pay,axfer,asset_opt_in" {
+	if got := first.Values[boundary.ParameterSpendEffects]; got != "pay,axfer,asset_opt_in" {
 		t.Fatalf("spend_effects = %q, want canonical order", got)
 	}
 }
@@ -591,17 +591,17 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 	if high >= low {
 		t.Fatal("fixture: the targets must sort one way as text and the other as bytes")
 	}
-	params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}, testRecipients(2))
-	params[plainhost.ParameterRekeyTo] = high + ", " + low
+	params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese}, testRecipients(2))
+	params[boundary.ParameterRekeyTo] = high + ", " + low
 	instance, err := provider.ResolveInstance(params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := instance.Values[plainhost.ParameterRekeyTo]; got != low+","+high {
+	if got := instance.Values[boundary.ParameterRekeyTo]; got != low+","+high {
 		t.Fatalf("rekey_to = %q, want canonical %q", got, low+","+high)
 	}
-	if instance.Values[plainhost.ParameterRekeyAuthority] != plainhost.RekeyOnlyThese {
-		t.Fatalf("rekey_authority = %q", instance.Values[plainhost.ParameterRekeyAuthority])
+	if instance.Values[boundary.ParameterRekeyAuthority] != boundary.RekeyOnlyThese {
+		t.Fatalf("rekey_authority = %q", instance.Values[boundary.ParameterRekeyAuthority])
 	}
 	if _, present := instance.Values[hostmeta.RekeyListRootParameter]; present {
 		t.Fatal("persisted values hold the rekey-to list root")
@@ -620,7 +620,7 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 			proofs = append(proofs, arg)
 		}
 	}
-	if len(proofs) != 1 || proofs[0].Name != "rekey_list_proof" || proofs[0].Parameter != plainhost.ParameterRekeyTo {
+	if len(proofs) != 1 || proofs[0].Name != "rekey_list_proof" || proofs[0].Parameter != boundary.ParameterRekeyTo {
 		t.Fatalf("rekey-list proof arguments = %+v", proofs)
 	}
 	slot := -1
@@ -648,7 +648,7 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 		t.Fatalf("persisted values resolved to another instance: %v", err)
 	}
 	// Without a recipient list it is not contained, whatever its rekey rule.
-	limits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true}, "")
+	limits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyOnlyThese, AnyRecipient: true}, "")
 	if limits.Host.Contained() {
 		t.Fatal("a limits-only only_these account reports itself contained")
 	}
@@ -657,7 +657,7 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 	for i := range full {
 		full[i] = rekeyTarget(byte(i + 1))
 	}
-	params[plainhost.ParameterRekeyTo] = strings.Join(full, ",")
+	params[boundary.ParameterRekeyTo] = strings.Join(full, ",")
 	if _, err := provider.ResolveInstance(params); err != nil {
 		t.Fatalf("a 16-entry list was refused: %v", err)
 	}
@@ -669,15 +669,15 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 	provider := falconHost(t)
 	for _, shape := range plainhost.Shapes() {
 		request := shapeRequest(shape, testRecipients(2))
-		request[plainhost.ParameterRekeyTo] = listedRekeyTo
+		request[boundary.ParameterRekeyTo] = listedRekeyTo
 		request[hostmeta.CosignerPublicKeyParameter] = testCosigner
 		values := provider.ComposerValuesForTest(shape, request)
-		for _, selector := range []string{plainhost.ParameterSpendEffects, plainhost.ParameterRekeyAuthority, plainhost.ParameterListEncoding, plainhost.ParameterRecipientScope} {
+		for _, selector := range []string{boundary.ParameterSpendEffects, boundary.ParameterRekeyAuthority, boundary.ParameterListEncoding, boundary.ParameterRecipientScope} {
 			if _, ok := values[selector]; ok {
 				t.Fatalf("%s: %s reached the composer", shape.Descriptor(), selector)
 			}
 		}
-		if _, ok := values[plainhost.ParameterRekeyTo]; ok != shape.HasRekeyList() {
+		if _, ok := values[boundary.ParameterRekeyTo]; ok != shape.HasRekeyList() {
 			t.Fatalf("%s: rekey_to reached the composer = %v", shape.Descriptor(), ok)
 		}
 		if _, ok := values[hostmeta.CosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
@@ -687,7 +687,7 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 		if _, ok := values[hostmeta.CosignerKeyTypeParameter]; ok {
 			t.Fatalf("%s: %s reached the composer", shape.Descriptor(), hostmeta.CosignerKeyTypeParameter)
 		}
-		if _, ok := values[plainhost.ParameterRecipients]; ok != (shape.Encoding != "") {
+		if _, ok := values[boundary.ParameterRecipients]; ok != (shape.Encoding != "") {
 			t.Fatalf("%s: recipients reached the composer = %v", shape.Descriptor(), ok)
 		}
 	}
@@ -702,7 +702,7 @@ func TestProviderHasNoRuntimeArguments(t *testing.T) {
 			t.Fatalf("%s: discovery added a cosigner to a request that named none", b.name)
 		}
 		// A bounds request names a cosigner the same way an overlays one does.
-		request := map[string]string{plainhost.ParameterCosigner: "ops", plainhost.ParameterSpendEffects: "pay"}
+		request := map[string]string{boundary.ParameterCosigner: "ops", boundary.ParameterSpendEffects: "pay"}
 		if components, ok := b.provider.CosignerComponentKeyTypes(request); !ok || !slices.Equal(components, plainhost.CosignerKeyTypes) {
 			t.Fatalf("%s: named cosigner reports %v, %v", b.name, components, ok)
 		}
@@ -712,7 +712,7 @@ func TestProviderHasNoRuntimeArguments(t *testing.T) {
 func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	hosts := bases(t)
 	provider := hosts[0].provider
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner}
 	digest := func(t *testing.T, mutate func(map[string]string)) string {
 		t.Helper()
 		params := shapeRequest(shape, testRecipients(3))
@@ -728,15 +728,15 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 		"cosigner key": func(p map[string]string) {
 			p[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 		},
-		"recipients": func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(4) },
-		"spend":      func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay" },
-		"encoding":   func(p map[string]string) { p[plainhost.ParameterListEncoding] = plainhost.EncodingMerkle },
+		"recipients": func(p map[string]string) { p[boundary.ParameterRecipients] = testRecipients(4) },
+		"spend":      func(p map[string]string) { p[boundary.ParameterSpendEffects] = "pay" },
+		"encoding":   func(p map[string]string) { p[boundary.ParameterListEncoding] = boundary.EncodingMerkle },
 		// The option is bound, not just the list: plus cosigned is the same
 		// entries with other rekeys open to the cosigner.
-		"plus cosigned": func(p map[string]string) { p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyPlusCosigned },
+		"plus cosigned": func(p map[string]string) { p[boundary.ParameterRekeyAuthority] = boundary.RekeyPlusCosigned },
 		"refused": func(p map[string]string) {
-			p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyRefused
-			delete(p, plainhost.ParameterRekeyTo)
+			p[boundary.ParameterRekeyAuthority] = boundary.RekeyRefused
+			delete(p, boundary.ParameterRekeyTo)
 		},
 		"no cosigner": func(p map[string]string) { delete(p, hostmeta.CosignerPublicKeyParameter) },
 	} {
@@ -757,11 +757,11 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 // The digest binds a rekey-to list's entries, not the order they were written in.
 func TestBoundaryDigestBindsTheRekeyToList(t *testing.T) {
 	provider := falconHost(t)
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese}
 	digest := func(rekeyTo string) string {
 		t.Helper()
 		params := shapeRequest(shape, testRecipients(2))
-		params[plainhost.ParameterRekeyTo] = rekeyTo
+		params[boundary.ParameterRekeyTo] = rekeyTo
 		instance, err := provider.ResolveInstance(params)
 		if err != nil {
 			t.Fatal(err)
@@ -846,7 +846,7 @@ func TestShapesFollowTheHostSaltStyle(t *testing.T) {
 	}
 	b := bases(t)[0]
 	client := characterizationAlgod(t)
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}
 	for name, test := range map[string]struct {
 		provider   *plainhost.Provider
 		autoSalted bool
@@ -870,7 +870,7 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 	if _, err := provider.StoredFingerprint(nil, nil); err == nil {
 		t.Fatal("accepted missing metadata")
 	}
-	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
+	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}, testRecipients(1))
 	custom := hostmeta.Clone(instance.Host)
 	custom.Bounds.Layer3Policy = hostmeta.Layer3PolicyCustom
 	if _, err := provider.StoredFingerprint(nil, custom); err == nil {
@@ -894,7 +894,7 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 // as a known one.
 func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	provider := falconHost(t)
-	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner, AnyRecipient: true}, "")
+	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner, AnyRecipient: true}, "")
 	if cosignedLimits.Host.Rekey != hostmeta.RekeyRefused || !cosignedLimits.Host.RefusesRekeys() || cosignedLimits.Host.RekeyList == nil {
 		t.Fatalf("a cosigned only_these limits-only account stored rekey %q, list %v", cosignedLimits.Host.Rekey, cosignedLimits.Host.RekeyList)
 	}
@@ -906,11 +906,11 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 		want   plainhost.Shape
 	}{
 		"plus cosigned": {func(m *hostmeta.Metadata) { m.Rekey = hostmeta.RekeySpendingKey },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true}},
 		"cosigned spending key": {func(m *hostmeta.Metadata) { m.Rekey, m.RekeyList = hostmeta.RekeySpendingKey, nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true}},
 		"refusing with no list": {func(m *hostmeta.Metadata) { m.RekeyList = nil },
-			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}},
+			plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}},
 	} {
 		stored := hostmeta.Clone(cosignedLimits.Host)
 		test.mutate(stored)
@@ -922,12 +922,12 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 			t.Fatalf("a stored %s limits-only account did not select %s", name, test.want.Descriptor())
 		}
 	}
-	listed := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true}, "")
+	listed := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyOnlyThese, AnyRecipient: true}, "")
 	// A setting the contract does not know, such as the retired admin-key rekey,
 	// or no setting at all, is refused rather than read as either known one, with
 	// a rekey-to list or without.
 	for _, metadata := range []*hostmeta.Metadata{cosignedLimits.Host, listed.Host} {
-		for _, rekey := range []hostmeta.RekeySetting{"admin_key", "none", "", hostmeta.RekeySetting(plainhost.RekeyOnlyThese)} {
+		for _, rekey := range []hostmeta.RekeySetting{"admin_key", "none", "", hostmeta.RekeySetting(boundary.RekeyOnlyThese)} {
 			stored := hostmeta.Clone(metadata)
 			stored.Rekey = rekey
 			if _, err := provider.StoredFingerprint(nil, stored); err == nil || !strings.Contains(err.Error(), "rekey setting") {
@@ -935,13 +935,13 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 			}
 		}
 	}
-	spending := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(2))
+	spending := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}, testRecipients(2))
 	if spending.Host.Rekey != hostmeta.RekeySpendingKey {
 		t.Fatalf("a spending-key shape stored rekey %q", spending.Host.Rekey)
 	}
 	// The same account refusing rekeys with no list and no cosigner is the refused
 	// shape, which the grammar now offers.
-	refusedShape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+	refusedShape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused}
 	stored := hostmeta.Clone(spending.Host)
 	stored.Rekey = hostmeta.RekeyRefused
 	if got, err := provider.StoredFingerprint(nil, stored); err != nil || got != provider.ShapeFingerprintForTest(refusedShape) || got == spending.Fingerprint {
@@ -949,7 +949,7 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	}
 	// With a rekey-to list it is the only_these shape, which carries a different
 	// fingerprint.
-	onlyThese := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}, testRecipients(2))
+	onlyThese := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese}, testRecipients(2))
 	stored.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: 4}
 	fingerprint, err := provider.StoredFingerprint(nil, stored)
 	if err != nil {
@@ -976,7 +976,7 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 // has no shape to report.
 func TestStoredFingerprintRefusesAListBesideAnotherRekey(t *testing.T) {
 	for _, b := range bases(t) {
-		shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}
+		shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese}
 		instance := resolveShape(t, b.provider, shape, testAddress(1))
 		if got, err := b.provider.StoredFingerprint(nil, instance.Host); err != nil || got != instance.Fingerprint {
 			t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", b.name, got, err, instance.Fingerprint)
@@ -1022,7 +1022,7 @@ rekey:
 		t.Fatal(err)
 	}
 	for _, b := range bases(t) {
-		direct := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese},
+		direct := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese},
 			testAddress(1)+","+testAddress(2))
 		for name, params := range map[string]map[string]string{"block style": loaded, "flow style": flow.CreationParameters()} {
 			fromFile, err := b.provider.ResolveInstance(params)
@@ -1048,8 +1048,8 @@ cosigner: ops-cosigner
 		t.Fatal(err)
 	}
 	params := file.CreationParameters()
-	if params[plainhost.ParameterCosigner] != "ops-cosigner" {
-		t.Fatalf("cosigner = %q", params[plainhost.ParameterCosigner])
+	if params[boundary.ParameterCosigner] != "ops-cosigner" {
+		t.Fatalf("cosigner = %q", params[boundary.ParameterCosigner])
 	}
 	// The host refuses the name until the signer resolves it to a key.
 	if _, err := falconHost(t).ResolveInstance(params); err == nil || !strings.Contains(err.Error(), "not resolved") {
@@ -1217,8 +1217,8 @@ func TestBoundaryFileFeeCeiling(t *testing.T) {
 	directory := t.TempDir()
 	for _, b := range bases(t) {
 		direct, err := b.provider.ResolveInstance(map[string]string{
-			plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRecipients: recipient,
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterMaxFee: "20000",
+			boundary.ParameterSpendEffects: "pay", boundary.ParameterRecipients: recipient,
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey, boundary.ParameterMaxFee: "20000",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -1269,7 +1269,7 @@ func TestBoundaryFileReachesTheLiftedShapes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", b.name, err)
 		}
-		want := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+		want := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused}
 		if instance.Fingerprint != b.provider.ShapeFingerprintForTest(want) || !instance.Host.Contained() {
 			t.Fatalf("%s: a refused file resolved to %+v", b.name, instance.Host)
 		}
@@ -1358,11 +1358,11 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 				hasCosigner := false
 				for _, field := range preset.Fields {
 					switch field {
-					case plainhost.ParameterRecipients:
+					case boundary.ParameterRecipients:
 						form[field] = strings.Join(recipients, ",")
-					case plainhost.ParameterRekeyTo:
+					case boundary.ParameterRekeyTo:
 						form[field] = strings.Join(rekeyTo, ",")
-					case plainhost.ParameterCosigner:
+					case boundary.ParameterCosigner:
 						hasCosigner = true
 					}
 				}
@@ -1374,10 +1374,10 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 					t.Fatal(err)
 				}
 				if hasCosigner {
-					if fromFile[plainhost.ParameterCosigner] != "ops-cosigner" {
-						t.Fatalf("file cosigner = %q", fromFile[plainhost.ParameterCosigner])
+					if fromFile[boundary.ParameterCosigner] != "ops-cosigner" {
+						t.Fatalf("file cosigner = %q", fromFile[boundary.ParameterCosigner])
 					}
-					delete(fromFile, plainhost.ParameterCosigner)
+					delete(fromFile, boundary.ParameterCosigner)
 					fromFile[hostmeta.CosignerPublicKeyParameter] = testCosigner
 					form[hostmeta.CosignerPublicKeyParameter] = testCosigner
 				}
@@ -1395,7 +1395,7 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 				if second.Host.Contract != hostmeta.BoundedContract {
 					t.Fatalf("a preset resolved to contract %s", second.Host.Contract)
 				}
-				if slices.Contains(preset.Fields, plainhost.ParameterRekeyTo) != (second.Host.RekeyList != nil) {
+				if slices.Contains(preset.Fields, boundary.ParameterRekeyTo) != (second.Host.RekeyList != nil) {
 					t.Fatalf("rekey-to list = %v for fields %v", second.Host.RekeyList, preset.Fields)
 				}
 			})
@@ -1410,19 +1410,19 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		name, rekey, encoding string
 		fields                []string
 	}{
-		{"allowlist", plainhost.RekeySpendingKey, plainhost.EncodingAuto, []string{plainhost.ParameterRecipients}},
-		{"locked-allowlist", plainhost.RekeyOnlyThese, plainhost.EncodingAuto, []string{plainhost.ParameterRecipients, plainhost.ParameterRekeyTo}},
-		{"corridor", plainhost.RekeyOnlyThese, plainhost.EncodingMerkle, []string{plainhost.ParameterRecipients, plainhost.ParameterRekeyTo, plainhost.ParameterCosigner}},
+		{"allowlist", boundary.RekeySpendingKey, boundary.EncodingAuto, []string{boundary.ParameterRecipients}},
+		{"locked-allowlist", boundary.RekeyOnlyThese, boundary.EncodingAuto, []string{boundary.ParameterRecipients, boundary.ParameterRekeyTo}},
+		{"corridor", boundary.RekeyOnlyThese, boundary.EncodingMerkle, []string{boundary.ParameterRecipients, boundary.ParameterRekeyTo, boundary.ParameterCosigner}},
 	} {
 		index := slices.IndexFunc(presets, func(preset boundary.Preset) bool { return preset.Name == test.name })
 		if index < 0 {
 			t.Fatalf("no preset %s", test.name)
 		}
 		preset := presets[index]
-		if preset.Fixed[plainhost.ParameterSpendEffects] != joinEffects(everyTransfer) {
-			t.Errorf("%s spend = %q", test.name, preset.Fixed[plainhost.ParameterSpendEffects])
+		if preset.Fixed[boundary.ParameterSpendEffects] != joinEffects(everyTransfer) {
+			t.Errorf("%s spend = %q", test.name, preset.Fixed[boundary.ParameterSpendEffects])
 		}
-		if preset.Fixed[plainhost.ParameterRekeyAuthority] != test.rekey || preset.Fixed[plainhost.ParameterListEncoding] != test.encoding {
+		if preset.Fixed[boundary.ParameterRekeyAuthority] != test.rekey || preset.Fixed[boundary.ParameterListEncoding] != test.encoding {
 			t.Errorf("%s fixed = %v", test.name, preset.Fixed)
 		}
 		if strings.Join(preset.Fields, ",") != strings.Join(test.fields, ",") {
@@ -1430,10 +1430,10 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 		}
 		// Each preset states the default fee ceiling, which its sample file writes
 		// directly after the transfer kinds and which parses back as written.
-		if got := preset.Fixed[plainhost.ParameterMaxFee]; got != "10000" || got != strconv.FormatUint(plainhost.DefaultMaxFee, 10) {
+		if got := preset.Fixed[boundary.ParameterMaxFee]; got != "10000" || got != strconv.FormatUint(boundary.DefaultMaxFee, 10) {
 			t.Errorf("%s max_fee = %q", test.name, got)
 		}
-		if slices.Contains(preset.Fields, plainhost.ParameterMaxFee) {
+		if slices.Contains(preset.Fields, boundary.ParameterMaxFee) {
 			t.Errorf("%s asks the operator for max_fee", test.name)
 		}
 		sample := preset.SampleBoundaryFile(boundary.SampleValues{
@@ -1447,7 +1447,7 @@ func TestPresetChoicesAreFrozen(t *testing.T) {
 			t.Fatalf("%s sample file: %v\n%s", test.name, err, sample)
 		}
 		parameters := file.CreationParameters()
-		if got := parameters[plainhost.ParameterMaxFee]; got != "10000" {
+		if got := parameters[boundary.ParameterMaxFee]; got != "10000" {
 			t.Errorf("%s sample file parses max_fee as %q", test.name, got)
 		}
 		for name, value := range preset.Fixed {
@@ -1477,7 +1477,7 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 	for _, b := range bases(t) {
 		t.Run(b.name, func(t *testing.T) {
 			provider := b.provider
-			params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}, testRecipients(2))
+			params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyOnlyThese}, testRecipients(2))
 			instance, err := provider.ResolveInstance(params)
 			if err != nil {
 				t.Fatal(err)
@@ -1493,7 +1493,7 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 				t.Fatal("PrepareRekeyList changed the request it was given")
 			}
 			root := prepared[hostmeta.RekeyListRootParameter]
-			want, err := composeddsa.RekeyListRootFor(testListKey, map[string]string{plainhost.ParameterRekeyTo: listedRekeyTo})
+			want, err := composeddsa.RekeyListRootFor(testListKey, map[string]string{boundary.ParameterRekeyTo: listedRekeyTo})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1546,7 +1546,7 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 				t.Fatalf("stored fingerprint %s, instance %s", stored, instance.Fingerprint)
 			}
 			// A shape without a list has no root to add.
-			plain := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(2))
+			plain := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}, testRecipients(2))
 			unchanged, err := provider.PrepareRekeyList(testListKey, plain)
 			if err != nil {
 				t.Fatal(err)
@@ -1560,7 +1560,7 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 
 func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 	for _, b := range bases(t) {
-		params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
+		params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}, testRecipients(1))
 		_, err := b.provider.BuildHostMetadata(b.spendingKey, params, make([]byte, 10_000_000))
 		if err == nil || !strings.Contains(err.Error(), "resource limits") {
 			t.Fatalf("%s: BuildHostMetadata() error = %v", b.name, err)
@@ -1573,7 +1573,7 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 		// program too large for a group is still refused at any ceiling.
 		for _, ceiling := range []uint64{0, 1_000, 20_000} {
 			low := maps.Clone(params)
-			low[plainhost.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
+			low[boundary.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
 			metadata, err := b.provider.BuildHostMetadata(b.spendingKey, low, make([]byte, 3_000))
 			if err != nil {
 				t.Fatalf("%s: ceiling %d was refused: %v", b.name, ceiling, err)
@@ -1590,7 +1590,7 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 
 func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	provider := falconHost(t)
-	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
+	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey}, testRecipients(1))
 	opcodes := provider.HostLogicSigOpcodeProfile()
 	if err := plainhost.CheckResources(instance.Host, opcodes, 3_000); err != nil {
 		t.Fatalf("an ordinary program was refused: %v", err)
@@ -1619,12 +1619,12 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 // feeCeilingShapes are a few shapes across the grammar: each policy, each rekey
 // setting, with and without a cosigner.
 var feeCeilingShapes = []plainhost.Shape{
-	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey},
-	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese},
-	{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner},
-	{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
-	{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
-	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn}, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true},
+	{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeySpendingKey},
+	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyOnlyThese},
+	{Spend: everyTransfer, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner},
+	{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner},
+	{Spend: everyTransfer, Rekey: boundary.RekeyRefused, AnyRecipient: true},
+	{Spend: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn}, Rekey: boundary.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true},
 }
 
 // feeCheck is the fee ceiling as a program states it.
@@ -1663,10 +1663,10 @@ func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, persisted := want.Values[plainhost.ParameterMaxFee]; persisted {
+			if _, persisted := want.Values[boundary.ParameterMaxFee]; persisted {
 				t.Fatalf("%s %s: the default ceiling is persisted", b.name, shape.Descriptor())
 			}
-			if want.Host.FeeCeiling() == nil || *want.Host.FeeCeiling() != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
+			if want.Host.FeeCeiling() == nil || *want.Host.FeeCeiling() != boundary.DefaultMaxFee || boundary.DefaultMaxFee != 10_000 {
 				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Host.FeeCeiling())
 			}
 			if want.Fingerprint != b.provider.ShapeFingerprintForTest(shape) {
@@ -1678,7 +1678,7 @@ func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
 			}
 			for _, spelling := range []string{"10000", " 10000 "} {
 				named := maps.Clone(absent)
-				named[plainhost.ParameterMaxFee] = spelling
+				named[boundary.ParameterMaxFee] = spelling
 				got, err := b.provider.ResolveInstance(named)
 				if err != nil {
 					t.Fatalf("%s %s max_fee=%q: %v", b.name, shape.Descriptor(), spelling, err)
@@ -1718,13 +1718,13 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				t.Fatal(err)
 			}
 			standardTEAL := shapeTEAL(t, b, absent)
-			seen := map[string]uint64{standard.Fingerprint: plainhost.DefaultMaxFee}
-			digests := map[string]uint64{standard.BoundaryDigest: plainhost.DefaultMaxFee}
+			seen := map[string]uint64{standard.Fingerprint: boundary.DefaultMaxFee}
+			digests := map[string]uint64{standard.BoundaryDigest: boundary.DefaultMaxFee}
 			for _, ceiling := range []uint64{0, 1, 9_999, 10_001, 20_000, hostmeta.MaxFeeLimit} {
 				name := fmt.Sprintf("%s %s max_fee=%d", b.name, shape.Descriptor(), ceiling)
 				canonical := strconv.FormatUint(ceiling, 10)
 				params := maps.Clone(absent)
-				params[plainhost.ParameterMaxFee] = " " + canonical + " "
+				params[boundary.ParameterMaxFee] = " " + canonical + " "
 				instance, err := b.provider.ResolveInstance(params)
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
@@ -1732,11 +1732,11 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				if err := b.provider.ValidateCreationParams(params); err != nil {
 					t.Fatalf("%s: ValidateCreationParams() error = %v", name, err)
 				}
-				if got := instance.Values[plainhost.ParameterMaxFee]; got != canonical {
+				if got := instance.Values[boundary.ParameterMaxFee]; got != canonical {
 					t.Fatalf("%s: persisted max_fee = %q", name, got)
 				}
 				withoutFee := maps.Clone(instance.Values)
-				delete(withoutFee, plainhost.ParameterMaxFee)
+				delete(withoutFee, boundary.ParameterMaxFee)
 				if !maps.Equal(withoutFee, standard.Values) {
 					t.Fatalf("%s: the ceiling changed another value: %v, want %v", name, withoutFee, standard.Values)
 				}
@@ -1748,7 +1748,7 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				}
 				// Apart from the ceiling it is the default account's contract.
 				sameButFee := hostmeta.Clone(instance.Host)
-				sameButFee.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
+				sameButFee.Bounds.MaxFee = new(boundary.DefaultMaxFee)
 				if !reflect.DeepEqual(sameButFee, hostmeta.Clone(standard.Host)) {
 					t.Fatalf("%s: the contract differs beyond the ceiling", name)
 				}
@@ -1767,10 +1767,10 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				}
 
 				teal := shapeTEAL(t, b, params)
-				if strings.Count(teal, feeCheck(ceiling)) != 1 || strings.Contains(teal, feeCheck(plainhost.DefaultMaxFee)) {
+				if strings.Count(teal, feeCheck(ceiling)) != 1 || strings.Contains(teal, feeCheck(boundary.DefaultMaxFee)) {
 					t.Fatalf("%s: the program does not check the fee against %d alone:\n%s", name, ceiling, teal)
 				}
-				if strings.Replace(teal, feeCheck(ceiling), feeCheck(plainhost.DefaultMaxFee), 1) != standardTEAL {
+				if strings.Replace(teal, feeCheck(ceiling), feeCheck(boundary.DefaultMaxFee), 1) != standardTEAL {
 					t.Fatalf("%s: the program differs from the default one beyond the fee check", name)
 				}
 
@@ -1829,11 +1829,11 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 // A provider that first meets an account through its stored metadata, as a
 // restarted signer does, reports the fingerprint the generating provider gave.
 func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyOnlyThese, Cosigner: falconCosigner}
 	generating, restarted := bases(t), bases(t)
 	for i, b := range generating {
 		params := shapeRequest(shape, testRecipients(2))
-		params[plainhost.ParameterMaxFee] = "20000"
+		params[boundary.ParameterMaxFee] = "20000"
 		instance, err := b.provider.ResolveInstance(params)
 		if err != nil {
 			t.Fatal(err)
@@ -1848,7 +1848,7 @@ func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
 		}
 		// And it is not the default-ceiling account's.
 		standard := hostmeta.Clone(instance.Host)
-		standard.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
+		standard.Bounds.MaxFee = new(boundary.DefaultMaxFee)
 		if def, err := fresh.StoredFingerprint(nil, standard); err != nil || def == got || def != fresh.ShapeFingerprintForTest(shape) {
 			t.Fatalf("%s: StoredFingerprint(default) = %q, %v", b.name, def, err)
 		}
@@ -1860,10 +1860,10 @@ func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
 // built again after it was dropped is the same program.
 func TestCustomFeeCeilingsRebuildTheSame(t *testing.T) {
 	provider := falconHost(t)
-	shape := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: plainhost.RekeyRefused, AnyRecipient: true}
+	shape := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: boundary.RekeyRefused, AnyRecipient: true}
 	resolve := func(ceiling int) *lsigprovider.Instance {
 		params := shapeRequest(shape, "")
-		params[plainhost.ParameterMaxFee] = strconv.Itoa(ceiling)
+		params[boundary.ParameterMaxFee] = strconv.Itoa(ceiling)
 		instance, err := provider.ResolveInstance(params)
 		if err != nil {
 			t.Fatal(err)
@@ -1878,7 +1878,7 @@ func TestCustomFeeCeilingsRebuildTheSame(t *testing.T) {
 		t.Fatalf("a fresh provider caches %d custom programs", got)
 	}
 	// The default ceiling is the grammar's own program, never a cached one.
-	resolve(int(plainhost.DefaultMaxFee))
+	resolve(int(boundary.DefaultMaxFee))
 	if got := provider.CustomShapeCountForTest(); got != 0 {
 		t.Fatalf("the default ceiling cached %d programs", got)
 	}
@@ -1920,7 +1920,7 @@ func TestCustomFeeCeilingsRebuildTheSame(t *testing.T) {
 	fresh := falconHost(t)
 	for _, i := range []int{0, extra, capacity + extra - 1} {
 		params := shapeRequest(shape, "")
-		params[plainhost.ParameterMaxFee] = strconv.Itoa(first + i)
+		params[boundary.ParameterMaxFee] = strconv.Itoa(first + i)
 		instance, err := fresh.ResolveInstance(params)
 		if err != nil {
 			t.Fatal(err)
@@ -1939,12 +1939,12 @@ func TestCustomFeeCeilingsResolveConcurrently(t *testing.T) {
 	const distinct, repeats = 24, 6
 	for _, b := range bases(t) {
 		shapes := []plainhost.Shape{
-			{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: plainhost.RekeyRefused, AnyRecipient: true},
-			{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
+			{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Rekey: boundary.RekeyRefused, AnyRecipient: true},
+			{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner},
 		}
 		requestFor := func(shape plainhost.Shape, ceiling int) map[string]string {
 			params := shapeRequest(shape, testRecipients(2))
-			params[plainhost.ParameterMaxFee] = strconv.Itoa(ceiling)
+			params[boundary.ParameterMaxFee] = strconv.Itoa(ceiling)
 			return params
 		}
 		// What each request resolves to alone, on a provider of its own.
@@ -2027,7 +2027,7 @@ func TestFeeCeilingWarning(t *testing.T) {
 				warns   bool
 			}{{"0", true}, {"1", true}, {"999", true}, {"10000", false}, {"20000", false}, {"9007199254740991", false}} {
 				params := shapeRequest(shape, testRecipients(2))
-				params[plainhost.ParameterMaxFee] = test.ceiling
+				params[boundary.ParameterMaxFee] = test.ceiling
 				instance, err := b.provider.ResolveInstance(params)
 				if err != nil {
 					t.Fatalf("%s max_fee=%s: %v", name, test.ceiling, err)
@@ -2068,7 +2068,7 @@ func TestFeeCeilingWarning(t *testing.T) {
 		}
 		// An account with no bounds has no ceiling to warn about, and no parameters
 		// at all make the plain program.
-		for _, params := range []map[string]string{nil, request(plainhost.RekeyOnlyThese)} {
+		for _, params := range []map[string]string{nil, request(boundary.RekeyOnlyThese)} {
 			if warnings := creationWarnings(t, b.provider, params); len(warnings) != 0 {
 				t.Fatalf("%s: an account without bounds warns: %v", b.name, warnings)
 			}
@@ -2081,8 +2081,8 @@ func TestFeeCeilingWarning(t *testing.T) {
 // network's charge for the bytes beyond them. A Falcon signature alone needs
 // two transactions; an Ed25519 one needs a second only beside a cosigner's.
 func TestFeeCeilingWarningThreshold(t *testing.T) {
-	uncosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, AnyRecipient: true}
-	cosigned := plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}
+	uncosigned := plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyRefused, AnyRecipient: true}
+	cosigned := plainhost.Shape{Spend: everyTransfer, Rekey: boundary.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}
 	hosts := bases(t)
 	for _, test := range []struct {
 		base      base
@@ -2097,7 +2097,7 @@ func TestFeeCeilingWarningThreshold(t *testing.T) {
 		name := test.base.name + " " + test.shape.Descriptor()
 		resolve := func(ceiling uint64) []string {
 			params := shapeRequest(test.shape, "")
-			params[plainhost.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
+			params[boundary.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
 			return creationWarnings(t, test.base.provider, params)
 		}
 		if warnings := resolve(test.threshold); len(warnings) != 0 {
@@ -2141,14 +2141,14 @@ func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
 		// the warning just below it names that cost for the spend.
 		threshold := func(encoding string, recipients int, want uint64) {
 			t.Helper()
-			shape := plainhost.Shape{Spend: everyTransfer, Encoding: encoding, Rekey: plainhost.RekeyRefused, Cosigner: test.cosigner}
+			shape := plainhost.Shape{Spend: everyTransfer, Encoding: encoding, Rekey: boundary.RekeyRefused, Cosigner: test.cosigner}
 			name := fmt.Sprintf("%s cosigner=%q %s, %d recipients", test.base.name, test.cosigner, encoding, recipients)
 			params := shapeRequest(shape, testRecipients(recipients))
-			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want, 10)
+			params[boundary.ParameterMaxFee] = strconv.FormatUint(want, 10)
 			if warnings := creationWarnings(t, test.base.provider, params); len(warnings) != 0 {
 				t.Fatalf("%s: a ceiling of %d warns: %v", name, want, warnings)
 			}
-			params[plainhost.ParameterMaxFee] = strconv.FormatUint(want-1, 10)
+			params[boundary.ParameterMaxFee] = strconv.FormatUint(want-1, 10)
 			warnings := creationWarnings(t, test.base.provider, params)
 			prefix := fmt.Sprintf("Fee limit %d is too low to pay alone. A transaction on its own costs more: spend (at least %d). ", want-1, want)
 			if len(warnings) != 1 || !strings.HasPrefix(warnings[0], prefix) {
@@ -2159,28 +2159,28 @@ func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
 				t.Fatalf("%s: ResolveInstance() error = %v", name, err)
 			}
 		}
-		threshold(plainhost.EncodingInline, 1, test.inlineOne)
-		threshold(plainhost.EncodingInline, plainhost.InlineMax, test.inlineFull)
+		threshold(boundary.EncodingInline, 1, test.inlineOne)
+		threshold(boundary.EncodingInline, plainhost.InlineMax, test.inlineFull)
 		if test.inlineFull < test.inlineOne {
 			t.Fatalf("%s cosigner=%v: a longer inline list lowers the bound", test.base.name, test.cosigner)
 		}
 		// A Merkle list of the same sizes, and of more than inline can hold.
 		for _, recipients := range []int{1, plainhost.InlineMax, plainhost.InlineMax + 34} {
-			threshold(plainhost.EncodingMerkle, recipients, test.merkle)
+			threshold(boundary.EncodingMerkle, recipients, test.merkle)
 		}
 		// Auto is whichever encoding it resolves to: inline up to its limit,
 		// Merkle past it.
-		threshold(plainhost.EncodingAuto, 1, test.inlineOne)
-		threshold(plainhost.EncodingAuto, plainhost.AutoInlineMax+1, test.merkle)
-		threshold(plainhost.EncodingAuto, plainhost.InlineMax, test.merkle)
+		threshold(boundary.EncodingAuto, 1, test.inlineOne)
+		threshold(boundary.EncodingAuto, plainhost.AutoInlineMax+1, test.merkle)
+		threshold(boundary.EncodingAuto, plainhost.InlineMax, test.merkle)
 	}
 
 	// An Ed25519 account alone, at one minimum fee: the bound does not move with
 	// the list, so a ceiling of 1,000 warns of nothing at either size.
 	for _, recipients := range []int{1, plainhost.InlineMax} {
-		shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+		shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused}
 		params := shapeRequest(shape, testRecipients(recipients))
-		params[plainhost.ParameterMaxFee] = "1000"
+		params[boundary.ParameterMaxFee] = "1000"
 		if warnings := creationWarnings(t, hosts[1].provider, params); len(warnings) != 0 {
 			t.Fatalf("ed25519, %d inline recipients, max_fee=1000: warnings = %v", recipients, warnings)
 		}
@@ -2190,15 +2190,15 @@ func TestFeeCeilingWarningCountsAnInlineList(t *testing.T) {
 // The advice is worked out from the request, so a request the provider refuses
 // has none to give: it returns the refusal, not an empty list.
 func TestCreationWarningsRefuseWhatTheProviderRefuses(t *testing.T) {
-	shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
+	shape := plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingInline, Rekey: boundary.RekeyRefused}
 	for _, b := range bases(t) {
 		for name, mutate := range map[string]func(map[string]string){
-			"an empty parameter":     func(p map[string]string) { p[plainhost.ParameterMaxFee] = " " },
-			"a ceiling not a number": func(p map[string]string) { p[plainhost.ParameterMaxFee] = "010" },
-			"a ceiling too large":    func(p map[string]string) { p[plainhost.ParameterMaxFee] = "9007199254740992" },
-			"an unknown transfer":    func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "appl" },
+			"an empty parameter":     func(p map[string]string) { p[boundary.ParameterMaxFee] = " " },
+			"a ceiling not a number": func(p map[string]string) { p[boundary.ParameterMaxFee] = "010" },
+			"a ceiling too large":    func(p map[string]string) { p[boundary.ParameterMaxFee] = "9007199254740992" },
+			"an unknown transfer":    func(p map[string]string) { p[boundary.ParameterSpendEffects] = "appl" },
 			"too long an inline list": func(p map[string]string) {
-				p[plainhost.ParameterRecipients] = testRecipients(plainhost.InlineMax + 1)
+				p[boundary.ParameterRecipients] = testRecipients(plainhost.InlineMax + 1)
 			},
 		} {
 			params := shapeRequest(shape, testRecipients(2))
@@ -2211,7 +2211,7 @@ func TestCreationWarningsRefuseWhatTheProviderRefuses(t *testing.T) {
 		}
 		// A request with an overlay but no bounds is valid and has no advice, even
 		// where the overlay itself would be refused: that is ResolveInstance's to say.
-		if warnings, err := b.provider.CreationWarnings(map[string]string{plainhost.ParameterRekeyAuthority: "nobody"}); err != nil || warnings != nil {
+		if warnings, err := b.provider.CreationWarnings(map[string]string{boundary.ParameterRekeyAuthority: "nobody"}); err != nil || warnings != nil {
 			t.Fatalf("%s: CreationWarnings(no bounds) = %v, %v", b.name, warnings, err)
 		}
 	}
@@ -2280,7 +2280,7 @@ func TestMerkleListShapesShareOneCombine(t *testing.T) {
 			if definitions != 1 {
 				t.Fatalf("%s %s: %d combine subroutines, want one", b.name, shape.Descriptor(), definitions)
 			}
-			merkle := shape.Encoding == plainhost.EncodingMerkle
+			merkle := shape.Encoding == boundary.EncodingMerkle
 			if strings.Contains(teal, "__aplane_bounded1_rekey_list_combine") == merkle {
 				t.Fatalf("%s %s: merkle %v, but the list's own combine is present %v", b.name, shape.Descriptor(), merkle, !merkle)
 			}
@@ -2373,7 +2373,7 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 				switch {
 				case shape.AnyRecipient:
 					pinned = rendered
-				case shape.Rekey != plainhost.RekeySpendingKey || shape.Cosigner != "":
+				case shape.Rekey != boundary.RekeySpendingKey || shape.Cosigner != "":
 					continue
 				}
 				resolved, err := b.provider.ResolveInstance(params)
@@ -2384,7 +2384,7 @@ func TestBoundsFingerprintGoldens(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			full := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingMerkle, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner},
+			full := resolveShape(t, b.provider, plainhost.Shape{Spend: everyTransfer, Encoding: boundary.EncodingMerkle, Rekey: boundary.RekeyPlusCosigned, Cosigner: falconCosigner},
 				testAddress(1)+","+testAddress(2))
 			golden := want[b.name]
 			for _, check := range []struct{ name, got, want string }{

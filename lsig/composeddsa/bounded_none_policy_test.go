@@ -100,9 +100,6 @@ func TestNonePolicyComposerRejections(t *testing.T) {
 			}
 		})
 	}
-	if composeddsa.Layer3PolicyNone != hostmeta.Layer3PolicyNone {
-		t.Fatal("generation and storage disagree on the policy name")
-	}
 }
 
 // Only the general type offers a limits-only account: every route by which a

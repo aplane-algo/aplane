@@ -13,6 +13,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
@@ -20,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativefalcon "github.com/aplane-algo/aplane/internal/signing/falcon1024"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 // boundedHostKeyType is the Falcon plain host, which takes bounds as well as
@@ -46,19 +46,19 @@ func generalParams(rekey string) map[string]string {
 	var recipient types.Address
 	recipient[31] = 7
 	params := map[string]string{
-		plainhost.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
-		plainhost.ParameterRekeyAuthority: rekey,
-		plainhost.ParameterRecipients:     recipient.String(),
+		boundary.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
+		boundary.ParameterRekeyAuthority: rekey,
+		boundary.ParameterRecipients:     recipient.String(),
 	}
-	if rekey == plainhost.RekeyOnlyThese || rekey == plainhost.RekeyPlusCosigned {
-		params[plainhost.ParameterRekeyTo] = listedTarget.String()
+	if rekey == boundary.RekeyOnlyThese || rekey == boundary.RekeyPlusCosigned {
+		params[boundary.ParameterRekeyTo] = listedTarget.String()
 	}
 	return params
 }
 
 func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	params := generalParams(plainhost.RekeySpendingKey)
+	params := generalParams(boundary.RekeySpendingKey)
 	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -69,7 +69,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	if prepared.BoundaryDigest == "" {
 		t.Fatal("prepared request has no boundary digest")
 	}
-	if prepared.Parameters[plainhost.ParameterListEncoding] != plainhost.EncodingInline {
+	if prepared.Parameters[boundary.ParameterListEncoding] != boundary.EncodingInline {
 		t.Fatalf("auto encoding was not resolved: %v", prepared.Parameters)
 	}
 	assertNoKeys(t, service)
@@ -79,7 +79,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateReviewedKey() error = %#v", err)
 	}
-	if result.Parameters[plainhost.ParameterRekeyAuthority] != plainhost.RekeySpendingKey {
+	if result.Parameters[boundary.ParameterRekeyAuthority] != boundary.RekeySpendingKey {
 		t.Fatalf("result parameters = %v", result.Parameters)
 	}
 	details, detailsErr := service.GetKeyDetails(result.Address)
@@ -115,7 +115,7 @@ func TestGeneralProviderGeneratesFromAReview(t *testing.T) {
 
 func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	params := generalParams(plainhost.RekeyOnlyThese)
+	params := generalParams(boundary.RekeyOnlyThese)
 	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -136,7 +136,7 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 	}
 	var other types.Address
 	other[31] = 8
-	changed[plainhost.ParameterRecipients] = other.String()
+	changed[boundary.ParameterRecipients] = other.String()
 	_, err = service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest})
 	if err == nil || !strings.Contains(err.Message, "changed after this request was reviewed") {
@@ -148,24 +148,24 @@ func TestGeneralProviderRejectsAChangedReview(t *testing.T) {
 func TestGenerationRequirements(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, _ := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	spendingKey := generalParams(plainhost.RekeySpendingKey)
-	refused := generalParams(plainhost.RekeyOnlyThese)
-	cosigned := generalParams(plainhost.RekeyOnlyThese)
+	spendingKey := generalParams(boundary.RekeySpendingKey)
+	refused := generalParams(boundary.RekeyOnlyThese)
+	cosigned := generalParams(boundary.RekeyOnlyThese)
 	cosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Cosigned rekeys are not containment either: two online keys can rekey the
 	// account anywhere the cosigner's policy allows.
-	cosignedSpending := generalParams(plainhost.RekeySpendingKey)
+	cosignedSpending := generalParams(boundary.RekeySpendingKey)
 	cosignedSpending[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
-	plusCosigned := generalParams(plainhost.RekeyPlusCosigned)
+	plusCosigned := generalParams(boundary.RekeyPlusCosigned)
 	plusCosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 	// Refusing rekeys is not containment on its own: a limits-only account pays
 	// anyone. Nor is a cosigner: it pays anyone the cosigner signs for.
-	limitsOnly := generalParams(plainhost.RekeyOnlyThese)
-	delete(limitsOnly, plainhost.ParameterRecipients)
-	limitsOnly[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
-	limitsCosigned := generalParams(plainhost.RekeyOnlyThese)
-	delete(limitsCosigned, plainhost.ParameterRecipients)
-	limitsCosigned[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
+	limitsOnly := generalParams(boundary.RekeyOnlyThese)
+	delete(limitsOnly, boundary.ParameterRecipients)
+	limitsOnly[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
+	limitsCosigned := generalParams(boundary.RekeyOnlyThese)
+	delete(limitsCosigned, boundary.ParameterRecipients)
+	limitsCosigned[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
 	limitsCosigned[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 
 	tests := []struct {
@@ -203,10 +203,10 @@ func TestGenerationRequirements(t *testing.T) {
 // refused, with a recipient list or without, and makes no key.
 func TestBoundsRefuseAnUnlockRound(t *testing.T) {
 	_, service := setupGeneralProvider(t)
-	listed := generalParams(plainhost.RekeySpendingKey)
+	listed := generalParams(boundary.RekeySpendingKey)
 	listed["unlock_round"] = "100"
-	alone := generalParams(plainhost.RekeyOnlyThese)
-	delete(alone, plainhost.ParameterRecipients)
+	alone := generalParams(boundary.RekeyOnlyThese)
+	delete(alone, boundary.ParameterRecipients)
 	alone["unlock_round"] = "100"
 	for name, params := range map[string]map[string]string{"allowlist and unlock round": listed, "unlock round alone": alone} {
 		if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err == nil || !strings.Contains(err.Message, "unknown parameter") {
@@ -221,7 +221,7 @@ func TestBoundsRefuseAnUnlockRound(t *testing.T) {
 
 func TestGenerationRequirementIsRecheckedAfterReview(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, generalParams(plainhost.RekeySpendingKey))
+	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, generalParams(boundary.RekeySpendingKey))
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
@@ -249,7 +249,7 @@ func TestGenerationRequirementsDoNotReachExpertTemplates(t *testing.T) {
 func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
 	publicKey, keyID := importPrepareReference(t, ir, prepareTestReference, 0x61)
-	params := generalParams(plainhost.RekeyPlusCosigned)
+	params := generalParams(boundary.RekeyPlusCosigned)
 	params[cosignerrefs.ParamCosignerName] = prepareTestReference // plus cosigned needs the cosigner
 	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestCosignerReferenceResolvesBeforeTheShapeIsChosen(t *testing.T) {
 // stored account carries both.
 func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	ir, service := setupGeneralProvider(t)
-	params := generalParams(plainhost.RekeyOnlyThese)
+	params := generalParams(boundary.RekeyOnlyThese)
 	prepared, err := service.PrepareGenerateKey(boundedHostKeyType, params)
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
@@ -291,7 +291,7 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 	changed := maps.Clone(prepared.Parameters)
 	var other types.Address
 	other[0], other[31] = 0x52, 1
-	changed[plainhost.ParameterRekeyTo] = other.String()
+	changed[boundary.ParameterRekeyTo] = other.String()
 	if _, err := service.GenerateReviewedKey(context.Background(), boundedHostKeyType, changed,
 		ReviewedValues{Fingerprint: prepared.ReviewFingerprint, BoundaryDigest: prepared.BoundaryDigest}); err == nil ||
 		!strings.Contains(err.Message, "changed after this request was reviewed") {
@@ -318,8 +318,8 @@ func TestGeneralProviderGeneratesAnOnlyTheseAccount(t *testing.T) {
 		if len(root) != 64 || info.Host.RekeyList == nil || info.Host.RekeyList.RootHex != root {
 			t.Fatalf("stored root %q, metadata %+v", root, info.Host.RekeyList)
 		}
-		if info.Parameters[plainhost.ParameterRekeyTo] != listedTarget.String() {
-			t.Fatalf("stored entries = %q", info.Parameters[plainhost.ParameterRekeyTo])
+		if info.Parameters[boundary.ParameterRekeyTo] != listedTarget.String() {
+			t.Fatalf("stored entries = %q", info.Parameters[boundary.ParameterRekeyTo])
 		}
 		if info.TemplateFingerprint != prepared.Fingerprint {
 			t.Fatalf("stored fingerprint %s, reviewed %s", info.TemplateFingerprint, prepared.Fingerprint)
@@ -346,9 +346,9 @@ func TestRekeyListTakesAnyAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := generalParams(plainhost.RekeyPlusCosigned)
+	params := generalParams(boundary.RekeyPlusCosigned)
 	params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(ownCosigner)
-	params[plainhost.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
+	params[boundary.ParameterRekeyTo] = listedTarget.String() + "," + referenceAddress.String() + "," + ownCosignerAddress.String()
 	if _, err := service.PrepareGenerateKey(boundedHostKeyType, params); err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}

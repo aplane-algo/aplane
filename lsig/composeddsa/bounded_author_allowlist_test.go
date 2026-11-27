@@ -40,7 +40,7 @@ type authorAllowlistCase struct {
 var authorAllowlistCases = []authorAllowlistCase{
 	{
 		name:       "fixed",
-		policy:     composeddsa.Layer3PolicyFixedAllowlist,
+		policy:     hostmeta.Layer3PolicyFixedAllowlist,
 		stored:     hostmeta.Layer3PolicyFixedAllowlistCustom,
 		maxItems:   composeddsa.BoundedInlineListMax,
 		preimageAt: 1,
@@ -53,7 +53,7 @@ var authorAllowlistCases = []authorAllowlistCase{
 	},
 	{
 		name:     "merkle",
-		policy:   composeddsa.Layer3PolicyMerkleAllowlist,
+		policy:   hostmeta.Layer3PolicyMerkleAllowlist,
 		stored:   hostmeta.Layer3PolicyMerkleAllowlistCustom,
 		maxItems: 65536,
 		derived: `
@@ -224,7 +224,7 @@ func TestFrameworkAllowlistRunsBeforeAuthorTEAL(t *testing.T) {
 				t.Fatalf("GenerateTEAL() error = %v", err)
 			}
 			done := "__aplane_bounded1_layer3_done:"
-			if test.policy == composeddsa.Layer3PolicyMerkleAllowlist {
+			if test.policy == hostmeta.Layer3PolicyMerkleAllowlist {
 				done = "__aplane_bounded1_merkle_done:"
 			}
 			author := fmt.Sprintf("arg %d\nsha256", test.preimageAt)
@@ -351,7 +351,7 @@ func authorAllowlistError(yaml []byte) error {
 // plain allowlist must encode exactly as it always has, or installed templates
 // would report a conflict.
 func TestLayer3PolicyFingerprintEncoding(t *testing.T) {
-	encoded, err := json.Marshal(composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"})
+	encoded, err := json.Marshal(composeddsa.Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"})
 	if err != nil {
 		t.Fatal(err)
 	}

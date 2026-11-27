@@ -21,6 +21,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
 	sdktypes "github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -219,10 +220,10 @@ func errText(err error) string {
 func refusedRequests() map[string]map[string]string {
 	inline := func(extra map[string]string) map[string]string {
 		params := map[string]string{
-			plainhost.ParameterSpendEffects:   "pay,axfer",
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-			plainhost.ParameterListEncoding:   plainhost.EncodingInline,
-			plainhost.ParameterRecipients:     testRecipients(3),
+			boundary.ParameterSpendEffects:   "pay,axfer",
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+			boundary.ParameterListEncoding:   boundary.EncodingInline,
+			boundary.ParameterRecipients:     testRecipients(3),
 		}
 		for name, value := range extra {
 			if value == "" {
@@ -234,33 +235,33 @@ func refusedRequests() map[string]map[string]string {
 		return params
 	}
 	return map[string]map[string]string{
-		"unknown rekey":              {plainhost.ParameterRekeyAuthority: "admin_key"},
-		"unknown parameter":          {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, "unknown": "1"},
-		"only these without a list":  {plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese},
-		"list without only these":    {plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterRekeyTo: testRekeyTo()},
-		"cosigner 0x prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0x" + testCosigner},
-		"cosigner 0X prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0X" + strings.ToUpper(testCosigner)},
-		"cosigner short":             {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "4444"},
-		"cosigner not hex":           {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "zz"},
-		"cosigner unknown type":      {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner, hostmeta.CosignerKeyTypeParameter: "example.unknown.v1"},
-		"cosigner type without key":  {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerKeyTypeParameter: falconCosigner},
-		"cosigner is spending key":   {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("22", hostmeta.DefaultCosignerPublicKeySize)},
-		"bounds without spend":       inline(map[string]string{plainhost.ParameterSpendEffects: ""}),
-		"bounds repeated spend":      inline(map[string]string{plainhost.ParameterSpendEffects: "pay,pay"}),
-		"bounds unknown spend":       inline(map[string]string{plainhost.ParameterSpendEffects: "keyreg"}),
-		"bounds empty recipients":    inline(map[string]string{plainhost.ParameterRecipients: ""}),
-		"bounds bad recipient":       inline(map[string]string{plainhost.ParameterRecipients: "nope"}),
-		"bounds unknown encoding":    inline(map[string]string{plainhost.ParameterListEncoding: "zip"}),
-		"bounds any with recipients": inline(map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny}),
-		"bounds bad scope":           inline(map[string]string{plainhost.ParameterRecipientScope: "some"}),
-		"bounds bad max fee":         inline(map[string]string{plainhost.ParameterMaxFee: "abc"}),
-		"bounds custom max fee":      inline(map[string]string{plainhost.ParameterMaxFee: "2500"}),
-		"bounds zero max fee":        inline(map[string]string{plainhost.ParameterMaxFee: "0"}),
-		"bounds merkle":              inline(map[string]string{plainhost.ParameterListEncoding: plainhost.EncodingMerkle}),
-		"bounds auto":                inline(map[string]string{plainhost.ParameterListEncoding: plainhost.EncodingAuto}),
-		"bounds only these no list":  inline(map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese}),
+		"unknown rekey":              {boundary.ParameterRekeyAuthority: "admin_key"},
+		"unknown parameter":          {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, "unknown": "1"},
+		"only these without a list":  {boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese},
+		"list without only these":    {boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey, boundary.ParameterRekeyTo: testRekeyTo()},
+		"cosigner 0x prefix":         {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0x" + testCosigner},
+		"cosigner 0X prefix":         {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0X" + strings.ToUpper(testCosigner)},
+		"cosigner short":             {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "4444"},
+		"cosigner not hex":           {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "zz"},
+		"cosigner unknown type":      {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner, hostmeta.CosignerKeyTypeParameter: "example.unknown.v1"},
+		"cosigner type without key":  {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerKeyTypeParameter: falconCosigner},
+		"cosigner is spending key":   {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("22", hostmeta.DefaultCosignerPublicKeySize)},
+		"bounds without spend":       inline(map[string]string{boundary.ParameterSpendEffects: ""}),
+		"bounds repeated spend":      inline(map[string]string{boundary.ParameterSpendEffects: "pay,pay"}),
+		"bounds unknown spend":       inline(map[string]string{boundary.ParameterSpendEffects: "keyreg"}),
+		"bounds empty recipients":    inline(map[string]string{boundary.ParameterRecipients: ""}),
+		"bounds bad recipient":       inline(map[string]string{boundary.ParameterRecipients: "nope"}),
+		"bounds unknown encoding":    inline(map[string]string{boundary.ParameterListEncoding: "zip"}),
+		"bounds any with recipients": inline(map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny}),
+		"bounds bad scope":           inline(map[string]string{boundary.ParameterRecipientScope: "some"}),
+		"bounds bad max fee":         inline(map[string]string{boundary.ParameterMaxFee: "abc"}),
+		"bounds custom max fee":      inline(map[string]string{boundary.ParameterMaxFee: "2500"}),
+		"bounds zero max fee":        inline(map[string]string{boundary.ParameterMaxFee: "0"}),
+		"bounds merkle":              inline(map[string]string{boundary.ParameterListEncoding: boundary.EncodingMerkle}),
+		"bounds auto":                inline(map[string]string{boundary.ParameterListEncoding: boundary.EncodingAuto}),
+		"bounds only these no list":  inline(map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese}),
 		"bounds 0x cosigner":         inline(map[string]string{hostmeta.CosignerPublicKeyParameter: "0x" + testCosigner}),
-		"empty value":                {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: " "},
+		"empty value":                {boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: " "},
 		"only an unknown parameter":  {"unknown": "1"},
 	}
 }

@@ -41,7 +41,7 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		return nil, err
 	}
 
-	spend, err := canonicalSpend(normalized[ParameterSpendEffects])
+	spend, err := canonicalSpend(normalized[boundary.ParameterSpendEffects])
 	if err != nil {
 		return nil, err
 	}
@@ -57,19 +57,19 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 	if err != nil {
 		return nil, err
 	}
-	anyRecipient := scope == RecipientScopeAny
+	anyRecipient := scope == boundary.RecipientScopeAny
 	var recipients []string
 	encoding := ""
 	if anyRecipient {
 		// Limits-only: the request asked for no list, so it may not carry one.
-		if _, present := params[ParameterRecipients]; present {
-			return nil, fmt.Errorf("%s=%s takes no %s", ParameterRecipientScope, RecipientScopeAny, ParameterRecipients)
+		if _, present := params[boundary.ParameterRecipients]; present {
+			return nil, fmt.Errorf("%s=%s takes no %s", boundary.ParameterRecipientScope, boundary.RecipientScopeAny, boundary.ParameterRecipients)
 		}
-		if _, present := params[ParameterListEncoding]; present {
-			return nil, fmt.Errorf("%s has no list to encode", ParameterListEncoding)
+		if _, present := params[boundary.ParameterListEncoding]; present {
+			return nil, fmt.Errorf("%s has no list to encode", boundary.ParameterListEncoding)
 		}
 	} else {
-		if recipients, err = canonicalRecipients(normalized[ParameterRecipients]); err != nil {
+		if recipients, err = canonicalRecipients(normalized[boundary.ParameterRecipients]); err != nil {
 			return nil, err
 		}
 		if encoding, err = selectEncoding(params, len(recipients)); err != nil {
@@ -77,19 +77,19 @@ func selectShape(params map[string]string, defs []lsigprovider.ParameterDef) (*s
 		}
 	}
 
-	values := map[string]string{ParameterSpendEffects: joinSpend(spend)}
+	values := map[string]string{boundary.ParameterSpendEffects: joinSpend(spend)}
 	overlays.addTo(values)
 	if recipients != nil {
-		values[ParameterListEncoding] = encoding
-		values[ParameterRecipients] = strings.Join(recipients, ",")
+		values[boundary.ParameterListEncoding] = encoding
+		values[boundary.ParameterRecipients] = strings.Join(recipients, ",")
 	}
 	// Only "any" is persisted: "listed" is the default.
 	if anyRecipient {
-		values[ParameterRecipientScope] = RecipientScopeAny
+		values[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
 	}
 	// Likewise only a ceiling other than the default.
-	if maxFee != DefaultMaxFee {
-		values[ParameterMaxFee] = strconv.FormatUint(maxFee, 10)
+	if maxFee != boundary.DefaultMaxFee {
+		values[boundary.ParameterMaxFee] = strconv.FormatUint(maxFee, 10)
 	}
 	return &selection{
 		maxFee: maxFee,
@@ -118,13 +118,13 @@ func resolveOverlays(params, normalized map[string]string) (overlays, error) {
 	if err != nil {
 		return overlays{}, err
 	}
-	rekey := normalized[ParameterRekeyAuthority]
+	rekey := normalized[boundary.ParameterRekeyAuthority]
 	if !slices.Contains(RekeyAuthorities, rekey) {
-		return overlays{}, fmt.Errorf("%s must be %s", ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
+		return overlays{}, fmt.Errorf("%s must be %s", boundary.ParameterRekeyAuthority, strings.Join(RekeyAuthorities, ", "))
 	}
-	if rekey == RekeyPlusCosigned && cosigner == "" {
+	if rekey == boundary.RekeyPlusCosigned && cosigner == "" {
 		return overlays{}, fmt.Errorf("%s=%s needs a cosigner; without one it is %s=%s",
-			ParameterRekeyAuthority, RekeyPlusCosigned, ParameterRekeyAuthority, RekeySpendingKey)
+			boundary.ParameterRekeyAuthority, boundary.RekeyPlusCosigned, boundary.ParameterRekeyAuthority, boundary.RekeySpendingKey)
 	}
 	rekeyTo, err := canonicalRekeyTo(params, normalized, rekey)
 	if err != nil {
@@ -169,7 +169,7 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 
 // addTo writes the overlays' canonical values.
 func (o overlays) addTo(values map[string]string) {
-	values[ParameterRekeyAuthority] = o.arrangement.Rekey
+	values[boundary.ParameterRekeyAuthority] = o.arrangement.Rekey
 	if o.cosigner != "" {
 		values[hostmeta.CosignerPublicKeyParameter] = o.cosigner
 	}
@@ -179,7 +179,7 @@ func (o overlays) addTo(values map[string]string) {
 		values[hostmeta.CosignerKeyTypeParameter] = o.arrangement.Cosigner
 	}
 	if o.rekeyTo != "" {
-		values[ParameterRekeyTo] = o.rekeyTo
+		values[boundary.ParameterRekeyTo] = o.rekeyTo
 	}
 }
 
@@ -191,7 +191,7 @@ func checkKnown(params map[string]string, defs []lsigprovider.ParameterDef) erro
 		known[def.Name] = true
 	}
 	for name := range params {
-		if name == ParameterCosigner {
+		if name == boundary.ParameterCosigner {
 			return fmt.Errorf("cosigner reference was not resolved")
 		}
 		if !known[name] {
@@ -204,15 +204,15 @@ func checkKnown(params map[string]string, defs []lsigprovider.ParameterDef) erro
 // canonicalRekeyTo returns the rekey-to list in canonical order, or "" for an
 // account without one. only_these and plus_cosigned take a list, and must have one.
 func canonicalRekeyTo(params, normalized map[string]string, rekey string) (string, error) {
-	_, present := params[ParameterRekeyTo]
+	_, present := params[boundary.ParameterRekeyTo]
 	if !(Arrangement{Rekey: rekey}).HasRekeyList() {
 		if present {
-			return "", fmt.Errorf("%s needs %s=%s or %s", ParameterRekeyTo, ParameterRekeyAuthority, RekeyOnlyThese, RekeyPlusCosigned)
+			return "", fmt.Errorf("%s needs %s=%s or %s", boundary.ParameterRekeyTo, boundary.ParameterRekeyAuthority, boundary.RekeyOnlyThese, boundary.RekeyPlusCosigned)
 		}
 		return "", nil
 	}
-	if strings.TrimSpace(normalized[ParameterRekeyTo]) == "" {
-		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", ParameterRekeyAuthority, rekey, ParameterRekeyTo)
+	if strings.TrimSpace(normalized[boundary.ParameterRekeyTo]) == "" {
+		return "", fmt.Errorf("%s=%s needs the addresses the account may be rekeyed to in %s", boundary.ParameterRekeyAuthority, rekey, boundary.ParameterRekeyTo)
 	}
 	entries, err := composeddsa.RekeyListEntries(normalized)
 	if err != nil {
@@ -227,40 +227,40 @@ func canonicalRekeyTo(params, normalized map[string]string, rekey string) (strin
 
 // canonicalRecipientScope returns "" when the request names no scope.
 func canonicalRecipientScope(params map[string]string) (string, error) {
-	scope, present := params[ParameterRecipientScope]
+	scope, present := params[boundary.ParameterRecipientScope]
 	if !present {
 		return "", nil
 	}
 	switch scope {
-	case RecipientScopeAny, RecipientScopeListed:
+	case boundary.RecipientScopeAny, boundary.RecipientScopeListed:
 		return scope, nil
 	default:
-		return "", fmt.Errorf("%s must be %s or %s", ParameterRecipientScope, RecipientScopeListed, RecipientScopeAny)
+		return "", fmt.Errorf("%s must be %s or %s", boundary.ParameterRecipientScope, boundary.RecipientScopeListed, boundary.RecipientScopeAny)
 	}
 }
 
 // canonicalMaxFee returns the fee ceiling, the default when the request names
 // none.
 func canonicalMaxFee(params map[string]string) (uint64, error) {
-	value, present := params[ParameterMaxFee]
+	value, present := params[boundary.ParameterMaxFee]
 	if !present {
-		return DefaultMaxFee, nil
+		return boundary.DefaultMaxFee, nil
 	}
 	return boundary.ParseMaxFee(value)
 }
 
 func canonicalSpend(value string) ([]txeffects.SpendEffect, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("%s is required with bounds", ParameterSpendEffects)
+		return nil, fmt.Errorf("%s is required with bounds", boundary.ParameterSpendEffects)
 	}
 	seen := make(map[txeffects.SpendEffect]bool)
 	for _, item := range strings.Split(value, ",") {
 		effect := txeffects.SpendEffect(strings.TrimSpace(item))
 		if !slices.Contains(spendEffectOrder, effect) {
-			return nil, fmt.Errorf("%s has unknown effect %q", ParameterSpendEffects, item)
+			return nil, fmt.Errorf("%s has unknown effect %q", boundary.ParameterSpendEffects, item)
 		}
 		if seen[effect] {
-			return nil, fmt.Errorf("%s repeats %q", ParameterSpendEffects, effect)
+			return nil, fmt.Errorf("%s repeats %q", boundary.ParameterSpendEffects, effect)
 		}
 		seen[effect] = true
 	}
@@ -284,22 +284,22 @@ func joinSpend(spend []txeffects.SpendEffect) string {
 // canonicalRecipients expects a list NormalizeCreationParams has already sorted.
 func canonicalRecipients(value string) ([]string, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("%s is required", ParameterRecipients)
+		return nil, fmt.Errorf("%s is required", boundary.ParameterRecipients)
 	}
 	recipients := strings.Split(value, ",")
 	if len(recipients) > RecipientsMax {
-		return nil, fmt.Errorf("%s has %d addresses, maximum is %d", ParameterRecipients, len(recipients), RecipientsMax)
+		return nil, fmt.Errorf("%s has %d addresses, maximum is %d", boundary.ParameterRecipients, len(recipients), RecipientsMax)
 	}
 	for i, recipient := range recipients {
 		address, err := types.DecodeAddress(recipient)
 		if err != nil {
-			return nil, fmt.Errorf("%s: invalid address %q: %w", ParameterRecipients, recipient, err)
+			return nil, fmt.Errorf("%s: invalid address %q: %w", boundary.ParameterRecipients, recipient, err)
 		}
 		if address == (types.Address{}) {
-			return nil, fmt.Errorf("%s must not contain the zero address", ParameterRecipients)
+			return nil, fmt.Errorf("%s must not contain the zero address", boundary.ParameterRecipients)
 		}
 		if i > 0 && recipient == recipients[i-1] {
-			return nil, fmt.Errorf("%s repeats %s", ParameterRecipients, recipient)
+			return nil, fmt.Errorf("%s repeats %s", boundary.ParameterRecipients, recipient)
 		}
 	}
 	return recipients, nil
@@ -307,24 +307,24 @@ func canonicalRecipients(value string) ([]string, error) {
 
 // selectEncoding reads the request, where an absent encoding means auto.
 func selectEncoding(params map[string]string, count int) (string, error) {
-	encoding, present := params[ParameterListEncoding]
+	encoding, present := params[boundary.ParameterListEncoding]
 	if !present {
-		encoding = EncodingAuto
+		encoding = boundary.EncodingAuto
 	}
 	switch encoding {
-	case EncodingAuto:
+	case boundary.EncodingAuto:
 		if count <= AutoInlineMax {
-			return EncodingInline, nil
+			return boundary.EncodingInline, nil
 		}
-		return EncodingMerkle, nil
-	case EncodingInline:
+		return boundary.EncodingMerkle, nil
+	case boundary.EncodingInline:
 		if count > InlineMax {
 			return "", fmt.Errorf("inline encoding accepts at most %d recipients, got %d", InlineMax, count)
 		}
-		return EncodingInline, nil
-	case EncodingMerkle:
-		return EncodingMerkle, nil
+		return boundary.EncodingInline, nil
+	case boundary.EncodingMerkle:
+		return boundary.EncodingMerkle, nil
 	default:
-		return "", fmt.Errorf("%s must be %s, %s or %s", ParameterListEncoding, EncodingAuto, EncodingInline, EncodingMerkle)
+		return "", fmt.Errorf("%s must be %s, %s or %s", boundary.ParameterListEncoding, boundary.EncodingAuto, boundary.EncodingInline, boundary.EncodingMerkle)
 	}
 }

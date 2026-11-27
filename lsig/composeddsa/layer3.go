@@ -17,21 +17,6 @@ import (
 )
 
 const (
-	// Layer3PolicyFixedAllowlist is the framework-owned bounded spending
-	// policy. It compiles all membership checks inline and uses no runtime
-	// witness or signer-generated argument.
-	Layer3PolicyFixedAllowlist = "fixed_allowlist"
-
-	// Layer3PolicyMerkleAllowlist is the framework-owned bounded spending
-	// policy for large recipient sets. Membership is proven by a fixed-size,
-	// signer-derived Merkle witness.
-	Layer3PolicyMerkleAllowlist = "merkle_allowlist"
-
-	// Layer3PolicyNone compiles no Layer 3: the bounded envelope and the spending
-	// signature are the whole spending rule. Only the plain hosts' bounds offer
-	// it, with recipient_scope=any.
-	Layer3PolicyNone = hostmeta.Layer3PolicyNone
-
 	// BoundedInlineListMax is the audited maximum for each framework-owned
 	// inline membership list.
 	BoundedInlineListMax = 30
@@ -59,11 +44,11 @@ func (rules layer3PolicyRules) hasList() bool {
 
 func rulesForLayer3Policy(policy string) (layer3PolicyRules, bool) {
 	switch policy {
-	case Layer3PolicyFixedAllowlist:
+	case hostmeta.Layer3PolicyFixedAllowlist:
 		return layer3PolicyRules{inlineList: true}, true
-	case Layer3PolicyMerkleAllowlist:
+	case hostmeta.Layer3PolicyMerkleAllowlist:
 		return layer3PolicyRules{merkleList: true}, true
-	case Layer3PolicyNone:
+	case hostmeta.Layer3PolicyNone:
 		return layer3PolicyRules{}, true
 	}
 	return layer3PolicyRules{}, false
@@ -110,7 +95,7 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 	}
 	// Author TEAL with no framework policy is "custom"; a second name for the same
 	// program would let a review call a restricted account unrestricted.
-	if policy.Policy == Layer3PolicyNone && hasAuthorTEAL {
+	if policy.Policy == hostmeta.Layer3PolicyNone && hasAuthorTEAL {
 		return fmt.Errorf("policy %q does not accept author TEAL; omit bounded.layer3 for custom TEAL", policy.Policy)
 	}
 
@@ -185,7 +170,7 @@ func (c *ComposedDSA) renderLayer3Policy(params map[string]string, profile *Host
 	if !ok {
 		return "", fmt.Errorf("unsupported Layer-3 policy %q", c.layer3.Policy)
 	}
-	if c.layer3.Policy == Layer3PolicyNone {
+	if c.layer3.Policy == hostmeta.Layer3PolicyNone {
 		// A comment only: the spend falls through to the accept block.
 		if profile != nil && profile.Bounds == nil && profile.Cosigner != nil {
 			return "// === plain host: no host rules; the cosigner signed this spend ===\n", nil

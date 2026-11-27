@@ -103,7 +103,7 @@ parameters:
 func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 	profile := fixedAllowlistTestProfile()
 	validParams := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax}}
-	valid := &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
+	valid := &Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
 	tests := []struct {
 		name   string
 		policy *Layer3Policy
@@ -111,7 +111,7 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 		want   string
 	}{
 		{name: "unknown policy", policy: &Layer3Policy{Policy: "customish", RecipientsParameter: "recipients"}, params: validParams, want: "unsupported policy"},
-		{name: "missing recipients", policy: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist}, params: validParams, want: "recipients_parameter is required"},
+		{name: "missing recipients", policy: &Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist}, params: validParams, want: "recipients_parameter is required"},
 		{name: "optional recipients", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", MinItems: 1, MaxItems: 30}}, want: "must be required"},
 		{name: "unbounded recipients", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1}}, want: "max_items"},
 		{name: "over audited maximum", policy: valid, params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax + 1}}, want: "max_items"},
@@ -130,7 +130,7 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 
 func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 	profile := fixedAllowlistTestProfile()
-	policy := &Layer3Policy{Policy: Layer3PolicyMerkleAllowlist, RecipientsParameter: "recipients"}
+	policy := &Layer3Policy{Policy: hostmeta.Layer3PolicyMerkleAllowlist, RecipientsParameter: "recipients"}
 	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 65536}}
 	if err := validateLayer3Policy(policy, params, profile, false); err != nil {
 		t.Fatalf("validateLayer3Policy() error = %v", err)
@@ -159,7 +159,7 @@ func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 // A rekey never reaches Layer 3, so the allowlist asks nothing of the rekey
 // setting: a spending-key rekey needs no pay, which only the spend path reads.
 func TestFixedAllowlistPolicyAcceptsEitherRekeySettingWithoutPay(t *testing.T) {
-	policy := &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
+	policy := &Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
 	params := []lsigprovider.ParameterDef{{
 		Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax,
 	}}
@@ -212,7 +212,7 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 		KeyType: "aplane.test-fixed-allowlist.v1", BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName: "aplane.test", Version: 1, Ops: boundedTestOps{}, SaltStyle: lsigsalt.StyleNone,
 		TemplateMode: "generated", Params: fixedAllowlistTestParams(), Host: fixedAllowlistTestProfile(),
-		Layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
+		Layer3: &Layer3Policy{Policy: hostmeta.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
 }
 

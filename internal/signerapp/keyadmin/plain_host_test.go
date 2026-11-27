@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 const plainHostKeyType = "aplane.falcon1024.v1"
@@ -46,8 +46,8 @@ func TestPlainHostCreatesWhatTheRequestAsks(t *testing.T) {
 		t.Fatalf("the plain program has an overlay contract: %+v", summary.Host)
 	}
 	prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, map[string]string{
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese,
-		plainhost.ParameterRekeyTo:        listedTarget.String(),
+		boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese,
+		boundary.ParameterRekeyTo:        listedTarget.String(),
 	})
 	if prepareErr != nil {
 		t.Fatalf("PrepareGenerateKey(only these, no cosigner) error = %#v", prepareErr)
@@ -74,12 +74,12 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 	ir, service, _ := setupPlainHost(t)
 	request := func(maxFee string) map[string]string {
 		params := map[string]string{
-			plainhost.ParameterSpendEffects:   "pay",
-			plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny,
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
+			boundary.ParameterSpendEffects:   "pay",
+			boundary.ParameterRecipientScope: boundary.RecipientScopeAny,
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
 		}
 		if maxFee != "" {
-			params[plainhost.ParameterMaxFee] = maxFee
+			params[boundary.ParameterMaxFee] = maxFee
 		}
 		return params
 	}
@@ -108,8 +108,8 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			}
 			// Only a limit other than the default is a parameter of the account, and
 			// the default is the account that names none.
-			persisted, present := prepared.Parameters[plainhost.ParameterMaxFee]
-			if test.want == plainhost.DefaultMaxFee {
+			persisted, present := prepared.Parameters[boundary.ParameterMaxFee]
+			if test.want == boundary.DefaultMaxFee {
 				if present || prepared.Fingerprint != unnamed.Fingerprint || prepared.BoundaryDigest != unnamed.BoundaryDigest {
 					t.Fatalf("the default limit prepared another account: max_fee=%q present=%v", persisted, present)
 				}
@@ -156,7 +156,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 			if metadata == nil || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != test.want {
 				t.Fatalf("stored contract = %+v", metadata)
 			}
-			if generated.Parameters[plainhost.ParameterMaxFee] != test.maxFee {
+			if generated.Parameters[boundary.ParameterMaxFee] != test.maxFee {
 				t.Fatalf("generated parameters = %v", generated.Parameters)
 			}
 			// Generation carries the same advice the review showed, and so does a
@@ -184,7 +184,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		t.Fatalf("a second preparation = %+v, %#v", second, prepareErr)
 	}
 	// An account with no bounds, and the plain program, have no limit to warn of.
-	for _, params := range []map[string]string{nil, {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}} {
+	for _, params := range []map[string]string{nil, {boundary.ParameterRekeyAuthority: boundary.RekeyRefused}} {
 		generated, err := service.GenerateKey(context.Background(), plainHostKeyType, params)
 		if err != nil || len(generated.Warnings) != 0 {
 			t.Fatalf("GenerateKey(%v) error = %#v, warnings = %q; want none", params, err, warningsOf(generated))
@@ -214,10 +214,10 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 		t.Fatalf("PrepareGenerateKey(largest max_fee) = %+v, %#v", largest, prepareErr)
 	}
 	if generated, err := service.GenerateKey(context.Background(), plainHostKeyType, request("9007199254740991")); err != nil ||
-		generated.Parameters[plainhost.ParameterMaxFee] != "9007199254740991" || len(generated.Warnings) != 0 {
+		generated.Parameters[boundary.ParameterMaxFee] != "9007199254740991" || len(generated.Warnings) != 0 {
 		t.Fatalf("GenerateKey(largest max_fee) error = %#v, warnings = %q", err, warningsOf(generated))
 	}
-	withoutBounds := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterMaxFee: "20000"}
+	withoutBounds := map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey, boundary.ParameterMaxFee: "20000"}
 	if _, err := service.PrepareGenerateKey(plainHostKeyType, withoutBounds); err == nil || !strings.Contains(err.Message, "spend_effects is required") {
 		t.Fatalf("PrepareGenerateKey(max_fee without transfer kinds) error = %#v", err)
 	}
@@ -235,9 +235,9 @@ func warningsOf(result *GenerateResult) []string {
 func TestPlainHostGeneratesFromAReview(t *testing.T) {
 	ir, service, cosignerKey := setupPlainHost(t)
 	params := map[string]string{
-		cosignerrefs.ParamCosignerName:    prepareTestReference,
-		plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned,
-		plainhost.ParameterRekeyTo:        listedTarget.String(),
+		cosignerrefs.ParamCosignerName:   prepareTestReference,
+		boundary.ParameterRekeyAuthority: boundary.RekeyPlusCosigned,
+		boundary.ParameterRekeyTo:        listedTarget.String(),
 	}
 	prepared, err := service.PrepareGenerateKey(plainHostKeyType, params)
 	if err != nil {
@@ -280,8 +280,8 @@ func TestPlainHostGeneratesFromAReview(t *testing.T) {
 // included: it has no cosigner and contains nothing.
 func TestGenerationRequirementsGovernPlainHosts(t *testing.T) {
 	ir, service, _ := setupPlainHost(t)
-	cosigned := map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}
-	uncosigned := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: listedTarget.String()}
+	cosigned := map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference, boundary.ParameterRekeyAuthority: boundary.RekeyRefused}
+	uncosigned := map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese, boundary.ParameterRekeyTo: listedTarget.String()}
 
 	ir.Config().SetGenerationRequirements(false, true)
 	t.Cleanup(func() { ir.Config().SetGenerationRequirements(false, false) })

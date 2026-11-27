@@ -16,6 +16,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -82,15 +83,15 @@ func legacyArrangement(a plainhost.Arrangement) string {
 }
 
 func requestFor(arrangement plainhost.Arrangement) map[string]string {
-	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
+	params := map[string]string{boundary.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
 		params[hostmeta.CosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
 		if arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 			params[hostmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
 		}
 	}
-	if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
-		params[plainhost.ParameterRekeyTo] = testRekeyTo()
+	if arrangement.Rekey == boundary.RekeyOnlyThese || arrangement.Rekey == boundary.RekeyPlusCosigned {
+		params[boundary.ParameterRekeyTo] = testRekeyTo()
 	}
 	return params
 }
@@ -153,8 +154,8 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 					(metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
 					t.Fatalf("%s: instance = %+v", rekey, instance)
 				}
-				wantList := arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
-				wantSpendingKey := arrangement.Rekey == plainhost.RekeySpendingKey || arrangement.Rekey == plainhost.RekeyPlusCosigned
+				wantList := arrangement.Rekey == boundary.RekeyOnlyThese || arrangement.Rekey == boundary.RekeyPlusCosigned
+				wantSpendingKey := arrangement.Rekey == boundary.RekeySpendingKey || arrangement.Rekey == boundary.RekeyPlusCosigned
 				if (metadata.RekeyList != nil) != wantList || (metadata.Rekey == hostmeta.RekeySpendingKey) != wantSpendingKey {
 					t.Fatalf("%s: rekey %s, list %v", rekey, metadata.Rekey, metadata.RekeyList)
 				}
@@ -198,30 +199,30 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 
 func TestOverlayRequestsFailClosed(t *testing.T) {
 	provider := bases(t)[0].provider
-	withList := request(plainhost.RekeyOnlyThese)
+	withList := request(boundary.RekeyOnlyThese)
 	for _, tc := range []struct {
 		name   string
 		params map[string]string
 		want   string
 	}{
-		{"plus cosigned without a cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned, plainhost.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
-		{"a misspelled overlay parameter", map[string]string{"rekey_authorty": plainhost.RekeyOnlyThese, "rekey_too": testRekeyTo()}, "unknown parameter"},
+		{"plus cosigned without a cosigner", map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyPlusCosigned, boundary.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
+		{"a misspelled overlay parameter", map[string]string{"rekey_authorty": boundary.RekeyOnlyThese, "rekey_too": testRekeyTo()}, "unknown parameter"},
 		{"no rekey authority", map[string]string{hostmeta.CosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
-		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", hostmeta.CosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
+		{"unknown rekey authority", map[string]string{boundary.ParameterRekeyAuthority: "admin_key", hostmeta.CosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
 		{"a list without only_these", func() map[string]string {
-			params := request(plainhost.RekeySpendingKey)
-			params[plainhost.ParameterRekeyTo] = testRekeyTo()
+			params := request(boundary.RekeySpendingKey)
+			params[boundary.ParameterRekeyTo] = testRekeyTo()
 			return params
 		}(), "rekey_to needs"},
 		{"only_these without a list", func() map[string]string {
-			params := request(plainhost.RekeyOnlyThese)
-			delete(params, plainhost.ParameterRekeyTo)
+			params := request(boundary.RekeyOnlyThese)
+			delete(params, boundary.ParameterRekeyTo)
 			return params
 		}(), "needs the addresses"},
-		{"an unresolved cosigner name", map[string]string{plainhost.ParameterCosigner: "corp", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "not resolved"},
-		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner}, "recipients is required"},
-		{"bounds without transfer kinds", map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "spend_effects is required"},
-		{"a generated root", map[string]string{hostmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, hostmeta.CosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
+		{"an unresolved cosigner name", map[string]string{boundary.ParameterCosigner: "corp", boundary.ParameterRekeyAuthority: boundary.RekeyRefused}, "not resolved"},
+		{"bounds without a recipient list", map[string]string{boundary.ParameterSpendEffects: "pay", boundary.ParameterRekeyAuthority: boundary.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner}, "recipients is required"},
+		{"bounds without transfer kinds", map[string]string{boundary.ParameterRecipientScope: boundary.RecipientScopeAny, boundary.ParameterRekeyAuthority: boundary.RekeyRefused}, "spend_effects is required"},
+		{"a generated root", map[string]string{hostmeta.RekeyListRootParameter: strings.Repeat("ab", 32), boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese, hostmeta.CosignerPublicKeyParameter: testCosigner, boundary.ParameterRekeyTo: withList[boundary.ParameterRekeyTo]}, "unknown parameter"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := provider.ResolveInstance(tc.params); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -242,14 +243,14 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 		for _, bounded := range []bool{false, true} {
 			withBounds := func(params map[string]string) map[string]string {
 				if bounded {
-					params[plainhost.ParameterSpendEffects] = "pay"
-					params[plainhost.ParameterRecipients] = testAddress(1)
+					params[boundary.ParameterSpendEffects] = "pay"
+					params[boundary.ParameterRecipients] = testAddress(1)
 				}
 				return params
 			}
 			name := fmt.Sprintf("%s bounded=%t", b.name, bounded)
-			falcon := withBounds(request(plainhost.RekeySpendingKey))
-			explicit := withBounds(request(plainhost.RekeySpendingKey))
+			falcon := withBounds(request(boundary.RekeySpendingKey))
+			explicit := withBounds(request(boundary.RekeySpendingKey))
 			explicit[hostmeta.CosignerKeyTypeParameter] = falconCosigner
 			implicit, err := b.provider.ResolveInstance(falcon)
 			if err != nil {
@@ -263,7 +264,7 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 				t.Fatalf("%s: an explicit default type is recorded or selects another program: %v", name, named.Values)
 			}
 
-			ed := withBounds(requestFor(plainhost.Arrangement{Rekey: plainhost.RekeySpendingKey, Cosigner: witness.Ed25519V1}))
+			ed := withBounds(requestFor(plainhost.Arrangement{Rekey: boundary.RekeySpendingKey, Cosigner: witness.Ed25519V1}))
 			instance, err := b.provider.ResolveInstance(ed)
 			if err != nil {
 				t.Fatalf("%s: Ed25519 cosigner: %v", name, err)
@@ -277,9 +278,9 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 			// fee ceiling too: never as the default-cosigned program.
 			if bounded {
 				custom := maps.Clone(ed)
-				custom[plainhost.ParameterMaxFee] = "20000"
+				custom[boundary.ParameterMaxFee] = "20000"
 				customFalcon := maps.Clone(falcon)
-				customFalcon[plainhost.ParameterMaxFee] = "20000"
+				customFalcon[boundary.ParameterMaxFee] = "20000"
 				edInstance, err := b.provider.ResolveInstance(custom)
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
@@ -335,23 +336,23 @@ func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
 		}
 		return instance.BoundaryDigest
 	}
-	base := request(plainhost.RekeyPlusCosigned)
-	otherCosigner := request(plainhost.RekeyPlusCosigned)
+	base := request(boundary.RekeyPlusCosigned)
+	otherCosigner := request(boundary.RekeyPlusCosigned)
 	otherCosigner[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 	var c types.Address
 	c[0] = 0x33
-	otherList := request(plainhost.RekeyPlusCosigned)
-	otherList[plainhost.ParameterRekeyTo] = c.String()
-	reordered := request(plainhost.RekeyPlusCosigned)
-	parts := strings.Split(reordered[plainhost.ParameterRekeyTo], ",")
-	reordered[plainhost.ParameterRekeyTo] = parts[1] + "," + parts[0]
+	otherList := request(boundary.RekeyPlusCosigned)
+	otherList[boundary.ParameterRekeyTo] = c.String()
+	reordered := request(boundary.RekeyPlusCosigned)
+	parts := strings.Split(reordered[boundary.ParameterRekeyTo], ",")
+	reordered[boundary.ParameterRekeyTo] = parts[1] + "," + parts[0]
 	if digest(base) == digest(otherCosigner) || digest(base) == digest(otherList) {
 		t.Fatal("the digest does not bind the cosigner and the list")
 	}
 	if digest(base) != digest(reordered) {
 		t.Fatal("the digest depends on the list's order")
 	}
-	if digest(base) == digest(request(plainhost.RekeyOnlyThese)) {
+	if digest(base) == digest(request(boundary.RekeyOnlyThese)) {
 		t.Fatal("the digest does not bind the arrangement")
 	}
 }
@@ -484,8 +485,8 @@ func TestEmptyParametersAreRefused(t *testing.T) {
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
 	}
-	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, hostmeta.CosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
-		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
+	for _, name := range []string{boundary.ParameterRekeyTo, boundary.ParameterCosigner, hostmeta.CosignerPublicKeyParameter, boundary.ParameterRekeyAuthority} {
+		named := map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyRefused, name: " "}
 		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
 			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
 		}
@@ -503,7 +504,7 @@ func TestEmptyParametersAreRefused(t *testing.T) {
 // the plain program, which is weaker than any account the caller meant.
 func TestMisspelledParametersAreRefusedEverywhere(t *testing.T) {
 	for _, b := range bases(t) {
-		for _, params := range []map[string]string{{"rekey_authorty": plainhost.RekeyRefused}, {"cosigner_pubkey": testCosigner}} {
+		for _, params := range []map[string]string{{"rekey_authorty": boundary.RekeyRefused}, {"cosigner_pubkey": testCosigner}} {
 			if _, err := b.provider.GenerateTEAL(b.spendingKey, params); err == nil || !strings.Contains(err.Error(), "unknown parameter") {
 				t.Fatalf("%s GenerateTEAL(%v) error = %v", b.name, params, err)
 			}
@@ -534,7 +535,7 @@ func TestShapesAreBuiltOnFirstUse(t *testing.T) {
 		if b.provider.ShapesBuiltForTest() {
 			t.Fatalf("%s built its shapes at registration", b.name)
 		}
-		if err := b.provider.ValidateCreationParams(request(plainhost.RekeyRefused)); err != nil || b.provider.ShapesBuiltForTest() {
+		if err := b.provider.ValidateCreationParams(request(boundary.RekeyRefused)); err != nil || b.provider.ShapesBuiltForTest() {
 			t.Fatalf("%s: an overlays-only check built the shapes (err %v)", b.name, err)
 		}
 		if b.provider.GrammarFingerprint() == "" || !b.provider.ShapesBuiltForTest() {

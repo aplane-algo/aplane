@@ -20,6 +20,7 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
@@ -39,15 +40,15 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 		spend[i] = string(effect)
 	}
 	params := map[string]string{
-		plainhost.ParameterSpendEffects:   strings.Join(spend, ","),
-		plainhost.ParameterRekeyAuthority: shape.Rekey,
+		boundary.ParameterSpendEffects:   strings.Join(spend, ","),
+		boundary.ParameterRekeyAuthority: shape.Rekey,
 	}
 	if shape.Encoding != "" {
-		params[plainhost.ParameterListEncoding] = shape.Encoding
-		params[plainhost.ParameterRecipients] = strings.Join(recipients, ",")
+		params[boundary.ParameterListEncoding] = shape.Encoding
+		params[boundary.ParameterRecipients] = strings.Join(recipients, ",")
 	}
 	if shape.AnyRecipient {
-		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
+		params[boundary.ParameterRecipientScope] = boundary.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
 		params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
@@ -56,7 +57,7 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 		}
 	}
 	if shape.HasRekeyList() {
-		params[plainhost.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
+		params[boundary.ParameterRekeyTo] = strings.Join(rekeyTo, ",")
 	}
 	return params
 }
@@ -94,7 +95,7 @@ func newBoundsAccount(t *testing.T, provider *plainhost.Provider, shape plainhos
 	account := corridorExecutionAccount{
 		address:            derived.Address.String(),
 		bytecode:           derived.Bytecode,
-		recipientsParam:    instance.Values[plainhost.ParameterRecipients],
+		recipientsParam:    instance.Values[boundary.ParameterRecipients],
 		userPrivateKey:     spendingPrivate,
 		edKey:              edKey,
 		cosignerPrivateKey: cosignerPrivate,
@@ -216,7 +217,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 	}
 	edProvider := plainHostProvider(t, network, plainEd25519KeyType)
 	for _, shape := range plainhost.Shapes() {
-		if shape.Encoding == plainhost.EncodingInline && len(shape.Spend) == 3 {
+		if shape.Encoding == boundary.EncodingInline && len(shape.Spend) == 3 {
 			cases = append(cases, shapeCase{edProvider, shape})
 		}
 	}
@@ -253,11 +254,11 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 				t.Fatalf("fund account: %v", err)
 			}
 
-			refused := shape.Rekey == plainhost.RekeyRefused
+			refused := shape.Rekey == boundary.RekeyRefused
 			mayPay := slices.Contains(shape.Spend, txeffects.SpendEffectPay)
 			mayTransfer := slices.Contains(shape.Spend, txeffects.SpendEffectAxfer)
 			mayOptIn := slices.Contains(shape.Spend, txeffects.SpendEffectAssetOptIn)
-			merkle := shape.Encoding == plainhost.EncodingMerkle
+			merkle := shape.Encoding == boundary.EncodingMerkle
 			hasList := shape.Encoding != ""
 			proof := func(to types.Address) []byte {
 				if !merkle {
@@ -443,16 +444,16 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 				})
 			}
 			switch shape.Rekey {
-			case plainhost.RekeyRefused:
+			case boundary.RekeyRefused:
 				// Refused: no rekey at all. The spending key signs, and on a cosigned
 				// shape the cosigner too, and neither opens one.
 				t.Run("rekey refused", func(t *testing.T) { expect(false, rekey("l3"), nil, nil) })
-			case plainhost.RekeyOnlyThese:
+			case boundary.RekeyOnlyThese:
 				// Only these: nothing but a listed target with its proof, and the
 				// cosigner opens nothing.
 				t.Run("rekey to an unlisted address", func(t *testing.T) { expect(false, rekeyTo(unlisted.Address, "l3"), nil, nil) })
 				t.Run("listed rekey without a proof", func(t *testing.T) { expect(false, rekey("l7"), nil, withProof(nil)) })
-			case plainhost.RekeyPlusCosigned:
+			case boundary.RekeyPlusCosigned:
 				// Plus cosigned: an empty proof takes the cosigner's branch, to any
 				// address; without the cosigner it fails.
 				t.Run("rekey to an unlisted address without the cosigner", func(t *testing.T) {
@@ -472,7 +473,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 						t.Fatalf("authorizer = %q after the hand-back", got)
 					}
 				})
-			case plainhost.RekeySpendingKey:
+			case boundary.RekeySpendingKey:
 				if shape.Cosigner != "" {
 					t.Run("rekey without the cosigner", func(t *testing.T) { expect(false, rekey("l10"), nil, withoutCosigner(nil)) })
 				}
@@ -542,9 +543,9 @@ func boundsFamilies() []boundsFamily {
 		}
 		recipients := 0
 		switch shape.Encoding {
-		case plainhost.EncodingInline:
+		case boundary.EncodingInline:
 			recipients = plainhost.InlineMax
-		case plainhost.EncodingMerkle:
+		case boundary.EncodingMerkle:
 			recipients = 64
 		}
 		families = append(families, boundsFamily{shape: shape, recipients: recipients})
@@ -579,15 +580,15 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 		return list
 	}
 	longest := map[string][]string{
-		plainhost.EncodingInline: addresses(plainhost.InlineMax),
-		plainhost.EncodingMerkle: addresses(plainhost.RecipientsMax),
+		boundary.EncodingInline: addresses(plainhost.InlineMax),
+		boundary.EncodingMerkle: addresses(plainhost.RecipientsMax),
 	}
 	// A list proof's size is fixed, so the list's length costs nothing; a full
 	// list shows generation still fits.
 	fullRekeyTo := addresses(rekeylist.MaxEntries)
 	for _, shape := range plainhost.Shapes() {
 		account := newBoundsAccount(t, provider, shape, longest[shape.Encoding], fullRekeyTo)
-		if account.metadata.FeeCeiling() == nil || *account.metadata.FeeCeiling() != plainhost.DefaultMaxFee {
+		if account.metadata.FeeCeiling() == nil || *account.metadata.FeeCeiling() != boundary.DefaultMaxFee {
 			t.Fatalf("%s MaxFee = %v", shape.Descriptor(), account.metadata.FeeCeiling())
 		}
 		t.Logf("%s: %d program bytes", shape.Descriptor(), len(account.bytecode))
@@ -613,14 +614,14 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			// Everything that can fail runs before funding, so the cleanup that
 			// returns the funds is registered as soon as there are funds to return.
 			var proof []byte
-			if shape.Encoding == plainhost.EncodingMerkle {
+			if shape.Encoding == boundary.EncodingMerkle {
 				proof = account.proofFor(t, funderAddress)
 			}
 			if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 				t.Fatalf("fund account: %v", err)
 			}
 			t.Cleanup(func() {
-				if shape.Rekey == plainhost.RekeyRefused {
+				if shape.Rekey == boundary.RekeyRefused {
 					// A refused account can't be rekeyed or closed; it pays back all
 					// but its minimum balance.
 					drainBounded(t, network, account, funder.GetAddress(), proof)
@@ -646,7 +647,7 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			if shape.HasRekeyList() {
 				rekeyVector(cleanup.Address, lsigresource.PathListedRekey, "maximum-listed-rekey")
 			}
-			if shape.Rekey == plainhost.RekeySpendingKey || shape.Rekey == plainhost.RekeyPlusCosigned {
+			if shape.Rekey == boundary.RekeySpendingKey || shape.Rekey == boundary.RekeyPlusCosigned {
 				rekeyVector(algocrypto.GenerateAccount().Address, lsigresource.PathSpendingRekey, "maximum-rekey")
 			}
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compiler, harness.OpcodeCeilingValidation{
@@ -699,9 +700,9 @@ func TestBoundsThroughSigner(t *testing.T) {
 
 	request := func(recipients ...string) map[string]string {
 		return map[string]string{
-			plainhost.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-			plainhost.ParameterRecipients:     strings.Join(recipients, ","),
+			boundary.ParameterSpendEffects:   "pay,axfer,asset_opt_in",
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+			boundary.ParameterRecipients:     strings.Join(recipients, ","),
 		}
 	}
 	accounts := make(map[string]string)
@@ -711,9 +712,9 @@ func TestBoundsThroughSigner(t *testing.T) {
 		policy     string
 		onlyThese  bool
 	}{
-		{name: "inline", recipients: 2, policy: composeddsa.Layer3PolicyFixedAllowlist},
-		{name: "auto chooses merkle above ten", recipients: 11, policy: composeddsa.Layer3PolicyMerkleAllowlist},
-		{name: "only these", recipients: 2, policy: composeddsa.Layer3PolicyFixedAllowlist, onlyThese: true},
+		{name: "inline", recipients: 2, policy: hostmeta.Layer3PolicyFixedAllowlist},
+		{name: "auto chooses merkle above ten", recipients: 11, policy: hostmeta.Layer3PolicyMerkleAllowlist},
+		{name: "only these", recipients: 2, policy: hostmeta.Layer3PolicyFixedAllowlist, onlyThese: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			allowed := algocrypto.GenerateAccount().Address.String()
@@ -726,8 +727,8 @@ func TestBoundsThroughSigner(t *testing.T) {
 			}
 			params := request(recipients...)
 			if test.onlyThese {
-				params[plainhost.ParameterRekeyAuthority] = plainhost.RekeyOnlyThese
-				params[plainhost.ParameterRekeyTo] = algocrypto.GenerateAccount().Address.String()
+				params[boundary.ParameterRekeyAuthority] = boundary.RekeyOnlyThese
+				params[boundary.ParameterRekeyTo] = algocrypto.GenerateAccount().Address.String()
 			}
 			account := mustAdminGenerateKeyNoCleanup(t, client, signerd, plainFalconKeyType, params)
 			if err := funder.FundMicroAlgosAndWait(account, 2_000_000); err != nil {
@@ -803,10 +804,10 @@ func TestBoundsThroughSigner(t *testing.T) {
 		if err := json.Unmarshal(data, &saved); err != nil {
 			t.Fatalf("parse result file: %v", err)
 		}
-		if saved.Parameters[plainhost.ParameterRecipients] != recipient || saved.Parameters[plainhost.ParameterSpendEffects] != "pay" {
+		if saved.Parameters[boundary.ParameterRecipients] != recipient || saved.Parameters[boundary.ParameterSpendEffects] != "pay" {
 			t.Fatalf("saved parameters = %v", saved.Parameters)
 		}
-		accounts[saved.Address] = composeddsa.Layer3PolicyFixedAllowlist
+		accounts[saved.Address] = hostmeta.Layer3PolicyFixedAllowlist
 	})
 
 	if err := signerd.Stop(); err != nil {
@@ -881,12 +882,12 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 	generate := func(maxFee string) string {
 		t.Helper()
 		params := map[string]string{
-			plainhost.ParameterSpendEffects:   "pay",
-			plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-			plainhost.ParameterRecipients:     allowed,
+			boundary.ParameterSpendEffects:   "pay",
+			boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+			boundary.ParameterRecipients:     allowed,
 		}
 		if maxFee != "" {
-			params[plainhost.ParameterMaxFee] = maxFee
+			params[boundary.ParameterMaxFee] = maxFee
 		}
 		account := mustAdminGenerateKeyNoCleanup(t, client, signerd, plainFalconKeyType, params)
 		if err := funder.FundMicroAlgosAndWait(account, 1_000_000); err != nil {
@@ -956,7 +957,7 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 	raised := generate("20000")
 	standard := generate("")
 	unfunded := generate("0")
-	for account, want := range map[string]uint64{raised: 20_000, standard: plainhost.DefaultMaxFee, unfunded: 0} {
+	for account, want := range map[string]uint64{raised: 20_000, standard: boundary.DefaultMaxFee, unfunded: 0} {
 		if got := storedMaxFee(account); got != want {
 			t.Fatalf("%s MaxFee = %d, want %d", account, got, want)
 		}
@@ -978,8 +979,8 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 			t.Fatalf("a ceiling of 20000 refused a fee of %d: status %d\n%s", clientFee, status, body)
 		}
 		signedFee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee)
-		if signedFee < clientFee || signedFee <= plainhost.DefaultMaxFee || signedFee > 20_000 {
-			t.Fatalf("signed fee = %d, want above %d and at most 20000", signedFee, plainhost.DefaultMaxFee)
+		if signedFee < clientFee || signedFee <= boundary.DefaultMaxFee || signedFee > 20_000 {
+			t.Fatalf("signed fee = %d, want above %d and at most 20000", signedFee, boundary.DefaultMaxFee)
 		}
 		confirm(response.Signed)
 		if got := balance(allowed); got != before+100_000 {
@@ -1041,20 +1042,20 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 		t.Fatalf("unlock signer: %v", err)
 	}
 	client = signerclient.NewSignerClient(signerd.GetURL())
-	for account, want := range map[string]uint64{raised: 20_000, standard: plainhost.DefaultMaxFee, unfunded: 0} {
+	for account, want := range map[string]uint64{raised: 20_000, standard: boundary.DefaultMaxFee, unfunded: 0} {
 		if !waitForKey(t, signerd.GetURL(), account, 10*time.Second) {
 			t.Fatalf("signer did not rescan %s", account)
 		}
 		if got := storedMaxFee(account); got != want {
 			t.Fatalf("after a restart %s MaxFee = %d, want %d", account, got, want)
 		}
-		assertAuthorAllowlistInventory(t, client, account, composeddsa.Layer3PolicyFixedAllowlist)
+		assertAuthorAllowlistInventory(t, client, account, hostmeta.Layer3PolicyFixedAllowlist)
 	}
 	status, response, body := sign(spend(raised, 15_000, "fee-ceiling-raised-after-restart"))
 	if status != http.StatusOK || len(response.Signed) == 0 {
 		t.Fatalf("after a restart a ceiling of 20000 refused a fee of 15000: status %d\n%s", status, body)
 	}
-	if fee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee); fee <= plainhost.DefaultMaxFee || fee > 20_000 {
+	if fee := uint64(decodeSignedTxnHex(t, response.Signed[0]).Txn.Fee); fee <= boundary.DefaultMaxFee || fee > 20_000 {
 		t.Fatalf("after a restart the signed fee = %d", fee)
 	}
 	confirm(response.Signed)

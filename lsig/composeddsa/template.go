@@ -35,8 +35,8 @@ func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	if spec.Bounded != nil && spec.Bounded.Layer3 != nil && spec.Bounded.Layer3.Policy == Layer3PolicyNone {
-		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the plain hosts' bounds, with recipient_scope=any", Layer3PolicyNone)
+	if spec.Bounded != nil && spec.Bounded.Layer3 != nil && spec.Bounded.Layer3.Policy == hostmeta.Layer3PolicyNone {
+		return nil, fmt.Errorf("bounded.layer3 policy %q is offered only by the plain hosts' bounds, with recipient_scope=any", hostmeta.Layer3PolicyNone)
 	}
 	return spec, nil
 }

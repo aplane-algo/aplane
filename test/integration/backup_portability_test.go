@@ -19,6 +19,7 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genstore"
@@ -30,7 +31,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -151,9 +151,9 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			name: "bounded plain host",
 			prepareSource: func(_ *testing.T, _ string, _ *harness.ApAdminHarness) (string, map[string]string) {
 				return plainFalconKeyType, map[string]string{
-					plainhost.ParameterSpendEffects:   "pay",
-					plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey,
-					plainhost.ParameterRecipients:     boundsRecipient,
+					boundary.ParameterSpendEffects:   "pay",
+					boundary.ParameterRekeyAuthority: boundary.RekeySpendingKey,
+					boundary.ParameterRecipients:     boundsRecipient,
 				}
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {

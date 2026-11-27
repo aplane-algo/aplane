@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
+	"github.com/aplane-algo/aplane/internal/boundary"
 	"github.com/aplane-algo/aplane/internal/keystore/keystoretest"
 	"github.com/aplane-algo/aplane/internal/witness"
 
@@ -24,7 +25,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/rotatingkey"
 	"github.com/aplane-algo/aplane/internal/signerapp/productruntime"
 	nativefalconreg "github.com/aplane-algo/aplane/internal/signing/falcon1024/signerreg"
-	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
 // cosignerHeldText is the warning for a cosigner key this signer holds as the
@@ -38,13 +38,13 @@ func cosignerHeldText(selector string) string {
 // key, with a fee limit when one is named.
 func cosignedRequest(cosignerPublicKeyHex, maxFee string) map[string]string {
 	params := map[string]string{
-		plainhost.ParameterSpendEffects:     "pay",
-		plainhost.ParameterRecipientScope:   plainhost.RecipientScopeAny,
-		plainhost.ParameterRekeyAuthority:   plainhost.RekeySpendingKey,
+		boundary.ParameterSpendEffects:      "pay",
+		boundary.ParameterRecipientScope:    boundary.RecipientScopeAny,
+		boundary.ParameterRekeyAuthority:    boundary.RekeySpendingKey,
 		hostmeta.CosignerPublicKeyParameter: cosignerPublicKeyHex,
 	}
 	if maxFee != "" {
-		params[plainhost.ParameterMaxFee] = maxFee
+		params[boundary.ParameterMaxFee] = maxFee
 	}
 	return params
 }
@@ -90,8 +90,8 @@ func TestARekeyToListNamingTheCosignerWarns(t *testing.T) {
 		"another address listed":        {listedTarget.String(), false},
 	} {
 		params := map[string]string{
-			plainhost.ParameterRekeyAuthority:   plainhost.RekeyPlusCosigned,
-			plainhost.ParameterRekeyTo:          tc.rekeyTo,
+			boundary.ParameterRekeyAuthority:    boundary.RekeyPlusCosigned,
+			boundary.ParameterRekeyTo:           tc.rekeyTo,
 			hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 			hostmeta.CosignerKeyTypeParameter:   witness.Ed25519V1,
 		}
@@ -133,8 +133,8 @@ func TestACosignerKeyThisSignerHoldsIsAllowedWithAWarning(t *testing.T) {
 	// told the same.
 	t.Run("no bounds", func(t *testing.T) {
 		params := map[string]string{
-			plainhost.ParameterRekeyAuthority:   plainhost.RekeyPlusCosigned,
-			plainhost.ParameterRekeyTo:          listedTarget.String(),
+			boundary.ParameterRekeyAuthority:    boundary.RekeyPlusCosigned,
+			boundary.ParameterRekeyTo:           listedTarget.String(),
 			hostmeta.CosignerPublicKeyParameter: heldHex,
 		}
 		prepared, reviewed, unreviewed := prepareThenGenerate(t, service, params)
@@ -157,7 +157,7 @@ func TestACosignerKeyThisSignerHoldsIsAllowedWithAWarning(t *testing.T) {
 	t.Run("by reference name", func(t *testing.T) {
 		params := cosignedRequest("", "")
 		delete(params, hostmeta.CosignerPublicKeyParameter)
-		params[plainhost.ParameterCosigner] = prepareTestReference
+		params[boundary.ParameterCosigner] = prepareTestReference
 		prepared, prepareErr := service.PrepareGenerateKey(plainHostKeyType, params)
 		if prepareErr != nil || len(prepared.Warnings) != 0 {
 			t.Fatalf("PrepareGenerateKey(reference) = %q, %#v; want no warning", warningsOfPrepared(prepared), prepareErr)
@@ -285,7 +285,7 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 	unknown := listedTarget.String()
 	request := func(rekey, targets string) map[string]string {
 		params := generalParams(rekey)
-		params[plainhost.ParameterRekeyTo] = targets
+		params[boundary.ParameterRekeyTo] = targets
 		return params
 	}
 	before := storedKeyFiles(t, ir, rotating.Address)
@@ -295,7 +295,7 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 	}
 
 	// An address has one spelling, so no other form of it reaches the lookup.
-	if _, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, request(plainhost.RekeyOnlyThese, strings.ToLower(rotating.Address))); prepareErr == nil {
+	if _, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, request(boundary.RekeyOnlyThese, strings.ToLower(rotating.Address))); prepareErr == nil {
 		t.Fatal("a lower-case address was taken as a rekey-to entry")
 	}
 
@@ -308,14 +308,14 @@ func TestRekeyListRefusesARotatingAccountThisSignerHolds(t *testing.T) {
 		params  map[string]string
 		refused bool
 	}{
-		{"the rotating account alone", request(plainhost.RekeyOnlyThese, rotating.Address), true},
-		{"the rotating account last", request(plainhost.RekeyOnlyThese, unknown+","+plain.Address+","+rotating.Address), true},
-		{"the rotating account first", request(plainhost.RekeyOnlyThese, rotating.Address+","+unknown), true},
-		{"with spaces around it", request(plainhost.RekeyOnlyThese, unknown+" , "+rotating.Address+" "), true},
-		{"no bounds", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, plainhost.ParameterRekeyTo: rotating.Address}, true},
-		{"a held account of another type", request(plainhost.RekeyOnlyThese, plain.Address), false},
-		{"an address the signer doesn't hold", request(plainhost.RekeyOnlyThese, unknown), false},
-		{"held and not held together", request(plainhost.RekeyOnlyThese, unknown+","+plain.Address), false},
+		{"the rotating account alone", request(boundary.RekeyOnlyThese, rotating.Address), true},
+		{"the rotating account last", request(boundary.RekeyOnlyThese, unknown+","+plain.Address+","+rotating.Address), true},
+		{"the rotating account first", request(boundary.RekeyOnlyThese, rotating.Address+","+unknown), true},
+		{"with spaces around it", request(boundary.RekeyOnlyThese, unknown+" , "+rotating.Address+" "), true},
+		{"no bounds", map[string]string{boundary.ParameterRekeyAuthority: boundary.RekeyOnlyThese, boundary.ParameterRekeyTo: rotating.Address}, true},
+		{"a held account of another type", request(boundary.RekeyOnlyThese, plain.Address), false},
+		{"an address the signer doesn't hold", request(boundary.RekeyOnlyThese, unknown), false},
+		{"held and not held together", request(boundary.RekeyOnlyThese, unknown+","+plain.Address), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prepared, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, test.params)
@@ -383,8 +383,8 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 		t.Fatal("the rotating account is still held")
 	}
 
-	params := generalParams(plainhost.RekeyOnlyThese)
-	params[plainhost.ParameterRekeyTo] = rotating.Address
+	params := generalParams(boundary.RekeyOnlyThese)
+	params[boundary.ParameterRekeyTo] = rotating.Address
 	// Not held: the address says nothing about its type, so it is taken.
 	listed, err := service.GenerateKey(context.Background(), boundedHostKeyType, params)
 	if err != nil {
@@ -415,7 +415,7 @@ func TestAStoredRekeyListNamingAHeldRotatingAccountStillLoads(t *testing.T) {
 		if keyTypes[listed.Address] != boundedHostKeyType || keyTypes[rotating.Address] != rotatingTestKeyType {
 			t.Fatalf("%s store holds %v", name, keyTypes)
 		}
-		if got := store.GetSigningSummary()[listed.Address].Parameters[plainhost.ParameterRekeyTo]; got != rotating.Address {
+		if got := store.GetSigningSummary()[listed.Address].Parameters[boundary.ParameterRekeyTo]; got != rotating.Address {
 			t.Fatalf("%s store: the account's list is %q", name, got)
 		}
 	}
@@ -537,8 +537,8 @@ func TestGenerationWarningsAreThoseOfTheKeysHeldAtGeneration(t *testing.T) {
 func TestAReviewMadeBeforeTheRotatingAccountWasHeldIsRefusedAtGeneration(t *testing.T) {
 	ir, service := setupRotatingHolder(t)
 	rotating := generateRotating(t, service)
-	params := generalParams(plainhost.RekeyOnlyThese)
-	params[plainhost.ParameterRekeyTo] = rotating.Address
+	params := generalParams(boundary.RekeyOnlyThese)
+	params[boundary.ParameterRekeyTo] = rotating.Address
 
 	putBack := takeOutOfStore(t, ir, rotating.Address)
 	review, prepareErr := service.PrepareGenerateKey(boundedHostKeyType, params)
@@ -563,8 +563,8 @@ func TestHeldKeyChecksComeAfterTheLockAndTheGenerationChecks(t *testing.T) {
 	ir, service := setupRotatingHolder(t)
 	rotating := generateRotating(t, service)
 	params := func() map[string]string {
-		request := generalParams(plainhost.RekeyOnlyThese)
-		request[plainhost.ParameterRekeyTo] = rotating.Address
+		request := generalParams(boundary.RekeyOnlyThese)
+		request[boundary.ParameterRekeyTo] = rotating.Address
 		return request
 	}
 	rotatingRefusal := "rekey_to: " + rotatingkey.RekeyTargetRefusal(rotating.Address)
