@@ -4,6 +4,7 @@
 package connect
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"testing"
@@ -86,4 +87,21 @@ func TestBindSignerClientContextConcurrentClearIsRaceSafe(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestSetProgressOutputUpdatesStateAndActiveClient(t *testing.T) {
+	state := NewState()
+	var buf bytes.Buffer
+	state.SetProgressOutput(&buf)
+	if state.ProgressOutput() != &buf {
+		t.Fatal("ProgressOutput() did not return configured writer")
+	}
+
+	client := util.NewSignerClient("http://localhost:1")
+	state.SignerClient = client
+	var second bytes.Buffer
+	state.SetProgressOutput(&second)
+	if client.ProgressOut != &second {
+		t.Fatal("SetProgressOutput did not update active SignerClient.ProgressOut")
+	}
 }

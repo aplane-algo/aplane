@@ -673,6 +673,29 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 	}
 }
 
+func TestDeactivateCompiledProviderRejectsYAMLTemplateRecord(t *testing.T) {
+	paths := newLibraryTestPaths(t)
+	masterKey := testMasterKey()
+	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("yaml-not-compiled", "YAML Not Compiled"))
+
+	installed, err := InstallParsed(paths, parsed, cryptotest.Keyring(t, masterKey))
+	if err != nil {
+		t.Fatalf("InstallParsed() error = %v", err)
+	}
+
+	_, err = DeactivateCompiledProvider(paths, installed.KeyType, cryptotest.Keyring(t, masterKey))
+	if err == nil {
+		t.Fatal("DeactivateCompiledProvider() error = nil, want rejection for YAML template record")
+	}
+	if !strings.Contains(err.Error(), "not a compiled provider") || !strings.Contains(err.Error(), "apstore template repair") {
+		t.Fatalf("DeactivateCompiledProvider() error = %v, want compiled-provider mismatch and repair guidance", err)
+	}
+	rec, ok, err := keytypestate.Get(paths, installed.KeyType)
+	if err != nil || !ok || rec.Source != keytypestate.SourceYAMLGeneric {
+		t.Fatalf("keytypestate.Get() = (%+v, %v, %v), want intact generic YAML record", rec, ok, err)
+	}
+}
+
 func TestRemoveInstalledTemplateMovesUnusedTemplateToDeletedArchive(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	parsed := mustParseYAML(t, "source.yaml", testGenericTemplateYAML("remove-unused", "Remove Unused"))

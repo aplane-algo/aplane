@@ -291,6 +291,7 @@ func (f *Fetcher) acquire(ctx context.Context, origin string) (func(), error) {
 func (f *Fetcher) transport(source policy.ExternalSourceV1, target *url.URL) *http.Transport {
 	t := &http.Transport{
 		DisableKeepAlives:      true,
+		DisableCompression:     true,
 		ForceAttemptHTTP2:      false,
 		MaxResponseHeaderBytes: maxResponseHeaderBytes,
 		TLSHandshakeTimeout:    time.Duration(source.TimeoutMS) * time.Millisecond,

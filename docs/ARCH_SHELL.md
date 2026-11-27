@@ -1992,7 +1992,7 @@ Client programs produce four kinds of output, and each has one owner:
 |---|---|---|
 | Result | The answer to a command, or something the user must keep | Typed application result, rendered by the host (`r.Out`, `command.Result`) |
 | Prompt | Asks for a decision or input | The line reader, or the host's approval handler |
-| Progress | Status that matters while an operation runs | `ProgressLine`, the signer client's `ProgressOut` (stdout when unset), or a host callback |
+| Progress | Status that matters while an operation runs | `ProgressLine`, the signer client's `ProgressOut` (discarded when unset; wired by the host), or a host callback |
 | Log | Operational diagnostics | `log/slog`, through the handler the host installs |
 
 If a command's answer would be incomplete without a message, it is a result, and

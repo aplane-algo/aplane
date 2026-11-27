@@ -55,9 +55,9 @@ func RunMCPMode(network string, cfg config.Config, dataDir string) {
 	state.AutoConfirm = true   // Non-interactive: skip confirmation prompts
 	state.SetOutput(os.Stderr) // stdout is MCP transport; all output goes to stderr
 
-	// Save the real stdout for MCP transport, then redirect os.Stdout to stderr.
-	// This prevents any stray fmt.Printf in signing/confirmation paths from
-	// corrupting the MCP JSON-RPC transport.
+	// Save the real stdout for MCP transport, then redirect os.Stdout to stderr
+	// as a safeguard against any third-party Go library writing directly to
+	// os.Stdout and corrupting the MCP JSON-RPC transport.
 	mcpStdout := os.Stdout
 	os.Stdout = os.Stderr
 	mcpExitCode := 0

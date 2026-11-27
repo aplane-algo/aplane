@@ -5,6 +5,7 @@ package connect
 
 import (
 	"context"
+	"io"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -21,6 +22,7 @@ type ConnectionState struct {
 	ConnectionTarget string
 	connectingTarget string
 	identityCreated  func(sshtunnel.IdentityCreated)
+	progressOut      io.Writer
 }
 
 // NewState creates an empty connection state.
@@ -63,6 +65,24 @@ func (s *ConnectionState) IdentityCreatedHandler() func(sshtunnel.IdentityCreate
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	return s.identityCreated
+}
+
+// SetProgressOutput sets the writer for live signer progress lines on the
+// current and any future signer client. Nil discards progress output.
+func (s *ConnectionState) SetProgressOutput(w io.Writer) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	s.progressOut = w
+	if s.SignerClient != nil {
+		s.SignerClient.SetProgressOutput(w)
+	}
+}
+
+// ProgressOutput returns the writer set by SetProgressOutput.
+func (s *ConnectionState) ProgressOutput() io.Writer {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	return s.progressOut
 }
 
 // BindSignerClientContext attaches a request context to the current signer

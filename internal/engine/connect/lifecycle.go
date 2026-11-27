@@ -125,6 +125,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 		failed()
 		return nil, connectVerifyError(client, errors.New("connection closed before setup completed"))
 	}
+	signerClient.SetProgressOutput(s.progressOut)
 	s.SignerClient = signerClient
 	s.ConnectionTarget = target
 	s.SSHTunnelClient = client

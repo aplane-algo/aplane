@@ -465,8 +465,8 @@ without overlays and bounds; neither takes mnemonic import.
 
 #### Key Type Templates
 
-- `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
-- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; available to any authenticated controlling (non-`auth_only`) session with an unlocked runtime and the `templates.view` action; it needs no stronger action because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
+- `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, basename-only `source_path` and `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.
+- `show_library_template`: `key_type`, `template_type` -> `show_library_template_result`: `success`, optional `key_type`, `template_type`, basename-only `source_path`, `source_sha256`, `source_mtime`, `template_yaml`, `code`, `error`; available to any authenticated controlling (non-`auth_only`) session with an unlocked runtime and the `templates.view` action; it needs no stronger action because it returns plaintext reference library YAML, not decrypted installed-template source. `source_sha256` is the exact-byte SHA-256 of `template_yaml`; `source_mtime` is the source file's Unix modification time and is informational rather than tamper-proof.
 - `install_library_template`: `key_type`, `template_type` -> `install_library_template_result`: `success`, optional `key_type`, `template_type`, `already_exists`, `code`, `error`
 - `list_installed_templates` -> `installed_templates`: `templates[]`, optional `code`, `error`; each template has `key_type`, `template_type`, optional `size`, and `enabled`
 - `show_installed_template`: `key_type` -> `show_installed_template_result`: `success`, optional `key_type`, `template_type`, sensitive `template_yaml`, `code`, `error`; available through authenticated IPC admin sessions
@@ -580,7 +580,7 @@ transaction type is one more entry in `fields` and needs no client change.
   checksum, and size; `created_at` is the archive file's
   modification time. Items are ordered newest first by the time in a managed
   archive's name (`aplane-backup-<UTC time>.tar.gz`), falling back to that
-  file time. Successful backup-create and import
+  file time. Successful backup-create, import, and restore-preview
   responses likewise expose only archive basenames, never the signer store
   root. A successful checksum read is not a claim that encrypted archive
   contents were authenticated. This read-only operation is available to
@@ -625,7 +625,7 @@ transaction type is one more entry in `fields` and needs no client change.
   a managed archive without filesystem access to the private signer store.
   It requires the signer store to be unlocked or recovery-blocked.
 - `preview_restore`: `archive_path`, sensitive `export_passphrase` ->
-  `restore_preview`: resolved archive path, optional `archive_created_at`
+  `restore_preview`: basename-only `archive_path`, optional `archive_created_at`
   (the creation time sealed in the authenticated manifest), `keys[]`,
   `skipped[]`, `skipped_omitted`, optional `code`, `error`. It classifies the whole archive as a
   whole-archive restore would. Each key in `keys[]` is one the restore would
@@ -878,10 +878,10 @@ Policy selection semantics:
 
 #### Cosigner References And Generation Inventory
 
-- `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records, and optional `invalid[]` (`path`, `name`, `reason`, `removable`) for each `.json` entry in the reference directory that is not a valid reference, an unreadable file, a directory and a dangling symlink included; `removable` says whether `remove_cosigner_reference` of `name` clears it, otherwise the entry has to be deleted by hand. Only a reference directory that cannot be read fails the list with `list_failed`. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
+- `list_cosigner_references` -> `cosigner_references_list`: `references[]`, optional `code`, `error`; returns product-store public cosigner-reference records, and optional `invalid[]` (basename-only `path`, `name`, `reason`, `removable`) for each `.json` entry in the reference directory that is not a valid reference, an unreadable file, a directory and a dangling symlink included; `removable` says whether `remove_cosigner_reference` of `name` clears it, otherwise the entry has to be deleted by hand. Only a reference directory that cannot be read fails the list with `list_failed`. Read-only store inspection does not wait behind a store mutation; it returns retryable `store_busy` instead.
 - `get_cosigner_reference`: `name` -> `cosigner_reference`: `success`, optional `reference`, `code`, `error`
 - `import_cosigner_reference`: `name`, `envelope_json` -> `import_cosigner_reference_result`: `success`, optional `reference`, `code`, `error`; the server parses, validates, and durably publishes the public reference under the store mutation lock
-- `remove_cosigner_reference`: `name` -> `remove_cosigner_reference_result`: `success`, `name`, `removed`, optional `path` (the file removed), `code`, `error`; `name` must be a reference name exactly as listed, so a near miss such as `Foo` is refused rather than removing `foo`; a record that does not parse is removed too
+- `remove_cosigner_reference`: `name` -> `remove_cosigner_reference_result`: `success`, `name`, `removed`, optional basename-only `path` (the file removed), `code`, `error`; `name` must be a reference name exactly as listed, so a near miss such as `Foo` is refused rather than removing `foo`; a record that does not parse is removed too
 - `export_cosigner_public`: `witness_key_id` -> `export_cosigner_public_result`: `success`, `witness_key_id`, `envelope_json`, `code`, `error`; only public witness metadata crosses the protocol
 - `list_generations` -> `generations_list`: current generation, sealed priors,
   bounded non-authoritative `quarantined[]` metadata, pending staging, retained

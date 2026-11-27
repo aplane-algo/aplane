@@ -43,23 +43,50 @@ func TestMarshalAdminMessageBoundsDocumentGrowth(t *testing.T) {
 	}
 }
 
-// The inferred kind is added to the first encoding in place of a decode and
-// re-encode through a map, which left unzeroed copies of every passphrase
-// and recovery phrase a message carried. Members therefore keep their struct
-// order and the kind comes last.
-func TestMarshalAdminMessageAppendsInferredKindWithoutReencoding(t *testing.T) {
-	data, err := MarshalAdminMessage(UnlockMessage{
+// The inferred kind is populated structurally on a shallow copy of the message
+// before encoding once, so no intermediate JSON buffer or cloned secret slice
+// is allocated and the encoded JSON places kind in its BaseMessage position.
+func TestMarshalAdminMessageSetsInferredKindStructurally(t *testing.T) {
+	secret := NewSensitiveBytes("secret")
+	msg := UnlockMessage{
 		BaseMessage: BaseMessage{Type: MsgTypeUnlock, ID: "unlock-1"},
-		Passphrase:  NewSensitiveBytes("secret"),
-	})
+		Passphrase:  secret,
+	}
+	data, err := MarshalAdminMessage(msg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"type":"unlock","id":"unlock-1","passphrase":"secret","kind":"request"}`
+	want := `{"kind":"request","type":"unlock","id":"unlock-1","passphrase":"secret"}`
 	if string(data) != want {
-		t.Fatalf("MarshalAdminMessage() = %s, want %s", data, want)
+		t.Fatalf("MarshalAdminMessage(value) = %s, want %s", data, want)
 	}
 
+	// Pointer callers get the same encoding without mutating the caller's struct.
+	ptrMsg := &UnlockMessage{
+		BaseMessage: BaseMessage{Type: MsgTypeUnlock, ID: "unlock-1"},
+		Passphrase:  secret,
+	}
+	data, err = MarshalAdminMessage(ptrMsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != want {
+		t.Fatalf("MarshalAdminMessage(pointer) = %s, want %s", data, want)
+	}
+	if ptrMsg.Kind != "" {
+		t.Fatalf("MarshalAdminMessage mutated caller Kind to %q", ptrMsg.Kind)
+	}
+
+	// Direct BaseMessage values also receive inferred kind.
+	baseData, err := MarshalAdminMessage(BaseMessage{Type: MsgTypeStatus, ID: "st-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantBase := `{"kind":"notification","type":"status","id":"st-1"}`; string(baseData) != wantBase {
+		t.Fatalf("MarshalAdminMessage(BaseMessage) = %s, want %s", baseData, wantBase)
+	}
+
+	// Explicit kind is preserved, and unknown/empty types encode without kind.
 	data, err = MarshalAdminMessage(UnlockMessage{
 		BaseMessage: BaseMessage{Kind: MessageKindRequest, Type: MsgTypeUnlock, ID: "unlock-2"},
 	})
@@ -69,14 +96,12 @@ func TestMarshalAdminMessageAppendsInferredKindWithoutReencoding(t *testing.T) {
 	if want := `{"kind":"request","type":"unlock","id":"unlock-2","passphrase":""}`; string(data) != want {
 		t.Fatalf("MarshalAdminMessage(with kind) = %s, want %s", data, want)
 	}
-}
 
-func TestAppendObjectKindHandlesEmptyObjectAndRejectsNonObject(t *testing.T) {
-	got, err := appendObjectKind([]byte(`{}`), MessageKindNotification)
-	if err != nil || string(got) != `{"kind":"notification"}` {
-		t.Fatalf("appendObjectKind({}) = %s, %v", got, err)
+	unknownData, err := MarshalAdminMessage(BaseMessage{Type: "unknown_future_type", ID: "u-1"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := appendObjectKind([]byte(`[]`), MessageKindRequest); err == nil {
-		t.Fatal("appendObjectKind accepted a non-object")
+	if wantUnknown := `{"type":"unknown_future_type","id":"u-1"}`; string(unknownData) != wantUnknown {
+		t.Fatalf("MarshalAdminMessage(unknown type) = %s, want %s", unknownData, wantUnknown)
 	}
 }

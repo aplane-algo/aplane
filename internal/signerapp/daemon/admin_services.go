@@ -461,7 +461,7 @@ func (s signerTemplateServices) ListKeyTypes() adminproto.ListKeyTypesResult {
 	resp, err := s.signer.restService().KeyTypes(ir)
 	if err != nil {
 		return adminproto.ListKeyTypesResult{
-			Code:  "list_failed",
+			Code:  protocol.ResultCodeListFailed,
 			Error: err.Error(),
 		}
 	}
@@ -478,7 +478,7 @@ func (s signerAdminServices) ListCosignerReferences() adminproto.ListCosignerRef
 		return err
 	})
 	if err != nil {
-		code, message := identityStoreInspectionError(err, "list_failed")
+		code, message := identityStoreInspectionError(err, protocol.ResultCodeListFailed)
 		return adminproto.ListCosignerReferencesResult{Code: code, Error: message}
 	}
 	result := adminproto.ListCosignerReferencesResult{References: make([]adminproto.CosignerReferenceInfo, len(records))}
@@ -503,11 +503,11 @@ func (s signerAdminServices) GetCosignerReference(req adminproto.GetCosignerRefe
 		return err
 	})
 	if err != nil {
-		code, message := identityStoreInspectionError(err, "read_failed")
+		code, message := identityStoreInspectionError(err, protocol.ResultCodeReadFailed)
 		return adminproto.GetCosignerReferenceResult{Code: code, Error: message}
 	}
 	if !found {
-		return adminproto.GetCosignerReferenceResult{Code: "not_found", Error: fmt.Sprintf("cosigner reference %q not found", req.Name)}
+		return adminproto.GetCosignerReferenceResult{Code: protocol.ResultCodeNotFound, Error: fmt.Sprintf("cosigner reference %q not found", req.Name)}
 	}
 	return adminproto.GetCosignerReferenceResult{Success: true, Reference: adminCosignerReference(record)}
 }
@@ -521,7 +521,7 @@ func (s signerAdminServices) ImportCosignerReference(req adminproto.ImportCosign
 		return err
 	})
 	if err != nil {
-		return adminproto.ImportCosignerReferenceResult{Code: "import_failed", Error: err.Error()}
+		return adminproto.ImportCosignerReferenceResult{Code: protocol.ResultCodeImportFailed, Error: err.Error()}
 	}
 	return adminproto.ImportCosignerReferenceResult{Success: true, Reference: adminCosignerReference(*record)}
 }
@@ -535,7 +535,7 @@ func (s signerAdminServices) RemoveCosignerReference(req adminproto.RemoveCosign
 		return err
 	})
 	if err != nil {
-		return adminproto.RemoveCosignerReferenceResult{Name: req.Name, Code: "remove_failed", Error: err.Error()}
+		return adminproto.RemoveCosignerReferenceResult{Name: req.Name, Code: protocol.ResultCodeRemoveFailed, Error: err.Error()}
 	}
 	return adminproto.RemoveCosignerReferenceResult{
 		Success: true, Name: req.Name, ComponentKey: removal.ComponentKey, Removed: removal.Removed, Path: removal.Path,
@@ -546,7 +546,7 @@ func (s signerAdminServices) ExportCosignerPublic(req adminproto.ExportCosignerP
 	ir := s.ProductRuntime()
 	componentKey, err := witness.NormalizeID(req.WitnessKeyID)
 	if err != nil {
-		return adminproto.ExportCosignerPublicResult{Code: "invalid_witness_key_id", Error: err.Error()}
+		return adminproto.ExportCosignerPublicResult{Code: protocol.ResultCodeInvalidWitnessKeyID, Error: err.Error()}
 	}
 	var envelope witness.PublicReference
 	var found bool
@@ -559,15 +559,15 @@ func (s signerAdminServices) ExportCosignerPublic(req adminproto.ExportCosignerP
 		return err
 	})
 	if err != nil {
-		code, message := identityStoreInspectionError(err, "export_failed")
+		code, message := identityStoreInspectionError(err, protocol.ResultCodeExportFailed)
 		return adminproto.ExportCosignerPublicResult{Code: code, Error: message}
 	}
 	if !found {
-		return adminproto.ExportCosignerPublicResult{Code: "not_found", Error: fmt.Sprintf("cosigner public metadata for %s not found", componentKey)}
+		return adminproto.ExportCosignerPublicResult{Code: protocol.ResultCodeNotFound, Error: fmt.Sprintf("cosigner public metadata for %s not found", componentKey)}
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
-		return adminproto.ExportCosignerPublicResult{Code: "encode_failed", Error: err.Error()}
+		return adminproto.ExportCosignerPublicResult{Code: protocol.ResultCodeEncodeFailed, Error: err.Error()}
 	}
 	data = append(data, '\n')
 	return adminproto.ExportCosignerPublicResult{Success: true, WitnessKeyID: componentKey, EnvelopeJSON: string(data)}
@@ -589,7 +589,7 @@ func (s signerAdminServices) ListGenerations() adminproto.GenerationInventory {
 		})
 	})
 	if err != nil {
-		code, message := identityStoreInspectionError(err, "inspect_failed")
+		code, message := identityStoreInspectionError(err, protocol.ResultCodeInspectFailed)
 		return adminproto.GenerationInventory{Code: code, Error: message}
 	}
 	quarantined = append(quarantined, report.Quarantined...)
