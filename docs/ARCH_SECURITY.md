@@ -129,7 +129,7 @@ Clients should:
 
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
-- `POST /sign/component` - Produce kind-tagged bounded-base and cosigner components
+- `POST /sign/component` - Produce kind-tagged base and cosigner components
 - `POST /sign/assemble` - Assemble bounded-cosigner signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /sign/rotating/prepare` - Prepare a rotating-key signing stage
@@ -1002,8 +1002,8 @@ makes action typos such as `keys.veiw` fail before allowlist matching.
 | `identity.restore` | List, import, preview, and directly restore managed credential archives, roll back the latest eligible restore, and reconcile product-store recovery state | `identity`, `backup`, `backup_upload` | Yes; recovery-mode inventory, repair, and resolution are allowed while signing remains blocked |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
-| `sign.component` | Request cosigner or bounded-base authorization components over a frozen group | `transaction` | Yes |
-| `sign.assemble` | Assemble verified bounded-base and cosigner component signatures into signed cosigned transactions | `transaction` | Yes |
+| `sign.component` | Request cosigner or base authorization components over a frozen group | `transaction` | Yes |
+| `sign.assemble` | Assemble verified base and cosigner component signatures into signed cosigned transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key | `key` | Yes |
@@ -1504,10 +1504,10 @@ Signing-audit semantics:
     foreign positions)
 
   A request refused before the signer's gates run, for example a cosigned
-  account sent to `/sign` (`bounded_cosigner_required`) or a planning
+  account sent to `/sign` (`cosigner_required`) or a planning
   error, is refused for that reason and writes no `SIGN_REJECTED`, whatever
   its other positions hold; nothing was signed. A technical failure while
-  signing a position is `SIGN_FAILED`. On `/sign` and bounded-base
+  signing a position is `SIGN_FAILED`. On `/sign` and base
   `/sign/component`, an approved request stopped by a lock or recovery before
   `SIGN_APPROVED` is written records `SIGN_REJECTED` with reason
   `session_ended_after_approval`. A request cancelled by the client, or
@@ -1541,7 +1541,7 @@ Signing-audit semantics:
   `carried_latest` for the newest, so only two rotations running that fail to
   copy them lose them (see
   [KEYTYPE_ROTATING_TRIPLE_HYBRID.md](KEYTYPE_ROTATING_TRIPLE_HYBRID.md) 8.2).
-  Audited signing paths (`/sign`, bounded-base and cosigner `/sign/component`,
+  Audited signing paths (`/sign`, base and cosigner `/sign/component`,
   and rotating sign) release their key use before writing `SIGN_APPROVED` and
   then make a final check of the request's session and context. If that check
   refuses the release (the signer locked, entered recovery, the request was
@@ -2012,7 +2012,7 @@ Callers (the admin `lock_identity` handler and IPC disconnect cleanup) call
 3. Drain key users: cancel their contexts and wait for them to finish, before `passphraseLock` is taken.
    The key users are the holders that register with `KeyUseContext`: the
    rotating stage-table worker, rotating prepare and sign, ordinary `/sign`,
-   bounded-base and cosigner-role `/sign/component`, `/sign/assemble`, cosigner
+   base and cosigner-role `/sign/component`, `/sign/assemble`, cosigner
    external checks, and mnemonic export. For signing paths that require
    approval, the key use begins only after policy gates and operator approval
    (never spanning approval wait) and releases once loaded key material is

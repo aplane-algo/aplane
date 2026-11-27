@@ -234,7 +234,7 @@ func TestPlansRecogniseHeldPositionsTheyDoNotSign(t *testing.T) {
 		t.Fatal(planErr)
 	}
 	request := signerapi.ComponentRequest{
-		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer}},
 		ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1, AuthAddress: falcon.String()}},
 	}
 	for i, plannedTxn := range planned.AllTxns {

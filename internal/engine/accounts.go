@@ -467,14 +467,12 @@ func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {
 		Parameters:               maps.Clone(k.Parameters),
 		TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   k.TemplateProvenanceNote,
-		PolicyLabel:              keytypeux.BoundedLabel(k.BoundedAuthorization),
+		PolicyLabel:              keytypeux.BoundedLabel(k.Host),
 		IsGenericLsig:            k.IsGenericLsig,
 		ValidRekeyTarget:         k.ValidRekeyTarget,
 	}
-	if bounded := k.BoundedAuthorization; bounded != nil {
-		if bounded.Cosigner != nil {
-			info.CosignerKeyID = bounded.Cosigner.ComponentKeyID
-		}
+	if k.Host != nil && k.Host.Cosigner != nil {
+		info.CosignerKeyID = k.Host.Cosigner.ComponentKeyID
 	}
 	return info
 }

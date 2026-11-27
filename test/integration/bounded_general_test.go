@@ -904,10 +904,10 @@ func TestBoundsFeeCeilingThroughSigner(t *testing.T) {
 			if key.Address != account {
 				continue
 			}
-			if key.BoundedAuthorization == nil || key.BoundedAuthorization.MaxFee == nil {
-				t.Fatalf("inventory for %s has no fee ceiling: %#v", account, key.BoundedAuthorization)
+			if key.Host == nil || key.Host.Bounds == nil {
+				t.Fatalf("inventory for %s has no fee ceiling: %#v", account, key.Host)
 			}
-			return *key.BoundedAuthorization.MaxFee
+			return key.Host.Bounds.MaxFee
 		}
 		t.Fatalf("inventory has no %s", account)
 		return 0

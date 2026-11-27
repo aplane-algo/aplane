@@ -185,7 +185,7 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 		component := components[target.Index]
 		assemblyTarget := signerapi.AssemblyTarget{
 			TargetIndex: target.Index, AuthAddress: target.Account,
-			BaseSignatures: component.BaseSignatures, BoundedRuntimeArgs: component.RuntimeArgs,
+			BaseSignatures: component.BaseSignatures, RuntimeArgs: component.RuntimeArgs,
 			AssemblyReceipt: component.AssemblyReceipt, BaseSourceRequestID: baseRequestID,
 		}
 		if component.NeedsCosigner() {
@@ -253,7 +253,7 @@ func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignReq
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
 			componentReq.Targets = append(componentReq.Targets, signerapi.ComponentTarget{
-				TargetIndex: i, Kind: signerapi.ComponentTargetKindBoundedBase,
+				TargetIndex: i, Kind: signerapi.ComponentTargetKindBase,
 				AuthAddress: request.AuthAddress, LsigArgs: request.LsigArgs, AppCallInfo: request.AppCallInfo,
 			})
 			continue
@@ -286,7 +286,7 @@ func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenG
 	components := make(map[int]signerapi.Component, len(componentResp.Components))
 	for _, component := range componentResp.Components {
 		target, ok := targetsByIndex[component.TargetIndex]
-		if !ok || component.Kind != signerapi.ComponentTargetKindBoundedBase || component.AuthAddress != target.Account {
+		if !ok || component.Kind != signerapi.ComponentTargetKindBase || component.AuthAddress != target.Account {
 			return nil, "", fmt.Errorf("signer returned an unexpected bounded component for target index %d", component.TargetIndex)
 		}
 		if _, duplicate := components[component.TargetIndex]; duplicate {
@@ -590,21 +590,24 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 }
 
 // boundedFeeCeiling is a cosigned account's on-chain fee ceiling: a bounded
-// host has one, a plain host has none. Missing metadata, or a contract this
-// client doesn't know, fails closed.
+// host has one, a plain host has none. Missing or contradictory metadata, or a
+// contract this client doesn't know, fails closed.
 func (s *Signer) boundedFeeCeiling(account string) (*uint64, error) {
 	contract, found := s.cache.BoundedContract(account)
 	if !found {
 		return nil, fmt.Errorf("bounded account %s is missing contract metadata; run keys refresh", account)
 	}
 	switch contract {
-	case signerapi.BoundedContractBounded2:
+	case signerapi.HostContractBounded2:
 		maxFee, found := s.cache.BoundedMaxFee(account)
 		if !found {
 			return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
 		}
 		return &maxFee, nil
-	case signerapi.BoundedContractPlain1:
+	case signerapi.HostContractPlain1:
+		if _, found := s.cache.BoundedMaxFee(account); found {
+			return nil, fmt.Errorf("plain host account %s has a max_fee, which a plain host never has; run keys refresh", account)
+		}
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("bounded account %s has contract %q, which this client does not support; upgrade the client", account, contract)

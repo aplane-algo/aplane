@@ -41,7 +41,7 @@ func TestProtocolPrepareGenerateResultCarriesWarnings(t *testing.T) {
 	}
 	msg := ProtocolPrepareGenerateResultMessage("prepare-1", adminproto.PrepareGenerateKeyResult{
 		Success: true, KeyType: "aplane.falcon1024.v1", Warnings: warnings,
-		Bounded: &adminproto.PreparedBoundedProfile{Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)), Rekey: "refused"},
+		Host: &adminproto.PreparedHostProfile{Rekey: "refused", Bounds: &adminproto.PreparedHostBounds{SpendEffects: []string{"pay"}}},
 	})
 	if len(msg.Warnings) != 2 || msg.Warnings[0] != warnings[0] || msg.Warnings[1] != warnings[1] {
 		t.Fatalf("Warnings = %q", msg.Warnings)
@@ -58,7 +58,7 @@ func TestProtocolPrepareGenerateResultCarriesWarnings(t *testing.T) {
 		t.Fatalf("decoded = %+v from %s", decoded, wire)
 	}
 	// A fee limit of zero is a value on the wire, not an absent one.
-	if decoded.Bounded == nil || decoded.Bounded.MaxFee == nil || *decoded.Bounded.MaxFee != 0 || !strings.Contains(string(wire), `"max_fee":0`) {
+	if decoded.Host == nil || decoded.Host.Bounds == nil || decoded.Host.Bounds.MaxFee != 0 || !strings.Contains(string(wire), `"max_fee":0`) {
 		t.Fatalf("a zero fee limit was lost: %s", wire)
 	}
 

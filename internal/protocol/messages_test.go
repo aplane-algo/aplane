@@ -151,10 +151,10 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 }
 
 // Pinned so a change of the version is a deliberate edit, made by the rule in
-// docs/ARCH_ADMIN.md ("Transport notes"). 10 removed initialize_store.
-func TestAdminProtocolVersionIsV10(t *testing.T) {
-	if AdminProtocolVersion != 10 {
-		t.Fatalf("AdminProtocolVersion = %d, want 10", AdminProtocolVersion)
+// docs/ARCH_ADMIN.md ("Transport notes"). 11 nested the bounds in prepare_generate_result's host.
+func TestAdminProtocolVersionIsV11(t *testing.T) {
+	if AdminProtocolVersion != 11 {
+		t.Fatalf("AdminProtocolVersion = %d, want 11", AdminProtocolVersion)
 	}
 }
 
@@ -1011,9 +1011,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-1"},
 				Success:     true,
 				KeyType:     "aplane.falcon1024.v1",
-				Bounded: &PreparedBoundedProfile{
-					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(2_000)),
-					Rekey: "refused", Layer3Policy: "none",
+				Host: &PreparedHostProfile{
+					Rekey:  "refused",
+					Bounds: &PreparedHostBounds{SpendEffects: []string{"pay"}, MaxFee: 2_000, Layer3Policy: "none"},
 				},
 			},
 			wantMap: map[string]any{
@@ -1021,12 +1021,33 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":       "prepare-1",
 				"success":  true,
 				"key_type": "aplane.falcon1024.v1",
-				"bounded": map[string]any{
-					"contract":      "bounded2",
-					"spend_effects": []any{"pay"},
-					"max_fee":       float64(2_000),
-					"rekey":         "refused",
-					"layer3_policy": "none",
+				"host": map[string]any{
+					"rekey": "refused",
+					"bounds": map[string]any{
+						"spend_effects": []any{"pay"},
+						"max_fee":       float64(2_000),
+						"layer3_policy": "none",
+					},
+				},
+			},
+		},
+		{
+			// A plain host has no bounds, and its profile carries none.
+			name: "prepare_generate_result for a plain host",
+			msg: PrepareGenerateResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-plain"},
+				Success:     true,
+				KeyType:     "aplane.falcon1024.v1",
+				Host:        &PreparedHostProfile{Rekey: "spending_key", CosignerRequired: true},
+			},
+			wantMap: map[string]any{
+				"type":     MsgTypePrepareGenerateResult,
+				"id":       "prepare-plain",
+				"success":  true,
+				"key_type": "aplane.falcon1024.v1",
+				"host": map[string]any{
+					"rekey":             "spending_key",
+					"cosigner_required": true,
 				},
 			},
 		},
@@ -1038,9 +1059,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				BaseMessage: BaseMessage{Type: MsgTypePrepareGenerateResult, ID: "prepare-2"},
 				Success:     true,
 				KeyType:     "aplane.falcon1024.v1",
-				Bounded: &PreparedBoundedProfile{
-					Contract: "bounded2", SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)),
-					Rekey: "refused", Layer3Policy: "none",
+				Host: &PreparedHostProfile{
+					Rekey:  "refused",
+					Bounds: &PreparedHostBounds{SpendEffects: []string{"pay"}, MaxFee: 0, Layer3Policy: "none"},
 				},
 				Warnings: []string{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "a second note"},
 			},
@@ -1049,12 +1070,13 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":       "prepare-2",
 				"success":  true,
 				"key_type": "aplane.falcon1024.v1",
-				"bounded": map[string]any{
-					"contract":      "bounded2",
-					"spend_effects": []any{"pay"},
-					"max_fee":       float64(0),
-					"rekey":         "refused",
-					"layer3_policy": "none",
+				"host": map[string]any{
+					"rekey": "refused",
+					"bounds": map[string]any{
+						"spend_effects": []any{"pay"},
+						"max_fee":       float64(0),
+						"layer3_policy": "none",
+					},
 				},
 				"warnings": []any{"Fee limit 0 is too low to pay alone. A transaction on its own costs more: spend (at least 2000).", "a second note"},
 			},
@@ -1387,7 +1409,7 @@ func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	}{
 		{
 			name:       "auth",
-			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":10}`),
+			raw:        []byte(`{"kind":"request","type":"auth","id":"auth-1","passphrase":"auth-secret","protocol_version":11}`),
 			msg:        &AuthMessage{},
 			fieldNames: []string{"passphrase"},
 			values:     []string{"auth-secret"},

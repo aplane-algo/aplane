@@ -279,7 +279,7 @@ func (f *nonRotatingFixture) boundedComponentSign(t *testing.T, svc *Service, ct
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		Targets: []signerapi.ComponentTarget{{
 			TargetIndex: 0,
-			Kind:        signerapi.ComponentTargetKindBoundedBase,
+			Kind:        signerapi.ComponentTargetKindBase,
 			AuthAddress: f.boundedAddr,
 		}},
 	}
@@ -388,7 +388,7 @@ func (f *nonRotatingFixture) newService(t *testing.T, audit AuditApproveLogger, 
 	}
 }
 
-// Every audited non-rotating signing path (ordinary /sign, bounded-base
+// Every audited non-rotating signing path (ordinary /sign, base
 // /sign/component, and cosigner /sign/component) must:
 //  1. release its key use before writing SIGN_APPROVED (so a stalled audit
 //     disk cannot hold a lock's drain), and
@@ -1057,8 +1057,8 @@ func TestSessionEndInsideKeyUseIsAuditedOnceAfterRelease(t *testing.T) {
 			RequestID:     "req-two-bounded",
 			GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(a), txnutil.EncodeWithPrefixHex(b)},
 			Targets: []signerapi.ComponentTarget{
-				{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: f.boundedAddr},
-				{TargetIndex: 1, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: f.boundedAddr},
+				{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: f.boundedAddr},
+				{TargetIndex: 1, Kind: signerapi.ComponentTargetKindBase, AuthAddress: f.boundedAddr},
 			},
 		}, f.session)
 		return signErr

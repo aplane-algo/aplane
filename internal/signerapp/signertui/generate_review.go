@@ -44,7 +44,7 @@ func (m Model) handlePreparedGeneration(result PrepareGenerateResultMessage) (te
 		m.viewState = m.generateErrorView()
 		return m, nil
 	}
-	if result.Bounded == nil {
+	if result.Host == nil {
 		id := m.beginOperation(ViewGenerating)
 		return m, m.sendGenerateKeyCmd(result.KeyType, m.forms.pendingGenerateParams, id)
 	}
@@ -135,7 +135,7 @@ func spendEffectsLabel(effects []string) string {
 // cosigned. A template without a list may have a parameter of the same name,
 // which is not one.
 func rekeyToList(review PrepareGenerateResultMessage) []string {
-	if review.Bounded == nil || !review.Bounded.RekeyList {
+	if review.Host == nil || !review.Host.RekeyList {
 		return nil
 	}
 	value := strings.TrimSpace(review.Parameters[boundedmeta.RekeyListEntriesParameter])
@@ -156,10 +156,10 @@ func recipientList(parameters map[string]string) []string {
 // reviewRekey states who can rekey the account and what that means, because the
 // escape path is the most consequential choice on the screen.
 func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string) {
-	setting := boundedmeta.RekeySetting(review.Bounded.Rekey)
-	cosigned := review.Bounded.CosignerRequired
-	plain := review.Bounded.Contract == boundedmeta.PlainContract
-	if review.Bounded.RekeyList {
+	setting := boundedmeta.RekeySetting(review.Host.Rekey)
+	cosigned := review.Host.CosignerRequired
+	plain := review.Host.Bounds == nil
+	if review.Host.RekeyList {
 		count := len(rekeyToList(review))
 		these, them := fmt.Sprintf("these %d addresses", count), "any of them"
 		if count == 1 {
@@ -195,7 +195,7 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 		}
 		return "Spending key alone", "That key can rekey out of this boundary."
 	default:
-		return "Unknown authority " + review.Bounded.Rekey, "This client cannot describe that rekey path."
+		return "Unknown authority " + review.Host.Rekey, "This client cannot describe that rekey path."
 	}
 }
 
@@ -204,12 +204,15 @@ func reviewRekey(review PrepareGenerateResultMessage) (label, consequence string
 // called recipients to code the framework does not check. Overstating what an account
 // can pay is the mistake to avoid, so only the policies with no list say "any". A
 // policy this client does not know claims neither: it is named, with the details.
-func reviewRecipients(contract, policy string, cosigned bool, recipients []string) (row, note string) {
-	switch {
-	case contract == boundedmeta.PlainContract && cosigned:
-		return reviewRow("Recipients", "any; the cosigner's policy decides what it signs"), ""
-	case contract == boundedmeta.PlainContract:
+func reviewRecipients(bounds *protocol.PreparedHostBounds, cosigned bool, recipients []string) (row, note string) {
+	if bounds == nil {
+		if cosigned {
+			return reviewRow("Recipients", "any; the cosigner's policy decides what it signs"), ""
+		}
 		return reviewRow("Recipients", "any; the spending key alone decides"), ""
+	}
+	policy := bounds.Layer3Policy
+	switch {
 	case policy == boundedmeta.Layer3PolicyCustom:
 		return reviewRow("Policy", "Custom policy, from the template author's code"), ""
 	case policy == boundedmeta.Layer3PolicyNone:
@@ -238,13 +241,13 @@ func (m Model) renderGenerateReview() string {
 	if review == nil {
 		return m.renderPopup(70, errorStyle.Render("No request to review"))
 	}
-	profile := review.Bounded
+	profile := review.Host
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("Review New Account"))
 	sb.WriteString("\n\n")
 	sb.WriteString(reviewRow("Key type", displayKeyType(review.KeyType)+", fixed once created"))
 	sb.WriteString(reviewRow("Transfers", transfersLabel(profile)))
-	row, note := reviewRecipients(profile.Contract, profile.Layer3Policy, profile.CosignerRequired, recipientList(review.Parameters))
+	row, note := reviewRecipients(profile.Bounds, profile.CosignerRequired, recipientList(review.Parameters))
 	// An account on a classical base, such as Ed25519, has a classical spending
 	// key, with or without bounds; say so where it is chosen.
 	// So is an Ed25519 cosigner: a second algorithm beside the spending key's,
@@ -340,7 +343,9 @@ func (m Model) renderGenerateReviewDetails() string {
 	for _, warning := range review.Warnings {
 		field("Warning", wrapText(terminalSafe(warning), 64))
 	}
-	field("Policy", review.Bounded.Layer3Policy)
+	if bounds := review.Host.Bounds; bounds != nil {
+		field("Policy", bounds.Layer3Policy)
+	}
 	field("Rekey protection", wrapText(reviewRekeyProtection(*review), 64))
 	field("Cosigner Witness Key ID", review.CosignerKeyID)
 	if review.BoundaryDigest != "" {
@@ -369,7 +374,7 @@ func (m Model) renderGenerateReviewDetails() string {
 			}
 		}
 		cosigner := ""
-		if review.Bounded.CosignerRequired {
+		if review.Host.CosignerRequired {
 			cosigner = ", without the cosigner and outside its policy"
 		}
 		unknown := ""
@@ -544,7 +549,7 @@ func reviewSpendingKeyPostQuantum(review PrepareGenerateResultMessage) (postQuan
 // a refused rekey and only these bound where authority can go independently of
 // the online keys.
 func reviewRekeyProtection(review PrepareGenerateResultMessage) string {
-	profile := review.Bounded
+	profile := review.Host
 	switch setting := boundedmeta.RekeySetting(profile.Rekey); {
 	case setting != boundedmeta.RekeyRefused && setting != boundedmeta.RekeySpendingKey:
 		return "This client cannot describe that rekey setting, so it claims no protection for it."
@@ -572,9 +577,9 @@ func indentLines(text, prefix string) string {
 
 // transfersLabel names what the account may spend and its fee limit. A plain
 // host has neither rule: every transaction that doesn't rekey is a spend.
-func transfersLabel(profile *protocol.PreparedBoundedProfile) string {
-	if profile.MaxFee == nil {
+func transfersLabel(profile *protocol.PreparedHostProfile) string {
+	if profile.Bounds == nil {
 		return "Any transaction, no fee limit"
 	}
-	return fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.SpendEffects), *profile.MaxFee)
+	return fmt.Sprintf("%s, fee limit %d", spendEffectsLabel(profile.Bounds.SpendEffects), profile.Bounds.MaxFee)
 }

@@ -173,7 +173,7 @@ reference resolution, or final LogicSig argument assembly.
 Cosigned accounts and cosigner keys are never signed through raw `/sign`:
 
 - a cosigned account's spends, cosigned rekeys and listed rekeys use `/plan`,
-  `/sign/component` with a bounded-base target and (except for a listed rekey)
+  `/sign/component` with a base target and (except for a listed rekey)
   a cosigner target, then `/sign/assemble` for source-aware final assembly;
 - cosigner keys use `/sign/component` with `kind:"cosigner"`;
 - ordinary `/sign` rejects cosigner key types and every plan with a cosigned
@@ -224,7 +224,7 @@ before accepting any of them.
 
 Cosigned signing has two independent authorization gates, one per party:
 
-- the **user signer** gates bounded-base component signing with the same
+- the **user signer** gates base component signing with the same
   signer-domain machinery as ordinary `/sign`: hard policy rejection,
   always-review rules, and blocking operator approval. The cosigned account is
   the per-target policy key (its own policy document, or the signer's node
@@ -249,7 +249,7 @@ compromised client credential cannot drive cosigned sends past the signer's
 review rules or operator approval.
 
 First-party client choreography is user-first: it completes the user-side gate
-and obtains the bounded base component before requesting a cosigner
+and obtains the base component before requesting a cosigner
 component. This avoids cosigner work and ordinary first-party audit events for
 transactions the user signer rejects, and it gives submission and simulation
 the same predictable operator flow.
@@ -275,7 +275,7 @@ write (or, on `/sign/assemble`, after the key use released). Shutdown zeroes
 the keyring only after the request servers have drained, and keeps it until
 process exit when a request handler may still be running at the deadline
 ([Shutdown Path](ARCH_SECURITY.md#shutdown-path)). In a mixed group the
-operator may be prompted twice — once for the bounded-base component request
+operator may be prompted twice — once for the base component request
 and once for the ordinary `/sign` legs; both prompts render the full group
 context. The `auto_approve_self_noop_transfer` rule never fires for cosigned
 groups because they are always pre-grouped, matching `/sign` semantics for
@@ -689,7 +689,7 @@ listed rekeys (spending key alone):
 1. Resolve the bounded target from `signing_flow` and durable inventory.
 2. Send the draft group to `/plan`, then pass the exact frozen group plus its
    closed target/context/dummy position partition to `/sign/component` with
-   `kind:"bounded-base"`. Every non-cosigned position is sent as the
+   `kind:"base"`. Every non-cosigned position is sent as the
    signer's own in both requests, since step 3 signs it through `/sign` (a
    group with a position the signer doesn't hold is refused before planning): in sign mode on `/plan`, and
    as a contextual position with `auth_address` on `/sign/component`. The
@@ -741,7 +741,7 @@ before it signs them with the dummy LogicSig. The final assembled group must
 be one canonically encoded signed transaction per frozen entry.
 
 A `plain1` account has no fee ceiling, so the client checks a planned fee against an
-account's ceiling only on a bounded one (`bounded2`, `max_fee` present); it
+account's ceiling only on a bounded one (`bounded2`, `bounds` present); it
 caches each account's contract from `/keys` and fails closed on one it doesn't
 know.
 
@@ -916,7 +916,7 @@ later as an opaque algod evaluation failure.
 Cosigner failures are fail-closed:
 
 - signer-domain policy rejection, always-review denial, operator denial, or a
-  missing admin client fail bounded-base component signing before any
+  missing admin client fail base component signing before any
   private-key operation,
 - there is no client-declared simulate mode on any signer endpoint; simulation
   follows the ordinary approval path,
@@ -1070,7 +1070,7 @@ The frozen online flow is:
 
 ```text
 client -> user signer  POST /plan
-client -> user signer  POST /sign/component (kind=bounded-base)
+client -> user signer  POST /sign/component (kind=base)
 client -> cosigner node  POST /sign/component (kind=cosigner)
 client -> user signer  POST /sign/assemble
 client -> algod         submit or simulate exact signed group
@@ -1078,7 +1078,7 @@ client -> algod         submit or simulate exact signed group
 
 `/plan` finalizes group bytes and fees; the client checks the result against
 its mutation report and prints the dummies added and the fee raised for
-authorization, with the positions that pay it. The bounded-base component call
+authorization, with the positions that pay it. The base component call
 validates those frozen bytes without changing them, applies user-signer policy
 and operator approval, and releases the base signature args plus a
 spending-key assembly receipt. First-party clients contact the cosigner only after that
@@ -1146,7 +1146,7 @@ Primary packages and files:
 - `internal/cosigner/cosignerrefs`: public cosigner reference catalog.
 - `internal/signerapp/signing`: frozen component validation, bounded
   authorization reconstruction, cosigner policy
-  evaluation, signer-domain approval gates (`gate.go`), bounded-base and
+  evaluation, signer-domain approval gates (`gate.go`), base and
   cosigner component signing, assembly, and `/sign` rejection gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
   `/sign/assemble`, `/keys`, and `/keytypes`.

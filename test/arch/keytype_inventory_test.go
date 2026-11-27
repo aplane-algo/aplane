@@ -79,6 +79,15 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"aplane." + "falcon1024-b" + ".v1",
 		"lsig/" + "boundedaccount",
 		"boundedaccount" + ".",
+		// The host wire: these named a host account's wire types, codes and
+		// preview before plain hosts shared them.
+		"BoundedAuthorization" + "Info",
+		"ComponentTargetKind" + "BoundedBase",
+		"PreparedBounded" + "Profile",
+		"ErrCodeBounded" + "CosignerRequired",
+		"ErrCodeBounded" + "RekeyTargetNotListed",
+		"BoundedContract" + "Bounded2",
+		"BoundedRekey" + "RequiresReviewRuleID",
 	}
 	// The naming pass: "guarded" became "cosigned" wherever it named a cosigned
 	// account. These are the package, ARCH doc, progress tag, public SDK names

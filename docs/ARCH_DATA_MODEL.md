@@ -169,8 +169,8 @@ DTOs and contract fixtures.
 | Admin session | Signer process | none | scalar `adminserver.SessionContext` ownership | admin IPC JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Component signing request | Request-scoped | canonical group bytes and target indices | per-target bounded-base or cosigner component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Cosigned assembly request | Request-scoped | bounded-base and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Component signing request | Request-scoped | canonical group bytes and target indices | per-target base or cosigner component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Cosigned assembly request | Request-scoped | base and cosigner component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `pkg/signerapi`, `internal/engine`, `internal/signerapp/signing` |
 | ASA set | Signer identity | `asa_set.json` plus `asa_set.json.hmac` at the generation root (`aplane.asa-set.v1`), optional; entries keyed by genesis hash and asset ID | `asaset.Set`, published with `NodePolicy` by `productruntime.Runtime.SetVerifiedPolicyState`; `asaset.Effective` adds the built-in table | `apadmin asa list\|add\|remove` through `list_asa_set`, `lookup_asa`, `add_asa`, `remove_asa` (each change mints a generation) | `internal/asaset`, `internal/asasetstore`, `internal/policycontext` |
 | ASA metadata | Network-scoped cache (client only) | `cache/<network>_asa_cache.json` in client data | operation-local metadata lookup | client display | `internal/cache`, `internal/asa`. The signer's asset metadata is its ASA set (`asa_set.json`), not a cache. |
@@ -375,7 +375,7 @@ The full field set is `payloadWire` in `internal/keys/payload_codec.go`.
 Cosigned account keys are DSA LogicSig keys whose bounded metadata carries the
 cosigner overlay and whose stored bytecode embeds the cosigner public key, on a
 plain host (`plain1`) or a bounded host (`bounded2`). They are not accepted by
-`/sign`; the client uses the cosigned flow: `/plan`, bounded-base
+`/sign`; the client uses the cosigned flow: `/plan`, base
 `/sign/component`, cosigner `/sign/component` (except for a listed rekey),
 `/sign/assemble`, then algod submit. Inventory advertises
 `signing_flow: cosigned1` for those keys. Cosigner witness keys are selected by an uppercase,
@@ -691,8 +691,8 @@ local, rebuildable state:
 JSON cache files use an HMAC envelope version plus a payload-level
 `schema_version`, which every write records. The signed envelope has
 `version: 1`; alias, set, ASA, and auth-address payloads carry
-`schema_version: 1`, while `signer_cache.json` carries `schema_version: 4`
-(structured LogicSig resources, `bounded_contracts`, and
+`schema_version: 1`, while `signer_cache.json` carries `schema_version: 5`
+(structured LogicSig resources, `host_contracts`, `host_max_fees`, and
 `authorization_kinds`). A missing or unsupported payload
 version is rejected and the cache is rebuilt from empty or seed data; the
 signer cache then rebuilds from authenticated signer inventory without
@@ -716,7 +716,7 @@ are rejected.
   the signer reports (`authorization_kind` per address), generic-LogicSig flags,
   structured `logic_sig_resources`, key-file signing argument schemas,
   `signing_flows`, `cosigner_component_key_types`, `cosigner_public_keys`, and
-  `bounded_max_fees` (the bounded authorization `max_fee` per address).
+  `host_max_fees` (a bounded host's `bounds.max_fee` per address).
   Each LogicSig resource profile keeps final compiled program bytes separate
   from path-specific maximum argument bytes and reviewed opcode-cost ceilings.
   Bounded profiles expose exactly the spend, spending-rekey, and listed-rekey
@@ -729,8 +729,8 @@ are rejected.
   must not exceed the persisted declaration. This validates the selected path
   ceiling, not the feasibility of every assembled group.
   For cosigned signing, clients route on `signing_flows`, and take a cosigned
-  account's fee ceiling from `bounded_max_fees` only when its cached
-  `bounded_contracts` entry is `bounded2`; a `plain1` account has none, and
+  account's fee ceiling from `host_max_fees` only when its cached
+  `host_contracts` entry is `bounded2`; a `plain1` account has none, and
   a missing or unknown contract fails closed until `/keys` is refreshed.
   The client takes an address's authorization kind from `authorization_kinds`
   and never derives it from the key type. A key the signer lists with no kind
@@ -905,7 +905,7 @@ Primary projections:
   `RotatingAccountStatus`, `RotatingRecoveryStatus`,
 - `MutationReport`,
 - `KeysResponse` / `KeyInfo` (including `signing_flow`,
-  `cosigner_component_key_type`, optional `bounded_authorization`),
+  `cosigner_component_key_type`, optional `host`),
 - `KeyTypesResponse`,
 - `StatusResponse`,
 - `HealthResponse`,
@@ -1031,12 +1031,12 @@ keys.
    `/plan` or `/sign`.
 3. Signer validates request shape and transaction network. Plain `/sign`
    rejects witness key types, every transaction of a cosigned account, on a
-   plain or bounded host (`bounded_cosigner_required`), and rotating accounts
+   plain or bounded host (`cosigner_required`), and rotating accounts
    (`rotating_signing_required`).
 4. Signer canonicalizes group and computes mutations (bounded planning
    classifies effects after fee pooling, and refuses a rekey to an address
    that is not on the rekey-to list of an account that takes no other rekey,
-   with `bounded_rekey_target_not_listed`).
+   with `rekey_target_not_listed`).
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
 7. Signer signs/assembles finalized slots.
@@ -1052,7 +1052,7 @@ durable sign request table.
 2. Client sends the intended originals to `/plan`, freezes the planned
    canonical group, classifies cosigned, non-cosigned, and dummy positions, and
    signs only the planned dummy suffix locally.
-3. Client calls the user signer `/sign/component` for bounded-base components,
+3. Client calls the user signer `/sign/component` for base components,
    each naming its path.
 4. If non-cosigned originals exist, client calls the primary signer `/sign` over
    the full canonical group: non-cosigned originals are sign-mode entries,
@@ -1337,7 +1337,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
 | Cosigned account key | signing/assembly authority | `.key` category `dsa_lsig`, bounded metadata with `cosigner` (a `plain1` account of a plain host such as `aplane.falcon1024.v1`, or a `bounded2` one such as a Corridor `aplane.falcon1024.v1` account) | local base key, bytecode, bounded metadata, embedded cosigner public key | `lsig/composeddsa`, `internal/boundedmeta`, `internal/signerapp/signing` | `/sign` rejects every transaction of the account; inventory uses `signing_flow: cosigned1`; bounded component and assembly endpoints consume stored metadata. |
-| Bounded account key metadata | signing authority metadata | key payload `host` | inventory `bounded_authorization` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; the key payload's `bounds` object, and so `max_fee`, is present on `bounded2` and absent on `plain1`. |
+| Bounded account key metadata | signing authority metadata | key payload `host` | inventory `host` / path sizing | `internal/boundedmeta`, `lsig/composeddsa`, `internal/keys`, `internal/signerapp/signing` | Required for bounded (`bounded2`) and plain host (`plain1`) DSA keys; the `bounds` object, and so `max_fee`, is present on `bounded2` and absent on `plain1`, in the key payload and in inventory alike. |
 | Cosigner witness key | component-sign authority | `.cos` category `witness`, key type `aplane.witness-*` | raw cosigner-role witness key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | Selected by Witness Key ID; `/sign` rejects; cosigner-role `/sign/component` only; not a spending account. |
 | Witness Key ID | public selector | 52-character uppercase base32 SHA-512/256 of canonical length-prefixed domain, key type, and public key bytes | cosigner key row `address`, public reference `witness_key_id`, and cosigner `component_key` fields | `internal/witness` | Txid-shaped but not a valid Algorand address; rejected where an Algorand address is required. |
 | Cosigner public metadata sidecar | public metadata | `keys/<witness_key_id>.cos.json` | `apadmin cosigner export` source | `internal/keys`, `internal/cosigner/cosignerrefs` | Witness Key ID/key type/public key consistency verified; no private material. |
@@ -1434,18 +1434,18 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Health response | wire projection | process liveness | `signerapi.HealthResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Unauthenticated `GET /health`; not product-store state. |
 | Status response | wire projection | authenticated product runtime state | `signerapi.StatusResponse` | `internal/signerapp/daemon`, `internal/signerapp/rest`, `pkg/signerapi` | `keyset_revision` is process-local, not durable, and starts at a random value in each process; clients compare it for equality only. |
 | Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Cosigner-key rows use Witness Key ID as `address`; cosigned rows expose non-secret params. |
-| Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key` disambiguates selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `bounded_authorization`. |
+| Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key` disambiguates selectors from accounts; may carry `signing_flow`, `cosigner_component_key_type`, and `host`. |
 | Key types response | wire projection | enabled providers/templates and cosigner refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args; may carry `signing_flow`. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
 | Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | Names no sender; the signer takes it from the decoded bytes. |
 | Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
-| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/daemon`, `internal/signerapp/approval` | `/sign`, `/sign/rotating/sign`, and approval-bearing user/bounded-base component request IDs are live cancel handles; cosigner-component and assembly IDs are correlation only. |
+| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/daemon`, `internal/signerapp/approval` | `/sign`, `/sign/rotating/sign`, and approval-bearing base component request IDs are live cancel handles; cosigner-component and assembly IDs are correlation only. |
 | Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/rest`, `internal/signerapp/keyadmin` | No mnemonic in REST response. |
 | Admin delete DTO | wire request/projection | address query parameter | empty `{}` response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
-| Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `cosigner` or `bounded-base` (the retired `user` kind is refused), one kind per request; every original group position is a target or contextual position, and omitted request IDs are generated. |
-| Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Cosigner components carry one signature; bounded-base components carry base signatures, validated runtime args, an assembly receipt, and the classified `path`. |
+| Component request | wire request | canonical group bytes and discriminated target records | `signerapi.ComponentRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Target kind is `cosigner` or `base` (the retired `user` kind is refused), one kind per request; every original group position is a target or contextual position, and omitted request IDs are generated. |
+| Component response | wire projection | kind-tagged per-target authorization material | `signerapi.ComponentResponse` | `internal/signerapp/signing` | Cosigner components carry one signature; base components carry base signatures, validated runtime args, an assembly receipt, and the classified `path`. |
 | Assembly request | wire request | group bytes plus bounded-cosigner targets and already-signed passthrough positions, together covering every position | `signerapi.AssemblyRequest` | `pkg/signerapi`, `internal/signerapp/signing` | A target names no kind: each carries base signatures, runtime args, an assembly receipt, and the cosigner signature unless it is a listed rekey. |
 | Assembly response | wire projection | assembled signed group bytes | `signerapi.AssemblyResponse` | `internal/signerapp/rest`, `internal/signerapp/signing` | Assembly revalidates each target against signer-owned metadata and does not trust endpoint-advertised public keys. |
 | Rotating prepare request/response | wire request/projection | rotating account transaction intent | `signerapi.RotatingPrepareRequest`, `RotatingPrepareResponse` | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/rest`, `internal/signerapp/signing` | `POST /sign/rotating/prepare`; contract fixtures `rotating_prepare_{request,response}.json`. |
@@ -1484,7 +1484,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Cosigner component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/cosigner/message` | Shared by signer assembly and TEAL vectors; clients treat component signatures as opaque. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Bounded-cosigner assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | The receipt, the base signatures and, on `spend` and `spending_rekey`, the cosigner signature are verified before packed bytes are returned. |
-| Cosigned send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, bounded-base component call (signer-domain gated), optional non-cosigned `/sign`, cosigner call (none for a listed rekey), assembly, then client algod submit or simulate | `internal/engine/cosigned`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; cosigned targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-cosigned originals over the same canonical bytes. |
+| Cosigned send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | `/plan`, base component call (signer-domain gated), optional non-cosigned `/sign`, cosigner call (none for a listed rekey), assembly, then client algod submit or simulate | `internal/engine/cosigned`, `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; cosigned targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-cosigned originals over the same canonical bytes. |
 
 ### Plugin, JavaScript, And MCP Models
 
@@ -1527,7 +1527,7 @@ and [ARCH_ADMIN.md](ARCH_ADMIN.md#admin-protocol-contract).
 | Audit event | authoritative audit record | JSONL line in `audit.log` | operational/accountability history | `internal/signerapp/audit` | Event fields are not signing inputs. |
 | Cosigner component audit projection | audit projection | component-signing outcome | `SIGN_APPROVED`/`SIGN_REJECTED` rows | `internal/signerapp/signing`, `internal/signerapp/audit` | Uses sign events; Witness Key ID is `txn_auth`, decoded sender is `txn_sender`, the signed target's ID is `txid`. |
 | Policy rule ID | stable identifier | policy constants and dynamic route grammar | audit/prompt/error context | `internal/policy` | Typos should be caught by tests; route IDs are persistent audit identifiers. |
-| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; live `/sign`, `/sign/rotating/sign`, and approval-bearing user/bounded-base `/sign/component` IDs are cancelable; cosigner-only component and assembly IDs are correlation only. |
+| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; live `/sign`, `/sign/rotating/sign`, and approval-bearing base `/sign/component` IDs are cancelable; cosigner-only component and assembly IDs are correlation only. |
 | Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/productruntime`, `internal/engine` | Process-local; must not be compared across restarts. |
 
 ### Representative Test And Fixture Index

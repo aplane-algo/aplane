@@ -23,11 +23,17 @@ var boundedPolicyLabels = map[string]string{
 // "Merkle allowlist · no rekey · cosigner". A custom policy says only that it
 // is custom: its conditions are the author's code, and nothing here can state them.
 // It returns "" for an account with no bounded contract.
-func BoundedLabel(info *signerapi.BoundedAuthorizationInfo) string {
+func BoundedLabel(info *signerapi.HostInfo) string {
 	if info == nil {
 		return ""
 	}
-	return boundedLabel(info.Contract, info.Layer3Policy, boundedmeta.RekeySetting(info.Rekey), info.RekeyList != nil, info.Cosigner != nil)
+	// A plain host has no bounds and is labelled by its contract; a bounded
+	// host that arrives without them gets the unknown-policy label.
+	layer3Policy := ""
+	if info.Bounds != nil {
+		layer3Policy = info.Bounds.Layer3Policy
+	}
+	return boundedLabel(info.Contract, layer3Policy, boundedmeta.RekeySetting(info.Rekey), info.RekeyList != nil, info.Cosigner != nil)
 }
 
 // BoundedMetadataLabel is BoundedLabel for a key's durable metadata.

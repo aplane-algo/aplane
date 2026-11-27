@@ -320,7 +320,7 @@ func (fx *nonRotatingDaemonFixture) boundedComponentRequest(t *testing.T) signer
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		Targets: []signerapi.ComponentTarget{{
 			TargetIndex: 0,
-			Kind:        signerapi.ComponentTargetKindBoundedBase,
+			Kind:        signerapi.ComponentTargetKindBase,
 			AuthAddress: fx.boundedAddr,
 		}},
 	}
@@ -357,7 +357,7 @@ func (fx *nonRotatingDaemonFixture) assemblyRequest(t *testing.T, svc *signersig
 		GroupBytesHex: rawHex,
 		Targets: []signerapi.ComponentTarget{{
 			TargetIndex: 0,
-			Kind:        signerapi.ComponentTargetKindBoundedBase,
+			Kind:        signerapi.ComponentTargetKindBase,
 			AuthAddress: fx.boundedAddr,
 		}},
 		ContextualPositions: []signerapi.ComponentContextPosition{{
@@ -399,7 +399,7 @@ func (fx *nonRotatingDaemonFixture) assemblyRequest(t *testing.T, svc *signersig
 	}
 }
 
-// Every non-rotating GetKeyWithContext load site (/sign, bounded-base
+// Every non-rotating GetKeyWithContext load site (/sign, base
 // /sign/component, cosigner /sign/component, /sign/assemble bounded target,
 // and /sign/assemble local passthrough) must be a registered key use that the
 // real Runtime.Lock cancels and waits for until the loaded key is zeroed and

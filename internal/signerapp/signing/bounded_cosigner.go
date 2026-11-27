@@ -52,7 +52,7 @@ func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResu
 		return nil, internal("bounded component plan is incomplete")
 	}
 	if plan.HasPassthrough {
-		return nil, badRequest("bounded-base component signing does not accept signed passthrough entries")
+		return nil, badRequest("base component signing does not accept signed passthrough entries")
 	}
 	targets := make([]int, 0)
 	for _, target := range req.Targets {
@@ -67,7 +67,7 @@ func validateBoundedComponentPlan(req signerapi.ComponentRequest, plan *PlanResu
 		targets = append(targets, i)
 	}
 	if len(targets) == 0 {
-		return nil, badRequest("bounded-base component signing requires at least one cosigner-enabled bounded target")
+		return nil, badRequest("base component signing requires at least one cosigner-enabled bounded target")
 	}
 	return targets, nil
 }
@@ -211,7 +211,7 @@ func signBoundedBaseComponent(ctx context.Context, req signerapi.GroupSignReques
 	}
 	defer crypto.ZeroBytes(receipt)
 	component := signerapi.Component{
-		TargetIndex: targetIndex, Kind: signerapi.ComponentTargetKindBoundedBase,
+		TargetIndex: targetIndex, Kind: signerapi.ComponentTargetKindBase,
 		AuthAddress: account, RuntimeArgs: encodeRuntimeArgs(item.RuntimeArgs),
 		AssemblyReceipt: hex.EncodeToString(receipt), SignatureScheme: keyMaterial.BaseKeyType,
 		Path: componentPath,
@@ -286,7 +286,7 @@ func assembleBoundedTarget(ctx context.Context, target signerapi.AssemblyTarget,
 	if _, ok := componentPaths[path]; !ok {
 		return "", badRequest(fmt.Sprintf("target index %d is not an admitted cosigned spend or rekey", target.TargetIndex))
 	}
-	runtimeArgs, runtimeErr := validateBoundedRuntimeArgs(target.BoundedRuntimeArgs, metadata, path)
+	runtimeArgs, runtimeErr := validateBoundedRuntimeArgs(target.RuntimeArgs, metadata, path)
 	if runtimeErr != nil {
 		return "", withTransactionIndex(target.TargetIndex, runtimeErr)
 	}

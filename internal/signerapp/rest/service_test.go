@@ -489,14 +489,14 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	info := infos[0]
 	// Without a cosigner a bounded key type signs through ordinary /sign and
 	// advertises no flow.
-	if info.SigningFlow != "" || info.BoundedAuthorization == nil {
+	if info.SigningFlow != "" || info.Host == nil {
 		t.Fatalf("bounded inventory = %#v", info)
 	}
-	bounded := info.BoundedAuthorization
-	if bounded.Contract != composeddsa.BoundedContract || bounded.MaxFee == nil || *bounded.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Layer3Policy != boundedmeta.Layer3PolicyCustom {
-		t.Fatalf("bounded_authorization = %#v", bounded)
+	bounded := info.Host
+	if bounded.Contract != composeddsa.BoundedContract || bounded.Bounds == nil || bounded.Bounds.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Bounds.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+		t.Fatalf("host = %#v", bounded)
 	}
-	if got := strings.Join(bounded.SpendEffects, ","); got != "pay,axfer" {
+	if got := strings.Join(bounded.Bounds.SpendEffects, ","); got != "pay,axfer" {
 		t.Fatalf("spend_effects = %q", got)
 	}
 	if bounded.Rekey != string(boundedmeta.RekeySpendingKey) {
@@ -523,11 +523,44 @@ func TestBuildKeyTypesServesBoundedCosignerMetadata(t *testing.T) {
 	if info.SigningFlow != signerapi.SigningFlowCosigned1 || !slices.Equal(info.CosignerComponentKeyTypes, []string{witness.Falcon1024V1}) {
 		t.Fatalf("bounded cosigner routing = %#v", info)
 	}
-	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Cosigner == nil {
-		t.Fatalf("bounded cosigner metadata = %#v", info.BoundedAuthorization)
+	if info.Host == nil || info.Host.Cosigner == nil {
+		t.Fatalf("bounded cosigner metadata = %#v", info.Host)
 	}
 	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.CosignerPublicKeyParameter {
 		t.Fatalf("creation params = %#v, want raw cosigner public key before reference projection", got)
+	}
+}
+
+// /keys and /keytypes nest a bounded host's rules in bounds, with a fee
+// ceiling of zero written out, and give a plain host no bounds at all.
+func TestHostInfoNestsTheBounds(t *testing.T) {
+	layout := boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}
+	bounded, err := json.Marshal(hostInfo(&boundedmeta.Metadata{
+		Contract: boundedmeta.Contract, BaseSignatureArgLayout: layout, Rekey: boundedmeta.RekeyRefused,
+		Bounds: &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(0)), Layer3Policy: boundedmeta.Layer3PolicyNone},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `"bounds":{"spend_effects":["pay"],"max_fee":0,"layer3_policy":"none"}`; !strings.Contains(string(bounded), want) {
+		t.Fatalf("bounded host = %s, want %s", bounded, want)
+	}
+	if strings.Count(string(bounded), `"max_fee"`) != 1 || strings.Count(string(bounded), `"spend_effects"`) != 1 {
+		t.Fatalf("bounded host repeats its bounds outside the object: %s", bounded)
+	}
+	plain, err := json.Marshal(hostInfo(&boundedmeta.Metadata{
+		Contract: boundedmeta.PlainContract, BaseSignatureArgLayout: layout, Rekey: boundedmeta.RekeySpendingKey,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"bounds"`, `"spend_effects"`, `"max_fee"`, `"layer3_policy"`} {
+		if strings.Contains(string(plain), field) {
+			t.Fatalf("plain host carries %s: %s", field, plain)
+		}
+	}
+	if !strings.Contains(string(plain), `"contract":"plain1"`) {
+		t.Fatalf("plain host = %s", plain)
 	}
 }
 
@@ -544,10 +577,10 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
 		},
 	}
-	info := boundedInfo(metadata)
+	info := hostInfo(metadata)
 	if info.Cosigner == nil || info.Cosigner.ComponentKeyID != "COSIGNER" || info.Cosigner.PublicKeyHex != metadata.Cosigner.PublicKeyHex ||
-		info.Layer3Policy != boundedmeta.Layer3PolicyCustom || info.Rekey != string(boundedmeta.RekeyRefused) {
-		t.Fatalf("boundedInfo() = %#v", info)
+		info.Bounds == nil || info.Bounds.Layer3Policy != boundedmeta.Layer3PolicyCustom || info.Rekey != string(boundedmeta.RekeyRefused) {
+		t.Fatalf("hostInfo() = %#v", info)
 	}
 }
 
@@ -1251,9 +1284,9 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	if _, err := (Service{}).Plan(cosignerOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
 		t.Fatalf("Plan(cosigner node) error = %#v, want forbidden node role error", err)
 	}
-	baseReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: "ADDR"}}}
+	baseReq := signerapi.ComponentRequest{GroupBytesHex: []string{"5458"}, Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ADDR"}}}
 	if _, err := (Service{}).SignComponents(context.Background(), cosignerOnly, baseReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account component signing") {
-		t.Fatalf("SignComponents(bounded-base kind in cosigner node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("SignComponents(base kind in cosigner node) error = %#v, want forbidden node role error", err)
 	}
 	if _, err := (Service{}).Assemble(context.Background(), cosignerOnly, signerapi.AssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "cosigned assembly") {
 		t.Fatalf("Assemble(cosigner node) error = %#v, want forbidden node role error", err)

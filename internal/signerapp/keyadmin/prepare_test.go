@@ -185,7 +185,7 @@ func TestIPCServiceAppliesTheExpectedFingerprint(t *testing.T) {
 	prepared := service.PrepareGenerateKey(adminproto.PrepareGenerateKeyRequest{
 		KeyType: keyType, Parameters: map[string]string{cosignerrefs.ParamCosignerName: prepareTestReference},
 	})
-	if !prepared.Success || prepared.CosignerKeyID == "" || prepared.Bounded == nil || !prepared.Bounded.CosignerRequired {
+	if !prepared.Success || prepared.CosignerKeyID == "" || prepared.Host == nil || !prepared.Host.CosignerRequired {
 		t.Fatalf("PrepareGenerateKey() = %+v", prepared)
 	}
 	stale := service.GenerateKey(context.Background(), adminproto.GenerateKeyRequest{
@@ -270,22 +270,22 @@ func TestProjectPrepareGenerateIPC(t *testing.T) {
 			Rekey:    boundedmeta.RekeyRefused,
 		},
 	}, nil)
-	if !result.Success || result.Bounded == nil || !result.Bounded.CosignerRequired || result.Bounded.MaxFee == nil || *result.Bounded.MaxFee != 10_000 ||
-		result.Bounded.Contract != boundedmeta.Contract || result.Bounded.Rekey != string(boundedmeta.RekeyRefused) ||
-		result.Bounded.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || result.CosignerKeyID != "COSIGNER" ||
-		!slices.Equal(result.Bounded.SpendEffects, []string{"pay"}) {
+	if !result.Success || result.Host == nil || !result.Host.CosignerRequired ||
+		result.Host.Rekey != string(boundedmeta.RekeyRefused) ||
+		result.CosignerKeyID != "COSIGNER" {
 		t.Fatalf("result = %+v", result)
 	}
-	// A plain host has no bounds to project. The reviewer still gets the flat
-	// shape: an empty spend-effect list, never null, no fee ceiling, and
-	// Layer 3 none.
+	if bounds := result.Host.Bounds; bounds == nil || bounds.MaxFee != 10_000 ||
+		bounds.Layer3Policy != boundedmeta.Layer3PolicyMerkleAllowlist || !slices.Equal(bounds.SpendEffects, []string{"pay"}) {
+		t.Fatalf("bounds = %+v", bounds)
+	}
+	// A plain host has no bounds, and the reviewer is sent none.
 	plain := ProjectPrepareGenerateIPC(&PreparedGeneration{
 		KeyType: "test.projected.v1",
 		Bounded: &boundedmeta.Metadata{Contract: boundedmeta.PlainContract, Rekey: boundedmeta.RekeySpendingKey},
 	}, nil)
-	if plain.Bounded == nil || plain.Bounded.Contract != boundedmeta.PlainContract || plain.Bounded.MaxFee != nil ||
-		plain.Bounded.SpendEffects == nil || len(plain.Bounded.SpendEffects) != 0 || plain.Bounded.Layer3Policy != boundedmeta.Layer3PolicyNone {
-		t.Fatalf("plain host result = %+v", plain.Bounded)
+	if plain.Host == nil || plain.Host.Rekey != string(boundedmeta.RekeySpendingKey) || plain.Host.Bounds != nil {
+		t.Fatalf("plain host result = %+v", plain.Host)
 	}
 	// The provider's warnings reach the reviewer in order; a result without any
 	// carries none, and neither does a failure.

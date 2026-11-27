@@ -141,7 +141,7 @@ func TestPrepareCarriesTheFeeLimitWarning(t *testing.T) {
 				t.Fatalf("Warnings = %q, want one starting %q", prepared.Warnings, want)
 			}
 			if !projected.Success || len(projected.Warnings) != 1 || projected.Warnings[0] != prepared.Warnings[0] ||
-				projected.Bounded == nil || projected.Bounded.MaxFee == nil || *projected.Bounded.MaxFee != test.want {
+				projected.Host == nil || projected.Host.Bounds == nil || projected.Host.Bounds.MaxFee != test.want {
 				t.Fatalf("projected = %+v", projected)
 			}
 

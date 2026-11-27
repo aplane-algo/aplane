@@ -740,11 +740,11 @@ func TestPlainHostThroughSigner(t *testing.T) {
 					t.Fatalf("signing flow = %q, want %q", key.SigningFlow, tc.flow)
 				}
 				switch {
-				case tc.params == nil && key.BoundedAuthorization != nil:
-					t.Fatalf("the plain program has a contract: %+v", key.BoundedAuthorization)
-				case tc.params != nil && (key.BoundedAuthorization == nil || key.BoundedAuthorization.Contract != signerapi.BoundedContractPlain1 ||
-					key.BoundedAuthorization.MaxFee != nil):
-					t.Fatalf("contract = %+v, want plain1 with no fee ceiling", key.BoundedAuthorization)
+				case tc.params == nil && key.Host != nil:
+					t.Fatalf("the plain program has a contract: %+v", key.Host)
+				case tc.params != nil && (key.Host == nil || key.Host.Contract != signerapi.HostContractPlain1 ||
+					key.Host.Bounds != nil):
+					t.Fatalf("contract = %+v, want plain1 with no bounds", key.Host)
 				}
 			}
 			if !found {

@@ -2,10 +2,39 @@
 
 Entries are newest first and include pre-release development history. Older
 token, setup-file, and protocol-v5 entries describe behavior superseded by the
-enrolled-key model and current admin protocol v10; they are not current setup
+enrolled-key model and current admin protocol v11; they are not current setup
 instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
+
+## The signer's wire names host accounts `host`; admin protocol 11
+
+The HTTP API, the admin protocol and the client's signer cache now use the
+names and the shape the key file took in the entry below. Clients and SDKs
+written for the old names need the matching release.
+
+- **`/keys` and `/keytypes` carry `host`**, where it was
+  `bounded_authorization`. `spend_effects`, `max_fee` and `layer3_policy` moved
+  into `host.bounds`, which a bounded host has and a plain host doesn't.
+  Inside it `max_fee` is always present, and `0` is a value. A client refuses
+  a host whose `contract` and `bounds` disagree.
+- **The `/sign/component` kind is `base`**, where it was `bounded-base`, in
+  requests and responses.
+- **A `/sign/assemble` target carries `runtime_args`**, where it was
+  `bounded_runtime_args`.
+- **Two error codes lose their prefix**: `cosigner_required` (was
+  `bounded_cosigner_required`) and `rekey_target_not_listed` (was
+  `bounded_rekey_target_not_listed`). Both apply to plain hosts too.
+- **The forced rekey review's rule ID is `host_rekey_requires_review`**, where
+  it was `bounded_rekey_requires_review`. A search of the audit log's
+  `policy_rule_id` for the old name finds only older entries.
+- **`AdminProtocolVersion` is 11.** `prepare_generate_result` carries `host`,
+  where it was `bounded`, with the same nested `bounds` and without
+  `contract`: the absence of `bounds` is what marks a plain host there.
+  Upgrade apadmin, apapprover and apsigner together.
+- **The client's signer cache is schema 5** (`host_max_fees`,
+  `host_contracts`). A cache written by an older apshell is discarded and
+  refilled from the signer on the next connect.
 
 ## Host account key files nest their bounds, and existing ones no longer load
 

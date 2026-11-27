@@ -272,8 +272,8 @@ With it on, the review requirement is satisfied without a prompt. Current review
 - `always_review_warnings`,
 - network- and asset-scoped `limits` `review_above` thresholds,
 - transfer routing `on_no_route: review` and `review_above` thresholds,
-- bounded spending-key and listed rekeys, which always require review (rule id
-  `bounded_rekey_requires_review`).
+- a host account's spending-key and listed rekeys, which always require review (rule id
+  `host_rekey_requires_review`).
 
 Warnings are displayed even when they do not force review.
 

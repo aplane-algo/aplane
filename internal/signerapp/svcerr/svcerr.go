@@ -28,8 +28,8 @@ const (
 	KindUnavailable              Kind = signerapi.ErrCodeUnavailable
 	KindCacheRefresh             Kind = signerapi.ErrCodeCacheRefresh
 	KindInternal                 Kind = signerapi.ErrCodeInternal
-	KindBoundedCosignerRequired  Kind = signerapi.ErrCodeBoundedCosignerRequired
-	KindBoundedRekeyNotListed    Kind = signerapi.ErrCodeBoundedRekeyTargetNotListed
+	KindBoundedCosignerRequired  Kind = signerapi.ErrCodeCosignerRequired
+	KindBoundedRekeyNotListed    Kind = signerapi.ErrCodeRekeyTargetNotListed
 	KindRotatingSigningRequired  Kind = signerapi.ErrCodeRotatingSigningRequired
 	KindRotatingStageUnproven    Kind = signerapi.ErrCodeRotatingStageUnproven
 	KindRotatingStageChanged     Kind = signerapi.ErrCodeRotatingStageChanged

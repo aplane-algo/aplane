@@ -180,12 +180,12 @@ func TestAppCallMethodMustBePrintableASCII(t *testing.T) {
 }
 
 // A contextual position that names one of the signer's own accounts is a
-// bounded-base concept: the signer sizes it from its records, so it takes no
+// base concept: the signer sizes it from its records, so it takes no
 // hint, and a cosigner request refuses the fields outright.
 func TestComponentRequestContextualPositionRules(t *testing.T) {
 	request := func(kind ComponentTargetKind, position ComponentContextPosition) ComponentRequest {
 		target := ComponentTarget{TargetIndex: 0, Kind: kind}
-		if kind == ComponentTargetKindBoundedBase {
+		if kind == ComponentTargetKindBase {
 			target.AuthAddress = "BOUNDED"
 		} else {
 			target.ComponentKey = "witness-key"
@@ -203,13 +203,13 @@ func TestComponentRequestContextualPositionRules(t *testing.T) {
 		position ComponentContextPosition
 		wantErr  string
 	}{
-		"held account":                  {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", LsigArgs: map[string]string{"a": "bb"}}, ""},
-		"another party, hinted":         {ComponentTargetKindBoundedBase, ComponentContextPosition{PQScheme: PQSchemeFalcon1024}, ""},
+		"held account":                  {ComponentTargetKindBase, ComponentContextPosition{AuthAddress: "HELD", LsigArgs: map[string]string{"a": "bb"}}, ""},
+		"another party, hinted":         {ComponentTargetKindBase, ComponentContextPosition{PQScheme: PQSchemeFalcon1024}, ""},
 		"another party, unhinted":       {ComponentTargetKindCosigner, ComponentContextPosition{}, ""},
-		"held account with pq hint":     {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", PQScheme: PQSchemeFalcon1024}, "lsig_resources and pq_scheme are allowed only without auth_address"},
-		"held account with size hint":   {ComponentTargetKindBoundedBase, ComponentContextPosition{AuthAddress: "HELD", LsigResources: hint}, "lsig_resources and pq_scheme are allowed only without auth_address"},
-		"lsig_args without account":     {ComponentTargetKindBoundedBase, ComponentContextPosition{LsigArgs: map[string]string{"a": "bb"}}, "lsig_args requires auth_address"},
-		"account on a cosigner request": {ComponentTargetKindCosigner, ComponentContextPosition{AuthAddress: "HELD"}, "allowed only on a bounded-base request"},
+		"held account with pq hint":     {ComponentTargetKindBase, ComponentContextPosition{AuthAddress: "HELD", PQScheme: PQSchemeFalcon1024}, "lsig_resources and pq_scheme are allowed only without auth_address"},
+		"held account with size hint":   {ComponentTargetKindBase, ComponentContextPosition{AuthAddress: "HELD", LsigResources: hint}, "lsig_resources and pq_scheme are allowed only without auth_address"},
+		"lsig_args without account":     {ComponentTargetKindBase, ComponentContextPosition{LsigArgs: map[string]string{"a": "bb"}}, "lsig_args requires auth_address"},
+		"account on a cosigner request": {ComponentTargetKindCosigner, ComponentContextPosition{AuthAddress: "HELD"}, "allowed only on a base request"},
 	} {
 		err := request(tc.kind, tc.position).Validate()
 		if tc.wantErr == "" {

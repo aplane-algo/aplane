@@ -535,10 +535,10 @@
           "amount": 5
         }
       ],
-      "forced_review": "bounded_rekey_requires_review",
+      "forced_review": "host_rekey_requires_review",
       "expect": {
         "outcome": "review",
-        "rule_id": "bounded_rekey_requires_review"
+        "rule_id": "host_rekey_requires_review"
       }
     },
     {
@@ -559,10 +559,10 @@
           "amount": 5
         }
       ],
-      "forced_review": "bounded_rekey_requires_review",
+      "forced_review": "host_rekey_requires_review",
       "expect": {
         "outcome": "review",
-        "rule_id": "bounded_rekey_requires_review"
+        "rule_id": "host_rekey_requires_review"
       }
     }
   ]

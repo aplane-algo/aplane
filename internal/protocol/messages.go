@@ -19,7 +19,7 @@ const (
 // in auth.protocol_version and the server accepts only this exact value:
 // apadmin, apapprover and apsigner ship together, so there is no skew to
 // tolerate. docs/ARCH_ADMIN.md ("Transport notes") says which changes bump it.
-const AdminProtocolVersion = 10
+const AdminProtocolVersion = 11
 
 // Admin protocol message type constants
 const (
@@ -801,21 +801,25 @@ type PrepareGenerateKeyMessage struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
-// PreparedBoundedProfile is the bounded contract of a prepared account.
-type PreparedBoundedProfile struct {
-	Contract     string   `json:"contract"`
+// PreparedHostBounds is what a prepared bounded host enforces on a spend.
+type PreparedHostBounds struct {
 	SpendEffects []string `json:"spend_effects"`
-	// MaxFee is absent for a plain host, which has no fee ceiling.
-	MaxFee *uint64 `json:"max_fee,omitempty"`
-	Rekey  string  `json:"rekey"`
+	MaxFee       uint64   `json:"max_fee"`
+	Layer3Policy string   `json:"layer3_policy"`
+}
+
+// PreparedHostProfile is the signing contract of a prepared host account.
+type PreparedHostProfile struct {
+	Rekey string `json:"rekey"`
 	// RekeyList is set when the account has a rekey-to list, which the request's
 	// rekey_to parameter holds: "only these" under rekey refused, "plus cosigned"
 	// under a spending-key rekey on a cosigned account.
-	RekeyList        bool   `json:"rekey_list,omitempty"`
-	Layer3Policy     string `json:"layer3_policy"`
-	CosignerRequired bool   `json:"cosigner_required,omitempty"`
+	RekeyList        bool `json:"rekey_list,omitempty"`
+	CosignerRequired bool `json:"cosigner_required,omitempty"`
 	// CosignerKeyType is the cosigner's key type, when the account has one.
 	CosignerKeyType string `json:"cosigner_key_type,omitempty"`
+	// Bounds is absent for a plain host.
+	Bounds *PreparedHostBounds `json:"bounds,omitempty"`
 }
 
 // PrepareGenerateResultMessage describes the account a request would create. It
@@ -834,9 +838,9 @@ type PrepareGenerateResultMessage struct {
 	// ReviewFingerprint goes back as generate_key.expected_fingerprint.
 	ReviewFingerprint string `json:"review_fingerprint,omitempty"`
 	// BoundaryDigest goes back as generate_key.expected_boundary_digest.
-	BoundaryDigest string                  `json:"boundary_digest,omitempty"`
-	Bounded        *PreparedBoundedProfile `json:"bounded,omitempty"`
-	CosignerKeyID  string                  `json:"cosigner_key_id,omitempty"`
+	BoundaryDigest string               `json:"boundary_digest,omitempty"`
+	Host           *PreparedHostProfile `json:"host,omitempty"`
+	CosignerKeyID  string               `json:"cosigner_key_id,omitempty"`
 	// Warnings are notes for the reviewer, such as a fee limit below what the
 	// account's own transactions cost. They refuse nothing.
 	Warnings []string `json:"warnings,omitempty"`

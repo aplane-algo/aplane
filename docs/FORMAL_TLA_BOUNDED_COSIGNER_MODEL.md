@@ -8,7 +8,7 @@
 This model checks the first-party client's stage order and the security-bearing
 final acceptance boundary of the `cosigned1` choreography, and the passthrough
 binding (A8) it took over from the retired cosigned assembly model. First-party
-orchestration releases an ordinary bounded base signature, requests the
+orchestration releases an ordinary base signature, requests the
 cosigner only after signer policy and operator approval, and then uses the
 shared `/sign/assemble` route, whose targets are all bounded-cosigner targets,
 to derive and place the declared arguments.
@@ -169,7 +169,7 @@ in their place. Anchors are in [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
   `internal/sigconstruction/verify` and the Falcon libraries).
 - **A11, the component response shape is exact.** One component per requested
   target, no unexpected or duplicate indices, the expected scheme, and on a
-  bounded-base component the path it names.
+  base component the path it names.
 - **A12, endpoint sync is atomic around hard failures.** Discovery writes no
   persisted routing state; failed endpoints contribute no routes, and usable
   results must still cover every required witness key uniquely.

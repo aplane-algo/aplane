@@ -100,8 +100,8 @@ func (s *Signer) InspectRoutes(ctx context.Context, keys []signerapi.KeyInfo) Ro
 			continue
 		}
 		var publicKey string
-		if key.BoundedAuthorization != nil && key.BoundedAuthorization.Cosigner != nil {
-			publicKey = key.BoundedAuthorization.Cosigner.PublicKeyHex
+		if key.Host != nil && key.Host.Cosigner != nil {
+			publicKey = key.Host.Cosigner.PublicKeyHex
 		}
 		canonical, err := normalizeCosignerPublicKeyHex(publicKey)
 		if err == nil {

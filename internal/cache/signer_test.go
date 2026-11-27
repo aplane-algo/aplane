@@ -370,7 +370,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 		{Name: "preimage", Type: "bytes", Required: true},
 	})
 	original.SetCosignerPublicKeyForAddress("ADDR2", "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a")
-	original.SetBoundedMaxFeeForAddress("ADDR2", 10_000)
+	original.SetHostMaxFeeForAddress("ADDR2", 10_000)
 	original.Locked = true
 
 	// Save
@@ -404,7 +404,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	if got, ok := loaded.CosignerPublicKeyForAddress("ADDR2"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Errorf("ADDR2 cosigner public key = %q/%v, want persisted value", got, ok)
 	}
-	if got, ok := loaded.BoundedMaxFeeForAddress("ADDR2"); !ok || got != 10_000 {
+	if got, ok := loaded.HostMaxFeeForAddress("ADDR2"); !ok || got != 10_000 {
 		t.Errorf("ADDR2 bounded max fee = %d/%v, want 10000/true", got, ok)
 	}
 	if loaded.Locked {
@@ -431,12 +431,12 @@ func TestSignerCache_CosignerPublicKeyHelpers(t *testing.T) {
 
 func TestSignerCache_BoundedMaxFeePreservesZero(t *testing.T) {
 	cache := NewSignerCache()
-	if _, ok := cache.BoundedMaxFeeForAddress("ADDR1"); ok {
-		t.Fatal("BoundedMaxFeeForAddress(empty) found value")
+	if _, ok := cache.HostMaxFeeForAddress("ADDR1"); ok {
+		t.Fatal("HostMaxFeeForAddress(empty) found value")
 	}
-	cache.SetBoundedMaxFeeForAddress("ADDR1", 0)
-	if got, ok := cache.BoundedMaxFeeForAddress("ADDR1"); !ok || got != 0 {
-		t.Fatalf("BoundedMaxFeeForAddress() = %d/%v, want 0/true", got, ok)
+	cache.SetHostMaxFeeForAddress("ADDR1", 0)
+	if got, ok := cache.HostMaxFeeForAddress("ADDR1"); !ok || got != 0 {
+		t.Fatalf("HostMaxFeeForAddress() = %d/%v, want 0/true", got, ok)
 	}
 }
 
@@ -451,13 +451,25 @@ func TestSignerCache_LoadFromEmptyStore(t *testing.T) {
 	}
 }
 
-func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
+// A signer cache written under an older schema is discarded whole, so its
+// entries are refilled from the signer and never read under the old names.
+func TestSignerCache_LoadOlderSchemaReturnsEmpty(t *testing.T) {
+	for name, payload := range map[string]string{
+		"schema 1": `{"schema_version":1,"keys":{"ADDR":"aplane.falcon1024.v1"},"generic_lsigs":{},"lsig_sizes":{"ADDR":4000},"signing_args":{}}`,
+		"schema 4": `{"schema_version":4,"keys":{"ADDR":"aplane.falcon1024.v1"},"signing_args":{},"bounded_max_fees":{"ADDR":5000},"bounded_contracts":{"ADDR":"bounded2"}}`,
+	} {
+		t.Run(name, func(t *testing.T) { loadOlderSignerCache(t, payload) })
+	}
+}
+
+func loadOlderSignerCache(t *testing.T, payload string) {
+	t.Helper()
 	store := NewStore(t.TempDir())
 	key, err := getOrCreateCacheKey(store)
 	if err != nil {
 		t.Fatalf("getOrCreateCacheKey() error = %v", err)
 	}
-	payloadBytes := []byte(`{"schema_version":1,"keys":{"ADDR":"aplane.falcon1024.v1"},"generic_lsigs":{},"lsig_sizes":{"ADDR":4000},"signing_args":{}}`)
+	payloadBytes := []byte(payload)
 	signed := SignedCache{
 		Version: signedCacheEnvelopeVersion,
 		Data:    base64.StdEncoding.EncodeToString(payloadBytes),
@@ -472,8 +484,9 @@ func TestSignerCache_LoadLegacySizeCacheReturnsEmpty(t *testing.T) {
 	}
 
 	loaded := LoadSignerCacheFromStore(store)
-	if loaded.Count() != 0 {
-		t.Fatalf("loaded signer count = %d, want empty cache requiring inventory refresh", loaded.Count())
+	if loaded.Count() != 0 || len(loaded.HostMaxFees) != 0 || len(loaded.HostContracts) != 0 {
+		t.Fatalf("loaded = %d keys, max fees %v, contracts %v; want an empty cache requiring inventory refresh",
+			loaded.Count(), loaded.HostMaxFees, loaded.HostContracts)
 	}
 	if loaded.SchemaVersion != signerCachePayloadSchemaVersion {
 		t.Fatalf("loaded schema version = %d, want %d", loaded.SchemaVersion, signerCachePayloadSchemaVersion)

@@ -281,7 +281,7 @@ dependency and exported-surface boundaries are pinned by `test/arch`.
 
 The same isolated package dispatches explicit inventory flow labels. `cosigned1`
 uses user-first bounded component release, cosigner-role component signing, and
-bounded assembly, for spends and rekeys, on a plain or bounded host. Each bounded-base component names its
+bounded assembly, for spends and rekeys, on a plain or bounded host. Each base component names its
 path; the client asks the cosigner for every target but a `listed_rekey` one,
 sends no cosigner request when no target needs one, and budgets each cosigned
 position in a mixed group on its component's path. It rejects unknown labels,

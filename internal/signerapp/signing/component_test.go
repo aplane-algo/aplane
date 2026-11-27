@@ -1692,8 +1692,8 @@ func TestSignComponentsRefusesUndecodableGroupsForEitherKind(t *testing.T) {
 		},
 	}
 	targets := map[signerapi.ComponentTargetKind]signerapi.ComponentTarget{
-		signerapi.ComponentTargetKindCosigner:    {TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: testFalconComponentSelector(t, 0xab)},
-		signerapi.ComponentTargetKindBoundedBase: {TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: sender},
+		signerapi.ComponentTargetKindCosigner: {TargetIndex: 0, Kind: signerapi.ComponentTargetKindCosigner, ComponentKey: testFalconComponentSelector(t, 0xab)},
+		signerapi.ComponentTargetKindBase:     {TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: sender},
 	}
 	for _, tc := range cases {
 		for kind, target := range targets {

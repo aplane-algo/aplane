@@ -173,8 +173,8 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 		c.SetSigningFlowForAddress(bounded, signerapi.SigningFlowCosigned1)
 		c.SetCosignerComponentKeyTypeForAddress(bounded, witness.Falcon1024V1)
 		c.SetCosignerPublicKeyForAddress(bounded, cosignerHex)
-		c.SetBoundedContractForAddress(bounded, signerapi.BoundedContractBounded2)
-		c.SetBoundedMaxFeeForAddress(bounded, 10_000)
+		c.SetHostContractForAddress(bounded, signerapi.HostContractBounded2)
+		c.SetHostMaxFeeForAddress(bounded, 10_000)
 		setTestLogicSigResources(c, bounded, 4000)
 		c.AddAddress(plain, "aplane.falcon1024.v1", "logic_sig")
 		setTestLogicSigResources(c, plain, 1700)
@@ -556,10 +556,10 @@ func (v testCacheView) CosignerPublicKey(address string) (string, bool) {
 	return v.c.CosignerPublicKeyForAddress(address)
 }
 func (v testCacheView) BoundedContract(address string) (string, bool) {
-	return v.c.BoundedContractForAddress(address)
+	return v.c.HostContractForAddress(address)
 }
 func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
-	return v.c.BoundedMaxFeeForAddress(address)
+	return v.c.HostMaxFeeForAddress(address)
 }
 func (v testCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
 	return v.c.LogicSigResourceProfile(address)
@@ -593,7 +593,7 @@ func newCosignedTestSigner(t *testing.T, sender string, programBytes int, cosign
 		signerCache.AddAddress(sender, "aplane.falcon1024.v1", "logic_sig")
 		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowCosigned1)
 		signerCache.SetCosignerComponentKeyTypeForAddress(sender, witness.Falcon1024V1)
-		signerCache.SetBoundedContractForAddress(sender, signerapi.BoundedContractPlain1)
+		signerCache.SetHostContractForAddress(sender, signerapi.HostContractPlain1)
 		if programBytes > 0 {
 			setTestCosignedResources(signerCache, sender, programBytes)
 		}
@@ -965,8 +965,8 @@ func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {
 }
 
 // A plain host has no fee ceiling, so any planned fee passes the client's check;
-// a bounded host keeps its ceiling, and an account whose contract is missing or
-// unknown fails closed before any request.
+// a bounded host keeps its ceiling, and an account whose contract is missing,
+// unknown or at odds with its ceiling fails closed before any request.
 func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	account := testAddress(1).String()
 	setup := func(contract string, maxFee *uint64) *Signer {
@@ -975,9 +975,9 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 			c.SetSigningFlowForAddress(account, signerapi.SigningFlowCosigned1)
 			c.SetCosignerComponentKeyTypeForAddress(account, witness.Falcon1024V1)
 			c.SetCosignerPublicKeyForAddress(account, testCosignerPublicKeyHex(0xd6))
-			c.SetBoundedContractForAddress(account, contract)
+			c.SetHostContractForAddress(account, contract)
 			if maxFee != nil {
-				c.SetBoundedMaxFeeForAddress(account, *maxFee)
+				c.SetHostMaxFeeForAddress(account, *maxFee)
 			}
 			setTestLogicSigResources(c, account, 4_000)
 		})
@@ -987,7 +987,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	closing.CloseRemainderTo = testAddress(3)
 	closing.Fee = 1_000_000
 
-	targets, err := setup(signerapi.BoundedContractPlain1, nil).cosignedTargets([]types.Transaction{closing})
+	targets, err := setup(signerapi.HostContractPlain1, nil).cosignedTargets([]types.Transaction{closing})
 	if err != nil || len(targets) != 1 || targets[0].BoundedMaxFee != nil {
 		t.Fatalf("plain host targets = %#v, %v", targets, err)
 	}
@@ -995,7 +995,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 		t.Fatalf("plain host fee check: %v", err)
 	}
 
-	targets, err = setup(signerapi.BoundedContractBounded2, new(uint64(10_000))).cosignedTargets([]types.Transaction{closing})
+	targets, err = setup(signerapi.HostContractBounded2, new(uint64(10_000))).cosignedTargets([]types.Transaction{closing})
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("bounded host targets = %#v, %v", targets, err)
 	}
@@ -1006,7 +1006,8 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	for name, s := range map[string]*Signer{
 		"no contract":                    setup("", nil),
 		"unknown contract":               setup("bounded3", new(uint64(1))),
-		"bounded host without a ceiling": setup(signerapi.BoundedContractBounded2, nil),
+		"bounded host without a ceiling": setup(signerapi.HostContractBounded2, nil),
+		"plain host with a ceiling":      setup(signerapi.HostContractPlain1, new(uint64(1_000))),
 	} {
 		if _, err := s.cosignedTargets([]types.Transaction{closing}); err == nil {
 			t.Fatalf("%s: cosignedTargets() accepted it", name)

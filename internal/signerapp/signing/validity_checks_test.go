@@ -316,7 +316,7 @@ func TestValidateFrozenComponentContextRefusesATransactionTheNetworkNeverAccepts
 			t.Fatal(planErr)
 		}
 		request := signerapi.ComponentRequest{
-			Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+			Targets: []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer}},
 		}
 		for i := 1; i < len(planned.AllTxns); i++ {
 			request.DummyPositions = append(request.DummyPositions, signerapi.ComponentDummyPosition{TargetIndex: i})
@@ -383,7 +383,7 @@ func TestValidateFrozenComponentContextRefusesMixedGenesisOrDisjointWindow(t *te
 		t.Fatal(planErr)
 	}
 	baseReq := signerapi.ComponentRequest{
-		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBoundedBase, AuthAddress: authorizer}},
+		Targets:             []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: authorizer}},
 		ContextualPositions: []signerapi.ComponentContextPosition{{TargetIndex: 1}},
 	}
 	for i := 2; i < len(planned.AllTxns); i++ {

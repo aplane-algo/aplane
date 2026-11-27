@@ -59,7 +59,7 @@ func TestPerKeyTypeKeepsItsCosignerOptional(t *testing.T) {
 		t.Fatalf("buildKeyTypes() = %+v", infos)
 	}
 	info := infos[0]
-	if !info.PerKeyContract || info.SigningFlow != "" || info.BoundedAuthorization != nil {
+	if !info.PerKeyContract || info.SigningFlow != "" || info.Host != nil {
 		t.Fatalf("per-key type reports a fixed contract: %+v", info)
 	}
 	if !slices.Equal(info.CosignerComponentKeyTypes, []string{witness.Falcon1024V1, witness.Ed25519V1}) {
@@ -156,7 +156,7 @@ func TestEveryBoundaryProviderSupportsTheBoundaryWorkflow(t *testing.T) {
 
 // The wire's contract names are the durable record's.
 func TestWireBoundedContractsMatchTheRecord(t *testing.T) {
-	if signerapi.BoundedContractBounded2 != boundedmeta.Contract || signerapi.BoundedContractPlain1 != boundedmeta.PlainContract {
-		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.BoundedContractBounded2, signerapi.BoundedContractPlain1, boundedmeta.Contract, boundedmeta.PlainContract)
+	if signerapi.HostContractBounded2 != boundedmeta.Contract || signerapi.HostContractPlain1 != boundedmeta.PlainContract {
+		t.Fatalf("wire contracts %q, %q; record %q, %q", signerapi.HostContractBounded2, signerapi.HostContractPlain1, boundedmeta.Contract, boundedmeta.PlainContract)
 	}
 }

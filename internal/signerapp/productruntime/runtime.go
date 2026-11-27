@@ -116,7 +116,7 @@ type Runtime struct {
 
 	// Key users are holders of loaded key material or source tokens outside an
 	// admin session (the stage table worker, rotating prepare and sign,
-	// ordinary /sign, bounded-base and cosigner /sign/component,
+	// ordinary /sign, base and cosigner /sign/component,
 	// /sign/assemble, cosigner external checks, and mnemonic export). Lock
 	// cancels their context and waits for them to release before it clears the
 	// session, so no copy of key material outlives the unlocked state.
@@ -522,7 +522,7 @@ func (ir *Runtime) SetRecovery() {
 // so no request from it is left waiting for, or showing, an approval; those
 // answer that the session ended. Requests that are planning or waiting at
 // their gates meet the session check and answer locked; every signing and
-// assembly path (rotating, ordinary /sign, bounded-base and cosigner
+// assembly path (rotating, ordinary /sign, base and cosigner
 // /sign/component, and /sign/assemble) holds a registered key use while
 // loading and using key material, so every session end cancels it and a lock
 // waits for it to release before clearing the session (ARCH_SIGNING.md,

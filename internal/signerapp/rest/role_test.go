@@ -11,7 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-// A cosigner component signs only on a cosigner node; a bounded-base
+// A cosigner component signs only on a cosigner node; a base
 // component only on a signer.
 func TestComponentTargetNodeRole(t *testing.T) {
 	cases := []struct {
@@ -21,8 +21,8 @@ func TestComponentTargetNodeRole(t *testing.T) {
 	}{
 		{noderole.RoleCosigner, signerapi.ComponentTargetKindCosigner, ""},
 		{noderole.RoleSigner, signerapi.ComponentTargetKindCosigner, `node role "signer" does not allow cosigner component signing`},
-		{noderole.RoleSigner, signerapi.ComponentTargetKindBoundedBase, ""},
-		{noderole.RoleCosigner, signerapi.ComponentTargetKindBoundedBase, `node role "cosigner" does not allow account component signing`},
+		{noderole.RoleSigner, signerapi.ComponentTargetKindBase, ""},
+		{noderole.RoleCosigner, signerapi.ComponentTargetKindBase, `node role "cosigner" does not allow account component signing`},
 		{noderole.RoleCosigner, "unknown", `unsupported component target kind "unknown"`},
 	}
 	for _, tc := range cases {

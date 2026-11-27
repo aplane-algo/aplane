@@ -83,7 +83,7 @@ func TestPlannerTakesTheListedPathOnlyForAListedTarget(t *testing.T) {
 		t.Fatalf("item = %+v", items[0])
 	}
 	_, err = resolveBoundedPlanItems(snapshot, request, []types.Transaction{listTestRekey(listTestOther)}, nil, nil)
-	if err == nil || err.Kind != ErrorBoundedRekeyNotListed || err.Code() != signerapi.ErrCodeBoundedRekeyTargetNotListed ||
+	if err == nil || err.Kind != ErrorBoundedRekeyNotListed || err.Code() != signerapi.ErrCodeRekeyTargetNotListed ||
 		!strings.Contains(err.Message, "not on this account's rekey-to list") {
 		t.Fatalf("unlisted target: error = %+v", err)
 	}
@@ -168,14 +168,14 @@ func TestListedRekeyIsForcedToReview(t *testing.T) {
 		AllTxns:            []types.Transaction{rekey},
 		EvalCount:          1,
 		ListedRekeyTargets: map[int]map[string]bool{0: items[0].ListedRekeyTargets},
-		ForcedReviewRuleID: policy.BoundedRekeyRequiresReviewRuleID,
+		ForcedReviewRuleID: policy.HostRekeyRequiresReviewRuleID,
 		Plan:               plan,
 		RequestOperatorApproval: func(_ context.Context, rule string) *ServiceError {
 			prompted = rule
 			return nil
 		},
 	}, nil)
-	if gateErr != nil || outcome.PolicyRuleID != policy.BoundedRekeyRequiresReviewRuleID || outcome.ApprovalSource != ApprovalSourceHuman || prompted != outcome.PolicyRuleID {
+	if gateErr != nil || outcome.PolicyRuleID != policy.HostRekeyRequiresReviewRuleID || outcome.ApprovalSource != ApprovalSourceHuman || prompted != outcome.PolicyRuleID {
 		t.Fatalf("gates = %+v, %v; prompted %q", outcome, gateErr, prompted)
 	}
 }
@@ -199,7 +199,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		ListedRekeyTargets: map[string]bool{listTestTarget.String(): true},
 	}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
-		policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
+		policy.HostRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{item}}); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || !strings.Contains(got[0].Message, "rekey-to list") || !strings.Contains(got[0].Message, "LEAVES THIS SIGNER'S CUSTODY") {
@@ -212,7 +212,7 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 	}
 	cosigned := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},
-		policy.BoundedRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
+		policy.HostRekeyRequiresReviewRuleID, &PlanResult{BoundedItems: []*boundedPlanItem{cosigned}}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(description, "Authorization: spending key and cosigner") {

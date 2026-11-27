@@ -59,9 +59,9 @@ func TestRefreshSubmitSigningStateDiscoversCosignedAuthorizer(t *testing.T) {
 				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
 				LogicSigResources:        testPublicLogicSigProfile(1_500),
-				BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
-					Contract: signerapi.BoundedContractPlain1,
-					Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: cosignerHex},
+				Host: &signerapi.HostInfo{
+					Contract: signerapi.HostContractPlain1,
+					Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: cosignerHex},
 				},
 			}},
 		}, req), nil
@@ -127,9 +127,9 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				SigningFlow:              signerapi.SigningFlowCosigned1,
 				CosignerComponentKeyType: witness.Falcon1024V1,
 				LogicSigResources:        testPublicLogicSigProfile(1_500),
-				BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
-					Contract: signerapi.BoundedContractPlain1,
-					Cosigner: &signerapi.BoundedCosignerAuthorizationInfo{PublicKeyHex: cosignerHex},
+				Host: &signerapi.HostInfo{
+					Contract: signerapi.HostContractPlain1,
+					Cosigner: &signerapi.HostCosignerInfo{PublicKeyHex: cosignerHex},
 				},
 			}},
 		}, req), nil

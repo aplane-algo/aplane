@@ -44,13 +44,13 @@
 
 The holders of loaded key material that register a key use with
 `Runtime.KeyUseContext` are all signing and assembly paths — rotating prepare,
-sign and the stage table worker, ordinary `/sign`, bounded-base and
+sign and the stage table worker, ordinary `/sign`, base and
 cosigner-role `/sign/component`, and `/sign/assemble` — plus mnemonic export
 and a cosigner's external check step (`runExternalChecks`), which holds one
 while it reads its source tokens and makes its lookups so that a lock ends them
 and waits for it to let go. That external-check step releases nothing to a
 caller: when its key use is canceled the request is refused as locked.
-For non-rotating signing (`/sign`, bounded-base `/sign/component`), the key use
+For non-rotating signing (`/sign`, base `/sign/component`), the key use
 starts after policy gates and operator approval (`Service.openKeyUse`), never
 spanning approval wait, and ends once loaded key material is zeroed and before
 blocking audit writes; cosigner `/sign/component` takes its signing key use
@@ -74,7 +74,7 @@ The spec lives at [formal/key_use_lock.tla](formal/key_use_lock.tla).
 
 | Invariant | Meaning | TLA+ predicate |
 |---|---|---|
-| KU1 | A signature (rotating, ordinary `/sign`, bounded-base or cosigner `/sign/component`, or `/sign/assemble`) is never returned once a lock or a recovery began after its request started and before its final check | `KU1_NoSignatureAfterLock` |
+| KU1 | A signature (rotating, ordinary `/sign`, base or cosigner `/sign/component`, or `/sign/assemble`) is never returned once a lock or a recovery began after its request started and before its final check | `KU1_NoSignatureAfterLock` |
 | KU2 | The session is never cleared while a key use is registered | `KU2_NoKeyMaterialAtWipe` |
 | KU3 | An export never delivers a phrase after the session was cleared | `KU3_NoExportAfterWipe` |
 | KU4 | The session is never cleared while the signer is unlocked | `KU4_NoWipeWhileUnlocked` |
@@ -315,7 +315,7 @@ for each.
   that as `errKeyUseRefused`, decided where the window was stopped). `Register`,
   a held step and `Release` describe them, so KU2 covers them without new
   actions.
-- Ordinary `/sign`, component signing (bounded-base and cosigner-role) and
+- Ordinary `/sign`, component signing (base and cosigner-role) and
   `/sign/assemble` register key uses through `Service.openKeyUse` after their
   gates and approval, never spanning human approval wait, release before
   blocking audit or console writes, and run the same post-release session check
@@ -344,7 +344,7 @@ for each.
   `TestLockWaitsForEveryRotatingSeedLoad` parks each load of prepare and sign
   under the real `Runtime.Lock` and fails if one of them is not a key use. For
   non-rotating signing and assembly, `TestLockWaitsForEveryNonRotatingKeyLoad`
-  parks each of the five `GetKeyWithContext` load sites (`/sign`, bounded-base
+  parks each of the five `GetKeyWithContext` load sites (`/sign`, base
   `/sign/component`, cosigner `/sign/component`, `/sign/assemble` target, and
   `/sign/assemble` local passthrough) under the real `Runtime.Lock` and fails
   if any is unregistered or releases before zeroing the loaded key.

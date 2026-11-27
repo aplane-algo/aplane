@@ -37,12 +37,14 @@ func preparedAccount(policy, rekey string, cosigner bool, recipients int) Prepar
 		Fingerprint:       "1:" + strings.Repeat("c", 64),
 		ReviewFingerprint: "1:" + strings.Repeat("d", 64),
 		BoundaryDigest:    strings.Repeat("e", 64),
-		Bounded: &protocol.PreparedBoundedProfile{
-			SpendEffects:     []string{"pay", "axfer", "asset_opt_in"},
-			MaxFee:           new(uint64(10_000)),
+		Host: &protocol.PreparedHostProfile{
 			Rekey:            rekey,
-			Layer3Policy:     policy,
 			CosignerRequired: cosigner,
+			Bounds: &protocol.PreparedHostBounds{
+				SpendEffects: []string{"pay", "axfer", "asset_opt_in"},
+				MaxFee:       10_000,
+				Layer3Policy: policy,
+			},
 		},
 	}
 	if cosigner {
@@ -131,7 +133,7 @@ func TestReviewShowsTheSignersWarnings(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, false, 2)
-			prepared.Bounded.MaxFee = new(uint64(0))
+			prepared.Host.Bounds.MaxFee = 0
 			prepared.Warnings = test.warnings
 			m := Model{viewState: ViewGenerateReview, width: 80, height: 400, standalone: true, forms: formsState{review: &prepared}}
 			view := flatReview(m.renderGenerateReview())
@@ -255,14 +257,13 @@ func TestReviewWithAWarningFitsAt80x24(t *testing.T) {
 			for _, standalone := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/standalone=%v", test.name, warned.name, standalone), func(t *testing.T) {
 					prepared := preparedAccount(test.policy, test.rekey, test.cosigner, 2)
-					prepared.Bounded.Contract = boundedmeta.Contract
-					prepared.Bounded.MaxFee = new(uint64(0))
+					prepared.Host.Bounds.MaxFee = 0
 					if test.rekeyTo > 0 {
 						targets := make([]string, test.rekeyTo)
 						for i := range targets {
 							targets[i] = testAddress(byte(i + 1))
 						}
-						prepared.Bounded.RekeyList = true
+						prepared.Host.RekeyList = true
 						prepared.Parameters[boundary.ParameterRekeyTo] = strings.Join(targets, ",")
 					}
 					if test.classical {
@@ -301,6 +302,22 @@ func TestReviewWithAWarningFitsAt80x24(t *testing.T) {
 
 // The main review stays plain. A fingerprint there would invite an operator to
 // treat it as the thing being approved.
+// The details name a bounded host's Layer 3 policy. A plain host has none, and
+// its details have no Policy line.
+func TestReviewDetailsShowThePolicyOnlyWithBounds(t *testing.T) {
+	bounded := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, false, 2)
+	m := Model{viewState: ViewGenerateReviewDetails, width: 80, height: 40, standalone: true, forms: formsState{review: &bounded}}
+	if details := stripANSI(m.renderGenerateReviewDetails()); !strings.Contains(details, "Policy:") || !strings.Contains(details, boundedmeta.Layer3PolicyFixedAllowlist) {
+		t.Errorf("a bounded host's details lack its policy:\n%s", details)
+	}
+	plain := bounded
+	plain.Host = &protocol.PreparedHostProfile{Rekey: boundary.RekeySpendingKey}
+	m.forms.review = &plain
+	if details := stripANSI(m.renderGenerateReviewDetails()); strings.Contains(details, "Policy:") {
+		t.Errorf("a plain host's details name a policy:\n%s", details)
+	}
+}
+
 func TestReviewKeepsDigestsInDetails(t *testing.T) {
 	prepared := preparedAccount(boundedmeta.Layer3PolicyMerkleAllowlist, boundary.RekeyRefused, true, 11)
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &prepared}}
@@ -365,12 +382,12 @@ func TestRestrictedAccountsNeverReadAsUnrestricted(t *testing.T) {
 }
 
 func TestParameterNamesDoNotInventAList(t *testing.T) {
-	row, note := reviewRecipients(boundedmeta.Contract, boundedmeta.Layer3PolicyCustom, false, []string{"A", "B"})
+	row, note := reviewRecipients(&protocol.PreparedHostBounds{Layer3Policy: boundedmeta.Layer3PolicyCustom}, false, []string{"A", "B"})
 	if !strings.Contains(row, "Custom policy") || strings.Contains(row, "inline") || note != "" {
 		t.Fatalf("row = %q, note = %q", row, note)
 	}
 	// The retired timelock policy is an unknown one: named, never "any".
-	row, _ = reviewRecipients(boundedmeta.Contract, "timelock", false, nil)
+	row, _ = reviewRecipients(&protocol.PreparedHostBounds{Layer3Policy: "timelock"}, false, nil)
 	if strings.Contains(row, "any") || !strings.Contains(row, "timelock") {
 		t.Fatalf("row = %q", row)
 	}
@@ -702,7 +719,7 @@ func TestCosignedRekeySummariesFitAt80x24(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			prepared := preparedAccount(test.policy, test.rekey, true, 11)
 			if test.list {
-				prepared.Bounded.RekeyList = true
+				prepared.Host.RekeyList = true
 				prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = strings.Join(targets, ",")
 			}
 			label, note := reviewRekey(prepared)
@@ -924,11 +941,9 @@ func TestPlainHostReviewFitsAndStatesWhatDecides(t *testing.T) {
 					Fingerprint:       "1:" + strings.Repeat("c", 64),
 					ReviewFingerprint: "1:" + strings.Repeat("d", 64),
 					BoundaryDigest:    strings.Repeat("e", 64),
-					Bounded: &protocol.PreparedBoundedProfile{
-						Contract:         boundedmeta.PlainContract,
+					Host: &protocol.PreparedHostProfile{
 						Rekey:            arrangement.rekey,
 						RekeyList:        arrangement.list,
-						Layer3Policy:     boundedmeta.Layer3PolicyNone,
 						CosignerRequired: arrangement.cosigned,
 					},
 				}
@@ -970,7 +985,7 @@ func TestReviewDetailsNameClassicalTargetsAndTheProtection(t *testing.T) {
 		{Address: "HELDTEMPLATE", KeyType: "aplane.htlc.v1"},
 	}
 	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, true, 1)
-	prepared.Bounded.RekeyList = true
+	prepared.Host.RekeyList = true
 	prepared.Parameters[boundedmeta.RekeyListEntriesParameter] = "HELDED25519,HELDFALCON,HELDTEMPLATE,ELSEWHERE"
 	m := Model{viewState: ViewGenerateReviewDetails, width: 80, height: 400, forms: formsState{review: &prepared}, keylist: keyListState{keys: held}}
 	details := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
@@ -990,7 +1005,7 @@ func TestReviewDetailsNameClassicalTargetsAndTheProtection(t *testing.T) {
 
 	classical := prepared
 	classical.KeyType = "aplane.ed25519.v1"
-	classical.Bounded = &protocol.PreparedBoundedProfile{Contract: boundedmeta.PlainContract, Rekey: boundary.RekeySpendingKey, RekeyList: true, Layer3Policy: boundedmeta.Layer3PolicyNone, CosignerRequired: true}
+	classical.Host = &protocol.PreparedHostProfile{Rekey: boundary.RekeySpendingKey, RekeyList: true, CosignerRequired: true}
 	m.forms.review = &classical
 	details = strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
 	if strings.Contains(details, "confirm it is a post-quantum key") || strings.Contains(details, "a classical key, so") {
@@ -1004,7 +1019,7 @@ func TestReviewDetailsNameClassicalTargetsAndTheProtection(t *testing.T) {
 	// Ed25519 base, so the review makes no post-quantum claim about its targets.
 	template := prepared
 	template.KeyType = "example.bounded-ed25519.v1"
-	template.Bounded = &protocol.PreparedBoundedProfile{Contract: boundedmeta.Contract, Rekey: boundary.RekeyRefused, RekeyList: true, Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist}
+	template.Host = &protocol.PreparedHostProfile{Rekey: boundary.RekeyRefused, RekeyList: true, Bounds: &protocol.PreparedHostBounds{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist}}
 	m.forms.review = &template
 	details = strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReviewDetails()), "║", " ")), " ")
 	if strings.Contains(details, "confirm it is a post-quantum key") || strings.Contains(details, "a classical key, so") {
@@ -1030,7 +1045,7 @@ func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
 		{"some_future_setting", true, true, "claims no protection"},
 	} {
 		prepared := preparedAccount(boundedmeta.Layer3PolicyNone, test.rekey, test.cosigned, 0)
-		prepared.Bounded.RekeyList = test.listed
+		prepared.Host.RekeyList = test.listed
 		if got := reviewRekeyProtection(prepared); !strings.Contains(got, test.want) {
 			t.Errorf("%s listed=%v cosigned=%v: %q, want %q", test.rekey, test.listed, test.cosigned, got, test.want)
 		}
@@ -1042,7 +1057,6 @@ func TestReviewRekeyProtectionNamesEachKind(t *testing.T) {
 func TestBoundedReviewNamesTheClassicalKey(t *testing.T) {
 	review := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
 	review.KeyType = "aplane.ed25519.v1"
-	review.Bounded.Contract = boundedmeta.Contract
 	m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
 	view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
 	if !strings.Contains(view, "spending key is classical") || !strings.Contains(view, "GENERATE") {
@@ -1064,8 +1078,7 @@ func TestReviewNamesAClassicalCosigner(t *testing.T) {
 	} {
 		review := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeySpendingKey, true, 1)
 		review.KeyType = tc.keyType
-		review.Bounded.Contract = boundedmeta.Contract
-		review.Bounded.CosignerKeyType = tc.cosigner
+		review.Host.CosignerKeyType = tc.cosigner
 		m := Model{viewState: ViewGenerateReview, width: 80, height: 23, standalone: true, forms: formsState{review: &review}}
 		view := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(m.renderGenerateReview()), "║", " ")), " ")
 		want := "The cosigner is classical."

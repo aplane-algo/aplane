@@ -681,17 +681,22 @@ type PrepareGenerateKeyRequest struct {
 	Parameters map[string]string
 }
 
-// PreparedBoundedProfile is the bounded contract of a prepared account.
-type PreparedBoundedProfile struct {
-	Contract         string
-	SpendEffects     []string
-	MaxFee           *uint64 // nil for a plain host, which has no fee ceiling
+// PreparedHostBounds is what a prepared bounded host enforces on a spend.
+type PreparedHostBounds struct {
+	SpendEffects []string
+	MaxFee       uint64
+	Layer3Policy string
+}
+
+// PreparedHostProfile is the signing contract of a prepared host account.
+type PreparedHostProfile struct {
 	Rekey            string
 	RekeyList        bool
-	Layer3Policy     string
 	CosignerRequired bool
 	// CosignerKeyType is the cosigner's key type, when the account has one.
 	CosignerKeyType string
+	// Bounds is nil for a plain host.
+	Bounds *PreparedHostBounds
 }
 
 // PrepareGenerateKeyResult describes the account a request would create. It has
@@ -704,7 +709,7 @@ type PrepareGenerateKeyResult struct {
 	Fingerprint       string
 	ReviewFingerprint string
 	BoundaryDigest    string
-	Bounded           *PreparedBoundedProfile
+	Host              *PreparedHostProfile
 	CosignerKeyID     string
 	Warnings          []string
 	Code              string

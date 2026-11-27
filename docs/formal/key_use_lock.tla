@@ -6,7 +6,7 @@ Key-use window model: how a lock ends every use of loaded key material, and
 what may still leave the signer while it does.
 
 Two holders use the same mechanism. A signing request (rotating sign, ordinary
-/sign, bounded-base or cosigner /sign/component, or /sign/assemble) holds key
+/sign, base or cosigner /sign/component, or /sign/assemble) holds key
 material after approval and gates, produces its signature, zeroes the key,
 ends its key use before any blocking audit write, and rechecks the session
 before returning the signature. A mnemonic export holds the key while it reads
@@ -145,7 +145,7 @@ Thirteen guards are switchable:
 
 Properties:
 
-  KU1  a signature (rotating, ordinary /sign, bounded-base or cosigner
+  KU1  a signature (rotating, ordinary /sign, base or cosigner
        /sign/component, or /sign/assemble) is never returned once a lock or a
        recovery has begun after its request started and before its final check;
   KU2  the session is never cleared while a key use is registered;
