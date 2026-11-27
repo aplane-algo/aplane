@@ -38,7 +38,7 @@ import (
 // a set of refused templates: admission, registration, fingerprints, parameter
 // definitions, metadata, programs, derived bytecode and addresses, and the
 // error text of each refusal.
-const composedOutputDigest = "c7dec71ea3a223b191508185cd9db57b12523bbf72b2f58eca1995b36e79e8ba"
+const composedOutputDigest = "781e47eddc9d13bfd4ba0fa7188e614a266ba59b335342bcc77716cadf19e568"
 
 const composedCharacterizationDumpEnv = "APLANE_COMPOSED_CHARACTERIZATION_DUMP"
 
@@ -229,11 +229,11 @@ func characterizationValues(defs []lsigprovider.ParameterDef) map[string]string 
 	values := map[string]string{}
 	for _, def := range defs {
 		switch {
-		case def.Name == composeddsa.CosignerPublicKeyParameter:
+		case def.Name == hostmeta.CosignerPublicKeyParameter:
 			// Hex with the digits a-f, half of it in upper case.
 			size := def.MaxLength / 2
 			values[def.Name] = strings.ToUpper(strings.Repeat("a5", size/2)) + strings.Repeat("3c", size-size/2)
-		case def.Name == composeddsa.RekeyToParameter:
+		case def.Name == hostmeta.RekeyListEntriesParameter:
 			values[def.Name] = address(0x61) + "," + address(0x62)
 		case def.Type == "address[]":
 			values[def.Name] = address(3) + "," + address(1) + "," + address(2)
@@ -370,17 +370,17 @@ func characterizeComposedTemplate(r *composedRecorder, client *algod.Client, nam
 	if _, err := provider.GenerateTEAL(publicKey, map[string]string{}); err != nil {
 		r.add(name+" teal no values", err)
 	}
-	if cosigner, ok := prepared[composeddsa.CosignerPublicKeyParameter]; ok {
+	if cosigner, ok := prepared[hostmeta.CosignerPublicKeyParameter]; ok {
 		shared := map[string]string{}
 		for k, v := range prepared {
 			shared[k] = v
 		}
-		shared[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
+		shared[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(publicKey)
 		_, err := provider.GenerateTEAL(publicKey, shared)
 		r.add(name+" teal shared cosigner", err)
 		_, err = provider.BuildHostMetadata(publicKey, shared, []byte("program"))
 		r.add(name+" metadata shared cosigner", err)
-		shared[composeddsa.CosignerPublicKeyParameter] = cosigner[:len(cosigner)-2]
+		shared[hostmeta.CosignerPublicKeyParameter] = cosigner[:len(cosigner)-2]
 		_, err = provider.BuildHostMetadata(publicKey, shared, []byte("program"))
 		r.add(name+" metadata short cosigner", err)
 	}

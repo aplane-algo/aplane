@@ -56,7 +56,7 @@ var productionTemplateBaseRules = templateBaseRules{
 // admits a cosigner on a bounded2 account over baseKeyType. The policy is the
 // one record of which bases the cosigner workflow is reviewed for.
 func boundedContractAllowsCosigner(baseKeyType string) bool {
-	support, ok := productionHostGenerationPolicy(BoundedContract, baseKeyType)
+	support, ok := productionHostGenerationPolicy(hostmeta.BoundedContract, baseKeyType)
 	return ok && support.cosigner
 }
 
@@ -372,8 +372,8 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 		return nil, nil
 	}
 	// The plain host is the plain providers' alone: a template is a bounded host.
-	if spec.Contract == PlainContract {
-		return nil, fmt.Errorf("bounded.contract %s is the plain host's, which templates don't declare", PlainContract)
+	if spec.Contract == hostmeta.PlainContract {
+		return nil, fmt.Errorf("bounded.contract %s is the plain host's, which templates don't declare", hostmeta.PlainContract)
 	}
 	if spec.MaxFee == nil {
 		return nil, fmt.Errorf("bounded.max_fee is required")
@@ -389,7 +389,7 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 		}
 		_, signatureMaxSize, ok := hostmeta.CosignerSizes(componentKeyType)
 		if !ok {
-			return nil, fmt.Errorf("unsupported bounded cosigner component key type %q", componentKeyType)
+			return nil, fmt.Errorf("unsupported cosigner component key type %q", componentKeyType)
 		}
 		profile.Cosigner = &hostmeta.CosignerAuthorization{
 			Contract:         spec.Cosigner.Contract,
@@ -412,13 +412,13 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	}
 	switch spec.Rekey {
 	case "":
-		return nil, fmt.Errorf("bounded.rekey is required: %s, %s, %s or %s", hostmeta.RekeyRefused, hostmeta.RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
-	case RekeyOnlyThese:
+		return nil, fmt.Errorf("bounded.rekey is required: %s, %s, %s or %s", hostmeta.RekeyRefused, hostmeta.RekeySpendingKey, hostmeta.RekeyOnlyThese, hostmeta.RekeyPlusCosigned)
+	case hostmeta.RekeyOnlyThese:
 		// Only these addresses: no rekey except to an address on the list, which
 		// the framework adds as the rekey_to parameter.
 		profile.Rekey = hostmeta.RekeyRefused
 		profile.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth}
-	case RekeyPlusCosigned:
+	case hostmeta.RekeyPlusCosigned:
 		// These addresses with the spending key alone, others with the cosigner
 		// too; the profile check refuses it without a cosigner.
 		profile.Rekey = hostmeta.RekeySpendingKey

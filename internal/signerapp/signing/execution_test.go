@@ -811,7 +811,7 @@ func TestAssembleHostArgsPlacesDerivedArgsByName(t *testing.T) {
 		t.Fatalf("assembled args = %x, want second's value in slot 1 and first's in slot 2", args)
 	}
 
-	if _, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}}); err == nil || !strings.Contains(err.Message, `bounded derived slot "second" has no derived argument`) {
+	if _, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}}); err == nil || !strings.Contains(err.Message, `derived slot "second" has no derived argument`) {
 		t.Fatalf("slot without a derived value: error = %+v", err)
 	}
 	if _, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}, "third": nil}); err == nil || !strings.Contains(err.Message, "not fully consumed") {
@@ -836,10 +836,10 @@ func TestVerifyHostPlanIntegrity(t *testing.T) {
 	}
 
 	if err := verifyHostPlanIntegrity(nil, loaded); err == nil || err.Kind != ErrorInternal {
-		t.Fatalf("key gained bounded metadata: error = %#v, want internal", err)
+		t.Fatalf("key gained host metadata: error = %#v, want internal", err)
 	}
 	if err := verifyHostPlanIntegrity(item, &coresigning.KeyMaterial{}); err == nil || err.Kind != ErrorInternal {
-		t.Fatalf("key lost bounded metadata: error = %#v, want internal", err)
+		t.Fatalf("key lost host metadata: error = %#v, want internal", err)
 	}
 
 	drifted := hostmeta.Clone(metadata)
@@ -1022,7 +1022,7 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 			key: func(private []byte) *coresigning.KeyMaterial {
 				return &coresigning.KeyMaterial{Type: rotatingkey.RotatingTripleSlhdsaV1, Value: private}
 			}},
-		{name: "bounded metadata the plan lacks", wantErr: "key gained bounded metadata after planning",
+		{name: "bounded metadata the plan lacks", wantErr: "key gained host metadata after planning",
 			key: func(private []byte) *coresigning.KeyMaterial {
 				return &coresigning.KeyMaterial{Type: nativeType, Value: private, Host: hostmeta.Clone(cosigned)}
 			}},
@@ -1108,9 +1108,9 @@ func TestCheckBaseSignatureLayout(t *testing.T) {
 	}{
 		{[][]byte{{1}, {2}}, ""},
 		{[][]byte{{1, 2, 3}, {4, 5}}, ""},
-		{[][]byte{{1}}, "base provider emitted 1 signature args, stored bounded layout requires 2"},
-		{[][]byte{{1}, {}}, "base signature arg 1 length 0 violates stored bounded maximum 2"},
-		{[][]byte{{1, 2, 3, 4}, {1}}, "base signature arg 0 length 4 violates stored bounded maximum 3"},
+		{[][]byte{{1}}, "base provider emitted 1 signature args, stored layout requires 2"},
+		{[][]byte{{1}, {}}, "base signature arg 1 length 0 violates stored maximum 2"},
+		{[][]byte{{1, 2, 3, 4}, {1}}, "base signature arg 0 length 4 violates stored maximum 3"},
 	}
 	for _, tc := range cases {
 		err := checkBaseSignatureLayout(layout, tc.args)

@@ -81,7 +81,7 @@ func TestLoadHostKeyMaterialMapsExpectedErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, got := loadHostKeyMaterial(t.Context(), &componentKeyTestSession{err: test.err}, "ACCOUNT", "bounded account key")
+			_, got := loadHostKeyMaterial(t.Context(), &componentKeyTestSession{err: test.err}, "ACCOUNT", "host account key")
 			if got == nil || got.Kind != test.kind {
 				t.Fatalf("loadHostKeyMaterial() error = %#v, want kind %s", got, test.kind)
 			}

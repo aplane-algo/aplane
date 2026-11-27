@@ -49,7 +49,7 @@ func hostPathNeedsCosigner(path hostPath) bool {
 
 func validateHostComponentPlan(req signerapi.ComponentRequest, plan *PlanResult) ([]int, *ServiceError) {
 	if plan == nil || len(plan.HostItems) < len(req.GroupSignRequest().Requests) {
-		return nil, internal("bounded component plan is incomplete")
+		return nil, internal("base component plan is incomplete")
 	}
 	if plan.HasPassthrough {
 		return nil, badRequest("base component signing does not accept signed passthrough entries")
@@ -59,7 +59,7 @@ func validateHostComponentPlan(req signerapi.ComponentRequest, plan *PlanResult)
 		i := target.TargetIndex
 		item := plan.HostItems[i]
 		if item == nil || item.Metadata == nil || item.Metadata.Cosigner == nil {
-			return nil, badRequest(fmt.Sprintf("transaction %d is not a cosigner-enabled bounded account", i+1))
+			return nil, badRequest(fmt.Sprintf("transaction %d is not a cosigned account's", i+1))
 		}
 		if _, ok := componentPaths[item.Path]; !ok {
 			return nil, badRequest(fmt.Sprintf("transaction %d is not an admitted cosigned spend or rekey", i+1))
@@ -67,7 +67,7 @@ func validateHostComponentPlan(req signerapi.ComponentRequest, plan *PlanResult)
 		targets = append(targets, i)
 	}
 	if len(targets) == 0 {
-		return nil, badRequest("base component signing requires at least one cosigner-enabled bounded target")
+		return nil, badRequest("base component signing requires at least one cosigned account's target")
 	}
 	return targets, nil
 }
@@ -131,7 +131,7 @@ func (s *Service) PrepareHostComponentWithContext(ctx context.Context, req signe
 	// terminal or disk cannot hold a lock's drain, then recheck the session
 	// before returning.
 	endKeyUse()
-	consoleOf(s.Console).Printf("[GROUP] Prepared %d bounded-cosigner base component(s)\n", len(components))
+	consoleOf(s.Console).Printf("[GROUP] Prepared %d base component(s) for cosigned accounts\n", len(components))
 	records := s.logHostComponentsApproved(req, plan, targets, outcome)
 	if refused := s.keyUseRefused(ctx, nil); refused != nil {
 		s.logWithheldRecords(records, refused)
@@ -156,7 +156,7 @@ func (s *Service) logHostComponentsApproved(req signerapi.ComponentRequest, plan
 			continue
 		}
 		txReq := groupReq.Requests[index]
-		const details = "bounded-cosigner base component released after policy and operator approval"
+		const details = "base component of a cosigned account released after policy and operator approval"
 		record := group.record(index, txReq.AuthAddress, details, outcome)
 		s.AuditLog.LogSignApproved(record)
 		records = append(records, record)
@@ -167,7 +167,7 @@ func (s *Service) logHostComponentsApproved(req signerapi.ComponentRequest, plan
 func signBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan *PlanResult, targetIndex int, session componentKeyGetter) (signerapi.Component, *ServiceError) {
 	item := plan.HostItems[targetIndex]
 	account := req.Requests[targetIndex].AuthAddress
-	keyMaterial, loadErr := loadHostKeyMaterial(ctx, session, account, "bounded spending key")
+	keyMaterial, loadErr := loadHostKeyMaterial(ctx, session, account, "host spending key")
 	if loadErr != nil {
 		return signerapi.Component{}, loadErr
 	}
@@ -185,17 +185,17 @@ func signBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan
 	provider := coresigning.GetProviderForKey(keyMaterial.Type, keyMaterial.BaseKeyType)
 	baseProvider := lsigprovider.Get(keyMaterial.BaseKeyType)
 	if provider == nil || baseProvider == nil {
-		return signerapi.Component{}, internal("bounded base signing provider is unavailable")
+		return signerapi.Component{}, internal("base signing provider is unavailable")
 	}
 	txID := algocrypto.TransactionID(plan.AllTxns[targetIndex])
 	signature, signErr := provider.SignMessage(keyMaterial, txID[:])
 	if signErr != nil {
-		return signerapi.Component{}, internal(fmt.Sprintf("failed to sign bounded base component: %v", signErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("failed to sign base component: %v", signErr))
 	}
 	defer crypto.ZeroBytes(signature)
 	baseArgs, packErr := baseProvider.BuildArgs(signature, nil)
 	if packErr != nil {
-		return signerapi.Component{}, internal(fmt.Sprintf("pack bounded base component: %v", packErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("pack base component: %v", packErr))
 	}
 	defer zeroGeneratedArgs(baseArgs)
 	if err := validateBaseArgs(keyMaterial, txID[:], baseArgs); err != nil {
@@ -203,11 +203,11 @@ func signBaseComponent(ctx context.Context, req signerapi.GroupSignRequest, plan
 	}
 	receiptMessage, receiptErr := hostAssemblyReceiptMessage(account, txID[:], item.Metadata, item.RuntimeArgs)
 	if receiptErr != nil {
-		return signerapi.Component{}, internal(fmt.Sprintf("build bounded assembly receipt: %v", receiptErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("build assembly receipt: %v", receiptErr))
 	}
 	receipt, receiptSignErr := provider.SignMessage(keyMaterial, receiptMessage[:])
 	if receiptSignErr != nil {
-		return signerapi.Component{}, internal(fmt.Sprintf("sign bounded assembly receipt: %v", receiptSignErr))
+		return signerapi.Component{}, internal(fmt.Sprintf("sign assembly receipt: %v", receiptSignErr))
 	}
 	defer crypto.ZeroBytes(receipt)
 	component := signerapi.Component{
@@ -240,7 +240,7 @@ func validateBaseArgs(keyMaterial *coresigning.KeyMaterial, messageBytes []byte,
 		return err
 	}
 	if !hostSpendingProofVerifies(keyMaterial, hostWorkflowCosigner, messageBytes, args...) {
-		return internal("generated bounded base component failed verification")
+		return internal("generated base component failed verification")
 	}
 	return nil
 }
@@ -264,7 +264,7 @@ func loadHostKeyMaterial(ctx context.Context, session componentKeyGetter, accoun
 }
 
 func assembleHostTarget(ctx context.Context, target signerapi.AssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
-	keyMaterial, loadErr := loadHostKeyMaterial(ctx, session, target.AuthAddress, "bounded account key")
+	keyMaterial, loadErr := loadHostKeyMaterial(ctx, session, target.AuthAddress, "host account key")
 	if loadErr != nil {
 		return "", loadErr
 	}
@@ -274,7 +274,7 @@ func assembleHostTarget(ctx context.Context, target signerapi.AssemblyTarget, en
 	}
 	metadata := keyMaterial.Host
 	if metadata == nil || metadata.Cosigner == nil {
-		return "", badRequest(fmt.Sprintf("target index %d is not a cosigner-enabled bounded account", target.TargetIndex))
+		return "", badRequest(fmt.Sprintf("target index %d is not a cosigned account's", target.TargetIndex))
 	}
 	// The path is decided again here, from the canonical transaction and the
 	// stored contract, so a client that skipped the cosigner on a target that
@@ -324,7 +324,7 @@ func assembleHostTarget(ctx context.Context, target signerapi.AssemblyTarget, en
 		defer crypto.ZeroBytes(cosignerSignature)
 		cosignerPublicKey, publicKeyErr := hex.DecodeString(metadata.Cosigner.PublicKeyHex)
 		if publicKeyErr != nil {
-			return "", internal("stored bounded cosigner public key is invalid")
+			return "", internal("stored cosigner public key is invalid")
 		}
 		cosignerMessage := message.ComponentMessage(message.RoleCosigner, entry.TxID)
 		if err := verifyCosignerAssemblySignature(metadata.Cosigner.ComponentKeyType, cosignerPublicKey, cosignerMessage[:], cosignerSignature); err != nil {
@@ -344,11 +344,11 @@ func assembleHostTarget(ctx context.Context, target signerapi.AssemblyTarget, en
 	lsigAccount := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: keyMaterial.Bytecode, Args: args}}
 	address, addressErr := lsigAccount.Address()
 	if addressErr != nil || address.String() != target.AuthAddress {
-		return "", internal(fmt.Sprintf("loaded bounded program does not match account %s", target.AuthAddress))
+		return "", internal(fmt.Sprintf("loaded host program does not match account %s", target.AuthAddress))
 	}
 	_, signedBytes, signErr := algocrypto.SignLogicSigAccountTransaction(lsigAccount, entry.Txn)
 	if signErr != nil {
-		return "", internal(fmt.Sprintf("failed to assemble bounded-cosigner transaction: %v", signErr))
+		return "", internal(fmt.Sprintf("failed to assemble host transaction: %v", signErr))
 	}
 	if validateErr := validateAssembledHostTarget(target, entry, signedBytes); validateErr != nil {
 		return "", validateErr
@@ -375,13 +375,13 @@ func decodeBaseArgs(target signerapi.AssemblyTarget, metadata *hostmeta.Metadata
 func validateAssembledHostTarget(target signerapi.AssemblyTarget, entry canonical.Txn, signedBytes []byte) *ServiceError {
 	var signed types.SignedTxn
 	if err := msgpack.Decode(signedBytes, &signed); err != nil {
-		return internal(fmt.Sprintf("failed to decode assembled bounded transaction: %v", err))
+		return internal(fmt.Sprintf("failed to decode assembled host transaction: %v", err))
 	}
 	if !bytes.Equal(algocrypto.TransactionID(signed.Txn), entry.TxID[:]) {
-		return internal(fmt.Sprintf("assembled bounded transaction at index %d does not match canonical transaction", target.TargetIndex))
+		return internal(fmt.Sprintf("assembled host transaction at index %d does not match canonical transaction", target.TargetIndex))
 	}
 	if entry.Txn.Sender.String() != target.AuthAddress && signed.AuthAddr.String() != target.AuthAddress {
-		return internal(fmt.Sprintf("assembled bounded transaction at index %d does not bind bounded account %s", target.TargetIndex, target.AuthAddress))
+		return internal(fmt.Sprintf("assembled host transaction at index %d does not bind host account %s", target.TargetIndex, target.AuthAddress))
 	}
 	return nil
 }

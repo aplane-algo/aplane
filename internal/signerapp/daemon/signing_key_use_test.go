@@ -839,7 +839,7 @@ func TestStalledConsoleDoesNotBlockLockOrLeakSignature(t *testing.T) {
 		},
 		{
 			name:  "bounded_component/summary",
-			match: "bounded-cosigner base component",
+			match: "base component(s) for cosigned accounts",
 			prepare: func(t *testing.T, fx *nonRotatingDaemonFixture) func(*signersigning.Service, *keystore.KeySession) (bool, *signersigning.ServiceError) {
 				req := fx.boundedComponentRequest(t)
 				return func(svc *signersigning.Service, session *keystore.KeySession) (bool, *signersigning.ServiceError) {

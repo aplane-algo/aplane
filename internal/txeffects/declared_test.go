@@ -240,7 +240,7 @@ func TestClassifyForRefusesAnInvalidDeclaration(t *testing.T) {
 		want        string
 	}{
 		{"rekey setting", hostmeta.PathDeclaration{Contract: hostmeta.BoundedContract, Rekey: "admin_key"}, "unsupported rekey setting"},
-		{"contract", hostmeta.PathDeclaration{Contract: "bounded1", Rekey: hostmeta.RekeyRefused}, "unsupported bounded authorization contract"},
+		{"contract", hostmeta.PathDeclaration{Contract: "bounded1", Rekey: hostmeta.RekeyRefused}, "unsupported host contract"},
 		{"plain host with bounds", hostmeta.PathDeclaration{Contract: hostmeta.PlainContract, Bounds: &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: &ceiling}, Rekey: hostmeta.RekeyRefused}, "plain1 has no host rules: bounds must be absent"},
 		// Without its bounds a bounded host would be classified as an open
 		// spend, with no fee ceiling and no spend-effect list.

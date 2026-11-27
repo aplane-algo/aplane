@@ -206,9 +206,9 @@ func TestSingleApprovalNamesAListedHandover(t *testing.T) {
 		t.Fatalf("single prompt warnings = %+v", got)
 	}
 	// A lone rekey is the usual case, so its prompt names the authorization too.
-	if !strings.Contains(description, "Bounded authorization operation: REKEY") ||
+	if !strings.Contains(description, "Authorization operation: REKEY") ||
 		!strings.Contains(description, "Authorization: spending key only, to an address on the account's rekey-to list") {
-		t.Fatalf("single prompt = %q, want the bounded rekey's authorization", description)
+		t.Fatalf("single prompt = %q, want the host rekey's authorization", description)
 	}
 	cosigned := &hostPlanItem{Path: hostPathSpendingKeyRekey, Metadata: boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))}
 	if err := promptSingle(svc, "", signerapi.SignRequest{AuthAddress: "ACCOUNT"}, []types.Transaction{rekey},

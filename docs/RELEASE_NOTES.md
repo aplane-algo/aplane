@@ -7,6 +7,28 @@ instructions. See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) for current contracts.
 Entries below that name `request-enrollment` describe the enrollment command
 before it was renamed `enroll`.
 
+## Host account messages no longer say "bounded" for a plain host
+
+Text that named a host account "bounded" when it could be a plain one is
+reworded. Error codes and behaviour are unchanged.
+
+- **Approval.** The prompt for a rekey of a host account carried the row
+  "Bounded authorization operation: REKEY". It now reads "Authorization
+  operation: REKEY".
+- **Error messages** from the signer, apshell and key generation name a host
+  account, a base component or a cosigned transaction, where they said
+  "bounded". Messages about bounds themselves (a declared runtime argument,
+  the Merkle allowlist proof, the fee ceiling) keep the word.
+- **Audit log.** Two texts changed, and a search for the old phrases finds
+  only older entries. The detail of a released base component is "base
+  component of a cosigned account released after policy and operator
+  approval", where it began "bounded-cosigner base component". The
+  `SIGN_FAILED` reason for a failed assembly begins "host lsig assembly
+  failed", where it began "bounded lsig assembly failed".
+- **Signer log.** The startup lines for `/sign/component` and `/sign/assemble`
+  and the console line "[GROUP] Prepared N base component(s) for cosigned
+  accounts" are reworded the same way.
+
 ## The signer's wire names host accounts `host`; admin protocol 11
 
 The HTTP API, the admin protocol and the client's signer cache now use the

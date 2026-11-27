@@ -166,10 +166,10 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 			panic("composeddsa: invalid opcode profile: " + err.Error())
 		}
 	}
-	if host != nil && host.Cosigner != nil && !hasParameter(params, CosignerPublicKeyParameter) {
+	if host != nil && host.Cosigner != nil && !hasParameter(params, hostmeta.CosignerPublicKeyParameter) {
 		params = append(params, CosignerParameterDef(host.Cosigner.ComponentKeyType))
 	}
-	if host != nil && host.RekeyList != nil && !hasParameter(params, RekeyToParameter) {
+	if host != nil && host.RekeyList != nil && !hasParameter(params, hostmeta.RekeyListEntriesParameter) {
 		params = append(params, rekeyListEntriesParameterDef(host.Rekey))
 	}
 	var hostRuntimeArgs []hostmeta.RuntimeArg
@@ -326,10 +326,10 @@ func (c *ComposedDSA) SignatureArgLayout() (SignatureArgLayout, bool) {
 	return cloneSignatureArgLayout(ops.SignatureArgLayout()), true
 }
 
-// errHostBuildArgs refuses BuildArgs on a bounded composer. The signer
-// packs a bounded account's spending signature through its base key type's
+// errHostBuildArgs refuses BuildArgs on a host composer. The signer
+// packs a host account's spending signature through its base key type's
 // provider and places every argument by the account's stored layout.
-var errHostBuildArgs = errors.New("bounded accounts are assembled from their stored metadata")
+var errHostBuildArgs = errors.New("host accounts are assembled from their stored metadata")
 
 // BuildArgs assembles LogicSig Args in the provider's declared order. A bounded
 // composer refuses (errHostBuildArgs).
@@ -458,9 +458,9 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	authorParams, authorDefs := normalizedParams, c.params
 	if hostProfile != nil && hostProfile.RekeyList != nil {
 		authorParams = maps.Clone(normalizedParams)
-		delete(authorParams, RekeyToParameter)
+		delete(authorParams, hostmeta.RekeyListEntriesParameter)
 		authorDefs = slices.DeleteFunc(slices.Clone(c.params), func(p lsigprovider.ParameterDef) bool {
-			return p.Name == RekeyToParameter
+			return p.Name == hostmeta.RekeyListEntriesParameter
 		})
 	}
 
@@ -518,7 +518,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 		prelude, err := c.renderHostPrelude(publicKey, preludeParams, hostProfile)
 		if err != nil {
-			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
+			return "", fmt.Errorf("failed to render host prelude: %w", err)
 		}
 		b.WriteString(prelude)
 	}

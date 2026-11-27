@@ -94,7 +94,7 @@ func TestBuildReviewOfAFrozenSingleTransaction(t *testing.T) {
 
 // A bounded rekey's authorization and a rotation are fields of the
 // transaction they belong to, after its own.
-func TestBuildReviewAddsBoundedAndRotationFields(t *testing.T) {
+func TestBuildReviewAddsHostAndRotationFields(t *testing.T) {
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}}}
 	plan := &PlanResult{
 		PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
@@ -106,7 +106,7 @@ func TestBuildReviewAddsBoundedAndRotationFields(t *testing.T) {
 	for _, f := range review.Items[0].Details.Fields {
 		labels = append(labels, f.Label)
 	}
-	if got := strings.Join(labels, ","); got != ",Bounded authorization operation,Authorization,Rotation" {
+	if got := strings.Join(labels, ","); got != ",Authorization operation,Authorization,Rotation" {
 		t.Fatalf("field labels = %q", got)
 	}
 }

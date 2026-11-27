@@ -95,7 +95,7 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
 		cosignerPublic, cosignerPrivate := newTestCosignerKey(t, arrangement.Cosigner)
-		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
+		params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
 		if arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 			params[hostmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
 		}

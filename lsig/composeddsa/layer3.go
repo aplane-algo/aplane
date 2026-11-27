@@ -106,7 +106,7 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 		return fmt.Errorf("unsupported policy %q", policy.Policy)
 	}
 	if profile == nil {
-		return fmt.Errorf("framework-owned Layer-3 policy requires a bounded profile")
+		return fmt.Errorf("framework-owned Layer-3 policy requires a host profile")
 	}
 	// Author TEAL with no framework policy is "custom"; a second name for the same
 	// program would let a review call a restricted account unrestricted.
@@ -335,10 +335,10 @@ func (c *ComposedDSA) validateFrameworkLayer3Arguments() error {
 func (c *ComposedDSA) paramsWithoutCosignerKey() []lsigprovider.ParameterDef {
 	params := make([]lsigprovider.ParameterDef, 0, len(c.params))
 	for _, param := range c.params {
-		if param.Name == CosignerPublicKeyParameter {
+		if param.Name == hostmeta.CosignerPublicKeyParameter {
 			continue
 		}
-		if param.Name == RekeyToParameter && c.host != nil && c.host.RekeyList != nil {
+		if param.Name == hostmeta.RekeyListEntriesParameter && c.host != nil && c.host.RekeyList != nil {
 			continue
 		}
 		params = append(params, param)

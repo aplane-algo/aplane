@@ -20,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/witness"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
@@ -85,7 +84,7 @@ func legacyArrangement(a plainhost.Arrangement) string {
 func requestFor(arrangement plainhost.Arrangement) map[string]string {
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
-		params[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
+		params[hostmeta.CosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
 		if arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 			params[hostmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
 		}
@@ -207,8 +206,8 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 	}{
 		{"plus cosigned without a cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned, plainhost.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
 		{"a misspelled overlay parameter", map[string]string{"rekey_authorty": plainhost.RekeyOnlyThese, "rekey_too": testRekeyTo()}, "unknown parameter"},
-		{"no rekey authority", map[string]string{composeddsa.CosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
-		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", composeddsa.CosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
+		{"no rekey authority", map[string]string{hostmeta.CosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
+		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", hostmeta.CosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
 		{"a list without only_these", func() map[string]string {
 			params := request(plainhost.RekeySpendingKey)
 			params[plainhost.ParameterRekeyTo] = testRekeyTo()
@@ -220,9 +219,9 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 			return params
 		}(), "needs the addresses"},
 		{"an unresolved cosigner name", map[string]string{plainhost.ParameterCosigner: "corp", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "not resolved"},
-		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: testCosigner}, "recipients is required"},
+		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner}, "recipients is required"},
 		{"bounds without transfer kinds", map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "spend_effects is required"},
-		{"a generated root", map[string]string{hostmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, composeddsa.CosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
+		{"a generated root", map[string]string{hostmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, hostmeta.CosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := provider.ResolveInstance(tc.params); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -304,10 +303,10 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 				edit func(map[string]string)
 				want string
 			}{
-				{"a type without a cosigner", func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) }, "needs a cosigner"},
+				{"a type without a cosigner", func(p map[string]string) { delete(p, hostmeta.CosignerPublicKeyParameter) }, "needs a cosigner"},
 				{"an unknown type", func(p map[string]string) { p[hostmeta.CosignerKeyTypeParameter] = "aplane.witness-rsa.v1" }, "cosigner_key_type"},
 				{"a Falcon key named Ed25519", func(p map[string]string) {
-					p[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
+					p[hostmeta.CosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
 				}, "a aplane.witness-ed25519.v1 key is 32"},
 				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, hostmeta.CosignerKeyTypeParameter) }, "for a aplane.witness-ed25519.v1 key, set cosigner_key_type=aplane.witness-ed25519.v1"},
 			} {
@@ -338,7 +337,7 @@ func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
 	}
 	base := request(plainhost.RekeyPlusCosigned)
 	otherCosigner := request(plainhost.RekeyPlusCosigned)
-	otherCosigner[composeddsa.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
+	otherCosigner[hostmeta.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 	var c types.Address
 	c[0] = 0x33
 	otherList := request(plainhost.RekeyPlusCosigned)
@@ -485,7 +484,7 @@ func TestEmptyParametersAreRefused(t *testing.T) {
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
 	}
-	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.CosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
+	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, hostmeta.CosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
 		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
 		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
 			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)

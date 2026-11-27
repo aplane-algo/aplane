@@ -279,7 +279,7 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	profile := provider.HostProfile()
-	if profile == nil || profile.Contract != BoundedContract || profile.Bounds.MaxFee == nil || *profile.Bounds.MaxFee != 10_000 || profile.Rekey != hostmeta.RekeySpendingKey {
+	if profile == nil || profile.Contract != hostmeta.BoundedContract || profile.Bounds.MaxFee == nil || *profile.Bounds.MaxFee != 10_000 || profile.Rekey != hostmeta.RekeySpendingKey {
 		t.Fatalf("HostProfile() = %#v", profile)
 	}
 	if got := provider.CreationParams(); len(got) != 0 {
@@ -461,7 +461,7 @@ teal: |
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	params := provider.CreationParams()
-	if len(params) != 1 || params[0].Name != CosignerPublicKeyParameter || params[0].MaxLength != hostmeta.DefaultCosignerPublicKeySize*2 {
+	if len(params) != 1 || params[0].Name != hostmeta.CosignerPublicKeyParameter || params[0].MaxLength != hostmeta.DefaultCosignerPublicKeySize*2 {
 		t.Fatalf("CreationParams() = %#v, want injected cosigner public key", params)
 	}
 	metadata := provider.HostMetadata()
@@ -506,7 +506,7 @@ teal: |
 	tests := []struct {
 		name, baseKeyType, contract, requiredOn, want string
 	}{
-		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner2", requiredOn: "spend", want: "unsupported bounded cosigner contract"},
+		{name: "contract", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner2", requiredOn: "spend", want: "unsupported cosigner contract"},
 		{name: "path", baseKeyType: "aplane.falcon1024.v1", contract: "cosigner1", requiredOn: "spending_rekey", want: "exactly [spend]"},
 		{name: "base", baseKeyType: "test.non-falcon-bounded-cosigner.v1", contract: "cosigner1", requiredOn: "spend", want: "is not reviewed for base_key_type"},
 	}
@@ -1104,7 +1104,7 @@ func TestComposedSchemaV2AdmissionRefusesTooManyArguments(t *testing.T) {
 		want        string
 	}{
 		{name: "255 in total", runtimeArgs: 254},
-		{name: "256 in total", runtimeArgs: 255, want: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+		{name: "256 in total", runtimeArgs: 255, want: "argument_layout has 256 arguments: a LogicSig carries at most 255"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 2
@@ -1168,8 +1168,8 @@ func TestComposedSchemaV2NeverYieldsArgumentsTheNetworkRefuses(t *testing.T) {
 			wantKeygen: "(arg0) is 4097 bytes: a LogicSig argument is at most 4096"},
 		{name: "255 in total with the cosigner slot", cosigner: cosigner, runtimeArgs: 253, maxSize: 8},
 		{name: "256 in total with the cosigner slot", cosigner: cosigner, runtimeArgs: 254, maxSize: 8,
-			want:       "bounded argument_layout has 256 arguments: a LogicSig carries at most 255",
-			wantKeygen: "bounded argument_layout has 256 arguments: a LogicSig carries at most 255"},
+			want:       "argument_layout has 256 arguments: a LogicSig carries at most 255",
+			wantKeygen: "argument_layout has 256 arguments: a LogicSig carries at most 255"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := requireRefusedAtAdmissionOnly(t, []byte(fmt.Sprintf(`schema_version: 2
@@ -1194,7 +1194,7 @@ bounded:
 `, tt.cosigner, runtimeArgsYAMLForTest("    ", tt.runtimeArgs, tt.maxSize, true))), tt.want)
 			params := map[string]string{}
 			if tt.cosigner != "" {
-				params[CosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize))
+				params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize))
 			}
 			_, err := provider.BuildHostMetadata(bytes.Repeat([]byte{0x31}, hostmeta.DefaultCosignerPublicKeySize), params, []byte{1, 2, 3})
 			if tt.wantKeygen == "" {

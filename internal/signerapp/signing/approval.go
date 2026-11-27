@@ -444,7 +444,7 @@ func hostRekeyFields(item *hostPlanItem) []txnreview.Field {
 		return nil
 	}
 	fields := []txnreview.Field{
-		{Label: "Bounded authorization operation", Value: "REKEY"},
+		{Label: "Authorization operation", Value: "REKEY"},
 		{Label: "Authorization", Value: rekeyAuthorizationLabel(item)},
 	}
 	if fee := item.Metadata.FeeCeiling(); fee != nil {

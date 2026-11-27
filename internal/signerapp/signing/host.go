@@ -48,7 +48,7 @@ func resolveHostPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignR
 			continue
 		}
 		if i >= len(txns) {
-			return nil, internal("bounded plan transaction index is out of bounds")
+			return nil, internal("host plan transaction index is out of bounds")
 		}
 		path, listed, err := hostAccountPath(txns[i], metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
 		if err != nil {
@@ -60,7 +60,7 @@ func resolveHostPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignR
 		}
 		spendingPublicKey, decodeErr := hex.DecodeString(snapshot.KeyMetadata[request.AuthAddress].PublicKeyHex)
 		if decodeErr != nil || len(spendingPublicKey) == 0 {
-			return nil, internal(fmt.Sprintf("transaction %d: bounded spending public key metadata is invalid", i+1))
+			return nil, internal(fmt.Sprintf("transaction %d: spending public key metadata is invalid", i+1))
 		}
 		// The planner snapshot is request-owned and read-only downstream, so
 		// the item references its metadata directly instead of cloning again.
@@ -86,7 +86,7 @@ func validateHostRuntimeArgs(encoded map[string]string, metadata *hostmeta.Metad
 	for name := range decoded {
 		slot, ok := slots[name]
 		if !ok {
-			return nil, badRequest(fmt.Sprintf("bounded caller argument %q is not a declared runtime slot", name))
+			return nil, badRequest(fmt.Sprintf("caller argument %q is not a declared runtime slot", name))
 		}
 		if hostSlotRule(slot, path) == hostmeta.ArgForbidden {
 			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q is forbidden on %s", name, path))
@@ -182,18 +182,18 @@ func hostAccountPath(txn types.Transaction, metadata *hostmeta.Metadata, paramet
 // makes the decision txeffects.ClassifyFor makes for the account's contract.
 func classifyHostPath(txn types.Transaction, metadata *hostmeta.Metadata) (hostPath, *ServiceError) {
 	if metadata == nil {
-		return "", internal("bounded authorization metadata is missing")
+		return "", internal("host metadata is missing")
 	}
 	if err := metadata.Validate(); err != nil {
-		return "", internal(fmt.Sprintf("invalid stored bounded authorization metadata: %v", err))
+		return "", internal(fmt.Sprintf("invalid stored host metadata: %v", err))
 	}
 	declaration, err := metadata.Declaration()
 	if err != nil {
-		return "", internal(fmt.Sprintf("invalid stored bounded declaration: %v", err))
+		return "", internal(fmt.Sprintf("invalid stored host declaration: %v", err))
 	}
 	decision, err := txeffects.ClassifyFor(txn, declaration)
 	if err != nil {
-		return "", internal(fmt.Sprintf("classify bounded transaction: %v", err))
+		return "", internal(fmt.Sprintf("classify host transaction: %v", err))
 	}
 	switch decision.Path {
 	case txeffects.PathSpend:
@@ -205,7 +205,7 @@ func classifyHostPath(txn types.Transaction, metadata *hostmeta.Metadata) (hostP
 	case txeffects.PathRefused:
 		return "", badRequest(decision.Reason)
 	default:
-		return "", internal(fmt.Sprintf("unknown bounded path %q", decision.Path))
+		return "", internal(fmt.Sprintf("unknown host path %q", decision.Path))
 	}
 }
 

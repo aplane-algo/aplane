@@ -170,7 +170,9 @@ func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
 	}
 }
 
-func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
+// The approval text names a host account's rekey authorization, for a plain
+// host as for a bounded one; only a bounded host has a fee ceiling to show.
+func TestApprovalTextNamesHostRekeyAuthority(t *testing.T) {
 	metadata := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
 	txn := testBoundedRekey()
 	description := approvalText(
@@ -188,12 +190,30 @@ func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
 		describeAs("transaction"),
 	)
 	for _, want := range []string{
-		"Bounded authorization operation: REKEY",
+		"Authorization operation: REKEY",
 		"Authorization: spending key only",
 		"Profile maximum fee: 5000 microAlgos",
 	} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("approval description = %q, want containing %q", description, want)
 		}
+	}
+
+	plain := *metadata
+	plain.Contract, plain.Bounds = hostmeta.PlainContract, nil
+	description = approvalText(
+		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
+		&PlanResult{
+			AllTxns:            []types.Transaction{txn},
+			PassthroughIndices: map[int]bool{},
+			ForeignIndices:     map[int]bool{},
+			HostItems:          []*hostPlanItem{{Path: hostPathSpendingKeyRekey, Metadata: &plain}},
+		},
+		[]types.Transaction{txn},
+		describeAs("transaction"),
+	)
+	if !strings.Contains(description, "Authorization operation: REKEY") || !strings.Contains(description, "Authorization: spending key only") ||
+		strings.Contains(description, "Profile maximum fee") {
+		t.Fatalf("plain host approval description = %q, want the rekey's authorization and no fee ceiling", description)
 	}
 }

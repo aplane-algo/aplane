@@ -73,7 +73,7 @@ func TestOnlyTheseTemplateDeclaresTheListContract(t *testing.T) {
 	provider := onlyTheseProvider(t)
 	var injected bool
 	for _, def := range provider.CreationParams() {
-		if def.Name == composeddsa.RekeyToParameter {
+		if def.Name == hostmeta.RekeyListEntriesParameter {
 			injected = def.Required && def.Type == "address[]" && def.MaxItems == rekeylist.MaxEntries
 		}
 		if def.Name == hostmeta.RekeyListRootParameter {
@@ -81,7 +81,7 @@ func TestOnlyTheseTemplateDeclaresTheListContract(t *testing.T) {
 		}
 	}
 	if !injected {
-		t.Fatalf("the framework did not inject %s", composeddsa.RekeyToParameter)
+		t.Fatalf("the framework did not inject %s", hostmeta.RekeyListEntriesParameter)
 	}
 	metadata := provider.HostMetadata()
 	if metadata == nil || metadata.Rekey != hostmeta.RekeyRefused || metadata.RekeyList == nil ||
@@ -128,7 +128,7 @@ func TestOnlyTheseRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ownList.GenerateTEAL(rekeyListSpendingKey, map[string]string{
-		composeddsa.RekeyToParameter: rekeyListListedA.String(), hostmeta.RekeyListRootParameter: strings.Repeat("00", 32),
+		hostmeta.RekeyListEntriesParameter: rekeyListListedA.String(), hostmeta.RekeyListRootParameter: strings.Repeat("00", 32),
 	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
 		t.Fatalf("a template's own rekey_to: error = %v", err)
 	}
@@ -168,7 +168,7 @@ func TestOnlyTheseRules(t *testing.T) {
 // upper-case root can't be compiled while the metadata would refuse it.
 func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam})
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{hostmeta.RekeyListEntriesParameter: rekeyListEntriesParam})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +180,11 @@ func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
 
 func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	request := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam}
+	request := map[string]string{hostmeta.RekeyListEntriesParameter: rekeyListEntriesParam}
 	if err := provider.ValidateCreationParams(request); err != nil {
 		t.Fatalf("a request with the list: %v", err)
 	}
-	withRoot := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
+	withRoot := map[string]string{hostmeta.RekeyListEntriesParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
 	if err := provider.ValidateCreationParams(withRoot); err == nil || !strings.Contains(err.Error(), "unknown parameter") {
 		t.Fatalf("a request that sets the root: error = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 // with its own proof and nothing else does.
 func TestOnlyTheseProgramAdmitsOnlyListedRekeys(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	request := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam}
+	request := map[string]string{hostmeta.RekeyListEntriesParameter: rekeyListEntriesParam}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
 		t.Fatal(err)
@@ -294,8 +294,8 @@ func TestPlusCosignedProgramTakesTheListOrTheCosigner(t *testing.T) {
 	provider := authorAllowlistProvider(t, yaml)
 	cosignerKey := bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize)
 	request := map[string]string{
-		composeddsa.RekeyToParameter:           rekeyListEntriesParam,
-		composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+		hostmeta.RekeyListEntriesParameter:  rekeyListEntriesParam,
+		hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 	}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
@@ -407,7 +407,7 @@ parameters:
 	if provider.HostMetadata() == nil {
 		t.Fatal("the framework-policy list account has no metadata")
 	}
-	request := map[string]string{"recipients": rekeyListListedB.String(), composeddsa.RekeyToParameter: rekeyListListedA.String()}
+	request := map[string]string{"recipients": rekeyListListedB.String(), hostmeta.RekeyListEntriesParameter: rekeyListListedA.String()}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
 		t.Fatal(err)
@@ -451,7 +451,7 @@ template_variables: []
       parameter: rekey_to
       max_size: 512
 `, 1)
-	params := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
+	params := map[string]string{hostmeta.RekeyListEntriesParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
 	for name, yaml := range map[string]string{"strict variable": strictVariable, "substitution": substituted, "range": ranged, "derived argument": derived} {
 		t.Run(name, func(t *testing.T) {
 			composer, err := noneComposer(yaml)
@@ -480,7 +480,7 @@ func TestInjectedRekeyToDescribesTheOtherRekeys(t *testing.T) {
 	} {
 		var description string
 		for _, def := range authorAllowlistProvider(t, yaml).CreationParams() {
-			if def.Name == composeddsa.RekeyToParameter {
+			if def.Name == hostmeta.RekeyListEntriesParameter {
 				description = def.Description
 			}
 		}

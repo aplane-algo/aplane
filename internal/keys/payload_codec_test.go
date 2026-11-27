@@ -503,7 +503,7 @@ func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
 		{name: "obsolete combined size", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded2","post_signing_lsig_size":9999`, 1), want: "unknown field"},
 		{name: "unknown nested field", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded2","future":true`, 1), want: "unknown field"},
 		{name: "duplicate nested field", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded2","contract":"bounded2"`, 1), want: `duplicate object member "contract"`},
-		{name: "bounded1 contract", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded1"`, 1), want: `unsupported bounded authorization contract "bounded1"`},
+		{name: "bounded1 contract", data: strings.Replace(base, `"contract":"bounded2"`, `"contract":"bounded1"`, 1), want: `unsupported host contract "bounded1"`},
 		{name: "bounded1 admin operations", data: strings.Replace(base, `"rekey":"refused"`, `"admin_operations":[]`, 1), want: "unknown field"},
 		{name: "bounded1 admin_rekey path", data: strings.Replace(base, `"listed_rekey":"required"}`, `"listed_rekey":"required","admin_rekey":"required"}`, 1), want: "unknown field"},
 		{name: "unknown rekey setting", data: strings.Replace(base, `"rekey":"refused"`, `"rekey":"admin_key"`, 1), want: `unsupported rekey setting "admin_key"`},

@@ -259,13 +259,13 @@ func (p *Payload) SetHost(metadata *hostmeta.Metadata) error {
 		return incompatibleKeyFormat("key payload is nil")
 	}
 	if metadata == nil {
-		return incompatibleKeyFormat("bounded authorization metadata is nil")
+		return incompatibleKeyFormat("host metadata is nil")
 	}
 	if err := metadata.Validate(); err != nil {
 		return incompatibleKeyFormat("invalid host: %v", err)
 	}
 	if err := p.LogicSigOpcodeProfile.Validate(true); err != nil {
-		return incompatibleKeyFormat("bounded authorization requires a reviewed bounded opcode profile: %v", err)
+		return incompatibleKeyFormat("a host account requires a reviewed host opcode profile: %v", err)
 	}
 	p.Host = hostmeta.Clone(metadata)
 	// Bounded metadata owns the complete argument contract. Generic
@@ -796,7 +796,7 @@ func validateHostSigningMetadata(p *Payload) error {
 			return err
 		}
 		metadataPublicKey, err := hostmeta.DecodeCanonicalHex(
-			"bounded cosigner public key",
+			"cosigner public key",
 			cosigner.PublicKeyHex,
 			publicKeySize,
 			publicKeySize,
@@ -825,7 +825,7 @@ func validateHostSigningMetadata(p *Payload) error {
 		}
 	}
 	if len(p.SigningArgs) != 0 {
-		return incompatibleKeyFormat("a bounded account forbids caller-supplied signing_args")
+		return incompatibleKeyFormat("a host account forbids caller-supplied signing_args")
 	}
 	return nil
 }

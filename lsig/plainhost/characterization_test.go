@@ -24,7 +24,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
 )
 
@@ -35,7 +34,7 @@ import (
 // the stored metadata and fingerprints, and the error text of each refusal. It
 // pins the hosts' output across refactors; a change that moves it changes what
 // an account is or what a user is told.
-const plainHostOutputDigest = "1284b9a9171ef5147f6c942bbf2ea2914be160a554ebcd51f83b3c4ffbce55e7"
+const plainHostOutputDigest = "e6366e21c9c0a6d87b2400a035028ea4dc075a2caeba1fec695e6a8ea1ac26c1"
 
 // characterizationDumpEnv names a file the characterization test writes its
 // records to, so two runs can be compared line by line.
@@ -122,7 +121,7 @@ func characterizationAlgod(t *testing.T) *algod.Client {
 // withHexCosigner replaces a request's cosigner key with one of the same size
 // whose hex has the digits a-f, in upper case when upper is set.
 func withHexCosigner(params map[string]string, upper bool) (map[string]string, bool) {
-	key, ok := params[composeddsa.CosignerPublicKeyParameter]
+	key, ok := params[hostmeta.CosignerPublicKeyParameter]
 	if !ok {
 		return nil, false
 	}
@@ -134,7 +133,7 @@ func withHexCosigner(params map[string]string, upper bool) (map[string]string, b
 	if upper {
 		hexKey = strings.ToUpper(hexKey)
 	}
-	out[composeddsa.CosignerPublicKeyParameter] = hexKey
+	out[hostmeta.CosignerPublicKeyParameter] = hexKey
 	return out, true
 }
 
@@ -239,13 +238,13 @@ func refusedRequests() map[string]map[string]string {
 		"unknown parameter":          {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, "unknown": "1"},
 		"only these without a list":  {plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese},
 		"list without only these":    {plainhost.ParameterRekeyAuthority: plainhost.RekeySpendingKey, plainhost.ParameterRekeyTo: testRekeyTo()},
-		"cosigner 0x prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: "0x" + testCosigner},
-		"cosigner 0X prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: "0X" + strings.ToUpper(testCosigner)},
-		"cosigner short":             {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: "4444"},
-		"cosigner not hex":           {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: "zz"},
-		"cosigner unknown type":      {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: testCosigner, hostmeta.CosignerKeyTypeParameter: "example.unknown.v1"},
+		"cosigner 0x prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0x" + testCosigner},
+		"cosigner 0X prefix":         {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "0X" + strings.ToUpper(testCosigner)},
+		"cosigner short":             {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "4444"},
+		"cosigner not hex":           {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: "zz"},
+		"cosigner unknown type":      {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: testCosigner, hostmeta.CosignerKeyTypeParameter: "example.unknown.v1"},
 		"cosigner type without key":  {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerKeyTypeParameter: falconCosigner},
-		"cosigner is spending key":   {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: strings.Repeat("22", hostmeta.DefaultCosignerPublicKeySize)},
+		"cosigner is spending key":   {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: strings.Repeat("22", hostmeta.DefaultCosignerPublicKeySize)},
 		"bounds without spend":       inline(map[string]string{plainhost.ParameterSpendEffects: ""}),
 		"bounds repeated spend":      inline(map[string]string{plainhost.ParameterSpendEffects: "pay,pay"}),
 		"bounds unknown spend":       inline(map[string]string{plainhost.ParameterSpendEffects: "keyreg"}),
@@ -260,8 +259,8 @@ func refusedRequests() map[string]map[string]string {
 		"bounds merkle":              inline(map[string]string{plainhost.ParameterListEncoding: plainhost.EncodingMerkle}),
 		"bounds auto":                inline(map[string]string{plainhost.ParameterListEncoding: plainhost.EncodingAuto}),
 		"bounds only these no list":  inline(map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese}),
-		"bounds 0x cosigner":         inline(map[string]string{composeddsa.CosignerPublicKeyParameter: "0x" + testCosigner}),
-		"empty value":                {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: " "},
+		"bounds 0x cosigner":         inline(map[string]string{hostmeta.CosignerPublicKeyParameter: "0x" + testCosigner}),
+		"empty value":                {plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, hostmeta.CosignerPublicKeyParameter: " "},
 		"only an unknown parameter":  {"unknown": "1"},
 	}
 }

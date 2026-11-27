@@ -167,7 +167,7 @@ func TestGenerationAllowsSupportedProfiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		params := map[string]string{
-			composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize)),
+			hostmeta.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize)),
 		}
 		if _, err := provider.GenerateTEAL(bytes.Repeat([]byte{0x22}, 1793), params); err != nil {
 			t.Fatalf("GenerateTEAL() error = %v", err)

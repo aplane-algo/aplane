@@ -244,10 +244,10 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 		}
 	}
 	if hasDefault && hostPaths != 0 {
-		return lsigresource.Profile{}, fmt.Errorf("default and bounded authorization paths cannot be mixed")
+		return lsigresource.Profile{}, fmt.Errorf("default and host authorization paths cannot be mixed")
 	}
 	if !hasDefault && hostPaths != 3 {
-		return lsigresource.Profile{}, fmt.Errorf("bounded resource profile must contain spend, spending_rekey and listed_rekey paths")
+		return lsigresource.Profile{}, fmt.Errorf("host resource profile must contain spend, spending_rekey and listed_rekey paths")
 	}
 
 	var programBytes uint64

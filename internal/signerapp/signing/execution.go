@@ -239,15 +239,15 @@ func verifyHostPlanIntegrity(item *hostPlanItem, keyMaterial *coresigning.KeyMat
 	metadata := keyMaterial.Host
 	if item == nil {
 		if metadata != nil {
-			return internal("key gained bounded metadata after planning; retry the request")
+			return internal("key gained host metadata after planning; retry the request")
 		}
 		return nil
 	}
 	if metadata == nil {
-		return internal("key lost bounded metadata after planning; retry the request")
+		return internal("key lost host metadata after planning; retry the request")
 	}
 	if !item.Metadata.Equal(metadata) {
-		return internal("bounded metadata changed after planning; retry the request")
+		return internal("host metadata changed after planning; retry the request")
 	}
 	return nil
 }
@@ -513,9 +513,9 @@ func (e *Executor) assembleHostLogicSig(txn types.Transaction, authAddr, txnSend
 	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
 		if e.AuditLog != nil {
-			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
+			e.AuditLog.LogSignFailed(authAddr, txnSender, fmt.Sprintf("host lsig assembly failed: %v", err))
 		}
-		return nil, keyType, internal(fmt.Sprintf("failed to assemble bounded lsig txn: %v", err))
+		return nil, keyType, internal(fmt.Sprintf("failed to assemble host lsig txn: %v", err))
 	}
 	return signedTxnBytes, keyType, nil
 }
@@ -526,11 +526,11 @@ func (e *Executor) assembleHostLogicSig(txn types.Transaction, authAddr, txnSend
 // emptiness only where a slot is required, and read the slot's own maximum.
 func checkBaseSignatureLayout(layout hostmeta.SignatureArgLayout, args [][]byte) *ServiceError {
 	if len(args) != layout.Count {
-		return internal(fmt.Sprintf("base provider emitted %d signature args, stored bounded layout requires %d", len(args), layout.Count))
+		return internal(fmt.Sprintf("base provider emitted %d signature args, stored layout requires %d", len(args), layout.Count))
 	}
 	for i, arg := range args {
 		if len(arg) == 0 || len(arg) > layout.MaxSizes[i] {
-			return internal(fmt.Sprintf("base signature arg %d length %d violates stored bounded maximum %d", i, len(arg), layout.MaxSizes[i]))
+			return internal(fmt.Sprintf("base signature arg %d length %d violates stored maximum %d", i, len(arg), layout.MaxSizes[i]))
 		}
 	}
 	return nil
@@ -556,7 +556,7 @@ func hostDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial
 			continue
 		}
 		if arg.Kind != hostmeta.DerivedArgMerkleProof {
-			return nil, internal(fmt.Sprintf("unsupported bounded derived argument kind %q", arg.Kind))
+			return nil, internal(fmt.Sprintf("unsupported derived argument kind %q", arg.Kind))
 		}
 		var receiver types.Address
 		switch txn.Type {
@@ -572,7 +572,7 @@ func hostDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial
 		}
 		recipients := keyMaterial.Parameters[arg.Parameter]
 		if recipients == "" {
-			return nil, internal(fmt.Sprintf("bounded key file is missing derived argument parameter %q", arg.Parameter))
+			return nil, internal(fmt.Sprintf("key file is missing derived argument parameter %q", arg.Parameter))
 		}
 		proof, err := merkleallowlist.ProofForAddressParam(recipients, receiver)
 		if err != nil {
@@ -601,14 +601,14 @@ func assembleHostArgsWithCosigner(metadata *hostmeta.Metadata, item *hostPlanIte
 		switch slot.Source {
 		case hostmeta.ArgSourceBaseSignature:
 			if baseIndex >= len(baseArgs) {
-				return nil, internal("bounded base signature slot count changed during assembly")
+				return nil, internal("base signature slot count changed during assembly")
 			}
 			value = baseArgs[baseIndex]
 			baseIndex++
 		case hostmeta.ArgSourceDerived:
 			derived, ok := derivedArgs[slot.Name]
 			if !ok {
-				return nil, internal(fmt.Sprintf("bounded derived slot %q has no derived argument during assembly", slot.Name))
+				return nil, internal(fmt.Sprintf("derived slot %q has no derived argument during assembly", slot.Name))
 			}
 			value = derived
 			derivedUsed++
@@ -617,17 +617,17 @@ func assembleHostArgsWithCosigner(metadata *hostmeta.Metadata, item *hostPlanIte
 		case hostmeta.ArgSourceCosigner:
 			value = cosignerSignature
 		default:
-			return nil, internal(fmt.Sprintf("unsupported bounded argument source %q", slot.Source))
+			return nil, internal(fmt.Sprintf("unsupported argument source %q", slot.Source))
 		}
 		rule := hostSlotRule(slot, item.Path)
 		if rule == hostmeta.ArgRequired && len(value) == 0 {
-			return nil, internal(fmt.Sprintf("required bounded argument slot %q is empty during assembly", slot.Name))
+			return nil, internal(fmt.Sprintf("required argument slot %q is empty during assembly", slot.Name))
 		}
 		if rule == hostmeta.ArgForbidden && len(value) != 0 {
-			return nil, internal(fmt.Sprintf("forbidden bounded argument slot %q is populated during assembly", slot.Name))
+			return nil, internal(fmt.Sprintf("forbidden argument slot %q is populated during assembly", slot.Name))
 		}
 		if len(value) > slot.MaxSize {
-			return nil, internal(fmt.Sprintf("bounded argument slot %q exceeds its stored maximum", slot.Name))
+			return nil, internal(fmt.Sprintf("argument slot %q exceeds its stored maximum", slot.Name))
 		}
 		if value == nil {
 			value = []byte{}
@@ -635,10 +635,10 @@ func assembleHostArgsWithCosigner(metadata *hostmeta.Metadata, item *hostPlanIte
 		args[slot.Index] = value
 	}
 	if baseIndex != len(baseArgs) {
-		return nil, internal("bounded base signature arguments were not fully consumed during assembly")
+		return nil, internal("base signature arguments were not fully consumed during assembly")
 	}
 	if derivedUsed != len(derivedArgs) {
-		return nil, internal("bounded derived arguments were not fully consumed during assembly")
+		return nil, internal("derived arguments were not fully consumed during assembly")
 	}
 	for len(args) > 0 && len(args[len(args)-1]) == 0 {
 		args = args[:len(args)-1]
@@ -660,7 +660,7 @@ func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {
 func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *hostmeta.Metadata, values map[string][]byte) (map[string][]byte, *ServiceError) {
 	lsigKey, ok := keyMaterial.Value.(*coresigning.LsigKeyMaterial)
 	if !ok || len(lsigKey.PrivateKey) == 0 {
-		return nil, internal("bounded listed rekey needs the spending private key")
+		return nil, internal("listed rekey needs the spending private key")
 	}
 	for _, arg := range metadata.DerivedArgs {
 		if arg.Kind != hostmeta.DerivedArgRekeyListProof {

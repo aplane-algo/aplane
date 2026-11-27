@@ -169,7 +169,7 @@ func (c *ComposedDSA) renderHostPrelude(publicKey []byte, params map[string]stri
 
 func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[string]string, metadata *hostmeta.Metadata) (string, error) {
 	if metadata == nil || metadata.Cosigner == nil {
-		return "", fmt.Errorf("bounded cosigner metadata is required")
+		return "", fmt.Errorf("cosigner metadata is required")
 	}
 	cosignerPublicKey, err := c.validatedCosignerPublicKey(publicKey, params)
 	if err != nil {
@@ -183,11 +183,11 @@ func (c *ComposedDSA) renderCosignerAuthorization(publicKey []byte, params map[s
 		}
 	}
 	if cosignerArgIndex < 0 {
-		return "", fmt.Errorf("bounded cosigner argument slot is missing")
+		return "", fmt.Errorf("cosigner argument slot is missing")
 	}
 	construction, ok := sigconstruction.ForWitnessKeyType(metadata.Cosigner.ComponentKeyType)
 	if !ok {
-		return "", fmt.Errorf("bounded cosigner key type %q has no signature construction", metadata.Cosigner.ComponentKeyType)
+		return "", fmt.Errorf("cosigner key type %q has no signature construction", metadata.Cosigner.ComponentKeyType)
 	}
 	message := fmt.Sprintf("pushbytes 0x%s\npushbytes 0x%02x\nconcat\ntxn TxID\nconcat\nsha512_256",
 		hex.EncodeToString([]byte(cosignermessage.DomainTagV1)), byte(cosignermessage.RoleCosigner))

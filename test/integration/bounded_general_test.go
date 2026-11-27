@@ -50,7 +50,7 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
-		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
+		params[hostmeta.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
 		if shape.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 			params[hostmeta.CosignerKeyTypeParameter] = shape.Cosigner
 		}

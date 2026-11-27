@@ -22,27 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-// The generation-side vocabulary is defined in terms of hostmeta, the
-// durable storage vocabulary, so the two cannot drift: a contract revision
-// edits hostmeta once and both sides follow at compile time.
 const (
-	// BoundedContract is the bounded-authorization contract.
-	BoundedContract = hostmeta.BoundedContract
-	// PlainContract is the plain host: signatures and overlays, no host rules.
-	PlainContract = hostmeta.PlainContract
-	// CosignerPublicKeyParameter is injected for cosigner-enabled profiles.
-	CosignerPublicKeyParameter = hostmeta.CosignerPublicKeyParameter
-	// RekeyToParameter carries a rekey-to list's entries. The framework
-	// injects it for a profile with a list; a template that declares it must
-	// match the injected definition exactly.
-	RekeyToParameter = hostmeta.RekeyListEntriesParameter
-	// RekeyOnlyThese is the template's rekey value for a rekey-to list:
-	// rekey: refused, plus the list.
-	RekeyOnlyThese = hostmeta.RekeyOnlyThese
-	// RekeyPlusCosigned is the template's rekey value for a rekey-to list
-	// beside cosigned rekeys: rekey: spending_key, plus the list, with a cosigner.
-	RekeyPlusCosigned = hostmeta.RekeyPlusCosigned
-
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
 
@@ -149,7 +129,7 @@ func validatedHostProfile(profile *HostProfile, metadata *hostmeta.Metadata) (*H
 		return nil, err
 	}
 	if canonical == nil {
-		return nil, fmt.Errorf("bounded profile is required")
+		return nil, fmt.Errorf("host profile is required")
 	}
 	if err := validateCanonicalMetadata(canonical, metadata); err != nil {
 		return nil, err
@@ -282,12 +262,12 @@ func CanonicalBoundedProfile(profile *HostProfile, metadata *hostmeta.Metadata) 
 
 func validateCanonicalMetadata(profile *HostProfile, metadata *hostmeta.Metadata) error {
 	if err := metadata.ValidateProfile(); err != nil {
-		return fmt.Errorf("invalid bounded profile metadata: %w", err)
+		return fmt.Errorf("invalid host profile metadata: %w", err)
 	}
 	if metadata.Contract != profile.Contract || !equalBoundsProfile(metadata.Bounds, profile.Bounds) ||
 		metadata.Rekey != profile.Rekey ||
 		!equalCosignerProfile(metadata.Cosigner, profile.Cosigner) || !equalRekeyListProfile(metadata.RekeyList, profile.RekeyList) {
-		return fmt.Errorf("bounded profile metadata does not match the authorization profile")
+		return fmt.Errorf("host profile metadata does not match the authorization profile")
 	}
 	return nil
 }
@@ -325,7 +305,7 @@ func equalCosignerProfile(a, b *hostmeta.CosignerAuthorization) bool {
 // fingerprint.
 func CosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
 	def := lsigprovider.ParameterDef{
-		Name:        CosignerPublicKeyParameter,
+		Name:        hostmeta.CosignerPublicKeyParameter,
 		Label:       "Cosigner Public Key",
 		Description: "Falcon-1024 public key for bounded spend authorization",
 		Type:        "bytes",
@@ -344,11 +324,11 @@ func CosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
 // cosignerPublicKeySize is the size of this composer's cosigner public key.
 func (c *ComposedDSA) cosignerPublicKeySize() (int, error) {
 	if c.host == nil || c.host.Cosigner == nil {
-		return 0, fmt.Errorf("composer declares no bounded cosigner")
+		return 0, fmt.Errorf("composer declares no cosigner")
 	}
 	publicKeySize, _, ok := hostmeta.CosignerSizes(c.host.Cosigner.ComponentKeyType)
 	if !ok {
-		return 0, fmt.Errorf("unsupported bounded cosigner component key type %q", c.host.Cosigner.ComponentKeyType)
+		return 0, fmt.Errorf("unsupported cosigner component key type %q", c.host.Cosigner.ComponentKeyType)
 	}
 	return publicKeySize, nil
 }
@@ -370,7 +350,7 @@ func cloneSignatureArgLayout(layout SignatureArgLayout) SignatureArgLayout {
 func (c *ComposedDSA) validatedSignatureArgLayout() (SignatureArgLayout, error) {
 	layout, ok := c.SignatureArgLayout()
 	if !ok {
-		return SignatureArgLayout{}, fmt.Errorf("base key type %q does not expose a static bounded signature argument layout", c.baseKeyType)
+		return SignatureArgLayout{}, fmt.Errorf("base key type %q does not expose a static signature argument layout", c.baseKeyType)
 	}
 	if err := hostmeta.ValidateSignatureLayout(layout); err != nil {
 		return SignatureArgLayout{}, err
@@ -418,11 +398,11 @@ func (c *ComposedDSA) BuildHostMetadata(publicKey []byte, params map[string]stri
 	}
 
 	if err := metadata.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
+		return nil, fmt.Errorf("invalid generated host metadata: %w", err)
 	}
 	// Checked at generation, not on load: see ValidateNetworkLimits.
 	if err := metadata.ValidateNetworkLimits(); err != nil {
-		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
+		return nil, fmt.Errorf("invalid generated host metadata: %w", err)
 	}
 	return metadata, nil
 }
@@ -449,7 +429,7 @@ func (c *ComposedDSA) refuseSharedSpendingKey(role string, spendingPublicKey []b
 		return err
 	}
 	if shared {
-		return fmt.Errorf("bounded %s witness key must differ from the spending key", role)
+		return fmt.Errorf("%s witness key must differ from the spending key", role)
 	}
 	return nil
 }
@@ -459,7 +439,7 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 	if err != nil {
 		return nil, err
 	}
-	cosignerPublicKey, err := decodeHexParameter(params[CosignerPublicKeyParameter], CosignerPublicKeyParameter, publicKeySize)
+	cosignerPublicKey, err := decodeHexParameter(params[hostmeta.CosignerPublicKeyParameter], hostmeta.CosignerPublicKeyParameter, publicKeySize)
 	if err != nil {
 		return nil, err
 	}
@@ -557,19 +537,19 @@ func (c *ComposedDSA) validateHostConfig() (*HostProfile, SignatureArgLayout, er
 	case profile.Bounds == nil:
 		// A plain host has no spending rule: Layer 3 is none, and no author TEAL.
 		if c.layer3 == nil || c.layer3.Policy != Layer3PolicyNone || c.hasAuthorTEAL() {
-			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", PlainContract, Layer3PolicyNone)
+			return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile takes layer3 policy %s and no author TEAL", hostmeta.PlainContract, Layer3PolicyNone)
 		}
 	case c.layer3 == nil && strings.TrimSpace(c.tealSuffix) == "":
 		return nil, SignatureArgLayout{}, fmt.Errorf("a bounded profile requires a Layer-3 spending policy suffix")
 	}
 	if err := c.validateFrameworkLayer3Arguments(); err != nil {
-		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 arguments: %w", err)
+		return nil, SignatureArgLayout{}, fmt.Errorf("invalid Layer-3 arguments: %w", err)
 	}
 	if err := validateLayer3Policy(c.layer3, c.paramsWithoutCosignerKey(), profile, c.hasAuthorTEAL()); err != nil {
-		return nil, SignatureArgLayout{}, fmt.Errorf("invalid bounded Layer-3 policy: %w", err)
+		return nil, SignatureArgLayout{}, fmt.Errorf("invalid Layer-3 policy: %w", err)
 	}
 	tealVersion := txeffects.BoundedManifest().TEALVersion
-	if profile.Contract == PlainContract {
+	if profile.Contract == hostmeta.PlainContract {
 		tealVersion = txeffects.PlainManifest().TEALVersion
 	}
 	if c.ops.TEALVersion() != tealVersion {
@@ -595,7 +575,7 @@ func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 func validateHostReservedNames(profile *HostProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, derivedArgs []hostmeta.DerivedArg, templateVars []tealtemplate.TemplateVariable, teal string) error {
 	for _, param := range params {
 		if isCosignerReservedName(param.Name) {
-			if param.Name != CosignerPublicKeyParameter || profile.Cosigner == nil {
+			if param.Name != hostmeta.CosignerPublicKeyParameter || profile.Cosigner == nil {
 				return fmt.Errorf("parameter name %q uses reserved cosigner namespace", param.Name)
 			}
 			want := CosignerParameterDef(profile.Cosigner.ComponentKeyType)
@@ -604,7 +584,7 @@ func validateHostReservedNames(profile *HostProfile, params []lsigprovider.Param
 			}
 			continue
 		}
-		if param.Name == RekeyToParameter && profile.RekeyList != nil {
+		if param.Name == hostmeta.RekeyListEntriesParameter && profile.RekeyList != nil {
 			want := rekeyListEntriesParameterDef(profile.Rekey)
 			if param.Type != want.Type || !param.Required || param.MinItems != want.MinItems || param.MaxItems != want.MaxItems {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
@@ -628,7 +608,7 @@ func validateHostReservedNames(profile *HostProfile, params []lsigprovider.Param
 	// recipient-tree proof is unsalted, so a spend would publish siblings anyone
 	// can test guessed addresses against. The framework's own list proof is
 	// salted and added after this check.
-	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == RekeyToParameter }
+	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == hostmeta.RekeyListEntriesParameter }
 	for _, arg := range derivedArgs {
 		if listPrivate(arg.Parameter) {
 			return fmt.Errorf("derived argument %q would publish proofs over the private rekey-to list", arg.Name)

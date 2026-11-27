@@ -113,7 +113,7 @@ type overlays struct {
 // Plus cosigned needs a cosigner: without one the spending key would rekey
 // anywhere, so the list would add nothing, and that is spending_key.
 func resolveOverlays(params, normalized map[string]string) (overlays, error) {
-	cosigner := normalized[composeddsa.CosignerPublicKeyParameter]
+	cosigner := normalized[hostmeta.CosignerPublicKeyParameter]
 	cosignerType, err := resolveCosignerType(cosigner, normalized[hostmeta.CosignerKeyTypeParameter])
 	if err != nil {
 		return overlays{}, err
@@ -153,10 +153,10 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 	// NormalizeCreationParams has made the key canonical hex, with no prefix.
 	publicKey, err := hex.DecodeString(cosigner)
 	if err != nil {
-		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.CosignerPublicKeyParameter, err)
+		return "", fmt.Errorf("invalid %s hex: %w", hostmeta.CosignerPublicKeyParameter, err)
 	}
 	if len(publicKey) != publicKeySize {
-		err := fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.CosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
+		err := fmt.Errorf("%s is %d bytes; a %s key is %d", hostmeta.CosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
 		for _, other := range CosignerKeyTypes {
 			if size, _, _ := hostmeta.CosignerSizes(other); size == len(publicKey) && other != cosignerType {
 				err = fmt.Errorf("%w: for a %s key, set %s=%s", err, other, hostmeta.CosignerKeyTypeParameter, other)
@@ -171,7 +171,7 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 func (o overlays) addTo(values map[string]string) {
 	values[ParameterRekeyAuthority] = o.arrangement.Rekey
 	if o.cosigner != "" {
-		values[composeddsa.CosignerPublicKeyParameter] = o.cosigner
+		values[hostmeta.CosignerPublicKeyParameter] = o.cosigner
 	}
 	// Recorded only when it is not the default, so a default-cosigned
 	// account keeps the parameters it has always had.
