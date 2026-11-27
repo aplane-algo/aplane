@@ -1307,7 +1307,7 @@ are stubbed in the offline TEAL runs, and run for real in the on-chain ones.
   be identified rather than reinterpreted as released v1 templates.
 - The shared signing-flow identifier remains `rotating1`. Clients route on
   `signing_flow`, not key type strings.
-- The installer floor for upgrades is v0.52.0.
+- The installer floor for upgrades is v0.53.0.
 
 ## 14. Evidence (tests)
 
