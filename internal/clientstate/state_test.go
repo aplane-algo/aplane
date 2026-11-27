@@ -308,17 +308,17 @@ func TestPopulateSignerCacheReadsBoundedCosignerMetadata(t *testing.T) {
 	if got := state.SignerCacheSigningFlow("BOUNDED"); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("bounded cosigner flow = %q", got)
 	}
-	if got, ok := state.SignerCacheBoundedMaxFee("BOUNDED"); !ok || got != 10_000 {
+	if got, ok := state.SignerCacheHostMaxFee("BOUNDED"); !ok || got != 10_000 {
 		t.Fatalf("bounded max fee = %d/%v", got, ok)
 	}
-	if got, ok := state.SignerCacheBoundedContract("BOUNDED"); !ok || got != "bounded2" {
+	if got, ok := state.SignerCacheHostContract("BOUNDED"); !ok || got != "bounded2" {
 		t.Fatalf("bounded contract = %q/%v", got, ok)
 	}
 	// A plain host records its contract and no ceiling, not a zero one.
-	if got, ok := state.SignerCacheBoundedContract("PLAIN"); !ok || got != "plain1" {
+	if got, ok := state.SignerCacheHostContract("PLAIN"); !ok || got != "plain1" {
 		t.Fatalf("plain host contract = %q/%v", got, ok)
 	}
-	if got, ok := state.SignerCacheBoundedMaxFee("PLAIN"); ok {
+	if got, ok := state.SignerCacheHostMaxFee("PLAIN"); ok {
 		t.Fatalf("plain host max fee = %d, want none", got)
 	}
 }
@@ -358,7 +358,7 @@ func TestPopulateSignerCacheRejectsInconsistentLogicSigProgramBytes(t *testing.T
 	}
 }
 
-func TestPopulateSignerCacheRequiresBothBoundedPaths(t *testing.T) {
+func TestPopulateSignerCacheRequiresBothHostPaths(t *testing.T) {
 	state := New("testnet")
 	err := state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address: "BAD", KeyType: "test.bounded.v1",
@@ -643,7 +643,7 @@ func TestAddAliasRefusesAnAddressAsAName(t *testing.T) {
 // The cosigner key comes from host, the structured field
 // the signer always sends for a cosigned account. The creation parameter of
 // the same name is not read.
-func TestPopulateSignerCacheReadsTheCosignerKeyFromBoundedAuthorization(t *testing.T) {
+func TestPopulateSignerCacheReadsTheCosignerKeyFromHost(t *testing.T) {
 	state := New("testnet")
 	if err := state.PopulateSignerCache([]signerapi.KeyInfo{
 		{Address: "PARAMS", KeyType: "k", Parameters: map[string]string{"cosigner_public_key": "aa"}},
@@ -686,10 +686,10 @@ func TestPopulateSignerCacheReadsHostBoundsFromTheWire(t *testing.T) {
 			if err := state.PopulateSignerCache([]signerapi.KeyInfo{key}); err != nil {
 				t.Fatal(err)
 			}
-			if contract, ok := state.SignerCacheBoundedContract("HOST"); !ok || contract != test.contract {
+			if contract, ok := state.SignerCacheHostContract("HOST"); !ok || contract != test.contract {
 				t.Fatalf("contract = %q/%v, want %q", contract, ok, test.contract)
 			}
-			if maxFee, ok := state.SignerCacheBoundedMaxFee("HOST"); ok != test.hasMaxFee || maxFee != test.maxFee {
+			if maxFee, ok := state.SignerCacheHostMaxFee("HOST"); ok != test.hasMaxFee || maxFee != test.maxFee {
 				t.Fatalf("max fee = %d/%v, want %d/%v", maxFee, ok, test.maxFee, test.hasMaxFee)
 			}
 		})
@@ -844,8 +844,8 @@ func TestEverySignerCacheMethodIsRaceSafe(t *testing.T) {
 		{"SignerCacheSigningFlow", func(s *State) { _ = s.SignerCacheSigningFlow(addr) }},
 		{"SignerCacheCosignerComponentKeyType", func(s *State) { _, _ = s.SignerCacheCosignerComponentKeyType(addr) }},
 		{"SignerCacheCosignerPublicKey", func(s *State) { _, _ = s.SignerCacheCosignerPublicKey(addr) }},
-		{"SignerCacheBoundedContract", func(s *State) { _, _ = s.SignerCacheBoundedContract(addr) }},
-		{"SignerCacheBoundedMaxFee", func(s *State) { _, _ = s.SignerCacheBoundedMaxFee(addr) }},
+		{"SignerCacheHostContract", func(s *State) { _, _ = s.SignerCacheHostContract(addr) }},
+		{"SignerCacheHostMaxFee", func(s *State) { _, _ = s.SignerCacheHostMaxFee(addr) }},
 		{"SignerCacheIsGenericLsig", func(s *State) { _ = s.SignerCacheIsGenericLsig(addr) }},
 		{"ValidateSignerLsigArgs", func(s *State) { _ = s.ValidateSignerLsigArgs(addr, validArgs) }},
 		{"ownedAuthAddresses", func(s *State) { _ = s.ownedAuthAddresses() }},

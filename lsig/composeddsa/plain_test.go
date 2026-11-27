@@ -8,23 +8,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
-func plainTestProfile(rekey boundedmeta.RekeySetting) *BoundedAuthorizationProfile {
-	return &BoundedAuthorizationProfile{
+func plainTestProfile(rekey hostmeta.RekeySetting) *HostProfile {
+	return &HostProfile{
 		Contract: PlainContract,
 		Rekey:    rekey,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: boundedmeta.CosignerRequiredOn(rekey),
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: hostmeta.CosignerRequiredOn(rekey),
 		},
 	}
 }
 
-func newPlainTestProvider(profile *BoundedAuthorizationProfile, suffix string, layer3 *Layer3Policy) *ComposedDSA {
+func newPlainTestProvider(profile *HostProfile, suffix string, layer3 *Layer3Policy) *ComposedDSA {
 	return NewComposedDSA(Config{
 		KeyType:      "aplane.falcon1024.v1",
 		BaseKeyType:  "aplane.falcon1024.v1",
@@ -34,7 +34,7 @@ func newPlainTestProvider(profile *BoundedAuthorizationProfile, suffix string, l
 		SaltStyle:    lsigsalt.StyleNone,
 		TemplateMode: "generated",
 		TEALSuffix:   suffix,
-		Bounded:      profile,
+		Host:         profile,
 		Layer3:       layer3,
 	})
 }
@@ -42,25 +42,25 @@ func newPlainTestProvider(profile *BoundedAuthorizationProfile, suffix string, l
 // A plain host's program is the spending-key check, the rekey dispatch, and the
 // cosigner: no fee gate, no zero-address envelope and no transaction-type list.
 func TestPlainHostRendersNoEnvelope(t *testing.T) {
-	provider := newPlainTestProvider(plainTestProfile(boundedmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
-	cosignerKey := strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
-	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{BoundedCosignerPublicKeyParameter: cosignerKey})
+	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
+	cosignerKey := strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
+	teal, err := provider.GenerateTEAL([]byte{0x01}, map[string]string{CosignerPublicKeyParameter: cosignerKey})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 	assertOrderedMarkers(t, teal,
 		"// === plain host: rekey dispatch ===",
-		"txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+boundedRekeyLabel+"\nb "+boundedSpendLabel+"\n",
-		boundedRekeyLabel+":",
+		"txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+hostRekeyLabel+"\nb "+hostSpendLabel+"\n",
+		hostRekeyLabel+":",
 		"txn TypeEnum\npushint 1\n==\nassert",
-		"callsub "+boundedCosignerLabel+"\nb "+boundedAcceptLabel,
-		boundedCosignerLabel+":",
+		"callsub "+hostCosignerLabel+"\nb "+hostAcceptLabel,
+		hostCosignerLabel+":",
 		"arg 1\npushbytes 0x"+cosignerKey+"\nfalcon_verify\nassert",
 		"retsub",
-		boundedSpendLabel+":",
-		"callsub "+boundedCosignerLabel,
+		hostSpendLabel+":",
+		"callsub "+hostCosignerLabel,
 		"// === plain host: no host rules; the cosigner signed this spend ===",
-		boundedAcceptLabel+":\npushint 1\nreturn",
+		hostAcceptLabel+":\npushint 1\nreturn",
 	)
 	for _, absent := range []string{"txn Fee", boundedPayLabel, boundedAxferLabel, "txn TypeEnum\npushint 4"} {
 		if strings.Contains(teal, absent) {
@@ -68,13 +68,13 @@ func TestPlainHostRendersNoEnvelope(t *testing.T) {
 		}
 	}
 	// The only zero-address checks are the pure rekey's, inside the rekey body.
-	if strings.Index(teal, "txn CloseRemainderTo") < strings.Index(teal, boundedRekeyLabel+":") {
+	if strings.Index(teal, "txn CloseRemainderTo") < strings.Index(teal, hostRekeyLabel+":") {
 		t.Fatalf("a close check precedes the rekey body:\n%s", teal)
 	}
 
-	metadata := provider.BoundedAuthorizationMetadata()
+	metadata := provider.HostMetadata()
 	if metadata == nil || metadata.Contract != PlainContract || metadata.Bounds != nil ||
-		metadata.Layer3Policy() != boundedmeta.Layer3PolicyNone {
+		metadata.Layer3Policy() != hostmeta.Layer3PolicyNone {
 		t.Fatalf("metadata = %+v", metadata)
 	}
 	if err := metadata.ValidateProfile(); err != nil {
@@ -86,28 +86,28 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 	none := &Layer3Policy{Policy: Layer3PolicyNone}
 	for _, tc := range []struct {
 		name   string
-		mutate func(*BoundedAuthorizationProfile)
+		mutate func(*HostProfile)
 		suffix string
 		layer3 *Layer3Policy
 		want   string
 	}{
-		{name: "bounds", mutate: func(p *BoundedAuthorizationProfile) {
+		{name: "bounds", mutate: func(p *HostProfile) {
 			p.Bounds = &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))}
 		}, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
-		{name: "empty bounds", mutate: func(p *BoundedAuthorizationProfile) { p.Bounds = &ProfileBounds{} }, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
+		{name: "empty bounds", mutate: func(p *HostProfile) { p.Bounds = &ProfileBounds{} }, layer3: none, want: "plain1 has no host rules: bounds must be absent"},
 		{name: "author TEAL", suffix: "int 1\nassert", layer3: none, want: "no author TEAL"},
 		{name: "a recipient list", layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}, want: "layer3 policy none"},
 		{name: "no Layer 3", want: "layer3 policy none"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			profile := plainTestProfile(boundedmeta.RekeyRefused)
+			profile := plainTestProfile(hostmeta.RekeyRefused)
 			if tc.mutate != nil {
 				tc.mutate(profile)
 			}
 			provider := newPlainTestProvider(profile, tc.suffix, tc.layer3)
 			params := map[string]string{}
 			if profile.Cosigner != nil {
-				params[BoundedCosignerPublicKeyParameter] = strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
+				params[CosignerPublicKeyParameter] = strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
 			}
 			_, err := provider.GenerateTEAL([]byte{0x01}, params)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -119,12 +119,12 @@ func TestPlainHostRefusesHostRules(t *testing.T) {
 
 // The plain contract's encoding has no fee field, and leads with its own name.
 func TestCanonicalPlainProfileGolden(t *testing.T) {
-	provider := newPlainTestProvider(plainTestProfile(boundedmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
-	metadata := provider.BoundedAuthorizationMetadata()
+	provider := newPlainTestProvider(plainTestProfile(hostmeta.RekeySpendingKey), "", &Layer3Policy{Policy: Layer3PolicyNone})
+	metadata := provider.HostMetadata()
 	if metadata == nil {
 		t.Fatal("no metadata")
 	}
-	encoded, err := CanonicalBoundedProfile(provider.BoundedAuthorizationProfile(), metadata)
+	encoded, err := CanonicalBoundedProfile(provider.HostProfile(), metadata)
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
@@ -137,15 +137,15 @@ func TestCanonicalPlainProfileGolden(t *testing.T) {
 // A plain host's cosigner is optional: without one its spends need the spending
 // key alone, and nothing calls the cosigner subroutine.
 func TestPlainHostWithoutACosigner(t *testing.T) {
-	profile := plainTestProfile(boundedmeta.RekeySpendingKey)
+	profile := plainTestProfile(hostmeta.RekeySpendingKey)
 	profile.Cosigner = nil
 	teal, err := newPlainTestProvider(profile, "", &Layer3Policy{Policy: Layer3PolicyNone}).GenerateTEAL([]byte{0x01}, map[string]string{})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	if strings.Contains(teal, boundedCosignerLabel) || strings.Contains(teal, "the cosigner signed") ||
+	if strings.Contains(teal, hostCosignerLabel) || strings.Contains(teal, "the cosigner signed") ||
 		!strings.Contains(teal, "the spending key alone signed this spend") {
 		t.Fatalf("a plain host without a cosigner calls or claims the cosigner:\n%s", teal)
 	}
-	assertOrderedMarkers(t, teal, "bnz "+boundedRekeyLabel, boundedRekeyLabel+":", boundedSpendLabel+":", boundedAcceptLabel+":")
+	assertOrderedMarkers(t, teal, "bnz "+hostRekeyLabel, hostRekeyLabel+":", hostSpendLabel+":", hostAcceptLabel+":")
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
 	"github.com/aplane-algo/aplane/internal/algo/algotest"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -54,9 +54,9 @@ teal: |
 		t.Fatal(err)
 	}
 	spendingKey := bytes.Repeat([]byte{0x11}, falconfamily.PublicKeySize)
-	cosignerKey := bytes.Repeat([]byte{0x22}, boundedmeta.DefaultCosignerPublicKeySize)
+	cosignerKey := bytes.Repeat([]byte{0x22}, hostmeta.DefaultCosignerPublicKeySize)
 	params := map[string]string{
-		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+		composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 	}
 	teal, err := provider.GenerateTEAL(spendingKey, params)
 	if err != nil {
@@ -74,7 +74,7 @@ teal: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingKey, params, bytecode)
+	metadata, err := provider.BuildHostMetadata(spendingKey, params, bytecode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ teal: |
 	if got, want := len(bytecode), 3_726; got != want {
 		t.Fatalf("compiled bytecode size = %d, want %d; TEAL SHA-256 %x", got, want, hash)
 	}
-	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 2_846; got != want {
+	if got, want := metadata.ArgumentBytesForPath(hostmeta.PathSpend), 2_846; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 }

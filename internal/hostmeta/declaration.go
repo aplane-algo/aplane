@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package boundedmeta
+package hostmeta
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ type CosignerOverlay struct {
 // which Layer 3 policy, how it may be rekeyed, and which cosigner it needs. The
 // signer's classifier reads it, through txeffects.ClassifyFor. The renderer still
 // works from the composer's profile, so the two are held together by test
-// (internal/signerapp/signing/bounded_agreement_test.go), not by sharing this.
+// (internal/signerapp/signing/host_agreement_test.go), not by sharing this.
 type PathDeclaration struct {
 	Contract string
 	// Bounds is the bounded host's spend effects, fee ceiling and Layer 3

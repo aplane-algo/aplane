@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -643,13 +643,13 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 		types.Address{1}.String(),
 		types.Address{1}.String(),
 		nil,
-		&boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, boundedmeta.RekeySpendingKey)},
+		&hostPlanItem{Path: hostPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, hostmeta.RekeySpendingKey)},
 		&coresigning.KeyMaterial{
-			Type:                 keyType,
-			Category:             keys.CategoryDSALsig,
-			BaseKeyType:          baseKeyType,
-			Bytecode:             append([]byte(nil), testApprovalProgram...),
-			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
+			Type:        keyType,
+			Category:    keys.CategoryDSALsig,
+			BaseKeyType: baseKeyType,
+			Bytecode:    append([]byte(nil), testApprovalProgram...),
+			Host:        testBoundedMetadata(t, hostmeta.RekeySpendingKey),
 		},
 		signature,
 		keyType,
@@ -663,14 +663,14 @@ func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
 	assertLogicSigArgs(t, signedBytes, [][]byte{signature})
 }
 
-// TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs pins the caller-owned
+// TestResolveHostPlanItemsRejectsUndeclaredCallerArgs pins the caller-owned
 // slot boundary; the executor consumes only runtime args accepted into the plan.
-func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
+func TestResolveHostPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 	authAddr := types.Address{1}.String()
 	snapshot := PlannerRuntimeSnapshot{
 		KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
-			PublicKeyHex:         "aabb",
-			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.RekeySpendingKey),
+			PublicKeyHex: "aabb",
+			Host:         testBoundedMetadata(t, hostmeta.RekeySpendingKey),
 		}},
 	}
 	requests := []signerapi.SignRequest{{
@@ -679,37 +679,37 @@ func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
 		LsigArgs:    map[string]string{"base_signature_0": "00"},
 	}}
 
-	_, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
+	_, err := resolveHostPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
 	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "not a declared runtime slot") {
-		t.Fatalf("resolveBoundedPlanItems() error = %#v, want caller-args rejection", err)
+		t.Fatalf("resolveHostPlanItems() error = %#v, want caller-args rejection", err)
 	}
 }
 
-func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
+func TestResolveHostPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 	authAddr := types.Address{1}.String()
-	metadata := testBoundedMetadata(t, boundedmeta.RekeyRefused)
-	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 2, MaxSize: 2}}
-	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
-		Index: 1, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 2,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+	metadata := testBoundedMetadata(t, hostmeta.RekeyRefused)
+	metadata.RuntimeArgs = []hostmeta.RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 2, MaxSize: 2}}
+	metadata.ArgumentLayout = append(metadata.ArgumentLayout, hostmeta.ArgumentSlot{
+		Index: 1, Name: "preimage", Source: hostmeta.ArgSourceRuntime, MaxSize: 2,
+		Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden},
 	})
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("runtime metadata invalid: %v", err)
 	}
 	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
-		PublicKeyHex: "aabb", BoundedAuthorization: metadata,
+		PublicKeyHex: "aabb", Host: metadata,
 	}}}
 	requests := []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: map[string]string{"preimage": "aabb"}}}
-	items, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
+	items, err := resolveHostPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
 	if err != nil {
-		t.Fatalf("resolveBoundedPlanItems() error = %v", err)
+		t.Fatalf("resolveHostPlanItems() error = %v", err)
 	}
 	if len(items) != 1 || items[0] == nil || !bytes.Equal(items[0].RuntimeArgs["preimage"], []byte{0xaa, 0xbb}) {
 		t.Fatalf("planned runtime args = %#v", items)
 	}
 
 	requests[0].LsigArgs = nil
-	if _, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{}); err == nil || !strings.Contains(err.Message, "missing required") {
+	if _, err := resolveHostPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{}); err == nil || !strings.Contains(err.Message, "missing required") {
 		t.Fatalf("missing runtime arg error = %#v", err)
 	}
 }
@@ -718,13 +718,13 @@ func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
 // a runtime argument maximum above it. It still loads, and signing refuses a
 // supplied value the network would refuse. Only a supplied value is checked, so
 // a rekey, which carries no runtime argument, is unaffected.
-func TestResolveBoundedPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *testing.T) {
+func TestResolveHostPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *testing.T) {
 	authAddr := types.Address{1}.String()
-	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "blob", Type: "bytes", Required: true, MaxSize: 5000}}
-	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
-		Index: 1, Name: "blob", Source: boundedmeta.ArgSourceRuntime, MaxSize: 5000,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+	metadata := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
+	metadata.RuntimeArgs = []hostmeta.RuntimeArg{{Name: "blob", Type: "bytes", Required: true, MaxSize: 5000}}
+	metadata.ArgumentLayout = append(metadata.ArgumentLayout, hostmeta.ArgumentSlot{
+		Index: 1, Name: "blob", Source: hostmeta.ArgSourceRuntime, MaxSize: 5000,
+		Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden},
 	})
 	// Durable validation, which a stored key gets on load, accepts it. The
 	// generation-time check does not, so the metadata is built by hand.
@@ -735,10 +735,10 @@ func TestResolveBoundedPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *test
 		t.Fatalf("ValidateNetworkLimits() error = %v, want the fixture past the limit", err)
 	}
 	snapshot := PlannerRuntimeSnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
-		PublicKeyHex: "aabb", BoundedAuthorization: metadata,
+		PublicKeyHex: "aabb", Host: metadata,
 	}}}
-	resolve := func(txn types.Transaction, lsigArgs map[string]string) ([]*boundedPlanItem, *ServiceError) {
-		return resolveBoundedPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: lsigArgs}},
+	resolve := func(txn types.Transaction, lsigArgs map[string]string) ([]*hostPlanItem, *ServiceError) {
+		return resolveHostPlanItems(snapshot, []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: lsigArgs}},
 			[]types.Transaction{txn}, map[int]bool{}, map[int]bool{})
 	}
 	blob := func(size int) map[string]string {
@@ -756,7 +756,7 @@ func TestResolveBoundedPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *test
 	if err != nil {
 		t.Fatalf("4096-byte argument: error = %v", err)
 	}
-	if len(items) != 1 || items[0] == nil || items[0].Path != boundedPathPureSpend || len(items[0].RuntimeArgs["blob"]) != lsigresource.MaxLogicSigArgBytes {
+	if len(items) != 1 || items[0] == nil || items[0].Path != hostPathPureSpend || len(items[0].RuntimeArgs["blob"]) != lsigresource.MaxLogicSigArgBytes {
 		t.Fatalf("4096-byte argument: planned items = %#v", items)
 	}
 	// Past the account's own maximum, the account's refusal comes first.
@@ -768,22 +768,22 @@ func TestResolveBoundedPlanItemsCapsASuppliedRuntimeArgAtTheNetworkLimit(t *test
 	if err != nil {
 		t.Fatalf("rekey without the argument: error = %v", err)
 	}
-	if len(items) != 1 || items[0] == nil || items[0].Path != boundedPathSpendingKeyRekey || len(items[0].RuntimeArgs) != 0 {
+	if len(items) != 1 || items[0] == nil || items[0].Path != hostPathSpendingKeyRekey || len(items[0].RuntimeArgs) != 0 {
 		t.Fatalf("rekey without the argument: planned items = %#v", items)
 	}
 }
 
-func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
-	metadata := &boundedmeta.Metadata{ArgumentLayout: []boundedmeta.ArgumentSlot{
-		{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
-		{Index: 1, Name: "proof", Source: boundedmeta.ArgSourceDerived, MaxSize: boundedmeta.MerkleProofSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
-		{Index: 2, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
-		{Index: 3, Name: "memo", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
+func TestAssembleHostArgsPreservesInteriorEmptySlots(t *testing.T) {
+	metadata := &hostmeta.Metadata{ArgumentLayout: []hostmeta.ArgumentSlot{
+		{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired}},
+		{Index: 1, Name: "proof", Source: hostmeta.ArgSourceDerived, MaxSize: hostmeta.MerkleProofSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional}},
+		{Index: 2, Name: "preimage", Source: hostmeta.ArgSourceRuntime, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired}},
+		{Index: 3, Name: "memo", Source: hostmeta.ArgSourceRuntime, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional}},
 	}}
-	item := &boundedPlanItem{Path: boundedPathPureSpend, RuntimeArgs: map[string][]byte{"preimage": {0xaa}}}
-	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"proof": nil})
+	item := &hostPlanItem{Path: hostPathPureSpend, RuntimeArgs: map[string][]byte{"preimage": {0xaa}}}
+	args, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"proof": nil})
 	if err != nil {
-		t.Fatalf("assembleBoundedArgs() error = %v", err)
+		t.Fatalf("assembleHostArgs() error = %v", err)
 	}
 	if len(args) != 3 || !bytes.Equal(args[0], []byte{0x99}) || args[1] == nil || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
 		t.Fatalf("assembled args = %#v, want base/empty/runtime with the trailing empty slot omitted", args)
@@ -792,69 +792,69 @@ func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
 
 // Each derived value goes to the layout slot of its own name, whatever order
 // the metadata declares the derived arguments in.
-func TestAssembleBoundedArgsPlacesDerivedArgsByName(t *testing.T) {
-	listed := boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgOptional, ListedRekey: boundedmeta.ArgOptional}
-	metadata := &boundedmeta.Metadata{
-		DerivedArgs: []boundedmeta.DerivedArg{{Name: "first"}, {Name: "second"}},
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
-			{Index: 1, Name: "second", Source: boundedmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
-			{Index: 2, Name: "first", Source: boundedmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
+func TestAssembleHostArgsPlacesDerivedArgsByName(t *testing.T) {
+	listed := hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional, SpendingRekey: hostmeta.ArgOptional, ListedRekey: hostmeta.ArgOptional}
+	metadata := &hostmeta.Metadata{
+		DerivedArgs: []hostmeta.DerivedArg{{Name: "first"}, {Name: "second"}},
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired}},
+			{Index: 1, Name: "second", Source: hostmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
+			{Index: 2, Name: "first", Source: hostmeta.ArgSourceDerived, MaxSize: 4, Paths: listed},
 		},
 	}
-	item := &boundedPlanItem{Path: boundedPathPureSpend}
-	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}})
+	item := &hostPlanItem{Path: hostPathPureSpend}
+	args, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}})
 	if err != nil {
-		t.Fatalf("assembleBoundedArgs() error = %v", err)
+		t.Fatalf("assembleHostArgs() error = %v", err)
 	}
 	if len(args) != 3 || !bytes.Equal(args[1], []byte{0x02}) || !bytes.Equal(args[2], []byte{0x01}) {
 		t.Fatalf("assembled args = %x, want second's value in slot 1 and first's in slot 2", args)
 	}
 
-	if _, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}}); err == nil || !strings.Contains(err.Message, `bounded derived slot "second" has no derived argument`) {
+	if _, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}}); err == nil || !strings.Contains(err.Message, `bounded derived slot "second" has no derived argument`) {
 		t.Fatalf("slot without a derived value: error = %+v", err)
 	}
-	if _, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}, "third": nil}); err == nil || !strings.Contains(err.Message, "not fully consumed") {
+	if _, err := assembleHostArgs(metadata, item, [][]byte{{0x99}}, map[string][]byte{"first": {0x01}, "second": {0x02}, "third": nil}); err == nil || !strings.Contains(err.Message, "not fully consumed") {
 		t.Fatalf("derived value without a slot: error = %+v", err)
 	}
 }
 
-// TestVerifyBoundedPlanIntegrity pins the executor's single bounded recheck:
+// TestVerifyHostPlanIntegrity pins the executor's single bounded recheck:
 // the loaded key must still match the planned classification.
-func TestVerifyBoundedPlanIntegrity(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	item := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedmeta.Clone(metadata)}
+func TestVerifyHostPlanIntegrity(t *testing.T) {
+	metadata := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
+	item := &hostPlanItem{Path: hostPathSpendingKeyRekey, Metadata: hostmeta.Clone(metadata)}
 	loaded := &coresigning.KeyMaterial{
-		BoundedAuthorization: boundedmeta.Clone(metadata),
+		Host: hostmeta.Clone(metadata),
 	}
 
-	if err := verifyBoundedPlanIntegrity(item, loaded); err != nil {
+	if err := verifyHostPlanIntegrity(item, loaded); err != nil {
 		t.Fatalf("matching metadata: unexpected error %v", err)
 	}
-	if err := verifyBoundedPlanIntegrity(nil, &coresigning.KeyMaterial{}); err != nil {
+	if err := verifyHostPlanIntegrity(nil, &coresigning.KeyMaterial{}); err != nil {
 		t.Fatalf("plain key without plan item: unexpected error %v", err)
 	}
 
-	if err := verifyBoundedPlanIntegrity(nil, loaded); err == nil || err.Kind != ErrorInternal {
+	if err := verifyHostPlanIntegrity(nil, loaded); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("key gained bounded metadata: error = %#v, want internal", err)
 	}
-	if err := verifyBoundedPlanIntegrity(item, &coresigning.KeyMaterial{}); err == nil || err.Kind != ErrorInternal {
+	if err := verifyHostPlanIntegrity(item, &coresigning.KeyMaterial{}); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("key lost bounded metadata: error = %#v, want internal", err)
 	}
 
-	drifted := boundedmeta.Clone(metadata)
+	drifted := hostmeta.Clone(metadata)
 	drifted.Bounds.MaxFee = new(*drifted.FeeCeiling() - 1)
 	changed := &coresigning.KeyMaterial{
-		BoundedAuthorization: drifted,
+		Host: drifted,
 	}
-	if err := verifyBoundedPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
+	if err := verifyHostPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("metadata drift: error = %#v, want internal", err)
 	}
 
-	rekeyChanged := boundedmeta.Clone(metadata)
-	rekeyChanged.Rekey = boundedmeta.RekeyRefused
-	if err := verifyBoundedPlanIntegrity(item, &coresigning.KeyMaterial{
-		BoundedAuthorization: rekeyChanged,
+	rekeyChanged := hostmeta.Clone(metadata)
+	rekeyChanged.Rekey = hostmeta.RekeyRefused
+	if err := verifyHostPlanIntegrity(item, &coresigning.KeyMaterial{
+		Host: rekeyChanged,
 	}); err == nil || err.Kind != ErrorInternal {
 		t.Fatalf("rekey setting drift: error = %#v, want internal", err)
 	}
@@ -1003,14 +1003,14 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 	baseType := uniqueSigningTestFamily("test-dsa-zeroing-base")
 	coresigning.Register(&testNativeSigningProvider{family: baseType})
 	lsigprovider.RegisterIfAbsent(&testBaseSignatureProvider{keyType: baseType, family: baseType})
-	cosigned := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x52}, boundedmeta.DefaultCosignerPublicKeySize))
+	cosigned := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x52}, hostmeta.DefaultCosignerPublicKeySize))
 	sender := types.Address{1}.String()
 	txn := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}, Fee: 1_000, FirstValid: 1, LastValid: 2}}
 
 	cases := []struct {
 		name    string
 		key     func(private []byte) *coresigning.KeyMaterial
-		item    *boundedPlanItem
+		item    *hostPlanItem
 		wantErr string
 		want    func(t *testing.T, signed []byte)
 	}{
@@ -1024,11 +1024,11 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 			}},
 		{name: "bounded metadata the plan lacks", wantErr: "key gained bounded metadata after planning",
 			key: func(private []byte) *coresigning.KeyMaterial {
-				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned)}
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, Host: hostmeta.Clone(cosigned)}
 			}},
-		{name: "cosigned bounded account", item: &boundedPlanItem{Path: boundedPathPureSpend, Metadata: boundedmeta.Clone(cosigned)}, wantErr: "cosign",
+		{name: "cosigned bounded account", item: &hostPlanItem{Path: hostPathPureSpend, Metadata: hostmeta.Clone(cosigned)}, wantErr: "cosign",
 			key: func(private []byte) *coresigning.KeyMaterial {
-				return &coresigning.KeyMaterial{Type: nativeType, Value: private, BoundedAuthorization: boundedmeta.Clone(cosigned)}
+				return &coresigning.KeyMaterial{Type: nativeType, Value: private, Host: hostmeta.Clone(cosigned)}
 			}},
 		{name: "unsupported key type", wantErr: "unsupported key type: test-unsupported-zeroing-v1",
 			key: func(private []byte) *coresigning.KeyMaterial {
@@ -1101,7 +1101,7 @@ func TestExecutorSignSingleTransactionZeroesTheLoadedKeyOnEveryExit(t *testing.T
 // Both bounded paths check base signature arguments against the stored
 // layout with the same rule and the same text.
 func TestCheckBaseSignatureLayout(t *testing.T) {
-	layout := boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{3, 2}}
+	layout := hostmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{3, 2}}
 	cases := []struct {
 		args [][]byte
 		want string

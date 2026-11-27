@@ -18,7 +18,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -41,11 +41,11 @@ type authorAllowlistEncoding struct {
 
 var authorAllowlistEncodings = []authorAllowlistEncoding{
 	{
-		name: "inline", policy: "fixed_allowlist", stored: boundedmeta.Layer3PolicyFixedAllowlistCustom,
+		name: "inline", policy: "fixed_allowlist", stored: hostmeta.Layer3PolicyFixedAllowlistCustom,
 		maxItems: 30, preimageAt: 1,
 	},
 	{
-		name: "merkle", policy: "merkle_allowlist", stored: boundedmeta.Layer3PolicyMerkleAllowlistCustom,
+		name: "merkle", policy: "merkle_allowlist", stored: hostmeta.Layer3PolicyMerkleAllowlistCustom,
 		maxItems: 65536, preimageAt: 2,
 		derivedArg: `
   derived_args:
@@ -113,7 +113,7 @@ teal: |
   $hash
   ==
   assert
-`, encoding.name, encoding.name, boundedmeta.Contract, boundedmeta.RekeySpendingKey, encoding.policy, encoding.derivedArg, encoding.maxItems, encoding.preimageAt)
+`, encoding.name, encoding.name, hostmeta.BoundedContract, hostmeta.RekeySpendingKey, encoding.policy, encoding.derivedArg, encoding.maxItems, encoding.preimageAt)
 }
 
 func authorAllowlistHash() string {
@@ -150,7 +150,7 @@ func TestBoundedAllowlistAuthorTEALOnChainLocalnet(t *testing.T) {
 			// A Merkle account takes a proof slot before the preimage. An empty
 			// slot is what a signer sends for a self-receiver.
 			args := func(preimage []byte, proofFor string) [][]byte {
-				if encoding.stored == boundedmeta.Layer3PolicyFixedAllowlistCustom {
+				if encoding.stored == hostmeta.Layer3PolicyFixedAllowlistCustom {
 					return [][]byte{preimage}
 				}
 				proof := []byte{}
@@ -190,7 +190,7 @@ func TestBoundedAllowlistAuthorTEALOnChainLocalnet(t *testing.T) {
 				// spending signature alone. Last, because it moves the account away.
 				{name: "rekey without the preimage", txn: rekey("g"), accept: true},
 			} {
-				if test.merkle && encoding.stored != boundedmeta.Layer3PolicyMerkleAllowlistCustom {
+				if test.merkle && encoding.stored != hostmeta.Layer3PolicyMerkleAllowlistCustom {
 					continue
 				}
 				t.Run(test.name, func(t *testing.T) {
@@ -238,7 +238,7 @@ func newAuthorAllowlistAccount(t *testing.T, network *harness.TestnetConfig, enc
 	if err != nil {
 		t.Fatalf("derive LogicSig: %v", err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(publicKey, params, derived.Bytecode)
+	metadata, err := provider.BuildHostMetadata(publicKey, params, derived.Bytecode)
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}

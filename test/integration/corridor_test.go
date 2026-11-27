@@ -16,8 +16,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/witness"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
@@ -73,7 +73,7 @@ func TestCorridorDeclaredOpcodeCeilings(t *testing.T) {
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compileAlgod, harness.OpcodeCeilingValidation{
 				Name:          "Corridor " + corridorShapeFor(cosignerKeyType).Descriptor(),
 				FinalProgram:  account.bytecode,
-				Profile:       provider.BoundedLogicSigOpcodeProfile(),
+				Profile:       provider.HostLogicSigOpcodeProfile(),
 				Bounded:       true,
 				RequiredPaths: []lsigresource.AuthorizationPath{lsigresource.PathSpend, lsigresource.PathListedRekey},
 				Vectors: []harness.OpcodeCeilingVector{
@@ -186,7 +186,7 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate wrong cosigner keypair: %v", err)
 	}
-	cosignerSlot := transferAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+	cosignerSlot := transferAccount.argumentIndex(t, hostmeta.ArgSourceCosigner)
 	t.Run("empty cosigner slot fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, transferAccount.address, 0, "corridor-deny-empty-cosigner")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, func(_ types.Digest, args [][]byte) [][]byte {
@@ -269,7 +269,7 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), rekeyAccount.address, rekeyAccount.address, 0, "corridor-allow-listed-rekey")
 		txn.RekeyTo = rekeyTarget.Address
 		rawGroup, txid := rekeyAccount.signGroup(t, txn, nil, func(_ types.Digest, args [][]byte) [][]byte {
-			return withArg(args, rekeyAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+			return withArg(args, rekeyAccount.argumentIndex(t, hostmeta.ArgSourceCosigner), nil)
 		})
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 		if got := authAddress(t, testnet, rekeyAccount.address); got != rekeyTarget.Address.String() {
@@ -288,7 +288,7 @@ type corridorExecutionAccount struct {
 	cosignerPrivateKey []byte
 	// cosignerKeyType is the cosigner's key type, which its signature follows.
 	cosignerKeyType string
-	metadata        *boundedmeta.Metadata
+	metadata        *hostmeta.Metadata
 	// rekeyList is an only-these account's rekey-to list, rebuilt from its
 	// spending key as the signer does.
 	rekeyList *rekeylist.List
@@ -360,8 +360,8 @@ func newCorridorAccountFor(t *testing.T, provider *plainhost.Provider, cosignerK
 		rekeyToStrings[i] = target.String()
 	}
 	account := newBoundsAccount(t, provider, corridorShapeFor(cosignerKeyType), recipientStrings, rekeyToStrings)
-	if account.metadata.Layer3Policy() != boundedmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
-		account.metadata.Rekey != boundedmeta.RekeyRefused || account.metadata.RekeyList == nil {
+	if account.metadata.Layer3Policy() != hostmeta.Layer3PolicyMerkleAllowlist || account.metadata.Cosigner == nil ||
+		account.metadata.Rekey != hostmeta.RekeyRefused || account.metadata.RekeyList == nil {
 		t.Fatalf("account is not a Corridor: layer3_policy=%q cosigner=%v rekey=%q list=%v",
 			account.metadata.Layer3Policy(), account.metadata.Cosigner != nil, account.metadata.Rekey, account.metadata.RekeyList != nil)
 	}
@@ -504,7 +504,7 @@ func (a corridorExecutionAccount) listProof(target types.Address) []byte {
 // listProofIndex is the argument slot carrying a listed rekey's proof.
 func (a corridorExecutionAccount) listProofIndex(t *testing.T) int {
 	t.Helper()
-	return a.derivedIndex(t, boundedmeta.DerivedArgRekeyListProof)
+	return a.derivedIndex(t, hostmeta.DerivedArgRekeyListProof)
 }
 
 func (a corridorExecutionAccount) derivedIndex(t *testing.T, kind string) int {
@@ -517,7 +517,7 @@ func (a corridorExecutionAccount) derivedIndex(t *testing.T, kind string) int {
 			continue
 		}
 		for _, slot := range a.metadata.ArgumentLayout {
-			if slot.Source == boundedmeta.ArgSourceDerived && slot.Name == arg.Name {
+			if slot.Source == hostmeta.ArgSourceDerived && slot.Name == arg.Name {
 				return slot.Index
 			}
 		}
@@ -541,22 +541,22 @@ func (a corridorExecutionAccount) spendArgs(t *testing.T, baseSignature, proof, 
 	for _, slot := range a.metadata.ArgumentLayout {
 		var value []byte
 		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
+		case hostmeta.ArgSourceBaseSignature:
 			if baseIndex >= len(baseValues) {
 				t.Fatalf("Corridor base slot %q has no test value", slot.Name)
 			}
 			value = baseValues[baseIndex]
 			baseIndex++
-		case boundedmeta.ArgSourceDerived:
+		case hostmeta.ArgSourceDerived:
 			switch derivedKinds[slot.Name] {
-			case boundedmeta.DerivedArgMerkleProof:
+			case hostmeta.DerivedArgMerkleProof:
 				value = proof
-			case boundedmeta.DerivedArgRekeyListProof:
+			case hostmeta.DerivedArgRekeyListProof:
 				value = listProof
 			default:
 				t.Fatalf("Corridor derived slot %q has no test value", slot.Name)
 			}
-		case boundedmeta.ArgSourceCosigner:
+		case hostmeta.ArgSourceCosigner:
 			value = cosignerSignature
 		default:
 			t.Fatalf("Corridor test does not support argument source %q", slot.Source)
@@ -758,7 +758,7 @@ func TestCorridorEd25519CosignerLocalnet(t *testing.T) {
 		handOver(t, testnet, account, exit.Address, "corridor-ed25519-cleanup")
 		bestEffortCloseRekeyedAccount(t, testnet, account.address, funder.GetAddress(), exit.PrivateKey)
 	})
-	cosignerSlot := account.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+	cosignerSlot := account.argumentIndex(t, hostmeta.ArgSourceCosigner)
 	selfPayment := func(note string) types.Transaction {
 		return corridorPaymentTxn(t, mustSuggestedParams(t, testnet), account.address, account.address, 0, note)
 	}
@@ -823,7 +823,7 @@ func TestCorridorEd25519CosignerLocalnet(t *testing.T) {
 	// cosigner's slot, and the signer leaves it out.
 	t.Run("a listed rekey without the cosigner succeeds", func(t *testing.T) {
 		rawGroup, txid := rekeyAccount.signGroup(t, listedRekey("corridor-ed25519-allow-listed-rekey"), nil, func(_ types.Digest, args [][]byte) [][]byte {
-			return withArg(args, rekeyAccount.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+			return withArg(args, rekeyAccount.argumentIndex(t, hostmeta.ArgSourceCosigner), nil)
 		})
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 		if got := authAddress(t, testnet, rekeyAccount.address); got != rekeyTarget.Address.String() {

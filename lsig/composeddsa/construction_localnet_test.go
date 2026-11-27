@@ -19,8 +19,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -77,7 +77,7 @@ func (k compositeKey) sign(t *testing.T, message []byte) []byte {
 type compositeAccount struct {
 	provider *composeddsa.ComposedDSA
 	keys     []compositeKey
-	metadata *boundedmeta.Metadata
+	metadata *hostmeta.Metadata
 	address  string
 	bytecode []byte
 	cosigner *compositeKey
@@ -92,7 +92,7 @@ func newCompositeAccount(t *testing.T, network *harness.TestnetConfig, funder *h
 		cosigner := newFalconKey(t)
 		account.cosigner = &cosigner
 		extra, support.Cosigner = cosignerYAML, true
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosigner.public)
+		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosigner.public)
 	}
 	account.provider = compositeProvider(t, compositeConstruction(t, primitives...), extra, support)
 	account.provider.SetAlgodClient(network.Client)
@@ -108,9 +108,9 @@ func newCompositeAccount(t *testing.T, network *harness.TestnetConfig, funder *h
 		t.Fatalf("DeriveLsigWithSalt() error = %v", err)
 	}
 	account.address, account.bytecode = derived.Address.String(), derived.Bytecode
-	account.metadata, err = account.provider.BuildBoundedAuthorizationMetadata(publicKey, params, derived.Bytecode)
+	account.metadata, err = account.provider.BuildHostMetadata(publicKey, params, derived.Bytecode)
 	if err != nil {
-		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+		t.Fatalf("BuildHostMetadata() error = %v", err)
 	}
 	if err := funder.FundMicroAlgosAndWait(account.address, 500_000); err != nil {
 		t.Fatalf("failed to fund %s: %v", account.address, err)
@@ -175,7 +175,7 @@ func (a *compositeAccount) signedGroup(t *testing.T, network *harness.TestnetCon
 		maximum += size
 	}
 	if a.cosigner != nil {
-		maximum += boundedmeta.DefaultCosignerSignatureMaxSize
+		maximum += hostmeta.DefaultCosignerSignatureMaxSize
 	}
 	size, fee := groupPlan(t, len(a.bytecode), maximum)
 	txn.Fee = types.MicroAlgos(fee)

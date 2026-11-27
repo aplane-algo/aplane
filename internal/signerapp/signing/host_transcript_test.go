@@ -6,8 +6,8 @@ package signing
 import (
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -37,8 +37,8 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 	for i := range txID {
 		txID[i] = byte(i + 1)
 	}
-	metadata := &boundedmeta.Metadata{Contract: boundedmeta.Contract, BaseSignatureArgLayout: layoutOf(sigconstruction.Falcon1024())}
-	receipt, err := boundedAssemblyReceiptMessage("ACCOUNT", txID[:], metadata, nil)
+	metadata := &hostmeta.Metadata{Contract: hostmeta.BoundedContract, BaseSignatureArgLayout: layoutOf(sigconstruction.Falcon1024())}
+	receipt, err := hostAssemblyReceiptMessage("ACCOUNT", txID[:], metadata, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,15 +64,15 @@ func TestBoundedTranscriptsAreRoleSeparated(t *testing.T) {
 		}
 		return signature
 	}
-	spending := &coresigning.KeyMaterial{BaseKeyType: plainFalcon1024LsigKeyType, PublicKey: spendingPublic, BoundedAuthorization: metadata}
+	spending := &coresigning.KeyMaterial{BaseKeyType: plainFalcon1024LsigKeyType, PublicKey: spendingPublic, Host: metadata}
 	verifiers := map[string]func(transcript, signature []byte) bool{
 		// The spending key signs the transaction and the assembly receipt; both are
-		// checked by boundedSpendingProofVerifies.
+		// checked by hostSpendingProofVerifies.
 		"spend": func(transcript, signature []byte) bool {
-			return boundedSpendingProofVerifies(spending, boundedWorkflowCosigner, transcript, signature)
+			return hostSpendingProofVerifies(spending, hostWorkflowCosigner, transcript, signature)
 		},
 		"assembly receipt": func(transcript, signature []byte) bool {
-			return boundedSpendingProofVerifies(spending, boundedWorkflowCosigner, transcript, signature)
+			return hostSpendingProofVerifies(spending, hostWorkflowCosigner, transcript, signature)
 		},
 		"cosigner component": func(transcript, signature []byte) bool {
 			return verifyCosignerAssemblySignature(witness.Falcon1024V1, cosignerPublic, transcript, signature) == nil

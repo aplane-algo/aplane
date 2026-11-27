@@ -21,8 +21,8 @@ import (
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 
 	"github.com/aplane-algo/aplane/internal/asaset"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -234,12 +234,12 @@ type KeyIndexSnapshot struct {
 // KeyPublicMetadata is the non-secret portion of a scanned key published with
 // the runtime key index at one revision.
 type KeyPublicMetadata struct {
-	Category             string
-	BaseKeyType          string
-	PublicKeyHex         string
-	Parameters           map[string]string
-	BoundedAuthorization *boundedmeta.Metadata
-	LogicSigResources    *lsigresource.Profile
+	Category          string
+	BaseKeyType       string
+	PublicKeyHex      string
+	Parameters        map[string]string
+	Host              *hostmeta.Metadata
+	LogicSigResources *lsigresource.Profile
 	// SigningArgs is a LogicSig key's declared runtime arguments, in order.
 	SigningArgs []lsigprovider.RuntimeArgDef
 	// ValidRekeyTarget is the valid_rekey_target the aplane key recorded when
@@ -1319,7 +1319,7 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	}
 	for k, v := range ir.keyMetadata {
 		v.Parameters = maps.Clone(v.Parameters)
-		v.BoundedAuthorization = boundedmeta.Clone(v.BoundedAuthorization)
+		v.Host = hostmeta.Clone(v.Host)
 		v.SigningArgs = slices.Clone(v.SigningArgs)
 		if v.LogicSigResources != nil {
 			cloned := v.LogicSigResources.Clone()
@@ -1384,11 +1384,11 @@ func keyMetadataOf(summaries map[string]keystore.SigningSummary, publicKeys map[
 	for selector, summary := range summaries {
 		metadata[selector] = KeyPublicMetadata{
 			Category: summary.Category, BaseKeyType: summary.BaseKeyType, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
-			BoundedAuthorization: summary.BoundedAuthorization,
-			LogicSigResources:    summary.LogicSigResources,
-			SigningArgs:          summary.SigningArgs,
-			ValidRekeyTarget:     summary.ValidRekeyTarget,
-			TemplateFingerprint:  summary.TemplateFingerprint,
+			Host:                summary.Host,
+			LogicSigResources:   summary.LogicSigResources,
+			SigningArgs:         summary.SigningArgs,
+			ValidRekeyTarget:    summary.ValidRekeyTarget,
+			TemplateFingerprint: summary.TemplateFingerprint,
 		}
 	}
 	return metadata

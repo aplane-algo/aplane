@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/genstore"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -281,8 +281,8 @@ type KeyFileInfo struct {
 	PublicKeyHex        string            // Hex-encoded public key stored in the key payload.
 	Parameters          map[string]string // Parameters for LogicSig keys (nil for DSA keys)
 	TemplateFingerprint string
-	// BoundedAuthorization is the stored bounded contract, or nil for any other key.
-	BoundedAuthorization *boundedmeta.Metadata
+	// Host is the stored bounded contract, or nil for any other key.
+	Host *hostmeta.Metadata
 	// DisplayTEAL is the stored TEAL source of a generic LogicSig, or empty.
 	DisplayTEAL string
 }
@@ -320,11 +320,11 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 	}
 	defer payload.ZeroSecrets()
 	return &KeyFileInfo{
-		Type:                 payload.KeyType,
-		PublicKeyHex:         hex.EncodeToString(payload.PublicKey),
-		Parameters:           payload.Parameters,
-		TemplateFingerprint:  payload.TemplateFingerprint,
-		BoundedAuthorization: payload.BoundedAuthorization,
-		DisplayTEAL:          payload.TEALSource,
+		Type:                payload.KeyType,
+		PublicKeyHex:        hex.EncodeToString(payload.PublicKey),
+		Parameters:          payload.Parameters,
+		TemplateFingerprint: payload.TemplateFingerprint,
+		Host:                payload.Host,
+		DisplayTEAL:         payload.TEALSource,
 	}, nil
 }

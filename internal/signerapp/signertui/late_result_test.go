@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -35,7 +35,7 @@ func unlocked(t *testing.T, m Model) Model {
 // operator unlocks, so its receipt can still be saved.
 func TestLateBoundedGenerateResultIsShownAfterUnlock(t *testing.T) {
 	t.Chdir(t.TempDir())
-	prepared := preparedAccount(boundedmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, true, 2)
+	prepared := preparedAccount(hostmeta.Layer3PolicyFixedAllowlist, boundary.RekeyRefused, true, 2)
 	m, result := reviewedResult("ADDRESS", prepared)
 	m.connectionState, m.signerState = ConnectionConnected, signerRuntimeUnlocked
 

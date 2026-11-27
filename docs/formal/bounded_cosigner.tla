@@ -2,7 +2,7 @@
 (*
 Machine-checkable model for the cosigned1 planning and assembly choreography
 implemented by internal/engine/cosigned/submit.go and
-internal/signerapp/signing/bounded_cosigner.go.
+internal/signerapp/signing/host_cosigner.go.
 
 A cosigned account's target takes one of three paths: a spend and a declared
 (cosigned) rekey need the spending key and the cosigner; a listed rekey needs

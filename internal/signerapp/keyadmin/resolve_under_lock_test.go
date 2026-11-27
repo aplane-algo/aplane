@@ -79,8 +79,8 @@ func TestCreationResolvesTheTemplateInForceUnderTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() error = %#v", err)
 	}
-	if before.Bounded == nil || before.Bounded.FeeCeiling() == nil || *before.Bounded.FeeCeiling() != 10000 {
-		t.Fatalf("setup: Bounded = %+v, want the 10000 fee limit", before.Bounded)
+	if before.Host == nil || before.Host.FeeCeiling() == nil || *before.Host.FeeCeiling() != 10000 {
+		t.Fatalf("setup: Host = %+v, want the 10000 fee limit", before.Host)
 	}
 
 	lock := &changingLock{change: func() { replacePrepareTemplate(t, keyType, family, "20000") }}
@@ -88,8 +88,8 @@ func TestCreationResolvesTheTemplateInForceUnderTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareGenerateKey() across a template change error = %#v", err)
 	}
-	if after.Bounded == nil || after.Bounded.FeeCeiling() == nil || *after.Bounded.FeeCeiling() != 20000 {
-		t.Fatalf("Bounded = %+v, want the 20000 fee limit of the template in force under the lock", after.Bounded)
+	if after.Host == nil || after.Host.FeeCeiling() == nil || *after.Host.FeeCeiling() != 20000 {
+		t.Fatalf("Host = %+v, want the 20000 fee limit of the template in force under the lock", after.Host)
 	}
 	if want := lsigprovider.TemplateFingerprintForKeyType(keyType); after.Fingerprint != want || after.Fingerprint == before.Fingerprint {
 		t.Fatalf("Fingerprint = %q, want the changed template's %q", after.Fingerprint, want)

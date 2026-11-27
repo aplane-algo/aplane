@@ -6,7 +6,7 @@ package lsigprovider
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 )
 
 // Instance is what one set of creation parameters selects from a provider: the
@@ -18,9 +18,9 @@ type Instance struct {
 	Parameters []ParameterDef
 	// Values are the canonical creation values.
 	Values map[string]string
-	// Bounded is the definition-level bounded contract, or nil when the account
-	// is not bounded. Fields that need the final program are not populated.
-	Bounded *boundedmeta.Metadata
+	// Host is the definition-level host contract, or nil when the account
+	// has none. Fields that need the final program are not populated.
+	Host *hostmeta.Metadata
 	// Fingerprint is the definition this account records as its provenance.
 	Fingerprint string
 	// ReviewFingerprint is what an operator approves by reviewing this request.
@@ -53,16 +53,16 @@ type InstanceResolver interface {
 	// StoredFingerprint returns the current fingerprint of a stored account's
 	// definition. It reads only the stored values: resolving an old reference or
 	// applying today's defaults could identify a different definition.
-	StoredFingerprint(parameters map[string]string, metadata *boundedmeta.Metadata) (string, error)
+	StoredFingerprint(parameters map[string]string, metadata *hostmeta.Metadata) (string, error)
 }
 
-type boundedDefinition interface {
-	BoundedAuthorizationMetadata() *boundedmeta.Metadata
+type hostDefinition interface {
+	HostMetadata() *hostmeta.Metadata
 }
 
-func fixedBoundedMetadata(provider LSigProvider) *boundedmeta.Metadata {
-	if definition, ok := provider.(boundedDefinition); ok {
-		return definition.BoundedAuthorizationMetadata()
+func fixedHostMetadata(provider LSigProvider) *hostmeta.Metadata {
+	if definition, ok := provider.(hostDefinition); ok {
+		return definition.HostMetadata()
 	}
 	return nil
 }
@@ -74,7 +74,7 @@ func CosignerComponentKeyTypes(provider LSigProvider, params map[string]string) 
 	if resolver, ok := provider.(InstanceResolver); ok {
 		return resolver.CosignerComponentKeyTypes(params)
 	}
-	metadata := fixedBoundedMetadata(provider)
+	metadata := fixedHostMetadata(provider)
 	if metadata == nil || metadata.Cosigner == nil {
 		return nil, false
 	}
@@ -102,7 +102,7 @@ func ResolveInstance(provider LSigProvider, params map[string]string) (*Instance
 	return &Instance{
 		Parameters:        definitions,
 		Values:            values,
-		Bounded:           fixedBoundedMetadata(provider),
+		Host:              fixedHostMetadata(provider),
 		Fingerprint:       fingerprint,
 		ReviewFingerprint: fingerprint,
 	}, nil
@@ -126,7 +126,7 @@ func CreationFingerprint(keyType string, params map[string]string) (string, erro
 // definition currently registered. A provider whose contract varies by key is
 // compared against that account's own definition, so a change to an unrelated
 // shape reports nothing.
-func CompareAccountProvenance(keyType, storedFingerprint string, parameters map[string]string, metadata *boundedmeta.Metadata) (status, note string) {
+func CompareAccountProvenance(keyType, storedFingerprint string, parameters map[string]string, metadata *hostmeta.Metadata) (status, note string) {
 	resolver, ok := Get(keyType).(InstanceResolver)
 	if !ok {
 		return CompareTemplateFingerprint(keyType, storedFingerprint)

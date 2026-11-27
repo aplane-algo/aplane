@@ -123,7 +123,7 @@ func TestInspectRoutesReportsEachEndpointFailure(t *testing.T) {
 
 // Route inspection reads the cosigner key from host only; a
 // creation parameter of the same name is not a source.
-func TestInspectRoutesReadsTheCosignerKeyFromBoundedAuthorization(t *testing.T) {
+func TestInspectRoutesReadsTheCosignerKeyFromHost(t *testing.T) {
 	s := &Signer{endpointRegistry: resolverTestRegistry("a"), probeEndpoint: func(context.Context, string, config.ClientEndpointConfig) (*resolvedCosignerEndpoint, []DiscoveredCosignerComponentKey, error) {
 		return resolverTestEndpoint("a"), []DiscoveredCosignerComponentKey{{KeyType: "test.v1", PublicKey: "aa", ComponentKey: "key"}}, nil
 	}}

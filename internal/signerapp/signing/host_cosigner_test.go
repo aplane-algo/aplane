@@ -15,9 +15,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/canonical"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
@@ -31,46 +31,46 @@ import (
 
 // The cosigned flow carries a cosigned account's spends, its cosigned rekeys and
 // its listed rekeys; no other path and no uncosigned account.
-func TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))
+func TestValidateHostComponentPlanAdmitsOnlyCosignedPaths(t *testing.T) {
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))
 	request := signerapi.ComponentRequest{
 		GroupBytesHex: []string{"TX00"},
 		Targets:       []signerapi.ComponentTarget{{TargetIndex: 0, Kind: signerapi.ComponentTargetKindBase, AuthAddress: "ACCOUNT"}},
 	}
-	for _, path := range []boundedPath{boundedPathPureSpend, boundedPathSpendingKeyRekey, boundedPathListedRekey} {
-		plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}}}
-		indices, err := validateBoundedComponentPlan(request, plan)
+	for _, path := range []hostPath{hostPathPureSpend, hostPathSpendingKeyRekey, hostPathListedRekey} {
+		plan := &PlanResult{HostItems: []*hostPlanItem{{Path: path, Metadata: metadata}}}
+		indices, err := validateHostComponentPlan(request, plan)
 		if err != nil || len(indices) != 1 || indices[0] != 0 {
-			t.Fatalf("validateBoundedComponentPlan(%s) = %v, %#v", path, err, indices)
+			t.Fatalf("validateHostComponentPlan(%s) = %v, %#v", path, err, indices)
 		}
 	}
-	plan := &PlanResult{BoundedItems: []*boundedPlanItem{{Path: "admin_rekey", Metadata: metadata}}}
-	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
-		t.Fatal("validateBoundedComponentPlan(unknown path) error = nil")
+	plan := &PlanResult{HostItems: []*hostPlanItem{{Path: "admin_rekey", Metadata: metadata}}}
+	if _, err := validateHostComponentPlan(request, plan); err == nil {
+		t.Fatal("validateHostComponentPlan(unknown path) error = nil")
 	}
-	plan.BoundedItems[0] = &boundedPlanItem{Path: boundedPathPureSpend, Metadata: testBoundedMetadata(t, boundedmeta.RekeyRefused)}
-	if _, err := validateBoundedComponentPlan(request, plan); err == nil {
-		t.Fatal("validateBoundedComponentPlan(non-cosigner) error = nil")
+	plan.HostItems[0] = &hostPlanItem{Path: hostPathPureSpend, Metadata: testBoundedMetadata(t, hostmeta.RekeyRefused)}
+	if _, err := validateHostComponentPlan(request, plan); err == nil {
+		t.Fatal("validateHostComponentPlan(non-cosigner) error = nil")
 	}
-	if !boundedPathNeedsCosigner(boundedPathPureSpend) || !boundedPathNeedsCosigner(boundedPathSpendingKeyRekey) || boundedPathNeedsCosigner(boundedPathListedRekey) {
+	if !hostPathNeedsCosigner(hostPathPureSpend) || !hostPathNeedsCosigner(hostPathSpendingKeyRekey) || hostPathNeedsCosigner(hostPathListedRekey) {
 		t.Fatal("the cosigner signs a listed rekey, or skips a spend or a declared rekey")
 	}
 }
 
-func TestPrepareBoundedComponentRejectsNilSessionBeforePlanning(t *testing.T) {
+func TestPrepareHostComponentRejectsNilSessionBeforePlanning(t *testing.T) {
 	svc := &Service{Planner: &Planner{}, Approval: &ApprovalService{}, Executor: &Executor{}}
-	_, err := svc.PrepareBoundedComponentWithContext(
+	_, err := svc.PrepareHostComponentWithContext(
 		t.Context(),
 
 		signerapi.ComponentRequest{},
 		nil,
 	)
 	if err == nil || err.Kind != ErrorInternal || err.Message != "key session is nil" {
-		t.Fatalf("PrepareBoundedComponentWithContext() error = %#v, want immediate nil-session rejection", err)
+		t.Fatalf("PrepareHostComponentWithContext() error = %#v, want immediate nil-session rejection", err)
 	}
 }
 
-func TestLoadBoundedKeyMaterialMapsExpectedErrors(t *testing.T) {
+func TestLoadHostKeyMaterialMapsExpectedErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -81,9 +81,9 @@ func TestLoadBoundedKeyMaterialMapsExpectedErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, got := loadBoundedKeyMaterial(t.Context(), &componentKeyTestSession{err: test.err}, "ACCOUNT", "bounded account key")
+			_, got := loadHostKeyMaterial(t.Context(), &componentKeyTestSession{err: test.err}, "ACCOUNT", "bounded account key")
 			if got == nil || got.Kind != test.kind {
-				t.Fatalf("loadBoundedKeyMaterial() error = %#v, want kind %s", got, test.kind)
+				t.Fatalf("loadHostKeyMaterial() error = %#v, want kind %s", got, test.kind)
 			}
 		})
 	}
@@ -98,26 +98,26 @@ func TestUnifiedAssemblyRejectsCanceledContext(t *testing.T) {
 	}
 }
 
-func TestBoundedAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize))
+func TestHostAssemblyReceiptBindsRuntimeAndMetadata(t *testing.T) {
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize))
 	txID := bytes.Repeat([]byte{0x43}, 32)
-	first, err := boundedAssemblyReceiptMessage("ACCOUNT", txID, metadata, map[string][]byte{"preimage": {1}})
+	first, err := hostAssemblyReceiptMessage("ACCOUNT", txID, metadata, map[string][]byte{"preimage": {1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	changedRuntime, _ := boundedAssemblyReceiptMessage("ACCOUNT", txID, metadata, map[string][]byte{"preimage": {2}})
+	changedRuntime, _ := hostAssemblyReceiptMessage("ACCOUNT", txID, metadata, map[string][]byte{"preimage": {2}})
 	if first == changedRuntime {
 		t.Fatal("receipt did not bind runtime arguments")
 	}
-	changedMetadata := boundedmeta.Clone(metadata)
+	changedMetadata := hostmeta.Clone(metadata)
 	changedMetadata.Bounds.MaxFee = new(*changedMetadata.FeeCeiling() + 1)
-	changedProfile, _ := boundedAssemblyReceiptMessage("ACCOUNT", txID, changedMetadata, map[string][]byte{"preimage": {1}})
+	changedProfile, _ := hostAssemblyReceiptMessage("ACCOUNT", txID, changedMetadata, map[string][]byte{"preimage": {1}})
 	if first == changedProfile {
 		t.Fatal("receipt did not bind durable metadata")
 	}
 }
 
-func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
+func TestAssembleHostTargetVerifiesBothAuthorities(t *testing.T) {
 	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, 0x44)
 	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x45)
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x55}
@@ -133,7 +133,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiptMessage, err := boundedAssemblyReceiptMessage(account, group.Entries[0].TxID[:], metadata, nil)
+	receiptMessage, err := hostAssemblyReceiptMessage(account, group.Entries[0].TxID[:], metadata, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 		return &coresigning.KeyMaterial{
 			Type: "test.bounded-cosigner.v1", Category: keys.CategoryDSALsig,
 			BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
-			Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
+			Bytecode: append([]byte(nil), bytecode...), Host: hostmeta.Clone(metadata),
 		}
 	}
 	target := signerapi.AssemblyTarget{
@@ -160,17 +160,17 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 	}
 	badReceipt := target
 	badReceipt.AssemblyReceipt = hex.EncodeToString(cosignerSignature)
-	if _, svcErr := assembleBoundedTarget(context.Background(), badReceipt, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
-		t.Fatal("assembleBoundedTarget(wrong receipt) error = nil")
+	if _, svcErr := assembleHostTarget(context.Background(), badReceipt, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
+		t.Fatal("assembleHostTarget(wrong receipt) error = nil")
 	}
 	badBase := target
 	badBase.BaseSignatures = []string{hex.EncodeToString(cosignerSignature)}
-	if _, svcErr := assembleBoundedTarget(context.Background(), badBase, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
-		t.Fatal("assembleBoundedTarget(wrong base signature) error = nil")
+	if _, svcErr := assembleHostTarget(context.Background(), badBase, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()}); svcErr == nil {
+		t.Fatal("assembleHostTarget(wrong base signature) error = nil")
 	}
-	signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()})
+	signedHex, svcErr := assembleHostTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: newKeyMaterial()})
 	if svcErr != nil {
-		t.Fatalf("assembleBoundedTarget() error = %v", svcErr)
+		t.Fatalf("assembleHostTarget() error = %v", svcErr)
 	}
 	signedBytes, err := hex.DecodeString(signedHex)
 	if err != nil {
@@ -188,7 +188,7 @@ func TestAssembleBoundedTargetVerifiesBothAuthorities(t *testing.T) {
 // Assembly decides whether the cosigner signs from the canonical transaction and
 // the stored contract, not from the client: a cosigned rekey and a spend need the
 // cosigner's signature, and a listed rekey refuses one.
-func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
+func TestAssembleHostTargetFollowsThePathForTheCosigner(t *testing.T) {
 	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, 0x54)
 	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x55)
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x56}
@@ -196,9 +196,9 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 	listedTarget, otherTarget := types.Address{0x61}, types.Address{0x62}
 
 	cosignedRekey := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	cosignedRekey.Rekey = boundedmeta.RekeySpendingKey
-	cosignedRekey.Cosigner.RequiredOn = boundedmeta.CosignerRequiredOn(boundedmeta.RekeySpendingKey)
-	cosignedRekey.ArgumentLayout[1].Paths = boundedmeta.CosignerSlotPaths(cosignedRekey.Cosigner)
+	cosignedRekey.Rekey = hostmeta.RekeySpendingKey
+	cosignedRekey.Cosigner.RequiredOn = hostmeta.CosignerRequiredOn(hostmeta.RekeySpendingKey)
+	cosignedRekey.ArgumentLayout[1].Paths = hostmeta.CosignerSlotPaths(cosignedRekey.Cosigner)
 
 	// Only these on a cosigned account: the list proof sits between the base and
 	// cosigner slots, and the root comes from the spending private key.
@@ -209,14 +209,14 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 	root := list.Root()
 	list.Zero()
 	onlyThese := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	onlyThese.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
-	onlyThese.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])}
-	onlyThese.DerivedArgs = []boundedmeta.DerivedArg{{Name: "rekey_list_proof", Kind: boundedmeta.DerivedArgRekeyListProof, Parameter: boundedmeta.RekeyListEntriesParameter, MaxSize: rekeylist.ProofSize}}
+	onlyThese.Bounds.SpendEffects = []string{hostmeta.SpendEffectAxfer}
+	onlyThese.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth, RootHex: hex.EncodeToString(root[:])}
+	onlyThese.DerivedArgs = []hostmeta.DerivedArg{{Name: "rekey_list_proof", Kind: hostmeta.DerivedArgRekeyListProof, Parameter: hostmeta.RekeyListEntriesParameter, MaxSize: rekeylist.ProofSize}}
 	cosignerSlot := onlyThese.ArgumentLayout[1]
 	cosignerSlot.Index = 2
-	onlyThese.ArgumentLayout = []boundedmeta.ArgumentSlot{onlyThese.ArgumentLayout[0], {
-		Index: 1, Name: "rekey_list_proof", Source: boundedmeta.ArgSourceDerived, MaxSize: rekeylist.ProofSize,
-		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired},
+	onlyThese.ArgumentLayout = []hostmeta.ArgumentSlot{onlyThese.ArgumentLayout[0], {
+		Index: 1, Name: "rekey_list_proof", Source: hostmeta.ArgSourceDerived, MaxSize: rekeylist.ProofSize,
+		Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgRequired},
 	}, cosignerSlot}
 	if err := onlyThese.Validate(); err != nil {
 		t.Fatal(err)
@@ -234,7 +234,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name     string
-		metadata *boundedmeta.Metadata
+		metadata *hostmeta.Metadata
 		txn      types.Transaction
 		cosigner bool
 		want     string
@@ -260,7 +260,7 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 				}
 				return hex.EncodeToString(signature)
 			}
-			receiptMessage, err := boundedAssemblyReceiptMessage(account, txID[:], test.metadata, nil)
+			receiptMessage, err := hostAssemblyReceiptMessage(account, txID[:], test.metadata, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -276,18 +276,18 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 				Type: "test.bounded-cosigner.v1", Category: keys.CategoryDSALsig,
 				BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
 				Value:    &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), spendingPrivateKey...)},
-				Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(test.metadata),
-				Parameters: map[string]string{boundedmeta.RekeyListEntriesParameter: listedTarget.String()},
+				Bytecode: append([]byte(nil), bytecode...), Host: hostmeta.Clone(test.metadata),
+				Parameters: map[string]string{hostmeta.RekeyListEntriesParameter: listedTarget.String()},
 			}
-			signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial})
+			signedHex, svcErr := assembleHostTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial})
 			if test.want != "" {
 				if svcErr == nil || !strings.Contains(svcErr.Message, test.want) {
-					t.Fatalf("assembleBoundedTarget() error = %v, want %q", svcErr, test.want)
+					t.Fatalf("assembleHostTarget() error = %v, want %q", svcErr, test.want)
 				}
 				return
 			}
 			if svcErr != nil {
-				t.Fatalf("assembleBoundedTarget() error = %v", svcErr)
+				t.Fatalf("assembleHostTarget() error = %v", svcErr)
 			}
 			signedBytes, err := hex.DecodeString(signedHex)
 			if err != nil {
@@ -307,25 +307,25 @@ func TestAssembleBoundedTargetFollowsThePathForTheCosigner(t *testing.T) {
 	}
 }
 
-func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *boundedmeta.Metadata {
+func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *hostmeta.Metadata {
 	t.Helper()
 	componentKeyID, err := witness.ID(witness.Falcon1024V1, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{boundedmeta.DefaultCosignerSignatureMaxSize}},
-		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
-		Rekey:                  boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
+	metadata := &hostmeta.Metadata{
+		Contract:               hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{hostmeta.DefaultCosignerSignatureMaxSize}},
+		Bounds:                 &hostmeta.Bounds{SpendEffects: []string{hostmeta.SpendEffectPay}, MaxFee: new(uint64(10_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
+		Rekey:                  hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: witness.Falcon1024V1,
 			PublicKeyHex: hex.EncodeToString(cosignerPublicKey), ComponentKeyID: componentKeyID,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+			{Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
 		},
 	}
 	if err := metadata.Validate(); err != nil {
@@ -337,7 +337,7 @@ func boundedCosignerTestMetadata(t *testing.T, cosignerPublicKey []byte) *bounde
 // The bounded cosigner flow is reviewed for Falcon spending only. A valid signature on
 // any other base stays refused at the point it always was, because resolving the base
 // alone would let Ed25519 through to a ceremony it can't finish.
-func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
+func TestHostSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	seed := make([]byte, 48)
 	seed[0] = 1
 	falconPublicKey, falconPrivateKey, err := signerops.New().GenerateKeypair(seed)
@@ -355,42 +355,42 @@ func TestBoundedSpendingProofRequiresSupportedConstruction(t *testing.T) {
 	}
 	edSignature := ed25519.Sign(edPrivateKey, message)
 
-	for name, workflow := range map[string]boundedSigningWorkflow{
-		"cosigner": boundedWorkflowCosigner,
+	for name, workflow := range map[string]hostSigningWorkflow{
+		"cosigner": hostWorkflowCosigner,
 	} {
 		t.Run(name, func(t *testing.T) {
 			falconLayout := layoutOf(sigconstruction.Falcon1024())
 			for label, test := range map[string]struct {
 				base      string
 				contract  string
-				layout    boundedmeta.SignatureArgLayout
+				layout    hostmeta.SignatureArgLayout
 				publicKey []byte
 				message   []byte
 				proof     [][]byte
 				want      bool
 			}{
-				"Falcon":          {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"wrong message":   {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
-				"no proof":        {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, nil, false},
-				"two proof slots": {"aplane.falcon1024.v1", boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
+				"Falcon":          {"aplane.falcon1024.v1", hostmeta.BoundedContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"wrong message":   {"aplane.falcon1024.v1", hostmeta.BoundedContract, falconLayout, falconPublicKey, []byte("other"), [][]byte{falconSignature}, false},
+				"no proof":        {"aplane.falcon1024.v1", hostmeta.BoundedContract, falconLayout, falconPublicKey, message, nil, false},
+				"two proof slots": {"aplane.falcon1024.v1", hostmeta.BoundedContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature, falconSignature}, false},
 				// A bounded host is cosigned on either base too (phase 6.5).
-				"valid on Ed25519":       {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
-				"Ed25519, wrong message": {"aplane.ed25519.v1", boundedmeta.Contract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
+				"valid on Ed25519":       {"aplane.ed25519.v1", hostmeta.BoundedContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
+				"Ed25519, wrong message": {"aplane.ed25519.v1", hostmeta.BoundedContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
 				// A plain host is cosigned on either base.
-				"plain host on Falcon":      {"aplane.falcon1024.v1", boundedmeta.PlainContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
-				"plain host on Ed25519":     {"aplane.ed25519.v1", boundedmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
-				"plain host, wrong message": {"aplane.ed25519.v1", boundedmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
+				"plain host on Falcon":      {"aplane.falcon1024.v1", hostmeta.PlainContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, true},
+				"plain host on Ed25519":     {"aplane.ed25519.v1", hostmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, message, [][]byte{edSignature}, true},
+				"plain host, wrong message": {"aplane.ed25519.v1", hostmeta.PlainContract, layoutOf(sigconstruction.Ed25519()), edPublicKey, []byte("other"), [][]byte{edSignature}, false},
 				"unknown contract":          {"aplane.falcon1024.v1", "bounded-unknown", falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"witness as a base":         {witness.Falcon1024V1, boundedmeta.Contract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"witness as a base":         {witness.Falcon1024V1, hostmeta.BoundedContract, falconLayout, falconPublicKey, message, [][]byte{falconSignature}, false},
 				// Stored metadata that disagrees with the construction is refused, even
 				// with a valid signature, rather than trusted on either side.
-				"stored max size differs":   {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"stored slot count differs": {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{1423, 1423}}, falconPublicKey, message, [][]byte{falconSignature}, false},
-				"no stored layout":          {"aplane.falcon1024.v1", boundedmeta.Contract, boundedmeta.SignatureArgLayout{}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"stored max size differs":   {"aplane.falcon1024.v1", hostmeta.BoundedContract, hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"stored slot count differs": {"aplane.falcon1024.v1", hostmeta.BoundedContract, hostmeta.SignatureArgLayout{Count: 2, MaxSizes: []int{1423, 1423}}, falconPublicKey, message, [][]byte{falconSignature}, false},
+				"no stored layout":          {"aplane.falcon1024.v1", hostmeta.BoundedContract, hostmeta.SignatureArgLayout{}, falconPublicKey, message, [][]byte{falconSignature}, false},
 			} {
-				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, BoundedAuthorization: &boundedmeta.Metadata{Contract: test.contract, BaseSignatureArgLayout: test.layout}}
-				if got := boundedSpendingProofVerifies(keyMaterial, workflow, test.message, test.proof...); got != test.want {
-					t.Errorf("%s: boundedSpendingProofVerifies() = %v, want %v", label, got, test.want)
+				keyMaterial := &coresigning.KeyMaterial{BaseKeyType: test.base, PublicKey: test.publicKey, Host: &hostmeta.Metadata{Contract: test.contract, BaseSignatureArgLayout: test.layout}}
+				if got := hostSpendingProofVerifies(keyMaterial, workflow, test.message, test.proof...); got != test.want {
+					t.Errorf("%s: hostSpendingProofVerifies() = %v, want %v", label, got, test.want)
 				}
 			}
 		})
@@ -419,13 +419,13 @@ func TestCosignerAssemblySignatureRequiresAWitnessKeyType(t *testing.T) {
 }
 
 // layoutOf is the durable layout generation writes for a construction.
-func layoutOf(construction sigconstruction.Construction) boundedmeta.SignatureArgLayout {
+func layoutOf(construction sigconstruction.Construction) hostmeta.SignatureArgLayout {
 	layout := construction.Layout()
-	return boundedmeta.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
+	return hostmeta.SignatureArgLayout{Count: layout.Count(), MaxSizes: layout.MaxSizes()}
 }
 
 func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
-	err := boundedCosignerRequired()
+	err := cosignerRequired()
 	if err.Code() != signerapi.ErrCodeCosignerRequired {
 		t.Fatalf("Code() = %q, want %q", err.Code(), signerapi.ErrCodeCosignerRequired)
 	}
@@ -437,13 +437,13 @@ func TestBoundedCosignerRequiredEmitsContractedCode(t *testing.T) {
 // A plain host's spends carry what the dedicated cosigned account's did: a close,
 // an app call, any type. Assembly takes each down the spend path, with both
 // signatures, and the program, not the client, decides that.
-func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
+func TestAssembleHostTargetCarriesPlainHostSpends(t *testing.T) {
 	spendingPublicKey, spendingPrivateKey := testFalconComponentKeypair(t, 0x64)
 	cosignerPublicKey, cosignerPrivateKey := testFalconComponentKeypair(t, 0x65)
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x44, 0x57}
 	account := logicSigAddressForTest(t, bytecode)
 	metadata := boundedCosignerTestMetadata(t, cosignerPublicKey)
-	metadata.Contract, metadata.Bounds = boundedmeta.PlainContract, nil
+	metadata.Contract, metadata.Bounds = hostmeta.PlainContract, nil
 	if err := metadata.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			receiptMessage, err := boundedAssemblyReceiptMessage(account, txID[:], metadata, nil)
+			receiptMessage, err := hostAssemblyReceiptMessage(account, txID[:], metadata, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -486,7 +486,7 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 				return &coresigning.KeyMaterial{
 					Type: "aplane.falcon1024.v1", Category: keys.CategoryDSALsig,
 					BaseKeyType: "aplane.falcon1024.v1", PublicKey: append([]byte(nil), spendingPublicKey...),
-					Bytecode: append([]byte(nil), bytecode...), BoundedAuthorization: boundedmeta.Clone(metadata),
+					Bytecode: append([]byte(nil), bytecode...), Host: hostmeta.Clone(metadata),
 				}
 			}
 			target := signerapi.AssemblyTarget{
@@ -494,9 +494,9 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 				BaseSignatures:  []string{hex.EncodeToString(baseSignature)},
 				AssemblyReceipt: hex.EncodeToString(receipt), CosignerSignature: hex.EncodeToString(cosignerSignature),
 			}
-			signedHex, svcErr := assembleBoundedTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial()})
+			signedHex, svcErr := assembleHostTarget(context.Background(), target, group.Entries[0], &componentKeyTestSession{key: keyMaterial()})
 			if svcErr != nil {
-				t.Fatalf("assembleBoundedTarget() error = %v", svcErr)
+				t.Fatalf("assembleHostTarget() error = %v", svcErr)
 			}
 			signedBytes, err := hex.DecodeString(signedHex)
 			if err != nil {
@@ -512,8 +512,8 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 			// Without the cosigner's signature the spend is refused.
 			missing := target
 			missing.CosignerSignature = ""
-			if _, svcErr := assembleBoundedTarget(context.Background(), missing, group.Entries[0], &componentKeyTestSession{key: keyMaterial()}); svcErr == nil {
-				t.Fatal("assembleBoundedTarget() without the cosigner signature succeeded")
+			if _, svcErr := assembleHostTarget(context.Background(), missing, group.Entries[0], &componentKeyTestSession{key: keyMaterial()}); svcErr == nil {
+				t.Fatal("assembleHostTarget() without the cosigner signature succeeded")
 			}
 		})
 	}
@@ -523,26 +523,26 @@ func TestAssembleBoundedTargetCarriesPlainHostSpends(t *testing.T) {
 // bounded host's, before signing anything; an account without a cosigner is
 // signed there.
 func TestPlainSignRefusesACosignedAccount(t *testing.T) {
-	cosignerKey := bytes.Repeat([]byte{0x47}, boundedmeta.DefaultCosignerPublicKeySize)
+	cosignerKey := bytes.Repeat([]byte{0x47}, hostmeta.DefaultCosignerPublicKeySize)
 	bounded := boundedCosignerTestMetadata(t, cosignerKey)
-	plain := boundedmeta.Clone(bounded)
-	plain.Contract, plain.Bounds = boundedmeta.PlainContract, nil
-	uncosigned := boundedmeta.Clone(plain)
+	plain := hostmeta.Clone(bounded)
+	plain.Contract, plain.Bounds = hostmeta.PlainContract, nil
+	uncosigned := hostmeta.Clone(plain)
 	uncosigned.Cosigner = nil
 	for name, test := range map[string]struct {
-		metadata *boundedmeta.Metadata
+		metadata *hostmeta.Metadata
 		refused  bool
 	}{
 		"cosigned bounded host":         {bounded, true},
 		"cosigned plain host":           {plain, true},
 		"plain host without a cosigner": {uncosigned, false},
 	} {
-		plan := &PlanResult{BoundedItems: []*boundedPlanItem{nil, {Metadata: test.metadata, Path: boundedPathPureSpend}}}
-		if got := planHasCosignedBoundedTarget(plan); got != test.refused {
-			t.Fatalf("%s: planHasCosignedBoundedTarget() = %v, want %v", name, got, test.refused)
+		plan := &PlanResult{HostItems: []*hostPlanItem{nil, {Metadata: test.metadata, Path: hostPathPureSpend}}}
+		if got := planHasCosignedHostTarget(plan); got != test.refused {
+			t.Fatalf("%s: planHasCosignedHostTarget() = %v, want %v", name, got, test.refused)
 		}
 	}
-	if err := boundedCosignerRequired(); err.Code() != signerapi.ErrCodeCosignerRequired {
+	if err := cosignerRequired(); err.Code() != signerapi.ErrCodeCosignerRequired {
 		t.Fatalf("refusal code = %q", err.Code())
 	}
 }

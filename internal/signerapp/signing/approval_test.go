@@ -909,7 +909,7 @@ func TestRequestGroupApprovalWithdrawnByApadminDisconnectAnswersUnavailable(t *t
 	}
 	plan := &PlanResult{
 		AllTxns: txns, ForeignIndices: map[int]bool{1: true}, HasForeign: true,
-		PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2),
+		PassthroughIndices: map[int]bool{}, HostItems: make([]*hostPlanItem, 2),
 	}
 	req := signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "AUTH"}, {AuthAddress: "FOREIGN"}}}
 	err := promptGroup(svc, req, plan, txns, describeAs("txn\n"))

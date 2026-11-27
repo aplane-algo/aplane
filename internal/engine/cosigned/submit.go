@@ -28,11 +28,11 @@ type cosignedTarget struct {
 	Account                  string
 	CosignerComponentKeyType string
 	CosignerPublicKey        string
-	// BoundedMaxFee is a bounded host's fee ceiling, nil on a plain host.
-	BoundedMaxFee *uint64
-	// BoundedPath is the path the signer's base component named for a cosigned
+	// HostMaxFee is a bounded host's fee ceiling, nil on a plain host.
+	HostMaxFee *uint64
+	// HostPath is the path the signer's base component named for a cosigned
 	// target, once components are in: what the position is budgeted on.
-	BoundedPath string
+	HostPath string
 }
 
 type cosignerRequestKey struct {
@@ -47,13 +47,13 @@ type cosignerRequestKey struct {
 type flowRoute int
 
 const (
-	// flowRoutePlain signs through the ordinary client path, a bounded account
-	// without a cosigner included: the signer's transaction-aware bounded path
+	// flowRoutePlain signs through the ordinary client path, a host account
+	// without a cosigner included: the signer's transaction-aware host path
 	// sits behind /sign.
 	flowRoutePlain flowRoute = iota
-	// flowRouteBoundedCosigner routes through the cosigned1 component
+	// flowRouteCosigned routes through the cosigned1 component
 	// orchestration.
-	flowRouteBoundedCosigner
+	flowRouteCosigned
 	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
 	// labels still enter cosigned routing so cosignedTargets rejects them
 	// explicitly instead of silently falling through to ordinary signing.
@@ -65,7 +65,7 @@ func routeForSigningFlow(flow string) flowRoute {
 	case "":
 		return flowRoutePlain
 	case signerapi.SigningFlowCosigned1:
-		return flowRouteBoundedCosigner
+		return flowRouteCosigned
 	default:
 		return flowRouteUnknown
 	}
@@ -127,15 +127,15 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	for _, target := range targets {
 		targetsByIndex[target.Index] = target
 	}
-	return s.signAndSubmitBoundedCosignerGroup(txns, targets, targetsByIndex, opts, w)
+	return s.signAndSubmitCosignedGroup(txns, targets, targetsByIndex, opts, w)
 }
 
-// signAndSubmitBoundedCosignerGroup runs the cosigned1 choreography: the user
+// signAndSubmitCosignedGroup runs the cosigned1 choreography: the user
 // signer's base components, then the cosigner's for each target whose path needs
 // one. A listed rekey takes none: the signer's component says so, and assembly
 // checks it again.
-func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
-	requests, err := s.buildBoundedComponentRequests(txns, targetsByIndex, opts)
+func (s *Signer) signAndSubmitCosignedGroup(txns []types.Transaction, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions, w io.Writer) ([]string, []types.Transaction, error) {
+	requests, err := s.buildBaseComponentRequests(txns, targetsByIndex, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,15 +143,15 @@ func (s *Signer) signAndSubmitBoundedCosignerGroup(txns []types.Transaction, tar
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := validateBoundedTargetFees(group.Txns, targets); err != nil {
+	if err := validateHostTargetFees(group.Txns, targets); err != nil {
 		return nil, nil, err
 	}
-	components, baseRequestID, err := s.requestBoundedBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.Batch)
+	components, baseRequestID, err := s.requestBaseComponents(opts.Ctx, group, requests, targets, targetsByIndex, opts.Batch)
 	if err != nil {
 		return nil, nil, err
 	}
 	for i, target := range targets {
-		target.BoundedPath = components[target.Index].Path
+		target.HostPath = components[target.Index].Path
 		targets[i], targetsByIndex[target.Index] = target, target
 	}
 
@@ -244,11 +244,11 @@ func oneBasedPositions(indices []int) []int {
 	return numbers
 }
 
-// boundedBaseComponentRequest builds the /sign/component request over the
+// baseComponentRequest builds the /sign/component request over the
 // frozen group from the /plan requests. A non-target position names its
 // account, as it did on /plan, so the signer sizes it from the same records
 // and the two agree on the group's dummy count.
-func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget) signerapi.ComponentRequest {
+func baseComponentRequest(group frozenGroup, requests []signerapi.SignRequest, targetsByIndex map[int]cosignedTarget) signerapi.ComponentRequest {
 	componentReq := signerapi.ComponentRequest{GroupBytesHex: group.BytesHex}
 	for i, request := range requests {
 		if _, ok := targetsByIndex[i]; ok {
@@ -268,14 +268,14 @@ func boundedBaseComponentRequest(group frozenGroup, requests []signerapi.SignReq
 	return componentReq
 }
 
-// requestBoundedBaseComponents obtains the user signer's bounded base
+// requestBaseComponents obtains the user signer's base
 // component for every target over the frozen group. This is where user policy
-// and operator approval run for bounded targets, so every contextual position
+// and operator approval run for cosigned targets, so every contextual position
 // carries the caller's app call description, which the /plan requests hold:
 // the approval shows another position's ABI method, as the cosigner's request
 // does.
-func (s *Signer) requestBoundedBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, batch *signerapi.SignBatch) (map[int]signerapi.Component, string, error) {
-	componentReq := boundedBaseComponentRequest(group, requests, targetsByIndex)
+func (s *Signer) requestBaseComponents(ctx context.Context, group frozenGroup, requests []signerapi.SignRequest, targets []cosignedTarget, targetsByIndex map[int]cosignedTarget, batch *signerapi.SignBatch) (map[int]signerapi.Component, string, error) {
+	componentReq := baseComponentRequest(group, requests, targetsByIndex)
 	// The user signer's prompt is the one an operator answers, so the batch
 	// label goes on this request alone.
 	componentReq.Batch = batch
@@ -366,7 +366,7 @@ func signModeRequest(i int, authAddress, txnHex string, opts clientsign.SubmitOp
 	return request
 }
 
-func (s *Signer) buildBoundedComponentRequests(txns []types.Transaction, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
+func (s *Signer) buildBaseComponentRequests(txns []types.Transaction, targetsByIndex map[int]cosignedTarget, opts clientsign.SubmitOptions) ([]signerapi.SignRequest, error) {
 	requests := make([]signerapi.SignRequest, len(txns))
 	for i, txn := range txns {
 		txnHex := txnutil.EncodeWithPrefixHex(txn)
@@ -408,16 +408,16 @@ func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 	return nil
 }
 
-func validateBoundedTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
+func validateHostTargetFees(planned []types.Transaction, targets []cosignedTarget) error {
 	for _, target := range targets {
 		if target.Index < 0 || target.Index >= len(planned) {
 			return fmt.Errorf("bounded target index %d is outside planned group", target.Index)
 		}
-		if target.BoundedMaxFee == nil {
+		if target.HostMaxFee == nil {
 			continue
 		}
-		if fee := uint64(planned[target.Index].Fee); fee > *target.BoundedMaxFee {
-			return fmt.Errorf("bounded target at index %d: fee %d exceeds advertised max_fee %d", target.Index, fee, *target.BoundedMaxFee)
+		if fee := uint64(planned[target.Index].Fee); fee > *target.HostMaxFee {
+			return fmt.Errorf("bounded target at index %d: fee %d exceeds advertised max_fee %d", target.Index, fee, *target.HostMaxFee)
 		}
 	}
 	return nil
@@ -479,7 +479,7 @@ func (s *Signer) buildGroupSignRequests(plannedTxns []types.Transaction, groupBy
 // component named into the later mixed-group /sign call, rather than the
 // maximum across unrelated paths.
 func cosignedLogicSigResourcePath(target cosignedTarget) (lsigresource.AuthorizationPath, error) {
-	switch target.BoundedPath {
+	switch target.HostPath {
 	case signerapi.ComponentPathSpend:
 		return lsigresource.PathSpend, nil
 	case signerapi.ComponentPathSpendingRekey:
@@ -557,7 +557,7 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 		switch routeForSigningFlow(flow) {
 		case flowRoutePlain:
 			continue
-		case flowRouteBoundedCosigner:
+		case flowRouteCosigned:
 		default:
 			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
 		}
@@ -573,7 +573,7 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 		if err != nil {
 			return nil, fmt.Errorf("cosigned account %s has invalid cosigner_public_key metadata: %w", account, err)
 		}
-		boundedMaxFee, err := s.boundedFeeCeiling(account)
+		hostMaxFee, err := s.hostFeeCeiling(account)
 		if err != nil {
 			return nil, err
 		}
@@ -583,29 +583,29 @@ func (s *Signer) cosignedTargets(txns []types.Transaction) ([]cosignedTarget, er
 			Account:                  account,
 			CosignerComponentKeyType: cosignerComponentKeyType,
 			CosignerPublicKey:        canonicalPublicKey,
-			BoundedMaxFee:            boundedMaxFee,
+			HostMaxFee:               hostMaxFee,
 		})
 	}
 	return targets, nil
 }
 
-// boundedFeeCeiling is a cosigned account's on-chain fee ceiling: a bounded
+// hostFeeCeiling is a cosigned account's on-chain fee ceiling: a bounded
 // host has one, a plain host has none. Missing or contradictory metadata, or a
 // contract this client doesn't know, fails closed.
-func (s *Signer) boundedFeeCeiling(account string) (*uint64, error) {
-	contract, found := s.cache.BoundedContract(account)
+func (s *Signer) hostFeeCeiling(account string) (*uint64, error) {
+	contract, found := s.cache.HostContract(account)
 	if !found {
 		return nil, fmt.Errorf("bounded account %s is missing contract metadata; run keys refresh", account)
 	}
 	switch contract {
 	case signerapi.HostContractBounded2:
-		maxFee, found := s.cache.BoundedMaxFee(account)
+		maxFee, found := s.cache.HostMaxFee(account)
 		if !found {
 			return nil, fmt.Errorf("bounded account %s is missing max_fee metadata; run keys refresh", account)
 		}
 		return &maxFee, nil
 	case signerapi.HostContractPlain1:
-		if _, found := s.cache.BoundedMaxFee(account); found {
+		if _, found := s.cache.HostMaxFee(account); found {
 			return nil, fmt.Errorf("plain host account %s has a max_fee, which a plain host never has; run keys refresh", account)
 		}
 		return nil, nil

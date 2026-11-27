@@ -46,7 +46,7 @@ func assembleDecoded(ctx context.Context, req signerapi.AssemblyRequest, group *
 		if err := ctx.Err(); err != nil {
 			return nil, canceledSignRequest(err)
 		}
-		signedTxnHex, err := assembleBoundedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		signedTxnHex, err := assembleHostTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func rejectLocalCosignedPassthrough(ctx context.Context, stxn types.SignedTxn, t
 		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
-		cosigned := km.BoundedAuthorization != nil && km.BoundedAuthorization.Cosigner != nil
+		cosigned := km.Host != nil && km.Host.Cosigner != nil
 		zeroLoadedKeyMaterial(km)
 		if err := ctx.Err(); err != nil {
 			return canceledSignRequest(err)

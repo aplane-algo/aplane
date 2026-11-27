@@ -54,10 +54,10 @@ func (d signerPlannerDeps) Snapshot() signersigning.PlannerRuntimeSnapshot {
 	for selector, metadata := range snapshot.KeyMetadata {
 		keyMetadata[selector] = signersigning.PlannerKeyMetadata{
 			Category: metadata.Category, BaseKeyType: metadata.BaseKeyType, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
-			BoundedAuthorization: metadata.BoundedAuthorization,
-			LogicSigResources:    metadata.LogicSigResources,
-			SigningArgs:          metadata.SigningArgs,
-			ValidRekeyTarget:     metadata.ValidRekeyTarget,
+			Host:              metadata.Host,
+			LogicSigResources: metadata.LogicSigResources,
+			SigningArgs:       metadata.SigningArgs,
+			ValidRekeyTarget:  metadata.ValidRekeyTarget,
 		}
 	}
 	return signersigning.PlannerRuntimeSnapshot{

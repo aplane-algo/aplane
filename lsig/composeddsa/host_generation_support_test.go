@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
@@ -88,12 +88,12 @@ func ed25519BoundedProvider(t *testing.T) *composeddsa.ComposedDSA {
 // one at generation. Every production base supports a cosigner, so the policy is
 // narrowed for this composer alone.
 func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
-	profile := *ed25519BoundedProvider(t).BoundedAuthorizationProfile()
-	profile.Rekey = boundedmeta.RekeyRefused
-	profile.Cosigner = &boundedmeta.CosignerAuthorization{}
+	profile := *ed25519BoundedProvider(t).HostProfile()
+	profile.Rekey = hostmeta.RekeyRefused
+	profile.Cosigner = &hostmeta.CosignerAuthorization{}
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-unsupported-cosigner.v1", BaseKeyType: "aplane.ed25519.v1", FamilyName: "aplane.ed25519",
-		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: &profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Host: &profile,
 	})
 	composeddsa.NarrowCosignerSupport(direct)
 	spendingKey := bytes.Repeat([]byte{0x22}, 32)
@@ -120,10 +120,10 @@ func TestGenerationRefusesCosignerOnUnsupportedBase(t *testing.T) {
 }
 
 func TestGenerationRefusesUnknownBoundedBase(t *testing.T) {
-	profile := ed25519BoundedProvider(t).BoundedAuthorizationProfile()
+	profile := ed25519BoundedProvider(t).HostProfile()
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-unknown-base.v1", BaseKeyType: "test.unknown-base.v1", FamilyName: "unknown",
-		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Host: profile,
 	})
 	_, err := direct.GenerateTEAL(bytes.Repeat([]byte{0x22}, 32), nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot be generated on base key type") {
@@ -135,11 +135,11 @@ func TestGenerationRefusesUnknownBoundedBase(t *testing.T) {
 // passing Ed25519 ops would get Falcon's support while the program verified an
 // Ed25519 signature, and signing would later check the account against Falcon.
 func TestGenerationRefusesOpsThatDisagreeWithTheBaseName(t *testing.T) {
-	profile := *ed25519BoundedProvider(t).BoundedAuthorizationProfile()
-	profile.Rekey = boundedmeta.RekeyRefused
+	profile := *ed25519BoundedProvider(t).HostProfile()
+	profile.Rekey = hostmeta.RekeyRefused
 	direct := composeddsa.NewComposedDSA(composeddsa.Config{
 		KeyType: "test.direct-mismatched-ops.v1", BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.falcon1024",
-		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Bounded: &profile,
+		Version: 1, Ops: ed25519v1.NewOps(), TemplateMode: "generated", TEALSuffix: "int 1\nassert", Host: &profile,
 	})
 	_, err := direct.GenerateTEAL(bytes.Repeat([]byte{0x22}, 32), nil)
 	if err == nil || !strings.Contains(err.Error(), `names construction "falcon1024", but its ops render "ed25519"`) {
@@ -167,7 +167,7 @@ func TestGenerationAllowsSupportedProfiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		params := map[string]string{
-			composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize)),
+			composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize)),
 		}
 		if _, err := provider.GenerateTEAL(bytes.Repeat([]byte{0x22}, 1793), params); err != nil {
 			t.Fatalf("GenerateTEAL() error = %v", err)

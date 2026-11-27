@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 
@@ -75,7 +75,7 @@ func TestDecodeHexRuntimeArgsReportsAnOddLength(t *testing.T) {
 	}
 }
 
-func TestBoundedDerivedArgsMerkleProof(t *testing.T) {
+func TestHostDerivedArgsMerkleProof(t *testing.T) {
 	sender := types.Address{1}
 	receiver := types.Address{2}
 	secondReceiver := types.Address{3}
@@ -115,12 +115,12 @@ func TestBoundedDerivedArgsMerkleProof(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			args, signErr := boundedDerivedArgs(tc.txn, keyMaterial, metadata, boundedPathPureSpend)
+			args, signErr := hostDerivedArgs(tc.txn, keyMaterial, metadata, hostPathPureSpend)
 			if signErr != nil {
-				t.Fatalf("boundedDerivedArgs() error = %v", signErr)
+				t.Fatalf("hostDerivedArgs() error = %v", signErr)
 			}
 			if len(args) != 1 {
-				t.Fatalf("boundedDerivedArgs() len = %d, want 1", len(args))
+				t.Fatalf("hostDerivedArgs() len = %d, want 1", len(args))
 			}
 			if len(args["merkle_proof"]) != merkleallowlist.ProofSize {
 				t.Fatalf("proof length = %d, want %d", len(args["merkle_proof"]), merkleallowlist.ProofSize)
@@ -132,41 +132,41 @@ func TestBoundedDerivedArgsMerkleProof(t *testing.T) {
 	}
 }
 
-func TestBoundedDerivedArgsMerkleProofSkipsSelfTransfer(t *testing.T) {
+func TestHostDerivedArgsMerkleProofSkipsSelfTransfer(t *testing.T) {
 	sender := types.Address{1}
 	keyMaterial := &coresigning.KeyMaterial{
 		Parameters: map[string]string{"recipients": sender.String()},
 	}
-	args, signErr := boundedDerivedArgs(types.Transaction{
+	args, signErr := hostDerivedArgs(types.Transaction{
 		Type:   types.PaymentTx,
 		Header: types.Header{Sender: sender},
 		PaymentTxnFields: types.PaymentTxnFields{
 			Receiver: sender,
 		},
-	}, keyMaterial, merkleDerivedMetadata(), boundedPathPureSpend)
+	}, keyMaterial, merkleDerivedMetadata(), hostPathPureSpend)
 	if signErr != nil {
-		t.Fatalf("boundedDerivedArgs() error = %v", signErr)
+		t.Fatalf("hostDerivedArgs() error = %v", signErr)
 	}
 	if proof, ok := args["merkle_proof"]; len(args) != 1 || !ok || proof != nil {
-		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
+		t.Fatalf("hostDerivedArgs() = %#v, want one empty derived slot", args)
 	}
 }
 
-func TestBoundedDerivedArgsMerkleProofRejectsNonMember(t *testing.T) {
+func TestHostDerivedArgsMerkleProofRejectsNonMember(t *testing.T) {
 	sender := types.Address{1}
 	receiver := types.Address{2}
 	keyMaterial := &coresigning.KeyMaterial{
 		Parameters: map[string]string{"recipients": types.Address{3}.String()},
 	}
-	_, signErr := boundedDerivedArgs(types.Transaction{
+	_, signErr := hostDerivedArgs(types.Transaction{
 		Type:   types.PaymentTx,
 		Header: types.Header{Sender: sender},
 		PaymentTxnFields: types.PaymentTxnFields{
 			Receiver: receiver,
 		},
-	}, keyMaterial, merkleDerivedMetadata(), boundedPathPureSpend)
+	}, keyMaterial, merkleDerivedMetadata(), hostPathPureSpend)
 	if signErr == nil {
-		t.Fatal("boundedDerivedArgs() error = nil, want rejection")
+		t.Fatal("hostDerivedArgs() error = nil, want rejection")
 		return
 	}
 	if signErr.Kind != ErrorBadRequest {
@@ -177,19 +177,19 @@ func TestBoundedDerivedArgsMerkleProofRejectsNonMember(t *testing.T) {
 	}
 }
 
-func TestBoundedDerivedArgsMerkleProofForbiddenOnRekey(t *testing.T) {
-	args, err := boundedDerivedArgs(types.Transaction{}, &coresigning.KeyMaterial{}, merkleDerivedMetadata(), boundedPathSpendingKeyRekey)
+func TestHostDerivedArgsMerkleProofForbiddenOnRekey(t *testing.T) {
+	args, err := hostDerivedArgs(types.Transaction{}, &coresigning.KeyMaterial{}, merkleDerivedMetadata(), hostPathSpendingKeyRekey)
 	if err != nil {
-		t.Fatalf("boundedDerivedArgs() error = %v", err)
+		t.Fatalf("hostDerivedArgs() error = %v", err)
 	}
 	if proof, ok := args["merkle_proof"]; len(args) != 1 || !ok || proof != nil {
-		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
+		t.Fatalf("hostDerivedArgs() = %#v, want one empty derived slot", args)
 	}
 }
 
-func merkleDerivedMetadata() *boundedmeta.Metadata {
-	return &boundedmeta.Metadata{DerivedArgs: []boundedmeta.DerivedArg{{
-		Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
-		Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+func merkleDerivedMetadata() *hostmeta.Metadata {
+	return &hostmeta.Metadata{DerivedArgs: []hostmeta.DerivedArg{{
+		Name: "merkle_proof", Kind: hostmeta.DerivedArgMerkleProof,
+		Parameter: "recipients", MaxSize: hostmeta.MerkleProofSize,
 	}}}
 }

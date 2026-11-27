@@ -20,22 +20,22 @@ import (
 	"fmt"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
 // KeyMaterial wraps provider-specific key data with type information
 // This provides type safety and better debugging capabilities
 type KeyMaterial struct {
-	Type                 string                       // Key type identifier (e.g., "aplane.falcon1024.v1", "ed25519")
-	Value                interface{}                  // The actual key data (provider-specific)
-	PublicKey            []byte                       // Public key bytes, when available from the key file
-	Bytecode             []byte                       // LogicSig bytecode (nil for native ed25519)
-	Category             string                       // Key category recorded in the key file, if any
-	BaseKeyType          string                       // Base DSA key type used for signer ops, if different from Type
-	Parameters           map[string]string            // Creation parameters recorded in the key file, if any
-	SigningArgs          []lsigprovider.RuntimeArgDef // Durable signing-time LogicSig arg contract
-	BoundedAuthorization *boundedmeta.Metadata        // Durable bounded signing and routing contract
+	Type        string                       // Key type identifier (e.g., "aplane.falcon1024.v1", "ed25519")
+	Value       interface{}                  // The actual key data (provider-specific)
+	PublicKey   []byte                       // Public key bytes, when available from the key file
+	Bytecode    []byte                       // LogicSig bytecode (nil for native ed25519)
+	Category    string                       // Key category recorded in the key file, if any
+	BaseKeyType string                       // Base DSA key type used for signer ops, if different from Type
+	Parameters  map[string]string            // Creation parameters recorded in the key file, if any
+	SigningArgs []lsigprovider.RuntimeArgDef // Durable signing-time LogicSig arg contract
+	Host        *hostmeta.Metadata           // Durable host signing and routing contract
 }
 
 // WitnessKeyMaterial holds raw signer-custodied witness material. Witness keys

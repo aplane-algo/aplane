@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package boundedmeta owns the durable, non-secret bounded-authorization
-// metadata stored with a LogicSig key. It deliberately has no dependency on a
+// Package hostmeta owns the durable, non-secret host metadata stored with a
+// LogicSig key: a plain or a bounded host's contract. It deliberately has no dependency on a
 // runtime template or composer registration.
-package boundedmeta
+package hostmeta
 
 import (
 	"encoding/hex"
@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	// Contract is the bounded account contract: the spending signature, a
+	// BoundedContract is the bounded account contract: the spending signature, a
 	// transaction envelope (fee ceiling, rekey setting, admitted spend types)
 	// and a Layer 3 policy. docs/ARCH_BOUNDED_DSA.md freezes it.
-	Contract = "bounded2"
+	BoundedContract = "bounded2"
 	// PlainContract is the plain host: the spending key and its overlays, with
 	// no host rules. Every transaction that doesn't rekey is a spend, of any
 	// type, closes and clawback included, and there is no fee ceiling. A
@@ -241,9 +241,9 @@ func equalBounds(a, b *Bounds) bool {
 // doesn't. It is the one place that ties a contract to having bounds.
 func CheckBounds(contract string, hasBounds bool) error {
 	switch contract {
-	case Contract:
+	case BoundedContract:
 		if !hasBounds {
-			return fmt.Errorf("%s requires bounds", Contract)
+			return fmt.Errorf("%s requires bounds", BoundedContract)
 		}
 	case PlainContract:
 		if hasBounds {
@@ -416,7 +416,7 @@ func (bounds *Bounds) validate() error {
 		return err
 	}
 	if !IsKnownLayer3Policy(bounds.Layer3Policy) {
-		return fmt.Errorf("unsupported %s layer3_policy %q", Contract, bounds.Layer3Policy)
+		return fmt.Errorf("unsupported %s layer3_policy %q", BoundedContract, bounds.Layer3Policy)
 	}
 	return ValidateSpendEffects(bounds.SpendEffects)
 }
@@ -427,7 +427,7 @@ func (bounds *Bounds) validate() error {
 // never read as a ceiling of zero or as none.
 func ValidateMaxFee(fee *uint64) error {
 	if fee == nil {
-		return fmt.Errorf("%s requires max_fee", Contract)
+		return fmt.Errorf("%s requires max_fee", BoundedContract)
 	}
 	if *fee > MaxFeeLimit {
 		return fmt.Errorf("max_fee %d is above %d, the largest value every client reads exactly", *fee, MaxFeeLimit)

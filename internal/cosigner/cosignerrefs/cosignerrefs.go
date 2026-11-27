@@ -21,9 +21,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/keytypes"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
@@ -366,8 +366,8 @@ func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, 
 		return nil, fmt.Errorf("cosigner reference %q uses %s, but %s takes %s", rec.Name, rec.KeyType, keyType, strings.Join(componentKeyTypes, " or "))
 	}
 	// An empty value is the provider's to refuse, with its own message.
-	if given := strings.TrimSpace(params[boundedmeta.CosignerKeyTypeParameter]); given != "" && given != rec.KeyType {
-		return nil, fmt.Errorf("%s %s contradicts cosigner reference %q, which uses %s", boundedmeta.CosignerKeyTypeParameter, given, rec.Name, rec.KeyType)
+	if given := strings.TrimSpace(params[hostmeta.CosignerKeyTypeParameter]); given != "" && given != rec.KeyType {
+		return nil, fmt.Errorf("%s %s contradicts cosigner reference %q, which uses %s", hostmeta.CosignerKeyTypeParameter, given, rec.Name, rec.KeyType)
 	}
 
 	resolved := make(map[string]string, len(params))
@@ -378,8 +378,8 @@ func ResolveCreationParamsForComponents(paths storepaths.Paths, keyType string, 
 		resolved[k] = v
 	}
 	resolved[keytypes.ParameterCosignerPublicKey] = rec.PublicKeyHex
-	if rec.KeyType != boundedmeta.DefaultCosignerComponentKeyType {
-		resolved[boundedmeta.CosignerKeyTypeParameter] = rec.KeyType
+	if rec.KeyType != hostmeta.DefaultCosignerComponentKeyType {
+		resolved[hostmeta.CosignerKeyTypeParameter] = rec.KeyType
 	}
 	return resolved, nil
 }

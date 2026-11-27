@@ -175,7 +175,7 @@ func TestComponentResponseValidateForRequestRejectsOutOfGroupIndex(t *testing.T)
 
 // A base component names the path the signer classified, from the closed
 // set; the client skips the cosigner on a listed rekey only.
-func TestComponentResponseNamesTheBoundedPath(t *testing.T) {
+func TestComponentResponseNamesTheHostPath(t *testing.T) {
 	component := Component{
 		TargetIndex: 0, Kind: ComponentTargetKindBase, AuthAddress: "BOUNDED",
 		BaseSignatures: []string{"aa"}, AssemblyReceipt: "bb", SignatureScheme: "aplane.falcon1024.v1",

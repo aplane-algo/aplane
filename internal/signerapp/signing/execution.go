@@ -10,8 +10,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -150,7 +150,7 @@ func (e *Executor) executeGroupSigning(ctx context.Context, plan *PlanResult, re
 		}
 		signedBytes, keyType, signErr := inner.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
-			req.Requests[i].LsigArgs, plan.boundedItem(i), session, ctx,
+			req.Requests[i].LsigArgs, plan.hostItem(i), session, ctx,
 		)
 		if signErr != nil {
 			deferred.failure = failLog.entry
@@ -182,7 +182,7 @@ func (e *Executor) executeGroupSigning(ctx context.Context, plan *PlanResult, re
 	return &ExecuteResult{SignedTxns: signedTxns}, deferred, nil
 }
 
-func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
+func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, hostItem *hostPlanItem, session *keystore.KeySession, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -214,29 +214,29 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 	if rotatingkey.IsRotatingKeyType(keyMaterial.Type) {
 		return nil, keyMaterial.Type, rotatingSigningRequired()
 	}
-	if err := verifyBoundedPlanIntegrity(boundedItem, keyMaterial); err != nil {
+	if err := verifyHostPlanIntegrity(hostItem, keyMaterial); err != nil {
 		return nil, keyMaterial.Type, err
 	}
-	if keyMaterial.BoundedAuthorization != nil && keyMaterial.BoundedAuthorization.Cosigner != nil {
-		return nil, keyMaterial.Type, boundedCosignerRequired()
+	if keyMaterial.Host != nil && keyMaterial.Host.Cosigner != nil {
+		return nil, keyMaterial.Type, cosignerRequired()
 	}
 
 	if isGenericKeyMaterial(keyMaterial) {
 		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial)
 	}
 
-	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial)
+	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, hostItem, keyMaterial)
 }
 
-// verifyBoundedPlanIntegrity is the executor's single bounded recheck. The
+// verifyHostPlanIntegrity is the executor's single host-plan recheck. The
 // authoritative classification ran once at the plan boundary against snapshot
 // metadata and the finalized transactions; the executor signs those same
 // transaction objects, so the only state that can drift before signing is the
 // key file reloaded here. Requiring the loaded metadata to equal the planned
 // metadata makes re-deriving the classification unnecessary: equal inputs
 // give an equal path.
-func verifyBoundedPlanIntegrity(item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial) *ServiceError {
-	metadata := keyMaterial.BoundedAuthorization
+func verifyHostPlanIntegrity(item *hostPlanItem, keyMaterial *coresigning.KeyMaterial) *ServiceError {
+	metadata := keyMaterial.Host
 	if item == nil {
 		if metadata != nil {
 			return internal("key gained bounded metadata after planning; retry the request")
@@ -285,7 +285,7 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 	return signedTxnBytes, keyType, nil
 }
 
-func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial) ([]byte, string, *ServiceError) {
+func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, hostItem *hostPlanItem, keyMaterial *coresigning.KeyMaterial) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
 	provider := coresigning.GetProviderForKey(keyType, keyMaterial.BaseKeyType)
 	if provider == nil {
@@ -315,7 +315,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 	}
 
 	if keyMaterial.Bytecode != nil {
-		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType)
+		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, hostItem, keyMaterial, sig, keyType)
 	}
 
 	var sigArr types.Signature
@@ -399,7 +399,7 @@ func zeroLoadedKeyMaterial(key *coresigning.KeyMaterial) {
 	}
 	key.Parameters = nil
 	key.SigningArgs = nil
-	key.BoundedAuthorization = nil
+	key.Host = nil
 }
 
 func zeroGeneratedArgs(args [][]byte) {
@@ -439,10 +439,10 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 
 // assembleDSALogicSig attaches a DSA LogicSig key's signature to its program,
 // through the key's base signature provider, with the key's runtime arguments
-// or, for a bounded key, its stored argument layout. The key parser has
+// or, for a host key, its stored argument layout. The key parser has
 // checked the key's signing metadata version and that it names its base key
 // type (keys.validateLogicSigFields).
-func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, hostItem *hostPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType string) ([]byte, string, *ServiceError) {
 	signatureProvider := lsigprovider.Get(keyMaterial.BaseKeyType)
 	if signatureProvider == nil {
 		return nil, keyType, internal(fmt.Sprintf("provider not found for base key type %s", keyMaterial.BaseKeyType))
@@ -452,8 +452,8 @@ func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSende
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
-	if keyMaterial.BoundedAuthorization != nil {
-		return e.assembleBoundedLogicSig(txn, authAddr, txnSender, boundedItem, keyMaterial, signatureArgs, keyType)
+	if keyMaterial.Host != nil {
+		return e.assembleHostLogicSig(txn, authAddr, txnSender, hostItem, keyMaterial, signatureArgs, keyType)
 	}
 
 	decodedArgs, err := decodeHexRuntimeArgs(lsigArgs)
@@ -486,23 +486,23 @@ func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSende
 	return signedTxnBytes, keyType, nil
 }
 
-// assembleBoundedLogicSig assembles the spend-path bounded LogicSig. Policy
+// assembleHostLogicSig assembles the spend-path host LogicSig. Policy
 // checks (classification, fee ceiling, caller-args validation) ran at the plan
 // boundary and were rechecked against the loaded key via
-// verifyBoundedPlanIntegrity; only assembly-shape enforcement remains here.
-func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnSender string, item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType string) ([]byte, string, *ServiceError) {
-	// verifyBoundedPlanIntegrity refused a bounded key without a planned item.
-	metadata := keyMaterial.BoundedAuthorization
+// verifyHostPlanIntegrity; only assembly-shape enforcement remains here.
+func (e *Executor) assembleHostLogicSig(txn types.Transaction, authAddr, txnSender string, item *hostPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType string) ([]byte, string, *ServiceError) {
+	// verifyHostPlanIntegrity refused a host key without a planned item.
+	metadata := keyMaterial.Host
 	if err := checkBaseSignatureLayout(metadata.BaseSignatureArgLayout, signatureArgs); err != nil {
 		return nil, keyType, err
 	}
 
-	derivedArgs, deriveErr := boundedDerivedArgs(txn, keyMaterial, metadata, item.Path)
+	derivedArgs, deriveErr := hostDerivedArgs(txn, keyMaterial, metadata, item.Path)
 	if deriveErr != nil {
 		return nil, keyType, deriveErr
 	}
 	defer zeroDerivedArgs(derivedArgs)
-	args, assemblyErr := assembleBoundedArgs(metadata, item, signatureArgs, derivedArgs)
+	args, assemblyErr := assembleHostArgs(metadata, item, signatureArgs, derivedArgs)
 	if assemblyErr != nil {
 		return nil, keyType, assemblyErr
 	}
@@ -520,11 +520,11 @@ func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnS
 	return signedTxnBytes, keyType, nil
 }
 
-// checkBaseSignatureLayout checks base signature arguments against a bounded
+// checkBaseSignatureLayout checks base signature arguments against a host
 // key's stored layout: its count, and each argument non-empty and within its
 // stored maximum. The slot checks at assembly do not cover this: they test
 // emptiness only where a slot is required, and read the slot's own maximum.
-func checkBaseSignatureLayout(layout boundedmeta.SignatureArgLayout, args [][]byte) *ServiceError {
+func checkBaseSignatureLayout(layout hostmeta.SignatureArgLayout, args [][]byte) *ServiceError {
 	if len(args) != layout.Count {
 		return internal(fmt.Sprintf("base provider emitted %d signature args, stored bounded layout requires %d", len(args), layout.Count))
 	}
@@ -536,26 +536,26 @@ func checkBaseSignatureLayout(layout boundedmeta.SignatureArgLayout, args [][]by
 	return nil
 }
 
-// boundedDerivedArgs returns the value of every declared derived argument by
+// hostDerivedArgs returns the value of every declared derived argument by
 // name, empty where the path or transaction takes none. Assembly places each
 // in the layout slot of the same name, so the order of the declarations and
 // the layout's slots never has to agree.
-func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, path boundedPath) (map[string][]byte, *ServiceError) {
+func hostDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *hostmeta.Metadata, path hostPath) (map[string][]byte, *ServiceError) {
 	values := make(map[string][]byte, len(metadata.DerivedArgs))
 	for _, arg := range metadata.DerivedArgs {
 		values[arg.Name] = nil
 	}
-	if path == boundedPathListedRekey {
+	if path == hostPathListedRekey {
 		return listedRekeyDerivedArgs(txn, keyMaterial, metadata, values)
 	}
-	if path != boundedPathPureSpend {
+	if path != hostPathPureSpend {
 		return values, nil
 	}
 	for _, arg := range metadata.DerivedArgs {
-		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
+		if arg.Kind == hostmeta.DerivedArgRekeyListProof {
 			continue
 		}
-		if arg.Kind != boundedmeta.DerivedArgMerkleProof {
+		if arg.Kind != hostmeta.DerivedArgMerkleProof {
 			return nil, internal(fmt.Sprintf("unsupported bounded derived argument kind %q", arg.Kind))
 		}
 		var receiver types.Address
@@ -589,41 +589,41 @@ func zeroDerivedArgs(args map[string][]byte) {
 	}
 }
 
-func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte) ([][]byte, *ServiceError) {
-	return assembleBoundedArgsWithCosigner(metadata, item, baseArgs, derivedArgs, nil)
+func assembleHostArgs(metadata *hostmeta.Metadata, item *hostPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte) ([][]byte, *ServiceError) {
+	return assembleHostArgsWithCosigner(metadata, item, baseArgs, derivedArgs, nil)
 }
 
-func assembleBoundedArgsWithCosigner(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte, cosignerSignature []byte) ([][]byte, *ServiceError) {
+func assembleHostArgsWithCosigner(metadata *hostmeta.Metadata, item *hostPlanItem, baseArgs [][]byte, derivedArgs map[string][]byte, cosignerSignature []byte) ([][]byte, *ServiceError) {
 	args := make([][]byte, len(metadata.ArgumentLayout))
 	baseIndex, derivedUsed := 0, 0
 	for _, slot := range metadata.ArgumentLayout {
 		var value []byte
 		switch slot.Source {
-		case boundedmeta.ArgSourceBaseSignature:
+		case hostmeta.ArgSourceBaseSignature:
 			if baseIndex >= len(baseArgs) {
 				return nil, internal("bounded base signature slot count changed during assembly")
 			}
 			value = baseArgs[baseIndex]
 			baseIndex++
-		case boundedmeta.ArgSourceDerived:
+		case hostmeta.ArgSourceDerived:
 			derived, ok := derivedArgs[slot.Name]
 			if !ok {
 				return nil, internal(fmt.Sprintf("bounded derived slot %q has no derived argument during assembly", slot.Name))
 			}
 			value = derived
 			derivedUsed++
-		case boundedmeta.ArgSourceRuntime:
+		case hostmeta.ArgSourceRuntime:
 			value = item.RuntimeArgs[slot.Name]
-		case boundedmeta.ArgSourceCosigner:
+		case hostmeta.ArgSourceCosigner:
 			value = cosignerSignature
 		default:
 			return nil, internal(fmt.Sprintf("unsupported bounded argument source %q", slot.Source))
 		}
-		rule := boundedSlotRule(slot, item.Path)
-		if rule == boundedmeta.ArgRequired && len(value) == 0 {
+		rule := hostSlotRule(slot, item.Path)
+		if rule == hostmeta.ArgRequired && len(value) == 0 {
 			return nil, internal(fmt.Sprintf("required bounded argument slot %q is empty during assembly", slot.Name))
 		}
-		if rule == boundedmeta.ArgForbidden && len(value) != 0 {
+		if rule == hostmeta.ArgForbidden && len(value) != 0 {
 			return nil, internal(fmt.Sprintf("forbidden bounded argument slot %q is populated during assembly", slot.Name))
 		}
 		if len(value) > slot.MaxSize {
@@ -657,13 +657,13 @@ func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {
 // salt comes from a seed derived from the spending private key, so only the
 // account's own signer can build it; the recipient proofs stay empty, since no
 // rekey reaches Layer 3.
-func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, values map[string][]byte) (map[string][]byte, *ServiceError) {
+func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *hostmeta.Metadata, values map[string][]byte) (map[string][]byte, *ServiceError) {
 	lsigKey, ok := keyMaterial.Value.(*coresigning.LsigKeyMaterial)
 	if !ok || len(lsigKey.PrivateKey) == 0 {
 		return nil, internal("bounded listed rekey needs the spending private key")
 	}
 	for _, arg := range metadata.DerivedArgs {
-		if arg.Kind != boundedmeta.DerivedArgRekeyListProof {
+		if arg.Kind != hostmeta.DerivedArgRekeyListProof {
 			continue
 		}
 		entries, err := rekeylist.ParseEntries(keyMaterial.Parameters[arg.Parameter])
@@ -682,7 +682,7 @@ func listedRekeyDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyM
 			return nil, internal("the rebuilt rekey-to list does not match the account's stored root")
 		}
 		if !listed {
-			return nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf("%s is not on this account's rekey-to list", txn.RekeyTo)}
+			return nil, &ServiceError{Kind: ErrorRekeyTargetNotListed, Message: fmt.Sprintf("%s is not on this account's rekey-to list", txn.RekeyTo)}
 		}
 		values[arg.Name] = proof
 	}

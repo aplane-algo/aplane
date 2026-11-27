@@ -43,8 +43,8 @@ func DefaultOpcodeProfile(maxCost uint64) OpcodeProfile {
 	return OpcodeProfile{Default: maxCost}
 }
 
-// BoundedOpcodeProfile returns the closed profile for bounded authorization.
-func BoundedOpcodeProfile(spend, spendingRekey, listedRekey uint64) OpcodeProfile {
+// HostOpcodeProfile returns the closed profile of a host account's paths.
+func HostOpcodeProfile(spend, spendingRekey, listedRekey uint64) OpcodeProfile {
 	return OpcodeProfile{Spend: spend, SpendingRekey: spendingRekey, ListedRekey: listedRekey}
 }
 
@@ -94,7 +94,7 @@ type Profile struct {
 
 // Materialize combines derived program/argument sizes with the durable opcode
 // ceilings. Bounded path arguments must contain both closed paths.
-func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[AuthorizationPath]uint64, opcodes OpcodeProfile) (Profile, error) {
+func Materialize(programBytes uint64, defaultArgs *uint64, hostArgs map[AuthorizationPath]uint64, opcodes OpcodeProfile) (Profile, error) {
 	bounded := defaultArgs == nil
 	if err := opcodes.Validate(bounded); err != nil {
 		return Profile{}, err
@@ -104,9 +104,9 @@ func Materialize(programBytes uint64, defaultArgs *uint64, boundedArgs map[Autho
 		profile.Default = &PathProfile{ArgumentBytes: *defaultArgs, MaxOpcodeCost: opcodes.Default}
 		return profile, nil
 	}
-	spend, spendOK := boundedArgs[PathSpend]
-	spendingRekey, spendingRekeyOK := boundedArgs[PathSpendingRekey]
-	listedRekey, listedRekeyOK := boundedArgs[PathListedRekey]
+	spend, spendOK := hostArgs[PathSpend]
+	spendingRekey, spendingRekeyOK := hostArgs[PathSpendingRekey]
+	listedRekey, listedRekeyOK := hostArgs[PathListedRekey]
 	if !spendOK || !spendingRekeyOK || !listedRekeyOK {
 		return Profile{}, fmt.Errorf("%w: bounded argument profile is incomplete", ErrInvalidUsage)
 	}

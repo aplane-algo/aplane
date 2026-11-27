@@ -143,7 +143,7 @@ cosigner flow needs a Falcon-1024 or Ed25519 spending key, on `bounded2` and
 bounded profile on a base the support policy doesn't list. The policy is keyed by
 the base's signature construction from `internal/sigconstruction`, so a registered
 base with no construction is refused too. This is an admission decision for new
-accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateBoundedConfig` stay
+accounts, separate from structural validity, and it runs only from `GenerateTEAL`. `ValidateTemplateSpec` and `validateHostConfig` stay
 structural, because installed templates reach both on load: an error there changes
 the template's compatibility fingerprint, which makes it a content defect, and that
 sends unlock to recovery mode and blocks store commits. Two tests pin this:
@@ -154,7 +154,7 @@ with a template on a base the policy doesn't list.
 Signing sites don't read that policy. Admission can narrow over time, and an existing
 account must keep signing, so the signer keeps its own table of the spending
 constructions each workflow completes
-(`internal/signerapp/signing/bounded_construction.go`). It resolves an account's
+(`internal/signerapp/signing/host_construction.go`). It resolves an account's
 construction from its durable contract and `base_key_type`. The cosigner flow
 completes Falcon-1024 and Ed25519 on `bounded2` and `plain1`. A valid signature on any other base is refused where it
 always was, before an assembly it couldn't finish. Admission must stay within
@@ -251,12 +251,12 @@ tests parse the pinned SDK source to detect newly introduced transaction types.
 
 ### Path declaration
 
-An account's path declaration (`boundedmeta.PathDeclaration`) states what it
+An account's path declaration (`hostmeta.PathDeclaration`) states what it
 allows: its spend effects, fee ceiling, Layer 3 policy, rekey setting, whether it
 has a rekey-to list, and cosigner. `Metadata.Declaration()` projects it from stored
 metadata, and the signer classifies every bounded target against it through
-`txeffects.ClassifyFor` (`classifyBoundedPath` in
-`internal/signerapp/signing/bounded.go`). An invalid declaration is an error, not
+`txeffects.ClassifyFor` (`classifyHostPath` in
+`internal/signerapp/signing/host.go`). An invalid declaration is an error, not
 a refusal.
 
 `ClassifyFor` checks the fee ceiling first, then the transaction's shape. Every
@@ -428,7 +428,7 @@ transaction type and effect; `PLAIN_EFFECT_CLASSIFICATIONS.json` lists the field
 judges under `cosigner_policy`.
 
 Durable validation requires `bounds` absent on `plain1` and present on
-`bounded2`, through `boundedmeta.CheckBounds`, and refuses an unknown contract;
+`bounded2`, through `hostmeta.CheckBounds`, and refuses an unknown contract;
 `txeffects.ClassifyFor` makes the same check rather than treating a
 contract it doesn't know as `bounded2`. Without bounds a `plain1` account has
 no Layer 3, and is held to the rules of `none`. The
@@ -645,7 +645,7 @@ its own time:
   runtime argument `max_size` over 4,096 bytes. The same admission check refuses a
   template that breaks its template-level contract, such as a parameter with the
   reserved `bounded_` prefix or a `rekey_to` that isn't the framework's.
-- At key generation: `BuildBoundedAuthorizationMetadata` runs
+- At key generation: `BuildHostMetadata` runs
   `Metadata.ValidateNetworkLimits` on the account's layout, and generation enforces
   the template-level contract as it always has.
 - At signing: a supplied runtime argument over 4,096 bytes is refused, whatever
@@ -921,7 +921,7 @@ path's resource profile, and refuses a target that is not on the stored list wit
 of building a transaction the program would reject. Under `plus_cosigned` it moves
 a listed target from `spending_rekey` to `listed_rekey`, and an unlisted target
 stays on the cosigned path. Cosigned assembly decides the path again through the
-same function (`boundedAccountPath`), so a component and its assembly cannot
+same function (`hostAccountPath`), so a component and its assembly cannot
 disagree about whether the cosigner signs. The executor consumes
 that plan, checks that loaded durable metadata still equals planned metadata, and
 assembles the declared slots without maintaining a second classifier. On the listed

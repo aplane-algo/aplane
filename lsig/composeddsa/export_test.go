@@ -27,11 +27,11 @@ func NewFixtureProvider(spec *TemplateSpec, base BaseRegistration, support Fixtu
 	if err != nil {
 		return nil, err
 	}
-	provider.generationPolicy = func(_, baseKeyType string) (boundedWorkflowSupport, bool) {
+	provider.generationPolicy = func(_, baseKeyType string) (hostWorkflowSupport, bool) {
 		if baseKeyType != base.BaseKeyType || support.RefuseGeneration {
-			return boundedWorkflowSupport{}, false
+			return hostWorkflowSupport{}, false
 		}
-		return boundedWorkflowSupport{cosigner: support.Cosigner}, true
+		return hostWorkflowSupport{cosigner: support.Cosigner}, true
 	}
 	return provider, nil
 }
@@ -50,7 +50,7 @@ func RegisteredBaseKeyTypes() []string {
 
 // ProductionSupportsBase reports whether a contract's production policy lists a base.
 func ProductionSupportsBase(contract, baseKeyType string) bool {
-	_, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
+	_, ok := productionHostGenerationPolicy(contract, baseKeyType)
 	return ok
 }
 
@@ -59,8 +59,8 @@ func ProductionSupportsBase(contract, baseKeyType string) bool {
 // production base supports a cosigner, so this is the only way to reach that
 // refusal.
 func NarrowCosignerSupport(provider *ComposedDSA) {
-	provider.generationPolicy = func(contract, baseKeyType string) (boundedWorkflowSupport, bool) {
-		support, ok := productionBoundedGenerationPolicy(contract, baseKeyType)
+	provider.generationPolicy = func(contract, baseKeyType string) (hostWorkflowSupport, bool) {
+		support, ok := productionHostGenerationPolicy(contract, baseKeyType)
 		support.cosigner = false
 		return support, ok
 	}

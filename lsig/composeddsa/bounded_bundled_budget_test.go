@@ -14,7 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algo/algotest"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -75,11 +75,11 @@ func TestBoundedFixtureCompiledBudgetMatrix(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(test.publicKey, test.parameters, bytecode)
+			metadata, err := provider.BuildHostMetadata(test.publicKey, test.parameters, bytecode)
 			if err != nil {
 				t.Fatal(err)
 			}
-			spendArgs := metadata.ArgumentBytesForPath(boundedmeta.PathSpend)
+			spendArgs := metadata.ArgumentBytesForPath(hostmeta.PathSpend)
 			spendPlan := solveV42BundledPath(t, profile, len(bytecode), spendArgs)
 			spendFee := v42BundledPathFee(spendPlan)
 			if len(bytecode) != test.bytecode || spendArgs != test.spendArgs ||

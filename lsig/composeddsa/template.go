@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -56,7 +56,7 @@ var productionTemplateBaseRules = templateBaseRules{
 // admits a cosigner on a bounded2 account over baseKeyType. The policy is the
 // one record of which bases the cosigner workflow is reviewed for.
 func boundedContractAllowsCosigner(baseKeyType string) bool {
-	support, ok := productionBoundedGenerationPolicy(BoundedContract, baseKeyType)
+	support, ok := productionHostGenerationPolicy(BoundedContract, baseKeyType)
 	return ok && support.cosigner
 }
 
@@ -79,7 +79,7 @@ func validateTemplateSpec(spec *TemplateSpec, rules templateBaseRules) error {
 		return fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
 	for _, parameter := range spec.Parameters {
-		if isBoundedCosignerReservedName(parameter.Name) {
+		if isCosignerReservedName(parameter.Name) {
 			return fmt.Errorf("parameter %q is framework-injected or reserved and cannot be declared by the author", parameter.Name)
 		}
 	}
@@ -193,7 +193,7 @@ func newProviderFromBase(spec *TemplateSpec, base BaseRegistration, saltStyle ls
 		Params:        generictemplate.ParameterSpecToParameterDefs(spec.Parameters),
 		RuntimeArgs:   append(generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs), boundedRuntimeArgsFromTemplate(spec.Bounded)...),
 		DerivedArgs:   boundedDerivedArgsFromTemplate(spec.Bounded),
-		Bounded:       bounded,
+		Host:          bounded,
 		Layer3:        layer3,
 		OpcodeProfile: spec.LogicSigOpcodeProfile(bounded != nil),
 		// An installed template declares it (install requires it); a plain
@@ -247,11 +247,11 @@ func ValidateTemplateAdmission(spec *TemplateSpec) error {
 // layout's structure. Instance fields, such as a cosigner key, wait for key
 // generation. It returns the template-level metadata it checked, nil for a
 // template that is not bounded.
-func (c *ComposedDSA) validateTemplateContract() (*boundedmeta.Metadata, error) {
-	if c.bounded == nil {
+func (c *ComposedDSA) validateTemplateContract() (*hostmeta.Metadata, error) {
+	if c.host == nil {
 		return nil, nil
 	}
-	metadata, err := c.boundedAuthorizationMetadataBase()
+	metadata, err := c.hostMetadataBase()
 	if err != nil {
 		return nil, fmt.Errorf("invalid bounded template contract: %w", err)
 	}
@@ -270,7 +270,7 @@ func (c *ComposedDSA) validateTemplateContract() (*boundedmeta.Metadata, error) 
 // signature). Any other composed program has the base's signature arguments and
 // the template's runtime arguments. metadata is what validateTemplateContract
 // returned.
-func (c *ComposedDSA) checkArgumentLimits(metadata *boundedmeta.Metadata) error {
+func (c *ComposedDSA) checkArgumentLimits(metadata *hostmeta.Metadata) error {
 	if metadata != nil {
 		return metadata.ValidateNetworkLimits()
 	}
@@ -306,7 +306,7 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		parameterTypes[parameter.Name] = parameter.Type
 	}
 	for _, arg := range spec.RuntimeArgs {
-		if isBoundedCosignerReservedName(arg.Name) {
+		if isCosignerReservedName(arg.Name) {
 			return fmt.Errorf("bounded.runtime_args argument name %q uses reserved cosigner namespace", arg.Name)
 		}
 		if arg.Name == "" || (arg.Type != "bytes" && arg.Type != "string" && arg.Type != "uint64") {
@@ -320,15 +320,15 @@ func validateBoundedArguments(spec *generictemplate.BoundedAuthorizationSpec, pa
 		}
 		seen[arg.Name] = struct{}{}
 		// A rekey never reaches Layer 3, so a runtime argument is spend-only.
-		if len(arg.RequiredOn) != 1 || arg.RequiredOn[0] != boundedmeta.PathSpend {
-			return fmt.Errorf("bounded.runtime_args argument %q must have required_on [%s]: a rekey never reaches Layer 3", arg.Name, boundedmeta.PathSpend)
+		if len(arg.RequiredOn) != 1 || arg.RequiredOn[0] != hostmeta.PathSpend {
+			return fmt.Errorf("bounded.runtime_args argument %q must have required_on [%s]: a rekey never reaches Layer 3", arg.Name, hostmeta.PathSpend)
 		}
 	}
 	for _, arg := range spec.DerivedArgs {
-		if isBoundedCosignerReservedName(arg.Name) {
+		if isCosignerReservedName(arg.Name) {
 			return fmt.Errorf("bounded.derived_args argument name %q uses reserved cosigner namespace", arg.Name)
 		}
-		if arg.Name == "" || arg.Kind != boundedmeta.DerivedArgMerkleProof || arg.Parameter == "" || arg.MaxSize != boundedmeta.MerkleProofSize {
+		if arg.Name == "" || arg.Kind != hostmeta.DerivedArgMerkleProof || arg.Parameter == "" || arg.MaxSize != hostmeta.MerkleProofSize {
 			return fmt.Errorf("bounded.derived_args contains invalid argument %q", arg.Name)
 		}
 		if _, duplicate := seen[arg.Name]; duplicate {
@@ -356,18 +356,18 @@ func boundedRuntimeArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSp
 	return defs
 }
 
-func boundedDerivedArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) []boundedmeta.DerivedArg {
+func boundedDerivedArgsFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) []hostmeta.DerivedArg {
 	if spec == nil {
 		return nil
 	}
-	args := make([]boundedmeta.DerivedArg, len(spec.DerivedArgs))
+	args := make([]hostmeta.DerivedArg, len(spec.DerivedArgs))
 	for i, arg := range spec.DerivedArgs {
-		args[i] = boundedmeta.DerivedArg{Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize}
+		args[i] = hostmeta.DerivedArg{Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize}
 	}
 	return args
 }
 
-func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) (*BoundedAuthorizationProfile, error) {
+func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) (*HostProfile, error) {
 	if spec == nil {
 		return nil, nil
 	}
@@ -379,19 +379,19 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 		return nil, fmt.Errorf("bounded.max_fee is required")
 	}
 	bounds := &ProfileBounds{MaxFee: new(*spec.MaxFee)}
-	profile := &BoundedAuthorizationProfile{Contract: spec.Contract, Bounds: bounds}
+	profile := &HostProfile{Contract: spec.Contract, Bounds: bounds}
 	if spec.Cosigner != nil {
 		// A template's cosigner is the default type; only a plain host's
 		// bounds choose another, through the spec's unexported field.
 		componentKeyType := spec.Cosigner.ComponentKeyType
 		if componentKeyType == "" {
-			componentKeyType = boundedmeta.DefaultCosignerComponentKeyType
+			componentKeyType = hostmeta.DefaultCosignerComponentKeyType
 		}
-		_, signatureMaxSize, ok := boundedmeta.CosignerSizes(componentKeyType)
+		_, signatureMaxSize, ok := hostmeta.CosignerSizes(componentKeyType)
 		if !ok {
 			return nil, fmt.Errorf("unsupported bounded cosigner component key type %q", componentKeyType)
 		}
-		profile.Cosigner = &boundedmeta.CosignerAuthorization{
+		profile.Cosigner = &hostmeta.CosignerAuthorization{
 			Contract:         spec.Cosigner.Contract,
 			ComponentKeyType: componentKeyType,
 			SignatureMaxSize: signatureMaxSize,
@@ -412,19 +412,19 @@ func boundedProfileFromTemplate(spec *generictemplate.BoundedAuthorizationSpec) 
 	}
 	switch spec.Rekey {
 	case "":
-		return nil, fmt.Errorf("bounded.rekey is required: %s, %s, %s or %s", boundedmeta.RekeyRefused, boundedmeta.RekeySpendingKey, BoundedRekeyOnlyThese, BoundedRekeyPlusCosigned)
-	case BoundedRekeyOnlyThese:
+		return nil, fmt.Errorf("bounded.rekey is required: %s, %s, %s or %s", hostmeta.RekeyRefused, hostmeta.RekeySpendingKey, RekeyOnlyThese, RekeyPlusCosigned)
+	case RekeyOnlyThese:
 		// Only these addresses: no rekey except to an address on the list, which
 		// the framework adds as the rekey_to parameter.
-		profile.Rekey = boundedmeta.RekeyRefused
-		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
-	case BoundedRekeyPlusCosigned:
+		profile.Rekey = hostmeta.RekeyRefused
+		profile.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth}
+	case RekeyPlusCosigned:
 		// These addresses with the spending key alone, others with the cosigner
 		// too; the profile check refuses it without a cosigner.
-		profile.Rekey = boundedmeta.RekeySpendingKey
-		profile.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: rekeylist.Depth}
+		profile.Rekey = hostmeta.RekeySpendingKey
+		profile.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: rekeylist.Depth}
 	default:
-		profile.Rekey = boundedmeta.RekeySetting(spec.Rekey)
+		profile.Rekey = hostmeta.RekeySetting(spec.Rekey)
 	}
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {

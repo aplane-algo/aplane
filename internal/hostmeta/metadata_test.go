@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package boundedmeta
+package hostmeta
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 
 func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 	base := Metadata{
-		Contract:               Contract,
+		Contract:               BoundedContract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
 		Bounds:                 &Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: Layer3PolicyCustom},
@@ -56,7 +56,7 @@ func TestMetadataValidateRejectsInvalidContracts(t *testing.T) {
 // its ALGO or an asset it opts into.
 func TestMetadataValidateAcceptsTheUsersChoice(t *testing.T) {
 	base := Metadata{
-		Contract:               Contract,
+		Contract:               BoundedContract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{64}}),
 		Bounds:                 &Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: Layer3PolicyCustom},
@@ -94,7 +94,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 			})
 		}
 		return &Metadata{
-			Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+			Contract: BoundedContract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
 			Bounds: &Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: policy}, Rekey: RekeyRefused, DerivedArgs: derived,
 		}
 	}
@@ -138,7 +138,7 @@ func TestMetadataValidateCombinedLayer3Policies(t *testing.T) {
 
 func TestMetadataArgumentLayoutPathSizes(t *testing.T) {
 	metadata := &Metadata{
-		Contract:               Contract,
+		Contract:               BoundedContract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
 		Bounds:                 &Bounds{SpendEffects: []string{SpendEffectPay}, MaxFee: new(uint64(2_000)), Layer3Policy: Layer3PolicyCustom},
 		Rekey:                  RekeySpendingKey,
@@ -172,7 +172,7 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 		t.Fatalf("witness.ID() error = %v", err)
 	}
 	metadata := &Metadata{
-		Contract:               Contract,
+		Contract:               BoundedContract,
 		BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 		Bounds:                 &Bounds{SpendEffects: []string{SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: Layer3PolicyCustom},
 		Rekey:                  RekeyRefused,
@@ -238,7 +238,7 @@ func TestMetadataValidateCosignerAuthorization(t *testing.T) {
 func TestMetadataEqual(t *testing.T) {
 	base := func() *Metadata {
 		return &Metadata{
-			Contract:               Contract,
+			Contract:               BoundedContract,
 			BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
 			ArgumentLayout:         BaseArgumentLayout(SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
 			Bounds:                 &Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(5000)), Layer3Policy: Layer3PolicyCustom},
@@ -325,7 +325,7 @@ func listMetadata() *Metadata {
 		Paths: ArgumentPathMask{Spend: ArgForbidden, SpendingRekey: ArgForbidden, ListedRekey: ArgRequired},
 	})
 	return &Metadata{
-		Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
+		Contract: BoundedContract, BaseSignatureArgLayout: layout, ArgumentLayout: slots,
 		Bounds: &Bounds{SpendEffects: []string{"axfer"}, MaxFee: new(uint64(1_000)), Layer3Policy: Layer3PolicyCustom}, Rekey: RekeyRefused,
 		RekeyList:   &RekeyList{Contract: RekeyListContractV1, Depth: 4, RootHex: strings.Repeat("ab", 32)},
 		DerivedArgs: []DerivedArg{{Name: "rekey_list_proof", Kind: DerivedArgRekeyListProof, Parameter: RekeyListEntriesParameter, MaxSize: RekeyListProofSize}},
@@ -519,7 +519,7 @@ func TestMetadataValidatePlainHost(t *testing.T) {
 	}
 	// The bounded contract is the one that needs them, whole.
 	bounded := plain()
-	bounded.Contract = Contract
+	bounded.Contract = BoundedContract
 	if err := bounded.ValidateProfile(); err == nil || !strings.Contains(err.Error(), "bounded2 requires bounds") {
 		t.Fatalf("bounded without bounds: ValidateProfile() error = %v", err)
 	}
@@ -572,7 +572,7 @@ func TestNetworkLimitsRefuseArgumentsTheNetworkRefuses(t *testing.T) {
 	base := func(signatureSize int) *Metadata {
 		layout := SignatureArgLayout{Count: 1, MaxSizes: []int{signatureSize}}
 		return &Metadata{
-			Contract: Contract, BaseSignatureArgLayout: layout, ArgumentLayout: BaseArgumentLayout(layout),
+			Contract: BoundedContract, BaseSignatureArgLayout: layout, ArgumentLayout: BaseArgumentLayout(layout),
 			Bounds: &Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: Layer3PolicyCustom}, Rekey: RekeyRefused,
 		}
 	}

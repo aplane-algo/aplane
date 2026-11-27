@@ -44,12 +44,12 @@ type SignerCacheView interface {
 	// CosignerPublicKey returns the cosigner public key embedded in a cosigned
 	// account's LogicSig, as advertised in inventory.
 	CosignerPublicKey(address string) (string, bool)
-	// BoundedContract returns the advertised bounded authorization contract:
+	// HostContract returns the advertised host contract:
 	// bounded2 has a fee ceiling, plain1 has none.
-	BoundedContract(address string) (string, bool)
-	// BoundedMaxFee returns the advertised on-chain fee ceiling for a bounded
+	HostContract(address string) (string, bool)
+	// HostMaxFee returns the advertised on-chain fee ceiling for a bounded
 	// account.
-	BoundedMaxFee(address string) (uint64, bool)
+	HostMaxFee(address string) (uint64, bool)
 	// LogicSigResourceProfile returns the split resource contract derived from
 	// the final compiled program and reviewed authorization paths.
 	LogicSigResourceProfile(address string) (lsigresource.Profile, bool)

@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
@@ -53,7 +53,7 @@ func descriptor(selected Arrangement) string {
 	name := ParameterRekeyAuthority + "=" + selected.Rekey
 	switch selected.Cosigner {
 	case "":
-	case boundedmeta.DefaultCosignerComponentKeyType:
+	case hostmeta.DefaultCosignerComponentKeyType:
 		name = "cosigner/" + name
 	default:
 		name = "cosigner=" + selected.Cosigner + "/" + name
@@ -148,7 +148,7 @@ func grammarFingerprint(keyType string, programs []*program) string {
 // no signing transcript.
 func boundaryDigest(selected *program, parameters map[string]string) (string, error) {
 	composer := selected.composer
-	profile, err := composeddsa.CanonicalBoundedProfile(composer.BoundedAuthorizationProfile(), composer.BoundedAuthorizationMetadata())
+	profile, err := composeddsa.CanonicalBoundedProfile(composer.HostProfile(), composer.HostMetadata())
 	if err != nil {
 		return "", fmt.Errorf("encode profile: %w", err)
 	}
@@ -157,12 +157,12 @@ func boundaryDigest(selected *program, parameters map[string]string) (string, er
 		return "", fmt.Errorf("encode behavior parameters: %w", err)
 	}
 	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(boundaryDigestDomainV1))
-	encoded = boundedmeta.AppendField(encoded, []byte(boundary.SchemaV1))
-	encoded = boundedmeta.AppendField(encoded, []byte(selected.fingerprint))
-	encoded = boundedmeta.AppendField(encoded, []byte(lsigprovider.FingerprintBasePrimitive(composer.BaseKeyType())))
-	encoded = boundedmeta.AppendField(encoded, profile)
-	encoded = boundedmeta.AppendField(encoded, behavior)
+	encoded = hostmeta.AppendField(encoded, []byte(boundaryDigestDomainV1))
+	encoded = hostmeta.AppendField(encoded, []byte(boundary.SchemaV1))
+	encoded = hostmeta.AppendField(encoded, []byte(selected.fingerprint))
+	encoded = hostmeta.AppendField(encoded, []byte(lsigprovider.FingerprintBasePrimitive(composer.BaseKeyType())))
+	encoded = hostmeta.AppendField(encoded, profile)
+	encoded = hostmeta.AppendField(encoded, behavior)
 	sum := sha512.Sum512_256(encoded)
 	return hex.EncodeToString(sum[:]), nil
 }

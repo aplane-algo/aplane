@@ -18,8 +18,8 @@ const (
 	ErrorLocked                   = svcerr.KindLocked
 	ErrorUnavailable              = svcerr.KindUnavailable
 	ErrorInternal                 = svcerr.KindInternal
-	ErrorBoundedCosignerRequired  = svcerr.KindBoundedCosignerRequired
-	ErrorBoundedRekeyNotListed    = svcerr.KindBoundedRekeyNotListed
+	ErrorCosignerRequired         = svcerr.KindCosignerRequired
+	ErrorRekeyTargetNotListed     = svcerr.KindRekeyTargetNotListed
 	ErrorRotatingSigningRequired  = svcerr.KindRotatingSigningRequired
 	ErrorRotatingStageUnproven    = svcerr.KindRotatingStageUnproven
 	ErrorRotatingStageChanged     = svcerr.KindRotatingStageChanged
@@ -34,11 +34,11 @@ func unavailable(msg string) *ServiceError {
 }
 func internal(msg string) *ServiceError { return &ServiceError{Kind: ErrorInternal, Message: msg} }
 
-// boundedCosignerRequired rejects a cosigner-gated bounded spend submitted on the
+// cosignerRequired rejects a cosigner-gated bounded spend submitted on the
 // plain /sign path and directs clients to the user-first component flow.
-func boundedCosignerRequired() *ServiceError {
+func cosignerRequired() *ServiceError {
 	return &ServiceError{
-		Kind:    ErrorBoundedCosignerRequired,
+		Kind:    ErrorCosignerRequired,
 		Message: "bounded-cosigner operation requires POST /plan, POST /sign/component, then POST /sign/assemble",
 	}
 }

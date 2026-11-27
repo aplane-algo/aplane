@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -92,11 +92,11 @@ type Shape struct {
 
 // arrangementSetting is the contract's rekey setting under a rekey option: only
 // these is refused plus the list, plus cosigned a spending-key rekey plus the list.
-func arrangementSetting(rekey string) boundedmeta.RekeySetting {
+func arrangementSetting(rekey string) hostmeta.RekeySetting {
 	if rekey == RekeySpendingKey || rekey == RekeyPlusCosigned {
-		return boundedmeta.RekeySpendingKey
+		return hostmeta.RekeySpendingKey
 	}
-	return boundedmeta.RekeyRefused
+	return hostmeta.RekeyRefused
 }
 
 // Policy names the shape's framework Layer 3 policy.
@@ -122,7 +122,7 @@ func (s Shape) Descriptor() string {
 	cosigner := "none"
 	switch s.Cosigner {
 	case "":
-	case boundedmeta.DefaultCosignerComponentKeyType:
+	case hostmeta.DefaultCosignerComponentKeyType:
 		cosigner = "required"
 	default:
 		cosigner = s.Cosigner
@@ -186,8 +186,8 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 		// The cosigner signs every spend, and every rekey the spending key
 		// declares; a listed rekey never asks it.
 		bounded.Cosigner = &generictemplate.BoundedCosignerSpec{
-			Contract:         boundedmeta.CosignerContractV1,
-			RequiredOn:       boundedmeta.CosignerRequiredOn(arrangementSetting(shape.Rekey)),
+			Contract:         hostmeta.CosignerContractV1,
+			RequiredOn:       hostmeta.CosignerRequiredOn(arrangementSetting(shape.Rekey)),
 			ComponentKeyType: shape.Cosigner,
 		}
 	}
@@ -211,7 +211,7 @@ func shapeSpec(plain Plain, shape Shape, maxFee uint64) (*composeddsa.TemplateSp
 	if shape.Encoding == EncodingMerkle {
 		bounded.DerivedArgs = []generictemplate.BoundedDerivedArgSpec{{
 			Name:      merkleProofArg,
-			Kind:      boundedmeta.DerivedArgMerkleProof,
+			Kind:      hostmeta.DerivedArgMerkleProof,
 			Parameter: ParameterRecipients,
 			MaxSize:   merkleProofSize,
 		}}
@@ -249,8 +249,8 @@ func newShapeComposer(plain Plain, base Base, shape Shape, maxFee uint64) (*comp
 	if err != nil {
 		return nil, err
 	}
-	metadata := composer.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Contract != boundedmeta.Contract || storedCosigner(metadata) != shape.Cosigner {
+	metadata := composer.HostMetadata()
+	if metadata == nil || metadata.Contract != hostmeta.BoundedContract || storedCosigner(metadata) != shape.Cosigner {
 		return nil, fmt.Errorf("the bounded program has no valid contract")
 	}
 	return composer, nil

@@ -6,7 +6,7 @@ package keys
 import (
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 )
 
@@ -37,16 +37,16 @@ func TestScanLogicSigResourcesSeparatesProgramAndArguments(t *testing.T) {
 func TestScanBoundedResourcesUsesPathMasks(t *testing.T) {
 	t.Parallel()
 
-	metadata := &boundedmeta.Metadata{ArgumentLayout: []boundedmeta.ArgumentSlot{
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-		{MaxSize: 512, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
-		{MaxSize: 1_423, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgForbidden}},
+	metadata := &hostmeta.Metadata{ArgumentLayout: []hostmeta.ArgumentSlot{
+		{MaxSize: 1_423, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+		{MaxSize: 512, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
+		{MaxSize: 1_423, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgForbidden}},
 	}}
 	profile, err := scanLogicSigResources(&Payload{
-		Category:             CategoryDSALsig,
-		LogicSigBytecode:     make([]byte, 4_500),
-		BoundedAuthorization: metadata,
-		LogicSigOpcodeProfile: lsigresource.BoundedOpcodeProfile(
+		Category:         CategoryDSALsig,
+		LogicSigBytecode: make([]byte, 4_500),
+		Host:             metadata,
+		LogicSigOpcodeProfile: lsigresource.HostOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,

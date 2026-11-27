@@ -13,8 +13,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/avmsim"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -73,32 +73,32 @@ func TestOnlyTheseTemplateDeclaresTheListContract(t *testing.T) {
 	provider := onlyTheseProvider(t)
 	var injected bool
 	for _, def := range provider.CreationParams() {
-		if def.Name == composeddsa.BoundedRekeyToParameter {
+		if def.Name == composeddsa.RekeyToParameter {
 			injected = def.Required && def.Type == "address[]" && def.MaxItems == rekeylist.MaxEntries
 		}
-		if def.Name == boundedmeta.RekeyListRootParameter {
+		if def.Name == hostmeta.RekeyListRootParameter {
 			t.Fatal("the generator's root is offered as a creation parameter")
 		}
 	}
 	if !injected {
-		t.Fatalf("the framework did not inject %s", composeddsa.BoundedRekeyToParameter)
+		t.Fatalf("the framework did not inject %s", composeddsa.RekeyToParameter)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata == nil || metadata.Rekey != boundedmeta.RekeyRefused || metadata.RekeyList == nil ||
-		metadata.RekeyList.Contract != boundedmeta.RekeyListContractV1 || metadata.RekeyList.Depth != rekeylist.Depth || metadata.RekeyList.RootHex != "" {
+	metadata := provider.HostMetadata()
+	if metadata == nil || metadata.Rekey != hostmeta.RekeyRefused || metadata.RekeyList == nil ||
+		metadata.RekeyList.Contract != hostmeta.RekeyListContractV1 || metadata.RekeyList.Depth != rekeylist.Depth || metadata.RekeyList.RootHex != "" {
 		t.Fatalf("metadata = %+v, rekey list %+v", metadata, metadata.RekeyList)
 	}
-	var proofSlot *boundedmeta.ArgumentSlot
+	var proofSlot *hostmeta.ArgumentSlot
 	for i, slot := range metadata.ArgumentLayout {
-		if slot.Source == boundedmeta.ArgSourceDerived {
+		if slot.Source == hostmeta.ArgSourceDerived {
 			proofSlot = &metadata.ArgumentLayout[i]
 		}
 	}
-	want := boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired}
+	want := hostmeta.ArgumentPathMask{Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgRequired}
 	if proofSlot == nil || proofSlot.MaxSize != rekeylist.ProofSize || proofSlot.Paths != want {
 		t.Fatalf("list proof slot = %+v", proofSlot)
 	}
-	if got := metadata.ArgumentBytesForPath(boundedmeta.PathListedRekey); got != 1423+rekeylist.ProofSize {
+	if got := metadata.ArgumentBytesForPath(hostmeta.PathListedRekey); got != 1423+rekeylist.ProofSize {
 		t.Fatalf("listed rekey argument bytes = %d", got)
 	}
 }
@@ -128,7 +128,7 @@ func TestOnlyTheseRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ownList.GenerateTEAL(rekeyListSpendingKey, map[string]string{
-		composeddsa.BoundedRekeyToParameter: rekeyListListedA.String(), boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32),
+		composeddsa.RekeyToParameter: rekeyListListedA.String(), hostmeta.RekeyListRootParameter: strings.Repeat("00", 32),
 	}); err == nil || !strings.Contains(err.Error(), "framework-injected contract") {
 		t.Fatalf("a template's own rekey_to: error = %v", err)
 	}
@@ -168,11 +168,11 @@ func TestOnlyTheseRules(t *testing.T) {
 // upper-case root can't be compiled while the metadata would refuse it.
 func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam})
+	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared[boundedmeta.RekeyListRootParameter] = strings.ToUpper(prepared[boundedmeta.RekeyListRootParameter])
+	prepared[hostmeta.RekeyListRootParameter] = strings.ToUpper(prepared[hostmeta.RekeyListRootParameter])
 	if _, err := provider.GenerateTEAL(rekeyListSpendingKey, prepared); err == nil || !strings.Contains(err.Error(), "lowercase hex") {
 		t.Fatalf("GenerateTEAL() with an upper-case root: error = %v", err)
 	}
@@ -180,11 +180,11 @@ func TestRekeyListRootMustBeCanonicalHex(t *testing.T) {
 
 func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	request := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam}
+	request := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam}
 	if err := provider.ValidateCreationParams(request); err != nil {
 		t.Fatalf("a request with the list: %v", err)
 	}
-	withRoot := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam, boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
+	withRoot := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
 	if err := provider.ValidateCreationParams(withRoot); err == nil || !strings.Contains(err.Error(), "unknown parameter") {
 		t.Fatalf("a request that sets the root: error = %v", err)
 	}
@@ -202,14 +202,14 @@ func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared[boundedmeta.RekeyListRootParameter] != hex.EncodeToString(root[:]) {
+	if prepared[hostmeta.RekeyListRootParameter] != hex.EncodeToString(root[:]) {
 		t.Fatal("the prepared root is not the list's root")
 	}
 	otherKey, err := composeddsa.RekeyListRootFor(bytes.Repeat([]byte{0x78}, 64), request)
 	if err != nil || otherKey == root {
 		t.Fatal("two spending keys give the same root")
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(rekeyListSpendingKey, prepared, make([]byte, 3000))
+	metadata, err := provider.BuildHostMetadata(rekeyListSpendingKey, prepared, make([]byte, 3000))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestRekeyListRootComesOnlyFromGeneration(t *testing.T) {
 // with its own proof and nothing else does.
 func TestOnlyTheseProgramAdmitsOnlyListedRekeys(t *testing.T) {
 	provider := onlyTheseProvider(t)
-	request := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam}
+	request := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
 		t.Fatal(err)
@@ -292,10 +292,10 @@ func TestPlusCosignedProgramTakesTheListOrTheCosigner(t *testing.T) {
 	yaml := strings.Replace(onlyTheseTemplateYAML, "  rekey: only_these\n",
 		"  rekey: plus_cosigned\n  cosigner:\n    contract: cosigner1\n    required_on: [spend, spending_rekey]\n", 1)
 	provider := authorAllowlistProvider(t, yaml)
-	cosignerKey := bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize)
+	cosignerKey := bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize)
 	request := map[string]string{
-		composeddsa.BoundedRekeyToParameter:           rekeyListEntriesParam,
-		composeddsa.BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
+		composeddsa.RekeyToParameter:           rekeyListEntriesParam,
+		composeddsa.CosignerPublicKeyParameter: hex.EncodeToString(cosignerKey),
 	}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
@@ -308,8 +308,8 @@ func TestPlusCosignedProgramTakesTheListOrTheCosigner(t *testing.T) {
 	if n := strings.Count(teal, hex.EncodeToString(cosignerKey)); n != 1 {
 		t.Fatalf("the cosigner key compiles %d times, want once", n)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if metadata.Rekey != boundedmeta.RekeySpendingKey || metadata.RekeyList == nil || metadata.Cosigner == nil {
+	metadata := provider.HostMetadata()
+	if metadata.Rekey != hostmeta.RekeySpendingKey || metadata.RekeyList == nil || metadata.Cosigner == nil {
 		t.Fatalf("plus cosigned metadata = %+v", metadata)
 	}
 	program, err := avmsim.Assemble(teal)
@@ -404,10 +404,10 @@ parameters:
     max_items: 30
 `
 	provider := authorAllowlistProvider(t, yaml)
-	if provider.BoundedAuthorizationMetadata() == nil {
+	if provider.HostMetadata() == nil {
 		t.Fatal("the framework-policy list account has no metadata")
 	}
-	request := map[string]string{"recipients": rekeyListListedB.String(), composeddsa.BoundedRekeyToParameter: rekeyListListedA.String()}
+	request := map[string]string{"recipients": rekeyListListedB.String(), composeddsa.RekeyToParameter: rekeyListListedA.String()}
 	prepared, err := provider.PrepareRekeyList(rekeyListPrivateKey, request)
 	if err != nil {
 		t.Fatal(err)
@@ -451,7 +451,7 @@ template_variables: []
       parameter: rekey_to
       max_size: 512
 `, 1)
-	params := map[string]string{composeddsa.BoundedRekeyToParameter: rekeyListEntriesParam, boundedmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
+	params := map[string]string{composeddsa.RekeyToParameter: rekeyListEntriesParam, hostmeta.RekeyListRootParameter: strings.Repeat("00", 32)}
 	for name, yaml := range map[string]string{"strict variable": strictVariable, "substitution": substituted, "range": ranged, "derived argument": derived} {
 		t.Run(name, func(t *testing.T) {
 			composer, err := noneComposer(yaml)
@@ -480,7 +480,7 @@ func TestInjectedRekeyToDescribesTheOtherRekeys(t *testing.T) {
 	} {
 		var description string
 		for _, def := range authorAllowlistProvider(t, yaml).CreationParams() {
-			if def.Name == composeddsa.BoundedRekeyToParameter {
+			if def.Name == composeddsa.RekeyToParameter {
 				description = def.Description
 			}
 		}

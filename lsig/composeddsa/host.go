@@ -14,7 +14,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
@@ -22,26 +22,26 @@ import (
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
-// The generation-side vocabulary is defined in terms of boundedmeta, the
+// The generation-side vocabulary is defined in terms of hostmeta, the
 // durable storage vocabulary, so the two cannot drift: a contract revision
-// edits boundedmeta once and both sides follow at compile time.
+// edits hostmeta once and both sides follow at compile time.
 const (
 	// BoundedContract is the bounded-authorization contract.
-	BoundedContract = boundedmeta.Contract
+	BoundedContract = hostmeta.BoundedContract
 	// PlainContract is the plain host: signatures and overlays, no host rules.
-	PlainContract = boundedmeta.PlainContract
-	// BoundedCosignerPublicKeyParameter is injected for cosigner-enabled profiles.
-	BoundedCosignerPublicKeyParameter = boundedmeta.CosignerPublicKeyParameter
-	// BoundedRekeyToParameter carries a rekey-to list's entries. The framework
+	PlainContract = hostmeta.PlainContract
+	// CosignerPublicKeyParameter is injected for cosigner-enabled profiles.
+	CosignerPublicKeyParameter = hostmeta.CosignerPublicKeyParameter
+	// RekeyToParameter carries a rekey-to list's entries. The framework
 	// injects it for a profile with a list; a template that declares it must
 	// match the injected definition exactly.
-	BoundedRekeyToParameter = boundedmeta.RekeyListEntriesParameter
-	// BoundedRekeyOnlyThese is the template's rekey value for a rekey-to list:
+	RekeyToParameter = hostmeta.RekeyListEntriesParameter
+	// RekeyOnlyThese is the template's rekey value for a rekey-to list:
 	// rekey: refused, plus the list.
-	BoundedRekeyOnlyThese = boundedmeta.RekeyOnlyThese
-	// BoundedRekeyPlusCosigned is the template's rekey value for a rekey-to list
+	RekeyOnlyThese = hostmeta.RekeyOnlyThese
+	// RekeyPlusCosigned is the template's rekey value for a rekey-to list
 	// beside cosigned rekeys: rekey: spending_key, plus the list, with a cosigner.
-	BoundedRekeyPlusCosigned = boundedmeta.RekeyPlusCosigned
+	RekeyPlusCosigned = hostmeta.RekeyPlusCosigned
 
 	boundedReservedNamePrefix  = "bounded_"
 	boundedReservedLabelPrefix = "__aplane_bounded1_"
@@ -50,19 +50,19 @@ const (
 	boundedBehaviorParametersDomainV1 = "APLANE_BOUNDED_BEHAVIOR_PARAMETERS_V1"
 )
 
-// BoundedAuthorizationProfile defines the bounded envelope compiled around
+// HostProfile defines the bounded envelope compiled around
 // a composed DSA spending policy. Under the plain contract there is no
 // envelope: no spend effects and no fee ceiling, only the rekey dispatch and
 // the overlays.
-type BoundedAuthorizationProfile struct {
+type HostProfile struct {
 	Contract string
 	// Bounds is the bounded host's envelope, nil on a plain host.
 	Bounds *ProfileBounds
-	Rekey  boundedmeta.RekeySetting
+	Rekey  hostmeta.RekeySetting
 	// RekeyList is the template-level rekey-to list record; the root is filled
 	// in at generation.
-	RekeyList *boundedmeta.RekeyList
-	Cosigner  *boundedmeta.CosignerAuthorization
+	RekeyList *hostmeta.RekeyList
+	Cosigner  *hostmeta.CosignerAuthorization
 }
 
 // ProfileBounds is the envelope a bounded host compiles: the transaction kinds
@@ -81,11 +81,11 @@ func (bounds *ProfileBounds) spendEffectNames() []string {
 	return names
 }
 
-type boundedFingerprint struct {
+type hostFingerprint struct {
 	CanonicalProfileHex string `json:"canonical_profile_hex"`
 }
 
-func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthorizationProfile {
+func cloneHostProfile(profile *HostProfile) *HostProfile {
 	if profile == nil {
 		return nil
 	}
@@ -93,7 +93,7 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	if profile.Bounds != nil {
 		cloned.Bounds = &ProfileBounds{
 			SpendEffects: append([]txeffects.SpendEffect(nil), profile.Bounds.SpendEffects...),
-			MaxFee:       boundedmeta.CloneMaxFee(profile.Bounds.MaxFee),
+			MaxFee:       hostmeta.CloneMaxFee(profile.Bounds.MaxFee),
 		}
 	}
 	if profile.Cosigner != nil {
@@ -108,42 +108,42 @@ func cloneBoundedProfile(profile *BoundedAuthorizationProfile) *BoundedAuthoriza
 	return &cloned
 }
 
-// validate delegates the bounded rule set to boundedmeta, so generation and
+// validate delegates the bounded rule set to hostmeta, so generation and
 // storage validation cannot diverge.
-func (profile *BoundedAuthorizationProfile) validate() error {
+func (profile *HostProfile) validate() error {
 	if profile == nil {
 		return nil
 	}
-	if err := boundedmeta.CheckBounds(profile.Contract, profile.Bounds != nil); err != nil {
+	if err := hostmeta.CheckBounds(profile.Contract, profile.Bounds != nil); err != nil {
 		return err
 	}
 	if bounds := profile.Bounds; bounds != nil {
-		if err := boundedmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
+		if err := hostmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
 			return err
 		}
-		if err := boundedmeta.ValidateSpendEffects(bounds.spendEffectNames()); err != nil {
+		if err := hostmeta.ValidateSpendEffects(bounds.spendEffectNames()); err != nil {
 			return err
 		}
 	}
-	if err := boundedmeta.ValidateRekeySetting(profile.Rekey); err != nil {
+	if err := hostmeta.ValidateRekeySetting(profile.Rekey); err != nil {
 		return err
 	}
 	// Plus cosigned needs the cosigner: alone, the spending key already rekeys
 	// anywhere, so the list would add nothing.
-	if profile.RekeyList != nil && profile.Rekey == boundedmeta.RekeySpendingKey && profile.Cosigner == nil {
-		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", boundedmeta.RekeyPlusCosigned)
+	if profile.RekeyList != nil && profile.Rekey == hostmeta.RekeySpendingKey && profile.Cosigner == nil {
+		return fmt.Errorf("a rekey-to list beside a spending-key rekey (%s) needs a cosigner", hostmeta.RekeyPlusCosigned)
 	}
-	if err := boundedmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner, profile.Rekey); err != nil {
+	if err := hostmeta.ValidateCosignerAuthorizationProfile(profile.Cosigner, profile.Rekey); err != nil {
 		return err
 	}
 	return nil
 }
 
-// validatedBoundedProfile canonicalizes a profile and checks it against its
+// validatedHostProfile canonicalizes a profile and checks it against its
 // metadata, which catches contradictions such as a rekey-to list beside a
 // spending-key rekey without a cosigner. CanonicalBoundedProfile encodes the
 // result.
-func validatedBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) (*BoundedAuthorizationProfile, error) {
+func validatedHostProfile(profile *HostProfile, metadata *hostmeta.Metadata) (*HostProfile, error) {
 	canonical, err := canonicalBoundedProfile(profile)
 	if err != nil {
 		return nil, err
@@ -157,14 +157,14 @@ func validatedBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	return canonical, nil
 }
 
-func canonicalBoundedProfile(profile *BoundedAuthorizationProfile) (*BoundedAuthorizationProfile, error) {
+func canonicalBoundedProfile(profile *HostProfile) (*HostProfile, error) {
 	if profile == nil {
 		return nil, nil
 	}
 	if err := profile.validate(); err != nil {
 		return nil, err
 	}
-	canonical := cloneBoundedProfile(profile)
+	canonical := cloneHostProfile(profile)
 	if canonical.Bounds != nil {
 		canonical.Bounds.SpendEffects = canonicalSpendEffects(canonical.Bounds.SpendEffects)
 	}
@@ -185,7 +185,7 @@ func canonicalSpendEffects(effects []txeffects.SpendEffect) []txeffects.SpendEff
 	return ordered
 }
 
-func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) any {
+func hostFingerprintProjection(profile *HostProfile, metadata *hostmeta.Metadata) any {
 	if profile == nil {
 		return nil
 	}
@@ -193,19 +193,19 @@ func boundedFingerprintProjection(profile *BoundedAuthorizationProfile, metadata
 	if err != nil {
 		return map[string]string{"invalid": err.Error()}
 	}
-	return boundedFingerprint{CanonicalProfileHex: hex.EncodeToString(encoded)}
+	return hostFingerprint{CanonicalProfileHex: hex.EncodeToString(encoded)}
 }
 
 // CanonicalBoundedProfile encodes a profile using the bounded binary contract,
 // which template fingerprints and the plain hosts' boundary digest hash.
-func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) ([]byte, error) {
-	canonical, err := validatedBoundedProfile(profile, metadata)
+func CanonicalBoundedProfile(profile *HostProfile, metadata *hostmeta.Metadata) ([]byte, error) {
+	canonical, err := validatedHostProfile(profile, metadata)
 	if err != nil {
 		return nil, err
 	}
 	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(boundedProfileDomain))
-	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Contract))
+	encoded = hostmeta.AppendField(encoded, []byte(boundedProfileDomain))
+	encoded = hostmeta.AppendField(encoded, []byte(canonical.Contract))
 	// A plain host has no bounds, and its encoding says so as it always has:
 	// no spend effects and no fee field. The contract name leads the encoding,
 	// so the missing field needs no placeholder.
@@ -216,49 +216,49 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	}
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(spendEffects)))
 	for _, effect := range spendEffects {
-		encoded = boundedmeta.AppendField(encoded, []byte(effect))
+		encoded = hostmeta.AppendField(encoded, []byte(effect))
 	}
 	if maxFee != nil {
 		encoded = binary.BigEndian.AppendUint64(encoded, *maxFee)
 	}
-	encoded = boundedmeta.AppendField(encoded, []byte(canonical.Rekey))
+	encoded = hostmeta.AppendField(encoded, []byte(canonical.Rekey))
 	// The list's contract and depth, never its root: the root is an instance
 	// value, and the review digest binds the entries it comes from instead.
 	if canonical.RekeyList == nil {
 		encoded = binary.BigEndian.AppendUint32(encoded, 0)
 	} else {
 		encoded = binary.BigEndian.AppendUint32(encoded, 1)
-		encoded = boundedmeta.AppendField(encoded, []byte(canonical.RekeyList.Contract))
+		encoded = hostmeta.AppendField(encoded, []byte(canonical.RekeyList.Contract))
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(canonical.RekeyList.Depth))
 	}
 	if canonical.Cosigner == nil {
 		encoded = binary.BigEndian.AppendUint32(encoded, 0)
 	} else {
 		encoded = binary.BigEndian.AppendUint32(encoded, 1)
-		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.Contract))
-		encoded = boundedmeta.AppendField(encoded, []byte(canonical.Cosigner.ComponentKeyType))
+		encoded = hostmeta.AppendField(encoded, []byte(canonical.Cosigner.Contract))
+		encoded = hostmeta.AppendField(encoded, []byte(canonical.Cosigner.ComponentKeyType))
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(canonical.Cosigner.SignatureMaxSize))
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(canonical.Cosigner.RequiredOn)))
 		for _, path := range canonical.Cosigner.RequiredOn {
-			encoded = boundedmeta.AppendField(encoded, []byte(path))
+			encoded = hostmeta.AppendField(encoded, []byte(path))
 		}
 	}
-	encoded = boundedmeta.AppendField(encoded, []byte(metadata.Layer3Policy()))
+	encoded = hostmeta.AppendField(encoded, []byte(metadata.Layer3Policy()))
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(metadata.BaseSignatureArgLayout.Count))
 	for _, maxSize := range metadata.BaseSignatureArgLayout.MaxSizes {
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(maxSize))
 	}
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.DerivedArgs)))
 	for _, arg := range metadata.DerivedArgs {
-		encoded = boundedmeta.AppendField(encoded, []byte(arg.Name))
-		encoded = boundedmeta.AppendField(encoded, []byte(arg.Kind))
-		encoded = boundedmeta.AppendField(encoded, []byte(arg.Parameter))
+		encoded = hostmeta.AppendField(encoded, []byte(arg.Name))
+		encoded = hostmeta.AppendField(encoded, []byte(arg.Kind))
+		encoded = hostmeta.AppendField(encoded, []byte(arg.Parameter))
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(arg.MaxSize))
 	}
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.RuntimeArgs)))
 	for _, arg := range metadata.RuntimeArgs {
-		encoded = boundedmeta.AppendField(encoded, []byte(arg.Name))
-		encoded = boundedmeta.AppendField(encoded, []byte(arg.Type))
+		encoded = hostmeta.AppendField(encoded, []byte(arg.Name))
+		encoded = hostmeta.AppendField(encoded, []byte(arg.Type))
 		if arg.Required {
 			encoded = binary.BigEndian.AppendUint32(encoded, 1)
 		} else {
@@ -270,17 +270,17 @@ func CanonicalBoundedProfile(profile *BoundedAuthorizationProfile, metadata *bou
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(metadata.ArgumentLayout)))
 	for _, slot := range metadata.ArgumentLayout {
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(slot.Index))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Name))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Source))
+		encoded = hostmeta.AppendField(encoded, []byte(slot.Name))
+		encoded = hostmeta.AppendField(encoded, []byte(slot.Source))
 		encoded = binary.BigEndian.AppendUint32(encoded, uint32(slot.MaxSize))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.Spend))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.SpendingRekey))
-		encoded = boundedmeta.AppendField(encoded, []byte(slot.Paths.ListedRekey))
+		encoded = hostmeta.AppendField(encoded, []byte(slot.Paths.Spend))
+		encoded = hostmeta.AppendField(encoded, []byte(slot.Paths.SpendingRekey))
+		encoded = hostmeta.AppendField(encoded, []byte(slot.Paths.ListedRekey))
 	}
 	return encoded, nil
 }
 
-func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *boundedmeta.Metadata) error {
+func validateCanonicalMetadata(profile *HostProfile, metadata *hostmeta.Metadata) error {
 	if err := metadata.ValidateProfile(); err != nil {
 		return fmt.Errorf("invalid bounded profile metadata: %w", err)
 	}
@@ -294,24 +294,24 @@ func validateCanonicalMetadata(profile *BoundedAuthorizationProfile, metadata *b
 
 // equalBoundsProfile compares the envelope; the Layer 3 policy is the
 // metadata's alone.
-func equalBoundsProfile(metadata *boundedmeta.Bounds, profile *ProfileBounds) bool {
+func equalBoundsProfile(metadata *hostmeta.Bounds, profile *ProfileBounds) bool {
 	if metadata == nil || profile == nil {
 		return metadata == nil && profile == nil
 	}
-	return boundedmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) &&
+	return hostmeta.EqualMaxFee(metadata.MaxFee, profile.MaxFee) &&
 		slices.Equal(metadata.SpendEffects, profile.spendEffectNames())
 }
 
 // equalRekeyListProfile compares the list's definition; the root is the
 // instance's and only the metadata has it.
-func equalRekeyListProfile(a, b *boundedmeta.RekeyList) bool {
+func equalRekeyListProfile(a, b *hostmeta.RekeyList) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
 	return a.Contract == b.Contract && a.Depth == b.Depth
 }
 
-func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
+func equalCosignerProfile(a, b *hostmeta.CosignerAuthorization) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
@@ -319,20 +319,20 @@ func equalCosignerProfile(a, b *boundedmeta.CosignerAuthorization) bool {
 		a.SignatureMaxSize == b.SignatureMaxSize && slices.Equal(a.RequiredOn, b.RequiredOn)
 }
 
-// BoundedCosignerParameterDef returns the definition of the cosigner key the
+// CosignerParameterDef returns the definition of the cosigner key the
 // composer injects for a cosigner of componentKeyType, which a provider that
 // presents the key itself also uses. Its length is part of the composed
 // fingerprint.
-func BoundedCosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
+func CosignerParameterDef(componentKeyType string) lsigprovider.ParameterDef {
 	def := lsigprovider.ParameterDef{
-		Name:        BoundedCosignerPublicKeyParameter,
+		Name:        CosignerPublicKeyParameter,
 		Label:       "Cosigner Public Key",
 		Description: "Falcon-1024 public key for bounded spend authorization",
 		Type:        "bytes",
 		Required:    true,
-		MaxLength:   boundedmeta.DefaultCosignerPublicKeySize * 2,
+		MaxLength:   hostmeta.DefaultCosignerPublicKeySize * 2,
 	}
-	if publicKeySize, _, ok := boundedmeta.CosignerSizes(componentKeyType); ok {
+	if publicKeySize, _, ok := hostmeta.CosignerSizes(componentKeyType); ok {
 		def.MaxLength = publicKeySize * 2
 	}
 	if name, ok := witness.AlgorithmName(componentKeyType); ok {
@@ -343,12 +343,12 @@ func BoundedCosignerParameterDef(componentKeyType string) lsigprovider.Parameter
 
 // cosignerPublicKeySize is the size of this composer's cosigner public key.
 func (c *ComposedDSA) cosignerPublicKeySize() (int, error) {
-	if c.bounded == nil || c.bounded.Cosigner == nil {
+	if c.host == nil || c.host.Cosigner == nil {
 		return 0, fmt.Errorf("composer declares no bounded cosigner")
 	}
-	publicKeySize, _, ok := boundedmeta.CosignerSizes(c.bounded.Cosigner.ComponentKeyType)
+	publicKeySize, _, ok := hostmeta.CosignerSizes(c.host.Cosigner.ComponentKeyType)
 	if !ok {
-		return 0, fmt.Errorf("unsupported bounded cosigner component key type %q", c.bounded.Cosigner.ComponentKeyType)
+		return 0, fmt.Errorf("unsupported bounded cosigner component key type %q", c.host.Cosigner.ComponentKeyType)
 	}
 	return publicKeySize, nil
 }
@@ -372,31 +372,31 @@ func (c *ComposedDSA) validatedSignatureArgLayout() (SignatureArgLayout, error) 
 	if !ok {
 		return SignatureArgLayout{}, fmt.Errorf("base key type %q does not expose a static bounded signature argument layout", c.baseKeyType)
 	}
-	if err := boundedmeta.ValidateSignatureLayout(layout); err != nil {
+	if err := hostmeta.ValidateSignatureLayout(layout); err != nil {
 		return SignatureArgLayout{}, err
 	}
 	return layout, nil
 }
 
-// BoundedAuthorizationMetadata returns the canonical template-level inventory
+// HostMetadata returns the canonical template-level inventory
 // projection. Instance-only fields are populated during key generation.
-func (c *ComposedDSA) BoundedAuthorizationMetadata() *boundedmeta.Metadata {
-	metadata, err := c.boundedAuthorizationMetadataBase()
+func (c *ComposedDSA) HostMetadata() *hostmeta.Metadata {
+	metadata, err := c.hostMetadataBase()
 	if err != nil {
 		return nil
 	}
 	return metadata
 }
 
-// BuildBoundedAuthorizationMetadata snapshots the complete non-secret bounded
+// BuildHostMetadata snapshots the complete non-secret bounded
 // signing contract after program derivation. Existing keys use this durable
 // projection and never need the installed YAML template to route or assemble.
-func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	metadata, err := c.boundedAuthorizationMetadataBase()
+func (c *ComposedDSA) BuildHostMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*hostmeta.Metadata, error) {
+	metadata, err := c.hostMetadataBase()
 	if err != nil || metadata == nil {
 		return metadata, err
 	}
-	profile := c.bounded
+	profile := c.host
 	if profile.Cosigner != nil {
 		cosignerPublicKey, err := c.validatedCosignerPublicKey(publicKey, params)
 		if err != nil {
@@ -459,37 +459,37 @@ func (c *ComposedDSA) validatedCosignerPublicKey(spendingPublicKey []byte, param
 	if err != nil {
 		return nil, err
 	}
-	cosignerPublicKey, err := decodeHexParameter(params[BoundedCosignerPublicKeyParameter], BoundedCosignerPublicKeyParameter, publicKeySize)
+	cosignerPublicKey, err := decodeHexParameter(params[CosignerPublicKeyParameter], CosignerPublicKeyParameter, publicKeySize)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.refuseSharedSpendingKey("cosigner", spendingPublicKey, c.bounded.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
+	if err := c.refuseSharedSpendingKey("cosigner", spendingPublicKey, c.host.Cosigner.ComponentKeyType, cosignerPublicKey); err != nil {
 		return nil, err
 	}
 	return cosignerPublicKey, nil
 }
 
-func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata, error) {
-	profile, layout, err := c.validateBoundedConfig()
+func (c *ComposedDSA) hostMetadataBase() (*hostmeta.Metadata, error) {
+	profile, layout, err := c.validateHostConfig()
 	if err != nil {
 		return nil, err
 	}
 	if profile == nil {
 		return nil, nil
 	}
-	metadata := &boundedmeta.Metadata{
+	metadata := &hostmeta.Metadata{
 		Contract: profile.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{
 			Count:    layout.Count,
 			MaxSizes: append([]int(nil), layout.MaxSizes...),
 		},
-		RuntimeArgs: append([]boundedmeta.RuntimeArg(nil), c.boundedRuntimeArgs...),
-		DerivedArgs: append([]boundedmeta.DerivedArg(nil), c.derivedArgs...),
+		RuntimeArgs: append([]hostmeta.RuntimeArg(nil), c.hostRuntimeArgs...),
+		DerivedArgs: append([]hostmeta.DerivedArg(nil), c.derivedArgs...),
 	}
 	if profile.Bounds != nil {
-		metadata.Bounds = &boundedmeta.Bounds{
+		metadata.Bounds = &hostmeta.Bounds{
 			SpendEffects: profile.Bounds.spendEffectNames(),
-			MaxFee:       boundedmeta.CloneMaxFee(profile.Bounds.MaxFee),
+			MaxFee:       hostmeta.CloneMaxFee(profile.Bounds.MaxFee),
 			Layer3Policy: c.Layer3PolicyName(),
 		}
 	}
@@ -505,48 +505,48 @@ func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata,
 		metadata.Cosigner = &cosigner
 	}
 	metadata.Rekey = profile.Rekey
-	metadata.ArgumentLayout = boundedArgumentLayout(layout, profile, metadata.DerivedArgs, metadata.RuntimeArgs)
+	metadata.ArgumentLayout = hostArgumentLayout(layout, profile, metadata.DerivedArgs, metadata.RuntimeArgs)
 	return metadata, nil
 }
 
-func boundedArgumentLayout(layout SignatureArgLayout, profile *BoundedAuthorizationProfile, derived []boundedmeta.DerivedArg, runtime []boundedmeta.RuntimeArg) []boundedmeta.ArgumentSlot {
-	slots := make([]boundedmeta.ArgumentSlot, 0, layout.Count+len(derived)+len(runtime)+2)
+func hostArgumentLayout(layout SignatureArgLayout, profile *HostProfile, derived []hostmeta.DerivedArg, runtime []hostmeta.RuntimeArg) []hostmeta.ArgumentSlot {
+	slots := make([]hostmeta.ArgumentSlot, 0, layout.Count+len(derived)+len(runtime)+2)
 	for i, maxSize := range layout.MaxSizes {
-		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: boundedmeta.ArgSourceBaseSignature, MaxSize: maxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired},
+		slots = append(slots, hostmeta.ArgumentSlot{
+			Index: i, Name: fmt.Sprintf("base_signature_%d", i), Source: hostmeta.ArgSourceBaseSignature, MaxSize: maxSize,
+			Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired},
 		})
 	}
 	for _, arg := range derived {
 		// A recipient proof serves Layer 3, which no rekey reaches; a list proof
 		// serves the listed rekey alone.
-		paths := boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}
-		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
-			paths = boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired}
+		paths := hostmeta.ArgumentPathMask{Spend: hostmeta.ArgOptional, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}
+		if arg.Kind == hostmeta.DerivedArgRekeyListProof {
+			paths = hostmeta.ArgumentPathMask{Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgRequired}
 		}
-		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceDerived, MaxSize: arg.MaxSize, Paths: paths,
+		slots = append(slots, hostmeta.ArgumentSlot{
+			Index: len(slots), Name: arg.Name, Source: hostmeta.ArgSourceDerived, MaxSize: arg.MaxSize, Paths: paths,
 		})
 	}
 	// A rekey never reaches Layer 3, so its arguments are spend-only.
 	for _, arg := range runtime {
-		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: arg.Name, Source: boundedmeta.ArgSourceRuntime, MaxSize: arg.MaxSize,
-			Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden},
+		slots = append(slots, hostmeta.ArgumentSlot{
+			Index: len(slots), Name: arg.Name, Source: hostmeta.ArgSourceRuntime, MaxSize: arg.MaxSize,
+			Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden},
 		})
 	}
 	if profile.Cosigner != nil {
-		slots = append(slots, boundedmeta.ArgumentSlot{
-			Index: len(slots), Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner,
+		slots = append(slots, hostmeta.ArgumentSlot{
+			Index: len(slots), Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner,
 			MaxSize: profile.Cosigner.SignatureMaxSize,
-			Paths:   boundedmeta.CosignerSlotPaths(profile.Cosigner),
+			Paths:   hostmeta.CosignerSlotPaths(profile.Cosigner),
 		})
 	}
 	return slots
 }
 
-func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, SignatureArgLayout, error) {
-	profile, err := canonicalBoundedProfile(c.bounded)
+func (c *ComposedDSA) validateHostConfig() (*HostProfile, SignatureArgLayout, error) {
+	profile, err := canonicalBoundedProfile(c.host)
 	if err != nil {
 		return nil, SignatureArgLayout{}, err
 	}
@@ -575,7 +575,7 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 	if c.ops.TEALVersion() != tealVersion {
 		return nil, SignatureArgLayout{}, fmt.Errorf("a %s profile requires TEAL version %d, base emits version %d", profile.Contract, tealVersion, c.ops.TEALVersion())
 	}
-	if err := validateBoundedReservedNames(profile, c.params, c.runtimeArgs, c.derivedArgs, c.templateVars, c.tealSuffix); err != nil {
+	if err := validateHostReservedNames(profile, c.params, c.runtimeArgs, c.derivedArgs, c.templateVars, c.tealSuffix); err != nil {
 		return nil, SignatureArgLayout{}, err
 	}
 	layout, err := c.validatedSignatureArgLayout()
@@ -587,24 +587,24 @@ func (c *ComposedDSA) validateBoundedConfig() (*BoundedAuthorizationProfile, Sig
 
 func layer3PolicyName(policy *Layer3Policy, hasAuthorTEAL bool) string {
 	if policy == nil {
-		return boundedmeta.Layer3PolicyCustom
+		return hostmeta.Layer3PolicyCustom
 	}
-	return boundedmeta.StoredLayer3Policy(policy.Policy, hasAuthorTEAL)
+	return hostmeta.StoredLayer3Policy(policy.Policy, hasAuthorTEAL)
 }
 
-func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, derivedArgs []boundedmeta.DerivedArg, templateVars []tealtemplate.TemplateVariable, teal string) error {
+func validateHostReservedNames(profile *HostProfile, params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, derivedArgs []hostmeta.DerivedArg, templateVars []tealtemplate.TemplateVariable, teal string) error {
 	for _, param := range params {
-		if isBoundedCosignerReservedName(param.Name) {
-			if param.Name != BoundedCosignerPublicKeyParameter || profile.Cosigner == nil {
+		if isCosignerReservedName(param.Name) {
+			if param.Name != CosignerPublicKeyParameter || profile.Cosigner == nil {
 				return fmt.Errorf("parameter name %q uses reserved cosigner namespace", param.Name)
 			}
-			want := BoundedCosignerParameterDef(profile.Cosigner.ComponentKeyType)
+			want := CosignerParameterDef(profile.Cosigner.ComponentKeyType)
 			if param.Type != want.Type || !param.Required || param.MaxLength != want.MaxLength {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
 			}
 			continue
 		}
-		if param.Name == BoundedRekeyToParameter && profile.RekeyList != nil {
+		if param.Name == RekeyToParameter && profile.RekeyList != nil {
 			want := rekeyListEntriesParameterDef(profile.Rekey)
 			if param.Type != want.Type || !param.Required || param.MinItems != want.MinItems || param.MaxItems != want.MaxItems {
 				return fmt.Errorf("parameter %q does not match the framework-injected contract", param.Name)
@@ -616,7 +616,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		}
 	}
 	for _, arg := range runtimeArgs {
-		if isBoundedCosignerReservedName(arg.Name) {
+		if isCosignerReservedName(arg.Name) {
 			return fmt.Errorf("runtime arg name %q uses reserved cosigner namespace", arg.Name)
 		}
 		if reason := reservedFrameworkName(arg.Name); reason != "" {
@@ -628,7 +628,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 	// recipient-tree proof is unsalted, so a spend would publish siblings anyone
 	// can test guessed addresses against. The framework's own list proof is
 	// salted and added after this check.
-	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == BoundedRekeyToParameter }
+	listPrivate := func(name string) bool { return profile.RekeyList != nil && name == RekeyToParameter }
 	for _, arg := range derivedArgs {
 		if listPrivate(arg.Parameter) {
 			return fmt.Errorf("derived argument %q would publish proofs over the private rekey-to list", arg.Name)
@@ -638,7 +638,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 		if listPrivate(variable.Name) || listPrivate(variable.Parameter) {
 			return fmt.Errorf("template variable %q would compile the private rekey-to list into the program", variable.Name)
 		}
-		if isBoundedCosignerReservedName(variable.Name) || isBoundedCosignerReservedName(variable.Parameter) {
+		if isCosignerReservedName(variable.Name) || isCosignerReservedName(variable.Parameter) {
 			return fmt.Errorf("template variable %q uses reserved cosigner namespace", variable.Name)
 		}
 		if reason := reservedFrameworkName(variable.Name); reason != "" {
@@ -675,7 +675,7 @@ func validateBoundedReservedNames(profile *BoundedAuthorizationProfile, params [
 // may set.
 func reservedFrameworkName(name string) string {
 	switch {
-	case name == boundedmeta.RekeyListRootParameter:
+	case name == hostmeta.RekeyListRootParameter:
 		return "the reserved rekey-to list root name"
 	case strings.HasPrefix(name, boundedReservedNamePrefix):
 		return "reserved bounded_ prefix"
@@ -683,7 +683,7 @@ func reservedFrameworkName(name string) string {
 	return ""
 }
 
-func isBoundedCosignerReservedName(name string) bool {
+func isCosignerReservedName(name string) bool {
 	return name == "cosigner" || strings.HasPrefix(name, "cosigner_")
 }
 
@@ -708,7 +708,7 @@ func CanonicalBoundedBehaviorParameters(params map[string]string, defs []lsigpro
 	}
 
 	var encoded []byte
-	encoded = boundedmeta.AppendField(encoded, []byte(boundedBehaviorParametersDomainV1))
+	encoded = hostmeta.AppendField(encoded, []byte(boundedBehaviorParametersDomainV1))
 	encoded = binary.BigEndian.AppendUint32(encoded, uint32(len(defs)))
 	for _, def := range defs {
 		value, present := normalized[def.Name]
@@ -719,9 +719,9 @@ func CanonicalBoundedBehaviorParameters(params map[string]string, defs []lsigpro
 				return nil, fmt.Errorf("canonical parameter %s: %w", def.Name, err)
 			}
 		}
-		encoded = boundedmeta.AppendField(encoded, []byte(def.Name))
-		encoded = boundedmeta.AppendField(encoded, []byte(def.Type))
-		encoded = boundedmeta.AppendField(encoded, canonical)
+		encoded = hostmeta.AppendField(encoded, []byte(def.Name))
+		encoded = hostmeta.AppendField(encoded, []byte(def.Type))
+		encoded = hostmeta.AppendField(encoded, canonical)
 	}
 	return encoded, nil
 }
@@ -750,7 +750,7 @@ func canonicalParameterValue(def lsigprovider.ParameterDef, value string) ([]byt
 			if err != nil {
 				return nil, err
 			}
-			encoded = boundedmeta.AppendField(encoded, address[:])
+			encoded = hostmeta.AppendField(encoded, address[:])
 		}
 		return encoded, nil
 	case "uint64[]":
@@ -761,7 +761,7 @@ func canonicalParameterValue(def lsigprovider.ParameterDef, value string) ([]byt
 			if err != nil {
 				return nil, err
 			}
-			encoded = boundedmeta.AppendField(encoded, binary.BigEndian.AppendUint64(nil, number))
+			encoded = hostmeta.AppendField(encoded, binary.BigEndian.AppendUint64(nil, number))
 		}
 		return encoded, nil
 	case "string":

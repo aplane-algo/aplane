@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -36,8 +36,8 @@ type rekeyListPreparer interface {
 	PrepareRekeyList(privateKey []byte, params map[string]string) (map[string]string, error)
 }
 
-type boundedAuthorizationMetadataProvider interface {
-	BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error)
+type hostMetadataProvider interface {
+	BuildHostMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*hostmeta.Metadata, error)
 }
 
 // LogicSigGenerator implements keygen.Generator for LogicSig-backed DSA
@@ -152,14 +152,14 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	if provider != nil {
 		signingArgs = signingargs.FromRuntimeDefs(provider.RuntimeArgs())
 	}
-	var boundedMetadata *boundedmeta.Metadata
-	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
-		boundedMetadata, err = boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
+	var hostMetadata *hostmeta.Metadata
+	if hostProvider, ok := dsa.(hostMetadataProvider); ok {
+		hostMetadata, err = hostProvider.BuildHostMetadata(pub, params, lsigBytecode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
 		}
 	}
-	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(dsa, boundedMetadata != nil)
+	opcodeProfile, err := lsigprovider.ResolveOpcodeProfile(dsa, hostMetadata != nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve LogicSig opcode profile: %w", err)
 	}
@@ -180,11 +180,11 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		)
 	}
 	defer payload.ZeroSecrets()
-	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, boundedMetadata != nil); err != nil {
+	if err := payload.SetLogicSigOpcodeProfile(opcodeProfile, hostMetadata != nil); err != nil {
 		return nil, err
 	}
-	if boundedMetadata != nil {
-		if err := payload.SetBoundedAuthorization(boundedMetadata); err != nil {
+	if hostMetadata != nil {
+		if err := payload.SetHost(hostMetadata); err != nil {
 			return nil, err
 		}
 	}

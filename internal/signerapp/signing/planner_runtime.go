@@ -8,8 +8,8 @@ import (
 	"math"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
@@ -31,12 +31,12 @@ type PlannerRuntimeSnapshot struct {
 // PlannerKeyMetadata is public scan-time metadata used for dependency
 // preflight. It never contains decrypted private material.
 type PlannerKeyMetadata struct {
-	Category             string
-	BaseKeyType          string
-	PublicKeyHex         string
-	Parameters           map[string]string
-	BoundedAuthorization *boundedmeta.Metadata
-	LogicSigResources    *lsigresource.Profile
+	Category          string
+	BaseKeyType       string
+	PublicKeyHex      string
+	Parameters        map[string]string
+	Host              *hostmeta.Metadata
+	LogicSigResources *lsigresource.Profile
 	// SigningArgs is a LogicSig key's declared runtime arguments. One that
 	// declares no size is planned from the request's value.
 	SigningArgs []lsigprovider.RuntimeArgDef
@@ -96,7 +96,7 @@ func buildFinalGroupWithoutFees(console Console, txns []types.Transaction, dummi
 	return allTxns, dummyTxns, dummiesNeeded > 0 || !isPreGrouped, nil
 }
 
-func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
+func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot, requests []signerapi.SignRequest, txns []types.Transaction, hostItems []*hostPlanItem, passthroughIndices, foreignIndices map[int]bool, passthroughSignedTxns map[int][]byte, hasPassthrough, isPreGrouped bool) (lsigresource.Plan, []int, *ServiceError) {
 	profile, profileErr := lsigresource.CurrentConsensus()
 	if profileErr != nil {
 		return lsigresource.Plan{}, nil, internal(fmt.Sprintf("load compiled v42 LogicSig contract: %v", profileErr))
@@ -137,9 +137,9 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		}
 
 		path := lsigresource.PathDefault
-		if i < len(boundedItems) && boundedItems[i] != nil {
+		if i < len(hostItems) && hostItems[i] != nil {
 			var pathErr error
-			path, pathErr = logicSigAuthorizationPath(boundedItems[i].Path)
+			path, pathErr = logicSigAuthorizationPath(hostItems[i].Path)
 			if pathErr != nil {
 				return lsigresource.Plan{}, nil, internal(fmt.Sprintf("transaction %d: %v", i+1, pathErr))
 			}
@@ -150,7 +150,7 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 		}
 		// A plan, or a cosigner's release for a held position, must not accept a
 		// request that /sign will refuse for a missing required argument.
-		if metadata.BoundedAuthorization == nil {
+		if metadata.Host == nil {
 			if name, missing := missingRequiredRuntimeArg(metadata.SigningArgs, request.LsigArgs); missing {
 				return lsigresource.Plan{}, nil, badRequest(fmt.Sprintf("transaction %d: missing required arg: %s", i+1, name))
 			}
@@ -204,13 +204,13 @@ func calculateLogicSigResources(console Console, snapshot PlannerRuntimeSnapshot
 	return resourcePlan, lsigIndices, nil
 }
 
-func logicSigAuthorizationPath(path boundedPath) (lsigresource.AuthorizationPath, error) {
+func logicSigAuthorizationPath(path hostPath) (lsigresource.AuthorizationPath, error) {
 	switch path {
-	case boundedPathPureSpend:
+	case hostPathPureSpend:
 		return lsigresource.PathSpend, nil
-	case boundedPathSpendingKeyRekey:
+	case hostPathSpendingKeyRekey:
 		return lsigresource.PathSpendingRekey, nil
-	case boundedPathListedRekey:
+	case hostPathListedRekey:
 		return lsigresource.PathListedRekey, nil
 	default:
 		return 0, fmt.Errorf("unknown bounded authorization path %q", path)

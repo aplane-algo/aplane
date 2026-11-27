@@ -17,7 +17,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sigconstruction"
@@ -73,11 +73,11 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 	if err != nil {
 		t.Fatalf("CanonicalBoundedBehaviorParameters(absent) error = %v", err)
 	}
-	want := boundedmeta.AppendField(nil, []byte(boundedBehaviorParametersDomainV1))
+	want := hostmeta.AppendField(nil, []byte(boundedBehaviorParametersDomainV1))
 	want = binary.BigEndian.AppendUint32(want, 1)
-	want = boundedmeta.AppendField(want, []byte(def.Name))
-	want = boundedmeta.AppendField(want, []byte(def.Type))
-	want = boundedmeta.AppendField(want, nil)
+	want = hostmeta.AppendField(want, []byte(def.Name))
+	want = hostmeta.AppendField(want, []byte(def.Type))
+	want = hostmeta.AppendField(want, nil)
 	if !bytes.Equal(absent, want) {
 		t.Fatalf("absent optional encoding = %x, want %x", absent, want)
 	}
@@ -92,20 +92,20 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 }
 
 func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
+	profile := &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}
-	metadata := &boundedmeta.Metadata{
+	metadata := &hostmeta.Metadata{
 		Contract: BoundedContract, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
-		Bounds: &boundedmeta.Bounds{SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom}, Rekey: boundedmeta.RekeyRefused, Cosigner: profile.Cosigner,
-		ArgumentLayout: []boundedmeta.ArgumentSlot{
-			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, ListedRekey: boundedmeta.ArgRequired}},
-			{Index: 1, Name: boundedmeta.CosignerSignatureSlot, Source: boundedmeta.ArgSourceCosigner, MaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgForbidden}},
+		Bounds: &hostmeta.Bounds{SpendEffects: []string{hostmeta.SpendEffectPay}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom}, Rekey: hostmeta.RekeyRefused, Cosigner: profile.Cosigner,
+		ArgumentLayout: []hostmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: hostmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgRequired, ListedRekey: hostmeta.ArgRequired}},
+			{Index: 1, Name: hostmeta.CosignerSignatureSlot, Source: hostmeta.ArgSourceCosigner, MaxSize: hostmeta.DefaultCosignerSignatureMaxSize, Paths: hostmeta.ArgumentPathMask{Spend: hostmeta.ArgRequired, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgForbidden}},
 		},
 	}
 	encoded, err := CanonicalBoundedProfile(profile, metadata)
@@ -118,60 +118,60 @@ func TestCanonicalBoundedCosignerProfileGolden(t *testing.T) {
 	}
 }
 
-func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
+func TestHostMetadataSnapshotsCosignerContract(t *testing.T) {
+	profile := &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeyRefused,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}
 	provider := newBoundedTestProvider(profile)
 	teal, err := provider.GenerateTEAL(
 		[]byte{0x01},
-		map[string]string{BoundedCosignerPublicKeyParameter: strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)},
+		map[string]string{CosignerPublicKeyParameter: strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)},
 	)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
 	assertOrderedMarkers(t, teal,
-		boundedCosignerLabel+":",
+		hostCosignerLabel+":",
 		"pushbytes 0x41504c414e455f434f5349474e45525f5631\npushbytes 0x02\nconcat\ntxn TxID\nconcat\nsha512_256",
-		"arg 1\npushbytes 0x"+strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)+"\nfalcon_verify\nassert",
+		"arg 1\npushbytes 0x"+strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)+"\nfalcon_verify\nassert",
 		"retsub",
-		boundedSpendLabel+":",
-		"callsub "+boundedCosignerLabel,
+		hostSpendLabel+":",
+		"callsub "+hostCosignerLabel,
 		"b "+boundedLayer3Label,
 		boundedLayer3Label+":",
 		"// LAYER3_TEST_POLICY",
 	)
-	if strings.Index(teal, boundedRekeyLabel+":") >= strings.Index(teal, boundedCosignerLabel+":") {
+	if strings.Index(teal, hostRekeyLabel+":") >= strings.Index(teal, hostCosignerLabel+":") {
 		t.Fatalf("rekey path is not dispatched before the cosigner check:\n%s", teal)
 	}
-	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.DefaultCosignerPublicKeySize)
-	cosignerPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.DefaultCosignerPublicKeySize)
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(
+	spendingPublicKey := bytes.Repeat([]byte{0x31}, hostmeta.DefaultCosignerPublicKeySize)
+	cosignerPublicKey := bytes.Repeat([]byte{0x42}, hostmeta.DefaultCosignerPublicKeySize)
+	metadata, err := provider.BuildHostMetadata(
 		spendingPublicKey,
-		map[string]string{BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
+		map[string]string{CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
 		bytes.Repeat([]byte{0x02}, 100),
 	)
 	if err != nil {
-		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+		t.Fatalf("BuildHostMetadata() error = %v", err)
 	}
-	wantID, err := witness.ID(boundedmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
+	wantID, err := witness.ID(hostmeta.DefaultCosignerComponentKeyType, cosignerPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if metadata.Cosigner == nil || metadata.Cosigner.ComponentKeyID != wantID || metadata.Cosigner.PublicKeyHex != hex.EncodeToString(cosignerPublicKey) {
 		t.Fatalf("Cosigner = %#v", metadata.Cosigner)
 	}
-	if got, want := metadata.ArgumentBytesForPath(boundedmeta.PathSpend), 4+boundedmeta.DefaultCosignerSignatureMaxSize; got != want {
+	if got, want := metadata.ArgumentBytesForPath(hostmeta.PathSpend), 4+hostmeta.DefaultCosignerSignatureMaxSize; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
-	if _, err := provider.BuildBoundedAuthorizationMetadata(
+	if _, err := provider.BuildHostMetadata(
 		cosignerPublicKey,
-		map[string]string{BoundedCosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
+		map[string]string{CosignerPublicKeyParameter: hex.EncodeToString(cosignerPublicKey)},
 		[]byte{1},
 	); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
 		t.Fatalf("collision error = %v", err)
@@ -179,10 +179,10 @@ func TestBoundedAuthorizationMetadataSnapshotsCosignerContract(t *testing.T) {
 }
 
 func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
+	provider := newBoundedTestProvider(&HostProfile{
 		Contract: BoundedContract,
 		Bounds:   &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(7_000))},
-		Rekey:    boundedmeta.RekeySpendingKey,
+		Rekey:    hostmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
@@ -193,11 +193,11 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 		"// BOUNDED_TEST_VERIFIER",
 		"// === bounded transaction envelope ===",
 		"txn Fee\npushint 7000\n<=\nassert",
-		"txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+boundedRekeyLabel,
-		boundedRekeyLabel+":",
-		boundedSpendLabel+":",
+		"txn RekeyTo\nglobal ZeroAddress\n!=\nbnz "+hostRekeyLabel,
+		hostRekeyLabel+":",
+		hostSpendLabel+":",
 		"// LAYER3_TEST_POLICY",
-		boundedAcceptLabel+":",
+		hostAcceptLabel+":",
 		"pushint 1\nreturn",
 	)
 	for _, field := range []string{"CloseRemainderTo", "AssetCloseTo", "AssetSender"} {
@@ -213,15 +213,15 @@ func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 }
 
 func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
+	provider := newBoundedTestProvider(&HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
+		Rekey: hostmeta.RekeyRefused,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	if !strings.Contains(teal, boundedRekeyLabel+":\nerr") {
+	if !strings.Contains(teal, hostRekeyLabel+":\nerr") {
 		t.Fatalf("disabled rekey does not fail closed:\n%s", teal)
 	}
 	if !strings.Contains(teal, boundedAxferLabel+":\ntxn AssetAmount") ||
@@ -233,23 +233,23 @@ func TestBoundedDisabledRekeyCompilesToErr(t *testing.T) {
 // No host rule gates a rekey: a spending-key rekey checks its normal form and
 // accepts, and the spend path's Layer 3 policy never sees it.
 func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
+	provider := newBoundedTestProvider(&HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeySpendingKey,
+		Rekey: hostmeta.RekeySpendingKey,
 	})
 	teal, err := provider.GenerateTEAL([]byte{1}, nil)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	rekey := strings.Index(teal, boundedRekeyLabel+":")
-	spend := strings.Index(teal, boundedSpendLabel+":")
+	rekey := strings.Index(teal, hostRekeyLabel+":")
+	spend := strings.Index(teal, hostSpendLabel+":")
 	policy := strings.Index(teal, "// LAYER3_TEST_POLICY")
 	if rekey < 0 || spend < 0 || rekey >= spend || policy < spend {
 		t.Fatalf("rekey path at %d, spend path at %d, Layer 3 at %d:\n%s", rekey, spend, policy, teal)
 	}
 	branch := teal[rekey:spend]
-	if !strings.HasPrefix(branch, boundedRekeyLabel+":\ntxn TypeEnum\npushint 1\n==\nassert\n") ||
-		!strings.HasSuffix(branch, "b "+boundedAcceptLabel+"\n\n") {
+	if !strings.HasPrefix(branch, hostRekeyLabel+":\ntxn TypeEnum\npushint 1\n==\nassert\n") ||
+		!strings.HasSuffix(branch, "b "+hostAcceptLabel+"\n\n") {
 		t.Fatalf("spending-key rekey does not check a pure payment and accept:\n%s", branch)
 	}
 	for _, field := range []string{"CloseRemainderTo", "AssetCloseTo", "AssetSender"} {
@@ -257,7 +257,7 @@ func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 			t.Fatalf("spending-key rekey does not require a zero %s:\n%s", field, branch)
 		}
 	}
-	if strings.Contains(branch, boundedSpendLabel) || strings.Contains(branch, boundedLayer3Label) || strings.Contains(branch, "LAYER3_TEST_POLICY") {
+	if strings.Contains(branch, hostSpendLabel) || strings.Contains(branch, boundedLayer3Label) || strings.Contains(branch, "LAYER3_TEST_POLICY") {
 		t.Fatalf("spending-key rekey reaches the spend path:\n%s", branch)
 	}
 }
@@ -266,38 +266,38 @@ func TestBoundedSpendingRekeyAcceptsWithoutLayer3(t *testing.T) {
 // calls the same cosigner check the spend path does: the cosigner's key compiles
 // once.
 func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
-	cosignerKey := strings.Repeat("42", boundedmeta.DefaultCosignerPublicKeySize)
-	profile := &BoundedAuthorizationProfile{
+	cosignerKey := strings.Repeat("42", hostmeta.DefaultCosignerPublicKeySize)
+	profile := &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeySpendingKey,
-		Cosigner: &boundedmeta.CosignerAuthorization{
-			Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-			SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+		Rekey: hostmeta.RekeySpendingKey,
+		Cosigner: &hostmeta.CosignerAuthorization{
+			Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+			SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 		},
 	}
-	params := map[string]string{BoundedCosignerPublicKeyParameter: cosignerKey}
+	params := map[string]string{CosignerPublicKeyParameter: cosignerKey}
 	if _, err := newBoundedTestProvider(profile).GenerateTEAL([]byte{1}, params); err == nil ||
 		!strings.Contains(err.Error(), "exactly [spend, spending_rekey] with rekey spending_key") {
 		t.Fatalf("a spend-only cosigner beside a spending-key rekey: error = %v", err)
 	}
-	profile.Cosigner.RequiredOn = boundedmeta.CosignerRequiredOn(boundedmeta.RekeySpendingKey)
+	profile.Cosigner.RequiredOn = hostmeta.CosignerRequiredOn(hostmeta.RekeySpendingKey)
 	teal, err := newBoundedTestProvider(profile).GenerateTEAL([]byte{1}, params)
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
-	rekey := strings.Index(teal, boundedRekeyLabel+":")
-	check := strings.Index(teal, boundedCosignerLabel+":")
-	spend := strings.Index(teal, boundedSpendLabel+":")
+	rekey := strings.Index(teal, hostRekeyLabel+":")
+	check := strings.Index(teal, hostCosignerLabel+":")
+	spend := strings.Index(teal, hostSpendLabel+":")
 	if rekey < 0 || check < rekey || spend < check {
 		t.Fatalf("rekey at %d, cosigner check at %d, spend at %d:\n%s", rekey, check, spend, teal)
 	}
-	if branch := teal[rekey:check]; !strings.HasSuffix(branch, "callsub "+boundedCosignerLabel+"\nb "+boundedAcceptLabel+"\n\n") {
+	if branch := teal[rekey:check]; !strings.HasSuffix(branch, "callsub "+hostCosignerLabel+"\nb "+hostAcceptLabel+"\n\n") {
 		t.Fatalf("the cosigned rekey does not call the cosigner check and accept:\n%s", branch)
 	}
 	if !strings.HasSuffix(teal[check:spend], "assert\nretsub\n\n") {
 		t.Fatalf("the cosigner check is not a subroutine:\n%s", teal[check:spend])
 	}
-	if !strings.HasPrefix(teal[spend:], boundedSpendLabel+":\ncallsub "+boundedCosignerLabel+"\n") {
+	if !strings.HasPrefix(teal[spend:], hostSpendLabel+":\ncallsub "+hostCosignerLabel+"\n") {
 		t.Fatalf("the spend path does not call the cosigner check:\n%s", teal[spend:])
 	}
 	if n := strings.Count(teal, cosignerKey); n != 1 {
@@ -306,9 +306,9 @@ func TestBoundedCosignedRekeyCallsTheCosignerCheck(t *testing.T) {
 }
 
 func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
-	valid := &BoundedAuthorizationProfile{
+	valid := &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
+		Rekey: hostmeta.RekeyRefused,
 	}
 	tests := []struct {
 		name string
@@ -318,7 +318,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 		{
 			name: "no fee ceiling",
 			make: func() *ComposedDSA {
-				profile := cloneBoundedProfile(valid)
+				profile := cloneHostProfile(valid)
 				profile.Bounds.MaxFee = nil
 				return newBoundedTestProvider(profile)
 			},
@@ -327,7 +327,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 		{
 			name: "denied spend effect",
 			make: func() *ComposedDSA {
-				profile := cloneBoundedProfile(valid)
+				profile := cloneHostProfile(valid)
 				profile.Bounds.SpendEffects = []txeffects.SpendEffect{txeffects.SpendEffect("appl")}
 				return newBoundedTestProvider(profile)
 			},
@@ -336,7 +336,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 		{
 			name: "missing rekey setting",
 			make: func() *ComposedDSA {
-				profile := cloneBoundedProfile(valid)
+				profile := cloneHostProfile(valid)
 				profile.Rekey = ""
 				return newBoundedTestProvider(profile)
 			},
@@ -345,7 +345,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 		{
 			name: "unknown rekey setting",
 			make: func() *ComposedDSA {
-				profile := cloneBoundedProfile(valid)
+				profile := cloneHostProfile(valid)
 				profile.Rekey = "admin_key"
 				return newBoundedTestProvider(profile)
 			},
@@ -355,7 +355,7 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 			name: "reserved label",
 			make: func() *ComposedDSA {
 				provider := newBoundedTestProvider(valid)
-				provider.tealSuffix = boundedSpendLabel + ":\nint 1\nassert"
+				provider.tealSuffix = hostSpendLabel + ":\nint 1\nassert"
 				return provider
 			},
 			want: "reserved bounded label",
@@ -385,11 +385,11 @@ func TestBoundedRejectsInvalidProfilesAndCapabilities(t *testing.T) {
 // with its own fee check, metadata and fingerprint.
 func TestBoundedAcceptsAnyFeeCeiling(t *testing.T) {
 	fingerprints := make(map[string]uint64)
-	for _, ceiling := range []uint64{0, 1_000, 10_000, 10_001, 20_000, boundedmeta.MaxFeeLimit} {
+	for _, ceiling := range []uint64{0, 1_000, 10_000, 10_001, 20_000, hostmeta.MaxFeeLimit} {
 		t.Run(strconv.FormatUint(ceiling, 10), func(t *testing.T) {
-			provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
+			provider := newBoundedTestProvider(&HostProfile{
 				Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(ceiling)},
-				Rekey: boundedmeta.RekeyRefused,
+				Rekey: hostmeta.RekeyRefused,
 			})
 			teal, err := provider.GenerateTEAL([]byte{1}, nil)
 			if err != nil {
@@ -398,7 +398,7 @@ func TestBoundedAcceptsAnyFeeCeiling(t *testing.T) {
 			if want := fmt.Sprintf("txn Fee\npushint %d\n<=\nassert\n", ceiling); !strings.Contains(teal, want) {
 				t.Fatalf("fee check %q missing:\n%s", want, teal)
 			}
-			metadata := provider.BoundedAuthorizationMetadata()
+			metadata := provider.HostMetadata()
 			if metadata == nil || metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != ceiling {
 				t.Fatalf("metadata = %+v", metadata)
 			}
@@ -417,14 +417,14 @@ func TestBoundedAcceptsAnyFeeCeiling(t *testing.T) {
 // A ceiling above the largest whole number every client reads exactly is
 // refused when the profile is validated, as generating the program does.
 func TestBoundedRefusesAFeeCeilingAboveTheWireLimit(t *testing.T) {
-	if boundedmeta.MaxFeeLimit != 9007199254740991 {
-		t.Fatalf("MaxFeeLimit = %d", boundedmeta.MaxFeeLimit)
+	if hostmeta.MaxFeeLimit != 9007199254740991 {
+		t.Fatalf("MaxFeeLimit = %d", hostmeta.MaxFeeLimit)
 	}
-	for _, ceiling := range []uint64{boundedmeta.MaxFeeLimit + 1, 1 << 63, math.MaxUint64} {
+	for _, ceiling := range []uint64{hostmeta.MaxFeeLimit + 1, 1 << 63, math.MaxUint64} {
 		t.Run(strconv.FormatUint(ceiling, 10), func(t *testing.T) {
-			profile := &BoundedAuthorizationProfile{
+			profile := &HostProfile{
 				Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(ceiling)},
-				Rekey: boundedmeta.RekeyRefused,
+				Rekey: hostmeta.RekeyRefused,
 			}
 			want := fmt.Sprintf("max_fee %d is above 9007199254740991, the largest value every client reads exactly", ceiling)
 			if err := profile.validate(); err == nil || err.Error() != want {
@@ -438,11 +438,11 @@ func TestBoundedRefusesAFeeCeilingAboveTheWireLimit(t *testing.T) {
 }
 
 func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
-	profileA := &BoundedAuthorizationProfile{
+	profileA := &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-		Rekey: boundedmeta.RekeyRefused,
+		Rekey: hostmeta.RekeyRefused,
 	}
-	profileB := cloneBoundedProfile(profileA)
+	profileB := cloneHostProfile(profileA)
 	profileB.Bounds.SpendEffects = []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}
 	if got, want := newBoundedTestProvider(profileA).CompatibilityFingerprint(), newBoundedTestProvider(profileB).CompatibilityFingerprint(); got != want {
 		t.Fatalf("profile order changed fingerprint: %s != %s", got, want)
@@ -451,8 +451,8 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 	if newBoundedTestProvider(profileA).CompatibilityFingerprint() == newBoundedTestProvider(profileB).CompatibilityFingerprint() {
 		t.Fatal("max_fee did not change fingerprint")
 	}
-	profileC := cloneBoundedProfile(profileA)
-	profileC.Rekey = boundedmeta.RekeySpendingKey
+	profileC := cloneHostProfile(profileA)
+	profileC.Rekey = hostmeta.RekeySpendingKey
 	if newBoundedTestProvider(profileA).CompatibilityFingerprint() == newBoundedTestProvider(profileC).CompatibilityFingerprint() {
 		t.Fatal("rekey setting did not change fingerprint")
 	}
@@ -461,17 +461,17 @@ func TestBoundedFingerprintCanonicalizesProfileOrder(t *testing.T) {
 // A bounded account's arguments come from its stored layout, which the signer
 // fills, so a bounded composer assembles none, cosigned or not.
 func TestBoundedBuildArgsRefuses(t *testing.T) {
-	for name, profile := range map[string]*BoundedAuthorizationProfile{
+	for name, profile := range map[string]*HostProfile{
 		"refused rekey": {
 			Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-			Rekey: boundedmeta.RekeyRefused,
+			Rekey: hostmeta.RekeyRefused,
 		},
 		"cosigned": {
 			Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-			Rekey: boundedmeta.RekeyRefused,
-			Cosigner: &boundedmeta.CosignerAuthorization{
-				Contract: boundedmeta.CosignerContractV1, ComponentKeyType: boundedmeta.DefaultCosignerComponentKeyType,
-				SignatureMaxSize: boundedmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{boundedmeta.PathSpend},
+			Rekey: hostmeta.RekeyRefused,
+			Cosigner: &hostmeta.CosignerAuthorization{
+				Contract: hostmeta.CosignerContractV1, ComponentKeyType: hostmeta.DefaultCosignerComponentKeyType,
+				SignatureMaxSize: hostmeta.DefaultCosignerSignatureMaxSize, RequiredOn: []string{hostmeta.PathSpend},
 			},
 		},
 	} {
@@ -479,11 +479,11 @@ func TestBoundedBuildArgsRefuses(t *testing.T) {
 			provider := newBoundedTestProvider(profile)
 			for _, signature := range [][]byte{{1, 2, 3, 4}, nil} {
 				args, err := provider.BuildArgs(signature, nil)
-				if !errors.Is(err, errBoundedBuildArgs) || args != nil {
-					t.Fatalf("BuildArgs(%x) = %v, %v, want %v", signature, args, err, errBoundedBuildArgs)
+				if !errors.Is(err, errHostBuildArgs) || args != nil {
+					t.Fatalf("BuildArgs(%x) = %v, %v, want %v", signature, args, err, errHostBuildArgs)
 				}
 			}
-			if got, want := errBoundedBuildArgs.Error(), "bounded accounts are assembled from their stored metadata"; got != want {
+			if got, want := errHostBuildArgs.Error(), "bounded accounts are assembled from their stored metadata"; got != want {
 				t.Fatalf("refusal = %q, want %q", got, want)
 			}
 		})
@@ -508,19 +508,19 @@ func TestBoundedLayoutPutsDerivedSlotBeforeRuntimeArg(t *testing.T) {
 		RuntimeArgs: []lsigprovider.RuntimeArgDef{{
 			Name: "preimage", Type: "bytes", Required: true, MaxSize: 64,
 		}},
-		DerivedArgs: []boundedmeta.DerivedArg{{
-			Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
-			Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+		DerivedArgs: []hostmeta.DerivedArg{{
+			Name: "merkle_proof", Kind: hostmeta.DerivedArgMerkleProof,
+			Parameter: "recipients", MaxSize: hostmeta.MerkleProofSize,
 		}},
-		Bounded: &BoundedAuthorizationProfile{
+		Host: &HostProfile{
 			Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-			Rekey: boundedmeta.RekeyRefused,
+			Rekey: hostmeta.RekeyRefused,
 		},
 	})
 
-	metadata := provider.BoundedAuthorizationMetadata()
+	metadata := provider.HostMetadata()
 	if metadata == nil {
-		t.Fatal("BoundedAuthorizationMetadata() = nil")
+		t.Fatal("HostMetadata() = nil")
 	}
 	var got []string
 	for i, slot := range metadata.ArgumentLayout {
@@ -529,7 +529,7 @@ func TestBoundedLayoutPutsDerivedSlotBeforeRuntimeArg(t *testing.T) {
 		}
 		got = append(got, slot.Name+":"+slot.Source)
 	}
-	want := []string{"base_signature_0:" + boundedmeta.ArgSourceBaseSignature, "merkle_proof:" + boundedmeta.ArgSourceDerived, "preimage:" + boundedmeta.ArgSourceRuntime}
+	want := []string{"base_signature_0:" + hostmeta.ArgSourceBaseSignature, "merkle_proof:" + hostmeta.ArgSourceDerived, "preimage:" + hostmeta.ArgSourceRuntime}
 	if !slices.Equal(got, want) {
 		t.Fatalf("argument layout = %v, want %v", got, want)
 	}
@@ -548,10 +548,10 @@ func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 		Params: []lsigprovider.ParameterDef{{
 			Name: "limit", Type: "uint64", Default: "100",
 		}},
-		Bounded: &BoundedAuthorizationProfile{
+		Host: &HostProfile{
 			Contract: BoundedContract,
 			Bounds:   &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
-			Rekey:    boundedmeta.RekeySpendingKey,
+			Rekey:    hostmeta.RekeySpendingKey,
 		},
 	})
 	inputs := []map[string]string{
@@ -566,8 +566,8 @@ func TestBoundedDefaultsHaveOneProgramAndBehaviorEncoding(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GenerateTEAL(input %d) error = %v", i, err)
 		}
-		if _, err := provider.BuildBoundedAuthorizationMetadata([]byte{1}, params, []byte{1, 2, 3}); err != nil {
-			t.Fatalf("BuildBoundedAuthorizationMetadata(input %d) error = %v", i, err)
+		if _, err := provider.BuildHostMetadata([]byte{1}, params, []byte{1, 2, 3}); err != nil {
+			t.Fatalf("BuildHostMetadata(input %d) error = %v", i, err)
 		}
 		behavior, err := CanonicalBoundedBehaviorParameters(params, provider.CreationParams())
 		if err != nil {
@@ -603,7 +603,7 @@ func TestNilBoundedPreservesLegacyTEAL(t *testing.T) {
 	}
 }
 
-func newBoundedTestProvider(profile *BoundedAuthorizationProfile) *ComposedDSA {
+func newBoundedTestProvider(profile *HostProfile) *ComposedDSA {
 	return NewComposedDSA(Config{
 		KeyType:      "aplane.test-bounded.v1",
 		BaseKeyType:  "aplane.falcon1024.v1",
@@ -613,7 +613,7 @@ func newBoundedTestProvider(profile *BoundedAuthorizationProfile) *ComposedDSA {
 		SaltStyle:    lsigsalt.StyleNone,
 		TemplateMode: "generated",
 		TEALSuffix:   "// LAYER3_TEST_POLICY\nint 1\nassert",
-		Bounded:      profile,
+		Host:         profile,
 	})
 }
 
@@ -680,16 +680,16 @@ func TestSpendingKeyHoldsResolvesTheWitnessFromItsKeyType(t *testing.T) {
 // bounded_ prefix, and the rekey-to list root, which has no prefix and is
 // reserved by name. Only key generation writes the root.
 func TestReservedFrameworkNamesAreRefusedEverywhere(t *testing.T) {
-	profile := &BoundedAuthorizationProfile{
-		Contract: BoundedContract, Rekey: boundedmeta.RekeyRefused,
+	profile := &HostProfile{
+		Contract: BoundedContract, Rekey: hostmeta.RekeyRefused,
 		Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 	}
 	check := func(params []lsigprovider.ParameterDef, runtimeArgs []lsigprovider.RuntimeArgDef, variables []tealtemplate.TemplateVariable, teal string) error {
-		return validateBoundedReservedNames(profile, params, runtimeArgs, nil, variables, teal)
+		return validateHostReservedNames(profile, params, runtimeArgs, nil, variables, teal)
 	}
 	for name, reason := range map[string]string{
-		boundedmeta.RekeyListRootParameter: "the reserved rekey-to list root name",
-		"bounded_example":                  "reserved bounded_ prefix",
+		hostmeta.RekeyListRootParameter: "the reserved rekey-to list root name",
+		"bounded_example":               "reserved bounded_ prefix",
 	} {
 		for place, err := range map[string]error{
 			"parameter":                     check([]lsigprovider.ParameterDef{{Name: name}}, nil, nil, ""),
@@ -705,11 +705,11 @@ func TestReservedFrameworkNamesAreRefusedEverywhere(t *testing.T) {
 		}
 	}
 	// The reservation is the exact name, not everything that starts with it.
-	if err := check([]lsigprovider.ParameterDef{{Name: boundedmeta.RekeyListRootParameter + "s"}}, nil, nil, ""); err != nil {
+	if err := check([]lsigprovider.ParameterDef{{Name: hostmeta.RekeyListRootParameter + "s"}}, nil, nil, ""); err != nil {
 		t.Fatalf("a name that only starts with the root's: error = %v", err)
 	}
-	if boundedmeta.RekeyListRootParameter != "rekey_to_root" {
-		t.Fatalf("the root parameter is %q; key files and /keys carry it as rekey_to_root", boundedmeta.RekeyListRootParameter)
+	if hostmeta.RekeyListRootParameter != "rekey_to_root" {
+		t.Fatalf("the root parameter is %q; key files and /keys carry it as rekey_to_root", hostmeta.RekeyListRootParameter)
 	}
 }
 
@@ -718,27 +718,27 @@ func TestReservedFrameworkNamesAreRefusedEverywhere(t *testing.T) {
 // fee ceiling or spend effects differ, or that has none, is not that
 // profile's.
 func TestBoundedProfileAndMetadataAgreeOnTheBounds(t *testing.T) {
-	if _, err := canonicalBoundedProfile(&BoundedAuthorizationProfile{Contract: BoundedContract, Rekey: boundedmeta.RekeyRefused}); err == nil ||
+	if _, err := canonicalBoundedProfile(&HostProfile{Contract: BoundedContract, Rekey: hostmeta.RekeyRefused}); err == nil ||
 		!strings.Contains(err.Error(), "bounded2 requires bounds") {
 		t.Fatalf("a bounded profile without bounds: error = %v", err)
 	}
-	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
-		Contract: BoundedContract, Rekey: boundedmeta.RekeyRefused,
+	provider := newBoundedTestProvider(&HostProfile{
+		Contract: BoundedContract, Rekey: hostmeta.RekeyRefused,
 		Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: new(uint64(1_000))},
 	})
-	profile := provider.BoundedAuthorizationProfile()
-	if _, err := CanonicalBoundedProfile(profile, provider.BoundedAuthorizationMetadata()); err != nil {
+	profile := provider.HostProfile()
+	if _, err := CanonicalBoundedProfile(profile, provider.HostMetadata()); err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	for name, mutate := range map[string]func(*boundedmeta.Metadata){
-		"another fee ceiling":  func(m *boundedmeta.Metadata) { *m.Bounds.MaxFee++ },
-		"another spend effect": func(m *boundedmeta.Metadata) { m.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn} },
-		"one more spend effect": func(m *boundedmeta.Metadata) {
-			m.Bounds.SpendEffects = append(m.Bounds.SpendEffects, boundedmeta.SpendEffectAssetOptIn)
+	for name, mutate := range map[string]func(*hostmeta.Metadata){
+		"another fee ceiling":  func(m *hostmeta.Metadata) { *m.Bounds.MaxFee++ },
+		"another spend effect": func(m *hostmeta.Metadata) { m.Bounds.SpendEffects = []string{hostmeta.SpendEffectAssetOptIn} },
+		"one more spend effect": func(m *hostmeta.Metadata) {
+			m.Bounds.SpendEffects = append(m.Bounds.SpendEffects, hostmeta.SpendEffectAssetOptIn)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			metadata := boundedmeta.Clone(provider.BoundedAuthorizationMetadata())
+			metadata := hostmeta.Clone(provider.HostMetadata())
 			mutate(metadata)
 			if _, err := CanonicalBoundedProfile(profile, metadata); err == nil || !strings.Contains(err.Error(), "does not match the authorization profile") {
 				t.Fatalf("CanonicalBoundedProfile() error = %v, want the mismatch refused", err)

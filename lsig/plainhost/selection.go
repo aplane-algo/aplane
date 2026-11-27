@@ -13,7 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -113,8 +113,8 @@ type overlays struct {
 // Plus cosigned needs a cosigner: without one the spending key would rekey
 // anywhere, so the list would add nothing, and that is spending_key.
 func resolveOverlays(params, normalized map[string]string) (overlays, error) {
-	cosigner := normalized[composeddsa.BoundedCosignerPublicKeyParameter]
-	cosignerType, err := resolveCosignerType(cosigner, normalized[boundedmeta.CosignerKeyTypeParameter])
+	cosigner := normalized[composeddsa.CosignerPublicKeyParameter]
+	cosignerType, err := resolveCosignerType(cosigner, normalized[hostmeta.CosignerKeyTypeParameter])
 	if err != nil {
 		return overlays{}, err
 	}
@@ -139,27 +139,27 @@ func resolveOverlays(params, normalized map[string]string) (overlays, error) {
 func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 	if cosigner == "" {
 		if cosignerType != "" {
-			return "", fmt.Errorf("%s needs a cosigner", boundedmeta.CosignerKeyTypeParameter)
+			return "", fmt.Errorf("%s needs a cosigner", hostmeta.CosignerKeyTypeParameter)
 		}
 		return "", nil
 	}
 	if cosignerType == "" {
-		cosignerType = boundedmeta.DefaultCosignerComponentKeyType
+		cosignerType = hostmeta.DefaultCosignerComponentKeyType
 	}
 	if !slices.Contains(CosignerKeyTypes, cosignerType) {
-		return "", fmt.Errorf("%s must be %s", boundedmeta.CosignerKeyTypeParameter, strings.Join(CosignerKeyTypes, " or "))
+		return "", fmt.Errorf("%s must be %s", hostmeta.CosignerKeyTypeParameter, strings.Join(CosignerKeyTypes, " or "))
 	}
-	publicKeySize, _, _ := boundedmeta.CosignerSizes(cosignerType)
+	publicKeySize, _, _ := hostmeta.CosignerSizes(cosignerType)
 	// NormalizeCreationParams has made the key canonical hex, with no prefix.
 	publicKey, err := hex.DecodeString(cosigner)
 	if err != nil {
-		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.BoundedCosignerPublicKeyParameter, err)
+		return "", fmt.Errorf("invalid %s hex: %w", composeddsa.CosignerPublicKeyParameter, err)
 	}
 	if len(publicKey) != publicKeySize {
-		err := fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.BoundedCosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
+		err := fmt.Errorf("%s is %d bytes; a %s key is %d", composeddsa.CosignerPublicKeyParameter, len(publicKey), cosignerType, publicKeySize)
 		for _, other := range CosignerKeyTypes {
-			if size, _, _ := boundedmeta.CosignerSizes(other); size == len(publicKey) && other != cosignerType {
-				err = fmt.Errorf("%w: for a %s key, set %s=%s", err, other, boundedmeta.CosignerKeyTypeParameter, other)
+			if size, _, _ := hostmeta.CosignerSizes(other); size == len(publicKey) && other != cosignerType {
+				err = fmt.Errorf("%w: for a %s key, set %s=%s", err, other, hostmeta.CosignerKeyTypeParameter, other)
 			}
 		}
 		return "", err
@@ -171,12 +171,12 @@ func resolveCosignerType(cosigner, cosignerType string) (string, error) {
 func (o overlays) addTo(values map[string]string) {
 	values[ParameterRekeyAuthority] = o.arrangement.Rekey
 	if o.cosigner != "" {
-		values[composeddsa.BoundedCosignerPublicKeyParameter] = o.cosigner
+		values[composeddsa.CosignerPublicKeyParameter] = o.cosigner
 	}
 	// Recorded only when it is not the default, so a default-cosigned
 	// account keeps the parameters it has always had.
-	if o.arrangement.Cosigner != "" && o.arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
-		values[boundedmeta.CosignerKeyTypeParameter] = o.arrangement.Cosigner
+	if o.arrangement.Cosigner != "" && o.arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
+		values[hostmeta.CosignerKeyTypeParameter] = o.arrangement.Cosigner
 	}
 	if o.rekeyTo != "" {
 		values[ParameterRekeyTo] = o.rekeyTo

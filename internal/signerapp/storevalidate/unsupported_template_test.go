@@ -27,7 +27,7 @@ import (
 // The fixture is a structurally valid template that generation support refuses.
 // Every production base is supported for what structural validation admits, so the
 // fixture uses a base registered under a name outside the construction catalog,
-// with Falcon's ops: it loads, but bounded_support.go has no entry for it.
+// with Falcon's ops: it loads, but host_support.go has no entry for it.
 const (
 	unsupportedTemplateBase    = "test.uncataloged-base.v1"
 	unsupportedTemplateKeyType = "test.unsupported-base-fixture.v1"

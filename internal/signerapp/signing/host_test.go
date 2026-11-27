@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeval"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
@@ -17,13 +17,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func testBoundedMetadata(t *testing.T, rekey boundedmeta.RekeySetting) *boundedmeta.Metadata {
+func testBoundedMetadata(t *testing.T, rekey hostmeta.RekeySetting) *hostmeta.Metadata {
 	t.Helper()
-	metadata := &boundedmeta.Metadata{
-		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
-		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(5_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
+	metadata := &hostmeta.Metadata{
+		Contract:               hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         hostmeta.BaseArgumentLayout(hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}),
+		Bounds:                 &hostmeta.Bounds{SpendEffects: []string{"pay", "axfer"}, MaxFee: new(uint64(5_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
 		Rekey:                  rekey,
 	}
 	if err := metadata.Validate(); err != nil {
@@ -58,27 +58,27 @@ func testBoundedAssetOptIn() types.Transaction {
 	}
 }
 
-func TestClassifyBoundedPath(t *testing.T) {
-	spendingRekey := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	noRekey := testBoundedMetadata(t, boundedmeta.RekeyRefused)
+func TestClassifyHostPath(t *testing.T) {
+	spendingRekey := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
+	noRekey := testBoundedMetadata(t, hostmeta.RekeyRefused)
 	// A refused account must keep pay, so the single-effect profiles have a
 	// spending-key rekey; the rekey setting plays no part in a spend decision.
-	assetOptIn := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	assetOptIn.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAssetOptIn}
-	assetTransferOnly := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
-	assetTransferOnly.Bounds.SpendEffects = []string{boundedmeta.SpendEffectAxfer}
+	assetOptIn := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
+	assetOptIn.Bounds.SpendEffects = []string{hostmeta.SpendEffectAssetOptIn}
+	assetTransferOnly := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
+	assetTransferOnly.Bounds.SpendEffects = []string{hostmeta.SpendEffectAxfer}
 
 	tests := []struct {
 		name     string
 		txn      types.Transaction
-		metadata *boundedmeta.Metadata
-		wantPath boundedPath
+		metadata *hostmeta.Metadata
+		wantPath hostPath
 		wantErr  string
 	}{
-		{name: "pure payment", txn: testBoundedPayment(), metadata: spendingRekey, wantPath: boundedPathPureSpend},
-		{name: "asset opt-in", txn: testBoundedAssetOptIn(), metadata: assetOptIn, wantPath: boundedPathPureSpend},
+		{name: "pure payment", txn: testBoundedPayment(), metadata: spendingRekey, wantPath: hostPathPureSpend},
+		{name: "asset opt-in", txn: testBoundedAssetOptIn(), metadata: assetOptIn, wantPath: hostPathPureSpend},
 		{name: "asset opt-in denied by transfer-only profile", txn: testBoundedAssetOptIn(), metadata: assetTransferOnly, wantErr: "bounded2 account does not allow spend effect \"asset_opt_in\""},
-		{name: "spending key rekey", txn: testBoundedRekey(), metadata: spendingRekey, wantPath: boundedPathSpendingKeyRekey},
+		{name: "spending key rekey", txn: testBoundedRekey(), metadata: spendingRekey, wantPath: hostPathSpendingKeyRekey},
 		{name: "rekey disabled", txn: testBoundedRekey(), metadata: noRekey, wantErr: "bounded2 account permanently disables rekey"},
 		{name: "fee over profile", txn: func() types.Transaction { txn := testBoundedPayment(); txn.Fee = 5_001; return txn }(), metadata: spendingRekey, wantErr: "bounded2 fee 5001 exceeds account maximum 5000"},
 		{name: "hybrid rekey transfer", txn: func() types.Transaction { txn := testBoundedRekey(); txn.Amount = 1; return txn }(), metadata: spendingRekey, wantErr: "bounded2 rejects hybrid transaction effects: rekey"},
@@ -92,15 +92,15 @@ func TestClassifyBoundedPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := classifyBoundedPath(tt.txn, tt.metadata)
+			got, err := classifyHostPath(tt.txn, tt.metadata)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Message, tt.wantErr) {
-					t.Fatalf("classifyBoundedPath() error = %#v, want containing %q", err, tt.wantErr)
+					t.Fatalf("classifyHostPath() error = %#v, want containing %q", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil || got != tt.wantPath {
-				t.Fatalf("classifyBoundedPath() = (%q, %v), want (%q, nil)", got, err, tt.wantPath)
+				t.Fatalf("classifyHostPath() = (%q, %v), want (%q, nil)", got, err, tt.wantPath)
 			}
 		})
 	}
@@ -149,17 +149,17 @@ func TestRunApprovalGatesForcedBoundedReviewPrecedesAutoApproval(t *testing.T) {
 // A cosigned account's declared rekey needs the cosigner as well, and its
 // listed rekey takes the spending key alone; the approval text says which.
 func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
-	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, boundedmeta.DefaultCosignerPublicKeySize))
+	metadata := boundedCosignerTestMetadata(t, bytes.Repeat([]byte{0x41}, hostmeta.DefaultCosignerPublicKeySize))
 	txn := testBoundedRekey()
-	for path, want := range map[boundedPath]string{
-		boundedPathSpendingKeyRekey: "Authorization: spending key and cosigner",
-		boundedPathListedRekey:      "Authorization: spending key only, to an address on the account's rekey-to list",
+	for path, want := range map[hostPath]string{
+		hostPathSpendingKeyRekey: "Authorization: spending key and cosigner",
+		hostPathListedRekey:      "Authorization: spending key only, to an address on the account's rekey-to list",
 	} {
 		description := approvalText(
 			signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
 			&PlanResult{
 				AllTxns: []types.Transaction{txn}, PassthroughIndices: map[int]bool{}, ForeignIndices: map[int]bool{},
-				BoundedItems: []*boundedPlanItem{{Path: path, Metadata: metadata}},
+				HostItems: []*hostPlanItem{{Path: path, Metadata: metadata}},
 			},
 			[]types.Transaction{txn},
 			describeAs("transaction"),
@@ -171,7 +171,7 @@ func TestApprovalTextNamesTheCosignerOnACosignedRekey(t *testing.T) {
 }
 
 func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
-	metadata := testBoundedMetadata(t, boundedmeta.RekeySpendingKey)
+	metadata := testBoundedMetadata(t, hostmeta.RekeySpendingKey)
 	txn := testBoundedRekey()
 	description := approvalText(
 		signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: txn.Sender.String()}}},
@@ -179,8 +179,8 @@ func TestApprovalTextNamesBoundedRekeyAuthority(t *testing.T) {
 			AllTxns:            []types.Transaction{txn},
 			PassthroughIndices: map[int]bool{},
 			ForeignIndices:     map[int]bool{},
-			BoundedItems: []*boundedPlanItem{{
-				Path:     boundedPathSpendingKeyRekey,
+			HostItems: []*hostPlanItem{{
+				Path:     hostPathSpendingKeyRekey,
 				Metadata: metadata,
 			}},
 		},

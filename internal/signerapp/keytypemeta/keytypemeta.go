@@ -10,7 +10,7 @@
 package keytypemeta
 
 import (
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
@@ -76,9 +76,9 @@ func RuntimeArgs(args []lsigprovider.RuntimeArgDef) []signerapi.RuntimeArgInfo {
 	return out
 }
 
-// BoundedRuntimeArgs projects a bounded contract's runtime arguments. None is
+// HostRuntimeArgs projects a bounded contract's runtime arguments. None is
 // an empty list, not nil, which the wire serves as [].
-func BoundedRuntimeArgs(args []boundedmeta.RuntimeArg) []signerapi.RuntimeArgInfo {
+func HostRuntimeArgs(args []hostmeta.RuntimeArg) []signerapi.RuntimeArgInfo {
 	out := make([]signerapi.RuntimeArgInfo, len(args))
 	for i, a := range args {
 		out[i] = runtimeArg(lsigprovider.RuntimeArgDef(a))

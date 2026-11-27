@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -48,12 +48,12 @@ func TestBoundedConditionalGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			metadata := provider.BoundedAuthorizationMetadata()
-			if spec.SchemaVersion != 2 || metadata == nil || metadata.Layer3Policy() != boundedmeta.Layer3PolicyCustom || len(metadata.RuntimeArgs) != test.wantRuntimeArgs {
+			metadata := provider.HostMetadata()
+			if spec.SchemaVersion != 2 || metadata == nil || metadata.Layer3Policy() != hostmeta.Layer3PolicyCustom || len(metadata.RuntimeArgs) != test.wantRuntimeArgs {
 				t.Fatalf("bounded conditional metadata = %#v", metadata)
 			}
-			if metadata.Rekey != boundedmeta.RekeyRefused {
-				t.Fatalf("bounded conditional rekey = %q, want %q", metadata.Rekey, boundedmeta.RekeyRefused)
+			if metadata.Rekey != hostmeta.RekeyRefused {
+				t.Fatalf("bounded conditional rekey = %q, want %q", metadata.Rekey, hostmeta.RekeyRefused)
 			}
 			teal, err := provider.GenerateTEAL(publicKey, test.parameters)
 			if err != nil {

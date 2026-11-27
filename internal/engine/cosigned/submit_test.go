@@ -187,14 +187,14 @@ func TestBoundedCosignerTargetsAndComponentRequestShape(t *testing.T) {
 	if err != nil || len(targets) != 1 || targets[0].Index != 0 {
 		t.Fatalf("cosignedTargets() = %#v, %v", targets, err)
 	}
-	if targets[0].BoundedMaxFee == nil || *targets[0].BoundedMaxFee != 10_000 {
-		t.Fatalf("bounded max fee = %v, want 10000", targets[0].BoundedMaxFee)
+	if targets[0].HostMaxFee == nil || *targets[0].HostMaxFee != 10_000 {
+		t.Fatalf("bounded max fee = %v, want 10000", targets[0].HostMaxFee)
 	}
-	requests, err := s.buildBoundedComponentRequests(txns, map[int]cosignedTarget{0: targets[0]}, clientsign.SubmitOptions{
+	requests, err := s.buildBaseComponentRequests(txns, map[int]cosignedTarget{0: targets[0]}, clientsign.SubmitOptions{
 		LsigArgsMap: []map[string][]byte{{"preimage": {0xaa}}, nil},
 	})
 	if err != nil {
-		t.Fatalf("buildBoundedComponentRequests() error = %v", err)
+		t.Fatalf("buildBaseComponentRequests() error = %v", err)
 	}
 	if mode, _ := requests[0].Mode(); mode != signerapi.RequestModeSign || requests[0].AuthAddress != bounded || requests[0].LsigArgs["preimage"] != "aa" {
 		t.Fatalf("bounded request = %#v", requests[0])
@@ -555,10 +555,10 @@ func (v testCacheView) CosignerComponentKeyType(address string) (string, bool) {
 func (v testCacheView) CosignerPublicKey(address string) (string, bool) {
 	return v.c.CosignerPublicKeyForAddress(address)
 }
-func (v testCacheView) BoundedContract(address string) (string, bool) {
+func (v testCacheView) HostContract(address string) (string, bool) {
 	return v.c.HostContractForAddress(address)
 }
-func (v testCacheView) BoundedMaxFee(address string) (uint64, bool) {
+func (v testCacheView) HostMaxFee(address string) (uint64, bool) {
 	return v.c.HostMaxFeeForAddress(address)
 }
 func (v testCacheView) LogicSigResourceProfile(address string) (lsigresource.Profile, bool) {
@@ -655,7 +655,7 @@ func cosignedTargetForTest(account, cosignerHex string) cosignedTarget {
 		Account:                  account,
 		CosignerComponentKeyType: witness.Falcon1024V1,
 		CosignerPublicKey:        cosignerHex,
-		BoundedPath:              signerapi.ComponentPathSpend,
+		HostPath:                 signerapi.ComponentPathSpend,
 	}
 }
 
@@ -927,9 +927,9 @@ func TestValidatePlannedGroup(t *testing.T) {
 		}
 	})
 	t.Run("fee exceeds advertised ceiling", func(t *testing.T) {
-		if err := validateBoundedTargetFees(
+		if err := validateHostTargetFees(
 			[]types.Transaction{plannedOriginal},
-			[]cosignedTarget{{Index: 0, BoundedMaxFee: new(uint64(plannedOriginal.Fee) - 1)}},
+			[]cosignedTarget{{Index: 0, HostMaxFee: new(uint64(plannedOriginal.Fee) - 1)}},
 		); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
 			t.Fatalf("error = %v, want max_fee rejection", err)
 		}
@@ -988,10 +988,10 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	closing.Fee = 1_000_000
 
 	targets, err := setup(signerapi.HostContractPlain1, nil).cosignedTargets([]types.Transaction{closing})
-	if err != nil || len(targets) != 1 || targets[0].BoundedMaxFee != nil {
+	if err != nil || len(targets) != 1 || targets[0].HostMaxFee != nil {
 		t.Fatalf("plain host targets = %#v, %v", targets, err)
 	}
-	if err := validateBoundedTargetFees([]types.Transaction{closing}, targets); err != nil {
+	if err := validateHostTargetFees([]types.Transaction{closing}, targets); err != nil {
 		t.Fatalf("plain host fee check: %v", err)
 	}
 
@@ -999,7 +999,7 @@ func TestBoundedTargetsTakeTheirFeeCeilingFromTheContract(t *testing.T) {
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("bounded host targets = %#v, %v", targets, err)
 	}
-	if err := validateBoundedTargetFees([]types.Transaction{closing}, targets); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
+	if err := validateHostTargetFees([]types.Transaction{closing}, targets); err == nil || !strings.Contains(err.Error(), "exceeds advertised max_fee") {
 		t.Fatalf("bounded host fee check: %v", err)
 	}
 

@@ -20,7 +20,7 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -50,9 +50,9 @@ func boundsRequest(shape plainhost.Shape, recipients []string, cosignerKey []byt
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
-		if shape.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
-			params[boundedmeta.CosignerKeyTypeParameter] = shape.Cosigner
+		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerKey)
+		if shape.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
+			params[hostmeta.CosignerKeyTypeParameter] = shape.Cosigner
 		}
 	}
 	if shape.HasRekeyList() {
@@ -84,11 +84,11 @@ func newBoundsAccount(t *testing.T, provider *plainhost.Provider, shape plainhos
 	if err != nil {
 		t.Fatalf("derive LogicSig: %v", err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublic, values, derived.Bytecode)
+	metadata, err := provider.BuildHostMetadata(spendingPublic, values, derived.Bytecode)
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata == nil || metadata.Contract != boundedmeta.Contract {
+	if metadata == nil || metadata.Contract != hostmeta.BoundedContract {
 		t.Fatalf("%s metadata = %+v, want the bounded contract", shape.Descriptor(), metadata)
 	}
 	account := corridorExecutionAccount{
@@ -341,7 +341,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 			}
 			if shape.Cosigner != "" {
 				t.Run("no cosigner signature", func(t *testing.T) {
-					slot := account.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+					slot := account.argumentIndex(t, hostmeta.ArgSourceCosigner)
 					expect(false, payment(account.address, "h"), nil, func(_ types.Digest, args [][]byte) [][]byte {
 						args[slot] = []byte{}
 						return args
@@ -415,7 +415,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 						args = more(txid, args)
 					}
 					if shape.Cosigner != "" {
-						args = withArg(args, account.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+						args = withArg(args, account.argumentIndex(t, hostmeta.ArgSourceCosigner), nil)
 					}
 					return args
 				}
@@ -434,7 +434,7 @@ func TestBoundsShapeMatrixOnChainLocalnet(t *testing.T) {
 					expect(false, rekey("l6"), nil, withProof(listedProof(otherListed)))
 				})
 				t.Run("listed rekey with a short proof", func(t *testing.T) {
-					expect(false, rekey("l8"), nil, withProof(listedProof(rekeyTarget.Address)[:boundedmeta.RekeyListProofSize-32]))
+					expect(false, rekey("l8"), nil, withProof(listedProof(rekeyTarget.Address)[:hostmeta.RekeyListProofSize-32]))
 				})
 				t.Run("listed rekey with a corrupted proof", func(t *testing.T) {
 					proof := append([]byte(nil), listedProof(rekeyTarget.Address)...)
@@ -552,7 +552,7 @@ func boundsFamilies() []boundsFamily {
 	return families
 }
 
-// BuildBoundedAuthorizationMetadata runs the generation backstop, so each account
+// BuildHostMetadata runs the generation backstop, so each account
 // here, every Falcon-1024 plain host shape, passed the production solver at its
 // list size. The simulation then shows the declared opcode ceilings hold on the
 // costliest path.
@@ -652,7 +652,7 @@ func TestBoundedGeneralResourceMatrix(t *testing.T) {
 			report, err := harness.ValidateDeclaredOpcodeCeiling(context.Background(), compiler, harness.OpcodeCeilingValidation{
 				Name:          shape.Descriptor(),
 				FinalProgram:  account.bytecode,
-				Profile:       provider.BoundedLogicSigOpcodeProfile(),
+				Profile:       provider.HostLogicSigOpcodeProfile(),
 				Bounded:       true,
 				RequiredPaths: paths,
 				Vectors:       vectors,

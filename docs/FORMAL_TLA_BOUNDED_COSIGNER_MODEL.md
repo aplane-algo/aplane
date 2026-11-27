@@ -72,7 +72,7 @@ planned -> base_released -> cosigner_released -> output
 
 The transition predicates transcribe the relevant decision boundaries in
 `internal/engine/cosigned/submit.go` and
-`internal/signerapp/signing/bounded_cosigner.go`. Unlike the one-shot assembly
+`internal/signerapp/signing/host_cosigner.go`. Unlike the one-shot assembly
 models, the state graph checks that the first-party orchestration's cosigner
 transition is not reachable before a successful base release. It does not model arbitrary direct calls to
 the cosigner endpoint.
@@ -124,7 +124,7 @@ The checked model passes its standard exhaustive run.
   it against the spending public key during assembly, before checking the
   cosigner signature or placing any argument; `receipt` abstracts that whole
   verification, including the metadata-hash and runtime-argument binding
-  checked concretely by `TestBoundedAssemblyReceiptBindsRuntimeAndMetadata`.
+  checked concretely by `TestHostAssemblyReceiptBindsRuntimeAndMetadata`.
 - The external-admin branch (the signer's admin partial plus offline completion)
   was removed with the admin key; BS2 now covers the listed-rekey branch in its
   place. An uncosigned account's listed rekey goes through ordinary `/sign` and
@@ -203,6 +203,6 @@ java -jar tla2tools.jar -config docs/formal/bounded_cosigner.cfg \
   [ARCH_COSIGNED.md](ARCH_COSIGNED.md).
 - Traceability: BS1-BS7, A2, A4, A5, A8-A13 and A15 in
   [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
-- Concrete tests: `internal/signerapp/signing/bounded_cosigner_test.go`,
+- Concrete tests: `internal/signerapp/signing/host_cosigner_test.go`,
   `internal/engine/cosigned/submit_test.go`, and
   `internal/engine/cosigned/simulate_submit_test.go`.

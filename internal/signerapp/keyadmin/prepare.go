@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -26,8 +26,8 @@ type PreparedGeneration struct {
 	ReviewFingerprint string
 	// BoundaryDigest is set only for general-provider accounts.
 	BoundaryDigest string
-	// Bounded is the bounded contract, or nil for any other key type.
-	Bounded       *boundedmeta.Metadata
+	// Host is the host contract, or nil for any other key type.
+	Host          *hostmeta.Metadata
 	CosignerKeyID string
 	// Warnings are the provider's and the signer's own notes for the reviewer.
 	// They refuse nothing.
@@ -76,7 +76,7 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 		prepared.Fingerprint = creation.instance.Fingerprint
 		prepared.ReviewFingerprint = creation.instance.ReviewFingerprint
 		prepared.BoundaryDigest = creation.instance.BoundaryDigest
-		prepared.Bounded = boundedmeta.Clone(creation.instance.Bounded)
+		prepared.Host = hostmeta.Clone(creation.instance.Host)
 	}
 	if err := prepared.resolveAuthorityIDs(); err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
@@ -87,17 +87,17 @@ func (s Service) PrepareGenerateKey(keyType string, params map[string]string) (*
 // resolveAuthorityIDs names the external keys the account would depend on, so a
 // reviewer compares identities rather than 1,793-byte public keys.
 func (p *PreparedGeneration) resolveAuthorityIDs() error {
-	if p.Bounded == nil || p.Bounded.Cosigner == nil {
+	if p.Host == nil || p.Host.Cosigner == nil {
 		return nil
 	}
-	component := p.Bounded.Cosigner.ComponentKeyType
-	value := p.Parameters[boundedmeta.CosignerPublicKeyParameter]
+	component := p.Host.Cosigner.ComponentKeyType
+	value := p.Parameters[hostmeta.CosignerPublicKeyParameter]
 	if value == "" {
 		return nil
 	}
 	publicKey, err := hex.DecodeString(value)
 	if err != nil {
-		return fmt.Errorf("invalid %s: %w", boundedmeta.CosignerPublicKeyParameter, err)
+		return fmt.Errorf("invalid %s: %w", hostmeta.CosignerPublicKeyParameter, err)
 	}
 	if p.CosignerKeyID, err = witness.ID(component, publicKey); err != nil {
 		return fmt.Errorf("identify cosigner key: %w", err)

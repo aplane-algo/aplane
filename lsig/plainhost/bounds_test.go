@@ -23,7 +23,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -105,9 +105,9 @@ func shapeRequest(shape plainhost.Shape, recipients string) map[string]string {
 		params[plainhost.ParameterRecipientScope] = plainhost.RecipientScopeAny
 	}
 	if shape.Cosigner != "" {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
-		if shape.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
-			params[boundedmeta.CosignerKeyTypeParameter] = shape.Cosigner
+		params[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(shape.Cosigner)
+		if shape.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
+			params[hostmeta.CosignerKeyTypeParameter] = shape.Cosigner
 		}
 	}
 	return params
@@ -135,11 +135,11 @@ func resolveShape(t *testing.T, provider *plainhost.Provider, shape plainhost.Sh
 
 // wantRekeySetting is the contract's rekey setting under a rekey option: only
 // these is refused plus the list, plus cosigned a spending-key rekey plus the list.
-func wantRekeySetting(rekey string) boundedmeta.RekeySetting {
+func wantRekeySetting(rekey string) hostmeta.RekeySetting {
 	if rekey == plainhost.RekeySpendingKey || rekey == plainhost.RekeyPlusCosigned {
-		return boundedmeta.RekeySpendingKey
+		return hostmeta.RekeySpendingKey
 	}
-	return boundedmeta.RekeyRefused
+	return hostmeta.RekeyRefused
 }
 
 // The expected set is written out here rather than derived from the code that
@@ -238,8 +238,8 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 			for _, shape := range plainhost.Shapes() {
 				t.Run(shape.Descriptor(), func(t *testing.T) {
 					instance := resolveShape(t, b.provider, shape, testRecipients(3))
-					bounded := instance.Bounded
-					if bounded == nil || bounded.Contract != boundedmeta.Contract {
+					bounded := instance.Host
+					if bounded == nil || bounded.Contract != hostmeta.BoundedContract {
 						t.Fatalf("instance has no bounded2 contract: %+v", bounded)
 					}
 					fromMetadata, err := plainhost.ShapeFromMetadata(bounded)
@@ -264,7 +264,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if (bounded.RekeyList != nil) != shape.HasRekeyList() {
 						t.Fatalf("rekey-to list metadata = %v", bounded.RekeyList)
 					}
-					if bounded.Cosigner != nil && !slices.Equal(bounded.Cosigner.RequiredOn, boundedmeta.CosignerRequiredOn(bounded.Rekey)) {
+					if bounded.Cosigner != nil && !slices.Equal(bounded.Cosigner.RequiredOn, hostmeta.CosignerRequiredOn(bounded.Rekey)) {
 						t.Fatalf("cosigner required_on = %v under rekey %s", bounded.Cosigner.RequiredOn, bounded.Rekey)
 					}
 					if len(bounded.RuntimeArgs) != 0 {
@@ -283,7 +283,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if instance.Values[plainhost.ParameterRekeyAuthority] != shape.Rekey {
 						t.Fatalf("persisted rekey_authority = %q", instance.Values[plainhost.ParameterRekeyAuthority])
 					}
-					if _, present := instance.Values[boundedmeta.RekeyListRootParameter]; present {
+					if _, present := instance.Values[hostmeta.RekeyListRootParameter]; present {
 						t.Fatal("persisted values hold the rekey-to list root")
 					}
 					again, err := b.provider.ResolveInstance(instance.Values)
@@ -312,8 +312,8 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					// The spending key is checked by the base's own signature check; the
 					// other base's appears only as a cosigner's of that algorithm.
 					cosignerOp := map[string]string{
-						boundedmeta.DefaultCosignerComponentKeyType: verifyOp["falcon"],
-						witness.Ed25519V1: verifyOp["ed25519"],
+						hostmeta.DefaultCosignerComponentKeyType: verifyOp["falcon"],
+						witness.Ed25519V1:                        verifyOp["ed25519"],
 					}[shape.Cosigner]
 					if !strings.Contains(teal, spendingCheck(b)) || (strings.Contains(teal, other) && other != cosignerOp) {
 						t.Fatalf("program does not verify on its base:\n%s", teal)
@@ -321,7 +321,7 @@ func TestEveryShapeResolvesAndAgreesWithItsMetadata(t *testing.T) {
 					if !strings.Contains(teal, "txn Fee\npushint 10000\n<=\nassert\n") {
 						t.Fatal("program has no fee ceiling")
 					}
-					metadata, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, prepared, make([]byte, 3_000))
+					metadata, err := b.provider.BuildHostMetadata(b.spendingKey, prepared, make([]byte, 3_000))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -362,8 +362,8 @@ func TestLiftedCombinationsResolve(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				bounded := instance.Bounded
-				if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy() != test.shape.Policy() || bounded.Rekey != wantRekeySetting(test.shape.Rekey) ||
+				bounded := instance.Host
+				if bounded.Contract != hostmeta.BoundedContract || bounded.Layer3Policy() != test.shape.Policy() || bounded.Rekey != wantRekeySetting(test.shape.Rekey) ||
 					(bounded.Cosigner != nil) != (test.shape.Cosigner != "") || (bounded.RekeyList != nil) != test.shape.HasRekeyList() {
 					t.Fatalf("metadata = %+v", bounded)
 				}
@@ -429,7 +429,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 			func(p map[string]string) { p["unlock_round"] = "5" }, "unknown parameter"},
 		// Without a cosigner the spending key would rekey anywhere, so the list
 		// would add nothing: that is spending_key.
-		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) },
+		{"plus cosigned without a cosigner", plusCosigned, func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) },
 			"rekey_authority=plus_cosigned needs a cosigner; without one it is rekey_authority=spending_key"},
 		{"plus_cosigned without rekey_to", plusCosigned, func(p map[string]string) { delete(p, plainhost.ParameterRekeyTo) },
 			"rekey_authority=plus_cosigned needs the addresses the account may be rekeyed to in rekey_to"},
@@ -438,7 +438,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"rekey_to with a spending-key rekey", spendingKey, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"rekey_to with a cosigned spending-key rekey", spendingKey, func(p map[string]string) {
 			p[plainhost.ParameterRekeyTo] = targets(1)
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
+			p[composeddsa.CosignerPublicKeyParameter] = testCosigner
 		}, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"rekey_to with a refused rekey", refused, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) }, "rekey_to needs rekey_authority=only_these or plus_cosigned"},
 		{"17 plus-cosigned rekey_to entries", plusCosigned, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(17) }, "holds at most 16 addresses, got 17"},
@@ -448,7 +448,7 @@ func TestInvalidRequestsFailClosed(t *testing.T) {
 		{"bad rekey_to entry", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = "NOTANADDRESS" }, "rekey_to: invalid address"},
 		{"empty rekey_to item", onlyThese, func(p map[string]string) { p[plainhost.ParameterRekeyTo] = targets(1) + ",," + rekeyTarget(0xd0) }, "empty item"},
 		// Key generation computes the root; no request can set it.
-		{"rekey-to list root", onlyThese, func(p map[string]string) { p[boundedmeta.RekeyListRootParameter] = strings.Repeat("00", 32) }, "unknown parameter"},
+		{"rekey-to list root", onlyThese, func(p map[string]string) { p[hostmeta.RekeyListRootParameter] = strings.Repeat("00", 32) }, "unknown parameter"},
 		{"zero recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = testAddress(1) + "," + zero }, "zero address"},
 		{"repeated recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = testAddress(1) + "," + testAddress(1) }, "repeats"},
 		{"bad recipient", spendingKey, func(p map[string]string) { p[plainhost.ParameterRecipients] = "NOTANADDRESS" }, "invalid address"},
@@ -514,7 +514,7 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 	for _, name := range []string{
 		plainhost.ParameterSpendEffects, plainhost.ParameterRecipients, plainhost.ParameterRecipientScope,
 		plainhost.ParameterListEncoding, plainhost.ParameterRekeyAuthority, plainhost.ParameterMaxFee,
-		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter,
+		plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.CosignerPublicKeyParameter,
 	} {
 		for _, empty := range []string{"", "  "} {
 			params := shapeRequest(cosigned, testRecipients(2))
@@ -535,7 +535,7 @@ func TestEmptyValuesAreRefused(t *testing.T) {
 		"empty transfer kinds": {plainhost.ParameterSpendEffects: "", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused},
 	} {
 		if instance, err := provider.ResolveInstance(params); err == nil {
-			t.Fatalf("%s resolved to %+v", name, instance.Bounded)
+			t.Fatalf("%s resolved to %+v", name, instance.Host)
 		}
 	}
 }
@@ -603,20 +603,20 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 	if instance.Values[plainhost.ParameterRekeyAuthority] != plainhost.RekeyOnlyThese {
 		t.Fatalf("rekey_authority = %q", instance.Values[plainhost.ParameterRekeyAuthority])
 	}
-	if _, present := instance.Values[boundedmeta.RekeyListRootParameter]; present {
+	if _, present := instance.Values[hostmeta.RekeyListRootParameter]; present {
 		t.Fatal("persisted values hold the rekey-to list root")
 	}
-	bounded := instance.Bounded
-	if bounded.Rekey != boundedmeta.RekeyRefused || !bounded.RefusesRekeys() || bounded.Cosigner != nil {
+	bounded := instance.Host
+	if bounded.Rekey != hostmeta.RekeyRefused || !bounded.RefusesRekeys() || bounded.Cosigner != nil {
 		t.Fatalf("rekey = %q, cosigner = %v", bounded.Rekey, bounded.Cosigner)
 	}
 	// The root is an instance field, filled in at generation.
-	if bounded.RekeyList == nil || *bounded.RekeyList != (boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: 4}) {
+	if bounded.RekeyList == nil || *bounded.RekeyList != (hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: 4}) {
 		t.Fatalf("rekey-to list = %+v", bounded.RekeyList)
 	}
-	var proofs []boundedmeta.DerivedArg
+	var proofs []hostmeta.DerivedArg
 	for _, arg := range bounded.DerivedArgs {
-		if arg.Kind == boundedmeta.DerivedArgRekeyListProof {
+		if arg.Kind == hostmeta.DerivedArgRekeyListProof {
 			proofs = append(proofs, arg)
 		}
 	}
@@ -629,8 +629,8 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 			slot = i
 		}
 	}
-	if slot < 0 || bounded.ArgumentLayout[slot].Paths != (boundedmeta.ArgumentPathMask{
-		Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, ListedRekey: boundedmeta.ArgRequired,
+	if slot < 0 || bounded.ArgumentLayout[slot].Paths != (hostmeta.ArgumentPathMask{
+		Spend: hostmeta.ArgForbidden, SpendingRekey: hostmeta.ArgForbidden, ListedRekey: hostmeta.ArgRequired,
 	}) {
 		t.Fatalf("rekey-list proof slot %d in %+v, want required on listed_rekey only", slot, bounded.ArgumentLayout)
 	}
@@ -649,7 +649,7 @@ func TestOnlyTheseRequestResolves(t *testing.T) {
 	}
 	// Without a recipient list it is not contained, whatever its rekey rule.
 	limits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, AnyRecipient: true}, "")
-	if limits.Bounded.Contained() {
+	if limits.Host.Contained() {
 		t.Fatal("a limits-only only_these account reports itself contained")
 	}
 	// A full list resolves.
@@ -670,7 +670,7 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 	for _, shape := range plainhost.Shapes() {
 		request := shapeRequest(shape, testRecipients(2))
 		request[plainhost.ParameterRekeyTo] = listedRekeyTo
-		request[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
+		request[composeddsa.CosignerPublicKeyParameter] = testCosigner
 		values := provider.ComposerValuesForTest(shape, request)
 		for _, selector := range []string{plainhost.ParameterSpendEffects, plainhost.ParameterRekeyAuthority, plainhost.ParameterListEncoding, plainhost.ParameterRecipientScope} {
 			if _, ok := values[selector]; ok {
@@ -680,12 +680,12 @@ func TestComposerSeesOnlyItsDeclaredParameters(t *testing.T) {
 		if _, ok := values[plainhost.ParameterRekeyTo]; ok != shape.HasRekeyList() {
 			t.Fatalf("%s: rekey_to reached the composer = %v", shape.Descriptor(), ok)
 		}
-		if _, ok := values[composeddsa.BoundedCosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
+		if _, ok := values[composeddsa.CosignerPublicKeyParameter]; ok != (shape.Cosigner != "") {
 			t.Fatalf("%s: the cosigner key reached the composer = %v", shape.Descriptor(), ok)
 		}
 		// The cosigner's type selects the composer; it isn't one of its parameters.
-		if _, ok := values[boundedmeta.CosignerKeyTypeParameter]; ok {
-			t.Fatalf("%s: %s reached the composer", shape.Descriptor(), boundedmeta.CosignerKeyTypeParameter)
+		if _, ok := values[hostmeta.CosignerKeyTypeParameter]; ok {
+			t.Fatalf("%s: %s reached the composer", shape.Descriptor(), hostmeta.CosignerKeyTypeParameter)
 		}
 		if _, ok := values[plainhost.ParameterRecipients]; ok != (shape.Encoding != "") {
 			t.Fatalf("%s: recipients reached the composer = %v", shape.Descriptor(), ok)
@@ -726,7 +726,7 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 	base := digest(t, func(map[string]string) {})
 	for name, mutate := range map[string]func(map[string]string){
 		"cosigner key": func(p map[string]string) {
-			p[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.DefaultCosignerPublicKeySize)
+			p[composeddsa.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 		},
 		"recipients": func(p map[string]string) { p[plainhost.ParameterRecipients] = testRecipients(4) },
 		"spend":      func(p map[string]string) { p[plainhost.ParameterSpendEffects] = "pay" },
@@ -738,7 +738,7 @@ func TestBoundaryDigestBindsWhatItCompares(t *testing.T) {
 			p[plainhost.ParameterRekeyAuthority] = plainhost.RekeyRefused
 			delete(p, plainhost.ParameterRekeyTo)
 		},
-		"no cosigner": func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) },
+		"no cosigner": func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) },
 	} {
 		if digest(t, mutate) == base {
 			t.Errorf("changing %s did not change the digest", name)
@@ -871,17 +871,17 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 		t.Fatal("accepted missing metadata")
 	}
 	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
-	custom := boundedmeta.Clone(instance.Bounded)
-	custom.Bounds.Layer3Policy = boundedmeta.Layer3PolicyCustom
+	custom := hostmeta.Clone(instance.Host)
+	custom.Bounds.Layer3Policy = hostmeta.Layer3PolicyCustom
 	if _, err := provider.StoredFingerprint(nil, custom); err == nil {
 		t.Fatal("accepted a custom policy")
 	}
-	unknown := boundedmeta.Clone(instance.Bounded)
+	unknown := hostmeta.Clone(instance.Host)
 	unknown.Bounds.SpendEffects = []string{"pay", "keyreg"}
 	if _, err := provider.StoredFingerprint(nil, unknown); err == nil {
 		t.Fatal("accepted an unknown transfer kind")
 	}
-	contract := boundedmeta.Clone(instance.Bounded)
+	contract := hostmeta.Clone(instance.Host)
 	contract.Contract = "bounded1"
 	if _, err := provider.StoredFingerprint(nil, contract); err == nil || !strings.Contains(err.Error(), "contract") {
 		t.Fatalf("a stored bounded1 contract: StoredFingerprint() error = %v", err)
@@ -895,24 +895,24 @@ func TestStoredFingerprintRefusesWhatTheGrammarCannotProduce(t *testing.T) {
 func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	provider := falconHost(t)
 	cosignedLimits := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyOnlyThese, Cosigner: falconCosigner, AnyRecipient: true}, "")
-	if cosignedLimits.Bounded.Rekey != boundedmeta.RekeyRefused || !cosignedLimits.Bounded.RefusesRekeys() || cosignedLimits.Bounded.RekeyList == nil {
-		t.Fatalf("a cosigned only_these limits-only account stored rekey %q, list %v", cosignedLimits.Bounded.Rekey, cosignedLimits.Bounded.RekeyList)
+	if cosignedLimits.Host.Rekey != hostmeta.RekeyRefused || !cosignedLimits.Host.RefusesRekeys() || cosignedLimits.Host.RekeyList == nil {
+		t.Fatalf("a cosigned only_these limits-only account stored rekey %q, list %v", cosignedLimits.Host.Rekey, cosignedLimits.Host.RekeyList)
 	}
 	// A limits-only account beside a spending-key rekey, cosigned or plus
 	// cosigned, and a cosigned one that refuses every rekey, are shapes: each
 	// mutation selects that shape, not the account it came from.
 	for name, test := range map[string]struct {
-		mutate func(*boundedmeta.Metadata)
+		mutate func(*hostmeta.Metadata)
 		want   plainhost.Shape
 	}{
-		"plus cosigned": {func(m *boundedmeta.Metadata) { m.Rekey = boundedmeta.RekeySpendingKey },
+		"plus cosigned": {func(m *hostmeta.Metadata) { m.Rekey = hostmeta.RekeySpendingKey },
 			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyPlusCosigned, Cosigner: falconCosigner, AnyRecipient: true}},
-		"cosigned spending key": {func(m *boundedmeta.Metadata) { m.Rekey, m.RekeyList = boundedmeta.RekeySpendingKey, nil },
+		"cosigned spending key": {func(m *hostmeta.Metadata) { m.Rekey, m.RekeyList = hostmeta.RekeySpendingKey, nil },
 			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeySpendingKey, Cosigner: falconCosigner, AnyRecipient: true}},
-		"refusing with no list": {func(m *boundedmeta.Metadata) { m.RekeyList = nil },
+		"refusing with no list": {func(m *hostmeta.Metadata) { m.RekeyList = nil },
 			plainhost.Shape{Spend: everyTransfer, Rekey: plainhost.RekeyRefused, Cosigner: falconCosigner, AnyRecipient: true}},
 	} {
-		stored := boundedmeta.Clone(cosignedLimits.Bounded)
+		stored := hostmeta.Clone(cosignedLimits.Host)
 		test.mutate(stored)
 		got, err := provider.StoredFingerprint(nil, stored)
 		if err != nil {
@@ -926,9 +926,9 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 	// A setting the contract does not know, such as the retired admin-key rekey,
 	// or no setting at all, is refused rather than read as either known one, with
 	// a rekey-to list or without.
-	for _, metadata := range []*boundedmeta.Metadata{cosignedLimits.Bounded, listed.Bounded} {
-		for _, rekey := range []boundedmeta.RekeySetting{"admin_key", "none", "", boundedmeta.RekeySetting(plainhost.RekeyOnlyThese)} {
-			stored := boundedmeta.Clone(metadata)
+	for _, metadata := range []*hostmeta.Metadata{cosignedLimits.Host, listed.Host} {
+		for _, rekey := range []hostmeta.RekeySetting{"admin_key", "none", "", hostmeta.RekeySetting(plainhost.RekeyOnlyThese)} {
+			stored := hostmeta.Clone(metadata)
 			stored.Rekey = rekey
 			if _, err := provider.StoredFingerprint(nil, stored); err == nil || !strings.Contains(err.Error(), "rekey setting") {
 				t.Fatalf("stored rekey %q: StoredFingerprint() error = %v", rekey, err)
@@ -936,21 +936,21 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 		}
 	}
 	spending := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(2))
-	if spending.Bounded.Rekey != boundedmeta.RekeySpendingKey {
-		t.Fatalf("a spending-key shape stored rekey %q", spending.Bounded.Rekey)
+	if spending.Host.Rekey != hostmeta.RekeySpendingKey {
+		t.Fatalf("a spending-key shape stored rekey %q", spending.Host.Rekey)
 	}
 	// The same account refusing rekeys with no list and no cosigner is the refused
 	// shape, which the grammar now offers.
 	refusedShape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
-	stored := boundedmeta.Clone(spending.Bounded)
-	stored.Rekey = boundedmeta.RekeyRefused
+	stored := hostmeta.Clone(spending.Host)
+	stored.Rekey = hostmeta.RekeyRefused
 	if got, err := provider.StoredFingerprint(nil, stored); err != nil || got != provider.ShapeFingerprintForTest(refusedShape) || got == spending.Fingerprint {
 		t.Fatalf("a stored uncosigned refusal: StoredFingerprint() = %q, %v", got, err)
 	}
 	// With a rekey-to list it is the only_these shape, which carries a different
 	// fingerprint.
 	onlyThese := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}, testRecipients(2))
-	stored.RekeyList = &boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: 4}
+	stored.RekeyList = &hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: 4}
 	fingerprint, err := provider.StoredFingerprint(nil, stored)
 	if err != nil {
 		t.Fatal(err)
@@ -959,13 +959,13 @@ func TestStoredFingerprintSelectsTheStoredRekey(t *testing.T) {
 		t.Fatal("a stored rekey-to list did not select the only_these shape")
 	}
 	// Without its list, the only_these account is the uncosigned refusal.
-	stripped := boundedmeta.Clone(onlyThese.Bounded)
+	stripped := hostmeta.Clone(onlyThese.Host)
 	stripped.RekeyList = nil
 	if got, err := provider.StoredFingerprint(nil, stripped); err != nil || got != provider.ShapeFingerprintForTest(refusedShape) || got == onlyThese.Fingerprint {
 		t.Fatalf("an only_these account without its list: StoredFingerprint() = %q, %v", got, err)
 	}
 	// A cosigned list account is its own shape, not its uncosigned twin.
-	got, err := provider.StoredFingerprint(nil, cosignedLimits.Bounded)
+	got, err := provider.StoredFingerprint(nil, cosignedLimits.Host)
 	if err != nil || got != cosignedLimits.Fingerprint || got == listed.Fingerprint {
 		t.Fatalf("a cosigned only_these limits-only account: StoredFingerprint() = %q, %v", got, err)
 	}
@@ -978,11 +978,11 @@ func TestStoredFingerprintRefusesAListBesideAnotherRekey(t *testing.T) {
 	for _, b := range bases(t) {
 		shape := plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyOnlyThese}
 		instance := resolveShape(t, b.provider, shape, testAddress(1))
-		if got, err := b.provider.StoredFingerprint(nil, instance.Bounded); err != nil || got != instance.Fingerprint {
+		if got, err := b.provider.StoredFingerprint(nil, instance.Host); err != nil || got != instance.Fingerprint {
 			t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", b.name, got, err, instance.Fingerprint)
 		}
-		mismatched := boundedmeta.Clone(instance.Bounded)
-		mismatched.Rekey = boundedmeta.RekeySpendingKey
+		mismatched := hostmeta.Clone(instance.Host)
+		mismatched.Rekey = hostmeta.RekeySpendingKey
 		if _, err := b.provider.StoredFingerprint(nil, mismatched); err == nil || !strings.Contains(err.Error(), "unsupported bounded shape spend=pay,axfer,asset_opt_in;policy=fixed_allowlist;rekey=plus_cosigned;cosigner=none") {
 			t.Fatalf("%s: StoredFingerprint() error = %v", b.name, err)
 		}
@@ -1223,8 +1223,8 @@ func TestBoundaryFileFeeCeiling(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if direct.Bounded.FeeCeiling() == nil || *direct.Bounded.FeeCeiling() != 20_000 {
-			t.Fatalf("%s: direct MaxFee = %v", b.name, direct.Bounded.FeeCeiling())
+		if direct.Host.FeeCeiling() == nil || *direct.Host.FeeCeiling() != 20_000 {
+			t.Fatalf("%s: direct MaxFee = %v", b.name, direct.Host.FeeCeiling())
 		}
 		for _, line := range []string{"max_fee: 20000\n", "max_fee: \"20000\"\n"} {
 			params, err := boundary.LoadFile(writeBoundaryFile(t, directory, valid+line))
@@ -1270,8 +1270,8 @@ func TestBoundaryFileReachesTheLiftedShapes(t *testing.T) {
 			t.Fatalf("%s: %v", b.name, err)
 		}
 		want := plainhost.Shape{Spend: []txeffects.SpendEffect{txeffects.SpendEffectPay}, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeyRefused}
-		if instance.Fingerprint != b.provider.ShapeFingerprintForTest(want) || !instance.Bounded.Contained() {
-			t.Fatalf("%s: a refused file resolved to %+v", b.name, instance.Bounded)
+		if instance.Fingerprint != b.provider.ShapeFingerprintForTest(want) || !instance.Host.Contained() {
+			t.Fatalf("%s: a refused file resolved to %+v", b.name, instance.Host)
 		}
 		overlays, err := boundary.ParseFile([]byte("schema: aplane.boundary.v1\nrekey: {authority: only_these, to: [" + rekeyTarget(0x08) + "]}\n"))
 		if err != nil {
@@ -1281,8 +1281,8 @@ func TestBoundaryFileReachesTheLiftedShapes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", b.name, err)
 		}
-		if instance.Bounded == nil || instance.Bounded.Contract != boundedmeta.PlainContract || instance.Bounded.RekeyList == nil || instance.Bounded.Cosigner != nil {
-			t.Fatalf("%s: a file without spend resolved to %+v", b.name, instance.Bounded)
+		if instance.Host == nil || instance.Host.Contract != hostmeta.PlainContract || instance.Host.RekeyList == nil || instance.Host.Cosigner != nil {
+			t.Fatalf("%s: a file without spend resolved to %+v", b.name, instance.Host)
 		}
 	}
 }
@@ -1378,8 +1378,8 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 						t.Fatalf("file cosigner = %q", fromFile[plainhost.ParameterCosigner])
 					}
 					delete(fromFile, plainhost.ParameterCosigner)
-					fromFile[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
-					form[composeddsa.BoundedCosignerPublicKeyParameter] = testCosigner
+					fromFile[composeddsa.CosignerPublicKeyParameter] = testCosigner
+					form[composeddsa.CosignerPublicKeyParameter] = testCosigner
 				}
 				first, err := b.provider.ResolveInstance(form)
 				if err != nil {
@@ -1392,11 +1392,11 @@ func TestPresetAndItsFileResolveTheSame(t *testing.T) {
 				if first.BoundaryDigest != second.BoundaryDigest || first.Fingerprint != second.Fingerprint {
 					t.Fatal("the preset and its file resolved differently")
 				}
-				if second.Bounded.Contract != boundedmeta.Contract {
-					t.Fatalf("a preset resolved to contract %s", second.Bounded.Contract)
+				if second.Host.Contract != hostmeta.BoundedContract {
+					t.Fatalf("a preset resolved to contract %s", second.Host.Contract)
 				}
-				if slices.Contains(preset.Fields, plainhost.ParameterRekeyTo) != (second.Bounded.RekeyList != nil) {
-					t.Fatalf("rekey-to list = %v for fields %v", second.Bounded.RekeyList, preset.Fields)
+				if slices.Contains(preset.Fields, plainhost.ParameterRekeyTo) != (second.Host.RekeyList != nil) {
+					t.Fatalf("rekey-to list = %v for fields %v", second.Host.RekeyList, preset.Fields)
 				}
 			})
 		}
@@ -1489,10 +1489,10 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, present := params[boundedmeta.RekeyListRootParameter]; present {
+			if _, present := params[hostmeta.RekeyListRootParameter]; present {
 				t.Fatal("PrepareRekeyList changed the request it was given")
 			}
-			root := prepared[boundedmeta.RekeyListRootParameter]
+			root := prepared[hostmeta.RekeyListRootParameter]
 			want, err := composeddsa.RekeyListRootFor(testListKey, map[string]string{plainhost.ParameterRekeyTo: listedRekeyTo})
 			if err != nil {
 				t.Fatal(err)
@@ -1513,7 +1513,7 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if other[boundedmeta.RekeyListRootParameter] == root {
+			if other[hostmeta.RekeyListRootParameter] == root {
 				t.Fatal("two spending keys gave one root")
 			}
 			// A request never carries the root, not even the generator's own output.
@@ -1531,11 +1531,11 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 			if strings.Count(teal, root) != 1 || !strings.Contains(teal, "pushbytes 0x"+root+"\n==\nassert\n") {
 				t.Fatalf("program does not commit to the root once:\n%s", teal)
 			}
-			metadata, err := provider.BuildBoundedAuthorizationMetadata(b.spendingKey, prepared, make([]byte, 3_000))
+			metadata, err := provider.BuildHostMetadata(b.spendingKey, prepared, make([]byte, 3_000))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if metadata.RekeyList == nil || *metadata.RekeyList != (boundedmeta.RekeyList{Contract: boundedmeta.RekeyListContractV1, Depth: 4, RootHex: root}) {
+			if metadata.RekeyList == nil || *metadata.RekeyList != (hostmeta.RekeyList{Contract: hostmeta.RekeyListContractV1, Depth: 4, RootHex: root}) {
 				t.Fatalf("rekey-to list metadata = %+v, want root %s", metadata.RekeyList, root)
 			}
 			stored, err := provider.StoredFingerprint(nil, metadata)
@@ -1561,11 +1561,11 @@ func TestPrepareRekeyListAddsTheRoot(t *testing.T) {
 func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 	for _, b := range bases(t) {
 		params := shapeRequest(plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
-		_, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, make([]byte, 10_000_000))
+		_, err := b.provider.BuildHostMetadata(b.spendingKey, params, make([]byte, 10_000_000))
 		if err == nil || !strings.Contains(err.Error(), "resource limits") {
-			t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", b.name, err)
+			t.Fatalf("%s: BuildHostMetadata() error = %v", b.name, err)
 		}
-		if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, make([]byte, 3_000)); err != nil {
+		if _, err := b.provider.BuildHostMetadata(b.spendingKey, params, make([]byte, 3_000)); err != nil {
 			t.Fatalf("%s: an ordinary program was refused: %v", b.name, err)
 		}
 		// A ceiling the account's own transactions cannot meet is generated all
@@ -1574,14 +1574,14 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 		for _, ceiling := range []uint64{0, 1_000, 20_000} {
 			low := maps.Clone(params)
 			low[plainhost.ParameterMaxFee] = strconv.FormatUint(ceiling, 10)
-			metadata, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, low, make([]byte, 3_000))
+			metadata, err := b.provider.BuildHostMetadata(b.spendingKey, low, make([]byte, 3_000))
 			if err != nil {
 				t.Fatalf("%s: ceiling %d was refused: %v", b.name, ceiling, err)
 			}
 			if metadata.FeeCeiling() == nil || *metadata.FeeCeiling() != ceiling {
 				t.Fatalf("%s: ceiling %d recorded as %v", b.name, ceiling, metadata.FeeCeiling())
 			}
-			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, low, make([]byte, 10_000_000)); err == nil || !strings.Contains(err.Error(), "resource limits") {
+			if _, err := b.provider.BuildHostMetadata(b.spendingKey, low, make([]byte, 10_000_000)); err == nil || !strings.Contains(err.Error(), "resource limits") {
 				t.Fatalf("%s: ceiling %d, oversized program: error = %v", b.name, ceiling, err)
 			}
 		}
@@ -1591,17 +1591,17 @@ func TestGenerationRunsTheResourceBackstop(t *testing.T) {
 func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	provider := falconHost(t)
 	instance := resolveShape(t, provider, plainhost.Shape{Spend: everyTransfer, Encoding: plainhost.EncodingInline, Rekey: plainhost.RekeySpendingKey}, testRecipients(1))
-	opcodes := provider.BoundedLogicSigOpcodeProfile()
-	if err := plainhost.CheckResources(instance.Bounded, opcodes, 3_000); err != nil {
+	opcodes := provider.HostLogicSigOpcodeProfile()
+	if err := plainhost.CheckResources(instance.Host, opcodes, 3_000); err != nil {
 		t.Fatalf("an ordinary program was refused: %v", err)
 	}
-	if err := plainhost.CheckResources(instance.Bounded, opcodes, 10_000_000); err == nil {
+	if err := plainhost.CheckResources(instance.Host, opcodes, 10_000_000); err == nil {
 		t.Fatal("accepted a program that cannot fit a group")
 	}
 	// A fee ceiling below what a path costs is the user's choice: the backstop
 	// no longer refuses it, and the review warns instead.
 	for _, ceiling := range []uint64{0, 1_000} {
-		lowCeiling := boundedmeta.Clone(instance.Bounded)
+		lowCeiling := hostmeta.Clone(instance.Host)
 		lowCeiling.Bounds.MaxFee = new(ceiling)
 		if err := plainhost.CheckResources(lowCeiling, opcodes, 3_000); err != nil {
 			t.Fatalf("CheckResources(ceiling %d) error = %v", ceiling, err)
@@ -1609,7 +1609,7 @@ func TestResourceBackstopRefusesWhatCannotRun(t *testing.T) {
 	}
 	// A rekey setting this type does not offer, such as the retired admin-key
 	// rekey, has no path to solve.
-	adminRekey := boundedmeta.Clone(instance.Bounded)
+	adminRekey := hostmeta.Clone(instance.Host)
 	adminRekey.Rekey = "admin_key"
 	if err := plainhost.CheckResources(adminRekey, opcodes, 3_000); err == nil || !strings.Contains(err.Error(), "no resource path") {
 		t.Fatalf("CheckResources(admin rekey) error = %v", err)
@@ -1666,8 +1666,8 @@ func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
 			if _, persisted := want.Values[plainhost.ParameterMaxFee]; persisted {
 				t.Fatalf("%s %s: the default ceiling is persisted", b.name, shape.Descriptor())
 			}
-			if want.Bounded.FeeCeiling() == nil || *want.Bounded.FeeCeiling() != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
-				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Bounded.FeeCeiling())
+			if want.Host.FeeCeiling() == nil || *want.Host.FeeCeiling() != plainhost.DefaultMaxFee || plainhost.DefaultMaxFee != 10_000 {
+				t.Fatalf("%s %s: default MaxFee = %v", b.name, shape.Descriptor(), want.Host.FeeCeiling())
 			}
 			if want.Fingerprint != b.provider.ShapeFingerprintForTest(shape) {
 				t.Fatalf("%s %s: the default is not the grammar's own program", b.name, shape.Descriptor())
@@ -1689,7 +1689,7 @@ func TestDefaultFeeCeilingIsTheAccountWithoutOne(t *testing.T) {
 				if got.Fingerprint != want.Fingerprint || got.BoundaryDigest != want.BoundaryDigest || got.ReviewFingerprint != want.ReviewFingerprint {
 					t.Fatalf("%s %s max_fee=%q: resolved to another account", b.name, shape.Descriptor(), spelling)
 				}
-				if !reflect.DeepEqual(got.Bounded, want.Bounded) || !reflect.DeepEqual(got.Parameters, want.Parameters) || len(creationWarnings(t, b.provider, named)) != 0 {
+				if !reflect.DeepEqual(got.Host, want.Host) || !reflect.DeepEqual(got.Parameters, want.Parameters) || len(creationWarnings(t, b.provider, named)) != 0 {
 					t.Fatalf("%s %s max_fee=%q: contract, parameters or warnings differ", b.name, shape.Descriptor(), spelling)
 				}
 				if teal := shapeTEAL(t, b, named); teal != wantTEAL {
@@ -1720,7 +1720,7 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 			standardTEAL := shapeTEAL(t, b, absent)
 			seen := map[string]uint64{standard.Fingerprint: plainhost.DefaultMaxFee}
 			digests := map[string]uint64{standard.BoundaryDigest: plainhost.DefaultMaxFee}
-			for _, ceiling := range []uint64{0, 1, 9_999, 10_001, 20_000, boundedmeta.MaxFeeLimit} {
+			for _, ceiling := range []uint64{0, 1, 9_999, 10_001, 20_000, hostmeta.MaxFeeLimit} {
 				name := fmt.Sprintf("%s %s max_fee=%d", b.name, shape.Descriptor(), ceiling)
 				canonical := strconv.FormatUint(ceiling, 10)
 				params := maps.Clone(absent)
@@ -1740,16 +1740,16 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				if !maps.Equal(withoutFee, standard.Values) {
 					t.Fatalf("%s: the ceiling changed another value: %v, want %v", name, withoutFee, standard.Values)
 				}
-				if instance.Bounded == nil || instance.Bounded.FeeCeiling() == nil || *instance.Bounded.FeeCeiling() != ceiling {
-					t.Fatalf("%s: contract MaxFee = %v", name, instance.Bounded.FeeCeiling())
+				if instance.Host == nil || instance.Host.FeeCeiling() == nil || *instance.Host.FeeCeiling() != ceiling {
+					t.Fatalf("%s: contract MaxFee = %v", name, instance.Host.FeeCeiling())
 				}
-				if err := instance.Bounded.ValidateProfile(); err != nil {
+				if err := instance.Host.ValidateProfile(); err != nil {
 					t.Fatalf("%s: ValidateProfile() error = %v", name, err)
 				}
 				// Apart from the ceiling it is the default account's contract.
-				sameButFee := boundedmeta.Clone(instance.Bounded)
+				sameButFee := hostmeta.Clone(instance.Host)
 				sameButFee.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
-				if !reflect.DeepEqual(sameButFee, boundedmeta.Clone(standard.Bounded)) {
+				if !reflect.DeepEqual(sameButFee, hostmeta.Clone(standard.Host)) {
 					t.Fatalf("%s: the contract differs beyond the ceiling", name)
 				}
 				if other, ok := seen[instance.Fingerprint]; ok {
@@ -1787,12 +1787,12 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 				}
 
 				// A stored account reports the same provenance from its metadata.
-				if got, err := b.provider.StoredFingerprint(nil, instance.Bounded); err != nil || got != instance.Fingerprint {
+				if got, err := b.provider.StoredFingerprint(nil, instance.Host); err != nil || got != instance.Fingerprint {
 					t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", name, got, err, instance.Fingerprint)
 				}
-				generated, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000))
+				generated, err := b.provider.BuildHostMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000))
 				if err != nil {
-					t.Fatalf("%s: BuildBoundedAuthorizationMetadata() error = %v", name, err)
+					t.Fatalf("%s: BuildHostMetadata() error = %v", name, err)
 				}
 				if generated.FeeCeiling() == nil || *generated.FeeCeiling() != ceiling {
 					t.Fatalf("%s: generated MaxFee = %v", name, generated.FeeCeiling())
@@ -1803,17 +1803,17 @@ func TestFeeCeilingSelectsItsOwnProgram(t *testing.T) {
 			}
 			// The same stored contract at the default ceiling is the grammar's program,
 			// and one with no ceiling has no program to report.
-			if got, err := b.provider.StoredFingerprint(nil, standard.Bounded); err != nil || got != standard.Fingerprint {
+			if got, err := b.provider.StoredFingerprint(nil, standard.Host); err != nil || got != standard.Fingerprint {
 				t.Fatalf("%s %s: StoredFingerprint(default) = %q, %v", b.name, shape.Descriptor(), got, err)
 			}
-			noCeiling := boundedmeta.Clone(standard.Bounded)
+			noCeiling := hostmeta.Clone(standard.Host)
 			noCeiling.Bounds.MaxFee = nil
 			if _, err := b.provider.StoredFingerprint(nil, noCeiling); err == nil || !strings.Contains(err.Error(), "no fee ceiling") {
 				t.Fatalf("%s %s: StoredFingerprint(no ceiling) error = %v", b.name, shape.Descriptor(), err)
 			}
 			// Metadata that names the bounded contract without its bounds has
 			// no shape to look up.
-			noBounds := boundedmeta.Clone(standard.Bounded)
+			noBounds := hostmeta.Clone(standard.Host)
 			noBounds.Bounds = nil
 			if _, err := b.provider.StoredFingerprint(nil, noBounds); err == nil || !strings.Contains(err.Error(), "no bounds") {
 				t.Fatalf("%s %s: StoredFingerprint(no bounds) error = %v", b.name, shape.Descriptor(), err)
@@ -1842,12 +1842,12 @@ func TestStoredFingerprintBuildsACustomCeilingOnDemand(t *testing.T) {
 		if fresh.ShapesBuiltForTest() {
 			t.Fatalf("%s: the fresh provider already built its shapes", b.name)
 		}
-		got, err := fresh.StoredFingerprint(nil, boundedmeta.Clone(instance.Bounded))
+		got, err := fresh.StoredFingerprint(nil, hostmeta.Clone(instance.Host))
 		if err != nil || got != instance.Fingerprint {
 			t.Fatalf("%s: StoredFingerprint() = %q, %v; want %s", b.name, got, err, instance.Fingerprint)
 		}
 		// And it is not the default-ceiling account's.
-		standard := boundedmeta.Clone(instance.Bounded)
+		standard := hostmeta.Clone(instance.Host)
 		standard.Bounds.MaxFee = new(plainhost.DefaultMaxFee)
 		if def, err := fresh.StoredFingerprint(nil, standard); err != nil || def == got || def != fresh.ShapeFingerprintForTest(shape) {
 			t.Fatalf("%s: StoredFingerprint(default) = %q, %v", b.name, def, err)
@@ -1977,13 +1977,13 @@ func TestCustomFeeCeilingsResolveConcurrently(t *testing.T) {
 						}
 						expected := want[key{s, c}]
 						if instance.Fingerprint != expected.Fingerprint || instance.BoundaryDigest != expected.BoundaryDigest ||
-							!maps.Equal(instance.Values, expected.Values) || !reflect.DeepEqual(instance.Bounded, expected.Bounded) {
+							!maps.Equal(instance.Values, expected.Values) || !reflect.DeepEqual(instance.Host, expected.Host) {
 							failures <- fmt.Sprintf("%s max_fee=%d resolved to another account", shape.Descriptor(), 50_000+c)
 						}
 						if _, err := b.provider.CreationWarnings(params); err != nil {
 							failures <- fmt.Sprintf("%s max_fee=%d: CreationWarnings() error = %v", shape.Descriptor(), 50_000+c, err)
 						}
-						if got, err := b.provider.StoredFingerprint(nil, instance.Bounded); err != nil || got != expected.Fingerprint {
+						if got, err := b.provider.StoredFingerprint(nil, instance.Host); err != nil || got != expected.Fingerprint {
 							failures <- fmt.Sprintf("%s max_fee=%d: StoredFingerprint() = %q, %v", shape.Descriptor(), 50_000+c, got, err)
 						}
 					})
@@ -2050,18 +2050,18 @@ func TestFeeCeilingWarning(t *testing.T) {
 				// Below the minimum fee every path the account has is named, the spend
 				// first, and no path it does not have.
 				paths := strings.TrimPrefix(warning, fmt.Sprintf(prefix, ceiling))
-				if !strings.HasPrefix(paths, boundedmeta.PathSpend+" (at least ") {
+				if !strings.HasPrefix(paths, hostmeta.PathSpend+" (at least ") {
 					t.Fatalf("%s max_fee=%s: the warning does not lead with the spend path: %q", name, test.ceiling, warning)
 				}
-				hasSpendingRekey := instance.Bounded.Rekey == boundedmeta.RekeySpendingKey
-				if strings.Contains(paths, boundedmeta.PathSpendingRekey+" (at least ") != hasSpendingRekey {
+				hasSpendingRekey := instance.Host.Rekey == hostmeta.RekeySpendingKey
+				if strings.Contains(paths, hostmeta.PathSpendingRekey+" (at least ") != hasSpendingRekey {
 					t.Fatalf("%s max_fee=%s: spending rekey named = %v: %q", name, test.ceiling, !hasSpendingRekey, warning)
 				}
-				if strings.Contains(paths, boundedmeta.PathListedRekey+" (at least ") != shape.HasRekeyList() {
+				if strings.Contains(paths, hostmeta.PathListedRekey+" (at least ") != shape.HasRekeyList() {
 					t.Fatalf("%s max_fee=%s: listed rekey named = %v: %q", name, test.ceiling, !shape.HasRekeyList(), warning)
 				}
 				// The warning refuses nothing: the same request generates.
-				if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000)); err != nil {
+				if _, err := b.provider.BuildHostMetadata(b.spendingKey, withRoot(t, b.provider, params), make([]byte, 3_000)); err != nil {
 					t.Fatalf("%s max_fee=%s: generation refused: %v", name, test.ceiling, err)
 				}
 			}
@@ -2221,8 +2221,8 @@ func TestCreationWarningsRefuseWhatTheProviderRefuses(t *testing.T) {
 // boundary file and the provider: the plain decimal form alone, spaces around it
 // aside, up to the largest whole number every client reads exactly.
 func TestParseMaxFee(t *testing.T) {
-	if boundedmeta.MaxFeeLimit != 9007199254740991 {
-		t.Fatalf("MaxFeeLimit = %d", boundedmeta.MaxFeeLimit)
+	if hostmeta.MaxFeeLimit != 9007199254740991 {
+		t.Fatalf("MaxFeeLimit = %d", hostmeta.MaxFeeLimit)
 	}
 	if boundary.DefaultMaxFeeText != "10000" || boundary.DefaultMaxFee != 10_000 {
 		t.Fatalf("default = %q, %d", boundary.DefaultMaxFeeText, boundary.DefaultMaxFee)
@@ -2233,7 +2233,7 @@ func TestParseMaxFee(t *testing.T) {
 	}{
 		{"0", 0}, {"1", 1}, {"999", 999}, {"10000", 10_000}, {boundary.DefaultMaxFeeText, boundary.DefaultMaxFee},
 		{"20000", 20_000}, {" 20000 ", 20_000}, {"\t20000\n", 20_000},
-		{"4294967296", 1 << 32}, {"9007199254740990", 1<<53 - 2}, {"9007199254740991", boundedmeta.MaxFeeLimit},
+		{"4294967296", 1 << 32}, {"9007199254740990", 1<<53 - 2}, {"9007199254740991", hostmeta.MaxFeeLimit},
 	} {
 		got, err := boundary.ParseMaxFee(test.text)
 		if err != nil || got != test.want {

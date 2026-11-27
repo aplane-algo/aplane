@@ -52,7 +52,7 @@
 //
 // # Where the bounded contract lives
 //
-// The bounded contract is owned by neutral packages under internal/: boundedmeta (durable
+// The bounded contract is owned by neutral packages under internal/: hostmeta (durable
 // metadata, canonical vocabulary, validation) and txeffects (transaction-effect
 // classification).
 // composeddsa holds only its program renderer and template-level profile

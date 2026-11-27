@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
@@ -45,7 +45,7 @@ type Payload struct {
 	SigningMetadataVersion int
 	BaseKeyType            string
 	SigningArgs            []StoredSigningArg
-	BoundedAuthorization   *boundedmeta.Metadata
+	Host                   *hostmeta.Metadata
 	TemplateFingerprint    string
 	GenesisHash            []byte
 	// ValidRekeyTarget is the key type's valid_rekey_target declaration,
@@ -76,7 +76,7 @@ type payloadWire struct {
 	SigningMetadataVersion int                             `json:"signing_metadata_version,omitempty"`
 	BaseKeyType            string                          `json:"base_key_type,omitempty"`
 	SigningArgs            []StoredSigningArg              `json:"signing_args,omitempty"`
-	BoundedAuthorization   *boundedmeta.Metadata           `json:"host,omitempty"`
+	Host                   *hostmeta.Metadata              `json:"host,omitempty"`
 	TemplateFingerprint    string                          `json:"template_fingerprint,omitempty"`
 	GenesisHashHex         string                          `json:"genesis_hash,omitempty"`
 	ValidRekeyTarget       bool                            `json:"valid_rekey_target,omitempty"`
@@ -251,10 +251,10 @@ func (p *Payload) SetLogicSigOpcodeProfile(profile lsigresource.OpcodeProfile, b
 	return nil
 }
 
-// SetBoundedAuthorization attaches a validated host signing contract to this
+// SetHost attaches a validated host signing contract to this
 // LogicSig payload, stored as its host object. The metadata then owns the
 // argument contract, so the payload's own signing args are dropped.
-func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error {
+func (p *Payload) SetHost(metadata *hostmeta.Metadata) error {
 	if p == nil {
 		return incompatibleKeyFormat("key payload is nil")
 	}
@@ -267,7 +267,7 @@ func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error 
 	if err := p.LogicSigOpcodeProfile.Validate(true); err != nil {
 		return incompatibleKeyFormat("bounded authorization requires a reviewed bounded opcode profile: %v", err)
 	}
-	p.BoundedAuthorization = boundedmeta.Clone(metadata)
+	p.Host = hostmeta.Clone(metadata)
 	// Bounded metadata owns the complete argument contract. Generic
 	// signing_args must not survive it or provide a second caller-controlled
 	// layout.
@@ -346,7 +346,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		SigningMetadataVersion: payload.SigningMetadataVersion,
 		BaseKeyType:            payload.BaseKeyType,
 		SigningArgs:            cloneStoredSigningArgs(payload.SigningArgs),
-		BoundedAuthorization:   boundedmeta.Clone(payload.BoundedAuthorization),
+		Host:                   hostmeta.Clone(payload.Host),
 		TemplateFingerprint:    payload.TemplateFingerprint,
 		GenesisHashHex:         hex.EncodeToString(payload.GenesisHash),
 		ValidRekeyTarget:       payload.ValidRekeyTarget,
@@ -502,7 +502,7 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 		Parameters:            maps.Clone(p.Parameters),
 		SigningArgs:           cloneStoredSigningArgs(p.SigningArgs),
 		LogicSigOpcodeProfile: p.LogicSigOpcodeProfile,
-		BoundedAuthorization:  boundedmeta.Clone(p.BoundedAuthorization),
+		Host:                  hostmeta.Clone(p.Host),
 	}
 }
 
@@ -564,7 +564,7 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 		SigningMetadataVersion: wire.SigningMetadataVersion,
 		BaseKeyType:            wire.BaseKeyType,
 		SigningArgs:            cloneStoredSigningArgs(wire.SigningArgs),
-		BoundedAuthorization:   boundedmeta.Clone(wire.BoundedAuthorization),
+		Host:                   hostmeta.Clone(wire.Host),
 		TemplateFingerprint:    wire.TemplateFingerprint,
 		GenesisHash:            genesisHash,
 		ValidRekeyTarget:       wire.ValidRekeyTarget,
@@ -572,14 +572,14 @@ func payloadFromWire(wire payloadWire) (*Payload, error) {
 	}, nil
 }
 
-// decodeCanonicalHex wraps the shared boundedmeta canonicality rule with the
+// decodeCanonicalHex wraps the shared hostmeta canonicality rule with the
 // key-codec contract: empty fields decode to nil (optional payload fields)
 // and violations surface as typed incompatible-key-format errors.
 func decodeCanonicalHex(field, value string) ([]byte, error) {
 	if value == "" {
 		return nil, nil
 	}
-	decoded, err := boundedmeta.DecodeCanonicalHex(field, value, 0, 0)
+	decoded, err := hostmeta.DecodeCanonicalHex(field, value, 0, 0)
 	if err != nil {
 		return nil, incompatibleKeyFormat("%v", err)
 	}
@@ -591,7 +591,7 @@ func decodeCanonicalHexBytes(field string, value []byte) ([]byte, error) {
 	if len(value) == 0 {
 		return nil, nil
 	}
-	decoded, err := boundedmeta.DecodeCanonicalHexBytes(field, value, 0, 0)
+	decoded, err := hostmeta.DecodeCanonicalHexBytes(field, value, 0, 0)
 	if err != nil {
 		return nil, incompatibleKeyFormat("%v", err)
 	}
@@ -723,7 +723,7 @@ func validateWitnessPayload(p *Payload) error {
 func validateNoLogicSigFields(p *Payload) error {
 	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.LogicSigDerivation != "" || p.LogicSigOpcodeProfile != (lsigresource.OpcodeProfile{}) ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
-		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
+		len(p.SigningArgs) != 0 || p.Host != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
 	}
 	return nil
@@ -741,7 +741,7 @@ func validateLogicSigFields(p *Payload) error {
 		if n <= 0 || version < 13 {
 			return incompatibleKeyFormat("%s derivation requires final TEAL v13+ bytecode", LogicSigDerivationAlgodV13AutoSalt)
 		}
-		if err := p.LogicSigOpcodeProfile.Validate(p.BoundedAuthorization != nil); err != nil {
+		if err := p.LogicSigOpcodeProfile.Validate(p.Host != nil); err != nil {
 			return incompatibleKeyFormat("invalid lsig_opcode_profile: %v", err)
 		}
 	default:
@@ -752,8 +752,8 @@ func validateLogicSigFields(p *Payload) error {
 	if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
 		return incompatibleKeyFormat("%s requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
 	}
-	if p.BoundedAuthorization != nil {
-		if err := validateBoundedSigningMetadata(p); err != nil {
+	if p.Host != nil {
+		if err := validateHostSigningMetadata(p); err != nil {
 			return err
 		}
 	}
@@ -767,35 +767,35 @@ func validateLogicSigFields(p *Payload) error {
 	return nil
 }
 
-// validateBoundedSigningMetadata checks the host metadata of a key that has
+// validateHostSigningMetadata checks the host metadata of a key that has
 // it: its category, the metadata itself, and that the cosigner and the
 // rekey-to list it names agree with the parameters.
-func validateBoundedSigningMetadata(p *Payload) error {
+func validateHostSigningMetadata(p *Payload) error {
 	if p.Category != CategoryDSALsig {
 		return incompatibleKeyFormat("host requires dsa_lsig category")
 	}
-	if err := p.BoundedAuthorization.Validate(); err != nil {
+	if err := p.Host.Validate(); err != nil {
 		return incompatibleKeyFormat("invalid host: %v", err)
 	}
-	if cosigner := p.BoundedAuthorization.Cosigner; cosigner != nil {
+	if cosigner := p.Host.Cosigner; cosigner != nil {
 		// The parameters name the cosigner's type only when it is not the
 		// default; the metadata always does. They must agree.
-		recorded := p.Parameters[boundedmeta.CosignerKeyTypeParameter]
+		recorded := p.Parameters[hostmeta.CosignerKeyTypeParameter]
 		if recorded == "" {
-			recorded = boundedmeta.DefaultCosignerComponentKeyType
+			recorded = hostmeta.DefaultCosignerComponentKeyType
 		}
 		if recorded != cosigner.ComponentKeyType {
-			return incompatibleKeyFormat("host cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, boundedmeta.CosignerKeyTypeParameter, recorded)
+			return incompatibleKeyFormat("host cosigner key type %q does not match parameters.%s %q", cosigner.ComponentKeyType, hostmeta.CosignerKeyTypeParameter, recorded)
 		}
-		publicKeySize, _, ok := boundedmeta.CosignerSizes(cosigner.ComponentKeyType)
+		publicKeySize, _, ok := hostmeta.CosignerSizes(cosigner.ComponentKeyType)
 		if !ok {
 			return incompatibleKeyFormat("invalid host: unsupported cosigner key type %q", cosigner.ComponentKeyType)
 		}
-		parameterPublicKey, err := decodeCanonicalHex(boundedmeta.CosignerPublicKeyParameter, p.Parameters[boundedmeta.CosignerPublicKeyParameter])
+		parameterPublicKey, err := decodeCanonicalHex(hostmeta.CosignerPublicKeyParameter, p.Parameters[hostmeta.CosignerPublicKeyParameter])
 		if err != nil {
 			return err
 		}
-		metadataPublicKey, err := boundedmeta.DecodeCanonicalHex(
+		metadataPublicKey, err := hostmeta.DecodeCanonicalHex(
 			"bounded cosigner public key",
 			cosigner.PublicKeyHex,
 			publicKeySize,
@@ -805,23 +805,23 @@ func validateBoundedSigningMetadata(p *Payload) error {
 			return incompatibleKeyFormat("invalid host: %v", err)
 		}
 		if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
-			return incompatibleKeyFormat("host cosigner public key does not match parameters.%s", boundedmeta.CosignerPublicKeyParameter)
+			return incompatibleKeyFormat("host cosigner public key does not match parameters.%s", hostmeta.CosignerPublicKeyParameter)
 		}
 	}
-	if p.BoundedAuthorization.Cosigner == nil {
-		if _, ok := p.Parameters[boundedmeta.CosignerKeyTypeParameter]; ok {
-			return incompatibleKeyFormat("parameters.%s without a cosigner", boundedmeta.CosignerKeyTypeParameter)
+	if p.Host.Cosigner == nil {
+		if _, ok := p.Parameters[hostmeta.CosignerKeyTypeParameter]; ok {
+			return incompatibleKeyFormat("parameters.%s without a cosigner", hostmeta.CosignerKeyTypeParameter)
 		}
 	}
 	// The program compiled the parameters' root, and every listed rekey
 	// rebuilds the list from the stored entries, so both must agree with the
 	// metadata now rather than fail after an operator approves a rekey.
-	if list := p.BoundedAuthorization.RekeyList; list != nil {
-		if p.Parameters[boundedmeta.RekeyListRootParameter] != list.RootHex {
-			return incompatibleKeyFormat("host rekey-to list root does not match parameters.%s", boundedmeta.RekeyListRootParameter)
+	if list := p.Host.RekeyList; list != nil {
+		if p.Parameters[hostmeta.RekeyListRootParameter] != list.RootHex {
+			return incompatibleKeyFormat("host rekey-to list root does not match parameters.%s", hostmeta.RekeyListRootParameter)
 		}
-		if _, err := rekeylist.ParseEntries(p.Parameters[boundedmeta.RekeyListEntriesParameter]); err != nil {
-			return incompatibleKeyFormat("invalid parameters.%s: %v", boundedmeta.RekeyListEntriesParameter, err)
+		if _, err := rekeylist.ParseEntries(p.Parameters[hostmeta.RekeyListEntriesParameter]); err != nil {
+			return incompatibleKeyFormat("invalid parameters.%s: %v", hostmeta.RekeyListEntriesParameter, err)
 		}
 	}
 	if len(p.SigningArgs) != 0 {

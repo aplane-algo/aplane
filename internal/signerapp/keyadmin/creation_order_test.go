@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
@@ -19,7 +19,7 @@ func TestImportKeyRefusesALogicSigTypeWhateverItsParameters(t *testing.T) {
 	const keyType = "aplane.ed25519.v1"
 	ir := setupProductRuntime(t)
 	svc := Service{Runtime: ir}
-	bad := map[string]string{boundedmeta.CosignerPublicKeyParameter: "not hex"}
+	bad := map[string]string{hostmeta.CosignerPublicKeyParameter: "not hex"}
 	for state, want := range map[keytypestate.State]string{
 		keytypestate.StateEnabled:  "mnemonic import not supported",
 		keytypestate.StateDisabled: "not enabled on this node",

@@ -237,16 +237,16 @@ func internalLogicSigResourceProfile(profile *signerapi.LogicSigResourceProfile)
 		return lsigresource.Profile{}, fmt.Errorf("profile is missing")
 	}
 	hasDefault := profile.Default != nil
-	boundedPaths := 0
+	hostPaths := 0
 	for _, usage := range []*signerapi.LogicSigResourceUsage{profile.Spend, profile.SpendingRekey, profile.ListedRekey} {
 		if usage != nil {
-			boundedPaths++
+			hostPaths++
 		}
 	}
-	if hasDefault && boundedPaths != 0 {
+	if hasDefault && hostPaths != 0 {
 		return lsigresource.Profile{}, fmt.Errorf("default and bounded authorization paths cannot be mixed")
 	}
-	if !hasDefault && boundedPaths != 3 {
+	if !hasDefault && hostPaths != 3 {
 		return lsigresource.Profile{}, fmt.Errorf("bounded resource profile must contain spend, spending_rekey and listed_rekey paths")
 	}
 
@@ -449,16 +449,16 @@ func (s *State) SignerCacheCosignerPublicKey(address string) (string, bool) {
 	return s.signerCache.CosignerPublicKeyForAddress(address)
 }
 
-// SignerCacheBoundedContract returns the bounded authorization contract cached
+// SignerCacheHostContract returns the host contract cached
 // for address.
-func (s *State) SignerCacheBoundedContract(address string) (string, bool) {
+func (s *State) SignerCacheHostContract(address string) (string, bool) {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
 	return s.signerCache.HostContractForAddress(address)
 }
 
-// SignerCacheBoundedMaxFee returns the on-chain fee ceiling cached for address.
-func (s *State) SignerCacheBoundedMaxFee(address string) (uint64, bool) {
+// SignerCacheHostMaxFee returns the on-chain fee ceiling cached for address.
+func (s *State) SignerCacheHostMaxFee(address string) (uint64, bool) {
 	s.signerCacheMu.RLock()
 	defer s.signerCacheMu.RUnlock()
 	return s.signerCache.HostMaxFeeForAddress(address)

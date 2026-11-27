@@ -685,11 +685,11 @@ signing.
 6. **Compatibility token.** Add a row to `fingerprintBasePrimitives` in
    `internal/lsigprovider/fingerprint.go`. The tokens feed fingerprints and the host
    boundary digest, so never rename one.
-7. **Workflow support.** Add a `boundedSupportPolicy` entry in
-   `lsig/composeddsa/bounded_support.go`. Grant only what you've reviewed: a registered base
+7. **Workflow support.** Add a `hostSupportPolicy` entry in
+   `lsig/composeddsa/host_support.go`. Grant only what you've reviewed: a registered base
    with no entry can't generate bounded accounts. Admission is for new accounts only;
-   signing has its own table, `boundedSigningConstructions` in
-   `internal/signerapp/signing/bounded_construction.go`, of the workflows the signer
+   signing has its own table, `hostSigningConstructions` in
+   `internal/signerapp/signing/host_construction.go`, of the workflows the signer
    completes. Add the signing rows first: `TestBoundedGenerationAdmitsOnlySignableWorkflows`
    fails if admission grants a workflow signing can't finish. Cosigner support also needs
    the template rule in `template.go` and a receipt encoding to change.
@@ -1384,7 +1384,7 @@ Common paths:
 ### DSA LogicSig Provider
 
 - [ ] Registers with `internal/logicsigdsa`
-- [ ] A composable base resolves to a construction in `internal/sigconstruction` and has a `boundedSupportPolicy` decision
+- [ ] A composable base resolves to a construction in `internal/sigconstruction` and has a `hostSupportPolicy` decision
 - [ ] Registers algorithm metadata / mnemonic handlers as needed
 - [ ] Registers signing provider with explicit signer ops, not by relying on the client metadata provider
 - [ ] Registers keygen with explicit keygen ops, not by relying on the client metadata provider

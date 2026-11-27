@@ -88,11 +88,11 @@ func TestSigningFlowCharacterizationInventory(t *testing.T) {
 			"TestAssembleDecodedCosignedVerifiesAndBuildsSignedGroup",
 			"TestAssembleDecodedCosignedRejectsMismatchedPassthrough",
 		},
-		"../../internal/signerapp/signing/bounded_cosigner_test.go": {
-			"TestValidateBoundedComponentPlanAdmitsOnlyCosignedPaths",
-			"TestBoundedAssemblyReceiptBindsRuntimeAndMetadata",
-			"TestAssembleBoundedTargetVerifiesBothAuthorities",
-			"TestAssembleBoundedTargetFollowsThePathForTheCosigner",
+		"../../internal/signerapp/signing/host_cosigner_test.go": {
+			"TestValidateHostComponentPlanAdmitsOnlyCosignedPaths",
+			"TestHostAssemblyReceiptBindsRuntimeAndMetadata",
+			"TestAssembleHostTargetVerifiesBothAuthorities",
+			"TestAssembleHostTargetFollowsThePathForTheCosigner",
 		},
 		"../../internal/signerapp/signing/frozen_component_test.go": {
 			"TestFrozenComponentReconstructionMatchesCanonicalPlan",

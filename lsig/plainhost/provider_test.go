@@ -16,7 +16,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/witness"
@@ -50,10 +50,10 @@ func bases(t *testing.T) []base {
 }
 
 // falconCosigner is the default cosigner key type, Falcon-1024.
-const falconCosigner = boundedmeta.DefaultCosignerComponentKeyType
+const falconCosigner = hostmeta.DefaultCosignerComponentKeyType
 
 var (
-	testCosigner = strings.Repeat("44", boundedmeta.DefaultCosignerPublicKeySize)
+	testCosigner = strings.Repeat("44", hostmeta.DefaultCosignerPublicKeySize)
 	testListKey  = bytes.Repeat([]byte{0x77}, 64)
 )
 
@@ -69,7 +69,7 @@ func request(rekey string) map[string]string {
 
 // testCosignerFor is a test cosigner key of componentKeyType's size.
 func testCosignerFor(componentKeyType string) string {
-	size, _, ok := boundedmeta.CosignerSizes(componentKeyType)
+	size, _, ok := hostmeta.CosignerSizes(componentKeyType)
 	if !ok {
 		panic("no test cosigner for " + componentKeyType)
 	}
@@ -85,9 +85,9 @@ func legacyArrangement(a plainhost.Arrangement) string {
 func requestFor(arrangement plainhost.Arrangement) map[string]string {
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
-		if arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
-			params[boundedmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
+		params[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(arrangement.Cosigner)
+		if arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
+			params[hostmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
 		}
 	}
 	if arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned {
@@ -105,7 +105,7 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if instance.Bounded != nil || instance.Fingerprint != "" {
+			if instance.Host != nil || instance.Fingerprint != "" {
 				t.Fatalf("instance = %+v", instance)
 			}
 			got, err := b.provider.GenerateTEAL(b.spendingKey, nil)
@@ -119,7 +119,7 @@ func TestNoParametersIsThePlainProgram(t *testing.T) {
 			if got != want {
 				t.Fatalf("plain program changed:\n%s\nwant\n%s", got, want)
 			}
-			metadata, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, nil, []byte{1})
+			metadata, err := b.provider.BuildHostMetadata(b.spendingKey, nil, []byte{1})
 			if err != nil || metadata != nil {
 				t.Fatalf("plain program metadata = %+v, %v", metadata, err)
 			}
@@ -149,14 +149,14 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s: %v", rekey, err)
 				}
-				metadata := instance.Bounded
-				if metadata == nil || metadata.Contract != boundedmeta.PlainContract || metadata.Bounds != nil ||
+				metadata := instance.Host
+				if metadata == nil || metadata.Contract != hostmeta.PlainContract || metadata.Bounds != nil ||
 					(metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
 					t.Fatalf("%s: instance = %+v", rekey, instance)
 				}
 				wantList := arrangement.Rekey == plainhost.RekeyOnlyThese || arrangement.Rekey == plainhost.RekeyPlusCosigned
 				wantSpendingKey := arrangement.Rekey == plainhost.RekeySpendingKey || arrangement.Rekey == plainhost.RekeyPlusCosigned
-				if (metadata.RekeyList != nil) != wantList || (metadata.Rekey == boundedmeta.RekeySpendingKey) != wantSpendingKey {
+				if (metadata.RekeyList != nil) != wantList || (metadata.Rekey == hostmeta.RekeySpendingKey) != wantSpendingKey {
 					t.Fatalf("%s: rekey %s, list %v", rekey, metadata.Rekey, metadata.RekeyList)
 				}
 				if instance.ReviewFingerprint != b.provider.GrammarFingerprint() || instance.BoundaryDigest == "" || seen[instance.Fingerprint] {
@@ -181,7 +181,7 @@ func TestEveryArrangementResolvesToPlain1(t *testing.T) {
 				if !strings.Contains(teal, "plain host: rekey dispatch") || strings.Contains(teal, "txn Fee") {
 					t.Fatalf("%s: not a plain1 program:\n%s", rekey, teal)
 				}
-				stored, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, prepared, make([]byte, 3_000))
+				stored, err := b.provider.BuildHostMetadata(b.spendingKey, prepared, make([]byte, 3_000))
 				if err != nil {
 					t.Fatalf("%s: %v", rekey, err)
 				}
@@ -207,8 +207,8 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 	}{
 		{"plus cosigned without a cosigner", map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyPlusCosigned, plainhost.ParameterRekeyTo: testRekeyTo()}, "without one it is rekey_authority=spending_key"},
 		{"a misspelled overlay parameter", map[string]string{"rekey_authorty": plainhost.RekeyOnlyThese, "rekey_too": testRekeyTo()}, "unknown parameter"},
-		{"no rekey authority", map[string]string{composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
-		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
+		{"no rekey authority", map[string]string{composeddsa.CosignerPublicKeyParameter: testCosigner}, "rekey_authority must be"},
+		{"unknown rekey authority", map[string]string{plainhost.ParameterRekeyAuthority: "admin_key", composeddsa.CosignerPublicKeyParameter: testCosigner}, "rekey_authority"},
 		{"a list without only_these", func() map[string]string {
 			params := request(plainhost.RekeySpendingKey)
 			params[plainhost.ParameterRekeyTo] = testRekeyTo()
@@ -220,9 +220,9 @@ func TestOverlayRequestsFailClosed(t *testing.T) {
 			return params
 		}(), "needs the addresses"},
 		{"an unresolved cosigner name", map[string]string{plainhost.ParameterCosigner: "corp", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "not resolved"},
-		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner}, "recipients is required"},
+		{"bounds without a recipient list", map[string]string{plainhost.ParameterSpendEffects: "pay", plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, composeddsa.CosignerPublicKeyParameter: testCosigner}, "recipients is required"},
 		{"bounds without transfer kinds", map[string]string{plainhost.ParameterRecipientScope: plainhost.RecipientScopeAny, plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused}, "spend_effects is required"},
-		{"a generated root", map[string]string{boundedmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, composeddsa.BoundedCosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
+		{"a generated root", map[string]string{hostmeta.RekeyListRootParameter: strings.Repeat("ab", 32), plainhost.ParameterRekeyAuthority: plainhost.RekeyOnlyThese, composeddsa.CosignerPublicKeyParameter: testCosigner, plainhost.ParameterRekeyTo: withList[plainhost.ParameterRekeyTo]}, "unknown parameter"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := provider.ResolveInstance(tc.params); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -251,7 +251,7 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 			name := fmt.Sprintf("%s bounded=%t", b.name, bounded)
 			falcon := withBounds(request(plainhost.RekeySpendingKey))
 			explicit := withBounds(request(plainhost.RekeySpendingKey))
-			explicit[boundedmeta.CosignerKeyTypeParameter] = falconCosigner
+			explicit[hostmeta.CosignerKeyTypeParameter] = falconCosigner
 			implicit, err := b.provider.ResolveInstance(falcon)
 			if err != nil {
 				t.Fatalf("%s: %v", name, err)
@@ -260,7 +260,7 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: explicit default: %v", name, err)
 			}
-			if _, recorded := named.Values[boundedmeta.CosignerKeyTypeParameter]; recorded || named.Fingerprint != implicit.Fingerprint {
+			if _, recorded := named.Values[hostmeta.CosignerKeyTypeParameter]; recorded || named.Fingerprint != implicit.Fingerprint {
 				t.Fatalf("%s: an explicit default type is recorded or selects another program: %v", name, named.Values)
 			}
 
@@ -269,9 +269,9 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: Ed25519 cosigner: %v", name, err)
 			}
-			if instance.Values[boundedmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 || instance.Bounded.Cosigner.ComponentKeyType != witness.Ed25519V1 ||
-				instance.Bounded.Cosigner.SignatureMaxSize != witness.Ed25519SignatureSize || instance.Fingerprint == implicit.Fingerprint {
-				t.Fatalf("%s: Ed25519 cosigner = %v, %+v", name, instance.Values, instance.Bounded.Cosigner)
+			if instance.Values[hostmeta.CosignerKeyTypeParameter] != witness.Ed25519V1 || instance.Host.Cosigner.ComponentKeyType != witness.Ed25519V1 ||
+				instance.Host.Cosigner.SignatureMaxSize != witness.Ed25519SignatureSize || instance.Fingerprint == implicit.Fingerprint {
+				t.Fatalf("%s: Ed25519 cosigner = %v, %+v", name, instance.Values, instance.Host.Cosigner)
 			}
 
 			// A stored account is looked up by its recorded type, at its own
@@ -289,7 +289,7 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
 				}
-				stored, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, edInstance.Values, make([]byte, 3_000))
+				stored, err := b.provider.BuildHostMetadata(b.spendingKey, edInstance.Values, make([]byte, 3_000))
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
 				}
@@ -304,12 +304,12 @@ func TestCosignerKeyTypeRules(t *testing.T) {
 				edit func(map[string]string)
 				want string
 			}{
-				{"a type without a cosigner", func(p map[string]string) { delete(p, composeddsa.BoundedCosignerPublicKeyParameter) }, "needs a cosigner"},
-				{"an unknown type", func(p map[string]string) { p[boundedmeta.CosignerKeyTypeParameter] = "aplane.witness-rsa.v1" }, "cosigner_key_type"},
+				{"a type without a cosigner", func(p map[string]string) { delete(p, composeddsa.CosignerPublicKeyParameter) }, "needs a cosigner"},
+				{"an unknown type", func(p map[string]string) { p[hostmeta.CosignerKeyTypeParameter] = "aplane.witness-rsa.v1" }, "cosigner_key_type"},
 				{"a Falcon key named Ed25519", func(p map[string]string) {
-					p[composeddsa.BoundedCosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
+					p[composeddsa.CosignerPublicKeyParameter] = testCosignerFor(falconCosigner)
 				}, "a aplane.witness-ed25519.v1 key is 32"},
-				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, boundedmeta.CosignerKeyTypeParameter) }, "for a aplane.witness-ed25519.v1 key, set cosigner_key_type=aplane.witness-ed25519.v1"},
+				{"an Ed25519 key with no type", func(p map[string]string) { delete(p, hostmeta.CosignerKeyTypeParameter) }, "for a aplane.witness-ed25519.v1 key, set cosigner_key_type=aplane.witness-ed25519.v1"},
 			} {
 				params := maps.Clone(ed)
 				tc.edit(params)
@@ -338,7 +338,7 @@ func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
 	}
 	base := request(plainhost.RekeyPlusCosigned)
 	otherCosigner := request(plainhost.RekeyPlusCosigned)
-	otherCosigner[composeddsa.BoundedCosignerPublicKeyParameter] = strings.Repeat("45", boundedmeta.DefaultCosignerPublicKeySize)
+	otherCosigner[composeddsa.CosignerPublicKeyParameter] = strings.Repeat("45", hostmeta.DefaultCosignerPublicKeySize)
 	var c types.Address
 	c[0] = 0x33
 	otherList := request(plainhost.RekeyPlusCosigned)
@@ -359,7 +359,7 @@ func TestBoundaryDigestBindsTheOverlays(t *testing.T) {
 
 func TestStoredFingerprintRefusesAnotherContract(t *testing.T) {
 	provider := bases(t)[0].provider
-	if _, err := provider.StoredFingerprint(nil, &boundedmeta.Metadata{Contract: boundedmeta.Contract}); err == nil {
+	if _, err := provider.StoredFingerprint(nil, &hostmeta.Metadata{Contract: hostmeta.BoundedContract}); err == nil {
 		t.Fatal("a bounded2 account resolved to a plain host arrangement")
 	}
 	if _, err := provider.StoredFingerprint(nil, nil); err == nil {
@@ -367,7 +367,7 @@ func TestStoredFingerprintRefusesAnotherContract(t *testing.T) {
 	}
 }
 
-func TestBoundedOpcodeProfileIsSeparate(t *testing.T) {
+func TestHostOpcodeProfileIsSeparate(t *testing.T) {
 	provider := bases(t)[0].provider
 	plain, err := lsigprovider.ResolveOpcodeProfile(provider, false)
 	if err != nil {
@@ -438,7 +438,7 @@ func TestArrangementGoldens(t *testing.T) {
 		programs, fingerprints := map[string]hash.Hash{}, map[string]hash.Hash{}
 		for _, arrangement := range plainhost.Arrangements() {
 			set, label := "", legacyArrangement(arrangement)
-			if arrangement.Cosigner != "" && arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
+			if arrangement.Cosigner != "" && arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
 				set, label = arrangement.Cosigner, fmt.Sprintf("%+v", arrangement)
 			}
 			if programs[set] == nil {
@@ -479,13 +479,13 @@ func TestArrangementGoldens(t *testing.T) {
 func TestEmptyParametersAreRefused(t *testing.T) {
 	provider := bases(t)[0].provider
 	instance, err := provider.ResolveInstance(map[string]string{})
-	if err != nil || instance.Bounded != nil {
+	if err != nil || instance.Host != nil {
 		t.Fatalf("no parameters: instance = %+v, %v; want the plain program", instance, err)
 	}
 	if err := provider.ValidateCreationParams(map[string]string{"recipients": "X"}); err == nil {
 		t.Fatal("the plain program accepted a parameter")
 	}
-	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.BoundedCosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
+	for _, name := range []string{plainhost.ParameterRekeyTo, plainhost.ParameterCosigner, composeddsa.CosignerPublicKeyParameter, plainhost.ParameterRekeyAuthority} {
 		named := map[string]string{plainhost.ParameterRekeyAuthority: plainhost.RekeyRefused, name: " "}
 		if _, err := provider.ResolveInstance(named); err == nil || !strings.Contains(err.Error(), name+" is empty") {
 			t.Fatalf("ResolveInstance(empty %s) error = %v", name, err)
@@ -517,8 +517,8 @@ func TestMisspelledParametersAreRefusedEverywhere(t *testing.T) {
 			if _, err := b.provider.PrepareRekeyList(testListKey, params); err == nil {
 				t.Fatalf("%s PrepareRekeyList(%v) accepted it", b.name, params)
 			}
-			if _, err := b.provider.BuildBoundedAuthorizationMetadata(b.spendingKey, params, nil); err == nil {
-				t.Fatalf("%s BuildBoundedAuthorizationMetadata(%v) accepted it", b.name, params)
+			if _, err := b.provider.BuildHostMetadata(b.spendingKey, params, nil); err == nil {
+				t.Fatalf("%s BuildHostMetadata(%v) accepted it", b.name, params)
 			}
 		}
 		// No parameters is still the plain program.

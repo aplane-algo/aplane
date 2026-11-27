@@ -20,9 +20,9 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/cosigner/cosignerrefs"
 	"github.com/aplane-algo/aplane/internal/cosigner/message"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -95,9 +95,9 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	params := map[string]string{plainhost.ParameterRekeyAuthority: arrangement.Rekey}
 	if arrangement.Cosigner != "" {
 		cosignerPublic, cosignerPrivate := newTestCosignerKey(t, arrangement.Cosigner)
-		params[composeddsa.BoundedCosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
-		if arrangement.Cosigner != boundedmeta.DefaultCosignerComponentKeyType {
-			params[boundedmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
+		params[composeddsa.CosignerPublicKeyParameter] = hex.EncodeToString(cosignerPublic)
+		if arrangement.Cosigner != hostmeta.DefaultCosignerComponentKeyType {
+			params[hostmeta.CosignerKeyTypeParameter] = arrangement.Cosigner
 		}
 		account.cosignerPrivateKey = cosignerPrivate
 		account.cosignerKeyType = arrangement.Cosigner
@@ -117,11 +117,11 @@ func newPlainHostAccount(t *testing.T, network *harness.TestnetConfig, keyType s
 	if err != nil {
 		t.Fatalf("derive LogicSig: %v", err)
 	}
-	metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingPublic, values, derived.Bytecode)
+	metadata, err := provider.BuildHostMetadata(spendingPublic, values, derived.Bytecode)
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
-	if metadata.Contract != boundedmeta.PlainContract || (metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
+	if metadata.Contract != hostmeta.PlainContract || (metadata.Cosigner != nil) != (arrangement.Cosigner != "") {
 		t.Fatalf("metadata = %+v", metadata)
 	}
 	account.address = derived.Address.String()
@@ -199,7 +199,7 @@ func (a plainHostAccount) withoutCosignerSlot(t *testing.T) func([][]byte) [][]b
 		if a.metadata.Cosigner == nil {
 			return args
 		}
-		return withArg(args, a.argumentIndex(t, boundedmeta.ArgSourceCosigner), nil)
+		return withArg(args, a.argumentIndex(t, hostmeta.ArgSourceCosigner), nil)
 	}
 }
 
@@ -320,7 +320,7 @@ func TestPlainHostArrangementsOnChainLocalnet(t *testing.T) {
 					submit(false, payment(funder.GetAddress(), 10_000, "b"), withoutCosigner)
 				})
 				t.Run("payment with a wrong cosigner signature", func(t *testing.T) {
-					slot := account.argumentIndex(t, boundedmeta.ArgSourceCosigner)
+					slot := account.argumentIndex(t, hostmeta.ArgSourceCosigner)
 					submit(false, payment(funder.GetAddress(), 10_000, "b2"), func(args [][]byte) [][]byte {
 						args[slot] = append([]byte(nil), args[slot]...)
 						args[slot][len(args[slot])/2] ^= 0xff

@@ -375,10 +375,10 @@ Five ideas stay separate:
 - **Bounded contract support** says which workflows are reviewed for a construction
   under a contract. It isn't a property of the cryptography, and a matching key size
   proves nothing about it. It has two sides. Admission
-  (`boundedSupportPolicy` in `lsig/composeddsa`) decides which new accounts may be
+  (`hostSupportPolicy` in `lsig/composeddsa`) decides which new accounts may be
   created, and may narrow over time. Signing keeps its own table of the workflows it
-  completes (`boundedSigningConstructions` in
-  `internal/signerapp/signing/bounded_construction.go`), so narrowing admission never
+  completes (`hostSigningConstructions` in
+  `internal/signerapp/signing/host_construction.go`), so narrowing admission never
   strands an existing account. Admission must stay within the signing table.
 - An **account key type** owns account semantics. A construction doesn't.
 
@@ -782,7 +782,7 @@ key-type fact: it is read from the account's durable bounded metadata. Examples:
   the signature construction a spending base or witness key type names. Both lookups
   normalize through `keytypecatalog.Canonicalize`. Signing uses the base lookup to
   resolve an existing account's construction from its durable `base_key_type`
-  (`internal/signerapp/signing/bounded_construction.go`), with no composer in hand.
+  (`internal/signerapp/signing/host_construction.go`), with no composer in hand.
 
 **Invariant:** these classifiers import no registry, provider, or
 algorithm-family package. This is load-bearing, not incidental.
@@ -807,7 +807,7 @@ is the right shape here.
   (`internal/lsigprovider/provider.go`), `LogicSigDSA`
   (`internal/logicsigdsa/dsa.go`).
 - Optional capabilities a resolved provider is asked for, such as
-  `InstanceResolver` (a per-key contract), `BoundedOpcodeProfileProvider` (a
+  `InstanceResolver` (a per-key contract), `HostOpcodeProfileProvider` (a
   plain host's bounded path ceilings) or the generator's `PrepareRekeyList`.
 
 Cosigned assembly does not use a key-type-specific capability hook. It reads the
@@ -998,7 +998,7 @@ validation, and signing helpers that the diagram omits) and gives a one-line rol
 | `lsig/plainhost` | The plain host: wraps a family's plain provider with the overlay arrangements (`plain1`) |
 | `internal/witness` | Witness-key vocabulary and identity (key IDs, sizes, public references) |
 | `internal/falconparams` | Client-safe Falcon-1024 size constants shared by LogicSig, witness, and signer metadata |
-| `internal/boundedmeta` | Durable, non-secret bounded-authorization metadata stored with a LogicSig key |
+| `internal/hostmeta` | Durable, non-secret host metadata stored with a LogicSig key: a plain or a bounded host's contract |
 | `internal/merkleallowlist` | Merkle recipient allowlist construction and proofs used by bounded templates |
 | `internal/rotatingkey` | Classify-axis leaf for rotating account key types and their frozen sizes |
 | `internal/rotatingstage` | The stage prefix every rotating stage program opens with: the stage number's offset and width, and a client-safe reader. Standard library only |
@@ -1664,9 +1664,9 @@ For a DSA LogicSig, `generateKey` in `lsig/dsafamily/signerreg/generator.go` the
 | 9 | Generate the keypair from the seed | The family's keygen ops |
 | 10 | Render TEAL, compile it, and validate the salted address | `deriveSaltedLogicSig`, `DeriveLsigWithSalt`, `lsigsalt` |
 | 11 | Capture the TEAL source and runtime argument definitions | `GenerateTEAL`, `RuntimeArgs` |
-| 12 | For an account with a contract (`plain1` or `bounded2`), build it: cosigner ID and argument layout | `BuildBoundedAuthorizationMetadata` |
+| 12 | For an account with a contract (`plain1` or `bounded2`), build it: cosigner ID and argument layout | `BuildHostMetadata` |
 | 13 | Resolve the reviewed opcode profile | `lsigprovider.ResolveOpcodeProfile` |
-| 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetBoundedAuthorization` |
+| 14 | Build the payload with bytecode, parameters, metadata and the template fingerprint | `keys.NewAutoSaltedDSALSigPayload`, `SetHost` |
 | 15 | Check the payload's selector equals the derived address, then save the new key file with the key type's `valid_rekey_target` | `Payload.Selector`, `keygen.SaveNewKey` |
 
 `GenerateKey` finishes by reloading the runtime and writing the audit entry. The seed
@@ -1685,10 +1685,10 @@ within 15s` and releases the lock.
 Three boundaries matter when changing this path:
 
 - **Definition versus instance.** `CreationParams`, `RuntimeArgs` and
-  `BoundedAuthorizationMetadata` answer once per key type. Steps 2 to 4 ask
+  `HostMetadata` answer once per key type. Steps 2 to 4 ask
   `lsigprovider` instead, so a provider whose contract varies by key can implement
   `InstanceResolver`, and a fixed provider gets the same answers from its definition.
-  `BuildBoundedAuthorizationMetadata` is the per-account step, because it receives the
+  `BuildHostMetadata` is the per-account step, because it receives the
   public key, parameters and final bytecode.
 - **Provenance.** An account records `lsigprovider.CreationFingerprint`, and inventory
   checks it with `CompareAccountProvenance` against that account's own definition.
@@ -1761,8 +1761,8 @@ passes every check an imported template passes. The provider holds one composer 
 arrangement and per shape at the default ceiling, a bounded cache of the shapes
 compiled with another ceiling, and no per-account state.
 
-Generation admission (`lsig/composeddsa/bounded_support.go`) and the signer's
-completed workflows (`internal/signerapp/signing/bounded_construction.go`) admit
+Generation admission (`lsig/composeddsa/host_support.go`) and the signer's
+completed workflows (`internal/signerapp/signing/host_construction.go`) admit
 `bounded2` and `plain1` on Falcon-1024 and Ed25519, with and without a cosigner. The
 Ed25519 spending key is classical, which the review says.
 
@@ -1775,7 +1775,7 @@ Ed25519 spending key is classical, which the review says.
 | Encoding | `auto` is inline through 10 recipients and Merkle from 11. Explicit inline stops at 30. The list holds at most 65,536 distinct nonzero addresses. |
 | Recipient scope | Absent or `listed`, a list is required, in the file and the request alike. Leaving the list out never opens an account. `any` must be asked for, and refuses `recipients` (even empty) and `list_encoding`. An empty or unknown scope is an error. The `none` policy is offered only here: an expert template that declares it is refused when parsed. |
 | Fee and arguments | A shape's compiled ceiling is the request's `max_fee`, 10,000 microAlgos when absent; a `plain1` arrangement has none. `max_fee` must parse as a `uint64`; no value is refused. There are no runtime arguments. The base is the plain host's own: Falcon-1024 or Ed25519. |
-| Resources | `BuildBoundedAuthorizationMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources, before the key is saved. This is a backstop: signing still checks the actual network. A ceiling below what a path costs when the account pays alone is not refused. |
+| Resources | `BuildHostMetadata` solves the spend path, and each rekey path the account has (`spending_rekey` for `spending_key`, `listed_rekey` for `only_these`, both for `plus_cosigned`), under the current consensus profile and refuses one that cannot run within one transaction's resources, before the key is saved. This is a backstop: signing still checks the actual network. A ceiling below what a path costs when the account pays alone is not refused. |
 | Fee warning | The provider implements `lsigprovider.CreationAdvisor`, which preparation and generation each call once. When a path costs more than the ceiling, the one warning names each such path and its cost, and says to batch it with transactions that share the cost or have another account in the group pay. The cost is that of a lone transaction: in a group the account's own transactions can share it. The program doesn't exist at review, so it is sized by what it must hold (the spending public key, the cosigner's on a cosigned account, and an inline recipient list): the cost is a lower bound, a ceiling just above it can still fall short, and signing reports that when it plans the group. The warning reaches the apadmin review as `prepare_generate_result.warnings` and an HTTP caller as `warnings` in the `/admin/generate` response, which apshell prints. It refuses nothing. |
 | Mnemonics | No mnemonic import. The account recovers from its encrypted credential or a backup. |
 
@@ -1801,7 +1801,7 @@ changed before generation, and each account still records its arrangement or sha
 
 **Generation settings.** `require_contained` (new accounts must be contained:
 refuse every rekey, or every rekey but one to a listed address (`only_these`), and hold
-a recipient list, `boundedmeta.Metadata.Contained`, so a limits-only account never is,
+a recipient list, `hostmeta.Metadata.Contained`, so a limits-only account never is,
 even with a cosigner, and neither is a `spending_key` or `plus_cosigned` one, which is
 only as strong as its two online keys; fees, capped per transaction only, are outside
 it) and
@@ -1890,7 +1890,7 @@ routing and identity stay daemon concerns. `--result <file>` saves that as
 apadmin's IPC workflow can issue a full receipt. Interactive confirmation is not an
 authorization, and unattended callers skip it.
 
-**Labels.** `keytypeux.BoundedLabel` builds descriptions such as `Merkle allowlist · no
+**Labels.** `keytypeux.HostLabel` builds descriptions such as `Merkle allowlist · no
 rekey · cosigner` from stored metadata, for `keys` and apadmin's key details; an account
 with a rekey-to list says `rekey to listed only`, a cosigned spending-key rekey
 `cosigned rekey`, and `plus_cosigned` `rekey to listed, or cosigned`. A custom

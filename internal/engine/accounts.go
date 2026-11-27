@@ -467,7 +467,7 @@ func keyInfoFromSigner(k signerapi.KeyInfo) KeyInfo {
 		Parameters:               maps.Clone(k.Parameters),
 		TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 		TemplateProvenanceNote:   k.TemplateProvenanceNote,
-		PolicyLabel:              keytypeux.BoundedLabel(k.Host),
+		PolicyLabel:              keytypeux.HostLabel(k.Host),
 		IsGenericLsig:            k.IsGenericLsig,
 		ValidRekeyTarget:         k.ValidRekeyTarget,
 	}

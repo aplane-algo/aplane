@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
@@ -23,11 +23,11 @@ var (
 type fixedBoundedProvider struct {
 	fingerprintTestProvider
 	definitions []lsigprovider.ParameterDef
-	metadata    *boundedmeta.Metadata
+	metadata    *hostmeta.Metadata
 }
 
 func (p fixedBoundedProvider) CreationParams() []lsigprovider.ParameterDef { return p.definitions }
-func (p fixedBoundedProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadata {
+func (p fixedBoundedProvider) HostMetadata() *hostmeta.Metadata {
 	return p.metadata
 }
 
@@ -56,7 +56,7 @@ func (p perKeyProvider) ResolveInstance(params map[string]string) (*lsigprovider
 	return &lsigprovider.Instance{Values: params, Fingerprint: fingerprint}, nil
 }
 
-func (p perKeyProvider) StoredFingerprint(parameters map[string]string, _ *boundedmeta.Metadata) (string, error) {
+func (p perKeyProvider) StoredFingerprint(parameters map[string]string, _ *hostmeta.Metadata) (string, error) {
 	fingerprint, ok := p.shapes[parameters["shape"]]
 	if !ok {
 		return "", errors.New("unknown shape")
@@ -71,9 +71,9 @@ func registerForTest(t *testing.T, provider lsigprovider.LSigProvider) {
 }
 
 func TestFixedProviderInstanceMatchesItsDefinition(t *testing.T) {
-	metadata := &boundedmeta.Metadata{
-		Bounds:   &boundedmeta.Bounds{Layer3Policy: boundedmeta.Layer3PolicyFixedAllowlist},
-		Cosigner: &boundedmeta.CosignerAuthorization{ComponentKeyType: "test.component.v1"},
+	metadata := &hostmeta.Metadata{
+		Bounds:   &hostmeta.Bounds{Layer3Policy: hostmeta.Layer3PolicyFixedAllowlist},
+		Cosigner: &hostmeta.CosignerAuthorization{ComponentKeyType: "test.component.v1"},
 	}
 	definitions := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]"}}
 	provider := fixedBoundedProvider{
@@ -93,7 +93,7 @@ func TestFixedProviderInstanceMatchesItsDefinition(t *testing.T) {
 	if got := instance.Values["recipients"]; got != "A,B" {
 		t.Fatalf("Values[recipients] = %q, want the normalized list", got)
 	}
-	if instance.Fingerprint != instanceFingerprintA || instance.Bounded != metadata || len(instance.Parameters) != 1 {
+	if instance.Fingerprint != instanceFingerprintA || instance.Host != metadata || len(instance.Parameters) != 1 {
 		t.Fatalf("instance = %+v", instance)
 	}
 }
@@ -107,8 +107,8 @@ func TestFixedProviderWithoutBoundedContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveInstance() error = %v", err)
 	}
-	if instance.Bounded != nil {
-		t.Fatalf("Bounded = %+v, want nil", instance.Bounded)
+	if instance.Host != nil {
+		t.Fatalf("Host = %+v, want nil", instance.Host)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 )
 
 // Path is the authorization path a declaration admits a transaction on.
@@ -18,9 +18,9 @@ type Path string
 
 // The admitted paths use the names argument path masks and resource profiles use.
 const (
-	PathSpend         Path = boundedmeta.PathSpend
-	PathSpendingRekey Path = boundedmeta.PathSpendingRekey
-	PathListedRekey   Path = boundedmeta.PathListedRekey
+	PathSpend         Path = hostmeta.PathSpend
+	PathSpendingRekey Path = hostmeta.PathSpendingRekey
+	PathListedRekey   Path = hostmeta.PathListedRekey
 	PathRefused       Path = "refused"
 )
 
@@ -67,17 +67,17 @@ type Decision struct {
 // transaction that doesn't rekey as a spend, and refuses only a rekey that isn't
 // pure. An invalid declaration is an error, not a refusal, so a corrupt
 // declaration can't be mistaken for a policy decision.
-func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration) (Decision, error) {
-	if err := boundedmeta.ValidateRekeySetting(declaration.Rekey); err != nil {
+func ClassifyFor(txn types.Transaction, declaration hostmeta.PathDeclaration) (Decision, error) {
+	if err := hostmeta.ValidateRekeySetting(declaration.Rekey); err != nil {
 		return Decision{}, err
 	}
 	contract, bounds := declaration.Contract, declaration.Bounds
-	if err := boundedmeta.CheckBounds(contract, bounds != nil); err != nil {
+	if err := hostmeta.CheckBounds(contract, bounds != nil); err != nil {
 		return Decision{}, err
 	}
 	if bounds != nil {
 		// Bounds without a ceiling are corrupt, not unlimited.
-		if err := boundedmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
+		if err := hostmeta.ValidateMaxFee(bounds.MaxFee); err != nil {
 			return Decision{}, err
 		}
 	}
@@ -101,11 +101,11 @@ func ClassifyFor(txn types.Transaction, declaration boundedmeta.PathDeclaration)
 		decision.Path, decision.Rule = PathSpend, RuleSpendAllowed
 		return decision, nil
 	case ShapePureRekey:
-		if declaration.Rekey == boundedmeta.RekeyRefused && declaration.RekeyList {
+		if declaration.Rekey == hostmeta.RekeyRefused && declaration.RekeyList {
 			decision.Path, decision.Rule = PathListedRekey, RuleRekeyListed
 			return decision, nil
 		}
-		if declaration.Rekey == boundedmeta.RekeyRefused {
+		if declaration.Rekey == hostmeta.RekeyRefused {
 			return refuse(decision, RuleRekeyRefused, fmt.Sprintf("%s account permanently disables rekey", contract))
 		}
 		decision.Path, decision.Rule = PathSpendingRekey, RuleRekeyAllowed

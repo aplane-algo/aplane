@@ -4,18 +4,18 @@
 package plainhost
 
 import (
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
 // ShapeFromMetadata reads a stored bounded account's shape, as StoredFingerprint does.
-func ShapeFromMetadata(metadata *boundedmeta.Metadata) (Shape, error) {
+func ShapeFromMetadata(metadata *hostmeta.Metadata) (Shape, error) {
 	return shapeFromMetadata(metadata)
 }
 
 // CheckResources runs the generation resource backstop on its own.
-func CheckResources(metadata *boundedmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
+func CheckResources(metadata *hostmeta.Metadata, opcodes lsigresource.OpcodeProfile, programBytes int) error {
 	return checkResources(metadata, opcodes, programBytes)
 }
 

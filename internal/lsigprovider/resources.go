@@ -17,11 +17,11 @@ type OpcodeProfileProvider interface {
 	LogicSigOpcodeProfile() lsigresource.OpcodeProfile
 }
 
-// BoundedOpcodeProfileProvider is implemented by a provider with both a plain
+// HostOpcodeProfileProvider is implemented by a provider with both a plain
 // program and bounded ones, as a plain host has: LogicSigOpcodeProfile declares
 // the plain program's ceiling, and this the bounded programs' path ceilings.
-type BoundedOpcodeProfileProvider interface {
-	BoundedLogicSigOpcodeProfile() lsigresource.OpcodeProfile
+type HostOpcodeProfileProvider interface {
+	HostLogicSigOpcodeProfile() lsigresource.OpcodeProfile
 }
 
 // ResolveOpcodeProfile returns the required provider-owned reviewed profile.
@@ -29,8 +29,8 @@ type BoundedOpcodeProfileProvider interface {
 // prevents default-path metadata from being attached to a bounded key (or vice
 // versa).
 func ResolveOpcodeProfile(provider any, bounded bool) (lsigresource.OpcodeProfile, error) {
-	if dual, ok := provider.(BoundedOpcodeProfileProvider); ok && bounded {
-		profile := dual.BoundedLogicSigOpcodeProfile()
+	if dual, ok := provider.(HostOpcodeProfileProvider); ok && bounded {
+		profile := dual.HostLogicSigOpcodeProfile()
 		if err := profile.Validate(true); err != nil {
 			return lsigresource.OpcodeProfile{}, fmt.Errorf("invalid reviewed LogicSig opcode profile: %w", err)
 		}

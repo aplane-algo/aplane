@@ -127,7 +127,7 @@ func TestKeyTypeListingsDropTheBlockScalarLineBreak(t *testing.T) {
 	if err := boundedKey.SetLogicSigOpcodeProfile(composed.LogicSigOpcodeProfile(), true); err != nil {
 		t.Fatal(err)
 	}
-	if err := boundedKey.SetBoundedAuthorization(composed.BoundedAuthorizationMetadata()); err != nil {
+	if err := boundedKey.SetHost(composed.HostMetadata()); err != nil {
 		t.Fatal(err)
 	}
 	saveAndReload(t, ir, genericKey, boundedKey)

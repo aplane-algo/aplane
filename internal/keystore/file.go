@@ -10,8 +10,8 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -40,13 +40,13 @@ type FileKeyStore struct {
 
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
 type SigningSummary struct {
-	Category             string
-	BaseKeyType          string
-	Parameters           map[string]string
-	SigningArgs          []lsigprovider.RuntimeArgDef
-	BoundedAuthorization *boundedmeta.Metadata
-	TemplateFingerprint  string
-	LogicSigResources    *lsigresource.Profile
+	Category            string
+	BaseKeyType         string
+	Parameters          map[string]string
+	SigningArgs         []lsigprovider.RuntimeArgDef
+	Host                *hostmeta.Metadata
+	TemplateFingerprint string
+	LogicSigResources   *lsigresource.Profile
 	// ValidRekeyTarget is the value the aplane key recorded at creation.
 	ValidRekeyTarget bool
 }
@@ -277,7 +277,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	km.PublicKey = bytes.Clone(payload.PublicKey)
 	km.Parameters = maps.Clone(signingMeta.Parameters)
 	km.SigningArgs = signingargs.ToRuntimeDefs(signingMeta.SigningArgs)
-	km.BoundedAuthorization = boundedmeta.Clone(signingMeta.BoundedAuthorization)
+	km.Host = hostmeta.Clone(signingMeta.Host)
 	return km, nil
 }
 
@@ -286,12 +286,12 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 // transactions - so Value stays nil.
 func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) *signing.KeyMaterial {
 	return &signing.KeyMaterial{
-		Type:                 keyType,
-		Category:             signingMeta.Category,
-		Bytecode:             bytes.Clone(payload.LogicSigBytecode),
-		Parameters:           maps.Clone(signingMeta.Parameters),
-		SigningArgs:          signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
-		BoundedAuthorization: boundedmeta.Clone(signingMeta.BoundedAuthorization),
+		Type:        keyType,
+		Category:    signingMeta.Category,
+		Bytecode:    bytes.Clone(payload.LogicSigBytecode),
+		Parameters:  maps.Clone(signingMeta.Parameters),
+		SigningArgs: signingargs.ToRuntimeDefs(signingMeta.SigningArgs),
+		Host:        hostmeta.Clone(signingMeta.Host),
 	}
 }
 
@@ -350,7 +350,7 @@ func (c Contents) KeyTypes() map[string]string {
 
 // GetSigningSummary returns one scan-time snapshot of address -> non-sensitive
 // signing metadata. The returned map, its Parameters maps, and its
-// BoundedAuthorization records are freshly built per call and owned by the
+// Host records are freshly built per call and owned by the
 // caller — no further defensive cloning is required. Only tests read it, and
 // the test seam productruntime.Runtime.PublishSnapshot: production reads the
 // runtime's published snapshot.
@@ -366,12 +366,12 @@ func (c Contents) SigningSummaries() map[string]SigningSummary {
 	result := make(map[string]SigningSummary, len(c.Keys))
 	for k, v := range c.Keys {
 		summary := SigningSummary{
-			Category:             v.Category,
-			BaseKeyType:          v.BaseKeyType,
-			Parameters:           maps.Clone(v.Parameters),
-			BoundedAuthorization: boundedmeta.Clone(v.BoundedAuthorization),
-			TemplateFingerprint:  v.TemplateFingerprint,
-			ValidRekeyTarget:     v.ValidRekeyTarget,
+			Category:            v.Category,
+			BaseKeyType:         v.BaseKeyType,
+			Parameters:          maps.Clone(v.Parameters),
+			Host:                hostmeta.Clone(v.Host),
+			TemplateFingerprint: v.TemplateFingerprint,
+			ValidRekeyTarget:    v.ValidRekeyTarget,
 		}
 		if v.LogicSigResources != nil {
 			cloned := v.LogicSigResources.Clone()

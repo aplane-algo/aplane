@@ -1102,7 +1102,7 @@ func matrixDeclaredOpcodeProfile(t *testing.T, account includedKeyTypeCase) lsig
 		if !ok {
 			t.Fatalf("%s is not a plain host", keyType)
 		}
-		return provider.BoundedLogicSigOpcodeProfile()
+		return provider.HostLogicSigOpcodeProfile()
 	}
 	switch keyType {
 	case "aplane.ed25519.v1":

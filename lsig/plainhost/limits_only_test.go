@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/boundary"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/plainhost"
@@ -56,8 +56,8 @@ func TestLimitsOnlyShapeResolvesFromAnExplicitScope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", b.name, err)
 		}
-		bounded := instance.Bounded
-		if bounded.Contract != boundedmeta.Contract || bounded.Layer3Policy() != boundedmeta.Layer3PolicyNone {
+		bounded := instance.Host
+		if bounded.Contract != hostmeta.BoundedContract || bounded.Layer3Policy() != hostmeta.Layer3PolicyNone {
 			t.Fatalf("%s: contract %s, policy %s", b.name, bounded.Contract, bounded.Layer3Policy())
 		}
 		if bounded.FeeCeiling() == nil || *bounded.FeeCeiling() != plainhost.DefaultMaxFee || !slices.Equal(bounded.Bounds.SpendEffects, []string{"pay"}) {
@@ -161,7 +161,7 @@ func TestLimitsOnlyFingerprintsAreDistinct(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if arrangement.Bounded.Contract != boundedmeta.PlainContract || limited.BoundaryDigest == arrangement.BoundaryDigest {
+				if arrangement.Host.Contract != hostmeta.PlainContract || limited.BoundaryDigest == arrangement.BoundaryDigest {
 					t.Fatalf("%s has its plain1 arrangement's boundary digest", shape.Descriptor())
 				}
 				limitedProfile := canonicalProfile(t, b.provider, shape)
@@ -169,8 +169,8 @@ func TestLimitsOnlyFingerprintsAreDistinct(t *testing.T) {
 				// The only difference is field(layer3_policy): "none" against
 				// "fixed_allowlist", which differ in length, so the encodings cannot meet.
 				want := strings.Replace(hex.EncodeToString(listedProfile),
-					hex.EncodeToString(boundedmeta.AppendField(nil, []byte(boundedmeta.Layer3PolicyFixedAllowlist))),
-					hex.EncodeToString(boundedmeta.AppendField(nil, []byte(boundedmeta.Layer3PolicyNone))), 1)
+					hex.EncodeToString(hostmeta.AppendField(nil, []byte(hostmeta.Layer3PolicyFixedAllowlist))),
+					hex.EncodeToString(hostmeta.AppendField(nil, []byte(hostmeta.Layer3PolicyNone))), 1)
 				if hex.EncodeToString(limitedProfile) != want {
 					t.Fatalf("%s profile differs from its twin in more than the policy", shape.Descriptor())
 				}
@@ -185,7 +185,7 @@ func canonicalProfile(t *testing.T, provider *plainhost.Provider, shape plainhos
 	if composer == nil {
 		t.Fatalf("no shape %s", shape.Descriptor())
 	}
-	encoded, err := composeddsa.CanonicalBoundedProfile(composer.BoundedAuthorizationProfile(), composer.BoundedAuthorizationMetadata())
+	encoded, err := composeddsa.CanonicalBoundedProfile(composer.HostProfile(), composer.HostMetadata())
 	if err != nil {
 		t.Fatal(err)
 	}

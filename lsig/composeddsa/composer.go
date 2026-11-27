@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
@@ -62,13 +62,13 @@ type DSAOps interface {
 
 // SignatureArgLayout describes the static LogicSig argument shape emitted by a
 // DSA base. Bounded-capable bases must expose this without probing dummy
-// signatures. It aliases the durable boundedmeta shape so the generation-side
+// signatures. It aliases the durable hostmeta shape so the generation-side
 // and stored layouts are the same type.
-type SignatureArgLayout = boundedmeta.SignatureArgLayout
+type SignatureArgLayout = hostmeta.SignatureArgLayout
 
-// BoundedCapableDSAOps is implemented by DSA bases whose signature argument
+// HostCapableDSAOps is implemented by DSA bases whose signature argument
 // layout is static and therefore safe to compose with bounded routing.
-type BoundedCapableDSAOps interface {
+type HostCapableDSAOps interface {
 	DSAOps
 	SignatureArgLayout() SignatureArgLayout
 }
@@ -94,11 +94,11 @@ type Config struct {
 	// them in its metadata as given, so a bounded composer's arguments must
 	// come from a validated template spec (newProviderFromBase), whose bounded
 	// runtime_args have passed the bounded argument checks. A Config built by
-	// hand with Bounded and RuntimeArgs skips those checks.
+	// hand with Host and RuntimeArgs skips those checks.
 	RuntimeArgs []lsigprovider.RuntimeArgDef
 	// DerivedArgs carries schema-v2-only slot metadata.
-	DerivedArgs   []boundedmeta.DerivedArg
-	Bounded       *BoundedAuthorizationProfile
+	DerivedArgs   []hostmeta.DerivedArg
+	Host          *HostProfile
 	Layer3        *Layer3Policy
 	OpcodeProfile lsigresource.OpcodeProfile
 	// RekeyTargetDeclaration is an installed template's valid_rekey_target,
@@ -132,19 +132,19 @@ type ComposedDSA struct {
 	templateVars []tealtemplate.TemplateVariable
 	params       []lsigprovider.ParameterDef
 	runtimeArgs  []lsigprovider.RuntimeArgDef
-	// boundedRuntimeArgs is runtimeArgs as a bounded account records them,
+	// hostRuntimeArgs is runtimeArgs as a bounded account records them,
 	// for a bounded composer.
-	boundedRuntimeArgs []boundedmeta.RuntimeArg
-	derivedArgs        []boundedmeta.DerivedArg
-	bounded            *BoundedAuthorizationProfile
-	layer3             *Layer3Policy
-	opcodeProfile      lsigresource.OpcodeProfile
+	hostRuntimeArgs []hostmeta.RuntimeArg
+	derivedArgs     []hostmeta.DerivedArg
+	host            *HostProfile
+	layer3          *Layer3Policy
+	opcodeProfile   lsigresource.OpcodeProfile
 	// rekeyTargetDeclaration is Config.RekeyTargetDeclaration.
 	rekeyTargetDeclaration *bool
 
 	// generationPolicy replaces the production support policy for this composer
 	// only. It stays nil outside tests: nothing but export_test.go sets it.
-	generationPolicy boundedGenerationPolicy
+	generationPolicy hostGenerationPolicy
 
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
@@ -159,23 +159,23 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		panic("composeddsa: Config.Ops is required")
 	}
 	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
-	bounded := cloneBoundedProfile(cfg.Bounded)
+	host := cloneHostProfile(cfg.Host)
 	opcodeProfile := cfg.OpcodeProfile
 	if opcodeProfile != (lsigresource.OpcodeProfile{}) {
-		if err := opcodeProfile.Validate(bounded != nil); err != nil {
+		if err := opcodeProfile.Validate(host != nil); err != nil {
 			panic("composeddsa: invalid opcode profile: " + err.Error())
 		}
 	}
-	if bounded != nil && bounded.Cosigner != nil && !hasParameter(params, BoundedCosignerPublicKeyParameter) {
-		params = append(params, BoundedCosignerParameterDef(bounded.Cosigner.ComponentKeyType))
+	if host != nil && host.Cosigner != nil && !hasParameter(params, CosignerPublicKeyParameter) {
+		params = append(params, CosignerParameterDef(host.Cosigner.ComponentKeyType))
 	}
-	if bounded != nil && bounded.RekeyList != nil && !hasParameter(params, BoundedRekeyToParameter) {
-		params = append(params, rekeyListEntriesParameterDef(bounded.Rekey))
+	if host != nil && host.RekeyList != nil && !hasParameter(params, RekeyToParameter) {
+		params = append(params, rekeyListEntriesParameterDef(host.Rekey))
 	}
-	var boundedRuntimeArgs []boundedmeta.RuntimeArg
-	if bounded != nil {
+	var hostRuntimeArgs []hostmeta.RuntimeArg
+	if host != nil {
 		for _, arg := range cfg.RuntimeArgs {
-			boundedRuntimeArgs = append(boundedRuntimeArgs, boundedmeta.RuntimeArg{
+			hostRuntimeArgs = append(hostRuntimeArgs, hostmeta.RuntimeArg{
 				Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
 				Required: arg.Required, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
 			})
@@ -195,9 +195,9 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 		templateVars:           cfg.TemplateVars,
 		params:                 params,
 		runtimeArgs:            cfg.RuntimeArgs,
-		boundedRuntimeArgs:     boundedRuntimeArgs,
-		derivedArgs:            append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
-		bounded:                bounded,
+		hostRuntimeArgs:        hostRuntimeArgs,
+		derivedArgs:            append([]hostmeta.DerivedArg(nil), cfg.DerivedArgs...),
+		host:                   host,
 		layer3:                 cloneLayer3Policy(cfg.Layer3),
 		opcodeProfile:          opcodeProfile,
 		rekeyTargetDeclaration: cloneBool(cfg.RekeyTargetDeclaration),
@@ -304,10 +304,10 @@ func (c *ComposedDSA) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return c.runtimeArgs
 }
 
-// BoundedAuthorizationProfile returns a defensive copy of this
+// HostProfile returns a defensive copy of this
 // provider's bounded profile, or nil for legacy composed providers.
-func (c *ComposedDSA) BoundedAuthorizationProfile() *BoundedAuthorizationProfile {
-	return cloneBoundedProfile(c.bounded)
+func (c *ComposedDSA) HostProfile() *HostProfile {
+	return cloneHostProfile(c.host)
 }
 
 // Layer3PolicyName identifies whether the provider uses framework-owned or
@@ -319,23 +319,23 @@ func (c *ComposedDSA) Layer3PolicyName() string {
 // SignatureArgLayout returns the static base signature layout when the base
 // advertises bounded capability.
 func (c *ComposedDSA) SignatureArgLayout() (SignatureArgLayout, bool) {
-	ops, ok := c.ops.(BoundedCapableDSAOps)
+	ops, ok := c.ops.(HostCapableDSAOps)
 	if !ok {
 		return SignatureArgLayout{}, false
 	}
 	return cloneSignatureArgLayout(ops.SignatureArgLayout()), true
 }
 
-// errBoundedBuildArgs refuses BuildArgs on a bounded composer. The signer
+// errHostBuildArgs refuses BuildArgs on a bounded composer. The signer
 // packs a bounded account's spending signature through its base key type's
 // provider and places every argument by the account's stored layout.
-var errBoundedBuildArgs = errors.New("bounded accounts are assembled from their stored metadata")
+var errHostBuildArgs = errors.New("bounded accounts are assembled from their stored metadata")
 
 // BuildArgs assembles LogicSig Args in the provider's declared order. A bounded
-// composer refuses (errBoundedBuildArgs).
+// composer refuses (errHostBuildArgs).
 func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
-	if c.bounded != nil {
-		return nil, errBoundedBuildArgs
+	if c.host != nil {
+		return nil, errHostBuildArgs
 	}
 	if signature == nil {
 		return nil, fmt.Errorf("signature is required for DSA LogicSig")
@@ -377,7 +377,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		TemplateVars  []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
 		Parameters    []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
 		RuntimeArgs   []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
-		Bounded       any                                `json:"bounded,omitempty"`
+		Host          any                                `json:"bounded,omitempty"`
 		Layer3        *Layer3Policy                      `json:"layer3,omitempty"`
 		// ValidRekeyTarget is a template's declaration, part of its
 		// definition: a template that declares another value is another
@@ -396,10 +396,10 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		runtimeArgs[i] = lsigprovider.ProjectRuntimeArgDef(a)
 	}
 
-	metadata, metadataErr := c.boundedAuthorizationMetadataBase()
-	boundedProjection := boundedFingerprintProjection(c.bounded, metadata)
+	metadata, metadataErr := c.hostMetadataBase()
+	hostProjection := hostFingerprintProjection(c.host, metadata)
 	if metadataErr != nil {
-		boundedProjection = map[string]string{"invalid": metadataErr.Error()}
+		hostProjection = map[string]string{"invalid": metadataErr.Error()}
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive:    lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
@@ -410,7 +410,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		TemplateVars:     c.templateVars,
 		Parameters:       params,
 		RuntimeArgs:      runtimeArgs,
-		Bounded:          boundedProjection,
+		Host:             hostProjection,
 		Layer3:           cloneLayer3Policy(c.layer3),
 		ValidRekeyTarget: c.rekeyTargetDeclaration,
 	})
@@ -426,7 +426,7 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 // The suffix is a predicate fragment, not a standalone TEAL program, and must
 // not contain its own return instructions.
 func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
-	if err := c.checkBoundedGenerationSupport(); err != nil {
+	if err := c.checkHostGenerationSupport(); err != nil {
 		return "", err
 	}
 	// The rekey-to list's root is the generator's, not a creation parameter.
@@ -438,7 +438,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if err := generictemplate.ValidateParameterValues(normalizedParams, c.params); err != nil {
 		return "", err
 	}
-	boundedProfile, _, err := c.validateBoundedConfig()
+	hostProfile, _, err := c.validateHostConfig()
 	if err != nil {
 		return "", err
 	}
@@ -454,13 +454,13 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	}
 
 	// Author TEAL never sees a rekey-to list's entries, which only its root may
-	// reveal; validateBoundedReservedNames refuses a reference with a reason.
+	// reveal; validateHostReservedNames refuses a reference with a reason.
 	authorParams, authorDefs := normalizedParams, c.params
-	if boundedProfile != nil && boundedProfile.RekeyList != nil {
+	if hostProfile != nil && hostProfile.RekeyList != nil {
 		authorParams = maps.Clone(normalizedParams)
-		delete(authorParams, BoundedRekeyToParameter)
+		delete(authorParams, RekeyToParameter)
 		authorDefs = slices.DeleteFunc(slices.Clone(c.params), func(p lsigprovider.ParameterDef) bool {
-			return p.Name == BoundedRekeyToParameter
+			return p.Name == RekeyToParameter
 		})
 	}
 
@@ -505,18 +505,18 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		b.WriteString("\n")
 	}
 
-	if boundedProfile == nil && !hasSuffix {
+	if hostProfile == nil && !hasSuffix {
 		return b.String(), nil
 	}
 
 	b.WriteString("assert\n\n")
-	if boundedProfile != nil {
+	if hostProfile != nil {
 		preludeParams := normalizedParams
 		if generated != nil {
 			preludeParams = maps.Clone(normalizedParams)
 			maps.Copy(preludeParams, generated)
 		}
-		prelude, err := c.renderBoundedPrelude(publicKey, preludeParams, boundedProfile)
+		prelude, err := c.renderHostPrelude(publicKey, preludeParams, hostProfile)
 		if err != nil {
 			return "", fmt.Errorf("failed to render bounded envelope: %w", err)
 		}
@@ -524,7 +524,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	}
 
 	if c.layer3 != nil {
-		layer3, err := c.renderLayer3Policy(normalizedParams, boundedProfile)
+		layer3, err := c.renderLayer3Policy(normalizedParams, hostProfile)
 		if err != nil {
 			return "", fmt.Errorf("failed to render Layer-3 policy: %w", err)
 		}
@@ -534,7 +534,7 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	// A framework allowlist is emitted first and falls through, so author TEAL
 	// can only narrow what it admits and nothing the author writes can skip it.
 	// Author TEAL is always present here: a composer with no framework policy
-	// has some (validateBoundedConfig, or the early return above), so the
+	// has some (validateHostConfig, or the early return above), so the
 	// suffix switch has already refused a missing or unknown mode.
 	if c.layer3 == nil || c.hasAuthorTEAL() {
 		switch mode {
@@ -567,8 +567,8 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		}
 	}
 
-	if boundedProfile != nil {
-		b.WriteString(renderBoundedAccept())
+	if hostProfile != nil {
+		b.WriteString(renderHostAccept())
 	} else {
 		b.WriteString("int 1\nreturn\n")
 	}

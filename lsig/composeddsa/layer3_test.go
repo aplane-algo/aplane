@@ -9,7 +9,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/txeffects"
@@ -40,7 +40,7 @@ func TestFixedAllowlistPolicyRendersCompleteSpendDispatch(t *testing.T) {
 	if strings.Count(teal, "__aplane_bounded1_layer3_recipient_yes") != 3 {
 		t.Fatalf("recipient membership does not contain exactly two branches and one label:\n%s", teal)
 	}
-	if provider.Layer3PolicyName() != boundedmeta.Layer3PolicyFixedAllowlist {
+	if provider.Layer3PolicyName() != hostmeta.Layer3PolicyFixedAllowlist {
 		t.Fatalf("Layer3PolicyName() = %q", provider.Layer3PolicyName())
 	}
 }
@@ -143,8 +143,8 @@ func TestMerkleAllowlistPolicyRequiresClosedProofContract(t *testing.T) {
 
 	provider := &ComposedDSA{
 		layer3: policy,
-		derivedArgs: []boundedmeta.DerivedArg{{
-			Name: "proof", Kind: boundedmeta.DerivedArgMerkleProof, Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+		derivedArgs: []hostmeta.DerivedArg{{
+			Name: "proof", Kind: hostmeta.DerivedArgMerkleProof, Parameter: "recipients", MaxSize: hostmeta.MerkleProofSize,
 		}},
 	}
 	if err := provider.validateFrameworkLayer3Arguments(); err != nil {
@@ -163,8 +163,8 @@ func TestFixedAllowlistPolicyAcceptsEitherRekeySettingWithoutPay(t *testing.T) {
 	params := []lsigprovider.ParameterDef{{
 		Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax,
 	}}
-	for _, rekey := range []boundedmeta.RekeySetting{boundedmeta.RekeySpendingKey, boundedmeta.RekeyRefused} {
-		profile := &BoundedAuthorizationProfile{
+	for _, rekey := range []hostmeta.RekeySetting{hostmeta.RekeySpendingKey, hostmeta.RekeyRefused} {
+		profile := &HostProfile{
 			Contract: BoundedContract,
 			Bounds:   &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
 			Rekey:    rekey,
@@ -211,15 +211,15 @@ func fixedAllowlistTestProvider() *ComposedDSA {
 	return NewComposedDSA(Config{
 		KeyType: "aplane.test-fixed-allowlist.v1", BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName: "aplane.test", Version: 1, Ops: boundedTestOps{}, SaltStyle: lsigsalt.StyleNone,
-		TemplateMode: "generated", Params: fixedAllowlistTestParams(), Bounded: fixedAllowlistTestProfile(),
+		TemplateMode: "generated", Params: fixedAllowlistTestParams(), Host: fixedAllowlistTestProfile(),
 		Layer3: &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
 	})
 }
 
-func fixedAllowlistTestProfile() *BoundedAuthorizationProfile {
-	return &BoundedAuthorizationProfile{
+func fixedAllowlistTestProfile() *HostProfile {
+	return &HostProfile{
 		Contract: BoundedContract, Bounds: &ProfileBounds{SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer}, MaxFee: new(uint64(10_000))},
-		Rekey: boundedmeta.RekeyRefused,
+		Rekey: hostmeta.RekeyRefused,
 	}
 }
 

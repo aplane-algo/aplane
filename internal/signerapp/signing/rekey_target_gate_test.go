@@ -251,7 +251,7 @@ func TestGroupWarningNamesAHeldInvalidRekeyTargetAtAForeignPosition(t *testing.T
 	txns := []types.Transaction{payment, foreignRekey}
 	for _, class := range []string{"foreign", "passthrough"} {
 		t.Run(class, func(t *testing.T) {
-			plan := &PlanResult{AllTxns: txns, ForeignIndices: map[int]bool{}, PassthroughIndices: map[int]bool{}, BoundedItems: make([]*boundedPlanItem, 2)}
+			plan := &PlanResult{AllTxns: txns, ForeignIndices: map[int]bool{}, PassthroughIndices: map[int]bool{}, HostItems: make([]*hostPlanItem, 2)}
 			if class == "foreign" {
 				plan.ForeignIndices[1], plan.HasForeign = true, true
 			} else {

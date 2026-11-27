@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/falconparams"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/witness"
 )
 
@@ -258,10 +258,10 @@ func TestCatalogMatchesTheFrozenAuthoritySizes(t *testing.T) {
 		t.Fatal("no construction for the Falcon witness")
 	}
 	maxSizes := falcon.Layout().MaxSizes()
-	if falcon.PublicKeySize() != boundedmeta.DefaultCosignerPublicKeySize {
+	if falcon.PublicKeySize() != hostmeta.DefaultCosignerPublicKeySize {
 		t.Fatalf("PublicKeySize() = %d", falcon.PublicKeySize())
 	}
-	if !slices.Equal(maxSizes, []int{boundedmeta.DefaultCosignerSignatureMaxSize}) {
+	if !slices.Equal(maxSizes, []int{hostmeta.DefaultCosignerSignatureMaxSize}) {
 		t.Fatalf("MaxSizes() = %v", maxSizes)
 	}
 }

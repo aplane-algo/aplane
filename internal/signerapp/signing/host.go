@@ -9,26 +9,26 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/internal/lsigresource"
 	"github.com/aplane-algo/aplane/internal/rekeylist"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/pkg/signerapi"
 )
 
-type boundedPath string
+type hostPath string
 
 const (
-	boundedPathPureSpend        boundedPath = "pure_spend"
-	boundedPathSpendingKeyRekey boundedPath = "spending_key_rekey"
-	// boundedPathListedRekey is a pure rekey to an address on the account's
+	hostPathPureSpend        hostPath = "pure_spend"
+	hostPathSpendingKeyRekey hostPath = "spending_key_rekey"
+	// hostPathListedRekey is a pure rekey to an address on the account's
 	// rekey-to list, signed by the spending key with a list proof.
-	boundedPathListedRekey boundedPath = "listed_rekey"
+	hostPathListedRekey hostPath = "listed_rekey"
 )
 
-type boundedPlanItem struct {
-	Path              boundedPath
-	Metadata          *boundedmeta.Metadata
+type hostPlanItem struct {
+	Path              hostPath
+	Metadata          *hostmeta.Metadata
 	BaseKeyType       string
 	SpendingPublicKey []byte
 	RuntimeArgs       map[string][]byte
@@ -37,24 +37,24 @@ type boundedPlanItem struct {
 	ListedRekeyTargets map[string]bool
 }
 
-func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) ([]*boundedPlanItem, *ServiceError) {
-	items := make([]*boundedPlanItem, len(req))
+func resolveHostPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool) ([]*hostPlanItem, *ServiceError) {
+	items := make([]*hostPlanItem, len(req))
 	for i, request := range req {
 		if passthroughIndices[i] || foreignIndices[i] {
 			continue
 		}
-		metadata := snapshot.KeyMetadata[request.AuthAddress].BoundedAuthorization
+		metadata := snapshot.KeyMetadata[request.AuthAddress].Host
 		if metadata == nil {
 			continue
 		}
 		if i >= len(txns) {
 			return nil, internal("bounded plan transaction index is out of bounds")
 		}
-		path, listed, err := boundedAccountPath(txns[i], metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
+		path, listed, err := hostAccountPath(txns[i], metadata, snapshot.KeyMetadata[request.AuthAddress].Parameters)
 		if err != nil {
 			return nil, withTransactionIndex(i, err)
 		}
-		runtimeArgs, argErr := validateBoundedRuntimeArgs(request.LsigArgs, metadata, path)
+		runtimeArgs, argErr := validateHostRuntimeArgs(request.LsigArgs, metadata, path)
 		if argErr != nil {
 			return nil, withTransactionIndex(i, argErr)
 		}
@@ -64,7 +64,7 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 		}
 		// The planner snapshot is request-owned and read-only downstream, so
 		// the item references its metadata directly instead of cloning again.
-		items[i] = &boundedPlanItem{
+		items[i] = &hostPlanItem{
 			Path: path, Metadata: metadata, BaseKeyType: snapshot.KeyMetadata[request.AuthAddress].BaseKeyType,
 			SpendingPublicKey: spendingPublicKey, RuntimeArgs: runtimeArgs, ListedRekeyTargets: listed,
 		}
@@ -72,14 +72,14 @@ func resolveBoundedPlanItems(snapshot PlannerRuntimeSnapshot, req []signerapi.Si
 	return items, nil
 }
 
-func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta.Metadata, path boundedPath) (map[string][]byte, *ServiceError) {
+func validateHostRuntimeArgs(encoded map[string]string, metadata *hostmeta.Metadata, path hostPath) (map[string][]byte, *ServiceError) {
 	decoded, err := decodeHexRuntimeArgs(encoded)
 	if err != nil {
 		return nil, badRequest(err.Error())
 	}
-	slots := make(map[string]boundedmeta.ArgumentSlot, len(metadata.RuntimeArgs))
+	slots := make(map[string]hostmeta.ArgumentSlot, len(metadata.RuntimeArgs))
 	for _, slot := range metadata.ArgumentLayout {
-		if slot.Source == boundedmeta.ArgSourceRuntime {
+		if slot.Source == hostmeta.ArgSourceRuntime {
 			slots[slot.Name] = slot
 		}
 	}
@@ -88,15 +88,15 @@ func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta
 		if !ok {
 			return nil, badRequest(fmt.Sprintf("bounded caller argument %q is not a declared runtime slot", name))
 		}
-		if boundedSlotRule(slot, path) == boundedmeta.ArgForbidden {
+		if hostSlotRule(slot, path) == hostmeta.ArgForbidden {
 			return nil, badRequest(fmt.Sprintf("bounded runtime argument %q is forbidden on %s", name, path))
 		}
 	}
 	for _, arg := range metadata.RuntimeArgs {
 		slot := slots[arg.Name]
 		value, present := decoded[arg.Name]
-		rule := boundedSlotRule(slot, path)
-		if rule == boundedmeta.ArgRequired && (!present || len(value) == 0) {
+		rule := hostSlotRule(slot, path)
+		if rule == hostmeta.ArgRequired && (!present || len(value) == 0) {
 			return nil, badRequest(fmt.Sprintf("missing required bounded runtime argument %q", arg.Name))
 		}
 		if !present {
@@ -118,13 +118,13 @@ func validateBoundedRuntimeArgs(encoded map[string]string, metadata *boundedmeta
 	return decoded, nil
 }
 
-func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
+func hostSlotRule(slot hostmeta.ArgumentSlot, path hostPath) string {
 	switch path {
-	case boundedPathPureSpend:
+	case hostPathPureSpend:
 		return slot.Paths.Spend
-	case boundedPathSpendingKeyRekey:
+	case hostPathSpendingKeyRekey:
 		return slot.Paths.SpendingRekey
-	case boundedPathListedRekey:
+	case hostPathListedRekey:
 		return slot.Paths.ListedRekey
 	default:
 		return ""
@@ -133,11 +133,11 @@ func boundedSlotRule(slot boundedmeta.ArgumentSlot, path boundedPath) string {
 
 // listedRekeyTargets reads an account's rekey-to list from its stored
 // parameters, or returns nil for an account without one.
-func listedRekeyTargets(metadata *boundedmeta.Metadata, parameters map[string]string) (map[string]bool, *ServiceError) {
+func listedRekeyTargets(metadata *hostmeta.Metadata, parameters map[string]string) (map[string]bool, *ServiceError) {
 	if metadata == nil || metadata.RekeyList == nil {
 		return nil, nil
 	}
-	entries, err := rekeylist.ParseEntries(parameters[boundedmeta.RekeyListEntriesParameter])
+	entries, err := rekeylist.ParseEntries(parameters[hostmeta.RekeyListEntriesParameter])
 	if err != nil {
 		return nil, internal(fmt.Sprintf("stored rekey-to list is invalid: %v", err))
 	}
@@ -148,12 +148,12 @@ func listedRekeyTargets(metadata *boundedmeta.Metadata, parameters map[string]st
 	return listed, nil
 }
 
-// boundedAccountPath is the path the signer signs a transaction on, and the
+// hostAccountPath is the path the signer signs a transaction on, and the
 // account's rekey-to list: the declaration's path, with a listed target moved to
 // the listed path. The planner and assembly both decide through it, so a
 // component and its assembly can't disagree about whether the cosigner signs.
-func boundedAccountPath(txn types.Transaction, metadata *boundedmeta.Metadata, parameters map[string]string) (boundedPath, map[string]bool, *ServiceError) {
-	path, err := classifyBoundedPath(txn, metadata)
+func hostAccountPath(txn types.Transaction, metadata *hostmeta.Metadata, parameters map[string]string) (hostPath, map[string]bool, *ServiceError) {
+	path, err := classifyHostPath(txn, metadata)
 	if err != nil {
 		return "", nil, err
 	}
@@ -164,23 +164,23 @@ func boundedAccountPath(txn types.Transaction, metadata *boundedmeta.Metadata, p
 	// Under plus cosigned the list is the owner's standing statement: a listed
 	// target always takes the listed path, with the spending key alone, and only
 	// another target asks the cosigner.
-	if path == boundedPathSpendingKeyRekey && listed[txn.RekeyTo.String()] {
-		path = boundedPathListedRekey
+	if path == hostPathSpendingKeyRekey && listed[txn.RekeyTo.String()] {
+		path = hostPathListedRekey
 	}
 	// The program takes a listed rekey only to a listed target, so the signer
 	// refuses any other rekey here instead of building a transaction the chain
 	// would reject.
-	if path == boundedPathListedRekey && !listed[txn.RekeyTo.String()] {
-		return "", nil, &ServiceError{Kind: ErrorBoundedRekeyNotListed, Message: fmt.Sprintf(
+	if path == hostPathListedRekey && !listed[txn.RekeyTo.String()] {
+		return "", nil, &ServiceError{Kind: ErrorRekeyTargetNotListed, Message: fmt.Sprintf(
 			"%s is not on this account's rekey-to list, and the account refuses every other rekey", txn.RekeyTo)}
 	}
 	return path, listed, nil
 }
 
-// classifyBoundedPath decides which path the account's path declaration admits a
+// classifyHostPath decides which path the account's path declaration admits a
 // transaction on. The declaration comes from the stored metadata, so the signer
 // makes the decision txeffects.ClassifyFor makes for the account's contract.
-func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) (boundedPath, *ServiceError) {
+func classifyHostPath(txn types.Transaction, metadata *hostmeta.Metadata) (hostPath, *ServiceError) {
 	if metadata == nil {
 		return "", internal("bounded authorization metadata is missing")
 	}
@@ -197,11 +197,11 @@ func classifyBoundedPath(txn types.Transaction, metadata *boundedmeta.Metadata) 
 	}
 	switch decision.Path {
 	case txeffects.PathSpend:
-		return boundedPathPureSpend, nil
+		return hostPathPureSpend, nil
 	case txeffects.PathSpendingRekey:
-		return boundedPathSpendingKeyRekey, nil
+		return hostPathSpendingKeyRekey, nil
 	case txeffects.PathListedRekey:
-		return boundedPathListedRekey, nil
+		return hostPathListedRekey, nil
 	case txeffects.PathRefused:
 		return "", badRequest(decision.Reason)
 	default:
@@ -220,14 +220,14 @@ func withTransactionIndex(index int, err *ServiceError) *ServiceError {
 	return &ServiceError{Kind: err.Kind, Message: fmt.Sprintf("transaction %d: %s", index+1, err.Message), RefusedPosition: &position}
 }
 
-// planHasCosignedBoundedTarget reports whether any bounded position belongs to a
+// planHasCosignedHostTarget reports whether any host position belongs to a
 // cosigned account, which signs only through the cosigned flow, even on a listed
 // rekey that needs no cosigner component.
-func planHasCosignedBoundedTarget(plan *PlanResult) bool {
+func planHasCosignedHostTarget(plan *PlanResult) bool {
 	if plan == nil {
 		return false
 	}
-	for _, item := range plan.BoundedItems {
+	for _, item := range plan.HostItems {
 		if item != nil && item.Metadata != nil && item.Metadata.Cosigner != nil {
 			return true
 		}
@@ -235,25 +235,25 @@ func planHasCosignedBoundedTarget(plan *PlanResult) bool {
 	return false
 }
 
-func planHasBoundedRekey(plan *PlanResult) bool {
+func planHasHostRekey(plan *PlanResult) bool {
 	if plan == nil {
 		return false
 	}
-	for _, item := range plan.BoundedItems {
-		if item != nil && item.Path != boundedPathPureSpend {
+	for _, item := range plan.HostItems {
+		if item != nil && item.Path != hostPathPureSpend {
 			return true
 		}
 	}
 	return false
 }
 
-// listedRekeyTargetsForPlan is each bounded position's rekey-to list, by index.
+// listedRekeyTargetsForPlan is each host position's rekey-to list, by index.
 func listedRekeyTargetsForPlan(plan *PlanResult) map[int]map[string]bool {
 	if plan == nil {
 		return nil
 	}
 	var listed map[int]map[string]bool
-	for i, item := range plan.BoundedItems {
+	for i, item := range plan.HostItems {
 		if item == nil || item.ListedRekeyTargets == nil {
 			continue
 		}

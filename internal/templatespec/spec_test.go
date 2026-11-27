@@ -285,7 +285,7 @@ func TestLogicSigOpcodeProfileDefaultsAndOverrides(t *testing.T) {
 
 	t.Run("bounded omission applies to every path", func(t *testing.T) {
 		spec := BaseTemplateSpec{}
-		want := lsigresource.BoundedOpcodeProfile(
+		want := lsigresource.HostOpcodeProfile(
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,
 			lsigresource.SingleTransactionOpcodeCeiling,

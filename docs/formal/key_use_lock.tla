@@ -190,8 +190,8 @@ Code anchors:
       / post-gate key-use windows in internal/signerapp/signing/service.go
       (openKeyUse, keyUseRefused, signGroupWithPlanContext,
       signComponentWithContext, AssembleWithContext), execution.go
-      (executeGroupSigning), bounded_cosigner.go
-      (PrepareBoundedComponentWithContext, assembleBoundedTarget),
+      (executeGroupSigning), host_cosigner.go
+      (PrepareHostComponentWithContext, assembleHostTarget),
       component_sign.go (signPreparedCosignerComponents), and
       component_assemble.go (assembleDecoded, rejectLocalCosignedPassthrough).
       Every route releases its key use before SReturn's final keyUseRefused

@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	keygenreg "github.com/aplane-algo/aplane/internal/keygen"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
@@ -167,20 +167,20 @@ func (*boundedGeneratorTestDSA) KeyType() string       { return "test.generator-
 func (*boundedGeneratorTestDSA) RoutingFamily() string { return "generator-bounded" }
 func (*boundedGeneratorTestDSA) BaseKeyType() string   { return "aplane.falcon1024.v1" }
 func (*boundedGeneratorTestDSA) LogicSigOpcodeProfile() lsigresource.OpcodeProfile {
-	return lsigresource.BoundedOpcodeProfile(
+	return lsigresource.HostOpcodeProfile(
 		lsigresource.SingleTransactionOpcodeCeiling,
 		lsigresource.SingleTransactionOpcodeCeiling,
 		lsigresource.SingleTransactionOpcodeCeiling,
 	)
 }
-func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
-	return &boundedmeta.Metadata{
-		Contract:               boundedmeta.Contract,
-		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
-		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}),
-		Bounds:                 &boundedmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: boundedmeta.Layer3PolicyCustom},
-		Rekey:                  boundedmeta.RekeyRefused,
-		RuntimeArgs:            []boundedmeta.RuntimeArg{},
+func (*boundedGeneratorTestDSA) BuildHostMetadata(_ []byte, _ map[string]string, bytecode []byte) (*hostmeta.Metadata, error) {
+	return &hostmeta.Metadata{
+		Contract:               hostmeta.BoundedContract,
+		BaseSignatureArgLayout: hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}},
+		ArgumentLayout:         hostmeta.BaseArgumentLayout(hostmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}),
+		Bounds:                 &hostmeta.Bounds{SpendEffects: []string{"pay"}, MaxFee: new(uint64(1_000)), Layer3Policy: hostmeta.Layer3PolicyCustom},
+		Rekey:                  hostmeta.RekeyRefused,
+		RuntimeArgs:            []hostmeta.RuntimeArg{},
 	}, nil
 }
 
@@ -312,10 +312,10 @@ func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
 	defer payload.ZeroSecrets()
-	if payload.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion || payload.BoundedAuthorization == nil {
-		t.Fatalf("bounded authorization metadata = %#v", payload.BoundedAuthorization)
+	if payload.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion || payload.Host == nil {
+		t.Fatalf("bounded authorization metadata = %#v", payload.Host)
 	}
-	if got, want := payload.BoundedAuthorization.ArgumentBytesForPath(boundedmeta.PathSpend), family.MaxSignatureSize; got != want {
+	if got, want := payload.Host.ArgumentBytesForPath(hostmeta.PathSpend), family.MaxSignatureSize; got != want {
 		t.Fatalf("spend argument bytes = %d, want %d", got, want)
 	}
 }
@@ -340,7 +340,7 @@ func (d *perKeyGeneratorDSA) CosignerComponentKeyTypes(map[string]string) ([]str
 func (d *perKeyGeneratorDSA) ResolveInstance(params map[string]string) (*lsigprovider.Instance, error) {
 	return &lsigprovider.Instance{Values: params, Fingerprint: perKeyGeneratorFingerprint}, nil
 }
-func (d *perKeyGeneratorDSA) StoredFingerprint(map[string]string, *boundedmeta.Metadata) (string, error) {
+func (d *perKeyGeneratorDSA) StoredFingerprint(map[string]string, *hostmeta.Metadata) (string, error) {
 	return perKeyGeneratorFingerprint, nil
 }
 

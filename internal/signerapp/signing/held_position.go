@@ -73,7 +73,7 @@ func heldForeignPositions(snapshot PlannerRuntimeSnapshot, txns []types.Transact
 		}
 		if position.SenderHeld && position.NamedAuthorizer == "" {
 			metadata := snapshot.KeyMetadata[sender]
-			listed, err := listedRekeyTargets(metadata.BoundedAuthorization, metadata.Parameters)
+			listed, err := listedRekeyTargets(metadata.Host, metadata.Parameters)
 			if err != nil {
 				// The warning then speaks of an unlisted rekey, the more
 				// cautious text, and the review says the list didn't read.

@@ -44,11 +44,11 @@ func TestCosignedSignerCacheViewDelegation(t *testing.T) {
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowCosigned1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowCosigned1)
 	}
-	if got, ok := view.BoundedContract(addr); !ok || got != signerapi.HostContractBounded2 {
-		t.Fatalf("BoundedContract() = %q/%v", got, ok)
+	if got, ok := view.HostContract(addr); !ok || got != signerapi.HostContractBounded2 {
+		t.Fatalf("HostContract() = %q/%v", got, ok)
 	}
-	if got, ok := view.BoundedMaxFee(addr); !ok || got != 10_000 {
-		t.Fatalf("BoundedMaxFee() = %d/%v", got, ok)
+	if got, ok := view.HostMaxFee(addr); !ok || got != 10_000 {
+		t.Fatalf("HostMaxFee() = %d/%v", got, ok)
 	}
 	if got, ok := view.CosignerComponentKeyType(addr); !ok || got != witness.Falcon1024V1 {
 		t.Fatalf("CosignerComponentKeyType() = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)

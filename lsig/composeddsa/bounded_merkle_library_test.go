@@ -11,7 +11,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/hostmeta"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -27,12 +27,12 @@ func TestBoundedMerkleAllowlistGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := provider.BoundedAuthorizationMetadata()
-	if spec.SchemaVersion != 2 || metadata == nil || metadata.Rekey != boundedmeta.RekeySpendingKey || len(metadata.DerivedArgs) != 1 || len(metadata.ArgumentLayout) != 2 {
+	metadata := provider.HostMetadata()
+	if spec.SchemaVersion != 2 || metadata == nil || metadata.Rekey != hostmeta.RekeySpendingKey || len(metadata.DerivedArgs) != 1 || len(metadata.ArgumentLayout) != 2 {
 		t.Fatalf("bounded Merkle metadata = %#v", metadata)
 	}
 	slot := metadata.ArgumentLayout[1]
-	if slot.Name != "merkle_proof" || slot.Source != boundedmeta.ArgSourceDerived || slot.MaxSize != boundedmeta.MerkleProofSize || slot.Paths.Spend != boundedmeta.ArgOptional || slot.Paths.SpendingRekey != boundedmeta.ArgForbidden {
+	if slot.Name != "merkle_proof" || slot.Source != hostmeta.ArgSourceDerived || slot.MaxSize != hostmeta.MerkleProofSize || slot.Paths.Spend != hostmeta.ArgOptional || slot.Paths.SpendingRekey != hostmeta.ArgForbidden {
 		t.Fatalf("bounded Merkle proof slot = %#v", slot)
 	}
 	publicKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
