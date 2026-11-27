@@ -211,7 +211,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 			ID:   id,
 		},
 		Success:         result.Success,
-		ArchivePath:     publicArchiveName(result.ArchivePath),
+		ArchivePath:     publicFileName(result.ArchivePath),
 		ArchiveChecksum: result.ArchiveChecksum,
 		ArchiveSize:     result.ArchiveSize,
 		KeyCount:        result.KeyCount,
@@ -292,7 +292,7 @@ func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewRe
 			Type: protocol.MsgTypeRestorePreview,
 			ID:   id,
 		},
-		ArchivePath:      result.ArchivePath,
+		ArchivePath:      publicFileName(result.ArchivePath),
 		ArchiveCreatedAt: result.ArchiveCreatedAt,
 		Keys:             protocolRestoreKeyInfos(result.Keys),
 		Skipped:          protocolRestoreSkipped(result.Skipped),
@@ -399,14 +399,16 @@ func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 // protocolBackupInfo names an archive by its base name only.
 func protocolBackupInfo(item adminproto.BackupInfo) protocol.BackupInfo {
 	return protocol.BackupInfo{
-		FileName:  publicArchiveName(item.FileName),
+		FileName:  publicFileName(item.FileName),
 		CreatedAt: item.CreatedAt,
 		Size:      item.Size,
 		Checksum:  item.Checksum,
 	}
 }
 
-func publicArchiveName(path string) string {
+// publicFileName strips any server-side directory prefix so host filesystem
+// layout is never disclosed across admin transports.
+func publicFileName(path string) string {
 	if path == "" {
 		return ""
 	}
@@ -532,7 +534,7 @@ func ProtocolCosignerReferencesListMessage(id string, result adminproto.ListCosi
 	var invalid []protocol.InvalidCosignerReferenceInfo
 	for _, bad := range result.Invalid {
 		invalid = append(invalid, protocol.InvalidCosignerReferenceInfo{
-			Path: bad.Path, Name: bad.Name, Reason: bad.Reason, Removable: bad.Removable,
+			Path: publicFileName(bad.Path), Name: bad.Name, Reason: bad.Reason, Removable: bad.Removable,
 		})
 	}
 	return protocol.CosignerReferencesListMessage{
@@ -551,7 +553,7 @@ func ProtocolCosignerReferenceMessage(id, messageType string, result adminproto.
 func ProtocolRemoveCosignerReferenceResultMessage(id string, result adminproto.RemoveCosignerReferenceResult) protocol.RemoveCosignerReferenceResultMessage {
 	return protocol.RemoveCosignerReferenceResultMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeRemoveCosignerReferenceResult, ID: id},
-		Success:     result.Success, Name: result.Name, Removed: result.Removed, Path: result.Path, Code: result.Code, Error: result.Error,
+		Success:     result.Success, Name: result.Name, Removed: result.Removed, Path: publicFileName(result.Path), Code: result.Code, Error: result.Error,
 	}
 }
 
@@ -826,7 +828,7 @@ func ProtocolShowLibraryTemplateResultMessage(id string, result adminproto.ShowL
 		Success:       result.Success,
 		KeyType:       result.KeyType,
 		TemplateType:  result.TemplateType,
-		SourcePath:    result.SourcePath,
+		SourcePath:    publicFileName(result.SourcePath),
 		SourceSHA256:  result.SourceSHA256,
 		SourceModTime: result.SourceModTime,
 		TemplateYAML:  protocol.SensitiveBytes(result.TemplateYAML),
@@ -933,8 +935,8 @@ func protocolLibraryTemplates(items []adminproto.LibraryTemplateInfo) []protocol
 			TemplateType: item.TemplateType,
 			DisplayName:  item.DisplayName,
 			Description:  item.Description,
-			SourcePath:   item.SourcePath,
-			FileName:     item.FileName,
+			SourcePath:   publicFileName(item.SourcePath),
+			FileName:     publicFileName(item.FileName),
 			Parameters:   protocolCreationParams(item.Parameters),
 			RuntimeArgs:  protocolRuntimeArgs(item.RuntimeArgs),
 			Installed:    item.Installed,

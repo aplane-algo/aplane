@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/clientenroll"
@@ -108,6 +109,12 @@ func (a *App) ConnectEndpointAlias(ctx context.Context, alias string, hostKeyApp
 // identity key. The shell announces it as progress.
 func (a *App) SetIdentityCreatedHandler(handler func(sshtunnel.IdentityCreated)) {
 	a.eng.Connection.SetIdentityCreatedHandler(handler)
+}
+
+// SetProgressOutput routes live signer progress lines (such as approval wait
+// notices) to w instead of discarding them.
+func (a *App) SetProgressOutput(w io.Writer) {
+	a.eng.Connection.SetProgressOutput(w)
 }
 
 func (a *App) configuredEndpoint(alias string) (config.ClientEndpointConfig, error) {

@@ -187,6 +187,55 @@ func TestBackupProtocolMessagesDoNotExposeStorePaths(t *testing.T) {
 	if committed.Warning != "directory durability warning" {
 		t.Fatalf("committed backup warning = %q", committed.Warning)
 	}
+
+	preview := ProtocolRestorePreviewMessage("preview-1", adminproto.RestorePreviewResult{
+		ArchivePath: "/var/lib/apsigner/backups/default/preview.tar.gz",
+	})
+	if preview.ArchivePath != "preview.tar.gz" {
+		t.Fatalf("restore preview archive_path = %q, want basename", preview.ArchivePath)
+	}
+
+	refs := ProtocolCosignerReferencesListMessage("refs-1", adminproto.ListCosignerReferencesResult{
+		Invalid: []adminproto.InvalidCosignerReference{{
+			Path: "/var/lib/apsigner/identities/default/cosigner-references/broken.json", Name: "broken", Reason: "invalid JSON",
+		}},
+	})
+	if len(refs.Invalid) != 1 || refs.Invalid[0].Path != "broken.json" {
+		t.Fatalf("cosigner list invalid leaked path: %#v", refs.Invalid)
+	}
+
+	removed := ProtocolRemoveCosignerReferenceResultMessage("rm-1", adminproto.RemoveCosignerReferenceResult{
+		Success: true, Name: "office", Removed: true, Path: "/var/lib/apsigner/identities/default/cosigner-references/office.json",
+	})
+	if removed.Path != "office.json" {
+		t.Fatalf("cosigner remove leaked path: %q", removed.Path)
+	}
+
+	shown := ProtocolShowLibraryTemplateResultMessage("show-1", adminproto.ShowLibraryTemplateResult{
+		Success: true, SourcePath: "/var/lib/apsigner/template-library/htlc.v1.yaml",
+	})
+	if shown.SourcePath != "htlc.v1.yaml" {
+		t.Fatalf("show library template leaked source_path: %q", shown.SourcePath)
+	}
+
+	library := ProtocolLibraryTemplatesMessage("lib-1", adminproto.ListLibraryTemplatesResult{
+		Templates: []adminproto.LibraryTemplateInfo{{
+			KeyType:    "aplane.htlc.v1",
+			SourcePath: "/var/lib/apsigner/template-library/htlc.v1.yaml",
+			FileName:   "/var/lib/apsigner/template-library/htlc.v1.yaml",
+		}},
+	})
+	if len(library.Templates) != 1 || library.Templates[0].SourcePath != "htlc.v1.yaml" || library.Templates[0].FileName != "htlc.v1.yaml" {
+		t.Fatalf("library templates leaked paths: %#v", library.Templates)
+	}
+
+	// Deleted archive paths are generation-relative logical keys, not host paths.
+	archive := ProtocolDeletedArchiveListMessage("arch-1", adminproto.DeletedArchiveInventory{
+		Entries: []adminproto.DeletedArchiveEntry{{Path: "keys/ADDR.key", EncodedBytes: 128}},
+	})
+	if len(archive.Entries) != 1 || archive.Entries[0].Path != "keys/ADDR.key" {
+		t.Fatalf("deleted archive key changed: %#v", archive.Entries)
+	}
 }
 
 // A sign request's review reaches the wire whole, and a request without one

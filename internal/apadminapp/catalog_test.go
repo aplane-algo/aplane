@@ -447,7 +447,7 @@ func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
 	requester := &fakeRequester{handle: func(message, result any) error {
 		if request, ok := message.(protocol.RemoveCosignerReferenceMessage); ok {
 			*result.(*protocol.RemoveCosignerReferenceResultMessage) = protocol.RemoveCosignerReferenceResultMessage{
-				Success: true, Removed: true, Name: request.Name, Path: "/store/cosigners/" + request.Name + ".json",
+				Success: true, Removed: true, Name: request.Name, Path: request.Name + ".json",
 			}
 			return nil
 		}
@@ -457,8 +457,8 @@ func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
 		*result.(*protocol.CosignerReferencesListMessage) = protocol.CosignerReferencesListMessage{
 			References: []protocol.CosignerReferenceInfo{{Name: "lab", ComponentKey: "KEY", KeyType: "TYPE"}},
 			Invalid: []protocol.InvalidCosignerReferenceInfo{
-				{Path: "/store/cosigners/bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
-				{Path: "/store/cosigners/Lab.json", Name: "Lab", Reason: `"Lab" is not a reference name`},
+				{Path: "bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
+				{Path: "Lab.json", Name: "Lab", Reason: `"Lab" is not a reference name`},
 			},
 		}
 		return nil
@@ -472,8 +472,8 @@ func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
 		t.Fatalf("list stdout = %q", stdout.String())
 	}
 	for _, want := range []string{
-		`warning: "/store/cosigners/bad.json" is not a valid cosigner reference: unsupported schema "wrong"; clear it with: apadmin cosigner remove bad` + "\n",
-		`warning: "/store/cosigners/Lab.json" is not a valid cosigner reference: "Lab" is not a reference name; apadmin cosigner remove does not reach it, so delete the file to clear it` + "\n",
+		`warning: "bad.json" is not a valid cosigner reference: unsupported schema "wrong"; clear it with: apadmin cosigner remove bad` + "\n",
+		`warning: "Lab.json" is not a valid cosigner reference: "Lab" is not a reference name; apadmin cosigner remove does not reach it, so delete it from the signer's cosigners directory to clear it` + "\n",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("list stderr = %q, want %q", stderr.String(), want)
@@ -484,7 +484,7 @@ func TestCatalogCosignerListReportsInvalidReferenceFiles(t *testing.T) {
 	if err := catalog.Run("cosigner", []string{"remove", "bad"}); err != nil {
 		t.Fatal(err)
 	}
-	if want := `cosigner reference bad removed: deleted "/store/cosigners/bad.json"` + "\n"; stderr.String() != want {
+	if want := `cosigner reference bad removed: deleted "bad.json"` + "\n"; stderr.String() != want {
 		t.Fatalf("remove stderr = %q, want %q", stderr.String(), want)
 	}
 }

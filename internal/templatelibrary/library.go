@@ -429,12 +429,15 @@ func DeactivateCompiledProvider(paths storepaths.Paths, keyType string, kr *cryp
 	if err := keytypestate.RequireUnused(paths, result.KeyType, kr); err != nil {
 		return result, err
 	}
-	_, ok, err := keytypestate.Get(paths, result.KeyType)
+	rec, ok, err := keytypestate.Get(paths, result.KeyType)
 	if err != nil {
 		return result, err
 	}
 	if !ok {
 		return result, nil
+	}
+	if rec.Source != keytypestate.SourceCompiled {
+		return result, fmt.Errorf("key type %q is managed as %s, not a compiled provider; if its template file is missing, use apstore template repair", result.KeyType, rec.Source)
 	}
 	if err := keytypestate.Delete(paths, result.KeyType); err != nil {
 		return result, err

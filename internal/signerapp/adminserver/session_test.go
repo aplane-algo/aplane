@@ -1090,7 +1090,7 @@ func TestSessionAuthenticateAdminProtocolVersionRule(t *testing.T) {
 			if len(conn.writes) != 2 {
 				t.Fatalf("write count = %d, want 2", len(conn.writes))
 			}
-			if got := string(conn.writes[0]); got != `{"type":"auth_required","id":"","kind":"notification"}` {
+			if got := string(conn.writes[0]); got != `{"kind":"notification","type":"auth_required","id":""}` {
 				t.Fatalf("auth_required = %s", got)
 			}
 			var result protocol.AuthResultMessage

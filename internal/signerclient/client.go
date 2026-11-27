@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,7 @@ type Client struct {
 	BaseURL     string
 	Client      *http.Client
 	Ctx         context.Context // If set, used for HTTP requests (enables cancellation)
-	ProgressOut io.Writer       // Progress/status output. Defaults to os.Stdout when nil.
+	ProgressOut io.Writer       // Progress/status output. Discards output when nil.
 
 	ctxMu             sync.RWMutex
 	approvalMu        sync.RWMutex
@@ -526,11 +525,22 @@ func logger() *slog.Logger {
 	return slog.With("component", "signerclient")
 }
 
+// SetProgressOutput sets the writer used for live progress lines (such as
+// waiting on operator approval). A nil writer discards progress output.
+func (c *Client) SetProgressOutput(w io.Writer) {
+	c.ctxMu.Lock()
+	c.ProgressOut = w
+	c.ctxMu.Unlock()
+}
+
 func (c *Client) progressWriter() io.Writer {
-	if c.ProgressOut != nil {
-		return c.ProgressOut
+	c.ctxMu.RLock()
+	w := c.ProgressOut
+	c.ctxMu.RUnlock()
+	if w != nil {
+		return w
 	}
-	return os.Stdout
+	return io.Discard
 }
 
 // GetKeysWithContext fetches the list of available signing keys from Signer.

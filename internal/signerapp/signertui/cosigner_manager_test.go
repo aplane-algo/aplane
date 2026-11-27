@@ -332,7 +332,6 @@ func TestCosignerManagerReportsInvalidReferenceFiles(t *testing.T) {
 // not valid references: one remove clears, and one only deleting it does.
 func invalidCosignerReferencesModel(t *testing.T) Model {
 	t.Helper()
-	const dir = "/var/lib/apsigner/identities/default/cosigners/"
 	return sizedForTest(t, Model{viewState: ViewCosignerReferences, connectionState: ConnectionConnected, cosigner: cosignerState{
 		loaded: true,
 		references: []CosignerReferenceInfo{
@@ -340,8 +339,8 @@ func invalidCosignerReferencesModel(t *testing.T) Model {
 			{Name: "west", ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"},
 		},
 		invalid: []InvalidCosignerReferenceInfo{
-			{Path: dir + "bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
-			{Path: dir + "my ref.json", Name: "my ref", Reason: `"my ref" is not a reference name`},
+			{Path: "bad.json", Name: "bad", Reason: `unsupported schema "wrong"`, Removable: true},
+			{Path: "my ref.json", Name: "my ref", Reason: `"my ref" is not a reference name`},
 		},
 	}}, MinWidth, MinHeight)
 }
@@ -452,7 +451,7 @@ func TestCosignerManagerSaysToDeleteAnInvalidFileRemoveDoesNotReach(t *testing.T
 	}
 	view := stripANSI(m.View())
 	checkFitsMinSize(t, view)
-	want := "Remove does not reach this file; delete it to clear it: /var/lib/apsigner/identities/default/cosigners/my ref.json"
+	want := "Remove does not reach this file; delete it in the signer's cosigners dir: my ref.json"
 	if flat := strings.Join(strings.Fields(view), " "); !strings.Contains(flat, want) {
 		t.Errorf("%q missing from:\n%s", want, view)
 	}
@@ -519,22 +518,22 @@ func TestCosignerRemoveConfirmationDropsATargetNoLongerListed(t *testing.T) {
 	}
 }
 
-// The hint for a reference file remove does not reach keeps all of its path on
-// screen at the minimum window size, with a full list and a deep data
-// directory, a long file name with spaces included. The list gives up rows
-// for it, and the selected row stays in view.
+// The hint for a reference file remove does not reach keeps all of its filename
+// on screen at the minimum window size, with a full list and a long file name
+// (continuous or with spaces). The list gives up rows for it, and the selected
+// row stays in view.
 func TestCosignerDeleteHintKeepsItsPathOnScreenAtMinSize(t *testing.T) {
-	for _, tc := range []struct{ dir, name string }{
-		{"/home/operator-with-a-long-name/.local/share/aplane/apsigner-data/identities/default/cosigners/", "a-really-long-file-name-for-a-cosigner-reference"},
-		{"/home/operator/.aplane/apsigner/identities/default/cosigners/", "copy of the west cosigner reference from the old machine before the move"},
+	for _, name := range []string{
+		"a-really-long-file-name-for-a-cosigner-reference-that-wraps-across-the-minimum-terminal-width",
+		"copy of the west cosigner reference from the old machine before the move to the replacement host",
 	} {
 		var references []CosignerReferenceInfo
 		for i := 0; i < 12; i++ {
 			references = append(references, CosignerReferenceInfo{Name: fmt.Sprintf("ref-%02d", i), ComponentKey: testWitnessKeyID, KeyType: "aplane.falcon1024.v1"})
 		}
 		var invalid []InvalidCosignerReferenceInfo
-		for _, name := range []string{"bad", "Lab", "my ref", "._lab", tc.name} {
-			invalid = append(invalid, InvalidCosignerReferenceInfo{Path: tc.dir + name + ".json", Name: name, Reason: `unsupported schema "wrong"`})
+		for _, stem := range []string{"bad", "Lab", "my ref", "._lab", name} {
+			invalid = append(invalid, InvalidCosignerReferenceInfo{Path: stem + ".json", Name: stem, Reason: `unsupported schema "wrong"`})
 		}
 		m := sizedForTest(t, Model{viewState: ViewCosignerReferences, cosigner: cosignerState{loaded: true, references: references, invalid: invalid}}, MinWidth, MinHeight)
 		for range len(references) + len(invalid) - 1 {
@@ -544,9 +543,9 @@ func TestCosignerDeleteHintKeepsItsPathOnScreenAtMinSize(t *testing.T) {
 		view := stripANSI(m.View())
 		checkFitsMinSize(t, view)
 		flat := strings.Join(strings.Fields(view), "")
-		path := strings.Join(strings.Fields(tc.dir+tc.name+".json"), "")
-		if !strings.Contains(flat, path) || !strings.Contains(flat, "deleteittoclearit:") || !strings.Contains(view, "> "+tc.name[:8]) {
-			t.Errorf("%s: the hint's path or the selected row is not all on screen:\n%s", tc.name, view)
+		path := strings.Join(strings.Fields(name+".json"), "")
+		if !strings.Contains(flat, path) || !strings.Contains(flat, "deleteitinthesigner'scosignersdir:") || !strings.Contains(view, "> "+name[:8]) {
+			t.Errorf("%s: the hint's path or the selected row is not all on screen:\n%s", name, view)
 		}
 	}
 }
@@ -555,13 +554,13 @@ func TestCosignerDeleteHintKeepsItsPathOnScreenAtMinSize(t *testing.T) {
 func TestCosignerDeleteHintClearsWhenTheCursorMoves(t *testing.T) {
 	m := invalidCosignerReferencesModel(t)
 	m = press(t, m, "down", "down", "down", "enter")
-	if !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+	if !strings.Contains(stripANSI(m.View()), "delete it in the signer's cosigners dir") {
 		t.Fatalf("no hint after enter:\n%s", stripANSI(m.View()))
 	}
-	if m = press(t, m, "down"); !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+	if m = press(t, m, "down"); !strings.Contains(stripANSI(m.View()), "delete it in the signer's cosigners dir") {
 		t.Fatalf("the hint went though the cursor stayed on the last row:\n%s", stripANSI(m.View()))
 	}
-	if m = press(t, m, "up"); strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+	if m = press(t, m, "up"); strings.Contains(stripANSI(m.View()), "delete it in the signer's cosigners dir") {
 		t.Fatalf("the hint stayed after the cursor moved:\n%s", stripANSI(m.View()))
 	}
 }
@@ -695,13 +694,13 @@ func TestCosignerDeleteHintFollowsItsRowAcrossAList(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := invalidCosignerReferencesModel(t)
 			m = press(t, m, "down", "down", "down", "enter", "r")
-			if !strings.Contains(stripANSI(m.View()), "delete it to clear it") {
+			if !strings.Contains(stripANSI(m.View()), "delete it in the signer's cosigners dir") {
 				t.Fatalf("no hint after enter:\n%s", stripANSI(m.View()))
 			}
 			m = updateModel(t, m, tc.list(m))
 			view := stripANSI(m.View())
 			checkFitsMinSize(t, view)
-			if got := strings.Contains(view, "delete it to clear it"); got != tc.wantHint {
+			if got := strings.Contains(view, "delete it in the signer's cosigners dir"); got != tc.wantHint {
 				t.Fatalf("hint shown %v, want %v, with the cursor on row %d:\n%s", got, tc.wantHint, m.cosigner.managerSelected, view)
 			}
 		})

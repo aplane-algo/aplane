@@ -75,6 +75,12 @@ func TestShellOutputDefaultsStayProcessLocal(t *testing.T) {
 		"internal/clientsign/submit.go": {
 			"w = os.Stdout", "Defaults to os.Stdout",
 		},
+		"internal/signerclient/client.go": {
+			"return os.Stdout", "Defaults to os.Stdout",
+		},
+		"internal/engine/cosigned/submit.go": {
+			"w = os.Stdout", "os.Stdout",
+		},
 	}
 	for rel, forbidden := range checks {
 		data, err := os.ReadFile(filepath.Join(root, rel))

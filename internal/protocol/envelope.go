@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 )
 
 func InferMessageKind(messageType string) (MessageKind, bool) {
@@ -177,58 +178,65 @@ func ParseAdminBaseMessage(data []byte) (BaseMessage, error) {
 	}
 }
 
-// MarshalAdminMessage encodes an admin message, adding the kind its type
-// implies when it has none. The kind is appended to the encoded object rather
-// than added by decoding and encoding the message again, and the first
-// encoding is zeroed, so a message that carries a passphrase or a recovery
-// phrase leaves no copy of it here beyond the frame it returns, which the
-// caller zeroes. encoding/json's own pooled buffers still keep copies.
+// MarshalAdminMessage encodes an admin message, setting the kind its type
+// implies when it has none. When v is a struct (or pointer to struct) carrying
+// BaseMessage, Kind is populated on a shallow struct copy before encoding once:
+// SensitiveBytes fields share their backing array across the shallow copy, no
+// intermediate JSON copy of a passphrase or recovery phrase is created, and
+// caller pointers are never mutated. encoding/json's own pooled buffers still
+// keep copies.
 func MarshalAdminMessage(v interface{}) ([]byte, error) {
-	data, err := marshalAdminJSON(v)
-	if err != nil {
-		return nil, err
-	}
-
-	var base BaseMessage
-	if err := json.Unmarshal(data, &base); err != nil {
-		SensitiveBytes(data).Zero()
-		return nil, err
-	}
-	if base.Type == "" || base.Kind != "" {
-		return data, nil
-	}
-
-	inferred, ok := InferMessageKind(base.Type)
-	if !ok {
-		return data, nil
-	}
-	framed, err := appendObjectKind(data, inferred)
-	SensitiveBytes(data).Zero()
-	if err != nil {
-		return nil, err
-	}
-	return framed, nil
+	return marshalAdminJSON(withInferredKind(v))
 }
 
-// appendObjectKind returns a copy of the encoded object with a kind member
-// added last, so it overrides any empty kind the object already carries.
-func appendObjectKind(object []byte, kind MessageKind) ([]byte, error) {
-	if len(object) < 2 || object[0] != '{' || object[len(object)-1] != '}' {
-		return nil, fmt.Errorf("admin message with a type must encode as a JSON object")
+var baseMessageType = reflect.TypeOf(BaseMessage{})
+
+func withInferredKind(v interface{}) interface{} {
+	if v == nil {
+		return nil
 	}
-	kindJSON, err := json.Marshal(kind)
-	if err != nil {
-		return nil, err
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return v
+		}
+		rv = rv.Elem()
 	}
-	const member = `"kind":`
-	out := make([]byte, 0, len(object)+1+len(member)+len(kindJSON))
-	out = append(out, object[:len(object)-1]...)
-	if len(object) > 2 {
-		out = append(out, ',')
+	if rv.Kind() != reflect.Struct {
+		return v
 	}
-	out = append(out, member...)
-	out = append(out, kindJSON...)
-	return append(out, '}'), nil
+	baseField, ok := findBaseMessage(rv)
+	if !ok {
+		return v
+	}
+	base := baseField.Interface().(BaseMessage)
+	if base.Type == "" || base.Kind != "" {
+		return v
+	}
+	inferred, ok := InferMessageKind(base.Type)
+	if !ok {
+		return v
+	}
+	clone := reflect.New(rv.Type())
+	clone.Elem().Set(rv)
+	cloneBase, _ := findBaseMessage(clone.Elem())
+	base.Kind = inferred
+	cloneBase.Set(reflect.ValueOf(base))
+	return clone.Interface()
+}
+
+func findBaseMessage(rv reflect.Value) (reflect.Value, bool) {
+	if rv.Type() == baseMessageType {
+		return rv, true
+	}
+	t := rv.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Anonymous && f.Type == baseMessageType {
+			return rv.Field(i), true
+		}
+	}
+	return reflect.Value{}, false
 }
 
 // marshalAdminJSON encodes v without HTML escaping. Admin messages never reach

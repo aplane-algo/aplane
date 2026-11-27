@@ -4,6 +4,7 @@
 package signerclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -874,5 +875,27 @@ func TestRequestGroupSignDoesNotCancelAfterSuccess(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := cancelCalls.Load(); got != 0 {
 		t.Fatalf("cancel requests = %d, want 0 after a successful sign", got)
+	}
+}
+
+func TestProgressOutputDefaultsToDiscardAndRoutesWhenSet(t *testing.T) {
+	resp := signerapi.GroupSignResponse{Signed: []string{"aabb"}}
+	c := NewSignerClient("http://signer.test")
+	c.Client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return mockResponse(200, jsonBody(t, resp)), nil
+	})}
+	c.cacheApprovalWaitSeconds(60)
+
+	if w := c.progressWriter(); w != io.Discard {
+		t.Fatalf("default progressWriter() = %T, want io.Discard", w)
+	}
+
+	var buf bytes.Buffer
+	c.SetProgressOutput(&buf)
+	if _, err := c.RequestGroupSignWithContext(context.Background(), []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+		t.Fatalf("RequestGroupSign() error = %v", err)
+	}
+	if !strings.Contains(buf.String(), "Waiting for approval from Signer...") {
+		t.Fatalf("progress output = %q, want approval wait notice", buf.String())
 	}
 }

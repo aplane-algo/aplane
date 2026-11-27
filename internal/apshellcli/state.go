@@ -4,10 +4,12 @@
 package apshellcli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -84,8 +86,37 @@ func NewREPLState(network string, config *config.Config, dataDir string) (*REPLS
 	}
 	state.SetOutput(os.Stdout)
 	state.app().SetIdentityCreatedHandler(state.announceIdentityCreated)
+	state.app().SetProgressOutput(&progressLineWriter{emit: state.progressPrintln})
 
 	return state, nil
+}
+
+// progressLineWriter adapts an io.Writer (such as signerclient.Client.ProgressOut)
+// to emit each newline-terminated line through REPLState.progressPrintln.
+type progressLineWriter struct {
+	mu   sync.Mutex
+	buf  []byte
+	emit func(string)
+}
+
+func (w *progressLineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buf = append(w.buf, p...)
+	var lines []string
+	for {
+		idx := bytes.IndexByte(w.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimSuffix(string(w.buf[:idx]), "\r")
+		lines = append(lines, line)
+		w.buf = w.buf[idx+1:]
+	}
+	w.mu.Unlock()
+	for _, line := range lines {
+		w.emit(line)
+	}
+	return len(p), nil
 }
 
 // SetOutput updates shell output so capture/redirection stays in sync.

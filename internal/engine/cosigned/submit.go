@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -113,7 +112,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	}
 	w := opts.Out
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 
 	targets, err := s.cosignedTargets(txns)

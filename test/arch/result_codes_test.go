@@ -15,16 +15,30 @@ import (
 
 const resultCodesFile = "internal/protocol/error_codes.go"
 
-// TestPolicyAndASAResultCodesComeFromProtocol keeps the policy and ASA set
-// result codes in internal/protocol, where producers and clients share them.
-// Where the packages that emit them give a code (a result's Code, the code of
-// policyapply.Error or asaError, the code or fallback of Code, asaCode and
-// resultError), they write no string, and nowhere do they write out a code that
-// internal/protocol names.
-func TestPolicyAndASAResultCodesComeFromProtocol(t *testing.T) {
-	emitters := []string{"internal/signerapp/policyapply/", "internal/signerapp/admin/", "internal/signerapp/policycmd/"}
+// TestAdminResultCodesComeFromProtocol keeps admin and daemon result codes in
+// internal/protocol, where producers and clients share them. Where the packages
+// that emit them give a code (a result's Code, the code of policyapply.Error or
+// asaError, or the fallback code argument to result-code helpers), they write
+// no string, and nowhere do they write out a code that internal/protocol names.
+func TestAdminResultCodesComeFromProtocol(t *testing.T) {
+	emitters := []string{
+		"internal/signerapp/policyapply/",
+		"internal/signerapp/admin/",
+		"internal/signerapp/policycmd/",
+		"internal/signerapp/backupadmin/",
+		"internal/signerapp/keyadmin/",
+		"internal/signerapp/templateadmin/",
+		"internal/signerapp/storeadmin/",
+		"internal/signerapp/adminserver/",
+		"internal/signerapp/daemon/admin_services.go",
+	}
 	named := protocolCodeValues(t)
-	codeArgument := map[string]int{"resultError": 0, "Code": 1, "asaCode": 1}
+	codeArgument := map[string]int{
+		"resultError":                  0,
+		"Code":                         1,
+		"asaCode":                      1,
+		"identityStoreInspectionError": 1,
+	}
 
 	files, given := 0, 0
 	forEachProductionFile(t, func(rel string, parsed *ast.File) {

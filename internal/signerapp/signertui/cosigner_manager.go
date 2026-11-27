@@ -216,7 +216,7 @@ func (m Model) cosignerManagerStatusBlock() string {
 	if m.cosigner.deleteHint != "" {
 		path := terminalSafe(m.cosigner.deleteHint)
 		lines = append(lines, subtitleStyle.Render(
-			wrapPlainText("Remove does not reach this file; delete it to clear it:", m.tableWidth())+"\n"+
+			wrapPlainText("Remove does not reach this file; delete it in the signer's cosigners dir:", m.tableWidth())+"\n"+
 				wrapPath(path, m.tableWidth())))
 	}
 	return strings.Join(lines, "\n")

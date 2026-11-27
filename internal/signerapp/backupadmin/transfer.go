@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -272,7 +273,7 @@ func (s Service) AbortBackupImport(req adminproto.AbortBackupImportRequest) admi
 		return fsutil.RemoveDurable(path)
 	})
 	if err != nil {
-		return adminproto.AbortBackupImportResult{Code: "backup_import_abort_failed", Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
+		return adminproto.AbortBackupImportResult{Code: protocol.ResultCodeBackupImportAbortFailed, Error: backupTransferErrorText(err, s.Deps.KeyPaths().Root())}
 	}
 	return adminproto.AbortBackupImportResult{Success: true}
 }
@@ -403,10 +404,10 @@ func backupClaimPath(dir, uploadID string) (string, error) {
 }
 
 func beginImportError(err error, storeRoot string) adminproto.BeginBackupImportResult {
-	return adminproto.BeginBackupImportResult{Code: "backup_import_begin_failed", Error: backupTransferErrorText(err, storeRoot)}
+	return adminproto.BeginBackupImportResult{Code: protocol.ResultCodeBackupImportBeginFailed, Error: backupTransferErrorText(err, storeRoot)}
 }
 func appendImportError(err error, storeRoot string) adminproto.AppendBackupImportResult {
-	return adminproto.AppendBackupImportResult{Code: "backup_import_append_failed", Error: backupTransferErrorText(err, storeRoot)}
+	return adminproto.AppendBackupImportResult{Code: protocol.ResultCodeBackupImportAppendFailed, Error: backupTransferErrorText(err, storeRoot)}
 }
 
 // importVerifyRefusal reports an archive the import's verification refused.
@@ -428,10 +429,10 @@ func importVerifyRefusal(err error, storeRoot string) adminproto.CommitBackupImp
 }
 
 func commitImportError(err error, storeRoot string) adminproto.CommitBackupImportResult {
-	return adminproto.CommitBackupImportResult{Code: "backup_import_commit_failed", Error: backupTransferErrorText(err, storeRoot)}
+	return adminproto.CommitBackupImportResult{Code: protocol.ResultCodeBackupImportCommitFailed, Error: backupTransferErrorText(err, storeRoot)}
 }
 func readChunkError(err error, storeRoot string) adminproto.ReadBackupChunkResult {
-	return adminproto.ReadBackupChunkResult{Code: "backup_export_read_failed", Error: backupTransferErrorText(err, storeRoot)}
+	return adminproto.ReadBackupChunkResult{Code: protocol.ResultCodeBackupExportReadFailed, Error: backupTransferErrorText(err, storeRoot)}
 }
 
 func backupTransferErrorText(err error, storeRoot string) string {

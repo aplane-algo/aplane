@@ -4,6 +4,8 @@
 package externalcheck
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -61,6 +63,9 @@ func TestGetSendsTheRequestContract(t *testing.T) {
 	if seen.Header.Get("Cookie") != "" {
 		t.Error("a lookup carried a cookie")
 	}
+	if seen.Header.Get("Accept-Encoding") != "" {
+		t.Errorf("Accept-Encoding = %q, want empty (compression disabled)", seen.Header.Get("Accept-Encoding"))
+	}
 	// A second lookup draws a fresh request ID, and a source without a
 	// token sends none.
 	second, err := f.Get(context.Background(), lookupFor(srv.URL, "/v1/x", policy.ExternalSourceV1{}), "unused")
@@ -96,6 +101,14 @@ func TestGetFailsClosed(t *testing.T) {
 			_, _ = w.Write([]byte(`{"ok": true}`))
 		}, "the lookup failed"},
 		{"not JSON", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`<html>`)) }, "not acceptable JSON"},
+		{"gzipped response is not decoded", func(w http.ResponseWriter, _ *http.Request) {
+			var buf bytes.Buffer
+			gz := gzip.NewWriter(&buf)
+			_, _ = gz.Write([]byte(`{"ok": true}`))
+			_ = gz.Close()
+			w.Header().Set("Content-Encoding", "gzip")
+			_, _ = w.Write(buf.Bytes())
+		}, "not acceptable JSON"},
 		{"empty body", func(http.ResponseWriter, *http.Request) {}, "not acceptable JSON"},
 		{"duplicate key", func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`{"ok": false, "ok": true}`))
